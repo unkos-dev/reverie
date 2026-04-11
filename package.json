@@ -1,0 +1,20 @@
+{
+  "private": true,
+  "name": "tome-dev",
+  "description": "Development tooling for Tome",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.md": "markdownlint-cli2",
+    "*.{ts,tsx,js,jsx,json,yaml,yml,css,md}": "prettier --check"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "markdownlint-cli2": "^0.22.0",
+    "prettier": "^3.8.2"
+  }
+}
