@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+.vscode
+.idea
+docs
+target
+node_modules
+dist
+*.md
+!README.md
+LICENSE
