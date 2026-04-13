@@ -3,8 +3,19 @@
 ## Dev Database
 
 Start the dev postgres: `docker compose up -d` from the repo root.
-Connection: `postgres://tome:tome@localhost:5433/tome_dev` (port 5433 — 5432 is
-taken by the host's shared-postgres).
+Port 5433 (5432 is taken by the host's shared-postgres).
+
+**Roles** (created by `docker/init-roles.sql` on first start):
+
+| Role | Connection | Purpose |
+|------|-----------|---------|
+| `tome` | `postgres://tome:tome@localhost:5433/tome_dev` | Schema owner. Runs migrations. Never used at runtime. |
+| `tome_app` | `postgres://tome_app:tome_app@localhost:5433/tome_dev` | Web application. RLS enforced. |
+| `tome_ingestion` | `postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev` | Background pipeline. Scoped RLS. |
+| `tome_readonly` | `postgres://tome_readonly:tome_readonly@localhost:5433/tome_dev` | Debug/reporting. SELECT only. |
+
+Run migrations as the schema owner:
+`DATABASE_URL=postgres://tome:tome@localhost:5433/tome_dev sqlx migrate run`
 
 ## Conventions
 
