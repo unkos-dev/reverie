@@ -1,5 +1,11 @@
 # Backend — Rust + Axum
 
+## Dev Database
+
+Start the dev postgres: `docker compose up -d` from the repo root.
+Connection: `postgres://tome:tome@localhost:5433/tome_dev` (port 5433 — 5432 is
+taken by the host's shared-postgres).
+
 ## Conventions
 
 - **Error handling:** Use `thiserror` for library errors, `anyhow` for application
