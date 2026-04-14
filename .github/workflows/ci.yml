@@ -15,6 +15,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: tome
+          POSTGRES_PASSWORD: tome
+          POSTGRES_DB: tome_dev
+        ports:
+          - 5432:5432
+        volumes:
+          - ${{ github.workspace }}/docker/init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql
+        options: >-
+          --health-cmd "pg_isready -U tome -d tome_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://tome_app:tome_app@localhost:5432/tome_dev
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +44,11 @@ jobs:
         with:
           workspaces: backend
 
+      - name: Run migrations
+        run: >-
+          cargo install sqlx-cli --no-default-features --features postgres --locked
+          && DATABASE_URL=postgres://tome:tome@localhost:5432/tome_dev sqlx migrate run
+
       - name: Check formatting
         run: cargo fmt --check
 
@@ -33,7 +56,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test -- --include-ignored
 
   audit:
     name: Security Audit
