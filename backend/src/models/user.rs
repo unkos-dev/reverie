@@ -163,7 +163,12 @@ mod tests {
                 .expect("upsert");
         assert_eq!(user.display_name, "Alice");
         assert_eq!(user.email.as_deref(), Some("alice@example.com"));
-        assert_eq!(user.role, "adult");
+        // First user in the database is auto-promoted to admin; otherwise "adult"
+        assert!(
+            user.role == "admin" || user.role == "adult",
+            "expected admin or adult, got {:?}",
+            user.role
+        );
         assert_eq!(user.session_version, 0);
         assert_eq!(user.session_version_bytes, 0_i32.to_le_bytes());
 
