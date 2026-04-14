@@ -8,7 +8,7 @@ pub async fn init_pool(database_url: &str, max_connections: u32) -> Result<PgPoo
         .await
 }
 
-#[allow(dead_code)] // Used by route handlers in subsequent steps
+#[allow(dead_code)] // Used by content-access routes in Step 9 (OPDS)
 /// Acquire a transaction with RLS context set for the given user.
 ///
 /// Uses `set_config('app.current_user_id', ..., true)` where the third
