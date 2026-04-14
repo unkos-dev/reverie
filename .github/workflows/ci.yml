@@ -24,8 +24,6 @@ jobs:
           POSTGRES_DB: tome_dev
         ports:
           - 5432:5432
-        volumes:
-          - ${{ github.workspace }}/docker/init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql
         options: >-
           --health-cmd "pg_isready -U tome -d tome_dev"
           --health-interval 5s
@@ -35,6 +33,10 @@ jobs:
       DATABASE_URL: postgres://tome_app:tome_app@localhost:5432/tome_dev
     steps:
       - uses: actions/checkout@v4
+
+      - name: Create database roles
+        run: psql postgres://tome:tome@localhost:5432/tome_dev -f docker/init-roles.sql
+        working-directory: ${{ github.workspace }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
