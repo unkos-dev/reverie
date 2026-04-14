@@ -8,7 +8,6 @@ CREATE TABLE users (
     is_child BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    session_version INTEGER NOT NULL DEFAULT 0,
     -- is_child is an admin-set flag (UI checkbox) that triggers child-related
     -- policies (RLS content filtering). It is intentionally separate from role:
     -- role controls permissions, is_child controls content visibility.

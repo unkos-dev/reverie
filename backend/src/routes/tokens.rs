@@ -39,6 +39,15 @@ async fn create_token(
         return Err(AppError::Validation("name must be 1-255 characters".into()));
     }
 
+    let count = device_token::count_active_for_user(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if count >= 10 {
+        return Err(AppError::Validation(
+            "maximum of 10 active device tokens per user".into(),
+        ));
+    }
+
     let (plaintext, hash) = generate_device_token();
     let dt = device_token::create(&state.pool, current_user.user_id, &body.name, &hash)
         .await
@@ -90,5 +99,104 @@ async fn revoke_token(
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AppError::NotFound)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+
+    use crate::test_support;
+
+    #[tokio::test]
+    async fn create_token_returns_401_without_auth() {
+        let server = test_support::test_server();
+        let response = server
+            .post("/api/tokens")
+            .json(&serde_json::json!({"name": "My Kindle"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn list_tokens_returns_401_without_auth() {
+        let server = test_support::test_server();
+        let response = server.get("/api/tokens").await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn revoke_token_returns_401_without_auth() {
+        let server = test_support::test_server();
+        let response = server
+            .delete(&format!("/api/tokens/{}", uuid::Uuid::new_v4()))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires running postgres
+    async fn create_token_validates_name() {
+        let url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into());
+        let pool = sqlx::PgPool::connect(&url).await.expect("connect");
+
+        // Create a test user and device token for Basic auth
+        let subject = format!("token-route-test-{}", uuid::Uuid::new_v4());
+        let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
+            &pool,
+            &subject,
+            "Token Test User",
+            None,
+        )
+        .await
+        .expect("create user");
+        let (plaintext, hash) = crate::auth::token::generate_device_token();
+        crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
+            .await
+            .expect("create token");
+
+        let state = crate::state::AppState {
+            pool: pool.clone(),
+            config: test_support::test_config(),
+            oidc_client: test_support::test_oidc_client(),
+        };
+        let auth_backend = crate::auth::backend::AuthBackend { pool: pool.clone() };
+        let app = crate::build_router(state, auth_backend);
+        let server = axum_test::TestServer::new(app);
+
+        use base64ct::Encoding;
+        let basic =
+            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+
+        // Empty name
+        let response = server
+            .post("/api/tokens")
+            .authorization_bearer(&basic)
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": ""}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Name too long
+        let long_name = "x".repeat(256);
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": long_name}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Cleanup
+        sqlx::query("DELETE FROM device_tokens WHERE user_id = $1")
+            .bind(user.id)
+            .execute(&pool)
+            .await
+            .expect("cleanup tokens");
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(user.id)
+            .execute(&pool)
+            .await
+            .expect("cleanup user");
     }
 }

@@ -143,6 +143,11 @@ async fn callback(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
 
+    // Clean up single-use OIDC flow state from session
+    let _ = auth_session.session.remove::<String>("pkce_verifier").await;
+    let _ = auth_session.session.remove::<String>("csrf_token").await;
+    let _ = auth_session.session.remove::<String>("nonce").await;
+
     Ok(Redirect::temporary("/"))
 }
 
@@ -169,4 +174,65 @@ async fn me(
         "role": u.role,
         "is_child": u.is_child,
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+
+    use crate::test_support;
+
+    #[tokio::test]
+    async fn login_redirects_to_oidc_provider() {
+        let server = test_support::test_server();
+        let response = server.get("/auth/login").await;
+        // Should redirect to the fake OIDC provider's auth URL
+        assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let location = response.header("location").to_str().unwrap().to_owned();
+        assert!(
+            location.starts_with("https://fake-issuer.example.com/auth"),
+            "expected redirect to OIDC provider, got: {location}"
+        );
+        // Verify PKCE and required OAuth params are present
+        assert!(
+            location.contains("code_challenge="),
+            "missing PKCE code_challenge"
+        );
+        assert!(
+            location.contains("code_challenge_method=S256"),
+            "missing PKCE method"
+        );
+        assert!(
+            location.contains("response_type=code"),
+            "missing response_type"
+        );
+        assert!(location.contains("scope="), "missing scope");
+    }
+
+    #[tokio::test]
+    async fn me_returns_401_without_auth() {
+        let server = test_support::test_server();
+        let response = server.get("/auth/me").await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn logout_returns_204_without_session() {
+        let server = test_support::test_server();
+        let response = server.post("/auth/logout").await;
+        // logout on a non-authenticated session still succeeds (no-op)
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn callback_returns_401_without_session_state() {
+        let server = test_support::test_server();
+        // Callback without a prior login flow (no CSRF/PKCE in session) should fail
+        let response = server
+            .get("/auth/callback")
+            .add_query_param("code", "fake-code")
+            .add_query_param("state", "fake-state")
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
 }

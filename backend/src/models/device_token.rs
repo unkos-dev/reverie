@@ -59,6 +59,16 @@ pub async fn revoke(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<bool, sqlx
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn count_active_for_user(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM device_tokens WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
 pub async fn update_last_used(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE device_tokens SET last_used_at = now() WHERE id = $1")
         .bind(id)
