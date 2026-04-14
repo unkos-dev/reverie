@@ -9,6 +9,10 @@ pub struct Config {
     pub quarantine_path: String,
     pub log_level: String,
     pub db_max_connections: u32,
+    pub oidc_issuer_url: String,
+    pub oidc_client_id: String,
+    pub oidc_client_secret: String,
+    pub oidc_redirect_uri: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +38,14 @@ impl Config {
                 reason: e.to_string(),
             })?;
 
+        let oidc_issuer_url = env::var("OIDC_ISSUER_URL")
+            .map_err(|_| ConfigError::MissingVar("OIDC_ISSUER_URL".into()))?;
+        let oidc_client_id = env::var("OIDC_CLIENT_ID")
+            .map_err(|_| ConfigError::MissingVar("OIDC_CLIENT_ID".into()))?;
+        let oidc_client_secret = env::var("OIDC_CLIENT_SECRET")
+            .map_err(|_| ConfigError::MissingVar("OIDC_CLIENT_SECRET".into()))?;
+        let oidc_redirect_uri = env::var("OIDC_REDIRECT_URI")
+            .map_err(|_| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
         Ok(Self {
             port,
             database_url,
@@ -50,6 +62,10 @@ impl Config {
                     var: "TOME_DB_MAX_CONNECTIONS".into(),
                     reason: e.to_string(),
                 })?,
+            oidc_issuer_url,
+            oidc_client_id,
+            oidc_client_secret,
+            oidc_redirect_uri,
         })
     }
 }
@@ -93,7 +109,13 @@ mod tests {
     #[test]
     fn from_env_with_defaults() {
         with_env(
-            &[("DATABASE_URL", "postgres://test@localhost/test")],
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/test"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+            ],
             &[
                 "TOME_PORT",
                 "TOME_LIBRARY_PATH",
@@ -121,6 +143,10 @@ mod tests {
                 ("TOME_INGESTION_PATH", "/data/ingestion"),
                 ("TOME_QUARANTINE_PATH", "/data/quarantine"),
                 ("RUST_LOG", "debug"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
             ],
             &[],
             || {
@@ -135,10 +161,19 @@ mod tests {
 
     #[test]
     fn from_env_missing_database_url() {
-        with_env(&[], &["DATABASE_URL"], || {
-            let err = Config::from_env().unwrap_err();
-            assert!(err.to_string().contains("DATABASE_URL"));
-        });
+        with_env(
+            &[
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+            ],
+            &["DATABASE_URL"],
+            || {
+                let err = Config::from_env().unwrap_err();
+                assert!(err.to_string().contains("DATABASE_URL"));
+            },
+        );
     }
 
     #[test]
@@ -147,6 +182,10 @@ mod tests {
             &[
                 ("DATABASE_URL", "postgres://x@localhost/x"),
                 ("TOME_PORT", "not_a_number"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
             ],
             &[],
             || {

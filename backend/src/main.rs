@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod db;
 mod error;
@@ -5,16 +6,40 @@ mod models;
 mod routes;
 mod services;
 mod state;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 use axum::Router;
+use axum_login::AuthManagerLayerBuilder;
+use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 use tracing_subscriber::EnvFilter;
 
+use crate::auth::backend::AuthBackend;
 use crate::config::Config;
 use crate::state::AppState;
 
-pub fn build_router(state: AppState) -> Router {
+pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
+    // NOTE: MemoryStore does not evict expired sessions server-side — the cookie
+    // expires client-side but the HashMap entry stays until process restart.
+    // Acceptable for single-instance homelab; replace with tower-sessions-sqlx-store
+    // if memory growth under sustained use becomes an issue.
+    let session_store = MemoryStore::default();
+    // Secure flag intentionally omitted: backend runs behind a TLS-terminating
+    // reverse proxy and sees plain HTTP, so Secure would prevent cookie delivery.
+    // Cookies are unsigned — session security relies on the cryptographic randomness
+    // of tower-sessions session IDs (ChaCha-seeded via `rand` crate).
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_http_only(true)
+        .with_same_site(tower_sessions::cookie::SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
+
+    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
+
     Router::new()
         .merge(routes::health::router())
+        .merge(routes::auth::router())
+        .merge(routes::tokens::router())
+        .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -34,11 +59,17 @@ async fn main() {
         .await
         .expect("failed to connect to database");
 
+    let oidc_client = auth::oidc::init_oidc_client(&config)
+        .await
+        .expect("failed to initialize OIDC client");
+
+    let auth_backend = AuthBackend { pool: pool.clone() };
     let state = AppState {
         pool,
         config: config.clone(),
+        oidc_client,
     };
-    let app = build_router(state);
+    let app = build_router(state, auth_backend);
 
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -66,31 +97,12 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use axum_test::TestServer;
-
-    fn test_router() -> Router {
-        // Liveness endpoint only — no DB needed for unit tests.
-        Router::new()
-            .merge(routes::health::router())
-            .with_state(AppState {
-                pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
-                config: Config {
-                    port: 3000,
-                    database_url: String::new(),
-                    library_path: String::new(),
-                    ingestion_path: String::new(),
-                    quarantine_path: String::new(),
-                    log_level: "info".into(),
-                    db_max_connections: 10,
-                },
-            })
-    }
+    use crate::test_support;
 
     #[tokio::test]
     async fn health_returns_ok() {
-        let server = TestServer::new(test_router());
-        let response: axum_test::TestResponse = server.get("/health").await;
+        let server = test_support::test_server();
+        let response = server.get("/health").await;
         response.assert_status_ok();
         response.assert_text("ok");
     }

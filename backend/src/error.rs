@@ -1,13 +1,15 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
-#[allow(dead_code)] // Used by route handlers in subsequent steps
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("not found")]
     NotFound,
     #[error("unauthorized")]
     Unauthorized,
+    #[error("forbidden")]
+    #[allow(dead_code)] // Used by role-based authorization in future steps
+    Forbidden,
     #[error("validation error: {0}")]
     Validation(String),
     #[error(transparent)]
@@ -19,6 +21,7 @@ impl IntoResponse for AppError {
         let (status, message) = match self {
             Self::NotFound => (StatusCode::NOT_FOUND, "not found".to_owned()),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_owned()),
+            Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden".to_owned()),
             Self::Validation(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");
@@ -63,6 +66,12 @@ mod tests {
         let (status, body) = status_of(AppError::Validation("bad input".into())).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body.contains("bad input"));
+    }
+
+    #[tokio::test]
+    async fn forbidden_returns_403() {
+        let (status, _) = status_of(AppError::Forbidden).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

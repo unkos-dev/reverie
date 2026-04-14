@@ -38,10 +38,17 @@ backend/
 ├── Cargo.toml
 ├── migrations/          # sqlx migrations
 ├── src/
-│   ├── main.rs          # Entrypoint, server setup
+│   ├── main.rs          # Entrypoint, router assembly, server setup
+│   ├── auth/            # Authentication subsystem
+│   │   ├── backend.rs   # axum-login AuthnBackend (OIDC credentials)
+│   │   ├── middleware.rs # CurrentUser extractor (session + Basic auth)
+│   │   ├── oidc.rs      # OIDC client init and discovery
+│   │   └── token.rs     # Device token generation and argon2 verification
 │   ├── routes/          # Axum route handlers, grouped by domain
 │   ├── models/          # Database models and queries
 │   ├── services/        # Business logic
+│   ├── config.rs        # Environment-based configuration
+│   ├── state.rs         # AppState (shared across handlers)
 │   └── error.rs         # AppError type
 └── tests/               # Integration tests (if separate from unit tests)
 ```

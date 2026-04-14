@@ -1,0 +1,70 @@
+use axum::Router;
+use axum_test::TestServer;
+
+use crate::auth::backend::AuthBackend;
+use crate::auth::oidc::OidcClient;
+use crate::config::Config;
+use crate::state::AppState;
+
+pub fn test_config() -> Config {
+    Config {
+        port: 3000,
+        database_url: String::new(),
+        library_path: String::new(),
+        ingestion_path: String::new(),
+        quarantine_path: String::new(),
+        log_level: "info".into(),
+        db_max_connections: 10,
+        oidc_issuer_url: String::new(),
+        oidc_client_id: String::new(),
+        oidc_client_secret: String::new(),
+        oidc_redirect_uri: String::new(),
+    }
+}
+
+pub fn test_oidc_client() -> OidcClient {
+    use openidconnect::core::{CoreProviderMetadata, CoreResponseType, CoreSubjectIdentifierType};
+    use openidconnect::{
+        AuthUrl, ClientId, EmptyAdditionalProviderMetadata, IssuerUrl, JsonWebKeySetUrl,
+        RedirectUrl, ResponseTypes, TokenUrl,
+    };
+
+    let issuer = IssuerUrl::new("https://fake-issuer.example.com".into()).unwrap();
+    let provider = CoreProviderMetadata::new(
+        issuer,
+        AuthUrl::new("https://fake-issuer.example.com/auth".into()).unwrap(),
+        JsonWebKeySetUrl::new("https://fake-issuer.example.com/jwks".into()).unwrap(),
+        vec![ResponseTypes::new(vec![CoreResponseType::Code])],
+        vec![CoreSubjectIdentifierType::Public],
+        vec![],
+        EmptyAdditionalProviderMetadata {},
+    )
+    .set_token_endpoint(Some(
+        TokenUrl::new("https://fake-issuer.example.com/token".into()).unwrap(),
+    ));
+
+    openidconnect::core::CoreClient::from_provider_metadata(
+        provider,
+        ClientId::new("test-client".into()),
+        Some(openidconnect::ClientSecret::new("test-secret".into())),
+    )
+    .set_redirect_uri(RedirectUrl::new("http://localhost:3000/auth/callback".into()).unwrap())
+}
+
+pub fn test_state() -> AppState {
+    AppState {
+        pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
+        config: test_config(),
+        oidc_client: test_oidc_client(),
+    }
+}
+
+/// Build the full application router with auth layer (for route integration tests).
+pub fn test_server() -> TestServer {
+    let state = test_state();
+    let auth_backend = AuthBackend {
+        pool: state.pool.clone(),
+    };
+    let app: Router = crate::build_router(state, auth_backend);
+    TestServer::new(app)
+}
