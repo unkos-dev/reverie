@@ -39,6 +39,7 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
         .merge(routes::health::router())
         .merge(routes::auth::router())
         .merge(routes::tokens::router())
+        .merge(routes::ingestion::router())
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
@@ -63,13 +64,31 @@ async fn main() {
         .await
         .expect("failed to initialize OIDC client");
 
+    let ingestion_pool = db::init_pool(&config.ingestion_database_url, config.db_max_connections)
+        .await
+        .expect("failed to connect ingestion pool");
+
     let auth_backend = AuthBackend { pool: pool.clone() };
     let state = AppState {
         pool,
+        ingestion_pool,
         config: config.clone(),
         oidc_client,
     };
-    let app = build_router(state, auth_backend);
+    let app = build_router(state.clone(), auth_backend);
+
+    // Spawn ingestion watcher with a cancellation token for graceful shutdown
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let watcher_token = cancel_token.clone();
+    let watcher_config = config.clone();
+    let watcher_pool = state.ingestion_pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            services::ingestion::run_watcher(watcher_config, watcher_pool, watcher_token).await
+        {
+            tracing::error!(error = %e, "ingestion watcher exited with error");
+        }
+    });
 
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -79,12 +98,12 @@ async fn main() {
     tracing::info!("listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(cancel_token))
         .await
         .expect("server error");
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
     let ctrl_c = tokio::signal::ctrl_c();
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("failed to register SIGTERM handler");
@@ -93,6 +112,7 @@ async fn shutdown_signal() {
         _ = sigterm.recv() => {},
     }
     tracing::info!("shutdown signal received");
+    cancel_token.cancel();
 }
 
 #[cfg(test)]

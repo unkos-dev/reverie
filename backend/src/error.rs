@@ -8,7 +8,6 @@ pub enum AppError {
     #[error("unauthorized")]
     Unauthorized,
     #[error("forbidden")]
-    #[allow(dead_code)] // Used by role-based authorization in future steps
     Forbidden,
     #[error("validation error: {0}")]
     Validation(String),

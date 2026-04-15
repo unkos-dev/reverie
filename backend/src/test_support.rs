@@ -3,7 +3,7 @@ use axum_test::TestServer;
 
 use crate::auth::backend::AuthBackend;
 use crate::auth::oidc::OidcClient;
-use crate::config::Config;
+use crate::config::{CleanupMode, Config};
 use crate::state::AppState;
 
 pub fn test_config() -> Config {
@@ -19,6 +19,16 @@ pub fn test_config() -> Config {
         oidc_client_id: String::new(),
         oidc_client_secret: String::new(),
         oidc_redirect_uri: String::new(),
+        ingestion_database_url: String::new(),
+        format_priority: vec![
+            "epub".into(),
+            "pdf".into(),
+            "mobi".into(),
+            "azw3".into(),
+            "cbz".into(),
+            "cbr".into(),
+        ],
+        cleanup_mode: CleanupMode::All,
     }
 }
 
@@ -54,6 +64,7 @@ pub fn test_oidc_client() -> OidcClient {
 pub fn test_state() -> AppState {
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
+        ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         config: test_config(),
         oidc_client: test_oidc_client(),
     }

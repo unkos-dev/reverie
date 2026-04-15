@@ -13,7 +13,23 @@ pub struct Config {
     pub oidc_client_id: String,
     pub oidc_client_secret: String,
     pub oidc_redirect_uri: String,
+    pub ingestion_database_url: String,
+    pub format_priority: Vec<String>,
+    pub cleanup_mode: CleanupMode,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanupMode {
+    /// Delete all files in the ingestion directory after a successful batch
+    All,
+    /// Delete only files that were actually ingested (selected by format priority)
+    Ingested,
+    /// Never delete source files — user handles cleanup manually
+    None,
+}
+
+/// Formats supported by the manifestation_format DB enum.
+pub const SUPPORTED_FORMATS: &[&str] = &["epub", "pdf", "mobi", "azw3", "cbz", "cbr"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -46,6 +62,45 @@ impl Config {
             .map_err(|_| ConfigError::MissingVar("OIDC_CLIENT_SECRET".into()))?;
         let oidc_redirect_uri = env::var("OIDC_REDIRECT_URI")
             .map_err(|_| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
+
+        let ingestion_database_url =
+            env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| database_url.clone());
+
+        let format_priority: Vec<String> = env::var("TOME_FORMAT_PRIORITY")
+            .unwrap_or_else(|_| "epub,pdf,mobi,azw3,cbz,cbr".into())
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        for fmt in &format_priority {
+            if !SUPPORTED_FORMATS.contains(&fmt.as_str()) {
+                return Err(ConfigError::Invalid {
+                    var: "TOME_FORMAT_PRIORITY".into(),
+                    reason: format!(
+                        "unsupported format '{fmt}'. Supported: {}",
+                        SUPPORTED_FORMATS.join(", ")
+                    ),
+                });
+            }
+        }
+
+        let cleanup_mode = match env::var("TOME_CLEANUP_MODE")
+            .unwrap_or_else(|_| "all".into())
+            .to_lowercase()
+            .as_str()
+        {
+            "all" => CleanupMode::All,
+            "ingested" => CleanupMode::Ingested,
+            "none" => CleanupMode::None,
+            other => {
+                return Err(ConfigError::Invalid {
+                    var: "TOME_CLEANUP_MODE".into(),
+                    reason: format!("expected 'all', 'ingested', or 'none', got '{other}'"),
+                });
+            }
+        };
+
         Ok(Self {
             port,
             database_url,
@@ -66,6 +121,9 @@ impl Config {
             oidc_client_id,
             oidc_client_secret,
             oidc_redirect_uri,
+            ingestion_database_url,
+            format_priority,
+            cleanup_mode,
         })
     }
 }
@@ -121,6 +179,9 @@ mod tests {
                 "TOME_LIBRARY_PATH",
                 "TOME_INGESTION_PATH",
                 "TOME_QUARANTINE_PATH",
+                "DATABASE_URL_INGESTION",
+                "TOME_FORMAT_PRIORITY",
+                "TOME_CLEANUP_MODE",
             ],
             || {
                 let config = Config::from_env().unwrap();
@@ -129,6 +190,16 @@ mod tests {
                 assert_eq!(config.library_path, "./library");
                 assert_eq!(config.ingestion_path, "./ingestion");
                 assert_eq!(config.quarantine_path, "./quarantine");
+                // Falls back to DATABASE_URL when DATABASE_URL_INGESTION is unset
+                assert_eq!(
+                    config.ingestion_database_url,
+                    "postgres://test@localhost/test"
+                );
+                assert_eq!(
+                    config.format_priority,
+                    vec!["epub", "pdf", "mobi", "azw3", "cbz", "cbr"]
+                );
+                assert_eq!(config.cleanup_mode, CleanupMode::All);
             },
         );
     }
@@ -172,6 +243,57 @@ mod tests {
             || {
                 let err = Config::from_env().unwrap_err();
                 assert!(err.to_string().contains("DATABASE_URL"));
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_custom_ingestion_url_and_format_priority() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/test"),
+                (
+                    "DATABASE_URL_INGESTION",
+                    "postgres://ingestion@localhost/test",
+                ),
+                ("TOME_FORMAT_PRIORITY", "pdf, EPUB , mobi"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().unwrap();
+                assert_eq!(
+                    config.ingestion_database_url,
+                    "postgres://ingestion@localhost/test"
+                );
+                assert_eq!(config.format_priority, vec!["pdf", "epub", "mobi"]);
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_rejects_unsupported_format_priority() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/test"),
+                ("TOME_FORMAT_PRIORITY", "epub,djvu"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+            ],
+            &[],
+            || {
+                let err = Config::from_env().unwrap_err();
+                let msg = err.to_string();
+                assert!(msg.contains("djvu"), "expected djvu in error: {msg}");
+                assert!(
+                    msg.contains("TOME_FORMAT_PRIORITY"),
+                    "expected var name in error: {msg}"
+                );
             },
         );
     }

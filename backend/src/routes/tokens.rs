@@ -154,6 +154,7 @@ mod tests {
 
         let state = crate::state::AppState {
             pool: pool.clone(),
+            ingestion_pool: pool.clone(),
             config: test_support::test_config(),
             oidc_client: test_support::test_oidc_client(),
         };
