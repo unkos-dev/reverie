@@ -1,6 +1,11 @@
 use axum::Router;
 use axum_test::TestServer;
 
+/// Serialize tests that mutate or read environment variables so they don't
+/// race with each other across modules. Import this wherever `std::env::set_var`
+/// or `std::env::var("DATABASE_URL")` is used in test code.
+pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 use crate::auth::backend::AuthBackend;
 use crate::auth::oidc::OidcClient;
 use crate::config::{CleanupMode, Config};

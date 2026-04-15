@@ -8,6 +8,7 @@ use walkdir::WalkDir;
 
 use crate::config::{CleanupMode, Config, SUPPORTED_FORMATS};
 use crate::models::ingestion_job;
+use crate::services::epub::{self, ValidationOutcome};
 use crate::services::ingestion::{cleanup, copier, format_filter, path_template, quarantine};
 
 #[derive(Debug)]
@@ -337,14 +338,73 @@ async fn process_file(
     }
     let format_str = ext.as_str();
 
+    // Step 4.5: EPUB structural validation and auto-repair.
+    // Only applies to EPUB files; other formats pass through as 'valid'.
+    let (validation_status_str, accessibility_metadata): (&'static str, Option<serde_json::Value>) =
+        if ext == "epub" {
+            let lib_file = library_path.join(&final_relative);
+            let validation = {
+                let lib_file = lib_file.clone();
+                tokio::task::spawn_blocking(move || epub::validate_and_repair(&lib_file)).await
+            };
+
+            match validation {
+                Ok(Ok(report)) => {
+                    tracing::info!(
+                        path = %lib_file.display(),
+                        outcome = ?report.outcome,
+                        issues = report.issues.len(),
+                        "epub validation complete"
+                    );
+                    let a11y = report.accessibility_metadata;
+                    let issues = report.issues;
+                    match report.outcome {
+                        ValidationOutcome::Quarantined => {
+                            let lib_file_str = lib_file.display().to_string();
+                            let _ = tokio::task::spawn_blocking(move || {
+                                if let Err(e) = std::fs::remove_file(&lib_file_str) {
+                                    tracing::warn!(
+                                        path = %lib_file_str,
+                                        error = %e,
+                                        "failed to remove library file for quarantined EPUB"
+                                    );
+                                }
+                            })
+                            .await;
+                            let reason = issues
+                                .iter()
+                                .map(|i| format!("{:?}", i.kind))
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            quarantine_async(&source, &quarantine_path, &reason).await;
+                            return ProcessResult::Failed(format!("EPUB quarantined: {reason}"));
+                        }
+                        ValidationOutcome::Clean => ("valid", a11y),
+                        ValidationOutcome::Repaired => ("repaired", a11y),
+                        ValidationOutcome::Degraded => ("degraded", a11y),
+                    }
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e, "epub validation error; proceeding as degraded");
+                    ("degraded", None)
+                }
+                Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
+            }
+        } else {
+            ("valid", None)
+        };
+
     // Step 5: Create work + manifestation in a single CTE
     let title = vars.get("Title").cloned().unwrap_or("Unknown".into());
     let result = sqlx::query(
         "WITH new_work AS ( \
             INSERT INTO works (title, sort_title) VALUES ($1, $2) RETURNING id \
          ) \
-         INSERT INTO manifestations (work_id, format, file_path, file_hash, file_size_bytes, ingestion_status) \
-         SELECT id, $3::manifestation_format, $4, $5, $6, 'complete'::ingestion_status FROM new_work",
+         INSERT INTO manifestations \
+             (work_id, format, file_path, file_hash, file_size_bytes, ingestion_status, \
+              validation_status, accessibility_metadata) \
+         SELECT id, $3::manifestation_format, $4, $5, $6, \
+                'complete'::ingestion_status, $7::validation_status, $8 FROM new_work",
     )
     .bind(&title)
     .bind(&title) // sort_title = title for now
@@ -352,6 +412,8 @@ async fn process_file(
     .bind(&dest_path_str)
     .bind(&copy_result.sha256)
     .bind(copy_result.file_size as i64)
+    .bind(validation_status_str)
+    .bind(accessibility_metadata)
     .execute(pool)
     .await;
 
@@ -460,14 +522,14 @@ mod tests {
 
     #[tokio::test]
     #[ignore] // Requires running postgres with applied migrations
-    async fn scan_once_processes_epub_end_to_end() {
+    async fn scan_once_processes_pdf_end_to_end() {
         let pool = sqlx::PgPool::connect(&db_url()).await.expect("connect");
         let ingestion = tempfile::tempdir().unwrap();
         let library = tempfile::tempdir().unwrap();
         let quarantine = tempfile::tempdir().unwrap();
 
-        let source = ingestion.path().join("Tolkien - The Hobbit.epub");
-        std::fs::write(&source, b"fake epub bytes for scan_once test").unwrap();
+        let source = ingestion.path().join("Tolkien - The Hobbit.pdf");
+        std::fs::write(&source, b"fake pdf bytes for scan_once test").unwrap();
 
         let config = test_config_for(
             ingestion.path().to_str().unwrap(),
@@ -480,11 +542,11 @@ mod tests {
         assert_eq!(result.skipped, 0);
 
         // File should exist in the library under Author/Title.ext
-        let dest = library.path().join("Tolkien/The Hobbit.epub");
+        let dest = library.path().join("Tolkien/The Hobbit.pdf");
         assert!(dest.exists(), "expected file at {}", dest.display());
         assert_eq!(
             std::fs::read(&dest).unwrap(),
-            b"fake epub bytes for scan_once test"
+            b"fake pdf bytes for scan_once test"
         );
 
         // Manifestation row should exist
@@ -499,6 +561,140 @@ mod tests {
         cleanup_test_data(&pool, dest.to_str().unwrap(), source.to_str().unwrap()).await;
     }
 
+    /// Build a minimal valid EPUB ZIP in memory.
+    ///
+    /// Structure: mimetype (stored) + META-INF/container.xml + OEBPS/content.opf.
+    /// All layers pass cleanly: valid ZIP, valid container, valid OPF with empty
+    /// manifest and spine, no XHTML to check, no cover declared.
+    fn make_minimal_epub() -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+
+        // mimetype must be first and stored (not deflated) per EPUB spec
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", stored).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+
+        w.start_file("META-INF/container.xml", default.clone())
+            .unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .unwrap();
+
+        w.start_file("OEBPS/content.opf", default).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest/>
+  <spine/>
+</package>"#,
+        )
+        .unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires running postgres with applied migrations
+    async fn scan_once_processes_epub_end_to_end() {
+        // P1: exercise the EPUB validation path end-to-end, verifying that a valid
+        // EPUB gets validation_status='valid' in the manifestation row.
+        let pool = sqlx::PgPool::connect(&db_url()).await.expect("connect");
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+
+        let source = ingestion.path().join("Tolkien - The Hobbit.epub");
+        std::fs::write(&source, make_minimal_epub()).unwrap();
+
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.skipped, 0);
+
+        let dest = library.path().join("Tolkien/The Hobbit.epub");
+        assert!(dest.exists(), "expected file at {}", dest.display());
+
+        // validation_status must be 'valid' for a clean EPUB
+        let status: String = sqlx::query_scalar(
+            "SELECT validation_status::text FROM manifestations WHERE file_path = $1",
+        )
+        .bind(dest.to_str().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "valid", "expected validation_status=valid");
+
+        cleanup_test_data(&pool, dest.to_str().unwrap(), source.to_str().unwrap()).await;
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires running postgres with applied migrations
+    async fn scan_once_quarantines_corrupt_epub() {
+        // P2: a corrupt EPUB (not a valid ZIP) must be quarantined — the source
+        // gets a quarantine sidecar, the library copy is removed, and failed=1.
+        let pool = sqlx::PgPool::connect(&db_url()).await.expect("connect");
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+
+        let source = ingestion.path().join("Bad - Corrupt Book.epub");
+        std::fs::write(&source, b"this is not a zip file").unwrap();
+
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.failed, 1, "expected 1 failed (quarantined)");
+        assert_eq!(result.processed, 0);
+
+        // Quarantine directory must contain a sidecar file for the corrupt EPUB
+        let quarantine_entries: Vec<_> = std::fs::read_dir(quarantine.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert!(
+            !quarantine_entries.is_empty(),
+            "expected a quarantine sidecar file, found none"
+        );
+
+        // Library must NOT contain the corrupt file
+        let dest = library.path().join("Bad/Corrupt Book.epub");
+        assert!(!dest.exists(), "corrupt EPUB must not remain in library");
+
+        // No manifestation row must have been written
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM manifestations WHERE file_path = $1")
+                .bind(dest.to_str().unwrap())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            count, 0,
+            "no manifestation row should exist for quarantined EPUB"
+        );
+    }
+
     #[tokio::test]
     #[ignore] // Requires running postgres with applied migrations
     async fn scan_once_skips_duplicate_on_second_run() {
@@ -509,7 +705,7 @@ mod tests {
 
         // Unique content to avoid collisions with other test data
         let unique_content = format!("dedup-test-{}", uuid::Uuid::new_v4());
-        let source = ingestion.path().join("Author - Book.epub");
+        let source = ingestion.path().join("Author - Book.pdf");
         std::fs::write(&source, unique_content.as_bytes()).unwrap();
 
         let config = test_config_for(
@@ -528,7 +724,7 @@ mod tests {
         assert_eq!(r2.skipped, 1, "second scan: expected skipped=1");
         assert_eq!(r2.processed, 0);
 
-        let dest = library.path().join("Author/Book.epub");
+        let dest = library.path().join("Author/Book.pdf");
         cleanup_test_data(&pool, dest.to_str().unwrap(), source.to_str().unwrap()).await;
     }
 }

@@ -36,7 +36,7 @@ jobs:
       DATABASE_URL: postgres://tome_app:tome_app@localhost:5432/tome_dev
       DATABASE_URL_INGESTION: postgres://tome_ingestion:tome_ingestion@localhost:5432/tome_dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create database roles
         run: psql postgres://tome:tome@localhost:5432/tome_dev -f docker/init-roles.sql
@@ -71,13 +71,21 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: cargo install cargo-audit --locked
       - name: Audit dependencies
-        run: >-
-          cargo audit
-          --ignore RUSTSEC-2023-0071
-          --ignore RUSTSEC-2026-0097
+        # Suppressed advisories — each must have a justification:
+        #
+        # RUSTSEC-2023-0071 — rsa: Marvin Attack (PKCS#1 v1.5 timing sidechannel).
+        #   No patched version exists upstream. Tome uses rsa transitively via
+        #   openidconnect for JWT *verification* only — the vulnerable PKCS#1 v1.5
+        #   *decryption* path is never invoked.
+        #
+        # RUSTSEC-2026-0097 — rand: soundness issue (aliased &mut via log+thread_rng).
+        #   rand 0.8.x is pulled in transitively by sqlx 0.8; the ecosystem has not
+        #   yet released sqlx 0.9 / rand-0.9-compatible versions. Revisit when
+        #   sqlx 0.9 goes stable.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
 
   frontend:
     name: Frontend
@@ -86,9 +94,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm

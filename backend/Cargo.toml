@@ -11,8 +11,11 @@ axum = "0.8"
 axum-login = "0.18"
 base64ct = { version = "1", features = ["std"] }
 dotenvy = "0.15"
-notify = "7"
+encoding_rs = "0.8"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+notify = "8"
 openidconnect = { version = "4", features = ["reqwest"] }
+quick-xml = "0.37"
 rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
@@ -31,6 +34,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 walkdir = "2"
+zip = "2"
 
 [dev-dependencies]
 axum-test = "20"

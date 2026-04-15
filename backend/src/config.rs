@@ -131,10 +131,10 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    // Env vars are process-global, so serialize config tests.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    // Env vars are process-global. Use the crate-wide ENV_LOCK from test_support
+    // so that db tests reading DATABASE_URL are also serialized against these tests.
+    use crate::test_support::ENV_LOCK;
 
     fn with_env<F: FnOnce()>(vars: &[(&str, &str)], clear: &[&str], f: F) {
         let _guard = ENV_LOCK.lock().unwrap();
