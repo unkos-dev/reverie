@@ -445,7 +445,8 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
     let accessibility_metadata = opf_data.as_ref().and_then(|d| d.accessibility_metadata.clone());
 
     if has_repairable {
-        repair::repackage(path, &issues)?;
+        let opf_path_str = opf_data.as_ref().map(|d| d.opf_path.as_str());
+        repair::repackage(path, &issues, opf_path_str)?;
         return Ok(ValidationReport {
             issues,
             outcome: ValidationOutcome::Repaired,
@@ -499,70 +500,96 @@ pub struct ZipHandle {
 /// If any `Irrecoverable` issue is added, the caller short-circuits.
 pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super::EpubError> {
     let bytes = std::fs::read(path)?;
-    let cursor = std::io::Cursor::new(bytes.clone());
-    let mut archive = ZipArchive::new(cursor)?;
-
     let mut entries = Vec::new();
-    let mut aggregate_size: u64 = 0;
 
-    for i in 0..archive.len() {
-        let file = archive.by_index(i)?;
-        let name = file.name().to_string();
+    'zip: {
+        let cursor = std::io::Cursor::new(&bytes[..]);
+        let mut archive = match ZipArchive::new(cursor) {
+            Ok(a) => a,
+            Err(_) => {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::CorruptEntry { entry_name: "<archive>".to_string() },
+                });
+                break 'zip;
+            }
+        };
 
-        // Path traversal check
-        if name.contains("..") || name.starts_with('/') {
-            issues.push(Issue {
-                layer: Layer::Zip,
-                severity: Severity::Irrecoverable,
-                kind: IssueKind::PathTraversal { entry_name: name },
-            });
-            return Ok(ZipHandle { bytes, entries }); // short-circuit
+        let mut aggregate_size: u64 = 0;
+
+        for i in 0..archive.len() {
+            let file = archive.by_index(i)?;
+            let name = file.name().to_string();
+
+            // Path traversal check
+            if name.contains("..") || name.starts_with('/') {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::PathTraversal { entry_name: name },
+                });
+                break 'zip;
+            }
+
+            // Per-entry size check (use size() — uncompressed — before extracting)
+            let uncompressed = file.size();
+            if uncompressed > MAX_ENTRY_UNCOMPRESSED_BYTES {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::ZipBomb {
+                        entry_name: name,
+                        size: uncompressed,
+                        limit: MAX_ENTRY_UNCOMPRESSED_BYTES,
+                    },
+                });
+                break 'zip;
+            }
+
+            aggregate_size = aggregate_size.saturating_add(uncompressed);
+            if aggregate_size > MAX_AGGREGATE_UNCOMPRESSED_BYTES {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::ZipBomb {
+                        entry_name: name,
+                        size: aggregate_size,
+                        limit: MAX_AGGREGATE_UNCOMPRESSED_BYTES,
+                    },
+                });
+                break 'zip;
+            }
+
+            // Extractability check — bound the read to catch lying central directories
+            let mut buf = Vec::new();
+            if file.take(MAX_ENTRY_UNCOMPRESSED_BYTES + 1).read_to_end(&mut buf).is_err() {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::CorruptEntry { entry_name: name },
+                });
+                break 'zip;
+            }
+
+            // Detect lying central directory: buf filled to cap means actual > declared
+            if buf.len() == (MAX_ENTRY_UNCOMPRESSED_BYTES + 1) as usize {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::ZipBomb {
+                        entry_name: name,
+                        size: buf.len() as u64,
+                        limit: MAX_ENTRY_UNCOMPRESSED_BYTES,
+                    },
+                });
+                break 'zip;
+            }
+
+            entries.push(name);
         }
+    } // archive dropped here; borrow on `bytes` released
 
-        // Per-entry size check (use size() — uncompressed — before extracting)
-        let uncompressed = file.size();
-        if uncompressed > MAX_ENTRY_UNCOMPRESSED_BYTES {
-            issues.push(Issue {
-                layer: Layer::Zip,
-                severity: Severity::Irrecoverable,
-                kind: IssueKind::ZipBomb {
-                    entry_name: name,
-                    size: uncompressed,
-                    limit: MAX_ENTRY_UNCOMPRESSED_BYTES,
-                },
-            });
-            return Ok(ZipHandle { bytes, entries });
-        }
-
-        aggregate_size = aggregate_size.saturating_add(uncompressed);
-        if aggregate_size > MAX_AGGREGATE_UNCOMPRESSED_BYTES {
-            issues.push(Issue {
-                layer: Layer::Zip,
-                severity: Severity::Irrecoverable,
-                kind: IssueKind::ZipBomb {
-                    entry_name: name,
-                    size: aggregate_size,
-                    limit: MAX_AGGREGATE_UNCOMPRESSED_BYTES,
-                },
-            });
-            return Ok(ZipHandle { bytes, entries });
-        }
-
-        // Extractability check — bound the read to catch lying central directories
-        let mut buf = Vec::new();
-        if let Err(_) = file.take(MAX_ENTRY_UNCOMPRESSED_BYTES + 1).read_to_end(&mut buf) {
-            issues.push(Issue {
-                layer: Layer::Zip,
-                severity: Severity::Irrecoverable,
-                kind: IssueKind::CorruptEntry { entry_name: name },
-            });
-            return Ok(ZipHandle { bytes, entries });
-        }
-
-        entries.push(name);
-    }
-
-    // Re-open cleanly for upper layers
     Ok(ZipHandle { bytes, entries })
 }
 
@@ -578,9 +605,10 @@ pub fn read_entry(handle: &ZipHandle, entry_name: &str) -> Option<Vec<u8>> {
 ```
 
 - **MIRROR**: THISERROR_ERROR
-- **GOTCHA**: `ZipFile::size()` returns the *uncompressed* size stored in the central directory. Use it BEFORE calling `read_to_end` to catch ZIP bombs without decompressing. A malicious ZIP can lie in the central directory — the per-entry limit is checked against `size()`, but the overall aggregate check is also needed.
-- **GOTCHA**: `ZipArchive::by_index` borrows `archive` mutably; you cannot call `by_index` twice in the same scope. Re-open from `bytes` each time.
-- **VALIDATE**: `cargo check`. Unit test: craft a ZIP with a `..` entry name, verify `Irrecoverable` issue.
+- **GOTCHA**: `ZipFile::size()` returns the *uncompressed* size from the central directory — a malicious ZIP can lie. Detect lying headers by reading with `take(MAX+1)` and checking `buf.len() == (MAX+1) as usize` after `read_to_end` succeeds: if the buffer filled to the cap, actual size exceeds declared size.
+- **GOTCHA**: Use a labeled block `'zip: { ... }` so that `archive` is dropped before `bytes` is moved into the return value. Using `return Ok(ZipHandle { bytes, entries })` inside the loop fails borrow-check because `archive` borrows `&bytes[..]`. Use `break 'zip` instead and build the `Ok(...)` after the block.
+- **GOTCHA**: `ZipArchive::new` failure is caught explicitly with `match` and pushed as `Severity::Irrecoverable` — do NOT propagate with `?` as that would skip the issues vec and return `Err`, causing the orchestrator to mark the file degraded without quarantining.
+- **VALIDATE**: `cargo check`. Unit test: craft a ZIP with a `..` entry name, verify `Irrecoverable` issue. Unit test: pass a non-ZIP file, verify `Irrecoverable` CorruptEntry issue is pushed (not `Err` returned).
 
 ---
 
@@ -713,6 +741,46 @@ pub fn validate(
 
     loop {
         match reader.read_event().ok()? {
+            // EPUB 3 text-content meta: <meta property="schema:accessMode">textual</meta>
+            // Must come BEFORE general Event::Start arm to avoid shadowing.
+            Event::Start(e) if e.name().as_ref() == b"meta" => {
+                let e = e.into_owned(); // release reader buffer borrow before read_text
+                let prop = e.attributes().flatten()
+                    .find(|a| a.key.as_ref() == b"property")
+                    .and_then(|a| std::str::from_utf8(&a.value).ok().map(|s| s.to_string()));
+                let content_attr = e.attributes().flatten()
+                    .find(|a| a.key.as_ref() == b"content")
+                    .and_then(|a| std::str::from_utf8(&a.value).ok().map(|s| s.to_string()));
+                if let Some(prop) = prop {
+                    if prop.starts_with("schema:access") || prop.starts_with("dcterms:") {
+                        let val = content_attr.or_else(|| {
+                            reader.read_text(e.name()).ok()
+                                .map(|t| t.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                        });
+                        if let Some(v) = val {
+                            accessibility_meta.insert(prop, serde_json::Value::String(v));
+                        }
+                    }
+                }
+            }
+            // EPUB 2 attribute-style meta: <meta name="..." content="..."/>
+            Event::Empty(e) if e.name().as_ref() == b"meta" => {
+                let prop = e.attributes().flatten()
+                    .find(|a| a.key.as_ref() == b"property")
+                    .and_then(|a| std::str::from_utf8(&a.value).ok().map(|s| s.to_string()));
+                let content = e.attributes().flatten()
+                    .find(|a| a.key.as_ref() == b"content")
+                    .and_then(|a| std::str::from_utf8(&a.value).ok().map(|s| s.to_string()));
+                if let Some(prop) = prop {
+                    if prop.starts_with("schema:access") || prop.starts_with("dcterms:") {
+                        if let Some(v) = content {
+                            accessibility_meta.insert(prop, serde_json::Value::String(v));
+                        }
+                    }
+                }
+            }
+            // General arm — meta already handled by guarded arms above
             Event::Empty(e) | Event::Start(e) => match e.name().as_ref() {
                 b"item" => {
                     let attrs: HashMap<String, String> = e
@@ -746,11 +814,6 @@ pub fn validate(
                             spine_idrefs.push(v.to_string());
                         }
                     }
-                }
-                b"meta" => {
-                    // Collect W3C accessibility metadata
-                    // <meta property="schema:accessMode">textual</meta>
-                    collect_accessibility_meta(&e, &mut reader, &mut accessibility_meta);
                 }
                 _ => {}
             },
@@ -787,36 +850,11 @@ pub fn validate(
         accessibility_metadata,
     })
 }
-
-fn collect_accessibility_meta(
-    e: &quick_xml::events::BytesStart,
-    _reader: &mut Reader<&[u8]>,
-    meta: &mut serde_json::Map<String, serde_json::Value>,
-) {
-    // Collect <meta property="schema:accessMode"> etc.
-    let attrs: HashMap<String, String> = e
-        .attributes()
-        .flatten()
-        .filter_map(|a| {
-            let k = std::str::from_utf8(a.key.as_ref()).ok()?.to_string();
-            let v = std::str::from_utf8(&a.value).ok()?.to_string();
-            Some((k, v))
-        })
-        .collect();
-
-    if let Some(prop) = attrs.get("property") {
-        if prop.starts_with("schema:access") || prop.starts_with("dcterms:") {
-            if let Some(content) = attrs.get("content") {
-                meta.insert(prop.clone(), serde_json::Value::String(content.clone()));
-            }
-        }
-    }
-}
 ```
 
 - **GOTCHA**: `quick-xml`'s attribute iterator yields `Result<Attribute, _>`; use `.flatten()` to skip malformed ones silently.
-- **GOTCHA**: For `<meta>` elements with text content rather than `content=` attributes (EPUB 3 style), you need to call `reader.read_text()` after matching the opening tag. The above implementation handles attribute-style (`content="..."`) only. EPUB 3 text-content style requires reading the next `Event::Text` before the `Event::End`.
-- **VALIDATE**: Unit test: OPF with one broken spine ref → issue added, valid spine has one fewer entry.
+- **GOTCHA**: EPUB 3 text-content style `<meta property="schema:accessMode">textual</meta>` requires `e.into_owned()` BEFORE calling `reader.read_text(e.name())`. Without `into_owned()`, the `BytesStart<'_>` borrows the reader's internal buffer, making `reader.read_text()` impossible (simultaneous mutable + immutable borrow). Guarded match arms (`Event::Start(e) if e.name().as_ref() == b"meta"`) must appear BEFORE the general `Event::Start(e)` arm to avoid the general arm shadowing the specific one.
+- **VALIDATE**: Unit test: OPF with one broken spine ref → issue added, valid spine has one fewer entry. Unit test: OPF with EPUB 3 `<meta property="schema:accessMode">textual</meta>` → accessibility_metadata contains `{"schema:accessMode": "textual"}`.
 
 ---
 
@@ -1048,7 +1086,7 @@ use tempfile::NamedTempFile;
 use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::{ZipArchive, ZipWriter};
 
-use super::{EpubError, Issue, IssueKind, Severity, zip_layer::read_entry};
+use super::{EpubError, Issue, IssueKind, Severity};
 
 const MIMETYPE_ENTRY: &str = "mimetype";
 const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
@@ -1057,14 +1095,10 @@ const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
 ///
 /// Writes to a temp file in the same directory, then `rename()`s over `path`
 /// atomically. If re-packaging fails, `path` is left untouched.
-pub fn repackage(path: &Path, issues: &[Issue]) -> Result<(), EpubError> {
+pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
     let dir = path.parent().unwrap_or(Path::new("."));
     let bytes = std::fs::read(path)?;
-    let cursor = std::io::Cursor::new(bytes.clone());
-    let mut archive = ZipArchive::new(cursor)?;
 
-    // Determine entries to remove (broken spine refs require OPF rewrite;
-    // encoding mismatches require XHTML re-encoding; missing container needs new entry)
     let broken_refs: Vec<String> = issues.iter().filter_map(|i| {
         if let IssueKind::BrokenSpineRef { idref } = &i.kind { Some(idref.clone()) } else { None }
     }).collect();
@@ -1085,9 +1119,28 @@ pub fn repackage(path: &Path, issues: &[Issue]) -> Result<(), EpubError> {
         } else { None }
     });
 
+    // Pre-compute the rewritten OPF bytes (if needed) before opening the archive,
+    // so the borrow on `bytes` can be dropped before we open the ZipArchive.
+    let rewritten_opf: Option<(String, Vec<u8>)> = if !broken_refs.is_empty() {
+        if let Some(opf) = opf_path {
+            let cursor = std::io::Cursor::new(&bytes[..]);
+            let mut ar = ZipArchive::new(cursor)?;
+            let mut opf_bytes = Vec::new();
+            ar.by_name(opf)?.read_to_end(&mut opf_bytes)?;
+            let rewritten = rewrite_opf_remove_broken_spine(&opf_bytes, &broken_refs);
+            Some((opf.to_string(), rewritten))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Build new ZIP into temp file
     let temp = NamedTempFile::new_in(dir)?;
     {
+        let cursor = std::io::Cursor::new(&bytes[..]);
+        let mut archive = ZipArchive::new(cursor)?;
         let mut writer = ZipWriter::new(&temp);
 
         // mimetype MUST be first and stored (not deflated) per EPUB spec
@@ -1106,8 +1159,14 @@ pub fn repackage(path: &Path, issues: &[Issue]) -> Result<(), EpubError> {
             let mut entry_bytes = Vec::new();
             file.read_to_end(&mut entry_bytes)?;
 
-            // Apply encoding fix if needed
-            let final_bytes = if let Some((_, declared_enc)) = encoding_fixes.iter()
+            // Use rewritten OPF bytes if this is the OPF entry
+            let final_bytes = if let Some((ref opf_name, ref rewritten)) = rewritten_opf {
+                if &name == opf_name {
+                    rewritten.clone()
+                } else {
+                    entry_bytes
+                }
+            } else if let Some((_, declared_enc)) = encoding_fixes.iter()
                 .find(|(n, _)| n == &name)
             {
                 transcode_to_utf8(&entry_bytes, declared_enc).unwrap_or(entry_bytes)
@@ -1130,17 +1189,57 @@ pub fn repackage(path: &Path, issues: &[Issue]) -> Result<(), EpubError> {
             }
         }
 
-        // TODO: rewrite OPF to remove broken spine refs (requires full OPF rewrite).
-        // For Step 5, broken spine refs are marked Repaired but the OPF is not
-        // actually modified — the validation report is sufficient for Step 6 to
-        // skip those entries. Full OPF rewrite can be added in a follow-up.
-
         writer.finish()?;
     }
 
     // Atomic rename over destination
     temp.persist(path).map_err(EpubError::TempFile)?;
     Ok(())
+}
+
+/// Rewrite OPF XML removing `<itemref>` elements whose `idref` is in `broken_refs`.
+fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> Vec<u8> {
+    let xml = match std::str::from_utf8(opf_bytes) {
+        Ok(s) => s,
+        Err(_) => return opf_bytes.to_vec(),
+    };
+    let mut reader = quick_xml::Reader::from_str(xml);
+    reader.config_mut().trim_text(false);
+    let mut output = quick_xml::Writer::new(Vec::new());
+    let mut skip_itemref = false;
+    loop {
+        match reader.read_event() {
+            Ok(quick_xml::events::Event::Empty(e)) if e.name().as_ref() == b"itemref" => {
+                let idref = e.attributes().flatten()
+                    .find(|a| a.key.as_ref() == b"idref")
+                    .and_then(|a| std::str::from_utf8(&a.value).ok().map(|s| s.to_string()));
+                if idref.as_deref().map_or(false, |id| broken_refs.iter().any(|r| r == id)) {
+                    continue;
+                }
+                let _ = output.write_event(quick_xml::events::Event::Empty(e.into_owned()));
+            }
+            Ok(quick_xml::events::Event::Start(e)) if e.name().as_ref() == b"itemref" => {
+                let idref = e.attributes().flatten()
+                    .find(|a| a.key.as_ref() == b"idref")
+                    .and_then(|a| std::str::from_utf8(&a.value).ok().map(|s| s.to_string()));
+                if idref.as_deref().map_or(false, |id| broken_refs.iter().any(|r| r == id)) {
+                    skip_itemref = true;
+                } else {
+                    let _ = output.write_event(quick_xml::events::Event::Start(e.into_owned()));
+                }
+            }
+            Ok(quick_xml::events::Event::End(e)) if e.name().as_ref() == b"itemref" => {
+                if skip_itemref { skip_itemref = false; }
+                else { let _ = output.write_event(quick_xml::events::Event::End(e.into_owned())); }
+            }
+            Ok(quick_xml::events::Event::Eof) => break,
+            Ok(e) => {
+                if !skip_itemref { let _ = output.write_event(e.into_owned()); }
+            }
+            Err(_) => return opf_bytes.to_vec(),
+        }
+    }
+    output.into_inner()
 }
 
 fn transcode_to_utf8(bytes: &[u8], declared_enc: &str) -> Option<Vec<u8>> {
@@ -1171,8 +1270,9 @@ fn generate_container_xml(opf_path: &str) -> String {
 - **MIRROR**: ATOMIC_WRITE
 - **GOTCHA**: `NamedTempFile::new_in(dir)` creates the temp file in the same directory as `path`. This is required for `rename()` to be atomic (same filesystem). Creating in `/tmp` may be a different filesystem and would fall back to copy+delete.
 - **GOTCHA**: `temp.persist(path)` consumes the `NamedTempFile`. If it fails, it returns a `PersistError` which wraps both the IO error and the original `NamedTempFile` — the temp file still exists and will be cleaned up when the error is dropped.
-- **GOTCHA**: The broken-spine-ref repair comment documents a known limitation: the plan marks them as `Repaired` in the report but doesn't rewrite the OPF XML. The OPF rewrite requires a full XML rebuild (read all events, skip broken `<itemref>` elements, write back). This is deferred; for Step 5 the report is sufficient for downstream steps (Step 6) to skip those items.
-- **VALIDATE**: Unit test: ZIP with path-traversal entry → `repackage` not called (quarantine path). Unit test: ZIP with missing container.xml → after repackage, archive contains `META-INF/container.xml`. Test structural invariants: mimetype is first, stored.
+- **GOTCHA**: `repackage` takes `opf_path: Option<&str>` — the OPF path discovered by container_layer (or found via heuristic). This is required so `rewrite_opf_remove_broken_spine` knows which ZIP entry is the OPF. Pass `opf_data.as_ref().map(|o| o.opf_path.as_str())` from the `validate_and_repair` call site.
+- **GOTCHA**: In `rewrite_opf_remove_broken_spine`, all passthrough events in the `quick-xml` write loop need `.into_owned()` to avoid borrow conflicts between the reader's internal buffer and the writer. Without it, passthrough `Event::Text` / `Event::Start` etc. borrow the reader, preventing subsequent `read_event()` calls.
+- **VALIDATE**: Unit test: ZIP with path-traversal entry → `repackage` not called (quarantine path). Unit test: ZIP with missing container.xml → after repackage, archive contains `META-INF/container.xml`. Unit test: OPF with broken spine ref idref "ch2" → after `repackage`, OPF XML in archive no longer contains `idref="ch2"`. Test structural invariants: mimetype is first, stored.
 
 ---
 
@@ -1418,6 +1518,47 @@ async fn corrupt_epub_is_quarantined() {
 }
 ```
 
+```rust
+#[tokio::test]
+#[ignore]
+async fn epub_missing_container_is_repaired() {
+    let pool = sqlx::PgPool::connect(&db_url()).await.expect("connect");
+    let ingestion = tempfile::tempdir().unwrap();
+    let library = tempfile::tempdir().unwrap();
+    let quarantine = tempfile::tempdir().unwrap();
+
+    // Build a valid EPUB ZIP with no META-INF/container.xml
+    let opf_content = b"<package><metadata/><manifest>\
+        <item id=\"x\" href=\"x.xhtml\" media-type=\"application/xhtml+xml\"/>\
+        </manifest><spine><itemref idref=\"x\"/></spine></package>";
+    let epub_bytes = make_epub(&[
+        ("OEBPS/content.opf", opf_content as &[u8]),
+        ("OEBPS/x.xhtml", b"<html/>" as &[u8]),
+    ]);
+    let source = ingestion.path().join("Author - GoodBook.epub");
+    std::fs::write(&source, &epub_bytes).unwrap();
+
+    let config = test_config_for(
+        ingestion.path().to_str().unwrap(),
+        library.path().to_str().unwrap(),
+        quarantine.path().to_str().unwrap(),
+    );
+    let result = scan_once(&config, &pool).await.unwrap();
+    assert_eq!(result.processed, 1);
+    assert_eq!(result.failed, 0);
+
+    let dest = library.path().join("Author/GoodBook.epub");
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT validation_status::text FROM manifestations WHERE file_path = $1"
+    )
+    .bind(dest.to_str().unwrap())
+    .fetch_optional(&pool).await.unwrap();
+    assert_eq!(status.as_deref(), Some("repaired"));
+
+    cleanup_test_data(&pool, dest.to_str().unwrap(), source.to_str().unwrap()).await;
+}
+```
+
 - **VALIDATE**: `cargo test` (unit tests pass without DB). `cargo test -- --ignored` for DB tests.
 
 ---
@@ -1440,7 +1581,7 @@ async fn corrupt_epub_is_quarantined() {
 |---|---|---|---|
 | Path traversal entry | ZIP with `../evil.xhtml` entry | `Irrecoverable` + `PathTraversal` issue | Yes |
 | ZIP bomb single entry | ZIP with entry `size()` = 600 MB | `Irrecoverable` + `ZipBomb` issue | Yes |
-| Corrupt ZIP | Zero-byte file | `EpubError::Zip` or `Irrecoverable` | Yes |
+| Corrupt ZIP | Zero-byte file | `Irrecoverable` + `CorruptEntry` issue, `Quarantined` outcome | Yes |
 | Clean EPUB | Valid ZIP structure | No issues, `Clean` outcome | No |
 | Missing container.xml | ZIP with only `.opf` | `Repaired` + `MissingContainer`, OPF path returned | Yes |
 | Broken spine ref | OPF spine refs unknown manifest id | `Repaired` + `BrokenSpineRef`, valid_spine shorter | No |
@@ -1553,7 +1694,7 @@ EXPECT: `degraded` in the enum value list.
 | `ALTER TYPE ADD VALUE` blocked in transaction | Mitigated | Migration fails | `-- sqlx:disable-transaction` pragma already in `.up.sql` — no action needed |
 | `zip` crate API differences (v1 vs v2) | Low | Compile error | Check `ZipWriter::FileOptions` type signature in v2 |
 | `quick-xml` event API breaking changes between versions | Low | Compile error | Pin to `"0.37"` and verify against docs |
-| Repair of broken spine refs requires OPF XML rewrite | Known | Partial fix only | Documented in repair.rs as deferred; report is still correct |
+| Repair of broken spine refs requires OPF XML rewrite | Mitigated | Full repair | `rewrite_opf_remove_broken_spine` implemented in `repair.rs`; broken `<itemref>` elements removed from OPF during repackage |
 | Non-EPUB files in ingestion dir bypass validation cleanly | Expected | None | `validation_status = 'valid'` for non-EPUBs is correct |
 
 ## Notes
@@ -1561,5 +1702,5 @@ EXPECT: `degraded` in the enum value list.
 - The `validation_status` enum in the DB maps to `ValidationOutcome` as: `Clean→valid`, `Repaired→repaired`, `Degraded→degraded`, `Quarantined→(no row, ProcessResult::Failed)`.
 - The migration uses `ALTER TYPE ... ADD VALUE` which cannot run inside a transaction. The `-- sqlx:disable-transaction` pragma is already the first line of the `.up.sql` file. The `IF NOT EXISTS` guard makes re-runs idempotent.
 - `image` crate with `default-features = false, features = ["jpeg", "png"]` will error at compile time if any other format is referenced. This is intentional — it enforces the constraint at the type system level.
-- The `repair.rs` deferred OPF-rewrite note means broken spine refs are recorded in the report and the archive is re-packaged, but the OPF file itself still contains the broken `<itemref>` elements. Step 6 (metadata extraction) must skip those idrefs when processing. The `OpfData.spine_idrefs` field already filters them out, so Step 6 will receive only valid idrefs.
+- Broken spine refs are fully repaired in Step 5: `rewrite_opf_remove_broken_spine` removes the broken `<itemref>` elements from the OPF during repackage, so the file on disk contains a valid spine after repair. Step 6 (metadata extraction) does not need to handle broken idrefs.
 - DESIGN_BRIEF §5.3 forbids auto-injecting WCAG conformance statements — the accessibility metadata extraction is strictly read-only. Never write to `accessibility_metadata` except from OPF source.
