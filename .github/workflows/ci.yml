@@ -36,7 +36,7 @@ jobs:
       DATABASE_URL: postgres://tome_app:tome_app@localhost:5432/tome_dev
       DATABASE_URL_INGESTION: postgres://tome_ingestion:tome_ingestion@localhost:5432/tome_dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Create database roles
         run: psql postgres://tome:tome@localhost:5432/tome_dev -f docker/init-roles.sql
@@ -71,7 +71,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: cargo install cargo-audit --locked
       - name: Audit dependencies
         run: >-
@@ -86,7 +86,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
