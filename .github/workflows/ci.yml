@@ -31,6 +31,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgres://tome_app:tome_app@localhost:5432/tome_dev
+      DATABASE_URL_INGESTION: postgres://tome_ingestion:tome_ingestion@localhost:5432/tome_dev
     steps:
       - uses: actions/checkout@v4
 
