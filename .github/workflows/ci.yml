@@ -74,13 +74,18 @@ jobs:
       - uses: actions/checkout@v5
       - run: cargo install cargo-audit --locked
       - name: Audit dependencies
-        # RUSTSEC-2023-0071: rsa Marvin Attack (timing sidechannel in PKCS#1 v1.5
-        # decryption). No patched version exists upstream. Tome uses rsa only via
-        # openidconnect for JWT *verification*, which does not invoke the vulnerable
-        # PKCS#1 v1.5 decryption path, so this advisory does not apply here.
-        run: >-
-          cargo audit
-          --ignore RUSTSEC-2023-0071
+        # Suppressed advisories — each must have a justification:
+        #
+        # RUSTSEC-2023-0071 — rsa: Marvin Attack (PKCS#1 v1.5 timing sidechannel).
+        #   No patched version exists upstream. Tome uses rsa transitively via
+        #   openidconnect for JWT *verification* only — the vulnerable PKCS#1 v1.5
+        #   *decryption* path is never invoked.
+        #
+        # RUSTSEC-2026-0097 — rand: soundness issue (aliased &mut via log+thread_rng).
+        #   rand 0.8.x is pulled in transitively by sqlx 0.8; the ecosystem has not
+        #   yet released sqlx 0.9 / rand-0.9-compatible versions. Revisit when
+        #   sqlx 0.9 goes stable.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
 
   frontend:
     name: Frontend
