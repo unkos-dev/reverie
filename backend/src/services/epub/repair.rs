@@ -93,19 +93,22 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
             let mut entry_bytes = Vec::new();
             file.take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1).read_to_end(&mut entry_bytes)?;
 
-            // Use rewritten OPF bytes if this is the OPF entry
-            let final_bytes = if let Some((ref opf_name, ref rewritten)) = rewritten_opf {
-                if &name == opf_name {
-                    rewritten.clone()
-                } else {
-                    entry_bytes
-                }
-            } else if let Some((_, declared_enc)) =
+            // Apply encoding fix first (independent of OPF rewriting).
+            // In practice OPF is always UTF-8 so these two transforms are mutually
+            // exclusive, but the logic is correct even if they overlap.
+            let transcoded = if let Some((_, declared_enc)) =
                 encoding_fixes.iter().find(|(n, _)| n == &name)
             {
                 transcode_to_utf8(&entry_bytes, declared_enc).unwrap_or(entry_bytes)
             } else {
                 entry_bytes
+            };
+
+            // Overlay OPF rewrite if this is the OPF entry.
+            let final_bytes = if let Some((ref opf_name, ref rewritten)) = rewritten_opf {
+                if &name == opf_name { rewritten.clone() } else { transcoded }
+            } else {
+                transcoded
             };
 
             let options: FileOptions<ExtendedFileOptions> = FileOptions::default();
