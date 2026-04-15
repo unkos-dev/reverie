@@ -34,6 +34,10 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running postgres: cargo test -- --ignored
     async fn acquire_with_rls_sets_session_variable() {
+        // Hold ENV_LOCK for the lifetime of this test. config::tests mutate
+        // DATABASE_URL (setting it to a non-existent "test" host), and without
+        // this lock the two test suites race in the --include-ignored run.
+        let _env_guard = crate::test_support::ENV_LOCK.lock().unwrap();
         let url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into());
         let pool = init_pool(&url, 2).await.expect("failed to connect");
