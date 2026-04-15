@@ -581,21 +581,28 @@ mod tests {
 
         let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
 
-        w.start_file("META-INF/container.xml", default.clone()).unwrap();
-        w.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+        w.start_file("META-INF/container.xml", default.clone())
+            .unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
-</container>"#).unwrap();
+</container>"#,
+        )
+        .unwrap();
 
         w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest/>
   <spine/>
-</package>"#).unwrap();
+</package>"#,
+        )
+        .unwrap();
 
         w.finish().unwrap().into_inner()
     }
@@ -676,14 +683,16 @@ mod tests {
         assert!(!dest.exists(), "corrupt EPUB must not remain in library");
 
         // No manifestation row must have been written
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM manifestations WHERE file_path = $1",
-        )
-        .bind(dest.to_str().unwrap())
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(count, 0, "no manifestation row should exist for quarantined EPUB");
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM manifestations WHERE file_path = $1")
+                .bind(dest.to_str().unwrap())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            count, 0,
+            "no manifestation row should exist for quarantined EPUB"
+        );
     }
 
     #[tokio::test]

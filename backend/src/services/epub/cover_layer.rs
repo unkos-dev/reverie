@@ -1,7 +1,7 @@
 use super::{
-    opf_layer::OpfData,
-    zip_layer::{read_entry, ZipHandle},
     Issue, IssueKind, Layer, Severity,
+    opf_layer::OpfData,
+    zip_layer::{ZipHandle, read_entry},
 };
 
 /// Validate the cover image (JPEG or PNG only).
@@ -106,27 +106,33 @@ mod tests {
         let opf = make_opf_data("cover", "cover.jpg");
         let mut issues = Vec::new();
         validate(&handle, Some(&opf), &mut issues);
-        assert!(issues.is_empty(), "expected no issues for valid cover: {:?}", issues);
+        assert!(
+            issues.is_empty(),
+            "expected no issues for valid cover: {:?}",
+            issues
+        );
     }
 
     #[test]
     fn missing_cover_file_emits_degraded() {
-        let handle = ZipHandle { bytes: {
-            use std::io::Write;
-            let buf = std::io::Cursor::new(Vec::new());
-            let mut w = zip::ZipWriter::new(buf);
-            let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-                zip::write::FileOptions::default();
-            w.start_file("OEBPS/content.opf", opts).unwrap();
-            w.write_all(b"<package/>").unwrap();
-            w.finish().unwrap().into_inner()
-        }, entries: vec!["OEBPS/content.opf".to_string()] };
+        let handle = ZipHandle {
+            bytes: {
+                use std::io::Write;
+                let buf = std::io::Cursor::new(Vec::new());
+                let mut w = zip::ZipWriter::new(buf);
+                let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+                    zip::write::FileOptions::default();
+                w.start_file("OEBPS/content.opf", opts).unwrap();
+                w.write_all(b"<package/>").unwrap();
+                w.finish().unwrap().into_inner()
+            },
+            entries: vec!["OEBPS/content.opf".to_string()],
+        };
         let opf = make_opf_data("cover", "cover.jpg");
         let mut issues = Vec::new();
         validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {
-            i.severity == Severity::Degraded
-                && matches!(&i.kind, IssueKind::MissingCover { .. })
+            i.severity == Severity::Degraded && matches!(&i.kind, IssueKind::MissingCover { .. })
         }));
     }
 

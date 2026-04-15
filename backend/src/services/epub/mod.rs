@@ -57,7 +57,11 @@ pub enum IssueKind {
     /// ZIP entry contains path traversal components or absolute path.
     PathTraversal { entry_name: String },
     /// ZIP entry or aggregate uncompressed size exceeds limit.
-    ZipBomb { entry_name: String, size: u64, limit: u64 },
+    ZipBomb {
+        entry_name: String,
+        size: u64,
+        limit: u64,
+    },
     /// ZIP entry is unreadable (corrupt data).
     CorruptEntry { entry_name: String },
     /// `META-INF/container.xml` absent; OPF path provided if regeneratable.
@@ -71,7 +75,11 @@ pub enum IssueKind {
     /// EPUB has more spine items than the 500-item cap.
     SpineCapExceeded { count: usize },
     /// XML file declared/detected encoding mismatch, was transcoded.
-    EncodingMismatch { entry_name: String, declared: String, detected: String },
+    EncodingMismatch {
+        entry_name: String,
+        declared: String,
+        detected: String,
+    },
     /// XML file has ambiguous encoding (conditions for safe transcode not met).
     AmbiguousEncoding { entry_name: String },
     /// XML parse error in a spine document.
@@ -198,7 +206,9 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
         });
     }
 
-    let accessibility_metadata = opf_data.as_ref().and_then(|d| d.accessibility_metadata.clone());
+    let accessibility_metadata = opf_data
+        .as_ref()
+        .and_then(|d| d.accessibility_metadata.clone());
 
     if has_repairable {
         let opf_path_str = opf_data.as_ref().map(|d| d.opf_path.as_str());
@@ -216,5 +226,9 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
         ValidationOutcome::Clean
     };
 
-    Ok(ValidationReport { issues, outcome, accessibility_metadata })
+    Ok(ValidationReport {
+        issues,
+        outcome,
+        accessibility_metadata,
+    })
 }

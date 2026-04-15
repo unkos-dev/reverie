@@ -1,9 +1,9 @@
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use super::{
-    zip_layer::{read_entry, ZipHandle},
     Issue, IssueKind, Layer, Severity,
+    zip_layer::{ZipHandle, read_entry},
 };
 
 const CONTAINER_PATH: &str = "META-INF/container.xml";
@@ -53,9 +53,11 @@ fn extract_opf_path(bytes: &[u8], issues: &mut Vec<Issue>) -> Option<String> {
     loop {
         match reader.read_event().ok()? {
             Event::Empty(e) | Event::Start(e) if e.name().as_ref() == b"rootfile" => {
-                if let Some(path) = e.attributes().flatten().find(|a| {
-                    a.key.as_ref() == b"full-path"
-                }) {
+                if let Some(path) = e
+                    .attributes()
+                    .flatten()
+                    .find(|a| a.key.as_ref() == b"full-path")
+                {
                     let raw = std::str::from_utf8(&path.value).ok()?.to_string();
                     // C4: path safety check via shared helper.
                     if !super::is_safe_path(&raw) {
@@ -122,9 +124,8 @@ mod tests {
     <rootfile full-path="../evil.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>"#;
-        let handle = make_handle_with_entries(&[
-            ("META-INF/container.xml", container_xml.to_vec()),
-        ]);
+        let handle =
+            make_handle_with_entries(&[("META-INF/container.xml", container_xml.to_vec())]);
         let mut issues = Vec::new();
         let result = validate(&handle, &mut issues);
         assert!(result.is_none(), "expected None for unsafe OPF path");
@@ -142,9 +143,8 @@ mod tests {
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>"#;
-        let handle = make_handle_with_entries(&[
-            ("META-INF/container.xml", container_xml.to_vec()),
-        ]);
+        let handle =
+            make_handle_with_entries(&[("META-INF/container.xml", container_xml.to_vec())]);
         let mut issues = Vec::new();
         let result = validate(&handle, &mut issues);
         assert_eq!(result.as_deref(), Some("OEBPS/content.opf"));

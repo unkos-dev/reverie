@@ -3,8 +3,8 @@ use std::path::Path;
 use zip::ZipArchive;
 
 use super::{
-    Issue, IssueKind, Layer, Severity,
-    MAX_AGGREGATE_UNCOMPRESSED_BYTES, MAX_ENTRY_UNCOMPRESSED_BYTES,
+    Issue, IssueKind, Layer, MAX_AGGREGATE_UNCOMPRESSED_BYTES, MAX_ENTRY_UNCOMPRESSED_BYTES,
+    Severity,
 };
 
 /// Lightweight handle returned by zip_layer so upper layers can re-open the archive.
@@ -31,7 +31,9 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
                 issues.push(Issue {
                     layer: Layer::Zip,
                     severity: Severity::Irrecoverable,
-                    kind: IssueKind::CorruptEntry { entry_name: "<archive>".to_string() },
+                    kind: IssueKind::CorruptEntry {
+                        entry_name: "<archive>".to_string(),
+                    },
                 });
                 break 'zip;
             }
@@ -140,7 +142,9 @@ pub fn read_entry(handle: &ZipHandle, entry_name: &str) -> Option<Vec<u8>> {
     let mut archive = ZipArchive::new(cursor).ok()?;
     let file = archive.by_name(entry_name).ok()?;
     let mut buf = Vec::new();
-    file.take(MAX_ENTRY_UNCOMPRESSED_BYTES + 1).read_to_end(&mut buf).ok()?;
+    file.take(MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
+        .read_to_end(&mut buf)
+        .ok()?;
     Some(buf)
 }
 

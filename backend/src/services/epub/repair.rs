@@ -31,7 +31,12 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
     let encoding_fixes: Vec<(String, String)> = issues
         .iter()
         .filter_map(|i| {
-            if let IssueKind::EncodingMismatch { entry_name, declared, .. } = &i.kind {
+            if let IssueKind::EncodingMismatch {
+                entry_name,
+                declared,
+                ..
+            } = &i.kind
+            {
                 Some((entry_name.clone(), declared.clone()))
             } else {
                 None
@@ -39,9 +44,9 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
         })
         .collect();
 
-    let missing_container = issues.iter().any(|i| {
-        matches!(&i.kind, IssueKind::MissingContainer { .. })
-    });
+    let missing_container = issues
+        .iter()
+        .any(|i| matches!(&i.kind, IssueKind::MissingContainer { .. }));
 
     let opf_candidate: Option<String> = issues.iter().find_map(|i| {
         if let IssueKind::MissingContainer { opf_candidate } = &i.kind {
@@ -58,7 +63,9 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
             let cursor = std::io::Cursor::new(&bytes[..]);
             let mut ar = ZipArchive::new(cursor)?;
             let mut opf_bytes = Vec::new();
-            ar.by_name(opf)?.take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1).read_to_end(&mut opf_bytes)?;
+            ar.by_name(opf)?
+                .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
+                .read_to_end(&mut opf_bytes)?;
             // Apply encoding fix to OPF bytes before spine rewrite so both
             // repairs are chained correctly when they occur simultaneously.
             let opf_bytes = if let Some((_, enc)) = encoding_fixes.iter().find(|(n, _)| n == opf) {
@@ -83,8 +90,8 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
         let mut writer = ZipWriter::new(&temp);
 
         // mimetype MUST be first and stored (not deflated) per EPUB spec
-        let stored: FileOptions<ExtendedFileOptions> = FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         writer.start_file(MIMETYPE_ENTRY, stored)?;
         writer.write_all(MIMETYPE_CONTENT)?;
 
@@ -98,22 +105,26 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
             }
 
             let mut entry_bytes = Vec::new();
-            file.take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1).read_to_end(&mut entry_bytes)?;
+            file.take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
+                .read_to_end(&mut entry_bytes)?;
 
             // Apply encoding fix first (independent of OPF rewriting).
             // If the OPF entry needs both transforms, they were already chained
             // during pre-computation above; for all other entries this is a no-op.
-            let transcoded = if let Some((_, declared_enc)) =
-                encoding_fixes.iter().find(|(n, _)| n == &name)
-            {
-                transcode_to_utf8(&entry_bytes, declared_enc).unwrap_or(entry_bytes)
-            } else {
-                entry_bytes
-            };
+            let transcoded =
+                if let Some((_, declared_enc)) = encoding_fixes.iter().find(|(n, _)| n == &name) {
+                    transcode_to_utf8(&entry_bytes, declared_enc).unwrap_or(entry_bytes)
+                } else {
+                    entry_bytes
+                };
 
             // Overlay OPF rewrite if this is the OPF entry.
             let final_bytes = if let Some((ref opf_name, ref rewritten)) = rewritten_opf {
-                if &name == opf_name { rewritten.clone() } else { transcoded }
+                if &name == opf_name {
+                    rewritten.clone()
+                } else {
+                    transcoded
+                }
             } else {
                 transcoded
             };
@@ -169,8 +180,7 @@ fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> 
                 {
                     continue;
                 }
-                let _ = output
-                    .write_event(quick_xml::events::Event::Empty(e.into_owned()));
+                let _ = output.write_event(quick_xml::events::Event::Empty(e.into_owned()));
             }
             Ok(quick_xml::events::Event::Start(e)) if e.name().as_ref() == b"itemref" => {
                 let idref = e
@@ -185,16 +195,14 @@ fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> 
                 {
                     skip_depth += 1;
                 } else {
-                    let _ = output
-                        .write_event(quick_xml::events::Event::Start(e.into_owned()));
+                    let _ = output.write_event(quick_xml::events::Event::Start(e.into_owned()));
                 }
             }
             Ok(quick_xml::events::Event::End(e)) if e.name().as_ref() == b"itemref" => {
                 if skip_depth > 0 {
                     skip_depth -= 1;
                 } else {
-                    let _ = output
-                        .write_event(quick_xml::events::Event::End(e.into_owned()));
+                    let _ = output.write_event(quick_xml::events::Event::End(e.into_owned()));
                 }
             }
             Ok(quick_xml::events::Event::Eof) => break,
@@ -224,10 +232,7 @@ fn transcode_to_utf8(bytes: &[u8], declared_enc: &str) -> Option<Vec<u8>> {
             &format!("encoding=\"{declared_enc}\""),
             "encoding=\"UTF-8\"",
         )
-        .replace(
-            &format!("encoding='{declared_enc}'"),
-            "encoding='UTF-8'",
-        );
+        .replace(&format!("encoding='{declared_enc}'"), "encoding='UTF-8'");
     Some(utf8_str.into_bytes())
 }
 

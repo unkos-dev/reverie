@@ -1,10 +1,10 @@
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    zip_layer::{read_entry, ZipHandle},
     Issue, IssueKind, Layer, Severity,
+    zip_layer::{ZipHandle, read_entry},
 };
 
 pub struct OpfData {
@@ -138,7 +138,9 @@ pub fn validate(
             issues.push(Issue {
                 layer: Layer::Opf,
                 severity: Severity::Repaired,
-                kind: IssueKind::BrokenSpineRef { idref: idref.clone() },
+                kind: IssueKind::BrokenSpineRef {
+                    idref: idref.clone(),
+                },
             });
         }
     }

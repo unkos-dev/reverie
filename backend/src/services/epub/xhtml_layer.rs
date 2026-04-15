@@ -1,9 +1,9 @@
 use quick_xml::Reader;
 
 use super::{
+    Issue, IssueKind, Layer, MAX_SPINE_ITEMS, Severity,
     opf_layer::OpfData,
-    zip_layer::{read_entry, ZipHandle},
-    Issue, IssueKind, Layer, Severity, MAX_SPINE_ITEMS,
+    zip_layer::{ZipHandle, read_entry},
 };
 
 /// Validate XHTML spine documents.
@@ -14,7 +14,9 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
         issues.push(Issue {
             layer: Layer::Xhtml,
             severity: Severity::Degraded,
-            kind: IssueKind::SpineCapExceeded { count: opf.spine_idrefs.len() },
+            kind: IssueKind::SpineCapExceeded {
+                count: opf.spine_idrefs.len(),
+            },
         });
         return;
     }
@@ -82,7 +84,9 @@ pub(crate) fn validate_xhtml_document(bytes: &[u8], entry_name: &str, issues: &m
         issues.push(Issue {
             layer: Layer::Xhtml,
             severity: Severity::Degraded,
-            kind: IssueKind::AmbiguousEncoding { entry_name: entry_name.to_string() },
+            kind: IssueKind::AmbiguousEncoding {
+                entry_name: entry_name.to_string(),
+            },
         });
         return;
     }
@@ -136,7 +140,9 @@ fn detect_declared_encoding(bytes: &[u8]) -> Option<String> {
     let decl_end = prefix[decl_start..].find("?>")?;
     let decl = &prefix[decl_start..decl_start + decl_end + 2];
 
-    let enc_start = decl.find("encoding=\"").or_else(|| decl.find("encoding='"))?;
+    let enc_start = decl
+        .find("encoding=\"")
+        .or_else(|| decl.find("encoding='"))?;
     let after = &decl[enc_start + 10..];
     let quote_char = decl.chars().nth(enc_start + 9)?;
     let enc_end = after.find(quote_char)?;
@@ -151,13 +157,14 @@ mod tests {
     #[test]
     fn latin1_declared_non_utf8_bytes_emits_repaired() {
         // Craft bytes with XML declaration claiming ISO-8859-1 that are not valid UTF-8
-        let mut bytes: Vec<u8> =
-            b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><html/>".to_vec();
+        let mut bytes: Vec<u8> = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><html/>".to_vec();
         bytes.push(0xE9); // é in Latin-1, invalid as UTF-8 continuation
         let mut issues = Vec::new();
         validate_xhtml_document(&bytes, "test.xhtml", &mut issues);
         assert!(
-            issues.iter().any(|i| matches!(&i.kind, IssueKind::EncodingMismatch { .. })),
+            issues
+                .iter()
+                .any(|i| matches!(&i.kind, IssueKind::EncodingMismatch { .. })),
             "expected EncodingMismatch issue, got: {issues:?}"
         );
     }
