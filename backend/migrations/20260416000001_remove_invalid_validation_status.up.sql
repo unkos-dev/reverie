@@ -11,8 +11,15 @@ ALTER TYPE validation_status RENAME TO validation_status_old;
 
 CREATE TYPE validation_status AS ENUM ('pending', 'valid', 'repaired', 'degraded');
 
+-- Drop the default before altering the type: Postgres cannot automatically
+-- cast a typed default to the new type and will error if we don't clear it first.
+ALTER TABLE manifestations ALTER COLUMN validation_status DROP DEFAULT;
+
 ALTER TABLE manifestations
     ALTER COLUMN validation_status TYPE validation_status
     USING validation_status::text::validation_status;
+
+-- Restore the default using the new type.
+ALTER TABLE manifestations ALTER COLUMN validation_status SET DEFAULT 'pending';
 
 DROP TYPE validation_status_old;
