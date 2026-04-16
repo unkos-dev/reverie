@@ -262,9 +262,11 @@ mod tests {
     async fn find_or_create_deduplicates_authors() {
         let pool = PgPool::connect(&db_url()).await.unwrap();
 
-        // Create two works by the same author
-        let meta1 = test_metadata("Book One By Same", "Shared Author Name");
-        let meta2 = test_metadata("Book Two By Same", "Shared Author Name");
+        // Use maximally distinct titles so pg_trgm similarity stays well below 0.6.
+        // "Book One By Same" / "Book Two By Same" share too many trigrams and
+        // were incorrectly treated as the same work.
+        let meta1 = test_metadata("Astronomy Fundamentals", "Shared Author Name");
+        let meta2 = test_metadata("Renaissance Cooking Guide", "Shared Author Name");
 
         let work_id1 = find_or_create(&pool, &meta1).await.unwrap();
         let work_id2 = find_or_create(&pool, &meta2).await.unwrap();
