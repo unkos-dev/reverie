@@ -1096,8 +1096,21 @@ server.post("/api/...")
   - Byte cap: mock server serves a stream of 20MB with `TOME_COVER_MAX_BYTES=10MB`; assert `TooLarge` before full download.
   - Content-type mismatch: server declares `image/jpeg` but serves PNG bytes → `MagicByteMismatch`.
   - Sub-threshold: 500×500 PNG with `min_long_edge_px=1000` → `DimensionsTooSmall`.
+  - **Initial-URL SSRF pre-check**: Phase B shipped `cover_download::download` with
+    the initial-URL `validate_hop` call gated by `#[cfg(not(test))]` because every
+    existing test uses a wiremock server on `127.0.0.1`, which would be rejected
+    by the production SSRF guard. This weakens coverage on the pre-check path —
+    the production guard is only exercised via the `cover_client()` redirect
+    policy, not the first hop. Task 37 must restore coverage without the
+    `#[cfg(not(test))]` escape hatch. Preferred fix: add an
+    `allow_private_hosts: bool` field to `DownloadConfig` (defaults `false`; tests
+    set it `true`) and make the pre-check consult the flag. Delete the
+    `#[cfg(not(test))]` gating in `cover_download.rs` at the same time so the
+    pre-check runs in all builds. Verify a unit test that constructs a
+    `DownloadConfig` with `allow_private_hosts: false` and a 127.0.0.1 URL still
+    returns `CoverError::SsrfBlocked`.
 - **MIRROR**: wiremock + in-process DNS mock pattern (inject a custom resolver via `hickory-resolver` config).
-- **VALIDATE**: `cargo test services::enrichment::cover_download services::enrichment::http`.
+- **VALIDATE**: `cargo test services::enrichment::cover_download services::enrichment::http`. Confirm the `#[cfg(not(test))]` marker is no longer present in `cover_download.rs` after this task lands.
 
 ---
 
