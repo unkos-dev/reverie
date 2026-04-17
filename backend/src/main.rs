@@ -40,6 +40,8 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
         .merge(routes::auth::router())
         .merge(routes::tokens::router())
         .merge(routes::ingestion::router())
+        .merge(routes::enrichment::router())
+        .merge(routes::metadata::router())
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
@@ -87,6 +89,20 @@ async fn main() {
             services::ingestion::run_watcher(watcher_config, watcher_pool, watcher_token).await
         {
             tracing::error!(error = %e, "ingestion watcher exited with error");
+        }
+    });
+
+    // Spawn enrichment queue worker. Uses state.pool (tome_app) because the
+    // worker may write to webhook_deliveries — tome_ingestion has no grants
+    // on that table.
+    let enrich_token = cancel_token.clone();
+    let enrich_config = config.clone();
+    let enrich_pool = state.pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            services::enrichment::spawn_queue(enrich_pool, enrich_config, enrich_token).await
+        {
+            tracing::error!(error = %e, "enrichment queue exited with error");
         }
     });
 

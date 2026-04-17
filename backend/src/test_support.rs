@@ -8,7 +8,7 @@ pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 use crate::auth::backend::AuthBackend;
 use crate::auth::oidc::OidcClient;
-use crate::config::{CleanupMode, Config};
+use crate::config::{CleanupMode, Config, CoverConfig, EnrichmentConfig};
 use crate::state::AppState;
 
 pub fn test_config() -> Config {
@@ -34,6 +34,28 @@ pub fn test_config() -> Config {
             "cbr".into(),
         ],
         cleanup_mode: CleanupMode::All,
+        enrichment: EnrichmentConfig {
+            enabled: false,
+            concurrency: 1,
+            poll_idle_secs: 30,
+            fetch_budget_secs: 15,
+            http_timeout_secs: 10,
+            max_attempts: 3,
+            cache_ttl_hit_days: 1,
+            cache_ttl_miss_days: 1,
+            cache_ttl_error_mins: 1,
+        },
+        cover: CoverConfig {
+            max_bytes: 10_485_760,
+            download_timeout_secs: 30,
+            min_long_edge_px: 1000,
+            redirect_limit: 3,
+        },
+        openlibrary_base_url: "https://openlibrary.org".into(),
+        googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
+        googlebooks_api_key: None,
+        hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
+        hardcover_api_token: None,
     }
 }
 

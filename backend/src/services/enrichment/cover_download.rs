@@ -25,7 +25,6 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-#[cfg(not(test))]
 use super::http::validate_hop;
 
 // ── Public types ───────────────────────────────────────────────────────────
@@ -72,6 +71,12 @@ pub struct DownloadConfig {
     pub max_bytes: u64,
     /// Minimum long-edge pixel count.  Images smaller than this are rejected.
     pub min_long_edge_px: u32,
+    /// When `true`, the initial-URL SSRF guard is bypassed.  Production
+    /// callers MUST leave this `false`; only in-process tests that point at
+    /// a `wiremock` server on `127.0.0.1` should flip it.  The redirect-hop
+    /// policy on `cover_client` is always active and is not affected by
+    /// this flag.
+    pub allow_private_hosts: bool,
 }
 
 /// Errors that can occur during a cover download.
@@ -123,12 +128,11 @@ pub async fn download(
 ) -> Result<CoverArtifact, CoverError> {
     // Step 1: SSRF-check the initial URL before any network I/O.
     //
-    // Skipped under `#[cfg(test)]` because wiremock binds to 127.0.0.1 and the
-    // guard would reject every test request.  In production the caller must
-    // supply a `cover_client()` whose redirect policy enforces SSRF on every hop,
-    // and this pre-check is belt-and-suspenders for the *initial* URL only.
-    #[cfg(not(test))]
-    {
+    // Bypassable via `DownloadConfig::allow_private_hosts = true` for in-process
+    // tests that target `wiremock` on 127.0.0.1.  Production callers always
+    // leave the flag `false`; the redirect-hop policy on `cover_client`
+    // remains active in all builds.
+    if !config.allow_private_hosts {
         let parsed_url = reqwest::Url::parse(url)
             .map_err(|e| CoverError::SsrfBlocked(format!("invalid URL: {e}")))?;
         validate_hop(&parsed_url).map_err(|e| CoverError::SsrfBlocked(e.to_string()))?;
@@ -258,6 +262,7 @@ mod tests {
             library_root: tmp.path().to_path_buf(),
             max_bytes: 10 * 1024 * 1024, // 10 MiB
             min_long_edge_px: 200,
+            allow_private_hosts: true, // wiremock runs on 127.0.0.1
         }
     }
 
@@ -341,6 +346,7 @@ mod tests {
             library_root: tmp.path().to_path_buf(),
             max_bytes: 1024,
             min_long_edge_px: 1,
+            allow_private_hosts: true,
         };
 
         let result = download(
@@ -442,6 +448,7 @@ mod tests {
             library_root: tmp.path().to_path_buf(),
             max_bytes: 10 * 1024 * 1024,
             min_long_edge_px: 1000,
+            allow_private_hosts: true,
         };
 
         let result = download(
@@ -456,6 +463,34 @@ mod tests {
         assert!(
             matches!(result, Err(CoverError::DimensionsTooSmall(100, 150))),
             "expected DimensionsTooSmall(100, 150), got {result:?}"
+        );
+    }
+
+    /// Task 37: The initial-URL SSRF pre-check must block 127.0.0.1 when
+    /// `allow_private_hosts` is `false`.  This is the coverage the Phase B
+    /// `#[cfg(not(test))]` gate obscured.
+    #[tokio::test]
+    async fn initial_url_loopback_blocked_without_allow_private_hosts() {
+        let tmp = TempDir::new().unwrap();
+        let config = DownloadConfig {
+            library_root: tmp.path().to_path_buf(),
+            max_bytes: 10 * 1024 * 1024,
+            min_long_edge_px: 1,
+            allow_private_hosts: false,
+        };
+
+        let result = download(
+            "http://127.0.0.1:1/cover.jpg",
+            &client(),
+            &config,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(CoverError::SsrfBlocked(_))),
+            "expected SsrfBlocked, got {result:?}"
         );
     }
 }
