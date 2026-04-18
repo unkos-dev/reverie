@@ -16,6 +16,8 @@ pub struct ExtractedMetadata {
     pub isbn: Option<isbn::IsbnResult>,
     pub subjects: Vec<String>,
     pub series: Option<SeriesInfo>,
+    /// Consumed by the enrichment confidence scorer (Step 7 task 14).
+    #[allow(dead_code)]
     pub inversion: Option<inversion::InversionResult>,
     /// Confidence score 0.0-1.0 based on field completeness.
     pub confidence: f32,

@@ -13,10 +13,31 @@ pub type AuthCtx = AuthSession<AuthBackend>;
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub user_id: Uuid,
-    #[allow(dead_code)] // Used by role-based authorization in future steps
     pub role: String,
-    #[allow(dead_code)] // Used by content filtering in future steps
     pub is_child: bool,
+}
+
+impl CurrentUser {
+    /// Return `Err(Forbidden)` unless the user is an admin.
+    pub fn require_admin(&self) -> Result<(), AppError> {
+        if self.role == "admin" {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden)
+        }
+    }
+
+    /// Return `Err(Forbidden)` for child accounts. Adult and admin pass.
+    /// Used to gate metadata/enrichment endpoints that should not be visible
+    /// to children.
+    #[allow(dead_code)] // wired up by Step 7 tasks 25/26 (metadata + enrichment routes)
+    pub fn require_not_child(&self) -> Result<(), AppError> {
+        if self.is_child {
+            Err(AppError::Forbidden)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for CurrentUser {

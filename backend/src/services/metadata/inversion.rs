@@ -4,6 +4,8 @@
 //! an author field looks like a book title. Advisory only — results are stored
 //! as draft metadata, never auto-applied.
 
+/// Fields consumed by the enrichment confidence scorer (Step 7 task 14).
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct InversionResult {
     pub probable_author: String,

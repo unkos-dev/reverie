@@ -16,9 +16,7 @@ async fn scan(
     current_user: CurrentUser,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
-    if current_user.role != "admin" {
-        return Err(AppError::Forbidden);
-    }
+    current_user.require_admin()?;
 
     let result = services::ingestion::scan_once(&state.config, &state.ingestion_pool)
         .await

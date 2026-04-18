@@ -111,7 +111,7 @@ mod tests {
         std::fs::write(&f2, b"2").unwrap();
 
         // Only remove f1 — f2 keeps the dir alive
-        let result = cleanup_batch(&[f1.clone()], root.path()).unwrap();
+        let result = cleanup_batch(std::slice::from_ref(&f1), root.path()).unwrap();
         assert_eq!(result.removed_files, 1);
         assert_eq!(result.removed_dirs, 0);
         assert!(sub.exists());

@@ -40,6 +40,8 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
         .merge(routes::auth::router())
         .merge(routes::tokens::router())
         .merge(routes::ingestion::router())
+        .merge(routes::enrichment::router())
+        .merge(routes::metadata::router())
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
@@ -55,6 +57,13 @@ async fn main() {
                 .unwrap_or_else(|_| config.log_level.parse().expect("invalid RUST_LOG value")),
         )
         .init();
+
+    if config.operator_contact.is_none() {
+        tracing::warn!(
+            "TOME_OPERATOR_CONTACT unset — OpenLibrary requests will run at the 1 req/s anonymous tier. \
+             Set TOME_OPERATOR_CONTACT=<email-or-url> to unlock the identified 3 req/s tier."
+        );
+    }
 
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
@@ -87,6 +96,17 @@ async fn main() {
             services::ingestion::run_watcher(watcher_config, watcher_pool, watcher_token).await
         {
             tracing::error!(error = %e, "ingestion watcher exited with error");
+        }
+    });
+
+    let enrich_token = cancel_token.clone();
+    let enrich_config = config.clone();
+    let enrich_pool = state.ingestion_pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            services::enrichment::spawn_queue(enrich_pool, enrich_config, enrich_token).await
+        {
+            tracing::error!(error = %e, "enrichment queue exited with error");
         }
     });
 

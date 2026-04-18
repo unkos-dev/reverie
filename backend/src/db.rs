@@ -8,7 +8,6 @@ pub async fn init_pool(database_url: &str, max_connections: u32) -> Result<PgPoo
         .await
 }
 
-#[allow(dead_code)] // Used by content-access routes in Step 9 (OPDS)
 /// Acquire a transaction with RLS context set for the given user.
 ///
 /// Uses `set_config('app.current_user_id', ..., true)` where the third
@@ -34,12 +33,15 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running postgres: cargo test -- --ignored
     async fn acquire_with_rls_sets_session_variable() {
-        // Hold ENV_LOCK for the lifetime of this test. config::tests mutate
-        // DATABASE_URL (setting it to a non-existent "test" host), and without
-        // this lock the two test suites race in the --include-ignored run.
-        let _env_guard = crate::test_support::ENV_LOCK.lock().unwrap();
-        let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into());
+        // config::tests mutate DATABASE_URL (setting it to a non-existent
+        // "test" host), so serialize the env read against them via ENV_LOCK.
+        // Scope the guard so it drops before the first await — once the URL
+        // is captured, env mutations can't affect this test.
+        let url = {
+            let _env_guard = crate::test_support::ENV_LOCK.lock().unwrap();
+            std::env::var("DATABASE_URL")
+                .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into())
+        };
         let pool = init_pool(&url, 2).await.expect("failed to connect");
 
         let user_id = uuid::Uuid::new_v4();

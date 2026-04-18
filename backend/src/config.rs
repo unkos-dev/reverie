@@ -16,6 +16,35 @@ pub struct Config {
     pub ingestion_database_url: String,
     pub format_priority: Vec<String>,
     pub cleanup_mode: CleanupMode,
+    pub enrichment: EnrichmentConfig,
+    pub cover: CoverConfig,
+    pub openlibrary_base_url: String,
+    pub googlebooks_base_url: String,
+    pub googlebooks_api_key: Option<String>,
+    pub hardcover_base_url: String,
+    pub hardcover_api_token: Option<String>,
+    pub operator_contact: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnrichmentConfig {
+    pub enabled: bool,
+    pub concurrency: u32,
+    pub poll_idle_secs: u64,
+    pub fetch_budget_secs: u64,
+    pub http_timeout_secs: u64,
+    pub max_attempts: u32,
+    pub cache_ttl_hit_days: u32,
+    pub cache_ttl_miss_days: u32,
+    pub cache_ttl_error_mins: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoverConfig {
+    pub max_bytes: u64,
+    pub download_timeout_secs: u64,
+    pub min_long_edge_px: u32,
+    pub redirect_limit: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +130,25 @@ impl Config {
             }
         };
 
+        let enrichment = EnrichmentConfig::from_env()?;
+        let cover = CoverConfig::from_env()?;
+
+        let openlibrary_base_url = env::var("TOME_OPENLIBRARY_BASE_URL")
+            .unwrap_or_else(|_| "https://openlibrary.org".into());
+        let googlebooks_base_url = env::var("TOME_GOOGLEBOOKS_BASE_URL")
+            .unwrap_or_else(|_| "https://www.googleapis.com/books/v1".into());
+        let googlebooks_api_key = env::var("TOME_GOOGLEBOOKS_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let hardcover_base_url = env::var("TOME_HARDCOVER_BASE_URL")
+            .unwrap_or_else(|_| "https://api.hardcover.app/v1/graphql".into());
+        let hardcover_api_token = env::var("TOME_HARDCOVER_API_TOKEN")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let operator_contact = env::var("TOME_OPERATOR_CONTACT")
+            .ok()
+            .filter(|s| !s.is_empty());
+
         Ok(Self {
             port,
             database_url,
@@ -124,7 +172,107 @@ impl Config {
             ingestion_database_url,
             format_priority,
             cleanup_mode,
+            enrichment,
+            cover,
+            openlibrary_base_url,
+            googlebooks_base_url,
+            googlebooks_api_key,
+            hardcover_base_url,
+            hardcover_api_token,
+            operator_contact,
         })
+    }
+
+    /// `User-Agent` string for outbound metadata API requests.  OpenLibrary
+    /// grants identified requests a 3 req/s rate-limit tier (vs. 1 req/s
+    /// anonymous) when a contact email or URL is present in the UA.
+    pub fn user_agent(&self) -> String {
+        match self.operator_contact.as_deref() {
+            Some(contact) => format!("Tome/{} ({contact})", env!("CARGO_PKG_VERSION")),
+            None => format!("Tome/{} (unidentified)", env!("CARGO_PKG_VERSION")),
+        }
+    }
+}
+
+impl EnrichmentConfig {
+    fn from_env() -> Result<Self, ConfigError> {
+        let enabled = parse_bool("TOME_ENRICHMENT_ENABLED", true)?;
+        let concurrency = parse_u32("TOME_ENRICHMENT_CONCURRENCY", 2)?;
+        if !(1..=10).contains(&concurrency) {
+            return Err(ConfigError::Invalid {
+                var: "TOME_ENRICHMENT_CONCURRENCY".into(),
+                reason: format!("must be 1-10, got {concurrency}"),
+            });
+        }
+        let poll_idle_secs = parse_u64("TOME_ENRICHMENT_POLL_IDLE_SECS", 30)?;
+        let fetch_budget_secs = parse_u64("TOME_ENRICHMENT_FETCH_BUDGET_SECS", 15)?;
+        let http_timeout_secs = parse_u64("TOME_ENRICHMENT_HTTP_TIMEOUT_SECS", 10)?;
+        let max_attempts = parse_u32("TOME_ENRICHMENT_MAX_ATTEMPTS", 10)?;
+        let cache_ttl_hit_days = parse_u32("TOME_ENRICHMENT_CACHE_TTL_HIT_DAYS", 30)?;
+        let cache_ttl_miss_days = parse_u32("TOME_ENRICHMENT_CACHE_TTL_MISS_DAYS", 7)?;
+        let cache_ttl_error_mins = parse_u32("TOME_ENRICHMENT_CACHE_TTL_ERROR_MINS", 15)?;
+
+        Ok(Self {
+            enabled,
+            concurrency,
+            poll_idle_secs,
+            fetch_budget_secs,
+            http_timeout_secs,
+            max_attempts,
+            cache_ttl_hit_days,
+            cache_ttl_miss_days,
+            cache_ttl_error_mins,
+        })
+    }
+}
+
+impl CoverConfig {
+    fn from_env() -> Result<Self, ConfigError> {
+        let max_bytes = parse_u64("TOME_COVER_MAX_BYTES", 10_485_760)?;
+        let download_timeout_secs = parse_u64("TOME_COVER_DOWNLOAD_TIMEOUT_SECS", 30)?;
+        let min_long_edge_px = parse_u32("TOME_COVER_MIN_LONG_EDGE_PX", 1000)?;
+        let redirect_limit = parse_u32("TOME_COVER_REDIRECT_LIMIT", 3)? as usize;
+
+        Ok(Self {
+            max_bytes,
+            download_timeout_secs,
+            min_long_edge_px,
+            redirect_limit,
+        })
+    }
+}
+
+fn parse_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
+    match env::var(var) {
+        Ok(v) => match v.to_lowercase().as_str() {
+            "true" | "1" | "yes" => Ok(true),
+            "false" | "0" | "no" => Ok(false),
+            _ => Err(ConfigError::Invalid {
+                var: var.into(),
+                reason: format!("expected boolean, got '{v}'"),
+            }),
+        },
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_u32(var: &str, default: u32) -> Result<u32, ConfigError> {
+    match env::var(var) {
+        Ok(v) => v.parse::<u32>().map_err(|e| ConfigError::Invalid {
+            var: var.into(),
+            reason: e.to_string(),
+        }),
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_u64(var: &str, default: u64) -> Result<u64, ConfigError> {
+    match env::var(var) {
+        Ok(v) => v.parse::<u64>().map_err(|e| ConfigError::Invalid {
+            var: var.into(),
+            reason: e.to_string(),
+        }),
+        Err(_) => Ok(default),
     }
 }
 
@@ -182,6 +330,25 @@ mod tests {
                 "DATABASE_URL_INGESTION",
                 "TOME_FORMAT_PRIORITY",
                 "TOME_CLEANUP_MODE",
+                "TOME_ENRICHMENT_ENABLED",
+                "TOME_ENRICHMENT_CONCURRENCY",
+                "TOME_ENRICHMENT_POLL_IDLE_SECS",
+                "TOME_ENRICHMENT_FETCH_BUDGET_SECS",
+                "TOME_ENRICHMENT_HTTP_TIMEOUT_SECS",
+                "TOME_ENRICHMENT_MAX_ATTEMPTS",
+                "TOME_ENRICHMENT_CACHE_TTL_HIT_DAYS",
+                "TOME_ENRICHMENT_CACHE_TTL_MISS_DAYS",
+                "TOME_ENRICHMENT_CACHE_TTL_ERROR_MINS",
+                "TOME_COVER_MAX_BYTES",
+                "TOME_COVER_DOWNLOAD_TIMEOUT_SECS",
+                "TOME_COVER_MIN_LONG_EDGE_PX",
+                "TOME_COVER_REDIRECT_LIMIT",
+                "TOME_OPENLIBRARY_BASE_URL",
+                "TOME_GOOGLEBOOKS_BASE_URL",
+                "TOME_GOOGLEBOOKS_API_KEY",
+                "TOME_HARDCOVER_BASE_URL",
+                "TOME_HARDCOVER_API_TOKEN",
+                "TOME_OPERATOR_CONTACT",
             ],
             || {
                 let config = Config::from_env().unwrap();
@@ -200,6 +367,78 @@ mod tests {
                     vec!["epub", "pdf", "mobi", "azw3", "cbz", "cbr"]
                 );
                 assert_eq!(config.cleanup_mode, CleanupMode::All);
+                // Enrichment defaults
+                assert!(config.enrichment.enabled);
+                assert_eq!(config.enrichment.concurrency, 2);
+                assert_eq!(config.enrichment.max_attempts, 10);
+                assert_eq!(config.cover.max_bytes, 10_485_760);
+                assert_eq!(config.cover.min_long_edge_px, 1000);
+                assert_eq!(config.cover.redirect_limit, 3);
+                assert_eq!(config.openlibrary_base_url, "https://openlibrary.org");
+                assert!(config.googlebooks_api_key.is_none());
+                assert!(config.hardcover_api_token.is_none());
+                assert!(config.operator_contact.is_none());
+            },
+        );
+    }
+
+    #[test]
+    fn user_agent_without_contact_reports_unidentified() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/test"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+            ],
+            &["TOME_OPERATOR_CONTACT"],
+            || {
+                let config = Config::from_env().unwrap();
+                let ua = config.user_agent();
+                assert!(ua.starts_with("Tome/"), "missing Tome/ prefix: {ua}");
+                assert!(ua.ends_with("(unidentified)"), "unexpected suffix: {ua}");
+            },
+        );
+    }
+
+    #[test]
+    fn user_agent_with_contact_embeds_identifier() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/test"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                ("TOME_OPERATOR_CONTACT", "ops@example.com"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().unwrap();
+                assert_eq!(config.operator_contact.as_deref(), Some("ops@example.com"));
+                let ua = config.user_agent();
+                assert!(ua.contains("(ops@example.com)"), "missing contact: {ua}");
+                assert!(ua.starts_with("Tome/"), "missing Tome/ prefix: {ua}");
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_rejects_concurrency_out_of_range() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://x@localhost/x"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                ("TOME_ENRICHMENT_CONCURRENCY", "11"),
+            ],
+            &[],
+            || {
+                let err = Config::from_env().unwrap_err();
+                assert!(err.to_string().contains("TOME_ENRICHMENT_CONCURRENCY"));
             },
         );
     }
