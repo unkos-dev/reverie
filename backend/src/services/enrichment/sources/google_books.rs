@@ -68,7 +68,11 @@ impl MetadataSource for GoogleBooks {
                 (format!("isbn:{isbn}"), 1_u32)
             }
             LookupKey::TitleAuthor { title, author } => (
-                format!("intitle:{}+inauthor:{}", encode(title), encode(author)),
+                format!(
+                    "intitle:{}+inauthor:{}",
+                    super::encode_query_component(title),
+                    super::encode_query_component(author),
+                ),
                 5_u32,
             ),
         };
@@ -114,16 +118,6 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
     } else {
         SourceError::Other(anyhow::Error::from(e))
     }
-}
-
-fn encode(s: &str) -> String {
-    // Google Books tolerates '+' between terms and accepts URL-encoded spaces.
-    s.replace('%', "%25")
-        .replace(' ', "+")
-        .replace('&', "%26")
-        .replace('#', "%23")
-        .replace('?', "%3F")
-        .replace('=', "%3D")
 }
 
 fn map_volumes(body: &Value, match_type: &str) -> Vec<SourceResult> {

@@ -77,8 +77,8 @@ impl MetadataSource for OpenLibrary {
             LookupKey::TitleAuthor { title, author } => format!(
                 "{}/search.json?title={}&author={}&limit=5",
                 self.base_url.trim_end_matches('/'),
-                urlencoding(title),
-                urlencoding(author),
+                super::encode_query_component(title),
+                super::encode_query_component(author),
             ),
         };
 
@@ -119,19 +119,6 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
     } else {
         SourceError::Other(anyhow::Error::from(e))
     }
-}
-
-fn urlencoding(s: &str) -> String {
-    // Minimal encoder: replace a handful of reserved chars. Good enough for
-    // title/author query params; the full-blown percent-encoding crate would
-    // pull in 200+ LoC for zero functional difference.
-    s.replace('%', "%25")
-        .replace(' ', "%20")
-        .replace('&', "%26")
-        .replace('#', "%23")
-        .replace('?', "%3F")
-        .replace('=', "%3D")
-        .replace('+', "%2B")
 }
 
 /// Parse an `/api/books?bibkeys=ISBN:X&jscmd=data` response.

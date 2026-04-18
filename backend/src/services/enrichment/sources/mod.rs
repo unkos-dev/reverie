@@ -117,3 +117,32 @@ pub trait MetadataSource: Send + Sync {
         key: &LookupKey,
     ) -> Result<Vec<SourceResult>, SourceError>;
 }
+
+/// Percent-encode a query-string component using RFC 3986 rules for the
+/// reserved characters Tome actually emits (title/author/key values).
+/// Prefer this over per-adapter encoders so we don't drift on which
+/// characters each adapter forgets. Full percent-encoding isn't
+/// required for the ASCII-dominated query terms Tome sends.
+pub(super) fn encode_query_component(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('&', "%26")
+        .replace('#', "%23")
+        .replace('?', "%3F")
+        .replace('=', "%3D")
+        .replace('+', "%2B")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_query_component;
+
+    #[test]
+    fn encode_query_component_escapes_reserved_chars() {
+        assert_eq!(encode_query_component("a b"), "a%20b");
+        assert_eq!(encode_query_component("C++"), "C%2B%2B");
+        assert_eq!(encode_query_component("A&B"), "A%26B");
+        assert_eq!(encode_query_component("50% off"), "50%25%20off");
+        assert_eq!(encode_query_component("q=1"), "q%3D1");
+    }
+}
