@@ -618,8 +618,7 @@ mod tests {
     async fn accept_admin_writes_canonical_title() {
         let app_pool = test_support::db::app_pool().await;
         let ing_pool = test_support::db::ingestion_pool().await;
-        let (admin_id, basic) =
-            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
@@ -665,8 +664,7 @@ mod tests {
     async fn reject_admin_marks_version_rejected() {
         let app_pool = test_support::db::app_pool().await;
         let ing_pool = test_support::db::ingestion_pool().await;
-        let (admin_id, basic) =
-            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
@@ -686,13 +684,12 @@ mod tests {
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
 
-        let row: (String, Option<Uuid>) = sqlx::query_as(
-            "SELECT status::text, resolved_by FROM metadata_versions WHERE id = $1",
-        )
-        .bind(version_id)
-        .fetch_one(&app_pool)
-        .await
-        .expect("fetch version");
+        let row: (String, Option<Uuid>) =
+            sqlx::query_as("SELECT status::text, resolved_by FROM metadata_versions WHERE id = $1")
+                .bind(version_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch version");
         assert_eq!(row.0, "rejected");
         assert_eq!(row.1, Some(admin_id), "resolved_by should record admin id");
 
@@ -705,8 +702,7 @@ mod tests {
     async fn revert_admin_clears_field_to_null() {
         let app_pool = test_support::db::app_pool().await;
         let ing_pool = test_support::db::ingestion_pool().await;
-        let (admin_id, basic) =
-            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
@@ -716,15 +712,13 @@ mod tests {
         let initial = format!("To Be Cleared {marker}");
         let version_id =
             insert_version(&ing_pool, m_id, "description", serde_json::json!(&initial)).await;
-        sqlx::query(
-            "UPDATE works SET description = $1, description_version_id = $2 WHERE id = $3",
-        )
-        .bind(&initial)
-        .bind(version_id)
-        .bind(work_id)
-        .execute(&ing_pool)
-        .await
-        .expect("seed description");
+        sqlx::query("UPDATE works SET description = $1, description_version_id = $2 WHERE id = $3")
+            .bind(&initial)
+            .bind(version_id)
+            .bind(work_id)
+            .execute(&ing_pool)
+            .await
+            .expect("seed description");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
@@ -742,13 +736,12 @@ mod tests {
             response.text()
         );
 
-        let row: (Option<String>, Option<Uuid>) = sqlx::query_as(
-            "SELECT description, description_version_id FROM works WHERE id = $1",
-        )
-        .bind(work_id)
-        .fetch_one(&app_pool)
-        .await
-        .expect("fetch work");
+        let row: (Option<String>, Option<Uuid>) =
+            sqlx::query_as("SELECT description, description_version_id FROM works WHERE id = $1")
+                .bind(work_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch work");
         assert_eq!(row.0, None, "description should be cleared");
         assert_eq!(row.1, None, "version pointer should be cleared");
 

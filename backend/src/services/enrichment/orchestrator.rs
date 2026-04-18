@@ -796,10 +796,17 @@ mod tests {
 
         let runs = fan_out(&sources, &http, &key, Duration::from_millis(50)).await;
 
-        assert_eq!(runs.len(), 2, "every enabled source must produce a SourceRun");
+        assert_eq!(
+            runs.len(),
+            2,
+            "every enabled source must produce a SourceRun"
+        );
         let fast = runs.iter().find(|r| r.source_id == "fast").unwrap();
         let slow = runs.iter().find(|r| r.source_id == "slow").unwrap();
-        assert!(fast.outcome.is_ok(), "fast source result was discarded by timeout");
+        assert!(
+            fast.outcome.is_ok(),
+            "fast source result was discarded by timeout"
+        );
         assert!(
             matches!(slow.outcome, Err(SourceError::Timeout)),
             "slow source should surface as Timeout, got {:?}",

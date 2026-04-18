@@ -76,12 +76,11 @@ async fn dry_run(
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let visible: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM manifestations WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+    let visible: Option<Uuid> = sqlx::query_scalar("SELECT id FROM manifestations WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     drop(tx);
     if visible.is_none() {
         return Err(AppError::NotFound);
@@ -183,8 +182,7 @@ mod tests {
         use axum::http::header::AUTHORIZATION;
         let app_pool = test_support::db::app_pool().await;
         let ing_pool = test_support::db::ingestion_pool().await;
-        let (admin_id, basic) =
-            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
