@@ -461,7 +461,10 @@ async fn cache_all(pool: &PgPool, runs: &[SourceRun], key: &LookupKey, ttls: &Ca
             Ok(results) if results.is_empty() => (serde_json::json!([]), ApiCacheKind::Miss, None),
             Ok(results) => (
                 serde_json::to_value(results.iter().map(|r| &r.raw_value).collect::<Vec<_>>())
-                    .unwrap_or(serde_json::Value::Null),
+                    .unwrap_or_else(|e| {
+                        warn!(error = %e, source = %run.source_id, "cache: failed to serialise results; writing NULL");
+                        serde_json::Value::Null
+                    }),
                 ApiCacheKind::Hit,
                 None,
             ),
@@ -641,6 +644,11 @@ async fn apply_field(
                 .execute(&mut **tx)
                 .await?;
             } else {
+                // Intentional divergence from routes::metadata::apply_version,
+                // which returns AppError::Validation. In the pipeline a bad
+                // pub_date comes from an external source; we keep the journal
+                // row so a reviewer can still accept/reject it and skip the
+                // canonical write.
                 tracing::debug!(value = %v, "pub_date value not ISO; skipping canonical apply");
             }
         }

@@ -482,7 +482,15 @@ mod tests {
         );
     }
 
+    // Requires outbound DNS to resolve example.com.  The Err arm below
+    // tolerates sandboxed CI (e.g. docker-in-docker builds with no
+    // external DNS) so the check never becomes a false positive — but
+    // that also means the assertion is vacuous without a real network.
+    // Marked `#[ignore]` so unit runs don't silently pass; enable with
+    // `cargo test -- --include-ignored` on a host with DNS, matching
+    // how CI runs the test target.
     #[tokio::test]
+    #[ignore = "requires outbound DNS; covered by CI's --include-ignored run"]
     async fn ssrf_resolver_allows_public_hostname() {
         use reqwest::dns::{Name, Resolve};
         use std::str::FromStr;

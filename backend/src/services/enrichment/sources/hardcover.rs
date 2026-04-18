@@ -104,11 +104,22 @@ impl MetadataSource for Hardcover {
                 let isbn = k.strip_prefix("isbn:").unwrap_or(k).to_string();
                 (ISBN_QUERY, json!({"isbn": isbn}), "isbn")
             }
-            LookupKey::TitleAuthor { title, author } => (
-                TITLE_AUTHOR_QUERY,
-                json!({"title": format!("%{title}%"), "author": format!("%{author}%")}),
-                "title_author_fuzzy",
-            ),
+            LookupKey::TitleAuthor { title, author } => {
+                // Strip existing '%' so an incoming value of "%" or long
+                // wildcard runs can't coerce Hardcover into a full-table
+                // LIKE scan.  Require at least 3 post-strip characters;
+                // shorter queries produce too much noise to be useful.
+                let t = sanitise_ilike_term(title);
+                let a = sanitise_ilike_term(author);
+                if t.chars().count() < 3 || a.chars().count() < 3 {
+                    return Ok(Vec::new());
+                }
+                (
+                    TITLE_AUTHOR_QUERY,
+                    json!({"title": format!("%{t}%"), "author": format!("%{a}%")}),
+                    "title_author_fuzzy",
+                )
+            }
         };
 
         let payload = json!({ "query": query, "variables": variables });
@@ -155,6 +166,15 @@ impl MetadataSource for Hardcover {
             None => Vec::new(),
         })
     }
+}
+
+/// Remove ILIKE wildcards and trim whitespace.  Hardcover's GraphQL
+/// `_ilike` filter treats `%` as match-anything; a user-controlled
+/// value like `%` on its own matches every row in the table and burns
+/// Hardcover's quota.  Stripping wildcards keeps the caller in control
+/// of what each term matches.
+fn sanitise_ilike_term(s: &str) -> String {
+    s.replace(['%', '_'], "").trim().to_string()
 }
 
 fn to_source_error(e: reqwest::Error) -> SourceError {
