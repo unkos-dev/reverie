@@ -29,9 +29,12 @@
 // all Phase B agents complete), so dead_code is expected during integration.
 #![allow(dead_code)]
 
-use std::net::{IpAddr, Ipv6Addr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use hickory_resolver::{Resolver, TokioResolver};
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::redirect;
 use tracing::warn;
 
@@ -209,11 +212,77 @@ pub fn validate_hop(url: &reqwest::Url) -> Result<(), HopError> {
 
 // ── Client constructors ────────────────────────────────────────────────────
 
+/// Process-wide DNS resolver that filters denied IPs at lookup time.
+///
+/// Closes the DNS-rebinding TOCTOU window between [`validate_hop`] and the
+/// hyper connection layer: every hostname goes through the same resolver, the
+/// returned `SocketAddr` is the one reqwest dials, and any address in a
+/// denied range is dropped before reqwest ever sees it.  The redirect-hop
+/// policy on [`cover_client`] remains as defense-in-depth.
+fn ssrf_resolver() -> Arc<SsrfResolver> {
+    static RESOLVER: OnceLock<Arc<SsrfResolver>> = OnceLock::new();
+    RESOLVER
+        .get_or_init(|| {
+            Arc::new(
+                SsrfResolver::new()
+                    .expect("failed to initialise hickory resolver from /etc/resolv.conf"),
+            )
+        })
+        .clone()
+}
+
+struct SsrfResolver {
+    inner: TokioResolver,
+}
+
+impl SsrfResolver {
+    fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let inner = Resolver::builder_tokio()?.build()?;
+        Ok(Self { inner })
+    }
+}
+
+impl Resolve for SsrfResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let inner = self.inner.clone();
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            let lookup = inner
+                .lookup_ip(host.as_str())
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+            let addrs: Vec<SocketAddr> = lookup
+                .iter()
+                .filter(|ip| {
+                    if ip_is_denied(*ip) {
+                        warn!(%ip, host = %host, "SSRF: resolution to denied IP blocked");
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .map(|ip| SocketAddr::new(ip, 0))
+                .collect();
+            if addrs.is_empty() {
+                let denied = lookup
+                    .iter()
+                    .next()
+                    .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+                return Err(Box::new(HopError::DenyListed(denied))
+                    as Box<dyn std::error::Error + Send + Sync>);
+            }
+            Ok(Box::new(addrs.into_iter()) as Addrs)
+        })
+    }
+}
+
 /// Build a reqwest client suitable for metadata REST/GraphQL API calls.
 ///
 /// * 10-second timeout.
 /// * Maximum 5 redirect hops.
 /// * Compiled with rustls TLS — no OpenSSL dependency.
+/// * Uses the [`ssrf_resolver`] so resolved IPs in denied ranges are
+///   rejected before reqwest dials them.
 ///
 /// `user_agent` is forwarded on every request.  Upstream providers
 /// (e.g. OpenLibrary) grant identified clients a higher rate-limit tier.
@@ -222,6 +291,7 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
         .user_agent(user_agent)
         .timeout(Duration::from_secs(10))
         .redirect(redirect::Policy::limited(5))
+        .dns_resolver(ssrf_resolver())
         .build()
         .expect("failed to build api_client — TLS init should not fail in this environment")
 }
@@ -229,11 +299,13 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
 /// Build a reqwest client suitable for fetching cover image URLs.
 ///
 /// Identical to [`api_client`] but with a configurable redirect limit and
-/// timeout, plus an SSRF guard on every redirect hop.
+/// timeout.  Two layers of SSRF defense are stacked:
 ///
-/// The redirect policy resolves each redirect target via the OS DNS resolver
-/// (blocking) and rejects any hop whose IP falls in a denied range.  See the
-/// module-level design note for the rationale behind using a blocking resolver.
+/// 1. The [`ssrf_resolver`] filters denied IPs at DNS resolution time —
+///    closes the TOCTOU window between validation and dial.
+/// 2. The redirect policy re-validates every hop via [`validate_hop`] before
+///    reqwest issues the next request, so a denied hostname is rejected
+///    before any TCP connect is attempted.
 ///
 /// # Panics
 ///
@@ -254,6 +326,7 @@ pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) 
         .user_agent(user_agent)
         .timeout(Duration::from_secs(timeout_secs))
         .redirect(policy)
+        .dns_resolver(ssrf_resolver())
         .build()
         .expect("failed to build cover_client — TLS init should not fail in this environment")
 }
@@ -388,5 +461,49 @@ mod tests {
     fn ipv4_mapped_public_allowed() {
         // ::ffff:8.8.8.8
         assert!(!ip_is_denied(v6("::ffff:8.8.8.8")));
+    }
+
+    /// The custom DNS resolver must reject hostnames whose entire resolution
+    /// set falls in a denied IP range — closes the TOCTOU window between
+    /// validate_hop and reqwest's connection-time resolution.
+    #[tokio::test]
+    async fn ssrf_resolver_rejects_localhost() {
+        use reqwest::dns::{Name, Resolve};
+        use std::str::FromStr;
+
+        let resolver = SsrfResolver::new().expect("resolver init");
+        let name = Name::from_str("localhost").expect("valid name");
+        let result = resolver.resolve(name).await;
+        assert!(
+            result.is_err(),
+            "expected localhost lookup to be denied, but resolver returned Ok"
+        );
+    }
+
+    #[tokio::test]
+    async fn ssrf_resolver_allows_public_hostname() {
+        use reqwest::dns::{Name, Resolve};
+        use std::str::FromStr;
+
+        let resolver = SsrfResolver::new().expect("resolver init");
+        // example.com is reserved for documentation; resolves to public IPs.
+        let name = Name::from_str("example.com").expect("valid name");
+        match resolver.resolve(name).await {
+            Ok(addrs) => {
+                assert!(
+                    addrs.count() > 0,
+                    "expected at least one address for example.com"
+                );
+            }
+            Err(e) => {
+                // Tolerate sandboxed CI without outbound DNS — assert the
+                // error is transport-level, not a deny-list rejection.
+                let s = e.to_string();
+                assert!(
+                    !s.contains("denied"),
+                    "public hostname rejected as denied: {s}"
+                );
+            }
+        }
     }
 }

@@ -230,6 +230,11 @@ pub async fn run_once(
                     .fetch_one(&mut *tx)
                     .await?;
             let confidence_score = confidence::score(source_id, &match_type, quorum);
+            sqlx::query("UPDATE metadata_versions SET confidence_score = $1 WHERE id = $2")
+                .bind(confidence_score)
+                .bind(incoming.id)
+                .execute(&mut *tx)
+                .await?;
             tracing::debug!(
                 %field, source_id, quorum, %match_type, confidence_score,
                 "confidence computed"
@@ -626,7 +631,9 @@ fn json_as_string(v: &serde_json::Value) -> String {
 
 fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
     use time::format_description::well_known::Iso8601;
-    if s.len() >= 10 {
+    // `s.len()` is in bytes; provider strings are adversarial and may contain
+    // multi-byte UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
+    if s.len() >= 10 && s.is_char_boundary(10) {
         time::Date::parse(&s[..10], &Iso8601::DATE)
     } else {
         // Fall back to `YYYY` or `YYYY-MM` by padding.
@@ -924,28 +931,22 @@ mod tests {
             "canonical title should match agreement value"
         );
 
-        // Three sources wrote journal rows for `title` — one per source —
-        // all with the same `value_hash` (agreement).  The quorum=3 boost is
-        // surfaced only via `tracing::debug!` in the orchestrator; the stored
-        // `confidence_score` on the upserted row reflects the per-source
-        // upsert-time quorum of 1 (see `orchestrator::upsert_journal_row`).
-        // Verify the agreement observation at the journal level instead.
-        let agreeing_rows: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM metadata_versions mv1 \
-             JOIN metadata_versions mv2 \
-               ON mv1.manifestation_id = mv2.manifestation_id \
-              AND mv1.field_name = mv2.field_name \
-              AND mv1.value_hash = mv2.value_hash \
-              AND mv1.id <> mv2.id \
-             WHERE mv1.manifestation_id = $1 AND mv1.field_name = 'title'",
+        // Three sources agreed on `title`; quorum=3 boost (1.20×) must be
+        // persisted on the journal rows.  The maximum quorum-1 score for any
+        // ISBN-matched source is `hardcover` at 0.85; with the boost,
+        // `openlibrary` reaches 0.96 — anything ≥ 0.90 proves the boost
+        // landed in the row, not just the log.
+        let max_score: f32 = sqlx::query_scalar(
+            "SELECT MAX(confidence_score) FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name = 'title'",
         )
         .bind(m_id)
         .fetch_one(&pool)
         .await
         .unwrap();
         assert!(
-            agreeing_rows >= 2,
-            "expected at least 2 cross-source agreement pairs on title, got {agreeing_rows}"
+            max_score >= 0.90,
+            "expected quorum-boosted confidence_score >= 0.90 on title, got {max_score}"
         );
 
         cleanup_enrich_fixture(&pool, work_id, isbn).await;

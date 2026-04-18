@@ -249,7 +249,9 @@ async fn mark_failed(
         .await?;
     }
 
-    let _ = backoff(i64::from(attempt_count));
+    // Backoff is applied inside the `claim_next` CTE via a CASE expression
+    // that compares `attempt_count` against the row's last-attempt timestamp.
+    // Nothing to compute here.
     Ok(())
 }
 
