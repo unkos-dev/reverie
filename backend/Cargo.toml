@@ -1,9 +1,9 @@
 [package]
-name = "tome-api"
+name = "reverie-api"
 version = "0.0.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
-description = "Tome ebook library manager — API server"
+description = "Reverie ebook library manager — API server"
 
 [dependencies]
 anyhow = "1"
