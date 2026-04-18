@@ -77,7 +77,7 @@ pub async fn run_watcher(
 
 /// Advisory lock ID for serializing ingestion scans. Prevents concurrent scan_once
 /// calls (watcher + manual POST) from racing on duplicate checks and file copies.
-const SCAN_ADVISORY_LOCK_ID: i64 = 0x546F6D65_00000004; // "Tome" + step 4
+const SCAN_ADVISORY_LOCK_ID: i64 = 0x52657665_00000004; // "Reve" + step 4
 
 /// One-shot ingestion scan: walk the ingestion directory, filter by format priority,
 /// copy to library, and track via ingestion_jobs.
@@ -662,7 +662,7 @@ mod tests {
 
     fn db_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         })
     }
 

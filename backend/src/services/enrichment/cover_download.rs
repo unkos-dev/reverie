@@ -531,7 +531,7 @@ mod tests {
             allow_private_hosts: true,
         };
 
-        let ssrf_client = cover_client(3, 10, "tome-tests/0 (cover-download)");
+        let ssrf_client = cover_client(3, 10, "reverie-tests/0 (cover-download)");
         let result = download(
             &server.uri(),
             &ssrf_client,

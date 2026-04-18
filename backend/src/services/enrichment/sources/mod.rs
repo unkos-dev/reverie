@@ -121,10 +121,10 @@ pub trait MetadataSource: Send + Sync {
 }
 
 /// Percent-encode a query-string component using RFC 3986 rules for the
-/// reserved characters Tome actually emits (title/author/key values).
+/// reserved characters Reverie actually emits (title/author/key values).
 /// Prefer this over per-adapter encoders so we don't drift on which
 /// characters each adapter forgets. Full percent-encoding isn't
-/// required for the ASCII-dominated query terms Tome sends.
+/// required for the ASCII-dominated query terms Reverie sends.
 pub(super) fn encode_query_component(s: &str) -> String {
     s.replace('%', "%25")
         .replace(' ', "%20")

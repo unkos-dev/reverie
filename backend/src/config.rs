@@ -75,11 +75,11 @@ impl Config {
         let database_url =
             env::var("DATABASE_URL").map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
 
-        let port = env::var("TOME_PORT")
+        let port = env::var("REVERIE_PORT")
             .unwrap_or_else(|_| "3000".into())
             .parse::<u16>()
             .map_err(|e| ConfigError::Invalid {
-                var: "TOME_PORT".into(),
+                var: "REVERIE_PORT".into(),
                 reason: e.to_string(),
             })?;
 
@@ -95,7 +95,7 @@ impl Config {
         let ingestion_database_url =
             env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| database_url.clone());
 
-        let format_priority: Vec<String> = env::var("TOME_FORMAT_PRIORITY")
+        let format_priority: Vec<String> = env::var("REVERIE_FORMAT_PRIORITY")
             .unwrap_or_else(|_| "epub,pdf,mobi,azw3,cbz,cbr".into())
             .split(',')
             .map(|s| s.trim().to_lowercase())
@@ -105,7 +105,7 @@ impl Config {
         for fmt in &format_priority {
             if !SUPPORTED_FORMATS.contains(&fmt.as_str()) {
                 return Err(ConfigError::Invalid {
-                    var: "TOME_FORMAT_PRIORITY".into(),
+                    var: "REVERIE_FORMAT_PRIORITY".into(),
                     reason: format!(
                         "unsupported format '{fmt}'. Supported: {}",
                         SUPPORTED_FORMATS.join(", ")
@@ -114,7 +114,7 @@ impl Config {
             }
         }
 
-        let cleanup_mode = match env::var("TOME_CLEANUP_MODE")
+        let cleanup_mode = match env::var("REVERIE_CLEANUP_MODE")
             .unwrap_or_else(|_| "all".into())
             .to_lowercase()
             .as_str()
@@ -124,7 +124,7 @@ impl Config {
             "none" => CleanupMode::None,
             other => {
                 return Err(ConfigError::Invalid {
-                    var: "TOME_CLEANUP_MODE".into(),
+                    var: "REVERIE_CLEANUP_MODE".into(),
                     reason: format!("expected 'all', 'ingested', or 'none', got '{other}'"),
                 });
             }
@@ -133,36 +133,36 @@ impl Config {
         let enrichment = EnrichmentConfig::from_env()?;
         let cover = CoverConfig::from_env()?;
 
-        let openlibrary_base_url = env::var("TOME_OPENLIBRARY_BASE_URL")
+        let openlibrary_base_url = env::var("REVERIE_OPENLIBRARY_BASE_URL")
             .unwrap_or_else(|_| "https://openlibrary.org".into());
-        let googlebooks_base_url = env::var("TOME_GOOGLEBOOKS_BASE_URL")
+        let googlebooks_base_url = env::var("REVERIE_GOOGLEBOOKS_BASE_URL")
             .unwrap_or_else(|_| "https://www.googleapis.com/books/v1".into());
-        let googlebooks_api_key = env::var("TOME_GOOGLEBOOKS_API_KEY")
+        let googlebooks_api_key = env::var("REVERIE_GOOGLEBOOKS_API_KEY")
             .ok()
             .filter(|s| !s.is_empty());
-        let hardcover_base_url = env::var("TOME_HARDCOVER_BASE_URL")
+        let hardcover_base_url = env::var("REVERIE_HARDCOVER_BASE_URL")
             .unwrap_or_else(|_| "https://api.hardcover.app/v1/graphql".into());
-        let hardcover_api_token = env::var("TOME_HARDCOVER_API_TOKEN")
+        let hardcover_api_token = env::var("REVERIE_HARDCOVER_API_TOKEN")
             .ok()
             .filter(|s| !s.is_empty());
-        let operator_contact = env::var("TOME_OPERATOR_CONTACT")
+        let operator_contact = env::var("REVERIE_OPERATOR_CONTACT")
             .ok()
             .filter(|s| !s.is_empty());
 
         Ok(Self {
             port,
             database_url,
-            library_path: env::var("TOME_LIBRARY_PATH").unwrap_or_else(|_| "./library".into()),
-            ingestion_path: env::var("TOME_INGESTION_PATH")
+            library_path: env::var("REVERIE_LIBRARY_PATH").unwrap_or_else(|_| "./library".into()),
+            ingestion_path: env::var("REVERIE_INGESTION_PATH")
                 .unwrap_or_else(|_| "./ingestion".into()),
-            quarantine_path: env::var("TOME_QUARANTINE_PATH")
+            quarantine_path: env::var("REVERIE_QUARANTINE_PATH")
                 .unwrap_or_else(|_| "./quarantine".into()),
             log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-            db_max_connections: env::var("TOME_DB_MAX_CONNECTIONS")
+            db_max_connections: env::var("REVERIE_DB_MAX_CONNECTIONS")
                 .unwrap_or_else(|_| "10".into())
                 .parse::<u32>()
                 .map_err(|e| ConfigError::Invalid {
-                    var: "TOME_DB_MAX_CONNECTIONS".into(),
+                    var: "REVERIE_DB_MAX_CONNECTIONS".into(),
                     reason: e.to_string(),
                 })?,
             oidc_issuer_url,
@@ -188,29 +188,29 @@ impl Config {
     /// anonymous) when a contact email or URL is present in the UA.
     pub fn user_agent(&self) -> String {
         match self.operator_contact.as_deref() {
-            Some(contact) => format!("Tome/{} ({contact})", env!("CARGO_PKG_VERSION")),
-            None => format!("Tome/{} (unidentified)", env!("CARGO_PKG_VERSION")),
+            Some(contact) => format!("Reverie/{} ({contact})", env!("CARGO_PKG_VERSION")),
+            None => format!("Reverie/{} (unidentified)", env!("CARGO_PKG_VERSION")),
         }
     }
 }
 
 impl EnrichmentConfig {
     fn from_env() -> Result<Self, ConfigError> {
-        let enabled = parse_bool("TOME_ENRICHMENT_ENABLED", true)?;
-        let concurrency = parse_u32("TOME_ENRICHMENT_CONCURRENCY", 2)?;
+        let enabled = parse_bool("REVERIE_ENRICHMENT_ENABLED", true)?;
+        let concurrency = parse_u32("REVERIE_ENRICHMENT_CONCURRENCY", 2)?;
         if !(1..=10).contains(&concurrency) {
             return Err(ConfigError::Invalid {
-                var: "TOME_ENRICHMENT_CONCURRENCY".into(),
+                var: "REVERIE_ENRICHMENT_CONCURRENCY".into(),
                 reason: format!("must be 1-10, got {concurrency}"),
             });
         }
-        let poll_idle_secs = parse_u64("TOME_ENRICHMENT_POLL_IDLE_SECS", 30)?;
-        let fetch_budget_secs = parse_u64("TOME_ENRICHMENT_FETCH_BUDGET_SECS", 15)?;
-        let http_timeout_secs = parse_u64("TOME_ENRICHMENT_HTTP_TIMEOUT_SECS", 10)?;
-        let max_attempts = parse_u32("TOME_ENRICHMENT_MAX_ATTEMPTS", 10)?;
-        let cache_ttl_hit_days = parse_u32("TOME_ENRICHMENT_CACHE_TTL_HIT_DAYS", 30)?;
-        let cache_ttl_miss_days = parse_u32("TOME_ENRICHMENT_CACHE_TTL_MISS_DAYS", 7)?;
-        let cache_ttl_error_mins = parse_u32("TOME_ENRICHMENT_CACHE_TTL_ERROR_MINS", 15)?;
+        let poll_idle_secs = parse_u64("REVERIE_ENRICHMENT_POLL_IDLE_SECS", 30)?;
+        let fetch_budget_secs = parse_u64("REVERIE_ENRICHMENT_FETCH_BUDGET_SECS", 15)?;
+        let http_timeout_secs = parse_u64("REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS", 10)?;
+        let max_attempts = parse_u32("REVERIE_ENRICHMENT_MAX_ATTEMPTS", 10)?;
+        let cache_ttl_hit_days = parse_u32("REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS", 30)?;
+        let cache_ttl_miss_days = parse_u32("REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS", 7)?;
+        let cache_ttl_error_mins = parse_u32("REVERIE_ENRICHMENT_CACHE_TTL_ERROR_MINS", 15)?;
 
         Ok(Self {
             enabled,
@@ -228,10 +228,10 @@ impl EnrichmentConfig {
 
 impl CoverConfig {
     fn from_env() -> Result<Self, ConfigError> {
-        let max_bytes = parse_u64("TOME_COVER_MAX_BYTES", 10_485_760)?;
-        let download_timeout_secs = parse_u64("TOME_COVER_DOWNLOAD_TIMEOUT_SECS", 30)?;
-        let min_long_edge_px = parse_u32("TOME_COVER_MIN_LONG_EDGE_PX", 1000)?;
-        let redirect_limit = parse_u32("TOME_COVER_REDIRECT_LIMIT", 3)? as usize;
+        let max_bytes = parse_u64("REVERIE_COVER_MAX_BYTES", 10_485_760)?;
+        let download_timeout_secs = parse_u64("REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS", 30)?;
+        let min_long_edge_px = parse_u32("REVERIE_COVER_MIN_LONG_EDGE_PX", 1000)?;
+        let redirect_limit = parse_u32("REVERIE_COVER_REDIRECT_LIMIT", 3)? as usize;
 
         Ok(Self {
             max_bytes,
@@ -323,32 +323,32 @@ mod tests {
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
             ],
             &[
-                "TOME_PORT",
-                "TOME_LIBRARY_PATH",
-                "TOME_INGESTION_PATH",
-                "TOME_QUARANTINE_PATH",
+                "REVERIE_PORT",
+                "REVERIE_LIBRARY_PATH",
+                "REVERIE_INGESTION_PATH",
+                "REVERIE_QUARANTINE_PATH",
                 "DATABASE_URL_INGESTION",
-                "TOME_FORMAT_PRIORITY",
-                "TOME_CLEANUP_MODE",
-                "TOME_ENRICHMENT_ENABLED",
-                "TOME_ENRICHMENT_CONCURRENCY",
-                "TOME_ENRICHMENT_POLL_IDLE_SECS",
-                "TOME_ENRICHMENT_FETCH_BUDGET_SECS",
-                "TOME_ENRICHMENT_HTTP_TIMEOUT_SECS",
-                "TOME_ENRICHMENT_MAX_ATTEMPTS",
-                "TOME_ENRICHMENT_CACHE_TTL_HIT_DAYS",
-                "TOME_ENRICHMENT_CACHE_TTL_MISS_DAYS",
-                "TOME_ENRICHMENT_CACHE_TTL_ERROR_MINS",
-                "TOME_COVER_MAX_BYTES",
-                "TOME_COVER_DOWNLOAD_TIMEOUT_SECS",
-                "TOME_COVER_MIN_LONG_EDGE_PX",
-                "TOME_COVER_REDIRECT_LIMIT",
-                "TOME_OPENLIBRARY_BASE_URL",
-                "TOME_GOOGLEBOOKS_BASE_URL",
-                "TOME_GOOGLEBOOKS_API_KEY",
-                "TOME_HARDCOVER_BASE_URL",
-                "TOME_HARDCOVER_API_TOKEN",
-                "TOME_OPERATOR_CONTACT",
+                "REVERIE_FORMAT_PRIORITY",
+                "REVERIE_CLEANUP_MODE",
+                "REVERIE_ENRICHMENT_ENABLED",
+                "REVERIE_ENRICHMENT_CONCURRENCY",
+                "REVERIE_ENRICHMENT_POLL_IDLE_SECS",
+                "REVERIE_ENRICHMENT_FETCH_BUDGET_SECS",
+                "REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS",
+                "REVERIE_ENRICHMENT_MAX_ATTEMPTS",
+                "REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS",
+                "REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS",
+                "REVERIE_ENRICHMENT_CACHE_TTL_ERROR_MINS",
+                "REVERIE_COVER_MAX_BYTES",
+                "REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS",
+                "REVERIE_COVER_MIN_LONG_EDGE_PX",
+                "REVERIE_COVER_REDIRECT_LIMIT",
+                "REVERIE_OPENLIBRARY_BASE_URL",
+                "REVERIE_GOOGLEBOOKS_BASE_URL",
+                "REVERIE_GOOGLEBOOKS_API_KEY",
+                "REVERIE_HARDCOVER_BASE_URL",
+                "REVERIE_HARDCOVER_API_TOKEN",
+                "REVERIE_OPERATOR_CONTACT",
             ],
             || {
                 let config = Config::from_env().unwrap();
@@ -392,11 +392,11 @@ mod tests {
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
             ],
-            &["TOME_OPERATOR_CONTACT"],
+            &["REVERIE_OPERATOR_CONTACT"],
             || {
                 let config = Config::from_env().unwrap();
                 let ua = config.user_agent();
-                assert!(ua.starts_with("Tome/"), "missing Tome/ prefix: {ua}");
+                assert!(ua.starts_with("Reverie/"), "missing Reverie/ prefix: {ua}");
                 assert!(ua.ends_with("(unidentified)"), "unexpected suffix: {ua}");
             },
         );
@@ -411,7 +411,7 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
-                ("TOME_OPERATOR_CONTACT", "ops@example.com"),
+                ("REVERIE_OPERATOR_CONTACT", "ops@example.com"),
             ],
             &[],
             || {
@@ -419,7 +419,7 @@ mod tests {
                 assert_eq!(config.operator_contact.as_deref(), Some("ops@example.com"));
                 let ua = config.user_agent();
                 assert!(ua.contains("(ops@example.com)"), "missing contact: {ua}");
-                assert!(ua.starts_with("Tome/"), "missing Tome/ prefix: {ua}");
+                assert!(ua.starts_with("Reverie/"), "missing Reverie/ prefix: {ua}");
             },
         );
     }
@@ -433,12 +433,12 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
-                ("TOME_ENRICHMENT_CONCURRENCY", "11"),
+                ("REVERIE_ENRICHMENT_CONCURRENCY", "11"),
             ],
             &[],
             || {
                 let err = Config::from_env().unwrap_err();
-                assert!(err.to_string().contains("TOME_ENRICHMENT_CONCURRENCY"));
+                assert!(err.to_string().contains("REVERIE_ENRICHMENT_CONCURRENCY"));
             },
         );
     }
@@ -448,10 +448,10 @@ mod tests {
         with_env(
             &[
                 ("DATABASE_URL", "postgres://custom@localhost/db"),
-                ("TOME_PORT", "8080"),
-                ("TOME_LIBRARY_PATH", "/data/library"),
-                ("TOME_INGESTION_PATH", "/data/ingestion"),
-                ("TOME_QUARANTINE_PATH", "/data/quarantine"),
+                ("REVERIE_PORT", "8080"),
+                ("REVERIE_LIBRARY_PATH", "/data/library"),
+                ("REVERIE_INGESTION_PATH", "/data/ingestion"),
+                ("REVERIE_QUARANTINE_PATH", "/data/quarantine"),
                 ("RUST_LOG", "debug"),
                 ("OIDC_ISSUER_URL", "https://auth.example.com"),
                 ("OIDC_CLIENT_ID", "test"),
@@ -495,7 +495,7 @@ mod tests {
                     "DATABASE_URL_INGESTION",
                     "postgres://ingestion@localhost/test",
                 ),
-                ("TOME_FORMAT_PRIORITY", "pdf, EPUB , mobi"),
+                ("REVERIE_FORMAT_PRIORITY", "pdf, EPUB , mobi"),
                 ("OIDC_ISSUER_URL", "https://auth.example.com"),
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
@@ -518,7 +518,7 @@ mod tests {
         with_env(
             &[
                 ("DATABASE_URL", "postgres://test@localhost/test"),
-                ("TOME_FORMAT_PRIORITY", "epub,djvu"),
+                ("REVERIE_FORMAT_PRIORITY", "epub,djvu"),
                 ("OIDC_ISSUER_URL", "https://auth.example.com"),
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
@@ -530,7 +530,7 @@ mod tests {
                 let msg = err.to_string();
                 assert!(msg.contains("djvu"), "expected djvu in error: {msg}");
                 assert!(
-                    msg.contains("TOME_FORMAT_PRIORITY"),
+                    msg.contains("REVERIE_FORMAT_PRIORITY"),
                     "expected var name in error: {msg}"
                 );
             },
@@ -542,7 +542,7 @@ mod tests {
         with_env(
             &[
                 ("DATABASE_URL", "postgres://x@localhost/x"),
-                ("TOME_PORT", "not_a_number"),
+                ("REVERIE_PORT", "not_a_number"),
                 ("OIDC_ISSUER_URL", "https://auth.example.com"),
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
@@ -551,7 +551,7 @@ mod tests {
             &[],
             || {
                 let err = Config::from_env().unwrap_err();
-                assert!(err.to_string().contains("TOME_PORT"));
+                assert!(err.to_string().contains("REVERIE_PORT"));
             },
         );
     }

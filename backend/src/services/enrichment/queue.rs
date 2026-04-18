@@ -258,13 +258,13 @@ mod tests {
 
     // ── Task 35: queue integration tests ──────────────────────────────────
 
-    /// Tests run against `tome_ingestion` — the role with the
+    /// Tests run against `reverie_ingestion` — the role with the
     /// `manifestations_ingestion_full_access` RLS policy, which lets the
     /// fixture INSERT queue rows with `RETURNING id`.  See the orchestrator
     /// tests for the companion grant migration on `field_locks`.
     fn db_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         })
     }
 

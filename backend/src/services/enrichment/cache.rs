@@ -150,7 +150,7 @@ mod tests {
 
     fn db_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         })
     }
 

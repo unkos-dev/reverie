@@ -108,22 +108,22 @@ pub async fn unlock(
 mod tests {
     use super::*;
 
-    /// tome_ingestion URL for fixture INSERTs.  The role holds the
+    /// reverie_ingestion URL for fixture INSERTs.  The role holds the
     /// `manifestations_ingestion_full_access` RLS policy, so it can insert
     /// manifestations without setting an `app.current_user_id` session var.
     /// The companion migration 20260417000002 grants it SELECT on
     /// `field_locks` for read-side assertions.
     fn ingestion_db_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         })
     }
 
-    /// tome_app URL for `field_locks` writes.  The migration deliberately
-    /// restricts lock/unlock to this role — tome_ingestion only has SELECT.
+    /// reverie_app URL for `field_locks` writes.  The migration deliberately
+    /// restricts lock/unlock to this role — reverie_ingestion only has SELECT.
     fn app_db_url() -> String {
         std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into())
+            .unwrap_or_else(|_| "postgres://reverie_app:reverie_app@localhost:5433/reverie_dev".into())
     }
 
     async fn setup_fixture(pool: &PgPool) -> (Uuid, Uuid) {
@@ -181,14 +181,14 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn lock_unlock_roundtrip() {
-        // tome_ingestion: fixture INSERTs on manifestations/works/users
+        // reverie_ingestion: fixture INSERTs on manifestations/works/users
         // (bypasses app.current_user_id RLS check).
         let ingestion = PgPool::connect(&ingestion_db_url()).await.unwrap();
-        // tome_app: field_locks writes (tome_ingestion only has SELECT).
+        // reverie_app: field_locks writes (reverie_ingestion only has SELECT).
         let app = PgPool::connect(&app_db_url()).await.unwrap();
 
         let (work_id, m_id) = setup_fixture(&ingestion).await;
-        // tome_ingestion has no grants on `users`; insert via tome_app.
+        // reverie_ingestion has no grants on `users`; insert via reverie_app.
         let user_id = a_user(&app).await;
 
         assert!(

@@ -153,7 +153,7 @@ mod tests {
     #[ignore] // Requires running postgres
     async fn upsert_creates_and_updates_user() {
         let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into());
+            .unwrap_or_else(|_| "postgres://reverie_app:reverie_app@localhost:5433/reverie_dev".into());
         let pool = sqlx::PgPool::connect(&url).await.expect("connect");
 
         let subject = format!("test-subject-{}", Uuid::new_v4());

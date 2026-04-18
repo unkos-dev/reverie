@@ -846,7 +846,7 @@ mod tests {
         );
     }
 
-    /// Tests run against `tome_ingestion`: that role holds the
+    /// Tests run against `reverie_ingestion`: that role holds the
     /// `manifestations_ingestion_full_access` RLS policy which lets the
     /// test fixture INSERT manifestations with `RETURNING id` without
     /// setting up an `app.current_user_id` session variable. The companion
@@ -855,7 +855,7 @@ mod tests {
     /// `field_lock::is_locked_tx` call succeeds under this role.
     fn db_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         })
     }
 
@@ -962,12 +962,12 @@ mod tests {
             .await;
     }
 
-    /// Open a separate tome_app pool for field_locks INSERTs.  The migration
-    /// grants tome_ingestion only SELECT on that table — writes (lock/unlock)
-    /// remain a tome_app surface.
-    async fn tome_app_pool() -> PgPool {
+    /// Open a separate reverie_app pool for field_locks INSERTs.  The migration
+    /// grants reverie_ingestion only SELECT on that table — writes (lock/unlock)
+    /// remain a reverie_app surface.
+    async fn reverie_app_pool() -> PgPool {
         let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into());
+            .unwrap_or_else(|_| "postgres://reverie_app:reverie_app@localhost:5433/reverie_dev".into());
         PgPool::connect(&url).await.unwrap()
     }
 
@@ -1232,9 +1232,9 @@ mod tests {
 
         let (work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
         // Lock the title field on the work side.  field_locks writes require
-        // tome_app (tome_ingestion has SELECT only) — use a separate pool.
+        // reverie_app (reverie_ingestion has SELECT only) — use a separate pool.
         {
-            let app_pool = tome_app_pool().await;
+            let app_pool = reverie_app_pool().await;
             sqlx::query(
                 "INSERT INTO field_locks (manifestation_id, entity_type, field_name) \
                  VALUES ($1, 'work', 'title')",

@@ -60,8 +60,8 @@ async fn main() {
 
     if config.operator_contact.is_none() {
         tracing::warn!(
-            "TOME_OPERATOR_CONTACT unset — OpenLibrary requests will run at the 1 req/s anonymous tier. \
-             Set TOME_OPERATOR_CONTACT=<email-or-url> to unlock the identified 3 req/s tier."
+            "REVERIE_OPERATOR_CONTACT unset — OpenLibrary requests will run at the 1 req/s anonymous tier. \
+             Set REVERIE_OPERATOR_CONTACT=<email-or-url> to unlock the identified 3 req/s tier."
         );
     }
 

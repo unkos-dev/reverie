@@ -101,7 +101,7 @@ mod tests {
     #[ignore] // Requires running postgres
     async fn job_lifecycle() {
         let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         });
         let pool = sqlx::PgPool::connect(&url).await.expect("connect");
 
@@ -135,7 +135,7 @@ mod tests {
     #[ignore] // Requires running postgres
     async fn job_skipped_and_failed() {
         let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         });
         let pool = sqlx::PgPool::connect(&url).await.expect("connect");
 

@@ -214,7 +214,7 @@ mod tests {
         );
 
         // Verify via ingestion_pool — `manifestations` is RLS-gated under
-        // `tome_app` and the verification SELECT carries no session context.
+        // `reverie_app` and the verification SELECT carries no session context.
         let row: (String, i32, Option<String>) = sqlx::query_as(
             "SELECT enrichment_status::text, enrichment_attempt_count, enrichment_error \
              FROM manifestations WHERE id = $1",

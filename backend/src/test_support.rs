@@ -114,32 +114,32 @@ pub mod db {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    /// `tome_app` connection — what AppState.pool uses in production.
+    /// `reverie_app` connection — what AppState.pool uses in production.
     pub fn app_url() -> String {
         std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into())
+            .unwrap_or_else(|_| "postgres://reverie_app:reverie_app@localhost:5433/reverie_dev".into())
     }
 
-    /// `tome_ingestion` connection — what AppState.ingestion_pool uses in
+    /// `reverie_ingestion` connection — what AppState.ingestion_pool uses in
     /// production, and what tests use for fixture inserts that need the
     /// `manifestations_ingestion_full_access` RLS bypass.
     pub fn ingestion_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
-            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+            "postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev".into()
         })
     }
 
     pub async fn app_pool() -> PgPool {
-        PgPool::connect(&app_url()).await.expect("connect tome_app")
+        PgPool::connect(&app_url()).await.expect("connect reverie_app")
     }
 
     pub async fn ingestion_pool() -> PgPool {
         PgPool::connect(&ingestion_url())
             .await
-            .expect("connect tome_ingestion")
+            .expect("connect reverie_ingestion")
     }
 
-    /// Insert an admin-role user via `tome_app` (the only role with grants
+    /// Insert an admin-role user via `reverie_app` (the only role with grants
     /// on `users`), mint a device token, and return
     /// `(user_id, "Basic ...")` ready for use as an `Authorization` header.
     pub async fn create_admin_and_basic_auth(app_pool: &PgPool) -> (Uuid, String) {
@@ -179,9 +179,9 @@ pub mod db {
     }
 
     /// Build the full router with both pools wired through AppState.
-    /// AppState.pool comes from `app_pool` (tome_app — for the route
+    /// AppState.pool comes from `app_pool` (reverie_app — for the route
     /// handlers' acquire_with_rls); AppState.ingestion_pool comes from
-    /// `ingestion_pool` (tome_ingestion — matches the queue + dry_run).
+    /// `ingestion_pool` (reverie_ingestion — matches the queue + dry_run).
     pub fn server_with_real_pools(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
@@ -201,7 +201,7 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
-    /// Insert (work, manifestation) via `tome_ingestion` for use as
+    /// Insert (work, manifestation) via `reverie_ingestion` for use as
     /// fixture data in route tests.  Returns `(work_id, manifestation_id)`.
     pub async fn insert_work_and_manifestation(
         ingestion_pool: &PgPool,
