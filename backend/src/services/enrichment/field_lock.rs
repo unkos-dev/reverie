@@ -110,7 +110,20 @@ pub async fn unlock(
 mod tests {
     use super::*;
 
-    fn db_url() -> String {
+    /// tome_ingestion URL for fixture INSERTs.  The role holds the
+    /// `manifestations_ingestion_full_access` RLS policy, so it can insert
+    /// manifestations without setting an `app.current_user_id` session var.
+    /// The companion migration 20260417000002 grants it SELECT on
+    /// `field_locks` for read-side assertions.
+    fn ingestion_db_url() -> String {
+        std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
+            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+        })
+    }
+
+    /// tome_app URL for `field_locks` writes.  The migration deliberately
+    /// restricts lock/unlock to this role — tome_ingestion only has SELECT.
+    fn app_db_url() -> String {
         std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into())
     }
@@ -170,49 +183,51 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn lock_unlock_roundtrip() {
-        let pool = PgPool::connect(&db_url()).await.unwrap();
-        let (work_id, m_id) = setup_fixture(&pool).await;
-        let user_id = a_user(&pool).await;
+        // tome_ingestion: fixture INSERTs on manifestations/works/users
+        // (bypasses app.current_user_id RLS check).
+        let ingestion = PgPool::connect(&ingestion_db_url()).await.unwrap();
+        // tome_app: field_locks writes (tome_ingestion only has SELECT).
+        let app = PgPool::connect(&app_db_url()).await.unwrap();
+
+        let (work_id, m_id) = setup_fixture(&ingestion).await;
+        // tome_ingestion has no grants on `users`; insert via tome_app.
+        let user_id = a_user(&app).await;
 
         assert!(
-            !is_locked(&pool, m_id, EntityType::Work, "title")
+            !is_locked(&app, m_id, EntityType::Work, "title")
                 .await
                 .unwrap()
         );
 
-        lock(&pool, m_id, EntityType::Work, "title", user_id)
+        lock(&app, m_id, EntityType::Work, "title", user_id)
             .await
             .unwrap();
         assert!(
-            is_locked(&pool, m_id, EntityType::Work, "title")
+            is_locked(&app, m_id, EntityType::Work, "title")
                 .await
                 .unwrap()
         );
 
         // Idempotent: second lock() is a no-op.
-        lock(&pool, m_id, EntityType::Work, "title", user_id)
+        lock(&app, m_id, EntityType::Work, "title", user_id)
             .await
             .unwrap();
 
-        let removed = unlock(&pool, m_id, EntityType::Work, "title")
-            .await
-            .unwrap();
+        let removed = unlock(&app, m_id, EntityType::Work, "title").await.unwrap();
         assert!(removed);
         assert!(
-            !is_locked(&pool, m_id, EntityType::Work, "title")
+            !is_locked(&app, m_id, EntityType::Work, "title")
                 .await
                 .unwrap()
         );
 
-        let removed = unlock(&pool, m_id, EntityType::Work, "title")
-            .await
-            .unwrap();
+        let removed = unlock(&app, m_id, EntityType::Work, "title").await.unwrap();
         assert!(!removed, "second unlock should report no-op");
 
-        cleanup(&pool, work_id, m_id).await;
+        cleanup(&ingestion, work_id, m_id).await;
         sqlx::query("DELETE FROM users WHERE id = $1")
             .bind(user_id)
-            .execute(&pool)
+            .execute(&app)
             .await
             .unwrap();
     }
