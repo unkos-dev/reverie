@@ -2,7 +2,7 @@
 
 A high-performance, self-hosted ebook library manager.
 
-[![CI](https://github.com/unkos-dev/Reverie/actions/workflows/ci.yml/badge.svg)](https://github.com/unkos-dev/Reverie/actions/workflows/ci.yml)
+[![CI](https://github.com/unkos-dev/reverie/actions/workflows/ci.yml/badge.svg)](https://github.com/unkos-dev/reverie/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 > **Status:** Pre-alpha. Under active development.

@@ -4,7 +4,7 @@ import starlight from "@astrojs/starlight";
 
 export default defineConfig({
   site: "https://unkos-dev.github.io",
-  base: "/Reverie",
+  base: "/reverie",
   integrations: [
     starlight({
       title: "Reverie",
@@ -12,7 +12,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/unkos-dev/Reverie",
+          href: "https://github.com/unkos-dev/reverie",
         },
       ],
       sidebar: [

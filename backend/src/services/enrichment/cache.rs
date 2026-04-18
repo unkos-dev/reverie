@@ -154,8 +154,6 @@ mod tests {
         })
     }
 
-    const TEST_SOURCE: &str = "test-cache";
-
     fn ttls_standard() -> CacheTtls {
         CacheTtls {
             hit: Duration::hours(1),
@@ -164,9 +162,9 @@ mod tests {
         }
     }
 
-    async fn cleanup(pool: &PgPool) {
+    async fn cleanup(pool: &PgPool, source: &str) {
         let _ = sqlx::query("DELETE FROM api_cache WHERE source = $1 AND lookup_key LIKE 'test-%'")
-            .bind(TEST_SOURCE)
+            .bind(source)
             .execute(pool)
             .await;
     }
@@ -174,15 +172,16 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn write_then_read_roundtrip() {
+        let source = "test-cache-roundtrip";
         let pool = PgPool::connect(&db_url()).await.unwrap();
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
 
         let key = "test-roundtrip";
         let payload = json!({"title": "Dune", "author": "Frank Herbert"});
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             key,
             &payload,
             ApiCacheKind::Hit,
@@ -192,21 +191,22 @@ mod tests {
         .await
         .unwrap();
 
-        let cached = read(&pool, TEST_SOURCE, key).await.unwrap();
+        let cached = read(&pool, source, key).await.unwrap();
         let cached = cached.expect("expected a cache hit");
 
         assert_eq!(cached.response, payload);
         assert_eq!(cached.kind, ApiCacheKind::Hit);
         assert_eq!(cached.http_status, Some(200));
 
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn expired_entry_returns_none() {
+        let source = "test-cache-expired";
         let pool = PgPool::connect(&db_url()).await.unwrap();
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
 
         let key = "test-expired";
         let ttls = CacheTtls {
@@ -217,7 +217,7 @@ mod tests {
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             key,
             &json!({"x": 1}),
             ApiCacheKind::Hit,
@@ -227,24 +227,25 @@ mod tests {
         .await
         .unwrap();
 
-        let cached = read(&pool, TEST_SOURCE, key).await.unwrap();
+        let cached = read(&pool, source, key).await.unwrap();
         assert!(cached.is_none(), "expired entry should return None");
 
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn distinct_kinds_get_distinct_expirations() {
+        let source = "test-cache-ttl";
         let pool = PgPool::connect(&db_url()).await.unwrap();
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
 
         let key_hit = "test-ttl-hit";
         let key_miss = "test-ttl-miss";
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             key_hit,
             &json!(null),
             ApiCacheKind::Hit,
@@ -256,7 +257,7 @@ mod tests {
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             key_miss,
             &json!(null),
             ApiCacheKind::Miss,
@@ -271,7 +272,7 @@ mod tests {
             "SELECT EXTRACT(EPOCH FROM expires_at - fetched_at)::float8 \
              FROM api_cache WHERE source = $1 AND lookup_key = $2",
         )
-        .bind(TEST_SOURCE)
+        .bind(source)
         .bind(key_hit)
         .fetch_one(&pool)
         .await
@@ -281,7 +282,7 @@ mod tests {
             "SELECT EXTRACT(EPOCH FROM expires_at - fetched_at)::float8 \
              FROM api_cache WHERE source = $1 AND lookup_key = $2",
         )
-        .bind(TEST_SOURCE)
+        .bind(source)
         .bind(key_miss)
         .fetch_one(&pool)
         .await
@@ -300,7 +301,7 @@ mod tests {
             "hit TTL {hit_gap} should exceed miss TTL {miss_gap}"
         );
 
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
     }
 
     /// ISBN-10 and ISBN-13 of the same book resolve to one cache row via
@@ -311,8 +312,9 @@ mod tests {
     async fn isbn10_and_isbn13_dedupe_via_lookup_key() {
         use crate::services::enrichment::lookup_key;
 
+        let source = "test-cache-isbn-dedupe";
         let pool = PgPool::connect(&db_url()).await.unwrap();
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
 
         let key_from_isbn10 = lookup_key::isbn_key("0306406152").expect("valid ISBN-10");
         let key_from_isbn13 = lookup_key::isbn_key("9780306406157").expect("valid ISBN-13");
@@ -327,7 +329,7 @@ mod tests {
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             &canonical,
             &payload,
             ApiCacheKind::Hit,
@@ -342,26 +344,27 @@ mod tests {
             "test-{}",
             lookup_key::isbn_key("9780306406157").expect("valid ISBN-13")
         );
-        let cached = read(&pool, TEST_SOURCE, &roundtrip_key)
+        let cached = read(&pool, source, &roundtrip_key)
             .await
             .unwrap()
             .expect("ISBN-13 key should hit the ISBN-10-written row");
         assert_eq!(cached.response, payload);
 
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn upsert_overwrites_previous_value() {
+        let source = "test-cache-upsert";
         let pool = PgPool::connect(&db_url()).await.unwrap();
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
 
         let key = "test-upsert";
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             key,
             &json!({"v": 1}),
             ApiCacheKind::Hit,
@@ -373,7 +376,7 @@ mod tests {
 
         write(
             &pool,
-            TEST_SOURCE,
+            source,
             key,
             &json!({"v": 2}),
             ApiCacheKind::Miss,
@@ -383,11 +386,11 @@ mod tests {
         .await
         .unwrap();
 
-        let cached = read(&pool, TEST_SOURCE, key).await.unwrap().unwrap();
+        let cached = read(&pool, source, key).await.unwrap().unwrap();
         assert_eq!(cached.response, json!({"v": 2}));
         assert_eq!(cached.kind, ApiCacheKind::Miss);
         assert_eq!(cached.http_status, Some(404));
 
-        cleanup(&pool).await;
+        cleanup(&pool, source).await;
     }
 }

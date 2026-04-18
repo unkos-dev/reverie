@@ -26,8 +26,8 @@ See [CLAUDE.md](CLAUDE.md) for the full specification and examples.
 
 ```bash
 # Clone the repo
-git clone https://github.com/unkos-dev/Reverie.git
-cd Reverie
+git clone https://github.com/unkos-dev/reverie.git
+cd reverie
 ```
 
 ```bash
