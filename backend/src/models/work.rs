@@ -21,7 +21,9 @@
 //! the plan's behaviour (matched paths leave pointers untouched; create paths
 //! wire all pointers from draft_ids).
 
-use sqlx::{PgConnection, PgPool};
+use sqlx::PgConnection;
+#[cfg(test)]
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::services::metadata::draft::DraftIds;
@@ -166,6 +168,7 @@ pub async fn upgrade_stub(
 /// don't participate in the ingest-invariant flow (primarily the existing
 /// tests).
 #[allow(dead_code)]
+#[cfg(test)]
 pub async fn find_or_create(
     pool: &PgPool,
     metadata: &ExtractedMetadata,

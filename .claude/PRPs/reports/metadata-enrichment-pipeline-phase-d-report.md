@@ -44,9 +44,9 @@ reveal" clause; the fixes are minimal. A small grant-only migration was added so
 | Level | Status | Notes |
 |---|---|---|
 | `cargo fmt --check` | PASS | 0 diffs. |
-| `cargo clippy -D warnings` (new code) | PASS | 2 pre-existing errors in `db.rs` + `cleanup.rs` remain — flagged out of scope by the brief. |
-| `cargo test --bin tome-api` (no DB) | PASS | 189 passed, 41 ignored, 0 failed. |
-| `cargo test --bin tome-api -- --ignored` (with DB) | 40 passed / 1 failed | The single failure is pre-existing: `services::enrichment::field_lock::tests::lock_unlock_roundtrip` — a Phase C test that uses `tome_app` to `INSERT INTO manifestations ... RETURNING id` without an `app.current_user_id` session variable. All 17 Phase D-added tests pass. |
+| `cargo clippy -D warnings` (new code) | PASS | 2 pre-existing errors in `db.rs` + `cleanup.rs` resolved on this branch (commits `4c01c31`, `0e85350`). |
+| `cargo test --bin tome-api` (no DB) | PASS | 201 passed, 41 ignored, 0 failed (post-adversarial-review fixes). |
+| `cargo test --bin tome-api -- --ignored` (with DB) | PASS | 41 passed / 0 failed.  The Phase C `field_lock::lock_unlock_roundtrip` failure was resolved by commit `4249774` which splits the fixture across `tome_ingestion` (manifestations INSERT) and `tome_app` (field_locks writes). |
 
 ## Tests Added (18 total)
 
@@ -73,14 +73,13 @@ reveal" clause; the fixes are minimal. A small grant-only migration was added so
 - `backend/src/services/enrichment/cover_download.rs` — 1 new DNS-rebinding redirect test.
 - `backend/src/services/ingestion/orchestrator.rs` — 3 new ingest-invariant DB tests + `preclean_isbn` helper.
 
-## Pre-existing Issues Surfaced (out of Phase D scope)
+## Pre-existing Issues Surfaced (resolved on this branch)
 
-1. `services::enrichment::field_lock::tests::lock_unlock_roundtrip` (Phase C) is broken: it uses `tome_app` to `INSERT INTO manifestations ... RETURNING id`, which the RLS policy blocks because no `app.current_user_id` is set. Fixing requires either setting the session variable in the test or switching the fixture to a role with full RLS bypass.
-2. Two pre-existing clippy errors in `db.rs` and `cleanup.rs` remain (`await_holding_lock`, `cloned_ref_to_slice_refs`).
-3. `main.rs` wires the enrichment queue to `state.pool` (tome_app). If the orchestrator ever needs to `UPDATE manifestations` outside an HTTP request with session context, it will trip the same RLS check as (1). The queue pool choice deserves a follow-up design decision.
+1. `services::enrichment::field_lock::tests::lock_unlock_roundtrip` (Phase C) — RESOLVED by commit `4249774` (split fixture: `tome_ingestion` for manifestations INSERT, `tome_app` for `field_locks` writes).
+2. Pre-existing clippy errors in `db.rs` and `cleanup.rs` — RESOLVED by commits `4c01c31` and `0e85350`.
+3. `main.rs` wired the enrichment queue to `state.pool` (`tome_app`) — would silently no-op in production because RLS on `manifestations` requires the `app.current_user_id` session variable that the queue never sets.  RESOLVED in adversarial-review pass: `main.rs` now passes `state.ingestion_pool` to `spawn_queue` (matches the `manifestations_ingestion_full_access` policy).
 
 ## Next Steps
 
-- [ ] `/code-review` on the Phase D diff
+- [ ] `/code-review` on the Phase D diff (done — adversarial review run; findings tracked in PR notes)
 - [ ] Open PR for the feature branch
-- [ ] Address pre-existing issues in a follow-up (separate PR)
