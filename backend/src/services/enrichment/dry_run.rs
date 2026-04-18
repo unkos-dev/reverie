@@ -4,8 +4,6 @@
 //! [`super::orchestrator`] but does NOT touch `metadata_versions` or
 //! canonical columns.  The caller receives an in-memory diff.
 
-#![allow(dead_code)] // wired in Phase C Task 25 (routes/enrichment)
-
 use std::collections::HashMap;
 
 use serde::Serialize;

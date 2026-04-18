@@ -11,8 +11,6 @@
 //! Rate-limited to 3 requests per second — OpenLibrary's identified-request
 //! tier, unlocked by the `User-Agent` set in [`super::super::http::api_client`].
 
-#![allow(dead_code)] // wired in Phase C Task 21 (orchestrator)
-
 use std::num::NonZeroU32;
 use std::sync::OnceLock;
 use std::time::Duration;

@@ -6,8 +6,6 @@
 //! the entire IP — the rate limiter is therefore intentionally conservative
 //! (1 req/sec).
 
-#![allow(dead_code)] // wired in Phase C Task 21 (orchestrator)
-
 use std::num::NonZeroU32;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -85,7 +83,7 @@ impl MetadataSource for GoogleBooks {
         );
         if let Some(k) = &self.api_key {
             url.push_str("&key=");
-            url.push_str(k);
+            url.push_str(&super::encode_query_component(k));
         }
 
         let resp = ctx.http.get(&url).send().await.map_err(to_source_error)?;

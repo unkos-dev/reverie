@@ -5,12 +5,12 @@
 //! (the field is locked by the user).
 
 // Phase B building block: callers are wired in Phase C.
-#![allow(dead_code)]
 
 use uuid::Uuid;
 
 /// Controls how a field responds to new incoming metadata.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // Lock variant is reserved: decide() short-circuits on `field_locked` today, keeping the variant makes the enum exhaustive for future lock-driven policies.
 pub enum FieldPolicy {
     /// Automatically apply when the canonical slot is empty and all sources agree.
     AutoFill,

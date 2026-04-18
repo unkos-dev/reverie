@@ -5,8 +5,6 @@
 //! The orchestrator pre-resolves locks before calling into `policy::decide`
 //! so the policy module stays pure.
 
-#![allow(dead_code)] // wired in Phase C Tasks 21/26 (orchestrator + routes/metadata)
-
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 

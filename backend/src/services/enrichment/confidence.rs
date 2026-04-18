@@ -5,7 +5,6 @@
 //! ceiling even with maximum agreement boost.
 
 // Phase B building block: callers are wired in Phase C.
-#![allow(dead_code)]
 
 /// Base confidence multiplier for a metadata source.
 ///

@@ -27,7 +27,6 @@
 // These items are public API consumed by the enrichment pipeline.  They are not
 // called from within this binary crate yet (the orchestrator wires them up after
 // all Phase B agents complete), so dead_code is expected during integration.
-#![allow(dead_code)]
 
 use std::net::{IpAddr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, OnceLock};
@@ -42,6 +41,7 @@ use tracing::warn;
 
 /// Reason a redirect hop was rejected.
 #[derive(Debug)]
+#[allow(dead_code)] // DnsFailure/MissingHost are constructed inside cover_download (phase D).
 pub enum HopError {
     /// The resolved IP is in a denied range.
     DenyListed(IpAddr),
@@ -185,6 +185,7 @@ fn to_ipv4_mapped(v6: Ipv6Addr) -> Option<std::net::Ipv4Addr> {
 ///
 /// Returns `Ok(())` only if at least one address resolved **and** none of them
 /// are denied.
+#[allow(dead_code)] // called from cover_download (phase D) and cover_client redirect policy.
 pub fn validate_hop(url: &reqwest::Url) -> Result<(), HopError> {
     let host = url.host_str().ok_or(HopError::MissingHost)?;
 
@@ -311,6 +312,7 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
 ///
 /// Panics if the underlying TLS stack cannot be initialised — this should
 /// never happen in a normally configured environment.
+#[allow(dead_code)] // wired from cover_download (phase D).
 pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) -> reqwest::Client {
     let policy = redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= redirect_limit {

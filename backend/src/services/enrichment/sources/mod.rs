@@ -9,8 +9,6 @@
 //! `governor::RateLimiter`) so one misbehaving provider can't drain
 //! another's quota.
 
-#![allow(dead_code)] // wired in Phase C Task 21 (orchestrator)
-
 pub mod google_books;
 pub mod hardcover;
 pub mod open_library;
@@ -43,6 +41,7 @@ impl LookupKey {
         }
     }
 
+    #[allow(dead_code)] // Kept alongside cache_key() as the public shape of LookupKey; used by adapter tests.
     pub fn match_type_for(&self) -> &'static str {
         match self {
             LookupKey::Isbn(_) => "isbn",
@@ -68,6 +67,7 @@ pub struct SourceResult {
 
 /// Failure modes shared across adapters.
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)] // NotFound is part of the adapter contract; currently expressed as Ok(vec![]) by all adapters.
 pub enum SourceError {
     #[error("not found")]
     NotFound,
@@ -89,6 +89,8 @@ pub struct LookupCtx<'a> {
     /// MAY return its results directly from the cached payload instead of
     /// hitting the network; the orchestrator passes `None` when a miss is
     /// desired.
+    #[allow(dead_code)]
+    // adapter-facing hook; orchestrator passes None today but the field is part of the contract.
     pub cached: Option<&'a CachedResponse>,
 }
 

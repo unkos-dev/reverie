@@ -6,7 +6,6 @@
 
 // Phase B building block: callers are wired in Phase C.  Until then this module
 // is unused from the binary entry point but is fully tested.
-#![allow(dead_code)]
 
 use serde_json::Value;
 use sqlx::PgPool;
@@ -30,6 +29,7 @@ impl ApiCacheKind {
     }
 }
 
+#[allow(dead_code)] // only reached via `read`, which is covered by tests but not yet called from the binary.
 fn kind_from_str(s: &str) -> Result<ApiCacheKind, sqlx::Error> {
     match s {
         "hit" => Ok(ApiCacheKind::Hit),
@@ -43,6 +43,7 @@ fn kind_from_str(s: &str) -> Result<ApiCacheKind, sqlx::Error> {
 
 /// A live (non-expired) cache row returned by [`read`].
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // fields populated for consumers of `read`; orchestrator only writes today.
 pub struct CachedResponse {
     pub response: Value,
     pub kind: ApiCacheKind,
@@ -60,6 +61,7 @@ pub struct CacheTtls {
 /// Read a live cache entry for `(source, lookup_key)`.
 ///
 /// Returns `None` if no row exists or the row is expired.
+#[allow(dead_code)] // orchestrator only writes today; read is exercised by the integration tests.
 pub async fn read(
     pool: &PgPool,
     source: &str,

@@ -6,8 +6,6 @@
 //! `skipped` after `max_attempts`.  On shutdown, reverts any `in_progress`
 //! rows back to `pending` so a fresh worker can re-claim them.
 
-#![allow(dead_code)] // wired via main.rs in Phase C Task 28
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,29 +20,9 @@ use crate::config::Config;
 
 use super::orchestrator::{self, RunOutcome};
 
-/// Retry backoff schedule (attempts are 1-indexed).  Keep in sync with the
-/// plan's Task 22 design; values are in minutes.
-const BACKOFF_MINUTES: [i64; 10] = [
-    5,    // attempt 1
-    30,   // attempt 2
-    120,  // attempt 3
-    480,  // attempt 4
-    1440, // attempt 5
-    1440, // attempt 6
-    1440, // attempt 7
-    1440, // attempt 8
-    1440, // attempt 9
-    1440, // attempt 10
-];
-
-fn backoff(attempt_count: i64) -> time::Duration {
-    // `attempt_count` is already incremented by the CTE when we claim; use
-    // (attempt_count - 1) as the index for computing the *next* delay.
-    let idx = attempt_count
-        .saturating_sub(1)
-        .clamp(0, (BACKOFF_MINUTES.len() - 1) as i64);
-    time::Duration::minutes(BACKOFF_MINUTES[idx as usize])
-}
+// Retry backoff is applied inside the `claim_next` CTE as a SQL CASE
+// expression (5m, 30m, 2h, 8h, then 24h). That is the authoritative
+// schedule; there is no Rust mirror to keep in sync.
 
 /// Spawn the queue worker loop.  Returns when `cancel` fires, reverting any
 /// `in_progress` row back to `pending`.
@@ -277,17 +255,6 @@ async fn revert_in_progress(pool: &PgPool) -> sqlx::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn backoff_schedule_monotonic() {
-        // 5m, 30m, 2h, 8h, then 24h for every subsequent attempt.
-        assert_eq!(backoff(1), time::Duration::minutes(5));
-        assert_eq!(backoff(2), time::Duration::minutes(30));
-        assert_eq!(backoff(3), time::Duration::minutes(120));
-        assert_eq!(backoff(4), time::Duration::minutes(480));
-        assert_eq!(backoff(5), time::Duration::minutes(1440));
-        assert_eq!(backoff(999), time::Duration::minutes(1440));
-    }
 
     // ── Task 35: queue integration tests ──────────────────────────────────
 

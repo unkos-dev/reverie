@@ -12,9 +12,9 @@
 //! responses — a direct request to an internal address is never intercepted by
 //! the callback.
 
-// These items are public API consumed by the enrichment pipeline.  They are not
-// called from within this binary crate yet (the orchestrator wires them up after
-// all Phase B agents complete), so dead_code is expected during integration.
+// Phase D: the orchestrator does not yet call this module. Keep
+// the scaffolding (and its tests) in-tree until the cover-apply
+// path is wired up. Re-evaluate at Phase D merge.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};

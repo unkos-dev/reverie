@@ -9,8 +9,6 @@
 //! shapes documented at hardcover.app/api.  The orchestrator treats any
 //! GraphQL error as [`SourceError::Other`].
 
-#![allow(dead_code)] // wired in Phase C Task 21 (orchestrator)
-
 use std::num::NonZeroU32;
 use std::sync::OnceLock;
 use std::time::Duration;

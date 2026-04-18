@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use futures::stream::{FuturesUnordered, StreamExt};
-use sqlx::{PgConnection, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use tokio::time::sleep;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -688,9 +688,9 @@ fn json_as_string(v: &serde_json::Value) -> Option<String> {
         serde_json::Value::String(s) => Some(s.clone()),
         serde_json::Value::Number(n) => Some(n.to_string()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
-        serde_json::Value::Null
-        | serde_json::Value::Array(_)
-        | serde_json::Value::Object(_) => None,
+        serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            None
+        }
     }
 }
 
@@ -758,11 +758,6 @@ pub async fn fan_out_for_dry_run(
     };
     cache_all(pool, &results, &key, &ttls).await;
     Ok((snapshot, results))
-}
-
-#[allow(dead_code)]
-async fn noop(_conn: &mut PgConnection) -> sqlx::Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]
