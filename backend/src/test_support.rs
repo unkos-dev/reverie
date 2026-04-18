@@ -107,3 +107,144 @@ pub fn test_server() -> TestServer {
     let app: Router = crate::build_router(state, auth_backend);
     TestServer::new(app)
 }
+
+/// Real-DB helpers for admin-authenticated route tests.  Requires running
+/// postgres + applied migrations; callers must mark their test `#[ignore]`.
+pub mod db {
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    /// `tome_app` connection — what AppState.pool uses in production.
+    pub fn app_url() -> String {
+        std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://tome_app:tome_app@localhost:5433/tome_dev".into())
+    }
+
+    /// `tome_ingestion` connection — what AppState.ingestion_pool uses in
+    /// production, and what tests use for fixture inserts that need the
+    /// `manifestations_ingestion_full_access` RLS bypass.
+    pub fn ingestion_url() -> String {
+        std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
+            "postgres://tome_ingestion:tome_ingestion@localhost:5433/tome_dev".into()
+        })
+    }
+
+    pub async fn app_pool() -> PgPool {
+        PgPool::connect(&app_url()).await.expect("connect tome_app")
+    }
+
+    pub async fn ingestion_pool() -> PgPool {
+        PgPool::connect(&ingestion_url())
+            .await
+            .expect("connect tome_ingestion")
+    }
+
+    /// Insert an admin-role user via `tome_app` (the only role with grants
+    /// on `users`), mint a device token, and return
+    /// `(user_id, "Basic ...")` ready for use as an `Authorization` header.
+    pub async fn create_admin_and_basic_auth(app_pool: &PgPool) -> (Uuid, String) {
+        let subject = format!("admin-test-{}", Uuid::new_v4());
+        let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
+            app_pool,
+            &subject,
+            "Admin Test",
+            None,
+        )
+        .await
+        .expect("upsert user");
+        sqlx::query("UPDATE users SET role = 'admin'::user_role WHERE id = $1")
+            .bind(user.id)
+            .execute(app_pool)
+            .await
+            .expect("promote to admin");
+        let (plaintext, hash) = crate::auth::token::generate_device_token();
+        crate::models::device_token::create(app_pool, user.id, "admin-test", &hash)
+            .await
+            .expect("create token");
+        use base64ct::Encoding;
+        let basic =
+            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        (user.id, format!("Basic {basic}"))
+    }
+
+    pub async fn cleanup_user(app_pool: &PgPool, user_id: Uuid) {
+        let _ = sqlx::query("DELETE FROM device_tokens WHERE user_id = $1")
+            .bind(user_id)
+            .execute(app_pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(user_id)
+            .execute(app_pool)
+            .await;
+    }
+
+    /// Build the full router with both pools wired through AppState.
+    /// AppState.pool comes from `app_pool` (tome_app — for the route
+    /// handlers' acquire_with_rls); AppState.ingestion_pool comes from
+    /// `ingestion_pool` (tome_ingestion — matches the queue + dry_run).
+    pub fn server_with_real_pools(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+    ) -> axum_test::TestServer {
+        use crate::auth::backend::AuthBackend;
+        use crate::state::AppState;
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config: super::test_config(),
+            oidc_client: super::test_oidc_client(),
+        };
+        let auth_backend = AuthBackend {
+            pool: app_pool.clone(),
+        };
+        let app = crate::build_router(state, auth_backend);
+        axum_test::TestServer::new(app)
+    }
+
+    /// Insert (work, manifestation) via `tome_ingestion` for use as
+    /// fixture data in route tests.  Returns `(work_id, manifestation_id)`.
+    pub async fn insert_work_and_manifestation(
+        ingestion_pool: &PgPool,
+        marker: &str,
+    ) -> (Uuid, Uuid) {
+        let work_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO works (title, sort_title) VALUES ('', '') RETURNING id",
+        )
+        .fetch_one(ingestion_pool)
+        .await
+        .expect("insert work");
+        let m_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO manifestations \
+                (work_id, format, file_path, file_hash, file_size_bytes, \
+                 ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, 1000, \
+                     'complete'::ingestion_status, 'valid'::validation_status) \
+             RETURNING id",
+        )
+        .bind(work_id)
+        .bind(format!("/tmp/admin-test-{marker}.epub"))
+        .bind(format!("admin-test-hash-{marker}"))
+        .fetch_one(ingestion_pool)
+        .await
+        .expect("insert manifestation");
+        (work_id, m_id)
+    }
+
+    pub async fn cleanup_work(ingestion_pool: &PgPool, work_id: Uuid) {
+        let _ = sqlx::query(
+            "DELETE FROM metadata_versions WHERE manifestation_id IN \
+             (SELECT id FROM manifestations WHERE work_id = $1)",
+        )
+        .bind(work_id)
+        .execute(ingestion_pool)
+        .await;
+        let _ = sqlx::query("DELETE FROM manifestations WHERE work_id = $1")
+            .bind(work_id)
+            .execute(ingestion_pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM works WHERE id = $1")
+            .bind(work_id)
+            .execute(ingestion_pool)
+            .await;
+    }
+}

@@ -578,4 +578,181 @@ mod tests {
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
+
+    // ── Admin-authenticated success tests (X3) ────────────────────────────
+    //
+    // These exercise the C2 fix: route handlers now open their tx via
+    // `acquire_with_rls`, so the manifestations RLS policies see a real
+    // `app.current_user_id` and an admin user satisfies the
+    // `role IN ('admin','adult')` clause.  Without C2 these tests would
+    // 404 on the initial SELECT.
+
+    use axum::http::header::AUTHORIZATION;
+
+    /// Insert a `metadata_versions` row for `(manifestation_id, field_name)`
+    /// via the ingestion pool, returning its id.
+    async fn insert_version(
+        ingestion_pool: &sqlx::PgPool,
+        manifestation_id: Uuid,
+        field: &str,
+        value: serde_json::Value,
+    ) -> Uuid {
+        sqlx::query_scalar(
+            "INSERT INTO metadata_versions \
+                (manifestation_id, source, field_name, new_value, value_hash, \
+                 match_type, confidence_score, status) \
+             VALUES ($1, 'openlibrary', $2, $3, $4, 'isbn', 0.96, 'pending'::metadata_review_status) \
+             RETURNING id",
+        )
+        .bind(manifestation_id)
+        .bind(field)
+        .bind(&value)
+        .bind(format!("hash-{}", Uuid::new_v4()).into_bytes())
+        .fetch_one(ingestion_pool)
+        .await
+        .expect("insert metadata_versions")
+    }
+
+    #[tokio::test]
+    #[ignore] // requires running postgres + applied migrations
+    async fn accept_admin_writes_canonical_title() {
+        let app_pool = test_support::db::app_pool().await;
+        let ing_pool = test_support::db::ingestion_pool().await;
+        let (admin_id, basic) =
+            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let new_title = format!("Canon Title {marker}");
+        let version_id =
+            insert_version(&ing_pool, m_id, "title", serde_json::json!(new_title)).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let title: String = sqlx::query_scalar("SELECT title FROM works WHERE id = $1")
+            .bind(work_id)
+            .fetch_one(&app_pool)
+            .await
+            .expect("fetch title");
+        assert_eq!(title, new_title, "canonical title not written");
+
+        let pointer: Option<Uuid> =
+            sqlx::query_scalar("SELECT title_version_id FROM works WHERE id = $1")
+                .bind(work_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch title_version_id");
+        assert_eq!(pointer, Some(version_id), "version pointer not wired");
+
+        test_support::db::cleanup_work(&ing_pool, work_id).await;
+        test_support::db::cleanup_user(&app_pool, admin_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn reject_admin_marks_version_rejected() {
+        let app_pool = test_support::db::app_pool().await;
+        let ing_pool = test_support::db::ingestion_pool().await;
+        let (admin_id, basic) =
+            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id = insert_version(
+            &ing_pool,
+            m_id,
+            "title",
+            serde_json::json!(format!("Reject Me {marker}")),
+        )
+        .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/manifestations/{m_id}/metadata/reject"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+
+        let row: (String, Option<Uuid>) = sqlx::query_as(
+            "SELECT status::text, resolved_by FROM metadata_versions WHERE id = $1",
+        )
+        .bind(version_id)
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch version");
+        assert_eq!(row.0, "rejected");
+        assert_eq!(row.1, Some(admin_id), "resolved_by should record admin id");
+
+        test_support::db::cleanup_work(&ing_pool, work_id).await;
+        test_support::db::cleanup_user(&app_pool, admin_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn revert_admin_clears_field_to_null() {
+        let app_pool = test_support::db::app_pool().await;
+        let ing_pool = test_support::db::ingestion_pool().await;
+        let (admin_id, basic) =
+            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        // Pre-set a description on the work + a version pointer; revert with
+        // version_id=null should clear both.
+        let initial = format!("To Be Cleared {marker}");
+        let version_id =
+            insert_version(&ing_pool, m_id, "description", serde_json::json!(&initial)).await;
+        sqlx::query(
+            "UPDATE works SET description = $1, description_version_id = $2 WHERE id = $3",
+        )
+        .bind(&initial)
+        .bind(version_id)
+        .bind(work_id)
+        .execute(&ing_pool)
+        .await
+        .expect("seed description");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "description",
+                "version_id": serde_json::Value::Null,
+            }))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let row: (Option<String>, Option<Uuid>) = sqlx::query_as(
+            "SELECT description, description_version_id FROM works WHERE id = $1",
+        )
+        .bind(work_id)
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch work");
+        assert_eq!(row.0, None, "description should be cleared");
+        assert_eq!(row.1, None, "version pointer should be cleared");
+
+        test_support::db::cleanup_work(&ing_pool, work_id).await;
+        test_support::db::cleanup_user(&app_pool, admin_id).await;
+    }
 }

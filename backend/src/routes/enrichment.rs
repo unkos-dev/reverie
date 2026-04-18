@@ -173,4 +173,63 @@ mod tests {
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
+
+    /// X3: admin POST /trigger must reset enrichment_status / attempt_count
+    /// on a real manifestation row.  Pre-C2 this 404'd in production
+    /// because state.pool had no app.current_user_id session var.
+    #[tokio::test]
+    #[ignore] // requires running postgres + applied migrations
+    async fn trigger_admin_resets_enrichment_state() {
+        use axum::http::header::AUTHORIZATION;
+        let app_pool = test_support::db::app_pool().await;
+        let ing_pool = test_support::db::ingestion_pool().await;
+        let (admin_id, basic) =
+            test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        // Pre-set the manifestation to a "failed" state with retries logged.
+        sqlx::query(
+            "UPDATE manifestations \
+             SET enrichment_status = 'failed'::enrichment_status, \
+                 enrichment_attempt_count = 3, \
+                 enrichment_attempted_at = now(), \
+                 enrichment_error = 'simulated failure' \
+             WHERE id = $1",
+        )
+        .bind(m_id)
+        .execute(&ing_pool)
+        .await
+        .expect("seed failed state");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/manifestations/{m_id}/enrichment/trigger"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::ACCEPTED,
+            "body = {}",
+            response.text()
+        );
+
+        // Verify via ingestion_pool — `manifestations` is RLS-gated under
+        // `tome_app` and the verification SELECT carries no session context.
+        let row: (String, i32, Option<String>) = sqlx::query_as(
+            "SELECT enrichment_status::text, enrichment_attempt_count, enrichment_error \
+             FROM manifestations WHERE id = $1",
+        )
+        .bind(m_id)
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch manifestation");
+        assert_eq!(row.0, "pending", "enrichment_status not reset");
+        assert_eq!(row.1, 0, "attempt_count not reset");
+        assert_eq!(row.2, None, "enrichment_error not cleared");
+
+        test_support::db::cleanup_work(&ing_pool, work_id).await;
+        test_support::db::cleanup_user(&app_pool, admin_id).await;
+    }
 }
