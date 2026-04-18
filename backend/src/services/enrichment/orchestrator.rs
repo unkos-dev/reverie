@@ -19,9 +19,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use futures::future::join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
-use tokio::time::timeout;
+use tokio::time::sleep;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -385,15 +385,24 @@ pub struct SourceRun {
 }
 
 /// Parallel lookup bounded by a wall-clock budget.  A slow provider cannot
-/// starve the others: timeouts mark that provider as Timeout but results
-/// from siblings still land in the journal.
+/// starve the others: when the budget expires, every provider that has
+/// already returned keeps its result; the rest are emitted as
+/// `SourceError::Timeout` so [`finish`](super::queue) can mark the row
+/// `failed` (eligible for retry) instead of silently completing it with no
+/// work done.
 pub async fn fan_out(
     sources: &[Arc<dyn MetadataSource>],
     http: &reqwest::Client,
     key: &LookupKey,
     budget: Duration,
 ) -> Vec<SourceRun> {
-    let futs: Vec<_> = sources
+    let enabled_ids: Vec<String> = sources
+        .iter()
+        .filter(|s| s.enabled())
+        .map(|s| s.id().to_string())
+        .collect();
+
+    let mut futs: FuturesUnordered<_> = sources
         .iter()
         .filter(|s| s.enabled())
         .map(|s| {
@@ -409,13 +418,40 @@ pub async fn fan_out(
         })
         .collect();
 
-    match timeout(budget, join_all(futs)).await {
-        Ok(v) => v,
-        Err(_) => {
-            warn!(?budget, "enrichment fan-out exceeded fetch budget");
-            Vec::new()
+    let mut done: Vec<SourceRun> = Vec::with_capacity(enabled_ids.len());
+    let deadline = sleep(budget);
+    tokio::pin!(deadline);
+
+    loop {
+        tokio::select! {
+            biased;
+            maybe_run = futs.next() => match maybe_run {
+                Some(run) => done.push(run),
+                None => break,
+            },
+            _ = &mut deadline => {
+                // Budget expired: synthesise a Timeout outcome for every
+                // source that hasn't reported yet so the failure surfaces
+                // to `finish`.  In-flight futures are dropped (cancelled).
+                for id in enabled_ids.iter() {
+                    if !done.iter().any(|r| &r.source_id == id) {
+                        done.push(SourceRun {
+                            source_id: id.clone(),
+                            outcome: Err(SourceError::Timeout),
+                        });
+                    }
+                }
+                warn!(
+                    ?budget,
+                    completed = done.iter().filter(|r| r.outcome.is_ok()).count(),
+                    "enrichment fan-out exceeded fetch budget"
+                );
+                break;
+            }
         }
     }
+
+    done
 }
 
 async fn cache_all(pool: &PgPool, runs: &[SourceRun], key: &LookupKey, ttls: &CacheTtls) {
@@ -707,6 +743,69 @@ mod tests {
     use serde_json::json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // ── fan_out budget behaviour ──────────────────────────────────────────
+
+    struct FastSource;
+    #[async_trait::async_trait]
+    impl MetadataSource for FastSource {
+        fn id(&self) -> &'static str {
+            "fast"
+        }
+        fn enabled(&self) -> bool {
+            true
+        }
+        async fn lookup(
+            &self,
+            _ctx: &LookupCtx<'_>,
+            _key: &LookupKey,
+        ) -> Result<Vec<SourceResult>, SourceError> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct SlowSource;
+    #[async_trait::async_trait]
+    impl MetadataSource for SlowSource {
+        fn id(&self) -> &'static str {
+            "slow"
+        }
+        fn enabled(&self) -> bool {
+            true
+        }
+        async fn lookup(
+            &self,
+            _ctx: &LookupCtx<'_>,
+            _key: &LookupKey,
+        ) -> Result<Vec<SourceResult>, SourceError> {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            Ok(Vec::new())
+        }
+    }
+
+    /// Adversarial-review D2 + C5: a hung provider must NOT discard
+    /// completed siblings, and every unfinished provider must be reported
+    /// as `SourceError::Timeout` so the queue marks the row `failed`
+    /// (eligible for retry) instead of silently `complete`.
+    #[tokio::test]
+    async fn fan_out_preserves_partial_results_and_emits_timeouts() {
+        let sources: Vec<Arc<dyn MetadataSource>> =
+            vec![Arc::new(FastSource), Arc::new(SlowSource)];
+        let http = reqwest::Client::new();
+        let key = LookupKey::Isbn("9780000000000".into());
+
+        let runs = fan_out(&sources, &http, &key, Duration::from_millis(50)).await;
+
+        assert_eq!(runs.len(), 2, "every enabled source must produce a SourceRun");
+        let fast = runs.iter().find(|r| r.source_id == "fast").unwrap();
+        let slow = runs.iter().find(|r| r.source_id == "slow").unwrap();
+        assert!(fast.outcome.is_ok(), "fast source result was discarded by timeout");
+        assert!(
+            matches!(slow.outcome, Err(SourceError::Timeout)),
+            "slow source should surface as Timeout, got {:?}",
+            slow.outcome
+        );
+    }
 
     /// Tests run against `tome_ingestion`: that role holds the
     /// `manifestations_ingestion_full_access` RLS policy which lets the
