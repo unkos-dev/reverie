@@ -9,6 +9,7 @@ use std::path::Path;
 pub mod container_layer;
 pub mod cover_layer;
 pub mod opf_layer;
+pub mod repack;
 pub mod repair;
 pub mod xhtml_layer;
 pub mod zip_layer;

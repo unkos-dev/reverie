@@ -450,6 +450,29 @@ async fn apply_version(
             )));
         }
     }
+    enqueue_writeback(tx, manifestation_id, field).await?;
+    Ok(())
+}
+
+/// Insert a writeback job in the caller's tx.  Shared by `apply_version`
+/// (accept + revert-to-version) and `clear_field` (revert-to-null) so the
+/// pointer mutation and writeback enqueue commit together.
+async fn enqueue_writeback(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    field: &str,
+) -> Result<(), AppError> {
+    let reason = if field == "cover" || field == "cover_url" {
+        "cover"
+    } else {
+        "metadata"
+    };
+    sqlx::query("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, $2)")
+        .bind(manifestation_id)
+        .bind(reason)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     Ok(())
 }
 
@@ -504,6 +527,7 @@ async fn clear_field(
         .execute(&mut **tx)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+    enqueue_writeback(tx, manifestation_id, field).await?;
     Ok(())
 }
 
@@ -658,6 +682,18 @@ mod tests {
                 .expect("fetch title_version_id");
         assert_eq!(pointer, Some(version_id), "version pointer not wired");
 
+        // Accept must have enqueued exactly one writeback_jobs row.
+        let job_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1")
+                .bind(m_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch job count");
+        assert_eq!(
+            job_count, 1,
+            "accept must enqueue exactly one writeback job; got {job_count}"
+        );
+
         test_support::db::cleanup_work(&ing_pool, work_id).await;
         test_support::db::cleanup_user(&app_pool, admin_id).await;
     }
@@ -695,6 +731,19 @@ mod tests {
                 .expect("fetch version");
         assert_eq!(row.0, "rejected");
         assert_eq!(row.1, Some(admin_id), "resolved_by should record admin id");
+
+        // Reject does NOT change the canonical pointer, so it must NOT
+        // enqueue a writeback job.
+        let job_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1")
+                .bind(m_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch job count");
+        assert_eq!(
+            job_count, 0,
+            "reject must NOT enqueue writeback; got {job_count}"
+        );
 
         test_support::db::cleanup_work(&ing_pool, work_id).await;
         test_support::db::cleanup_user(&app_pool, admin_id).await;
@@ -747,6 +796,67 @@ mod tests {
                 .expect("fetch work");
         assert_eq!(row.0, None, "description should be cleared");
         assert_eq!(row.1, None, "version pointer should be cleared");
+
+        // Revert must enqueue exactly one writeback_jobs row — the OPF
+        // still needs the field cleared on disk.
+        let job_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1")
+                .bind(m_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch job count");
+        assert_eq!(
+            job_count, 1,
+            "revert must enqueue exactly one writeback job; got {job_count}"
+        );
+
+        test_support::db::cleanup_work(&ing_pool, work_id).await;
+        test_support::db::cleanup_user(&app_pool, admin_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn double_accept_enqueues_two_jobs() {
+        let app_pool = test_support::db::app_pool().await;
+        let ing_pool = test_support::db::ingestion_pool().await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let v1 = insert_version(
+            &ing_pool,
+            m_id,
+            "title",
+            serde_json::json!(format!("First {marker}")),
+        )
+        .await;
+        let v2 = insert_version(
+            &ing_pool,
+            m_id,
+            "title",
+            serde_json::json!(format!("Second {marker}")),
+        )
+        .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        for vid in [v1, v2] {
+            let response = server
+                .post(&format!("/api/manifestations/{m_id}/metadata/accept"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"version_id": vid}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+        }
+
+        // Emitter does NOT dedup; worker does.  Two accepts → two rows.
+        let job_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1")
+                .bind(m_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch job count");
+        assert_eq!(job_count, 2, "two accepts must enqueue two rows (no dedup)");
 
         test_support::db::cleanup_work(&ing_pool, work_id).await;
         test_support::db::cleanup_user(&app_pool, admin_id).await;

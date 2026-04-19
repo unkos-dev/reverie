@@ -315,6 +315,12 @@ mod tests {
                 min_long_edge_px: 1000,
                 redirect_limit: 3,
             },
+            writeback: crate::config::WritebackConfig {
+                enabled: false,
+                concurrency: 1,
+                poll_idle_secs: 5,
+                max_attempts: 3,
+            },
             openlibrary_base_url: "https://example.invalid".into(),
             googlebooks_base_url: "https://example.invalid".into(),
             googlebooks_api_key: None,
@@ -345,10 +351,10 @@ mod tests {
         let path = format!("/tmp/queue-{marker}.epub");
         let manifestation_id: Uuid = sqlx::query_scalar(
             "INSERT INTO manifestations \
-               (work_id, format, file_path, file_hash, file_size_bytes, \
-                ingestion_status, validation_status, \
+               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status, \
                 enrichment_status, enrichment_attempt_count, enrichment_attempted_at) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, 1000, \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'valid'::validation_status, \
                      $4::enrichment_status, $5, \
                      CASE WHEN $6::bigint IS NULL THEN NULL \

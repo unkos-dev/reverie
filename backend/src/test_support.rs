@@ -8,7 +8,7 @@ pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 use crate::auth::backend::AuthBackend;
 use crate::auth::oidc::OidcClient;
-use crate::config::{CleanupMode, Config, CoverConfig, EnrichmentConfig};
+use crate::config::{CleanupMode, Config, CoverConfig, EnrichmentConfig, WritebackConfig};
 use crate::state::AppState;
 
 pub fn test_config() -> Config {
@@ -50,6 +50,12 @@ pub fn test_config() -> Config {
             download_timeout_secs: 30,
             min_long_edge_px: 1000,
             redirect_limit: 3,
+        },
+        writeback: WritebackConfig {
+            enabled: false,
+            concurrency: 1,
+            poll_idle_secs: 5,
+            max_attempts: 3,
         },
         openlibrary_base_url: "https://openlibrary.org".into(),
         googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
@@ -218,9 +224,9 @@ pub mod db {
         .expect("insert work");
         let m_id: Uuid = sqlx::query_scalar(
             "INSERT INTO manifestations \
-                (work_id, format, file_path, file_hash, file_size_bytes, \
-                 ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, 1000, \
+                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'valid'::validation_status) \
              RETURNING id",
         )

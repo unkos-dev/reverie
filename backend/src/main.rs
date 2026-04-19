@@ -110,6 +110,20 @@ async fn main() {
         }
     });
 
+    // Writeback worker runs on the reverie_app pool (full DML on
+    // writeback_jobs + UPDATE on manifestations.current_file_hash).
+    let writeback_token = cancel_token.clone();
+    let writeback_config = config.clone();
+    let writeback_pool = state.pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)
+                .await
+        {
+            tracing::error!(error = %e, "writeback worker exited with error");
+        }
+    });
+
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

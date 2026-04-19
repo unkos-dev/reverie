@@ -1,13 +1,11 @@
-use std::io::{Read, Write};
+use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
-use tempfile::NamedTempFile;
+use zip::ZipArchive;
 use zip::write::{ExtendedFileOptions, FileOptions};
-use zip::{ZipArchive, ZipWriter};
 
+use super::repack;
 use super::{EpubError, Issue, IssueKind};
-
-const MIMETYPE_ENTRY: &str = "mimetype";
-const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
 
 /// Re-package the EPUB at `path` applying all `Repaired`-severity issues.
 ///
@@ -15,7 +13,6 @@ const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
 /// atomically. If re-packaging fails, `path` is left untouched.
 pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
     let dir = path.parent().unwrap_or(Path::new("."));
-    let bytes = std::fs::read(path)?;
 
     let broken_refs: Vec<String> = issues
         .iter()
@@ -56,9 +53,36 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
         }
     });
 
-    // Pre-compute the rewritten OPF bytes (if needed) before opening the archive,
-    // so the borrow on `bytes` can be dropped before we open the ZipArchive.
-    let rewritten_opf: Option<(String, Vec<u8>)> = if !broken_refs.is_empty() {
+    // Build a `binary_replacements` map for encoding fixes applied to
+    // non-OPF entries.  OPF encoding fixes are folded into the rewritten_opf
+    // below, so they are NOT added to this map.
+    let mut binary_replacements: HashMap<String, Vec<u8>> = HashMap::new();
+    let bytes = std::fs::read(path)?;
+    for (entry_name, declared_enc) in &encoding_fixes {
+        if Some(entry_name.as_str()) == opf_path {
+            continue;
+        }
+        let cursor = std::io::Cursor::new(&bytes[..]);
+        let mut ar = ZipArchive::new(cursor)?;
+        let entry_bytes: Option<Vec<u8>> = match ar.by_name(entry_name) {
+            Ok(entry) => {
+                let mut buf = Vec::new();
+                entry
+                    .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
+                    .read_to_end(&mut buf)?;
+                Some(buf)
+            }
+            Err(_) => None,
+        };
+        if let Some(raw) = entry_bytes
+            && let Some(transcoded) = transcode_to_utf8(&raw, declared_enc)
+        {
+            binary_replacements.insert(entry_name.clone(), transcoded);
+        }
+    }
+
+    // OPF replacement: chain encoding fix + spine rewrite when both apply.
+    let rewritten_opf: Option<Vec<u8>> = if !broken_refs.is_empty() {
         if let Some(opf) = opf_path {
             let cursor = std::io::Cursor::new(&bytes[..]);
             let mut ar = ZipArchive::new(cursor)?;
@@ -66,86 +90,58 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
             ar.by_name(opf)?
                 .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
                 .read_to_end(&mut opf_bytes)?;
-            // Apply encoding fix to OPF bytes before spine rewrite so both
-            // repairs are chained correctly when they occur simultaneously.
             let opf_bytes = if let Some((_, enc)) = encoding_fixes.iter().find(|(n, _)| n == opf) {
                 transcode_to_utf8(&opf_bytes, enc).unwrap_or(opf_bytes)
             } else {
                 opf_bytes
             };
-            let rewritten = rewrite_opf_remove_broken_spine(&opf_bytes, &broken_refs);
-            Some((opf.to_string(), rewritten))
+            Some(rewrite_opf_remove_broken_spine(&opf_bytes, &broken_refs))
         } else {
             None
         }
+    } else if let Some(opf) = opf_path {
+        // No spine rewrite but OPF may still need an encoding fix.
+        encoding_fixes
+            .iter()
+            .find(|(n, _)| n == opf)
+            .and_then(|(_, enc)| {
+                let cursor = std::io::Cursor::new(&bytes[..]);
+                let mut ar = ZipArchive::new(cursor).ok()?;
+                let mut opf_bytes = Vec::new();
+                ar.by_name(opf)
+                    .ok()?
+                    .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
+                    .read_to_end(&mut opf_bytes)
+                    .ok()?;
+                transcode_to_utf8(&opf_bytes, enc)
+            })
     } else {
         None
     };
 
-    // Build new ZIP into temp file
-    let temp = NamedTempFile::new_in(dir)?;
-    {
-        let cursor = std::io::Cursor::new(&bytes[..]);
-        let mut archive = ZipArchive::new(cursor)?;
-        let mut writer = ZipWriter::new(&temp);
-
-        // mimetype MUST be first and stored (not deflated) per EPUB spec
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        writer.start_file(MIMETYPE_ENTRY, stored)?;
-        writer.write_all(MIMETYPE_CONTENT)?;
-
-        // Copy all entries except mimetype, applying fixes
-        for i in 0..archive.len() {
-            let file = archive.by_index(i)?;
-            let name = file.name().to_string();
-
-            if name == MIMETYPE_ENTRY {
-                continue; // already written
-            }
-
-            let mut entry_bytes = Vec::new();
-            file.take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
-                .read_to_end(&mut entry_bytes)?;
-
-            // Apply encoding fix first (independent of OPF rewriting).
-            // If the OPF entry needs both transforms, they were already chained
-            // during pre-computation above; for all other entries this is a no-op.
-            let transcoded =
-                if let Some((_, declared_enc)) = encoding_fixes.iter().find(|(n, _)| n == &name) {
-                    transcode_to_utf8(&entry_bytes, declared_enc).unwrap_or(entry_bytes)
-                } else {
-                    entry_bytes
-                };
-
-            // Overlay OPF rewrite if this is the OPF entry.
-            let final_bytes = if let Some((ref opf_name, ref rewritten)) = rewritten_opf {
-                if &name == opf_name {
-                    rewritten.clone()
-                } else {
-                    transcoded
-                }
-            } else {
-                transcoded
-            };
-
-            let options: FileOptions<ExtendedFileOptions> = FileOptions::default();
-            writer.start_file(&name, options)?;
-            writer.write_all(&final_bytes)?;
-        }
-
-        // Add regenerated container.xml if it was missing
-        if missing_container && let Some(opf_path_str) = &opf_candidate {
-            let container_xml = generate_container_xml(opf_path_str);
-            let options: FileOptions<ExtendedFileOptions> = FileOptions::default();
-            writer.start_file("META-INF/container.xml", options)?;
-            writer.write_all(container_xml.as_bytes())?;
-        }
-
-        writer.finish()?;
+    // Regenerated container.xml is appended as an addition when missing.
+    let mut additions: Vec<(String, Vec<u8>, FileOptions<ExtendedFileOptions>)> = Vec::new();
+    if missing_container && let Some(opf_path_str) = &opf_candidate {
+        let container_xml = generate_container_xml(opf_path_str);
+        let opts: FileOptions<ExtendedFileOptions> = FileOptions::default();
+        additions.push((
+            "META-INF/container.xml".to_string(),
+            container_xml.into_bytes(),
+            opts,
+        ));
     }
 
-    // Atomic rename over destination
+    // Release the bytes borrow before the helper re-reads the source.
+    drop(bytes);
+
+    let temp = repack::with_modifications(
+        path,
+        dir,
+        opf_path,
+        rewritten_opf.as_deref(),
+        &binary_replacements,
+        &additions,
+    )?;
     temp.persist(path).map_err(EpubError::TempFile)?;
     Ok(())
 }
@@ -262,8 +258,10 @@ fn generate_container_xml(opf_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::epub::repack::MIMETYPE_ENTRY;
     use crate::services::epub::{IssueKind, Layer, Severity};
     use std::io::Write;
+    use zip::ZipWriter;
 
     fn make_epub(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let buf = std::io::Cursor::new(Vec::new());

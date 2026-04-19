@@ -18,6 +18,7 @@ pub struct Config {
     pub cleanup_mode: CleanupMode,
     pub enrichment: EnrichmentConfig,
     pub cover: CoverConfig,
+    pub writeback: WritebackConfig,
     pub openlibrary_base_url: String,
     pub googlebooks_base_url: String,
     pub googlebooks_api_key: Option<String>,
@@ -45,6 +46,14 @@ pub struct CoverConfig {
     pub download_timeout_secs: u64,
     pub min_long_edge_px: u32,
     pub redirect_limit: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct WritebackConfig {
+    pub enabled: bool,
+    pub concurrency: u32,
+    pub poll_idle_secs: u64,
+    pub max_attempts: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +141,7 @@ impl Config {
 
         let enrichment = EnrichmentConfig::from_env()?;
         let cover = CoverConfig::from_env()?;
+        let writeback = WritebackConfig::from_env()?;
 
         let openlibrary_base_url = env::var("REVERIE_OPENLIBRARY_BASE_URL")
             .unwrap_or_else(|_| "https://openlibrary.org".into());
@@ -174,6 +184,7 @@ impl Config {
             cleanup_mode,
             enrichment,
             cover,
+            writeback,
             openlibrary_base_url,
             googlebooks_base_url,
             googlebooks_api_key,
@@ -222,6 +233,27 @@ impl EnrichmentConfig {
             cache_ttl_hit_days,
             cache_ttl_miss_days,
             cache_ttl_error_mins,
+        })
+    }
+}
+
+impl WritebackConfig {
+    fn from_env() -> Result<Self, ConfigError> {
+        let enabled = parse_bool("REVERIE_WRITEBACK_ENABLED", true)?;
+        let concurrency = parse_u32("REVERIE_WRITEBACK_CONCURRENCY", 2)?;
+        if !(1..=10).contains(&concurrency) {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_WRITEBACK_CONCURRENCY".into(),
+                reason: format!("must be 1-10, got {concurrency}"),
+            });
+        }
+        let poll_idle_secs = parse_u64("REVERIE_WRITEBACK_POLL_IDLE_SECS", 5)?;
+        let max_attempts = parse_u32("REVERIE_WRITEBACK_MAX_ATTEMPTS", 10)?;
+        Ok(Self {
+            enabled,
+            concurrency,
+            poll_idle_secs,
+            max_attempts,
         })
     }
 }
@@ -343,6 +375,10 @@ mod tests {
                 "REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS",
                 "REVERIE_COVER_MIN_LONG_EDGE_PX",
                 "REVERIE_COVER_REDIRECT_LIMIT",
+                "REVERIE_WRITEBACK_ENABLED",
+                "REVERIE_WRITEBACK_CONCURRENCY",
+                "REVERIE_WRITEBACK_POLL_IDLE_SECS",
+                "REVERIE_WRITEBACK_MAX_ATTEMPTS",
                 "REVERIE_OPENLIBRARY_BASE_URL",
                 "REVERIE_GOOGLEBOOKS_BASE_URL",
                 "REVERIE_GOOGLEBOOKS_API_KEY",
@@ -374,6 +410,11 @@ mod tests {
                 assert_eq!(config.cover.max_bytes, 10_485_760);
                 assert_eq!(config.cover.min_long_edge_px, 1000);
                 assert_eq!(config.cover.redirect_limit, 3);
+                // Writeback defaults
+                assert!(config.writeback.enabled);
+                assert_eq!(config.writeback.concurrency, 2);
+                assert_eq!(config.writeback.poll_idle_secs, 5);
+                assert_eq!(config.writeback.max_attempts, 10);
                 assert_eq!(config.openlibrary_base_url, "https://openlibrary.org");
                 assert!(config.googlebooks_api_key.is_none());
                 assert!(config.hardcover_api_token.is_none());

@@ -507,9 +507,9 @@ mod tests {
 
         let _ = sqlx::query(
             "INSERT INTO manifestations \
-             (work_id, isbn_13, format, file_path, file_hash, file_size_bytes, \
-              ingestion_status, validation_status) \
-             VALUES ($1, $2, 'epub'::manifestation_format, $3, 'testhash', 1000, \
+             (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
+              file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, $2, 'epub'::manifestation_format, $3, 'testhash', 'testhash', 1000, \
                      'complete'::ingestion_status, 'valid'::validation_status)",
         )
         .bind(work_id1)
@@ -586,9 +586,9 @@ mod tests {
         let path = format!("/tmp/rematch-{file_marker}.epub");
         sqlx::query_scalar(
             "INSERT INTO manifestations \
-               (work_id, isbn_13, format, file_path, file_hash, file_size_bytes, \
-                ingestion_status, validation_status) \
-             VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, 1000, \
+               (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
                      'complete'::ingestion_status, 'valid'::validation_status) \
              RETURNING id",
         )

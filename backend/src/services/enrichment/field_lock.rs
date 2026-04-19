@@ -136,9 +136,9 @@ mod tests {
         .unwrap();
         let m_id: Uuid = sqlx::query_scalar(
             "INSERT INTO manifestations \
-             (work_id, format, file_path, file_hash, file_size_bytes, \
-              ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, 100, \
+             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+              file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 100, \
                      'complete'::ingestion_status, 'valid'::validation_status) \
              RETURNING id",
         )

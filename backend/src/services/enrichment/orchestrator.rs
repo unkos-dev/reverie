@@ -269,6 +269,11 @@ pub async fn run_once(
                             );
                         }
                     }
+                    // Enqueue writeback in the same tx so the pointer move
+                    // and file-side reflection either both commit or both
+                    // roll back.  Worker deduplicates if two fields flip on
+                    // the same manifestation in <1s; not the emitter's job.
+                    enqueue_writeback(&mut tx, manifestation_id, field).await?;
                     // Avoid re-applying on the same run when two sources agree.
                     break;
                 }
@@ -559,6 +564,31 @@ fn is_work_field(field: &str) -> bool {
 }
 
 /// Apply a scalar field to its canonical column + `*_version_id` pointer.
+fn is_cover_field(f: &str) -> bool {
+    f == "cover" || f == "cover_url"
+}
+
+/// Enqueue a writeback job in the caller's transaction.  The pointer move
+/// plus the job INSERT commit or roll back together, so the worker never
+/// sees a pointer change that has no corresponding job.
+async fn enqueue_writeback(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    field: &str,
+) -> anyhow::Result<()> {
+    let reason = if is_cover_field(field) {
+        "cover"
+    } else {
+        "metadata"
+    };
+    sqlx::query("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, $2)")
+        .bind(manifestation_id)
+        .bind(reason)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 async fn apply_field(
     tx: &mut Transaction<'_, Postgres>,
     snapshot: &Snapshot,
@@ -897,6 +927,12 @@ mod tests {
                 min_long_edge_px: 1000,
                 redirect_limit: 3,
             },
+            writeback: crate::config::WritebackConfig {
+                enabled: false,
+                concurrency: 1,
+                poll_idle_secs: 5,
+                max_attempts: 3,
+            },
             openlibrary_base_url: ol_uri.into(),
             googlebooks_base_url: gb_uri.into(),
             googlebooks_api_key: None,
@@ -917,9 +953,9 @@ mod tests {
         .unwrap();
         let manifestation_id: Uuid = sqlx::query_scalar(
             "INSERT INTO manifestations \
-               (work_id, isbn_13, format, file_path, file_hash, file_size_bytes, \
-                ingestion_status, validation_status) \
-             VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, 1000, \
+               (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
                      'complete'::ingestion_status, 'valid'::validation_status) \
              RETURNING id",
         )
@@ -1206,6 +1242,18 @@ mod tests {
         assert!(
             publisher_ptr.is_some(),
             "publisher_version_id must be wired"
+        );
+
+        // Apply path must emit a writeback_jobs row in the same tx.
+        let job_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1")
+                .bind(m_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            job_count, 1,
+            "enrichment Apply must emit exactly one writeback_jobs row; got {job_count}"
         );
 
         cleanup_enrich_fixture(&pool, work_id, isbn).await;

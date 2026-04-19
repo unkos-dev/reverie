@@ -281,7 +281,7 @@ async fn process_file(
 
     // Step 2: Duplicate check BEFORE copying
     let duplicate = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM manifestations WHERE file_hash = $1 OR file_path = $2)",
+        "SELECT EXISTS(SELECT 1 FROM manifestations WHERE ingestion_file_hash = $1 OR file_path = $2)",
     )
     .bind(&source_hash)
     .bind(&dest_path_str)
@@ -560,9 +560,9 @@ async fn commit_ingest(
     // 2. Insert manifestation with NULL canonical + NULL pointers.
     let manifestation_id: Uuid = sqlx::query_scalar(
         "INSERT INTO manifestations \
-             (work_id, format, file_path, file_hash, file_size_bytes, \
-              ingestion_status, validation_status, accessibility_metadata) \
-         VALUES ($1, $2::manifestation_format, $3, $4, $5, \
+             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+              file_size_bytes, ingestion_status, validation_status, accessibility_metadata) \
+         VALUES ($1, $2::manifestation_format, $3, $4, $4, $5, \
                  'complete'::ingestion_status, $6::validation_status, $7) \
          RETURNING id",
     )
@@ -699,6 +699,12 @@ mod tests {
                 download_timeout_secs: 30,
                 min_long_edge_px: 1000,
                 redirect_limit: 3,
+            },
+            writeback: crate::config::WritebackConfig {
+                enabled: false,
+                concurrency: 1,
+                poll_idle_secs: 5,
+                max_attempts: 3,
             },
             openlibrary_base_url: "https://openlibrary.org".into(),
             googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
