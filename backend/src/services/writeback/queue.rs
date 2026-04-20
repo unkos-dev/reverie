@@ -140,29 +140,35 @@ async fn finish(
     // is that a DB failure followed by crash-recovery retry can emit the
     // same terminal event twice; Step 12's real dispatcher must dedupe.
     match result {
-        Ok(outcome) => {
-            let manifestation_id = outcome.manifestation_id;
-            let reason = outcome.reason;
-            if let Some(skip_reason) = outcome.skipped {
-                events::emit_writeback_failed(
-                    manifestation_id,
-                    &reason,
-                    attempt_count,
-                    &skip_reason,
-                );
-                // Terminal skip (e.g. unsupported format): bypass retry path.
-                mark_skipped(pool, id, &skip_reason).await?;
-            } else if outcome.success {
-                let hash = outcome.current_file_hash.as_deref().unwrap_or("");
-                events::emit_writeback_complete(manifestation_id, &reason, attempt_count, hash);
-                mark_complete(pool, id).await?;
-            } else {
-                let err = outcome
-                    .error
-                    .unwrap_or_else(|| "writeback failed without specific error".into());
-                events::emit_writeback_failed(manifestation_id, &reason, attempt_count, &err);
-                mark_failed(pool, id, attempt_count, config, Some(&err)).await?;
-            }
+        Ok(RunOutcome::Success {
+            manifestation_id,
+            reason,
+            current_file_hash,
+        }) => {
+            events::emit_writeback_complete(
+                manifestation_id,
+                &reason,
+                attempt_count,
+                &current_file_hash,
+            );
+            mark_complete(pool, id).await?;
+        }
+        Ok(RunOutcome::Skipped {
+            manifestation_id,
+            reason,
+            skip_reason,
+        }) => {
+            events::emit_writeback_failed(manifestation_id, &reason, attempt_count, &skip_reason);
+            // Terminal skip (e.g. unsupported format): bypass retry path.
+            mark_skipped(pool, id, &skip_reason).await?;
+        }
+        Ok(RunOutcome::Failed {
+            manifestation_id,
+            reason,
+            error,
+        }) => {
+            events::emit_writeback_failed(manifestation_id, &reason, attempt_count, &error);
+            mark_failed(pool, id, attempt_count, config, Some(&error)).await?;
         }
         Err(e) => {
             warn!(error = %e, %id, "writeback run_once failed");

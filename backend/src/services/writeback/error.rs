@@ -23,6 +23,8 @@ pub enum WritebackError {
     UnsupportedFormat(String),
     #[error("missing container.xml or OPF entry")]
     MissingOpf,
+    #[error("writeback job {0} not found")]
+    JobNotFound(uuid::Uuid),
     #[error("sqlx: {0}")]
     Db(#[from] sqlx::Error),
     #[error("tempfile persist: {0}")]

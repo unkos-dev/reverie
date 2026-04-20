@@ -31,19 +31,35 @@ use super::error::WritebackError;
 use super::opf_rewrite::{self, Target};
 use super::path_rename;
 
+/// Terminal outcome of a single `run_once` call.  Three arms, one per
+/// terminal DB transition the queue performs — illegal combinations
+/// (success without a hash, skipped with an error, etc.) are structurally
+/// unrepresentable.
 #[derive(Debug)]
-pub struct RunOutcome {
-    pub manifestation_id: Uuid,
-    pub success: bool,
-    pub reason: String,
-    pub error: Option<String>,
-    /// Some → mark the job 'skipped' directly (bypassing the failed-retry
-    /// path).  For cases where retrying won't help (unsupported format,
-    /// missing file).
-    pub skipped: Option<String>,
-    /// New hash of the on-disk file on success; None otherwise.  Consumed
-    /// by the queue's `finish` to populate the `writeback_complete` event.
-    pub current_file_hash: Option<String>,
+pub enum RunOutcome {
+    /// Writeback completed cleanly.  `current_file_hash` is the new
+    /// on-disk SHA-256; the queue emits `writeback_complete` with it.
+    Success {
+        manifestation_id: Uuid,
+        reason: String,
+        current_file_hash: String,
+    },
+    /// Retrying won't help (unsupported format, missing file, post-
+    /// validation rollback).  Bypasses the retry path directly to
+    /// `mark_skipped`.  `skip_reason` is the user-facing explanation.
+    Skipped {
+        manifestation_id: Uuid,
+        reason: String,
+        skip_reason: String,
+    },
+    /// Writeback failed in a way that's potentially retryable (the
+    /// queue's `finish` decides whether attempt_count has reached
+    /// `max_attempts` and escalates to `skipped`).
+    Failed {
+        manifestation_id: Uuid,
+        reason: String,
+        error: String,
+    },
 }
 
 /// Outcome of the post-writeback validation decision.  Extracted for
@@ -87,24 +103,18 @@ pub async fn run_once(
 
     // Skip early when retrying won't help.
     if snap.format != "epub" {
-        return Ok(RunOutcome {
+        return Ok(RunOutcome::Skipped {
             manifestation_id,
-            success: false,
             reason,
-            error: None,
-            skipped: Some(format!("format_unsupported: {}", snap.format)),
-            current_file_hash: None,
+            skip_reason: format!("format_unsupported: {}", snap.format),
         });
     }
     let src_path = PathBuf::from(&snap.file_path);
     if !src_path.exists() {
-        return Ok(RunOutcome {
+        return Ok(RunOutcome::Skipped {
             manifestation_id,
-            success: false,
             reason,
-            error: None,
-            skipped: Some(format!("file_missing: {}", snap.file_path)),
-            current_file_hash: None,
+            skip_reason: format!("file_missing: {}", snap.file_path),
         });
     }
 
@@ -182,13 +192,10 @@ pub async fn run_once(
     )? {
         FinaliseAction::Commit => {}
         FinaliseAction::RolledBack(err_msg) => {
-            return Ok(RunOutcome {
+            return Ok(RunOutcome::Failed {
                 manifestation_id,
-                success: false,
                 reason,
-                error: Some(err_msg),
-                skipped: None,
-                current_file_hash: None,
+                error: err_msg,
             });
         }
     }
@@ -222,13 +229,10 @@ pub async fn run_once(
         );
     }
 
-    Ok(RunOutcome {
+    Ok(RunOutcome::Success {
         manifestation_id,
-        success: true,
         reason,
-        error: None,
-        skipped: None,
-        current_file_hash: Some(new_hash),
+        current_file_hash: new_hash,
     })
 }
 
@@ -399,7 +403,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
     .bind(job_id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| WritebackError::Persist(format!("job {job_id} not found")))?;
+    .ok_or(WritebackError::JobNotFound(job_id))?;
 
     let work_id: Uuid = row.try_get("work_id")?;
     let primary_author: Option<String> = sqlx::query_scalar(
@@ -754,7 +758,7 @@ mod tests {
         .unwrap();
 
         let outcome = run_once(&app_pool, &test_config(), job_id).await.unwrap();
-        assert!(outcome.success, "run_once should succeed: {:?}", outcome);
+        assert!(matches!(outcome, RunOutcome::Success { .. }), "run_once should succeed: {:?}", outcome);
 
         // OPF at OEBPS/package.opf should contain the new title.
         let new_bytes = std::fs::read(&path).unwrap();
@@ -925,7 +929,7 @@ mod tests {
         cfg.library_path = library_root.clone();
 
         let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
-        assert!(outcome.success, "run_once should succeed: {:?}", outcome);
+        assert!(matches!(outcome, RunOutcome::Success { .. }), "run_once should succeed: {:?}", outcome);
 
         // The src_path should no longer exist; the new template path should.
         let expected_new = std::path::PathBuf::from(&library_root)
