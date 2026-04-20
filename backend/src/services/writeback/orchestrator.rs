@@ -208,11 +208,18 @@ pub async fn run_once(
 
     // Move cover sidecar from _covers/pending/ → _covers/accepted/ on
     // success.  Best-effort: a failed move does not fail the writeback —
-    // Step 11 sweep surfaces orphans in pending/.
+    // Step 11 sweep surfaces orphans in pending/.  Log failures at warn!
+    // so operators can observe stuck sidecars before the sweep lands.
     if reason == "cover"
         && let Some(pending) = snap.cover_path.as_deref()
+        && let Err(e) = move_cover_sidecar(pending)
     {
-        let _ = move_cover_sidecar(pending);
+        tracing::warn!(
+            error = %e,
+            %manifestation_id,
+            pending_path = pending,
+            "writeback: cover sidecar move failed (non-fatal; Step 11 sweep will reconcile)"
+        );
     }
 
     Ok(RunOutcome {
@@ -407,7 +414,21 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
     .fetch_optional(pool)
     .await?;
 
-    let pub_date: Option<time::Date> = row.try_get("pub_date").ok();
+    // `try_get` returns `Ok(None)` for NULL columns; any `Err` here is a
+    // real decode problem (type mismatch, bad bytes) — log it instead of
+    // silently falling back to `None`, otherwise the writeback reports
+    // success with `<dc:date>` left stale.
+    let pub_date: Option<time::Date> = match row.try_get("pub_date") {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                %job_id,
+                "writeback: pub_date decode failed; proceeding with no date"
+            );
+            None
+        }
+    };
     Ok(JobSnapshot {
         manifestation_id: row.try_get("manifestation_id")?,
         reason: row.try_get::<String, _>("reason")?,
@@ -434,11 +455,27 @@ fn find_opf_path(epub_bytes: &[u8]) -> Result<String, WritebackError> {
 }
 
 fn extract_opf_path(container_bytes: &[u8]) -> Option<String> {
-    let xml = std::str::from_utf8(container_bytes).ok()?;
+    let xml = match std::str::from_utf8(container_bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "writeback: container.xml is not valid UTF-8");
+            return None;
+        }
+    };
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
     loop {
-        match reader.read_event().ok()? {
+        let event = match reader.read_event() {
+            Ok(ev) => ev,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "writeback: container.xml parse error; OPF path detection aborted"
+                );
+                return None;
+            }
+        };
+        match event {
             Event::Empty(e) | Event::Start(e) if e.name().as_ref() == b"rootfile" => {
                 if let Some(attr) = e
                     .attributes()

@@ -25,13 +25,17 @@ pub fn emit_writeback_complete(
 }
 
 /// Terminal-failure event payload.
+///
+/// Logs at `warn!` because a writeback failure is an operator-relevant
+/// anomaly — an operator filtering by severity should see these, but
+/// should not see every successful writeback.
 pub fn emit_writeback_failed(
     manifestation_id: Uuid,
     reason: &str,
     attempt_count: i32,
     error: &str,
 ) {
-    tracing::info!(
+    tracing::warn!(
         event = "writeback_failed",
         %manifestation_id,
         reason,

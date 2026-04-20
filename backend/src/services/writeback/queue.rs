@@ -134,47 +134,69 @@ async fn finish(
     attempt_count: i32,
     result: Result<RunOutcome, super::error::WritebackError>,
 ) -> sqlx::Result<()> {
+    // Emit the webhook BEFORE the DB bookkeeping write.  If the DB write
+    // fails, the event still fires (a transient DB hiccup on the final
+    // update otherwise silently dropped the webhook forever).  The cost
+    // is that a DB failure followed by crash-recovery retry can emit the
+    // same terminal event twice; Step 12's real dispatcher must dedupe.
     match result {
         Ok(outcome) => {
             let manifestation_id = outcome.manifestation_id;
             let reason = outcome.reason;
             if let Some(skip_reason) = outcome.skipped {
-                // Terminal skip (e.g. unsupported format): bypass retry path.
-                mark_skipped(pool, id, &skip_reason).await?;
                 events::emit_writeback_failed(
                     manifestation_id,
                     &reason,
                     attempt_count,
                     &skip_reason,
                 );
+                // Terminal skip (e.g. unsupported format): bypass retry path.
+                mark_skipped(pool, id, &skip_reason).await?;
             } else if outcome.success {
-                mark_complete(pool, id).await?;
                 let hash = outcome.current_file_hash.as_deref().unwrap_or("");
                 events::emit_writeback_complete(manifestation_id, &reason, attempt_count, hash);
+                mark_complete(pool, id).await?;
             } else {
                 let err = outcome
                     .error
                     .unwrap_or_else(|| "writeback failed without specific error".into());
-                mark_failed(pool, id, attempt_count, config, Some(&err)).await?;
                 events::emit_writeback_failed(manifestation_id, &reason, attempt_count, &err);
+                mark_failed(pool, id, attempt_count, config, Some(&err)).await?;
             }
         }
         Err(e) => {
             warn!(error = %e, %id, "writeback run_once failed");
             let err_str = e.to_string();
-            mark_failed(pool, id, attempt_count, config, Some(&err_str)).await?;
-            // Best-effort manifestation lookup — this path only fires when
             // run_once failed before producing a RunOutcome (e.g. snapshot
-            // load).  No outcome = no reason string, so log-only.
-            if let Ok(Some(mid)) = sqlx::query_scalar::<_, Uuid>(
+            // load).  Resolve manifestation_id from the job row so the
+            // webhook carries the right target.  Each outcome is logged
+            // explicitly so an observability gap here can't silently
+            // swallow the failure event.
+            match sqlx::query_scalar::<_, Uuid>(
                 "SELECT manifestation_id FROM writeback_jobs WHERE id = $1",
             )
             .bind(id)
             .fetch_optional(pool)
             .await
             {
-                events::emit_writeback_failed(mid, "unknown", attempt_count, &err_str);
+                Ok(Some(mid)) => {
+                    events::emit_writeback_failed(mid, "unknown", attempt_count, &err_str);
+                }
+                Ok(None) => {
+                    warn!(
+                        %id,
+                        "writeback: job row vanished before failure webhook could be emitted"
+                    );
+                }
+                Err(lookup_err) => {
+                    warn!(
+                        error = %lookup_err,
+                        %id,
+                        "writeback: manifestation_id lookup failed; failure webhook not emitted"
+                    );
+                }
             }
+            mark_failed(pool, id, attempt_count, config, Some(&err_str)).await?;
         }
     }
     Ok(())
@@ -215,11 +237,17 @@ async fn mark_failed(
     error: Option<&str>,
 ) -> sqlx::Result<()> {
     let max = config.writeback.max_attempts as i32;
-    let next_status = if attempt_count >= max {
-        "skipped"
-    } else {
-        "failed"
-    };
+    let exhausted = attempt_count >= max;
+    let next_status = if exhausted { "skipped" } else { "failed" };
+    if exhausted {
+        tracing::warn!(
+            %id,
+            attempt_count,
+            max_attempts = max,
+            error,
+            "writeback: job exhausted retries, transitioning to skipped"
+        );
+    }
     sqlx::query(
         "UPDATE writeback_jobs \
          SET status = $1::writeback_status, error = $2 \

@@ -108,7 +108,19 @@ fn scan_opf(opf_bytes: &[u8]) -> OpfScan {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Err(_) | Ok(Event::Eof) => break,
+            Err(e) => {
+                // A parse error here leaves `cover_href = None`, which
+                // downstream treats as "no cover present" and inserts a
+                // new manifest entry into an OPF we could not fully read.
+                // The post-writeback validator is the safety net, but
+                // operators still need a signal that the scan aborted.
+                tracing::warn!(
+                    error = %e,
+                    "writeback: OPF scan XML parse error — cover detection may be incomplete"
+                );
+                break;
+            }
+            Ok(Event::Eof) => break,
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 let local = local_name(e.name().as_ref()).to_vec();
                 if local == b"package"
