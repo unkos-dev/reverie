@@ -733,11 +733,15 @@ mod tests {
         .await
         .unwrap();
         let m_id: Uuid = sqlx::query_scalar(
+            // Set enrichment_status = 'complete' so these fixtures don't
+            // leak into the enrichment queue's claim_next under parallel
+            // test execution (the column defaults to 'pending').
             "INSERT INTO manifestations \
                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
-                file_size_bytes, ingestion_status, validation_status) \
+                file_size_bytes, ingestion_status, validation_status, enrichment_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status) \
+                     'complete'::ingestion_status, 'valid'::validation_status, \
+                     'complete'::enrichment_status) \
              RETURNING id",
         )
         .bind(work_id)
