@@ -16,9 +16,49 @@ use super::error::WritebackError;
 /// copy + verify + unlink when crossing filesystem boundaries.
 pub fn commit(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError> {
     match temp.persist(dest) {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            fsync_parent_dir(dest);
+            Ok(())
+        }
         Err(err) if is_cross_device(&err.error) => exdev_fallback(err.file, dest),
         Err(err) => Err(WritebackError::Persist(err.error.to_string())),
+    }
+}
+
+/// fsync the parent directory of `path` so the preceding rename's
+/// directory-entry update is durable across a power loss.  POSIX rename
+/// is atomic for visibility but does not guarantee the directory
+/// metadata is flushed — on ext4/xfs a crash between rename and
+/// directory-inode flush can revert the rename.
+///
+/// Best-effort: a failure here only means durability isn't guaranteed;
+/// the rename itself has already committed and Step 11's health sweep
+/// will reconcile any post-crash divergence.  Logging the failure is
+/// the operator's signal to investigate the underlying FS health.
+fn fsync_parent_dir(path: &Path) {
+    let Some(parent) = path.parent() else { return };
+    // An empty parent means the caller passed a bare filename; fsyncing
+    // CWD is almost never what they wanted, so skip.
+    if parent.as_os_str().is_empty() {
+        return;
+    }
+    match std::fs::File::open(parent) {
+        Ok(dir) => {
+            if let Err(e) = dir.sync_all() {
+                tracing::warn!(
+                    error = %e,
+                    parent = %parent.display(),
+                    "writeback: parent-dir fsync failed after rename; durability not guaranteed"
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                parent = %parent.display(),
+                "writeback: could not open parent directory for post-rename fsync"
+            );
+        }
     }
 }
 
@@ -49,6 +89,7 @@ fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError
     new_temp
         .persist(dest)
         .map_err(|e| WritebackError::Persist(e.error.to_string()))?;
+    fsync_parent_dir(dest);
 
     // Verify the final file matches what we intended to write.
     let dest_bytes = std::fs::read(dest)?;
@@ -69,7 +110,16 @@ fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError
 /// path-rename step after post-writeback validation passes.
 pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
     match std::fs::rename(src, dest) {
-        Ok(_) => return Ok(()),
+        Ok(_) => {
+            fsync_parent_dir(dest);
+            // When `src` and `dest` share a parent the two fsyncs collapse
+            // to one (same inode); when they don't, flush `src`'s parent
+            // too so the unlink side of the rename is durable.
+            if src.parent() != dest.parent() {
+                fsync_parent_dir(src);
+            }
+            return Ok(());
+        }
         Err(e) if !is_cross_device(&e) => return Err(WritebackError::Io(e)),
         // EXDEV: src + dest sit on different mounts, so std::fs::rename
         // can't perform the atomic same-FS rename.  Fall through to the
@@ -86,6 +136,10 @@ pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
     std::fs::File::open(temp.path())?.sync_all()?;
     commit(temp, dest)?;
     std::fs::remove_file(src)?;
+    // The `remove_file` of `src` is a directory-metadata change; flush
+    // `src`'s parent so the unlink is durable.  `dest`'s parent was
+    // already fsync'd inside `commit`.
+    fsync_parent_dir(src);
     Ok(())
 }
 

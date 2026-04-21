@@ -26,6 +26,12 @@ Run migrations as the schema owner:
   `backend/migrations/`.
 - **Testing:** Use `axum-test` for integration tests. Unit tests live alongside the
   code in `#[cfg(test)]` modules.
+- **DB-backed tests are `#[ignore]`d by convention.** Any `#[tokio::test]` that
+  opens a `PgPool` must be marked `#[ignore]` — it requires a running postgres at
+  `localhost:5433` with migrations applied. Default `cargo test` silently skips
+  these. Run the full suite with `cargo test -- --include-ignored`, and ensure
+  CI does the same. Migrating this pattern to `#[sqlx::test]` (per-test isolated
+  DBs, no manual `#[ignore]`) is tracked separately.
 - **Logging:** Use `tracing` with structured fields. Never `println!` or `eprintln!`.
 - **Formatting:** `cargo fmt` is enforced by CI. Do not fight the formatter.
 - **Linting:** `cargo clippy -- -D warnings` is enforced by CI. Fix warnings, don't

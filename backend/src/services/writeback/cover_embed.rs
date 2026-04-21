@@ -15,7 +15,7 @@ use std::io::Cursor;
 
 use quick_xml::Reader;
 use quick_xml::Writer;
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::events::{BytesEnd, BytesStart, Event};
 use zip::write::{ExtendedFileOptions, FileOptions};
 
 use super::error::WritebackError;
@@ -320,9 +320,6 @@ fn insert_opf_cover(
             "opf has no <manifest>".into(),
         ));
     }
-    let _ = saw_metadata_open;
-    let _ = BytesText::new(""); // silence unused import
-    let _ = BytesEnd::new(""); // silence unused import
     Ok(writer.into_inner().into_inner())
 }
 

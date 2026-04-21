@@ -161,15 +161,16 @@ pub async fn run_once(
     // OPF is at ZIP root (`content.opf`), the two coincide.
     let opf_dir = opf_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     let empty_replacements: HashMap<String, Vec<u8>> = HashMap::new();
-    let translated_replacements: HashMap<String, Vec<u8>> = cover_plan
-        .as_ref()
-        .map(|p| {
-            p.binary_replacements
-                .iter()
-                .map(|(href, bytes)| (resolve_opf_relative(opf_dir, href), bytes.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let translated_replacements: HashMap<String, Vec<u8>> = match cover_plan.as_ref() {
+        Some(p) => p
+            .binary_replacements
+            .iter()
+            .map(|(href, bytes)| {
+                resolve_opf_relative(opf_dir, href).map(|path| (path, bytes.clone()))
+            })
+            .collect::<Result<_, _>>()?,
+        None => HashMap::new(),
+    };
     let binary_replacements = if translated_replacements.is_empty() {
         &empty_replacements
     } else {
@@ -184,21 +185,16 @@ pub async fn run_once(
         String,
         Vec<u8>,
         zip::write::FileOptions<'static, zip::write::ExtendedFileOptions>,
-    )> = cover_plan
-        .as_ref()
-        .map(|p| {
-            p.additions
-                .iter()
-                .map(|(href, bytes, opts)| {
-                    (
-                        resolve_opf_relative(opf_dir, href),
-                        bytes.clone(),
-                        opts.clone(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    )> = match cover_plan.as_ref() {
+        Some(p) => p
+            .additions
+            .iter()
+            .map(|(href, bytes, opts)| {
+                resolve_opf_relative(opf_dir, href).map(|path| (path, bytes.clone(), opts.clone()))
+            })
+            .collect::<Result<_, _>>()?,
+        None => Vec::new(),
+    };
     let additions: &[_] = if translated_additions.is_empty() {
         &empty_additions
     } else {
@@ -206,7 +202,16 @@ pub async fn run_once(
     };
 
     // Repack into a temp file in the destination directory.
-    let dest_dir = src_path.parent().unwrap_or(Path::new("."));
+    // `src_path` is always an existing managed file on disk, so its parent
+    // must exist; refuse rather than silently falling back to CWD — a rogue
+    // rename that landed at `/` would otherwise write the temp into the
+    // worker's working directory.
+    let dest_dir = src_path.parent().ok_or_else(|| {
+        WritebackError::Persist(format!(
+            "src_path has no parent directory: {}",
+            src_path.display()
+        ))
+    })?;
     let temp = repack::with_modifications(
         &src_path,
         dest_dir,
@@ -246,12 +251,30 @@ pub async fn run_once(
     let final_path = path_rename_step(&snap, config, src_path.clone(), pool).await?;
 
     // Update current_file_hash from the final on-disk file.
+    //
+    // If this UPDATE fails the on-disk rewrite + rename already committed,
+    // so `file_path` is correct but `current_file_hash` stays at the
+    // pre-writeback value until the next successful retry.  Step 11's
+    // library-health sweep will surface the divergence, but we log the
+    // specifics at `error!` so an operator doesn't have to wait for the
+    // sweep to notice.
     let new_hash = compute_hex_sha256(&final_path)?;
-    sqlx::query("UPDATE manifestations SET current_file_hash = $1 WHERE id = $2")
+    if let Err(e) = sqlx::query("UPDATE manifestations SET current_file_hash = $1 WHERE id = $2")
         .bind(&new_hash)
         .bind(manifestation_id)
         .execute(pool)
-        .await?;
+        .await
+    {
+        tracing::error!(
+            error = %e,
+            %manifestation_id,
+            final_path = %final_path.display(),
+            attempted_hash = %new_hash,
+            "writeback: current_file_hash UPDATE failed after successful on-disk commit \
+             — on-disk file diverges from DB hash until Step 11 sweep or retry reconciles"
+        );
+        return Err(WritebackError::Db(e));
+    }
 
     // Move cover sidecar from _covers/pending/ → _covers/accepted/ on
     // success.  Best-effort: a failed move does not fail the writeback —
@@ -520,7 +543,16 @@ fn extract_opf_path(container_bytes: &[u8]) -> Option<String> {
                     .flatten()
                     .find(|a| a.key.as_ref() == b"full-path")
                 {
-                    return std::str::from_utf8(&attr.value).ok().map(|s| s.to_string());
+                    match std::str::from_utf8(&attr.value) {
+                        Ok(s) => return Some(s.to_string()),
+                        Err(decode_err) => {
+                            tracing::warn!(
+                                error = %decode_err,
+                                "writeback: container.xml rootfile@full-path is not valid UTF-8"
+                            );
+                            return None;
+                        }
+                    }
                 }
             }
             Event::Eof => return None,
@@ -570,15 +602,21 @@ fn compute_hex_sha256(path: &Path) -> Result<String, WritebackError> {
 
 /// Resolve an OPF-relative href against the OPF's directory, yielding a
 /// ZIP-absolute path suitable for `repack::with_modifications`.
-/// Collapses `./` and absolute-looking inputs but does NOT validate `..`
-/// — real-world EPUBs with parent-dir hrefs in the manifest are
-/// pathological and should be caught by validation before writeback.
-fn resolve_opf_relative(opf_dir: &str, href: &str) -> String {
+/// Collapses `./` and rejects any `..` segment — symmetric with
+/// `path_rename::normalise_relative`. Pre-writeback validation should
+/// already reject pathological hrefs; this is a belt-and-braces check
+/// at the writeback boundary.
+fn resolve_opf_relative(opf_dir: &str, href: &str) -> Result<String, WritebackError> {
+    if href.split('/').any(|seg| seg == "..") {
+        return Err(WritebackError::Persist(format!(
+            "opf-relative href contains ..: {href}"
+        )));
+    }
     if opf_dir.is_empty() {
-        return href.to_string();
+        return Ok(href.to_string());
     }
     let stripped = href.strip_prefix("./").unwrap_or(href);
-    format!("{opf_dir}/{stripped}")
+    Ok(format!("{opf_dir}/{stripped}"))
 }
 
 fn move_cover_sidecar(pending_path: &str) -> std::io::Result<()> {
@@ -1569,7 +1607,7 @@ mod tests {
     #[test]
     fn resolve_opf_relative_joins_with_opf_dir() {
         assert_eq!(
-            resolve_opf_relative("OEBPS", "images/cover.png"),
+            resolve_opf_relative("OEBPS", "images/cover.png").unwrap(),
             "OEBPS/images/cover.png"
         );
     }
@@ -1577,7 +1615,7 @@ mod tests {
     #[test]
     fn resolve_opf_relative_no_op_when_opf_at_zip_root() {
         assert_eq!(
-            resolve_opf_relative("", "content/cover.png"),
+            resolve_opf_relative("", "content/cover.png").unwrap(),
             "content/cover.png"
         );
     }
@@ -1585,8 +1623,20 @@ mod tests {
     #[test]
     fn resolve_opf_relative_strips_leading_dot_slash() {
         assert_eq!(
-            resolve_opf_relative("OEBPS", "./images/cover.png"),
+            resolve_opf_relative("OEBPS", "./images/cover.png").unwrap(),
             "OEBPS/images/cover.png"
         );
+    }
+
+    #[test]
+    fn resolve_opf_relative_rejects_parent_dir_segments() {
+        // Leading ..
+        assert!(resolve_opf_relative("OEBPS", "../secret").is_err());
+        // Interior ..
+        assert!(resolve_opf_relative("OEBPS", "images/../../secret").is_err());
+        // Trailing ..
+        assert!(resolve_opf_relative("OEBPS", "images/..").is_err());
+        // Even with empty opf_dir
+        assert!(resolve_opf_relative("", "../evil").is_err());
     }
 }

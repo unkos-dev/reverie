@@ -5,7 +5,6 @@
 //! `From<anyhow::Error>`.  No direct `StatusCode` at handlers.
 
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)] // NoManagedFile / UnsupportedFormat / ValidationRegressed reserved for future paths
 pub enum WritebackError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
@@ -17,10 +16,6 @@ pub enum WritebackError {
     Epub(#[from] crate::services::epub::EpubError),
     #[error("post-writeback validation regressed: {0}")]
     ValidationRegressed(String),
-    #[error("manifestation has no managed file")]
-    NoManagedFile,
-    #[error("unsupported format: {0}")]
-    UnsupportedFormat(String),
     #[error("missing container.xml or OPF entry")]
     MissingOpf,
     #[error("writeback job {0} not found")]
