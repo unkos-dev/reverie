@@ -708,3 +708,149 @@ async fn pagination_walk_125(pool: PgPool) {
         seen.len()
     );
 }
+
+// ── Invalid cursor: 422 on every cursor-accepting handler ───────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn invalid_cursor_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    // Need an owned shelf so the shelf-scoped cursor path reaches the
+    // cursor parser (otherwise we'd 404 on shelf ownership).
+    let shelf_id = test_support::db::create_shelf(&app_pool, admin_id, "test-shelf").await;
+    // Any author UUID — the query parses the cursor before it runs.
+    let author_id = Uuid::new_v4();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    let bad_cursor = "!!!not-base64url!!!";
+    let paths = [
+        format!("/opds/library/new?cursor={bad_cursor}"),
+        format!("/opds/library/authors/{author_id}?cursor={bad_cursor}"),
+        format!("/opds/shelves/{shelf_id}/new?cursor={bad_cursor}"),
+    ];
+    for path in paths {
+        let response = server.get(&path).add_header(AUTHORIZATION, basic.clone()).await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "expected 422 for invalid cursor at {path}, got {}",
+            response.status_code()
+        );
+    }
+}
+
+// ── Empty library: no rel="next" ────────────────────────────────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn empty_library_has_no_next_link(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    let response = server
+        .get("/opds/library/new")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body = std::str::from_utf8(response.as_bytes()).unwrap();
+    assert_eq!(body.matches("<entry>").count(), 0);
+    assert!(
+        !body.contains(r#"rel="next""#),
+        "empty library must not emit a next link"
+    );
+}
+
+// ── Exactly page_size rows: no rel="next" ───────────────────────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn exact_page_size_has_no_next_link(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    // Sentinel for `has_more = rows.len() > page_size`. page_size=50 in
+    // server_with_opds_enabled, so insert exactly 50 rows.
+    for i in 0..50u32 {
+        let work_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+        )
+        .bind(format!("Book {i:03}"))
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("insert work");
+        sqlx::query(
+            "INSERT INTO manifestations \
+                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'valid'::validation_status)",
+        )
+        .bind(work_id)
+        .bind(format!("/tmp/exact-{i}.epub"))
+        .bind(format!("exact-hash-{i}"))
+        .execute(&ingestion_pool)
+        .await
+        .expect("insert manifestation");
+    }
+
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let response = server
+        .get("/opds/library/new")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body = std::str::from_utf8(response.as_bytes()).unwrap();
+    assert_eq!(body.matches("<entry>").count(), 50);
+    assert!(
+        !body.contains(r#"rel="next""#),
+        "exact page_size must not emit a next link (off-by-one sentinel)"
+    );
+}
+
+// ── Wrong password returns a Basic challenge ────────────────────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn wrong_password_returns_challenge(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin_id, _correct) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Craft a Basic header with the real user UUID but a wrong plaintext.
+    use base64ct::Encoding;
+    let wrong_plaintext = "rev_0000000000000000000000000000000000000000";
+    let bad_basic = format!(
+        "Basic {}",
+        base64ct::Base64::encode_string(format!("{admin_id}:{wrong_plaintext}").as_bytes())
+    );
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let response = server.get("/opds").add_header(AUTHORIZATION, bad_basic).await;
+    assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    let challenge = response
+        .headers()
+        .get(axum::http::header::WWW_AUTHENTICATE)
+        .expect("WWW-Authenticate header present")
+        .to_str()
+        .unwrap();
+    assert!(
+        challenge.starts_with("Basic "),
+        "expected Basic challenge, got {challenge}"
+    );
+}
+
+// ── Disabled OPDS: /opds returns 404 ────────────────────────────────────
+
+#[tokio::test]
+async fn opds_disabled_returns_404() {
+    // test_server() uses test_config() with opds.enabled = false — the
+    // router_enabled() gate returns None so /opds isn't mounted.
+    let server = test_support::test_server();
+    let response = server.get("/opds").await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
