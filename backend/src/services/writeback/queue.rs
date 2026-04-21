@@ -334,7 +334,7 @@ mod tests {
     use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig, WritebackConfig};
     use tokio::sync::Barrier;
 
-    use crate::test_support::db::{app_pool_for, ingestion_pool_for};
+    use crate::test_support::db::{app_pool_for, ingestion_pool_for, writeback_pool_for};
 
     fn test_config_with_max_attempts(max_attempts: u32) -> Config {
         Config {
@@ -895,38 +895,75 @@ mod tests {
         assert_eq!(error.as_deref(), Some("regression"));
     }
 
-    /// RLS system-context policy: with no user context set (NULL
-    /// `app.current_user_id`), `reverie_app` can UPDATE `manifestations`
-    /// — the worker's operational pathway.  Matches how the real worker
-    /// connects: it never calls `SET LOCAL app.current_user_id`, so the
-    /// setting stays at its session default of NULL.
+    /// RLS system-context policy: a writeback pool (which sets
+    /// `app.system_context = 'writeback'` per-connection via
+    /// `after_connect`) can UPDATE `manifestations` without an
+    /// `app.current_user_id` user context — the worker's operational
+    /// pathway.
     #[sqlx::test(migrations = "./migrations")]
-    async fn rls_system_update_policy_allows_writeback_worker_without_user_context(pool: PgPool) {
+    async fn rls_system_update_policy_allows_writeback_pool(pool: PgPool) {
+        let wb_pool = writeback_pool_for(&pool).await;
+        let ing_pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_fixture(&ing_pool, &marker).await;
+
+        let res = sqlx::query("UPDATE manifestations SET current_file_hash = $1 WHERE id = $2")
+            .bind("system-context-hash")
+            .bind(m_id)
+            .execute(&wb_pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            res.rows_affected(),
+            1,
+            "writeback pool must be able to UPDATE manifestations"
+        );
+    }
+
+    /// UNK-99: a `reverie_app` connection without `app.system_context` set
+    /// AND without `app.current_user_id` set matches zero policies and is
+    /// denied.  This is the failure mode UNK-99 prevents: a future Axum
+    /// handler that forgets `SET LOCAL app.current_user_id` cannot reach
+    /// the system policy because that policy now requires an explicit
+    /// `app.system_context = 'writeback'` signal that user-facing pools
+    /// never set.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rls_user_facing_pool_without_user_id_blocked_from_manifestations(pool: PgPool) {
         let app_pool = app_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (_work_id, m_id) = insert_fixture(&ing_pool, &marker).await;
 
-        // No SET LOCAL — default is NULL, which matches the real worker.
+        // SELECT with no user context, no system context → must return 0 rows.
+        let visible: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM manifestations WHERE id = $1")
+                .bind(m_id)
+                .fetch_optional(&app_pool)
+                .await
+                .unwrap();
+        assert!(
+            visible.is_none(),
+            "a reverie_app session with neither app.current_user_id nor app.system_context must NOT see manifestations rows"
+        );
+
+        // UPDATE with no user context, no system context → must affect 0 rows.
         let res = sqlx::query("UPDATE manifestations SET current_file_hash = $1 WHERE id = $2")
-            .bind("system-context-hash")
+            .bind("should-not-apply")
             .bind(m_id)
             .execute(&app_pool)
             .await
             .unwrap();
         assert_eq!(
             res.rows_affected(),
-            1,
-            "system-context worker must be able to UPDATE manifestations"
+            0,
+            "a reverie_app session with neither app.current_user_id nor app.system_context must NOT update manifestations rows"
         );
     }
 
-    /// RLS system-context policy: with a non-empty `app.current_user_id`
-    /// pointing at a non-existent user, neither the system policy nor the
-    /// user-role policies match, so the UPDATE is filtered out.  This
-    /// guards the worker's isolation: a misconfigured worker session
-    /// that inherits a user context does NOT quietly succeed under the
-    /// system policy.
+    /// RLS system-context policy: a `reverie_app` session that has set a
+    /// non-empty `app.current_user_id` pointing at a non-existent user
+    /// matches neither the user policies (no real user) nor the system
+    /// policy (no `app.system_context`), so the UPDATE is filtered out.
     #[sqlx::test(migrations = "./migrations")]
     async fn rls_system_update_policy_blocks_unknown_user_context(pool: PgPool) {
         let app_pool = app_pool_for(&pool).await;
@@ -955,7 +992,7 @@ mod tests {
         assert_eq!(
             res.rows_affected(),
             0,
-            "a session with a bogus user context must NOT be able to update manifestations via the system policy"
+            "a session with a bogus user context must NOT be able to update manifestations"
         );
     }
 

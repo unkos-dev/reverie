@@ -639,7 +639,7 @@ mod tests {
     use zip::ZipWriter;
     use zip::write::{ExtendedFileOptions, FileOptions};
 
-    use crate::test_support::db::{app_pool_for, ingestion_pool_for};
+    use crate::test_support::db::{ingestion_pool_for, writeback_pool_for};
 
     fn test_config() -> Config {
         Config {
@@ -790,7 +790,7 @@ mod tests {
     /// - `ingestion_file_hash` is immutable across the writeback
     #[sqlx::test(migrations = "./migrations")]
     async fn run_once_finds_non_default_opf_and_updates_hash(pool: PgPool) {
-        let app_pool = app_pool_for(&pool).await;
+        let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
 
@@ -857,7 +857,7 @@ mod tests {
     /// both; `current_file_hash` must change each time.
     #[sqlx::test(migrations = "./migrations")]
     async fn ingestion_file_hash_immutable_across_writeback_chain(pool: PgPool) {
-        let app_pool = app_pool_for(&pool).await;
+        let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
 
@@ -930,7 +930,7 @@ mod tests {
     /// AND update `manifestations.file_path`.
     #[sqlx::test(migrations = "./migrations")]
     async fn run_once_renames_file_to_template_path(pool: PgPool) {
-        let app_pool = app_pool_for(&pool).await;
+        let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
 
@@ -1105,7 +1105,7 @@ mod tests {
             0xE7, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
         ];
 
-        let app_pool = app_pool_for(&pool).await;
+        let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
 
@@ -1204,7 +1204,7 @@ mod tests {
     /// overwrites an unrelated pre-existing file at the rendered path.
     #[sqlx::test(migrations = "./migrations")]
     async fn run_once_rename_resolves_collision_with_suffix(pool: PgPool) {
-        let app_pool = app_pool_for(&pool).await;
+        let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
 

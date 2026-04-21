@@ -110,11 +110,17 @@ async fn main() {
         }
     });
 
-    // Writeback worker runs on the reverie_app pool (full DML on
-    // writeback_jobs + UPDATE on manifestations.current_file_hash).
+    // Writeback worker runs on a dedicated reverie_app pool that sets
+    // `app.system_context = 'writeback'` per-connection.  The
+    // `manifestations_*_system` RLS policies match only when that GUC is
+    // set, so user-facing handlers (which never set it) cannot reach the
+    // system policies even if they forget `SET LOCAL app.current_user_id`.
     let writeback_token = cancel_token.clone();
     let writeback_config = config.clone();
-    let writeback_pool = state.pool.clone();
+    let writeback_pool =
+        db::init_writeback_pool(&config.database_url, config.db_max_connections)
+            .await
+            .expect("failed to build writeback pool");
     tokio::spawn(async move {
         if let Err(e) =
             services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)

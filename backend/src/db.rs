@@ -8,6 +8,33 @@ pub async fn init_pool(database_url: &str, max_connections: u32) -> Result<PgPoo
         .await
 }
 
+/// Build a `reverie_app` pool dedicated to the writeback worker.
+///
+/// Every connection opened by this pool runs
+/// `SELECT set_config('app.system_context', 'writeback', false)` once at
+/// connect time, marking it as a system-context caller for the duration
+/// of the connection.  The `manifestations_*_system` RLS policies match
+/// only when this GUC is set to `'writeback'`, so no other code path
+/// (in particular, no user-facing handler that forgets `SET LOCAL
+/// app.current_user_id`) can reach those policies.
+pub async fn init_writeback_pool(
+    database_url: &str,
+    max_connections: u32,
+) -> Result<PgPool, sqlx::Error> {
+    PgPoolOptions::new()
+        .max_connections(max_connections)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::query("SELECT set_config('app.system_context', 'writeback', false)")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(database_url)
+        .await
+}
+
 /// Acquire a transaction with RLS context set for the given user.
 ///
 /// Uses `set_config('app.current_user_id', ..., true)` where the third

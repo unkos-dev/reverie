@@ -133,7 +133,18 @@ pub mod db {
     pub async fn app_pool_for(pool: &PgPool) -> PgPool {
         let password =
             std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
-        pool_as_role(pool, "reverie_app", &password).await
+        pool_as_role(pool, "reverie_app", &password, false).await
+    }
+
+    /// Build a writeback-worker pool against the same DB as the given pool.
+    /// Connects as `reverie_app` with `app.system_context = 'writeback'` set
+    /// session-scoped on every connection — mirrors `db::init_writeback_pool`.
+    /// Use this for tests that exercise writeback orchestrator/queue code
+    /// paths against `manifestations` (which has system-context RLS policies).
+    pub async fn writeback_pool_for(pool: &PgPool) -> PgPool {
+        let password =
+            std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
+        pool_as_role(pool, "reverie_app", &password, true).await
     }
 
     /// Build a `reverie_ingestion` pool against the same DB as the given pool.
@@ -144,10 +155,15 @@ pub mod db {
     pub async fn ingestion_pool_for(pool: &PgPool) -> PgPool {
         let password = std::env::var("REVERIE_INGESTION_PASSWORD")
             .unwrap_or_else(|_| "reverie_ingestion".into());
-        pool_as_role(pool, "reverie_ingestion", &password).await
+        pool_as_role(pool, "reverie_ingestion", &password, false).await
     }
 
-    async fn pool_as_role(pool: &PgPool, username: &str, password: &str) -> PgPool {
+    async fn pool_as_role(
+        pool: &PgPool,
+        username: &str,
+        password: &str,
+        writeback_context: bool,
+    ) -> PgPool {
         let (host, port, database) = {
             let opts = pool.connect_options();
             (
@@ -164,8 +180,18 @@ pub mod db {
             .database(&database)
             .username(username)
             .password(password);
-        PgPoolOptions::new()
-            .max_connections(5)
+        let mut builder = PgPoolOptions::new().max_connections(5);
+        if writeback_context {
+            builder = builder.after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    sqlx::query("SELECT set_config('app.system_context', 'writeback', false)")
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+            });
+        }
+        builder
             .connect_with(new_opts)
             .await
             .unwrap_or_else(|e| panic!("connect as role failed: {e}"))
