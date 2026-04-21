@@ -128,15 +128,23 @@ pub mod db {
 
     /// Build a `reverie_app` pool against the same DB as the given pool.
     /// Use this when a test needs RLS-enforced access (the runtime web role).
+    /// Password defaults to the role name (matches `docker/init-roles.sql`);
+    /// override with `REVERIE_APP_PASSWORD` env var.
     pub async fn app_pool_for(pool: &PgPool) -> PgPool {
-        pool_as_role(pool, "reverie_app", "reverie_app").await
+        let password =
+            std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
+        pool_as_role(pool, "reverie_app", &password).await
     }
 
     /// Build a `reverie_ingestion` pool against the same DB as the given pool.
     /// Use this for fixture inserts on pipeline tables (manifestations, works)
     /// where the `*_ingestion_full_access` RLS policies apply.
+    /// Password defaults to the role name (matches `docker/init-roles.sql`);
+    /// override with `REVERIE_INGESTION_PASSWORD` env var.
     pub async fn ingestion_pool_for(pool: &PgPool) -> PgPool {
-        pool_as_role(pool, "reverie_ingestion", "reverie_ingestion").await
+        let password = std::env::var("REVERIE_INGESTION_PASSWORD")
+            .unwrap_or_else(|_| "reverie_ingestion".into());
+        pool_as_role(pool, "reverie_ingestion", &password).await
     }
 
     async fn pool_as_role(pool: &PgPool, username: &str, password: &str) -> PgPool {
@@ -160,7 +168,7 @@ pub mod db {
             .max_connections(5)
             .connect_with(new_opts)
             .await
-            .unwrap_or_else(|e| panic!("connect as {username}: {e}"))
+            .unwrap_or_else(|e| panic!("connect as role failed: {e}"))
     }
 
     /// Insert an admin-role user via `reverie_app` (the only role with grants
