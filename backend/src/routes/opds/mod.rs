@@ -6,18 +6,16 @@
 //! library (further filtered by child-account RLS) or at
 //! `/opds/shelves/{id}/*` to see only that shelf.
 
-pub mod cursor;
-pub mod feed;
-pub mod scope;
-pub mod xml;
-
-// Filled in during Phases D–G.
 pub mod covers;
+pub mod cursor;
 pub mod download;
+pub mod feed;
 pub mod library;
 pub mod opensearch;
 pub mod root;
+pub mod scope;
 pub mod shelves;
+pub mod xml;
 
 use axum::Router;
 
@@ -43,7 +41,7 @@ pub fn router_enabled(config: &OpdsConfig) -> Option<Router<AppState>> {
 }
 
 /// The `/api/books/:id/cover{,/thumb}` mount. Behind the cookie-or-Basic
-/// [`crate::auth::middleware::CurrentUser`] extractor so the Step 10 web UI
+/// [`crate::auth::middleware::CurrentUser`] extractor so the web UI
 /// can load covers with a session cookie. Always mounted — independent of
 /// `config.opds.enabled` — because the web UI needs it regardless of OPDS.
 pub fn covers_router() -> Router<AppState> {

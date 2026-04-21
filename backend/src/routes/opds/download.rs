@@ -23,7 +23,7 @@ use crate::db;
 use crate::error::AppError;
 use crate::state::AppState;
 
-pub const EPUB_MIME: &str = "application/epub+zip";
+use super::feed::EPUB_MIME;
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/opds/books/{id}/file", get(download_epub))
@@ -49,7 +49,7 @@ async fn download_epub(
     .map_err(|e| AppError::Internal(e.into()))?;
 
     let (file_path, title) = row.ok_or(AppError::NotFound)?;
-    drop(tx); // release DB transaction before I/O
+    drop(tx);
 
     let library_path = state.config.library_path.clone();
     let canonical = canonicalise_file_for_download(&file_path, &library_path).await?;
@@ -125,7 +125,6 @@ fn ascii_fallback(title: &str, manifestation_id: Uuid) -> String {
             out.push('-');
         }
     }
-    // collapse multiple dashes
     while out.contains("--") {
         out = out.replace("--", "-");
     }

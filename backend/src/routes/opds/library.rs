@@ -204,6 +204,41 @@ async fn library_search(
     Ok(atom_response(bytes, FeedKind::Acquisition.content_type()))
 }
 
+// ── Pagination helpers shared by emit_new / emit_author_books ────────────
+
+fn parse_cursor(raw: Option<String>) -> Result<Option<super::cursor::Cursor>, AppError> {
+    raw.as_deref()
+        .map(super::cursor::Cursor::parse)
+        .transpose()
+        .map_err(|_| AppError::Validation("invalid cursor".into()))
+}
+
+fn push_cursor_predicate(
+    qb: &mut QueryBuilder<'_, Postgres>,
+    cursor: &Option<super::cursor::Cursor>,
+) {
+    if let Some(c) = cursor {
+        qb.push(" AND (m.created_at, m.id) < (");
+        qb.push_bind(c.created_at);
+        qb.push(", ");
+        qb.push_bind(c.id);
+        qb.push(")");
+    }
+}
+
+fn split_page(
+    rows: &[sqlx::postgres::PgRow],
+    page_size: i64,
+) -> (&[sqlx::postgres::PgRow], bool) {
+    let has_more = rows.len() as i64 > page_size;
+    let page_rows = if has_more {
+        &rows[..page_size as usize]
+    } else {
+        rows
+    };
+    (page_rows, has_more)
+}
+
 // ── Shared feed-emitter helpers (pub(super) so shelves.rs delegates) ──
 
 pub(super) async fn emit_new(
@@ -221,11 +256,7 @@ pub(super) async fn emit_new(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let cursor = cursor
-        .as_deref()
-        .map(super::cursor::Cursor::parse)
-        .transpose()
-        .map_err(|_| AppError::Validation("invalid cursor".into()))?;
+    let cursor = parse_cursor(cursor)?;
 
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
@@ -238,13 +269,7 @@ pub(super) async fn emit_new(
         qb.push(" AND ");
         push_scope(&mut qb, scope, "m");
     }
-    if let Some(c) = &cursor {
-        qb.push(" AND (m.created_at, m.id) < (");
-        qb.push_bind(c.created_at);
-        qb.push(", ");
-        qb.push_bind(c.id);
-        qb.push(")");
-    }
+    push_cursor_predicate(&mut qb, &cursor);
     qb.push(" ORDER BY m.created_at DESC, m.id DESC LIMIT ");
     qb.push_bind(page_size + 1);
 
@@ -254,12 +279,7 @@ pub(super) async fn emit_new(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let has_more = rows.len() as i64 > page_size;
-    let page_rows = if has_more {
-        &rows[..page_size as usize]
-    } else {
-        &rows[..]
-    };
+    let (page_rows, has_more) = split_page(&rows, page_size);
 
     let work_ids: Vec<Uuid> = page_rows
         .iter()
@@ -380,11 +400,7 @@ pub(super) async fn emit_author_books(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let cursor = cursor
-        .as_deref()
-        .map(super::cursor::Cursor::parse)
-        .transpose()
-        .map_err(|_| AppError::Validation("invalid cursor".into()))?;
+    let cursor = parse_cursor(cursor)?;
 
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
@@ -399,13 +415,7 @@ pub(super) async fn emit_author_books(
         qb.push(" AND ");
         push_scope(&mut qb, scope, "m");
     }
-    if let Some(c) = &cursor {
-        qb.push(" AND (m.created_at, m.id) < (");
-        qb.push_bind(c.created_at);
-        qb.push(", ");
-        qb.push_bind(c.id);
-        qb.push(")");
-    }
+    push_cursor_predicate(&mut qb, &cursor);
     qb.push(" ORDER BY m.created_at DESC, m.id DESC LIMIT ");
     qb.push_bind(page_size + 1);
 
@@ -415,12 +425,7 @@ pub(super) async fn emit_author_books(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let has_more = rows.len() as i64 > page_size;
-    let page_rows = if has_more {
-        &rows[..page_size as usize]
-    } else {
-        &rows[..]
-    };
+    let (page_rows, has_more) = split_page(&rows, page_size);
 
     let work_ids: Vec<Uuid> = page_rows
         .iter()

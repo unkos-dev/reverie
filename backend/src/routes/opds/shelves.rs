@@ -1,7 +1,7 @@
 //! `/opds/shelves/:shelf_id/*` handlers. Delegates to the shared
 //! [`super::library`] emit_* helpers with [`Scope::Shelf`]. Every shelf route
-//! verifies ownership under `acquire_with_rls` and returns 404 on foreign
-//! shelves (BLUEPRINT: cross-user access returns 404, not 403).
+//! verifies ownership under `acquire_with_rls` and returns 404 for foreign
+//! shelves to avoid leaking shelf existence.
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
@@ -78,7 +78,7 @@ async fn shelf_new(
     Path(shelf_id): Path<Uuid>,
     Query(params): Query<PageParams>,
 ) -> Result<Response, AppError> {
-    let _ = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
+    assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
     let bytes = emit_new(
@@ -99,7 +99,7 @@ async fn shelf_authors(
     Path(shelf_id): Path<Uuid>,
     Query(params): Query<PageParams>,
 ) -> Result<Response, AppError> {
-    let _ = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
+    assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
     let bytes = emit_authors(
@@ -120,7 +120,7 @@ async fn shelf_author_books(
     Path((shelf_id, author_id)): Path<(Uuid, Uuid)>,
     Query(params): Query<PageParams>,
 ) -> Result<Response, AppError> {
-    let _ = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
+    assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
     let bytes = emit_author_books(
@@ -142,7 +142,7 @@ async fn shelf_series(
     Path(shelf_id): Path<Uuid>,
     Query(params): Query<PageParams>,
 ) -> Result<Response, AppError> {
-    let _ = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
+    assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
     let bytes = emit_series(
@@ -163,7 +163,7 @@ async fn shelf_series_books(
     Path((shelf_id, series_id)): Path<(Uuid, Uuid)>,
     Query(params): Query<PageParams>,
 ) -> Result<Response, AppError> {
-    let _ = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
+    assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
     let bytes = emit_series_books(
@@ -185,7 +185,7 @@ async fn shelf_search(
     Path(shelf_id): Path<Uuid>,
     Query(params): Query<SearchParams>,
 ) -> Result<Response, AppError> {
-    let _ = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
+    assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
     let bytes = emit_search(

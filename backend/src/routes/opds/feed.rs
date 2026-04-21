@@ -103,11 +103,8 @@ impl FeedBuilder {
             .write_event(Event::Start(feed))
             .expect("write feed open");
 
-        // <id>
         write_text_element(&mut writer, "id", &feed_urn(self_path));
-        // <title>
         write_text_element(&mut writer, "title", &sanitise_xml_text(title));
-        // <updated>
         write_text_element(
             &mut writer,
             "updated",
@@ -209,7 +206,6 @@ impl FeedBuilder {
             .write_event(Event::Start(BytesStart::new("entry")))
             .expect("entry open");
 
-        // Stable URN per manifestation for client bookmarks.
         write_text_element(
             &mut self.writer,
             "id",
@@ -229,7 +225,6 @@ impl FeedBuilder {
                 .expect("format entry updated"),
         );
 
-        // <author>/<name> per creator.
         for creator in &entry.creators {
             self.writer
                 .write_event(Event::Start(BytesStart::new("author")))
@@ -240,7 +235,6 @@ impl FeedBuilder {
                 .expect("author close");
         }
 
-        // <dc:identifier> — ISBN preferred, UUID fallback.
         let identifier = match &entry.isbn {
             Some(isbn) => format!("urn:isbn:{}", sanitise_xml_text(isbn)),
             None => format!("urn:uuid:{}", entry.manifestation_id),
