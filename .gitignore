@@ -25,6 +25,9 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+# Claude Code runtime locks
+.claude/*.lock
+
 # Docs build output
 docs/.astro/
 
