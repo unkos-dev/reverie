@@ -1,0 +1,2 @@
+-- Reverses 20260421000001_serialise_writeback_per_manifestation.up.sql
+DROP INDEX IF EXISTS idx_writeback_jobs_in_progress_unique;

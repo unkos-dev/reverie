@@ -1,8 +1,22 @@
 //! Background writeback queue worker.
 //!
-//! Mirrors `services::enrichment::queue` with one change: the claim CTE
-//! adds a manifestation-aware `NOT EXISTS` clause so two jobs for the same
-//! manifestation never run in parallel (on-disk file state must serialise).
+//! Mirrors `services::enrichment::queue` with one change: at most one job
+//! per manifestation is ever `in_progress` at the same time, so two
+//! workers can never race writebacks on the same on-disk EPUB.
+//!
+//! The guarantee is enforced in two layers:
+//!   1. A partial UNIQUE index (`idx_writeback_jobs_in_progress_unique`)
+//!      on `(manifestation_id) WHERE status = 'in_progress'` — the
+//!      load-bearing correctness gate.  Two workers racing the same
+//!      manifestation both survive `NOT EXISTS` under READ COMMITTED
+//!      (which can't see a peer's uncommitted UPDATE), but when the
+//!      second worker's UPDATE would create a duplicate in_progress
+//!      tuple, Postgres waits on the first worker's uncommitted index
+//!      entry, then fails with SQLSTATE 23505.  `claim_next` translates
+//!      that into `Ok(None)`.
+//!   2. A `NOT EXISTS` clause inside the claim CTE — a cheap soft filter
+//!      that avoids the unique-violation round-trip on the common path
+//!      where a sibling job already holds the `in_progress` slot.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,10 +97,12 @@ pub async fn spawn_worker(
 }
 
 /// Atomic claim.  Returns `Some((id, new_attempt_count))` when a row was
-/// claimed.  Manifestation-aware `NOT EXISTS` clause ensures only one job
-/// per manifestation is `in_progress` at any time.
+/// claimed.  The partial UNIQUE index on
+/// `(manifestation_id) WHERE status = 'in_progress'` is the load-bearing
+/// serialisation primitive; the `NOT EXISTS` clause in the CTE is a
+/// common-path optimisation that avoids a unique-violation round-trip.
 pub(crate) async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
-    let row: Option<(Uuid, i32)> = sqlx::query_as(
+    let result = sqlx::query_as::<_, (Uuid, i32)>(
         r#"WITH eligible AS (
              SELECT wj.id, wj.attempt_count
              FROM writeback_jobs wj
@@ -123,8 +139,21 @@ pub(crate) async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)
            RETURNING wj.id, wj.attempt_count"#,
     )
     .fetch_optional(pool)
-    .await?;
-    Ok(row)
+    .await;
+
+    match result {
+        Ok(row) => Ok(row),
+        // A peer worker beat us to the in_progress slot for this
+        // manifestation. The partial UNIQUE index did its job; treat as a
+        // lost race and let the caller poll again.
+        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+            tracing::debug!(
+                "writeback: claim_next lost race on in_progress unique index; will retry"
+            );
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 async fn finish(
@@ -138,7 +167,8 @@ async fn finish(
     // fails, the event still fires (a transient DB hiccup on the final
     // update otherwise silently dropped the webhook forever).  The cost
     // is that a DB failure followed by crash-recovery retry can emit the
-    // same terminal event twice; Step 12's real dispatcher must dedupe.
+    // same terminal event twice; Step 12's real dispatcher must dedupe on
+    // event ID.  Tracked in UNK-98.
     match result {
         Ok(RunOutcome::Success {
             manifestation_id,
@@ -173,36 +203,49 @@ async fn finish(
         Err(e) => {
             warn!(error = %e, %id, "writeback run_once failed");
             let err_str = e.to_string();
-            // run_once failed before producing a RunOutcome (e.g. snapshot
-            // load).  Resolve manifestation_id from the job row so the
-            // webhook carries the right target.  Each outcome is logged
-            // explicitly so an observability gap here can't silently
-            // swallow the failure event.
-            match sqlx::query_scalar::<_, Uuid>(
+            // JobNotFound is terminal: the job row has vanished (CASCADE
+            // removed the manifestation, or someone deleted the row
+            // manually). There's no row to retry against, so retrying
+            // burns the full retry budget pointlessly — go straight to
+            // skipped.
+            let is_job_not_found = matches!(e, super::error::WritebackError::JobNotFound(_));
+
+            // Resolve manifestation_id from the job row so the webhook
+            // carries the right target. Fall back to Uuid::nil() when the
+            // row is gone or the lookup fails, so every terminal
+            // transition still produces an event that downstream consumers
+            // can correlate against the job id.
+            let mid = match sqlx::query_scalar::<_, Uuid>(
                 "SELECT manifestation_id FROM writeback_jobs WHERE id = $1",
             )
             .bind(id)
             .fetch_optional(pool)
             .await
             {
-                Ok(Some(mid)) => {
-                    events::emit_writeback_failed(mid, "unknown", attempt_count, &err_str);
-                }
+                Ok(Some(mid)) => mid,
                 Ok(None) => {
                     warn!(
                         %id,
-                        "writeback: job row vanished before failure webhook could be emitted"
+                        "writeback: job row vanished before failure webhook could be emitted; using sentinel manifestation_id"
                     );
+                    Uuid::nil()
                 }
                 Err(lookup_err) => {
                     warn!(
                         error = %lookup_err,
                         %id,
-                        "writeback: manifestation_id lookup failed; failure webhook not emitted"
+                        "writeback: manifestation_id lookup failed; using sentinel manifestation_id"
                     );
+                    Uuid::nil()
                 }
+            };
+            events::emit_writeback_failed(mid, "unknown", attempt_count, &err_str);
+
+            if is_job_not_found {
+                mark_skipped(pool, id, &err_str).await?;
+            } else {
+                mark_failed(pool, id, attempt_count, config, Some(&err_str)).await?;
             }
-            mark_failed(pool, id, attempt_count, config, Some(&err_str)).await?;
         }
     }
     Ok(())
@@ -289,6 +332,7 @@ pub(crate) async fn revert_in_progress(pool: &PgPool) -> sqlx::Result<()> {
 mod tests {
     use super::*;
     use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig, WritebackConfig};
+    use tokio::sync::Barrier;
 
     fn db_url() -> String {
         std::env::var("DATABASE_URL_INGESTION").unwrap_or_else(|_| {
@@ -420,13 +464,16 @@ mod tests {
             .await;
     }
 
-    /// Two jobs on the same manifestation MUST serialise — only one can be
-    /// in_progress at any time.  Asserts the manifestation-aware NOT EXISTS
-    /// clause excludes sibling-pending rows when one is in_progress.
-    /// Parallel-test safe (no reliance on global claim_next order).
+    /// NOT EXISTS soft filter: when one sibling is already `in_progress`,
+    /// the CTE predicate treats the remaining pending siblings as
+    /// ineligible.  This is the common-path optimisation — it avoids a
+    /// unique-violation round-trip on the claim.  Correctness under
+    /// concurrent workers is guaranteed by the partial UNIQUE index
+    /// (`concurrent_claims_on_same_manifestation_serialise_via_unique_index`
+    /// below), not by this predicate.
     #[tokio::test]
     #[ignore]
-    async fn two_workers_same_manifestation_serialise() {
+    async fn not_exists_filter_excludes_siblings_of_in_progress_job() {
         let pool = PgPool::connect(&app_url()).await.unwrap();
         let marker = Uuid::new_v4().simple().to_string();
 
@@ -436,16 +483,12 @@ mod tests {
         let _job_b = insert_job(&ing_pool, m_id, "metadata").await;
         let _job_c = insert_job(&ing_pool, m_id, "metadata").await;
 
-        // Simulate one claim — flip job_a to in_progress.
         sqlx::query("UPDATE writeback_jobs SET status = 'in_progress' WHERE id = $1")
             .bind(job_a)
             .execute(&pool)
             .await
             .unwrap();
 
-        // The remaining two sibling pending jobs must now fail the
-        // NOT EXISTS (sibling in_progress for same manifestation) clause,
-        // i.e. be ineligible.
         let count_eligible_siblings: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM writeback_jobs wj \
              WHERE wj.manifestation_id = $1 \
@@ -466,6 +509,127 @@ mod tests {
         );
 
         cleanup(&pool, &ing_pool, work_id, m_id).await;
+    }
+
+    /// The partial UNIQUE index
+    /// `(manifestation_id) WHERE status = 'in_progress'` enforces the
+    /// per-manifestation serialisation guarantee the module promises.
+    /// Two concurrent transactions each try to mark a DIFFERENT sibling
+    /// row `in_progress`; the first commits, the second is blocked on
+    /// the index tuple and then fails with SQLSTATE 23505 once the first
+    /// commits.  Without this index, both would succeed under READ
+    /// COMMITTED (the NOT EXISTS snapshot cannot see the peer's
+    /// uncommitted UPDATE).
+    #[tokio::test]
+    #[ignore]
+    async fn concurrent_claims_on_same_manifestation_serialise_via_unique_index() {
+        let ing_pool = PgPool::connect(&db_url()).await.unwrap();
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_fixture(&ing_pool, &marker).await;
+        let job_a = insert_job(&ing_pool, m_id, "metadata").await;
+        let job_b = insert_job(&ing_pool, m_id, "metadata").await;
+
+        // Separate pools to force distinct connections (like real workers).
+        let pool_a = PgPool::connect(&app_url()).await.unwrap();
+        let pool_b = PgPool::connect(&app_url()).await.unwrap();
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        let b1 = barrier.clone();
+        let t1 = tokio::spawn(async move {
+            let mut tx = pool_a.begin().await.unwrap();
+            b1.wait().await;
+            let res = sqlx::query(
+                "UPDATE writeback_jobs SET status = 'in_progress', \
+                 last_attempted_at = now(), attempt_count = attempt_count + 1 \
+                 WHERE id = $1",
+            )
+            .bind(job_a)
+            .execute(&mut *tx)
+            .await;
+            // Hold the transaction briefly so the peer definitely blocks
+            // on our uncommitted index tuple before we commit.
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            match res {
+                Ok(r) => {
+                    tx.commit().await.unwrap();
+                    Ok::<u64, sqlx::Error>(r.rows_affected())
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    Err(e)
+                }
+            }
+        });
+
+        let b2 = barrier.clone();
+        let t2 = tokio::spawn(async move {
+            let mut tx = pool_b.begin().await.unwrap();
+            b2.wait().await;
+            // Tiny stagger ensures t1 hits the UPDATE first so t2 is the
+            // one that blocks on the index.  Without the stagger the race
+            // outcome is symmetric (either tx wins) but the test still
+            // passes — it just doesn't deterministically exercise the
+            // "blocked on peer" path.
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            let res = sqlx::query(
+                "UPDATE writeback_jobs SET status = 'in_progress', \
+                 last_attempted_at = now(), attempt_count = attempt_count + 1 \
+                 WHERE id = $1",
+            )
+            .bind(job_b)
+            .execute(&mut *tx)
+            .await;
+            match res {
+                Ok(r) => {
+                    tx.commit().await.unwrap();
+                    Ok::<u64, sqlx::Error>(r.rows_affected())
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    Err(e)
+                }
+            }
+        });
+
+        let (r1, r2) = tokio::join!(t1, t2);
+        let r1 = r1.unwrap();
+        let r2 = r2.unwrap();
+
+        let mut successes = 0u32;
+        let mut unique_violations = 0u32;
+        for r in [&r1, &r2] {
+            match r {
+                Ok(1) => successes += 1,
+                Ok(n) => panic!("unexpected rows_affected: {n}"),
+                Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                    unique_violations += 1
+                }
+                Err(e) => panic!("unexpected error: {e}"),
+            }
+        }
+        assert_eq!(
+            successes, 1,
+            "exactly one concurrent UPDATE must succeed under the partial UNIQUE index"
+        );
+        assert_eq!(
+            unique_violations, 1,
+            "the other concurrent UPDATE must fail with SQLSTATE 23505 unique_violation"
+        );
+
+        // Final state: exactly one in_progress row for this manifestation.
+        let in_progress_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM writeback_jobs \
+             WHERE manifestation_id = $1 AND status = 'in_progress'",
+        )
+        .bind(m_id)
+        .fetch_one(&ing_pool)
+        .await
+        .unwrap();
+        assert_eq!(in_progress_count, 1);
+
+        let cleanup_pool = PgPool::connect(&app_url()).await.unwrap();
+        cleanup(&cleanup_pool, &ing_pool, work_id, m_id).await;
     }
 
     /// Jobs on distinct manifestations can run in parallel — i.e. the
@@ -876,12 +1040,53 @@ mod tests {
         cleanup(&pool, &ing_pool, work_id, m_id).await;
     }
 
-    /// `finish(Err(WritebackError))` records `mark_failed` with the
-    /// error string.  This is the S3 Err arm: `run_once` failed before
-    /// producing a `RunOutcome`.
+    /// `finish(Err(WritebackError))` for a transient / retryable error
+    /// routes through `mark_failed`.  `attempt_count < max_attempts`, so
+    /// the row lands at `failed` for a later retry.
     #[tokio::test]
     #[ignore]
-    async fn finish_marks_failed_on_run_once_error() {
+    async fn finish_marks_failed_on_transient_run_once_error() {
+        let pool = PgPool::connect(&app_url()).await.unwrap();
+        let ing_pool = PgPool::connect(&db_url()).await.unwrap();
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_fixture(&ing_pool, &marker).await;
+        let job_id = insert_job(&ing_pool, m_id, "metadata").await;
+
+        finish(
+            &pool,
+            &test_config_with_max_attempts(3),
+            job_id,
+            1,
+            Err(super::super::error::WritebackError::Persist(
+                "transient-disk-error".into(),
+            )),
+        )
+        .await
+        .unwrap();
+
+        let (status, error): (String, Option<String>) =
+            sqlx::query_as("SELECT status::text, error FROM writeback_jobs WHERE id = $1")
+                .bind(job_id)
+                .fetch_one(&ing_pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "failed");
+        let err_text = error.expect("error column should record the run_once error");
+        assert!(
+            err_text.contains("transient-disk-error"),
+            "error should describe the Persist error: {err_text}"
+        );
+
+        cleanup(&pool, &ing_pool, work_id, m_id).await;
+    }
+
+    /// `finish(Err(JobNotFound))` skips the retry budget and routes
+    /// straight to `skipped`: the job row has vanished (CASCADE removed
+    /// the manifestation, or the row was deleted manually), so retrying
+    /// cannot succeed.
+    #[tokio::test]
+    #[ignore]
+    async fn finish_marks_skipped_on_job_not_found_error() {
         let pool = PgPool::connect(&app_url()).await.unwrap();
         let ing_pool = PgPool::connect(&db_url()).await.unwrap();
         let marker = Uuid::new_v4().simple().to_string();
@@ -904,8 +1109,11 @@ mod tests {
                 .fetch_one(&ing_pool)
                 .await
                 .unwrap();
-        assert_eq!(status, "failed");
-        let err_text = error.expect("error column should record the run_once error");
+        assert_eq!(
+            status, "skipped",
+            "JobNotFound must route to skipped (retry budget would be wasted on a vanished row)"
+        );
+        let err_text = error.expect("error column should record the JobNotFound error");
         assert!(
             err_text.contains("not found"),
             "error should describe the JobNotFound: {err_text}"
