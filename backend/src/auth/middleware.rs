@@ -40,6 +40,66 @@ impl CurrentUser {
     }
 }
 
+/// Verify a `Authorization: Basic <b64>` header against the device-token
+/// registry. Shared by [`CurrentUser`] (cookie-or-Basic) and
+/// [`crate::auth::basic_only::BasicOnly`] (Basic-only).
+///
+/// Returns `Ok(Some(user))` when Basic credentials validate, `Ok(None)` when
+/// no `Authorization: Basic ...` is present, and `Err(Unauthorized)` when a
+/// Basic header is present but credentials are malformed or don't match any
+/// active token. Side-effect: schedules an async `update_last_used` write
+/// (SQL-side debounced to at most one UPDATE per token per 5 minutes).
+pub(crate) async fn verify_basic(
+    state: &AppState,
+    parts: &Parts,
+) -> Result<Option<CurrentUser>, AppError> {
+    let Some(auth) = parts.headers.get(axum::http::header::AUTHORIZATION) else {
+        return Ok(None);
+    };
+    let Ok(auth_str) = auth.to_str() else {
+        return Ok(None);
+    };
+    let Some(credentials) = auth_str.strip_prefix("Basic ") else {
+        return Ok(None);
+    };
+
+    use base64ct::Encoding;
+    let mut buf = vec![0u8; credentials.len()];
+    let decoded = base64ct::Base64::decode(credentials.as_bytes(), &mut buf)
+        .map_err(|_| AppError::Unauthorized)?;
+    let decoded_str = std::str::from_utf8(decoded).map_err(|_| AppError::Unauthorized)?;
+    let (username, password) = decoded_str.split_once(':').ok_or(AppError::Unauthorized)?;
+
+    let user_id: Uuid = username.parse().map_err(|_| AppError::Unauthorized)?;
+    let u = user::find_by_id(&state.pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+    let tokens = device_token::list_for_user(&state.pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    // Iterate all tokens to avoid timing side-channel that leaks token position.
+    let mut matched_token_id = None;
+    for token in &tokens {
+        if crate::auth::token::verify_device_token(password, &token.token_hash) {
+            matched_token_id = Some(token.id);
+        }
+    }
+
+    let token_id = matched_token_id.ok_or(AppError::Unauthorized)?;
+    let pool = state.pool.clone();
+    tokio::spawn(async move {
+        let _ = device_token::update_last_used(&pool, token_id).await;
+    });
+
+    Ok(Some(CurrentUser {
+        user_id: u.id,
+        role: u.role,
+        is_child: u.is_child,
+    }))
+}
+
 impl FromRequestParts<AppState> for CurrentUser {
     type Rejection = AppError;
 
@@ -59,50 +119,9 @@ impl FromRequestParts<AppState> for CurrentUser {
             });
         }
 
-        // Fall back to Basic auth: username = user_id UUID, password = device token
-        if let Some(auth) = parts.headers.get(axum::http::header::AUTHORIZATION)
-            && let Ok(auth_str) = auth.to_str()
-            && let Some(credentials) = auth_str.strip_prefix("Basic ")
-        {
-            use base64ct::Encoding;
-            let mut buf = vec![0u8; credentials.len()];
-            let decoded = base64ct::Base64::decode(credentials.as_bytes(), &mut buf)
-                .map_err(|_| AppError::Unauthorized)?;
-            let decoded_str = std::str::from_utf8(decoded).map_err(|_| AppError::Unauthorized)?;
-            let (username, password) = decoded_str.split_once(':').ok_or(AppError::Unauthorized)?;
-
-            let user_id: Uuid = username.parse().map_err(|_| AppError::Unauthorized)?;
-            let u = user::find_by_id(&state.pool, user_id)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?
-                .ok_or(AppError::Unauthorized)?;
-            let tokens = device_token::list_for_user(&state.pool, user_id)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-
-            // Iterate all tokens to avoid timing side-channel that leaks token position.
-            let mut matched_token_id = None;
-            for token in &tokens {
-                if crate::auth::token::verify_device_token(password, &token.token_hash) {
-                    matched_token_id = Some(token.id);
-                }
-            }
-
-            if let Some(token_id) = matched_token_id {
-                // Update last_used_at (fire-and-forget)
-                let pool = state.pool.clone();
-                tokio::spawn(async move {
-                    let _ = device_token::update_last_used(&pool, token_id).await;
-                });
-
-                return Ok(CurrentUser {
-                    user_id: u.id,
-                    role: u.role,
-                    is_child: u.is_child,
-                });
-            }
-
-            return Err(AppError::Unauthorized);
+        // Fall back to Basic auth
+        if let Some(user) = verify_basic(state, parts).await? {
+            return Ok(user);
         }
 
         Err(AppError::Unauthorized)

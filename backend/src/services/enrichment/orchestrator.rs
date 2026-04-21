@@ -929,6 +929,12 @@ mod tests {
                 poll_idle_secs: 5,
                 max_attempts: 3,
             },
+            opds: crate::config::OpdsConfig {
+                enabled: false,
+                page_size: 50,
+                realm: "Reverie OPDS".into(),
+                public_url: None,
+            },
             openlibrary_base_url: ol_uri.into(),
             googlebooks_base_url: gb_uri.into(),
             googlebooks_api_key: None,

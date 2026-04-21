@@ -49,7 +49,11 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
 
 /// Find the cover image href from OPF manifest/metadata.
 /// Checks manifest item with `id="cover-image"`, `id="cover"`, etc.
-fn find_cover_href(opf: &OpfData) -> Option<String> {
+///
+/// `pub(crate)` so `services::covers::extract` can mirror Step 5 detection
+/// semantics exactly — any divergence between the validation pass and the
+/// OPDS cover serve would be a silent correctness hazard.
+pub(crate) fn find_cover_href(opf: &OpfData) -> Option<String> {
     for id in &["cover-image", "cover", "Cover", "Cover-Image"] {
         if let Some(href) = opf.manifest.get(*id) {
             return Some(href.clone());

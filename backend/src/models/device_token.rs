@@ -109,11 +109,19 @@ pub async fn create_with_limit(
     Ok(dt)
 }
 
+/// Update `last_used_at`, debounced SQL-side to at most one UPDATE per token
+/// per 5 minutes. The WHERE predicate turns every call into a no-op when a
+/// previous update landed within the window — single source of truth, atomic
+/// under concurrent requests, no Rust-side policy to unit-test.
 pub async fn update_last_used(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE device_tokens SET last_used_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE device_tokens SET last_used_at = now() \
+         WHERE id = $1 \
+           AND (last_used_at IS NULL OR last_used_at < now() - interval '5 minutes')",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -148,5 +156,66 @@ mod tests {
             .await
             .expect("list after revoke");
         assert!(tokens.is_empty());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn list_for_user_excludes_revoked(pool: PgPool) {
+        let user_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Revoke Filter') RETURNING id",
+        )
+        .bind(format!("revoke-filter-{}", Uuid::new_v4()))
+        .fetch_one(&pool)
+        .await
+        .expect("create user");
+
+        let active = create(&pool, user_id, "active", "hash-active")
+            .await
+            .expect("create active");
+        let to_revoke = create(&pool, user_id, "to-revoke", "hash-revoked")
+            .await
+            .expect("create revoked");
+        assert!(revoke(&pool, to_revoke.id, user_id).await.expect("revoke"),);
+
+        let listed = list_for_user(&pool, user_id).await.expect("list");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, active.id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn update_last_used_debounced_within_window(pool: PgPool) {
+        let user_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Debounce') RETURNING id",
+        )
+        .bind(format!("debounce-{}", Uuid::new_v4()))
+        .fetch_one(&pool)
+        .await
+        .expect("create user");
+        let token = create(&pool, user_id, "debounce", "hash-debounce")
+            .await
+            .expect("create token");
+
+        update_last_used(&pool, token.id).await.expect("first");
+        let first: Option<OffsetDateTime> =
+            sqlx::query_scalar("SELECT last_used_at FROM device_tokens WHERE id = $1")
+                .bind(token.id)
+                .fetch_one(&pool)
+                .await
+                .expect("fetch first");
+        let first = first.expect("first last_used_at not null");
+
+        // Sleep 50ms then update again — the SQL predicate should veto the write
+        // because last_used_at < now() - interval '5 minutes' is false.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        update_last_used(&pool, token.id).await.expect("second");
+        let second: OffsetDateTime =
+            sqlx::query_scalar("SELECT last_used_at FROM device_tokens WHERE id = $1")
+                .bind(token.id)
+                .fetch_one(&pool)
+                .await
+                .expect("fetch second");
+        assert_eq!(
+            first, second,
+            "second update within 5-minute window must be a no-op"
+        );
     }
 }
