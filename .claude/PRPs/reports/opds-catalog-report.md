@@ -119,7 +119,7 @@ All 26 tasks from plan:
 | OPDS unit + integration tests               | ✅ 45 cases pass |
 | `services::covers::*` tests                 | ✅ 5 passed   |
 | `models::device_token::*` tests             | ✅ 4 passed   |
-| `cargo build --release`                     | not run in this session |
+| `cargo build --release`                     | ✅ compiled in 4m 04s |
 
 ### Full-suite journey (fixed in-flight)
 
