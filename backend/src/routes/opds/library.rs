@@ -226,10 +226,7 @@ fn push_cursor_predicate(
     }
 }
 
-fn split_page(
-    rows: &[sqlx::postgres::PgRow],
-    page_size: i64,
-) -> (&[sqlx::postgres::PgRow], bool) {
+fn split_page(rows: &[sqlx::postgres::PgRow], page_size: i64) -> (&[sqlx::postgres::PgRow], bool) {
     let has_more = rows.len() as i64 > page_size;
     let page_rows = if has_more {
         &rows[..page_size as usize]

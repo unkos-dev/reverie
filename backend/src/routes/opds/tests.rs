@@ -585,15 +585,13 @@ async fn series_feed_renders_all_manifestations(pool: PgPool) {
         .fetch_one(&ingestion_pool)
         .await
         .expect("insert manifestation");
-        sqlx::query(
-            "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3)",
-        )
-        .bind(series_id)
-        .bind(work_id)
-        .bind(i as i32 + 1)
-        .execute(&ingestion_pool)
-        .await
-        .expect("insert series_works");
+        sqlx::query("INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3)")
+            .bind(series_id)
+            .bind(work_id)
+            .bind(i as i32 + 1)
+            .execute(&ingestion_pool)
+            .await
+            .expect("insert series_works");
         expected.push(m_id);
     }
 
@@ -731,7 +729,10 @@ async fn invalid_cursor_returns_422(pool: PgPool) {
         format!("/opds/shelves/{shelf_id}/new?cursor={bad_cursor}"),
     ];
     for path in paths {
-        let response = server.get(&path).add_header(AUTHORIZATION, basic.clone()).await;
+        let response = server
+            .get(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
         assert_eq!(
             response.status_code(),
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -830,7 +831,10 @@ async fn wrong_password_returns_challenge(pool: PgPool) {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
-    let response = server.get("/opds").add_header(AUTHORIZATION, bad_basic).await;
+    let response = server
+        .get("/opds")
+        .add_header(AUTHORIZATION, bad_basic)
+        .await;
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     let challenge = response
         .headers()

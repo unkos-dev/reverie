@@ -675,7 +675,10 @@ mod tests {
             || {
                 let err = Config::from_env().unwrap_err();
                 let msg = err.to_string();
-                assert!(msg.contains("REVERIE_PUBLIC_URL"), "unexpected error: {msg}");
+                assert!(
+                    msg.contains("REVERIE_PUBLIC_URL"),
+                    "unexpected error: {msg}"
+                );
             },
         );
     }
