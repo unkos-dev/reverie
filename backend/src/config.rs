@@ -413,6 +413,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[
                 "REVERIE_PORT",
@@ -492,6 +495,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &["REVERIE_OPERATOR_CONTACT"],
             || {
@@ -513,6 +519,7 @@ mod tests {
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
                 ("REVERIE_OPERATOR_CONTACT", "ops@example.com"),
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -558,6 +565,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -581,6 +591,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &["DATABASE_URL"],
             || {
@@ -604,6 +617,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -627,6 +643,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -651,6 +670,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
