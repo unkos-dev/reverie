@@ -30,9 +30,10 @@ impl FromRequestParts<AppState> for BasicOnly {
     ) -> Result<Self, Self::Rejection> {
         match verify_basic(state, parts).await {
             Ok(Some(user)) => Ok(BasicOnly(user)),
-            _ => Err(AppError::BasicAuthRequired {
+            Ok(None) | Err(AppError::Unauthorized) => Err(AppError::BasicAuthRequired {
                 realm: state.config.opds.realm.clone(),
             }),
+            Err(other) => Err(other),
         }
     }
 }

@@ -109,6 +109,33 @@ async fn unauthenticated_returns_challenge(pool: PgPool) {
     assert_eq!(challenge, r#"Basic realm="Reverie OPDS", charset="UTF-8""#);
 }
 
+// ── Regression: DB failure surfaces as 500, not a 401 challenge ──────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn basic_only_db_failure_returns_500_not_challenge(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    // Close the app pool the server's state holds. A subsequent Basic auth
+    // attempt drives verify_basic into a PoolClosed sqlx::Error that
+    // bubbles up as AppError::Internal.  Before the fix, BasicOnly's
+    // wildcard arm swallowed it into a 401 + challenge.
+    app_pool.close().await;
+
+    let response = server.get("/opds").add_header(AUTHORIZATION, basic).await;
+    assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        response
+            .headers()
+            .get(axum::http::header::WWW_AUTHENTICATE)
+            .is_none(),
+        "500 must not emit a Basic challenge"
+    );
+}
+
 // ── Test 22: revoked device token rejected ───────────────────────────────
 
 #[sqlx::test(migrations = "./migrations")]
