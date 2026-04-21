@@ -25,8 +25,9 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-# Claude Code runtime locks
+# Claude Code runtime locks + per-user local settings
 .claude/*.lock
+.claude/settings.local.json
 
 # Docs build output
 docs/.astro/
