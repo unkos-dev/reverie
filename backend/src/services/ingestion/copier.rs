@@ -40,7 +40,11 @@ pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// Atomically copy `source` to `dest_dir/dest_relative`, verifying SHA-256 integrity.
@@ -90,7 +94,11 @@ pub fn copy_verified(
             dest_hasher.update(&buf[..n]);
         }
         writer.flush()?;
-        dest_hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
+        dest_hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
     };
 
     if source_hash != dest_hash {
