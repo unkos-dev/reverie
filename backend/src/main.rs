@@ -117,10 +117,9 @@ async fn main() {
     // system policies even if they forget `SET LOCAL app.current_user_id`.
     let writeback_token = cancel_token.clone();
     let writeback_config = config.clone();
-    let writeback_pool =
-        db::init_writeback_pool(&config.database_url, config.db_max_connections)
-            .await
-            .expect("failed to build writeback pool");
+    let writeback_pool = db::init_writeback_pool(&config.database_url, config.db_max_connections)
+        .await
+        .expect("failed to build writeback pool");
     tokio::spawn(async move {
         if let Err(e) =
             services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)
