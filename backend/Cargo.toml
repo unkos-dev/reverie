@@ -40,7 +40,7 @@ url = "2"
 percent-encoding = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 walkdir = "2"
-zip = "2"
+zip = "8"
 
 [dev-dependencies]
 axum-test = "20"
