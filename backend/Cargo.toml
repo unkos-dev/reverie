@@ -19,7 +19,7 @@ hickory-resolver = "0.26"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 notify = "8"
 openidconnect = { version = "4", features = ["reqwest"] }
-quick-xml = "0.37"
+quick-xml = "0.39"
 rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
