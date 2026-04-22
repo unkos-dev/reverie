@@ -313,7 +313,7 @@ mod tests {
         let (_work_id, manifestation_id) = setup_manifestation(&pool).await;
 
         let mut tx = pool.begin().await.unwrap();
-        write_drafts(&mut *tx, manifestation_id, &sample_metadata())
+        write_drafts(&mut tx, manifestation_id, &sample_metadata())
             .await
             .unwrap();
         tx.rollback().await.unwrap();

@@ -36,6 +36,8 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 tower-sessions = "0.14"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+percent-encoding = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 walkdir = "2"
 zip = "2"

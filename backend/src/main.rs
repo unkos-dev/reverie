@@ -35,13 +35,20 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
 
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    Router::new()
+    let mut router = Router::new()
         .merge(routes::health::router())
         .merge(routes::auth::router())
         .merge(routes::tokens::router())
         .merge(routes::ingestion::router())
         .merge(routes::enrichment::router())
         .merge(routes::metadata::router())
+        // /api/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
+        // with a session cookie regardless of OPDS availability).
+        .merge(routes::opds::covers_router());
+    if let Some(opds) = routes::opds::router_enabled(&state.config.opds) {
+        router = router.merge(opds);
+    }
+    router
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)

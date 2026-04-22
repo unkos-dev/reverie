@@ -1,4 +1,4 @@
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
 #[derive(Debug, thiserror::Error)]
@@ -7,6 +7,12 @@ pub enum AppError {
     NotFound,
     #[error("unauthorized")]
     Unauthorized,
+    /// 401 that emits a `WWW-Authenticate: Basic` challenge (RFC 7617). Used by
+    /// the `BasicOnly` extractor to signal OPDS clients to prompt for
+    /// credentials. `realm` is operator-configured and validated at startup
+    /// (no embedded `"` allowed).
+    #[error("basic auth required")]
+    BasicAuthRequired { realm: String },
     #[error("forbidden")]
     Forbidden,
     #[error("validation error: {0}")]
@@ -17,9 +23,22 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if let Self::BasicAuthRequired { realm } = &self {
+            let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
+            let mut response = Response::new(axum::body::Body::empty());
+            *response.status_mut() = StatusCode::UNAUTHORIZED;
+            if let Ok(value) = HeaderValue::from_str(&challenge) {
+                response
+                    .headers_mut()
+                    .insert(header::WWW_AUTHENTICATE, value);
+            }
+            return response;
+        }
+
         let (status, message) = match self {
             Self::NotFound => (StatusCode::NOT_FOUND, "not found".to_owned()),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_owned()),
+            Self::BasicAuthRequired { .. } => unreachable!("handled above"),
             Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden".to_owned()),
             Self::Validation(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
             Self::Internal(err) => {
@@ -71,6 +90,25 @@ mod tests {
     async fn forbidden_returns_403() {
         let (status, _) = status_of(AppError::Forbidden).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn basic_auth_required_emits_challenge() {
+        let response = AppError::BasicAuthRequired {
+            realm: "Reverie OPDS".into(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let challenge = response
+            .headers()
+            .get(axum::http::header::WWW_AUTHENTICATE)
+            .expect("WWW-Authenticate header present")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(challenge, r#"Basic realm="Reverie OPDS", charset="UTF-8""#);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert!(body.is_empty(), "BasicAuthRequired body must be empty");
     }
 
     #[tokio::test]

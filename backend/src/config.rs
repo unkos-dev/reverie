@@ -19,12 +19,28 @@ pub struct Config {
     pub enrichment: EnrichmentConfig,
     pub cover: CoverConfig,
     pub writeback: WritebackConfig,
+    pub opds: OpdsConfig,
     pub openlibrary_base_url: String,
     pub googlebooks_base_url: String,
     pub googlebooks_api_key: Option<String>,
     pub hardcover_base_url: String,
     pub hardcover_api_token: Option<String>,
     pub operator_contact: Option<String>,
+}
+
+/// OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a
+/// Basic-only extractor and `public_url` must be set — feeds emit absolute URLs
+/// rooted at `public_url`.
+///
+/// Note: the dual-mounted cover handlers at `/api/books/:id/cover{,/thumb}` are
+/// mounted independently of `enabled` because the web UI (Step 10) needs them
+/// regardless of OPDS availability.
+#[derive(Debug, Clone)]
+pub struct OpdsConfig {
+    pub enabled: bool,
+    pub page_size: u32,
+    pub realm: String,
+    pub public_url: Option<url::Url>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +158,7 @@ impl Config {
         let enrichment = EnrichmentConfig::from_env()?;
         let cover = CoverConfig::from_env()?;
         let writeback = WritebackConfig::from_env()?;
+        let opds = OpdsConfig::from_env()?;
 
         let openlibrary_base_url = env::var("REVERIE_OPENLIBRARY_BASE_URL")
             .unwrap_or_else(|_| "https://openlibrary.org".into());
@@ -185,6 +202,7 @@ impl Config {
             enrichment,
             cover,
             writeback,
+            opds,
             openlibrary_base_url,
             googlebooks_base_url,
             googlebooks_api_key,
@@ -274,6 +292,48 @@ impl CoverConfig {
     }
 }
 
+impl OpdsConfig {
+    fn from_env() -> Result<Self, ConfigError> {
+        let enabled = parse_bool("REVERIE_OPDS_ENABLED", true)?;
+        let page_size = parse_u32("REVERIE_OPDS_PAGE_SIZE", 50)?;
+        if !(1..=500).contains(&page_size) {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_OPDS_PAGE_SIZE".into(),
+                reason: format!("must be 1-500, got {page_size}"),
+            });
+        }
+        let realm = env::var("REVERIE_OPDS_REALM").unwrap_or_else(|_| "Reverie OPDS".into());
+        if realm.contains('"') {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_OPDS_REALM".into(),
+                reason: "must not contain '\"'".into(),
+            });
+        }
+        let public_url = match env::var("REVERIE_PUBLIC_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+        {
+            Some(s) => Some(url::Url::parse(&s).map_err(|e| ConfigError::Invalid {
+                var: "REVERIE_PUBLIC_URL".into(),
+                reason: e.to_string(),
+            })?),
+            None => None,
+        };
+        if enabled && public_url.is_none() {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_PUBLIC_URL".into(),
+                reason: "required when REVERIE_OPDS_ENABLED=true".into(),
+            });
+        }
+        Ok(Self {
+            enabled,
+            page_size,
+            realm,
+            public_url,
+        })
+    }
+}
+
 fn parse_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
     match env::var(var) {
         Ok(v) => match v.to_lowercase().as_str() {
@@ -353,6 +413,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[
                 "REVERIE_PORT",
@@ -432,6 +495,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &["REVERIE_OPERATOR_CONTACT"],
             || {
@@ -453,6 +519,7 @@ mod tests {
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
                 ("REVERIE_OPERATOR_CONTACT", "ops@example.com"),
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -498,6 +565,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -521,6 +591,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &["DATABASE_URL"],
             || {
@@ -544,6 +617,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -567,6 +643,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
@@ -582,6 +661,103 @@ mod tests {
     }
 
     #[test]
+    fn opds_enabled_without_public_url_errors() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                ("REVERIE_OPDS_ENABLED", "true"),
+            ],
+            &["REVERIE_PUBLIC_URL"],
+            || {
+                let err = Config::from_env().unwrap_err();
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("REVERIE_PUBLIC_URL"),
+                    "unexpected error: {msg}"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn opds_page_size_out_of_range_errors() {
+        for bad in ["0", "501"] {
+            with_env(
+                &[
+                    ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
+                    ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                    ("OIDC_CLIENT_ID", "test"),
+                    ("OIDC_CLIENT_SECRET", "secret"),
+                    ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                    ("REVERIE_OPDS_ENABLED", "false"),
+                    ("REVERIE_OPDS_PAGE_SIZE", bad),
+                ],
+                &[],
+                || {
+                    let err = Config::from_env().unwrap_err();
+                    let msg = err.to_string();
+                    assert!(
+                        msg.contains("REVERIE_OPDS_PAGE_SIZE"),
+                        "page_size={bad} did not surface var name: {msg}"
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn opds_realm_with_double_quote_errors() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                ("REVERIE_OPDS_ENABLED", "false"),
+                ("REVERIE_OPDS_REALM", "bad\"quote"),
+            ],
+            &[],
+            || {
+                let err = Config::from_env().unwrap_err();
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("REVERIE_OPDS_REALM"),
+                    "expected realm error: {msg}"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn opds_enabled_with_valid_public_url_parses() {
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
+                ("OIDC_ISSUER_URL", "https://auth.example.com"),
+                ("OIDC_CLIENT_ID", "test"),
+                ("OIDC_CLIENT_SECRET", "secret"),
+                ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                ("REVERIE_OPDS_ENABLED", "true"),
+                ("REVERIE_PUBLIC_URL", "https://reverie.example.com/"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().unwrap();
+                assert!(config.opds.enabled);
+                assert_eq!(
+                    config.opds.public_url.as_ref().map(|u| u.as_str()),
+                    Some("https://reverie.example.com/")
+                );
+            },
+        );
+    }
+
+    #[test]
     fn from_env_invalid_port() {
         with_env(
             &[
@@ -591,6 +767,9 @@ mod tests {
                 ("OIDC_CLIENT_ID", "test"),
                 ("OIDC_CLIENT_SECRET", "secret"),
                 ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
+                // OPDS: default enabled=true requires PUBLIC_URL. Existing tests
+                // don't care about OPDS, so disable it here.
+                ("REVERIE_OPDS_ENABLED", "false"),
             ],
             &[],
             || {
