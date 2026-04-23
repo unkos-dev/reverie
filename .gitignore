@@ -36,3 +36,7 @@ docs/.astro/
 coverage/
 *.lcov
 /plans/
+
+# Gemini CLI security scanner scratch directory (mid-run temp files;
+# security_report.json persists when --json is requested)
+.gemini_security/
