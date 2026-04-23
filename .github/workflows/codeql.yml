@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Weekly scan, 17:00 UTC Sunday (~01:00 Monday Perth). Off-peak, and
+    # Weekly scan, 17:37 UTC Sunday (~01:37 Monday Perth). Off-peak and
     # avoids top-of-the-hour contention on GitHub-hosted runners.
     - cron: '37 17 * * 0'
 
@@ -30,42 +30,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: actions
-            build-mode: none
-          - language: javascript-typescript
-            build-mode: none
-          - language: rust
-            build-mode: manual
+        language: [actions, javascript-typescript, rust]
     steps:
       - uses: actions/checkout@v6
-
-      # Rust: install toolchain + prime cargo cache BEFORE codeql init, so that
-      # the cargo build step (which runs AFTER init so the extractor can hook
-      # cargo invocations) has a warm cache.
-      - if: matrix.language == 'rust'
-        uses: dtolnay/rust-toolchain@stable
-
-      - if: matrix.language == 'rust'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
+          # All three languages use build-mode: none. The Rust extractor
+          # (codeql/rust-queries, beta) currently pins Rust to `none` and
+          # rejects `manual`/`autobuild`; the extractor invokes cargo
+          # internally. Revisit when upstream exposes manual mode.
+          build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
-
-      # Build step must run AFTER init so the CodeQL Rust extractor can hook
-      # cargo's compiler invocations and observe expanded macros + resolved
-      # types. Plain debug build; --release / --all-targets add time without
-      # improving extraction quality.
-      - if: matrix.language == 'rust'
-        name: Build Rust
-        working-directory: backend
-        run: cargo build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
