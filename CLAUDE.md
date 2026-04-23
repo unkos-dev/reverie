@@ -113,3 +113,30 @@ This project is tracked in Linear under the **Unkos** team, **Reverie** project.
 - Include issue IDs in branch names: `feat/unk-42-epub-import`
 - Include issue IDs in commit messages where relevant
 - When work is deferred or blocked, create a Linear issue
+
+---
+
+## Planning Artifact Locations
+
+Two distinct planning artifact types live in two distinct locations:
+
+- **`/plans/`** (gitignored, local scratch space):
+  - Project-wide reference docs (BLUEPRINT.md, DESIGN_BRIEF.md)
+  - Design specs and brainstorming outputs (pre-implementation decisions + rationale)
+  - The `superpowers:brainstorming` skill MUST write its spec output here as
+    `YYYY-MM-DD-<topic>-design.md`. This overrides the skill's documented
+    default of `docs/superpowers/specs/` (which the skill explicitly invites
+    overriding via "User preferences for spec location override this default").
+- **`.claude/PRPs/plans/`** (committed):
+  - Implementation plans, one per feature/PR
+  - Output from `prp-core:prp-plan` and related planning skills
+  - Filename pattern: `<topic>.plan.md` (matching the feature branch name)
+
+**Workflow:** `superpowers:brainstorming` → spec lands in `/plans/` →
+ingested by `prp-core:prp-plan` → implementation plan committed to
+`.claude/PRPs/plans/`.
+
+When invoking `superpowers:brainstorming`, explicitly pass the spec
+location alongside the topic (belt-and-suspenders alongside this
+convention) — agents that read CLAUDE.md will honor this section, but the
+SKILL.md default is not enforced automatically.
