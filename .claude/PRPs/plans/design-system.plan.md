@@ -10,6 +10,15 @@
 > templating of `index.html`; no per-request nonce. Sections touching CSP have
 > been reconciled against the shipped mechanism.
 >
+> **Hero screens removed 2026-04-24 (adversarial-review Path 2 resolution).**
+> Phase D4 (`/design/hero/library`, `/design/hero/book`) is cut. The design
+> system is judged in this PR against tokens, themes, docs, and the
+> `/design/system` primitive gallery only; applied-page design review
+> (library grid, book detail, search UI) is Step 11's scope. A dev-only seed
+> script (`dev/seed-library.sh`) populates `$REVERIE_LIBRARY_ROOT` with a
+> curated set of Standard Ebooks public-domain EPUBs for backend integration
+> tests and Step 11 onboarding; no binaries are committed to the repo.
+>
 > **Related Linear issues:** [UNK-104](https://linear.app/unkos/issue/UNK-104)
 > (OIDC e2e test), [UNK-105](https://linear.app/unkos/issue/UNK-105)
 > (shared-constants pipeline), [UNK-106](https://linear.app/unkos/issue/UNK-106)
@@ -18,14 +27,14 @@
 ## Summary
 
 Build Reverie's design foundation — a codified multi-theme token system, themed
-shadcn/ui primitives, flicker-free theme switching with a DB-backed per-user
-preference, and two hero screens (library grid + book detail) that prove the
-system against realistic data. Scope is frontend-heavy with a single backend
-sliver: one migration adding `theme_preference` to `users` plus an update to
-`/auth/me` and a new `PATCH /auth/me/theme` endpoint. Design phases D1
-(philosophy) and D2 (three coded directions) remain creative/iterative; this
-plan gives D0 (test harness + deps), D3 (codification), D4 (hero screens), and
-D5 (crosscheck review) execution-grade detail.
+shadcn/ui primitives, and flicker-free theme switching with a DB-backed per-user
+preference. Scope is frontend-heavy with a single backend sliver: one migration
+adding `theme_preference` to `users` plus an update to `/auth/me` and a new
+`PATCH /auth/me/theme` endpoint. Design phases D1 (philosophy) and D2 (three
+coded directions) remain creative/iterative; this plan gives D0 (test harness +
+deps + seeded dev library), D3 (codification), and D5 (crosscheck review)
+execution-grade detail. Applied-page design (library grid, book detail, search)
+is deferred to Step 11.
 
 ## User Story
 
@@ -46,8 +55,8 @@ no router, no tokens, no component library, no tests, no theme mechanism. Step
 **Desired state:** the app boots into a themed shell (Dark/Light, selected
 synchronously from a cookie before React hydrates — no theme flicker),
 navigates via react-router, composes from restyled shadcn primitives bound to
-semantic tokens, and ships `/design/system` + `/design/hero/{library,book}`
-dev-only routes that serve as the visual contract for Step 11. The design
+semantic tokens, and ships a dev-only `/design/system` route — the primitive
+gallery — that serves as the visual contract for Step 11. The design
 system is canonically documented in `docs/design/PHILOSOPHY.md` +
 `docs/design/VISUAL_IDENTITY.md`.
 
@@ -60,7 +69,7 @@ system is canonically documented in `docs/design/PHILOSOPHY.md` +
 | Depends on | Step 9 merged |
 | Parallelism | Standalone; Step 11 blocks on this |
 | Complexity | HIGH (multi-phase, creative + mechanical, DB + FE, crosscheck gate) |
-| Estimated files | ~45–60 (1 migration up/down, ~3 backend edits, ~15 shadcn primitives, ~10 theme/provider/switcher files, ~6 hero/gallery route files, 2 docs files, 1 CI edit) |
+| Estimated files | ~40–50 (1 migration up/down, ~3 backend edits, ~15 shadcn primitives, ~10 theme/provider/switcher files, 1 primitive-gallery route file, 1 dev seed script, 2 docs files, 1 CI edit) |
 | Model tier | Strongest (visual identity is a product pillar; errors cascade into every subsequent frontend step) |
 
 ---
@@ -114,10 +123,10 @@ system is canonically documented in `docs/design/PHILOSOPHY.md` +
 ║  ┌──────────────────────────┐      ┌──────────────────────────────────────┐   ║
 ║  │ Production bundle:       │      │ Dev bundle (also dev gallery):       │   ║
 ║  │  App shell (react-router │      │  + /design/system (primitive gallery)│   ║
-║  │  + themed primitives) —  │      │  + /design/hero/library              │   ║
-║  │  /design/* tree-shaken   │      │  + /design/hero/book                 │   ║
-║  │  out via dynamic import  │      │  (imported via dynamic import inside │   ║
-║  │  inside `if (DEV)` block │      │   `if (import.meta.env.DEV)`)        │   ║
+║  │  + themed primitives) —  │      │  (imported via dynamic import inside │   ║
+║  │  /design/* tree-shaken   │      │   `if (import.meta.env.DEV)`)        │   ║
+║  │  out via dynamic import  │      │                                      │   ║
+║  │  inside `if (DEV)` block │      │                                      │   ║
 ║  └──────────────────────────┘      └──────────────────────────────────────┘   ║
 ║                                                                               ║
 ║  USER_FLOW: cold load → correct theme first paint → app shell → browse       ║
@@ -136,14 +145,13 @@ system is canonically documented in `docs/design/PHILOSOPHY.md` +
 |---|---|---|---|
 | `/` (frontend root) | Vite/React logos + counter demo | Themed app shell (Step 11 will fill in; scaffold ships with react-router, themed layout, no business content) | Foundation in place for all subsequent UI work |
 | `/design/system` | 404 | Primitive gallery — every shadcn component in every state, in both themes; dev-only | Visual contract reviewable by any contributor |
-| `/design/hero/library`, `/design/hero/book` | 404 | Production-fidelity reference screens against fixture data; dev-only | Step 11 mirrors these instead of designing from scratch |
 | First paint on cold load | White default | `data-theme` set from cookie by blocking inline script; first paint matches stored preference | No theme flicker (FOUC) |
 | `GET /auth/me` | Returns `{id, display_name, email, role, is_child}` (`backend/src/routes/auth.rs:162–177`) | Adds `theme_preference` field | Frontend reconciles cookie with server on hydrate |
 | `PATCH /auth/me/theme` (new) | 404 | Accepts `{theme_preference: "system" \| "light" \| "dark"}`, updates `users.theme_preference`, refreshes `reverie_theme` cookie | Preference persists across devices |
 | Session cookie (`id`, tower-sessions default, `backend/src/main.rs:27–34`) | Unchanged — stays HttpOnly | Joined by sibling `reverie_theme` cookie (not HttpOnly, SameSite=Lax, 1yr, Path=/) | JS can read the theme cookie synchronously for FOUC avoidance |
 | `users` table | No theme column | Adds `theme_preference TEXT NOT NULL DEFAULT 'system'` | Per-user preference, multi-user-aware |
 | `frontend/vite.config.ts` | No `server.proxy`; dev is cross-origin to backend | Proxies `/api`, `/auth`, `/opds` to `http://localhost:3000` | Same-origin dev → session + theme cookies work identically to production |
-| CI (`.github/workflows/ci.yml:87–110`) | `npm ci && lint && build` | Adds `npm test -- --run`, stylelint, bundle-leak gate | Regressions on theme/primitive/gating caught in CI |
+| CI (`.github/workflows/ci.yml:87–110`) | `npm ci && lint && build` | Adds `npm test -- --run`, stylelint, bundle-leak structural gate | Regressions on theme/primitive/gating caught in CI |
 
 ---
 
@@ -356,6 +364,21 @@ referenced, not re-literalled (see shared-constants tracker UNK-105):
 
 ```rust
 // NEW: backend/src/auth/theme_cookie.rs
+//!
+//! FOUC theme-preference cookie helpers.
+//!
+//! Lifecycle: `reverie_theme` **survives logout by design**. It is device
+//! state (visual preference, non-PII, non-session-scoped), not session
+//! state. See `docs/design/visual-identity.md` § Theme Cookie Lifecycle
+//! for the rationale and the contrast rule: any future *session-state*
+//! cookie MUST be `HttpOnly` and MUST be cleared on logout — this one
+//! is the explicit counterexample.
+//!
+//! Attribute parity: the frontend `writeThemeCookie`
+//! (`frontend/src/lib/theme/cookie.ts`) MUST produce matching attributes
+//! (Path=/, Max-Age=31536000, SameSite=Lax, no HttpOnly, no Secure).
+//! Drift produces two cookies of the same name with divergent attributes
+//! in the browser jar. See THEME_COOKIE_FRONTEND_WRITER pattern.
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use time::Duration;
 
@@ -396,6 +419,86 @@ Ok((jar, Redirect::temporary("/")))
 
 The callback signature gains `jar: CookieJar` as an extractor alongside the
 existing ones.
+
+**THEME_COOKIE_FRONTEND_WRITER** — parallels `THEME_COOKIE_WRITER` on the
+backend side. The frontend writes `reverie_theme` from JS during the
+optimistic-update path in `setPreference` (before the PATCH resolves) and on
+any local reconciliation. Attribute parity with the backend is a **hard
+requirement**: when both sides write the same-named cookie, any attribute
+drift (Path, Max-Age, SameSite, Secure) produces **two cookies in the jar**
+whose relative precedence is path-specific and non-deterministic. The FOUC
+script's `document.cookie.split('; ')` then matches whichever is more
+specific — and "more specific" depends on the path the user is on when the
+divergent cookie was set.
+
+```typescript
+// NEW: frontend/src/lib/theme/cookie.ts
+// Cookie name for the FOUC theme preference. Duplicated in:
+//   - backend/src/auth/theme_cookie.rs (THEME_COOKIE_NAME const)
+//   - frontend/src/fouc/fouc.js (inline FOUC script body, CSP-hashed at build)
+// All three MUST agree. Tracked as instance 1 under UNK-105.
+export const THEME_COOKIE_NAME = "reverie_theme";
+
+// ONE YEAR in seconds. MUST equal `Duration::days(365).whole_seconds()` on the
+// backend side (365 × 86400 = 31_536_000). If this constant changes, the
+// matching `.max_age(Duration::days(...))` in
+// `backend/src/auth/theme_cookie.rs` MUST change in the same commit.
+const ONE_YEAR_SECONDS = 31_536_000;
+
+export type ThemePreference = "system" | "light" | "dark";
+
+export function readThemeCookie(): ThemePreference | null {
+  // Match the backend name verbatim; split on "; " per RFC 6265 cookie-string
+  // grammar. Malformed values are handled by the caller (FOUC falls back to
+  // `light`; provider falls back to the server-returned value).
+  const pairs = (document.cookie || "").split("; ");
+  for (const pair of pairs) {
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    if (pair.slice(0, eq) !== THEME_COOKIE_NAME) continue;
+    const raw = pair.slice(eq + 1);
+    if (raw === "system" || raw === "light" || raw === "dark") return raw;
+    return null; // malformed: signal caller to ignore
+  }
+  return null;
+}
+
+// Attribute parity with backend `set_theme_cookie`:
+//   Path=/            — matches backend
+//   Max-Age=31536000  — matches backend's Duration::days(365)
+//   SameSite=Lax      — matches backend
+//   HttpOnly          — intentionally absent on BOTH sides (JS must read for FOUC)
+//   Secure            — intentionally absent on BOTH sides (TLS proxy fronts
+//                       plain HTTP; matches session cookie behaviour)
+// If the backend spec changes, this function MUST change in the same commit.
+// The `cookie.test.ts` spec below asserts each attribute so drift is caught.
+export function writeThemeCookie(value: ThemePreference): void {
+  document.cookie =
+    `${THEME_COOKIE_NAME}=${value}; ` +
+    `Path=/; ` +
+    `Max-Age=${ONE_YEAR_SECONDS}; ` +
+    `SameSite=Lax`;
+}
+```
+
+`cookie.test.ts` MUST assert every attribute as a verbatim string check against
+the written `document.cookie` input, not just that the value round-trips.
+Mocking approach: stub `document.cookie` via a property setter spy
+(`Object.defineProperty(document, 'cookie', { set: spy, get: ... })`) or use
+jsdom's default `document.cookie` getter and parse the result. Assertions
+(see Testing Strategy test matrix row for `cookie.test.ts`):
+
+- Written string contains `Path=/`
+- Written string contains `Max-Age=31536000`
+- Written string contains `SameSite=Lax`
+- Written string does **NOT** contain `HttpOnly`
+- Written string does **NOT** contain `Secure`
+- Written string starts with `reverie_theme=<value>`
+
+These attribute assertions — combined with the backend `set_theme_cookie`
+unit test's matching assertions on the built `Cookie` struct — form the
+cross-stack parity contract. A drift on either side fails the corresponding
+unit test in the same PR.
 
 **SQLX_TEST_HARNESS** — migration + PATCH verification. Helper signatures
 verified against `backend/src/test_support.rs` (2026-04-23):
@@ -607,12 +710,52 @@ interface ThemeContextValue {
 }
 ```
 
-Initial state is read from `document.documentElement.dataset.theme` (set by
-the inline script) to match what's already painted. On mount, the provider
-fetches `/auth/me`, and if the server `theme_preference` differs from the
-cookie, trusts the server and updates both cookie and DOM. Every `setPreference`
-call is optimistic (writes cookie + DOM immediately) then PATCHes; on PATCH
-failure it reverts both.
+**Initial state derivation — `preference` and `effective` have different
+sources of truth:**
+
+- `preference` (the user's stored choice — `system` | `light` | `dark`) ←
+  **cookie**, via `readThemeCookie()` from `cookie.ts`. If the cookie is
+  absent or malformed, default to `'system'`.
+- `effective` (what's actually painted — `light` | `dark`) ←
+  **`document.documentElement.dataset.theme`**, which FOUC already resolved
+  from the same cookie plus `prefers-color-scheme`. Belt-and-suspenders
+  fallback: if `dataset.theme` is missing or unexpected, re-derive (if
+  `preference === 'system'`, consult `matchMedia('(prefers-color-scheme:
+  dark)')`; otherwise `effective = preference`).
+
+Reading `preference` from `dataset.theme` (the naïve approach) would lose the
+`system` choice entirely: FOUC resolves `system` → `light`/`dark` before
+setting `dataset.theme`, so the attribute is always concrete and "System" in
+the theme switcher would appear unselected even when the user's stored
+preference is `system`. The cookie is the canonical source for `preference`.
+
+```typescript
+// Initial-state helper — synchronous, mount-time derivation
+function deriveInitialState(): { preference: Theme; effective: EffectiveTheme } {
+  const stored = readThemeCookie(); // "system" | "light" | "dark" | null
+  const preference: Theme = stored ?? 'system';
+
+  const painted = document.documentElement.dataset.theme;
+  const effective: EffectiveTheme =
+    painted === 'dark' || painted === 'light'
+      ? (painted as EffectiveTheme)
+      : preference === 'system'
+        ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : (preference as EffectiveTheme);
+
+  return { preference, effective };
+}
+```
+
+On mount, the provider fetches `/auth/me`. If the server `theme_preference`
+differs from the cookie-derived `preference`, trust the server and update
+cookie + DOM + state (via `writeThemeCookie` + `setPreference`-like flow).
+If `/auth/me` returns 401 (logged-out visitor) the provider stays on the
+cookie-derived preference — no reconciliation needed.
+
+Every `setPreference` call is optimistic (writes cookie + DOM immediately)
+then PATCHes; on PATCH failure it reverts both cookie (back to prior value)
+and DOM.
 
 **Cross-tab sync via `BroadcastChannel`**: the provider subscribes to
 `BroadcastChannel('reverie-theme')` on mount and posts the new value on
@@ -665,7 +808,8 @@ Notes on choices:
   migrate to a meta-framework is the smallest part of that migration.
 - `iconLibrary: "lucide"` — ~1,500 icons covering reading-app vocabulary
   (book, bookmark, library, scroll, glasses, notebook, pen, quote,
-  highlighter). Radix Icons' ~300 would hit the wall in hero screens.
+  highlighter). Radix Icons' ~300 would run thin once Step 11 starts
+  applying primitives to real pages.
 - Aliases match `frontend/CLAUDE.md` project structure exactly.
 
 **DEV_ROUTE_TREE_SHAKING** — the gating mechanism for `/design/*`:
@@ -688,36 +832,80 @@ async function buildRouter() {
 
 `import.meta.env.DEV` is replaced at build time to a literal `false` in
 production, and Vite's tree-shaker eliminates the whole `import('./routes/design')`
-target module tree. Verified by the CI grep gate in the verification block.
+target module tree. Verified by the CI structural gate in the verification block
+(no `design-*.js` chunk emitted in `frontend/dist/assets/`).
 Static top-level `import { designRoutes } from './routes/design'` does **not**
 achieve this, even if the route list is conditionally empty.
 
-**VITE_PROXY_FOR_SAME_ORIGIN_DEV** — removes the need for CORS:
+**VITE_PROXY_FOR_SAME_ORIGIN_DEV** — removes the need for CORS.
 
-```typescript
-// frontend/vite.config.ts (extend existing)
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  server: {
-    proxy: {
-      '/api':  { target: 'http://localhost:3000', changeOrigin: true },
-      '/auth': { target: 'http://localhost:3000', changeOrigin: true },
-      '/opds': { target: 'http://localhost:3000', changeOrigin: true },
-    },
-  },
-  test: {
-    environment: 'jsdom',
-    globals: true,
-    setupFiles: ['./tests/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
-  },
-});
+> [!IMPORTANT]
+> This is a **diff against the currently-shipped `frontend/vite.config.ts`**
+> (the UNK-106 CSP PR added `cspHashPlugin()` and a `server.headers` dev CSP
+> block). **Both must be preserved verbatim.** Do not replace the whole file
+> with any code block below — apply the additions. A literal overwrite
+> regresses UNK-106 (no FOUC hash regen, backend dist-validation fails at
+> boot, dev CSP disappears).
+
+```diff
+ // frontend/vite.config.ts — current file (post UNK-106) already defines
+ // `const DEV_CSP = …` and imports `cspHashPlugin`. Do not touch those.
+ // This task ADDS `server.proxy` + reshapes `test` into a two-project config.
+
+ export default defineConfig({
+   plugins: [react(), tailwindcss(), cspHashPlugin()],    // ← PRESERVE cspHashPlugin()
+   server: {
+     headers: {
+       "Content-Security-Policy": DEV_CSP,                // ← PRESERVE DEV_CSP header
+     },
++    proxy: {
++      "/api":  { target: "http://localhost:3000", changeOrigin: true },
++      "/auth": { target: "http://localhost:3000", changeOrigin: true },
++      "/opds": { target: "http://localhost:3000", changeOrigin: true },
++    },
+   },
+   test: {
+-    environment: "node",
+-    include: ["vite-plugins/**/__tests__/**/*.test.ts"],
++    // Vitest `projects` (Vitest ≥ 3.x) is the idiomatic way to run tests
++    // under different environments in one config. Verify API shape against
++    // the installed vitest version; fall back to a `vitest.workspace.ts`
++    // file if the installed version predates `test.projects`.
++    projects: [
++      {
++        extends: true,
++        test: {
++          name: "vite-plugins",
++          environment: "node",
++          include: ["vite-plugins/**/__tests__/**/*.test.ts"],
++        },
++      },
++      {
++        extends: true,
++        test: {
++          name: "frontend",
++          environment: "jsdom",
++          globals: true,
++          setupFiles: ["./tests/setup.ts"],
++          include: ["src/**/*.{test,spec}.{ts,tsx}"],
++        },
++      },
++    ],
+   },
+ });
 ```
 
 Backend port `3000` matches `REVERIE_PORT` default (`backend/src/config.rs:103–109`).
 Cookies set by the backend on `/auth/*` are automatically same-origin in dev.
 No `CorsLayer` needed; matches production topology (Docker serves frontend +
 backend from same origin).
+
+**Why two test projects?** The plugin tests (`vite-plugins/__tests__`) use
+Node's `crypto` + `fs` and want the `node` environment. The new React tests
+(`src/**/*.test.tsx`) use React Testing Library and want `jsdom`. Vitest's
+single-project flat `test.environment` can't be both; `projects` is the
+supported mechanism. `extends: true` inherits plugins + resolve config from
+the root so both suites see the same `cspHashPlugin()` / aliases.
 
 ---
 
@@ -741,7 +929,7 @@ Frontend (substantial):
 | File | Action | Why |
 |---|---|---|
 | `frontend/package.json` | UPDATE | Add devDeps (vitest, @testing-library/react, @testing-library/jest-dom, @testing-library/user-event, jsdom, stylelint, @axe-core/cli) + deps (react-router, lucide-react, @fontsource/<chosen>); add `test`, `test:coverage`, `stylelint` scripts |
-| `frontend/vite.config.ts` | UPDATE | Add `server.proxy` + `test` key |
+| `frontend/vite.config.ts` | UPDATE | Add `server.proxy`; reshape `test` into `test.projects` (node for plugin tests, jsdom for React tests); add `"font-src 'self'"` to `DEV_CSP` array (S2 parity with prod). **Preserve** `cspHashPlugin()` + existing `server.headers` block verbatim. |
 | `frontend/vitest.config.ts` | CREATE (optional, if not inlined) | Vitest config |
 | `frontend/tests/setup.ts` | CREATE | RTL setup, jest-dom registration, cleanup |
 | `frontend/tsconfig.app.json` | UPDATE | `types: ["vitest/globals", "vitest/jsdom", "@testing-library/jest-dom"]` |
@@ -768,26 +956,29 @@ Frontend (substantial):
 | `frontend/src/components/ui/*.tsx` | CREATE via shadcn add | Button, Input, Label, Select, Combobox, RadioGroup, Checkbox, Switch, Card, Dialog, AlertDialog, Sheet, Table, Tabs, Toast, Tooltip, DropdownMenu, Form, Avatar, Badge, Separator, Skeleton, ScrollArea, Popover |
 | `frontend/src/routes/design.tsx` | CREATE | Dev-only route tree; dynamic import target |
 | `frontend/src/pages/design/system.tsx` | CREATE | Component gallery route |
-| `frontend/src/pages/design/hero/library.tsx` | CREATE | Hero library-grid screen |
-| `frontend/src/pages/design/hero/book.tsx` | CREATE | Hero book-detail screen |
-| `frontend/src/pages/design/fixtures/` | CREATE | Realistic title/author/cover fixture data (covers from Open Library or public-domain classics) |
 | `frontend/src/pages/design/explore/*` | CREATE then DELETE | Three D2 direction spikes; pruned as first step of D3 |
-| `.github/workflows/ci.yml` | UPDATE | Add `npm test -- --run`, `npx stylelint`, bundle-leak grep gate to frontend job |
+| `dev/seed-library.sh` | CREATE | Pinned Standard Ebooks URLs + SHA-256 checksums; downloads ~8 PD EPUBs into `$REVERIE_LIBRARY_ROOT` for dev QA and backend integration tests |
+| `.gitignore` | UPDATE | Ignore `backend/tests/fixtures/library/` (seed script writes here when `REVERIE_LIBRARY_ROOT` is unset) |
+| `.github/workflows/ci.yml` | UPDATE | Add `npm test -- --run`, `npx stylelint`, bundle-leak structural gate to frontend job |
 
 Docs:
 
 | File | Action | Why |
 |---|---|---|
 | `docs/src/content/docs/design/philosophy.md` | CREATE | D1 deliverable — emotional target, anti-patterns, usage context |
-| `docs/src/content/docs/design/visual-identity.md` | CREATE | D3 canonical spec — tokens, type scale, spacing, motion, state philosophy |
+| `docs/src/content/docs/design/visual-identity.md` | CREATE | D3 canonical spec — tokens, type scale, spacing, motion, state philosophy, Theme Cookie Lifecycle (S3 rationale) |
+| `docs/security/content-security-policy.md` | UPDATE | D3.20: add `## Cookies` section (inventory + lifecycle of `id` + `reverie_theme`) and fonts row/subsection in dev-vs-prod table (C1 resolution) |
 | `docs/astro.config.mjs` | UPDATE | Add `Design` sidebar group linking the two docs |
 
 ---
 
 ## NOT Building
 
-- Frontend business routes beyond app shell + hero screens (library grid that actually queries the API, book detail with real data) — **this is Step 11**. Hero screens are fixture-driven reference only.
-- Admin UI, user management, settings page, search UI — Step 11+.
+- Frontend business routes beyond the app shell (library grid that queries `/api/books`, book detail with real data, search UI) — **Step 11**. This PR ships the design system; Step 11 applies it to real pages.
+- Applied-page design review (layouts, spacing-in-context, per-page hover/focus states, empty/loading/error treatments for real routes) — **Step 11**. Crosscheck in this PR judges the *system* (tokens, themes, docs, primitives), not applied pages.
+- Hero / showcase screens driven by fake fixtures — dropped entirely. Seed script populates the dev library with real EPUBs; design QA for applied pages happens in Step 11 against the real routes built on top of this system.
+- JSON book list/detail endpoints (`GET /api/books`, `GET /api/books/:id`) — Step 11 surface. This PR does not add them.
+- Admin UI, user management, settings page — Step 11+.
 - Additional themes beyond Dark + Light — architected for unlimited, shipped as two.
 - Mobile-specific responsive optimisations beyond "usable on tablet"; a dedicated mobile polish pass is out of scope.
 - Storybook or any third-party visual-regression tooling — `/design/system` + crosscheck review is the substitute.
@@ -814,18 +1005,34 @@ Docs:
 - **NOTES:** `@fontsource/<chosen>` is deferred to D3 task 20 (font decided in D2). `react-hook-form`, `zod`, `@hookform/resolvers` added in D3 only if `Form` primitive is wired.
 - **VALIDATE:** `npm run build` still succeeds; deps appear in `package.json`
 
-**Task D0.3 — Create `frontend/vitest.config.ts` (or merge `test` key into `vite.config.ts`)**
+**Task D0.3 — Reshape `vite.config.ts` test block into two projects**
 
-- **ACTION:** Prefer merging into `vite.config.ts` (one config source). Add `server.proxy` in the same pass (Task D0.4).
+- **ACTION:** Merge the new frontend test config into the existing `vite.config.ts` (one config source). Apply the edit described by the **VITE_PROXY_FOR_SAME_ORIGIN_DEV** diff — this also adds `server.proxy` (covered by Task D0.4 below, same edit pass).
+- **ACTION:** **Preserve** `cspHashPlugin()` in the `plugins` array and the `server.headers.Content-Security-Policy` block verbatim. These are shipped from UNK-106 and load-bearing.
+- **ACTION:** Replace the current flat `test: { environment: "node", include: [...] }` with `test.projects` — one project for the existing plugin tests (node), one for the new React tests (jsdom). See the pattern block for the literal shape.
 - **IMPLEMENT:** See "FRONTEND_TESTING_HARNESS" and "VITE_PROXY_FOR_SAME_ORIGIN_DEV" patterns
-- **MIRROR:** Vitest docs "Configuring Vitest" (see External Documentation)
-- **VALIDATE:** `npx vitest run` exits 0 (no tests yet, but harness loads)
+- **MIRROR:** Vitest docs "Configuring Vitest" + "Workspaces / Projects" (see External Documentation)
+- **VALIDATE (preservation — mechanical):**
+  ```bash
+  grep -q "cspHashPlugin()" frontend/vite.config.ts && \
+    grep -q 'Content-Security-Policy.*DEV_CSP\|"Content-Security-Policy": DEV_CSP' frontend/vite.config.ts
+  ```
+  Must exit 0. If either grep fails, UNK-106 has been regressed — revert and reapply as a diff, not a rewrite.
+- **VALIDATE (harness):** `npx vitest run` exits 0; both the `vite-plugins` and `frontend` project names appear in the output header.
+- **VALIDATE (plugin tests still green):** Existing `vite-plugins/__tests__/**/*.test.ts` continue to pass under the `vite-plugins` project — no regression from the test-config reshape.
 
 **Task D0.4 — Add Vite dev proxy in `vite.config.ts`**
 
-- **ACTION:** Add `server.proxy` forwarding `/api`, `/auth`, `/opds` to `http://localhost:3000`
-- **GOTCHA:** `changeOrigin: true` is required for cookie-bearing requests to appear same-origin to the backend
-- **VALIDATE:** Manual — start backend at :3000, Vite at :5173, curl `http://localhost:5173/auth/me` returns backend's response
+- **ACTION:** Add `server.proxy` forwarding `/api`, `/auth`, `/opds` to `http://localhost:3000`. This is the *same edit pass* as D0.3 if merged; listed as a separate task for validation-granularity.
+- **ACTION:** Confirm `cspHashPlugin()` and the `server.headers` block are unchanged after this edit — the addition of `server.proxy` must not reshape the `server` object in a way that drops its sibling `headers` key.
+- **GOTCHA:** `changeOrigin: true` is required for cookie-bearing requests to appear same-origin to the backend.
+- **VALIDATE (preservation — same grep as D0.3):**
+  ```bash
+  grep -q "cspHashPlugin()" frontend/vite.config.ts && \
+    grep -q 'Content-Security-Policy.*DEV_CSP\|"Content-Security-Policy": DEV_CSP' frontend/vite.config.ts
+  ```
+- **VALIDATE (proxy works):** Manual — start backend at :3000, Vite at :5173, `curl http://localhost:5173/auth/me` returns backend's response (401 or JSON depending on session state, never Vite's fallback page).
+- **VALIDATE (FOUC hash still emitted):** `npm run build` produces `frontend/dist/csp-hashes.json` with a non-empty `script-src-hashes` array — confirms `cspHashPlugin()` is still running on build.
 
 **Task D0.5 — Create `frontend/tests/setup.ts`**
 
@@ -885,8 +1092,9 @@ Docs:
     sync), cookie helpers, custom ESLint hex-literal rule fixtures, route-gating
     production-build assertion.
   - **Visual / composition work (exempt from unit tests):** verified by
-    `@axe-core/cli`, Lighthouse, manual Dark/Light toggle, and the `/crosscheck`
-    dual-model review gate.
+    `@axe-core/cli` against `/design/system`, manual Dark/Light toggle, and
+    the `/crosscheck` dual-model review gate. Applied-page Lighthouse gates
+    are Step 11's responsibility.
   ```
 - **VALIDATE:** Docs site build (`cd docs && npm run build`) succeeds after sidebar update in D3
 
@@ -900,7 +1108,22 @@ Docs:
 - **RATIONALE:** The entire design-system backend sliver (theme PATCH + OIDC callback cookie write + FOUC seed) depends on `CookieJar` working as an extractor and returnable type. Verify the contract works for both OK and Redirect responses BEFORE starting D3.5. Failing fast here is the whole point of D0.
 - **VALIDATE:** Both tests pass. Remove the throwaway routes before exiting D0 (or roll them into a `#[cfg(test)]` module that never registers them outside tests).
 
-**D0 Exit Gate:** `npm test` green, `cargo test` green (including the cookie-middleware verification), deps visible in package.json + Cargo.toml, TDD scope documented.
+**Task D0.12 — Seed dev library with Standard Ebooks**
+
+- **ACTION:** Create `dev/seed-library.sh` (committed). The script:
+  - Reads `$REVERIE_LIBRARY_ROOT` or defaults to `backend/tests/fixtures/library/` (which `.gitignore` covers).
+  - Contains a pinned manifest of ~8 Standard Ebooks releases by **stable URL + SHA-256 checksum**. URLs follow the form `https://standardebooks.org/ebooks/<author>/<title>/downloads/<author>_<title>.epub`.
+  - Curation covers design edge cases: (1) long title — Stevenson *The Strange Case of Dr Jekyll and Mr Hyde*, (2) short title — Austen *Emma*, (3) series — three Conan Doyle Sherlock Holmes books (shared series metadata), (4) long author — Dostoevsky *Crime and Punishment*, (5) translated work — Kafka *The Metamorphosis*, (6) rich subject metadata — Darwin *On the Origin of Species*.
+  - Idempotent: skips files already present with matching checksum.
+  - Fails loud on checksum mismatch. Never auto-overwrites.
+  - Uses `curl --fail --retry 3 --retry-delay 2`; POSIX `sha256sum` (Linux/CI) with a `shasum -a 256` fallback for macOS.
+- **ACTION:** Add `backend/tests/fixtures/library/` to `.gitignore`. No EPUBs are committed.
+- **ACTION:** Document in `backend/CLAUDE.md` or a new `dev/README.md`: "Run `./dev/seed-library.sh` once after clone to populate the dev library; then start the backend with `REVERIE_LIBRARY_ROOT=$(pwd)/backend/tests/fixtures/library cargo run` and `curl -X POST http://localhost:3000/api/ingestion/scan` to ingest."
+- **RATIONALE:** Backend integration tests beyond `make_minimal_epub_with_cover_tagged` need real EPUBs exercising real ingestion paths (OPF parsing, cover extraction, series metadata). Step 11 design reviewers need a pre-populated library out of the box. The PR-time D5 crosscheck does **not** depend on this — it judges the system, not applied pages — so CI is not required to run the seed.
+- **VALIDATE:** `./dev/seed-library.sh` run once populates the directory with 8 `.epub` files, all checksums match. Second run is a no-op. Backend `scan_once` (invoked via `POST /api/ingestion/scan`) reports `books_ingested: 8` and `covers_extracted: 8` in the response.
+- **GOTCHA:** Standard Ebooks releases are versioned and occasionally re-issued. Pinning by URL + SHA-256 means a re-issue surfaces as a checksum mismatch rather than silent content drift — the correct fix is to update both URL and checksum together in the same commit.
+
+**D0 Exit Gate:** `npm test` green, `cargo test` green (including the cookie-middleware verification), deps visible in package.json + Cargo.toml, TDD scope documented, seed script present and runnable.
 
 ---
 
@@ -938,8 +1161,12 @@ drive D2 variations.
 1. Generate three *genuinely distinct* coded directions — not variations of one
    palette
 2. Each direction produces: full token set (colours × Dark + Light minimum,
-   type scale, spacing, motion), applied to ~3 representative screens (library
-   grid, book detail, search) against realistic fixture data
+   type scale, spacing, motion), applied to ~3 representative mock screens
+   (library grid, book detail, search) using inline placeholder data —
+   string-only titles/authors and gradient-or-initial-based cover blocks. No
+   external image URLs, no CDN references. These screens are throwaway
+   exploration spikes pruned at the start of D3; their job is aesthetic
+   comparison, not product fidelity.
 3. Live-browseable at `/design/explore/[name-a]`, `/design/explore/[name-b]`,
    `/design/explore/[name-c]`
 4. Use tweakcn to generate token exports per direction; commit as
@@ -1044,13 +1271,15 @@ two) clearly wins. **Record the decision in a short note at the top of
 
 **Task D3.10 — Theme provider + switcher + API client**
 
-- **ACTION:** Create `frontend/src/lib/theme/{ThemeProvider.tsx,cookie.ts,api.ts}` per "THEME_PROVIDER" pattern
+- **ACTION:** Create `frontend/src/lib/theme/{ThemeProvider.tsx,cookie.ts,api.ts}` per "THEME_PROVIDER" pattern for the provider/API surface and the **THEME_COOKIE_FRONTEND_WRITER** pattern for `cookie.ts`.
+- **ACTION (cross-stack parity, D2):** `cookie.ts`'s `writeThemeCookie` MUST produce attributes matching `backend/src/auth/theme_cookie.rs::set_theme_cookie` exactly — `Path=/`, `Max-Age=31536000`, `SameSite=Lax`, no `HttpOnly`, no `Secure`. Drift produces two cookies of the same name with different attributes in the browser jar; the FOUC script's match is non-deterministic. The `cookie.test.ts` attribute-string assertions are the drift guard.
 - **ACTION:** Create `frontend/src/components/theme-switcher.tsx` — uses `DropdownMenu` primitive with System / Light / Dark options
 - **ACTION:** Mount `<ThemeProvider>` in `frontend/src/main.tsx` wrapping `<RouterProvider>`
 - **ACTION (cross-tab sync, C3):** Inside `ThemeProvider`, create a `BroadcastChannel('reverie-theme')` in a `useEffect` on mount (close on unmount). On successful `setPreference` (after the PATCH resolves), post the new preference to the channel. On receive, mirror the value to local state + DOM + cookie WITHOUT triggering another PATCH (the originating tab already did). This eliminates the cross-tab-drift papercut.
+- **ACTION (D3 initial-state derivation):** `ThemeProvider` MUST source `preference` from `readThemeCookie()` (not from `dataset.theme`) and `effective` from `dataset.theme` (with matchMedia fallback). Reading `preference` from `dataset.theme` silently drops the `system` choice because FOUC resolves `system` → `light`/`dark` before setting the attribute. See the THEME_PROVIDER pattern's `deriveInitialState` helper for the exact shape.
 - **ACTION:** TDD — write these tests FIRST per D0 TDD scope (see Testing Strategy section):
-  - `cookie.test.ts`: round-trip parse/write, malformed cookie handling
-  - `ThemeProvider.test.tsx`: initial resolution from `document.documentElement.dataset.theme`; reconciliation with server value on mount; optimistic update + rollback on PATCH failure; `system` preference reacts to `prefers-color-scheme` media query change; **BroadcastChannel message from another tab updates state without triggering a PATCH**
+  - `cookie.test.ts`: round-trip parse/write, malformed cookie handling, **plus explicit attribute-string assertions from the THEME_COOKIE_FRONTEND_WRITER pattern (Path=/, Max-Age=31536000, SameSite=Lax, no HttpOnly, no Secure)**
+  - `ThemeProvider.test.tsx`: initial-state derivation matrix (D3 finding): (a) cookie=`system` + `dataset.theme=dark` → `preference='system', effective='dark'`; (b) cookie=`light` + `dataset.theme=light` → both `light`; (c) missing cookie + `dataset.theme=dark` → `preference='system', effective='dark'`; (d) logged-out visitor (401 from `/auth/me`) → stays on cookie-derived preference, no reconciliation. Plus: reconciliation with server value on mount (cookie differs from server); optimistic update + rollback on PATCH failure; `system` preference reacts to `prefers-color-scheme` media query change mid-session; **BroadcastChannel message from another tab updates state without triggering a PATCH**
 - **VALIDATE:** `npm test` all green; `/design/system` theme-switcher cycles through states; manually open two tabs, change theme in one, verify the other updates without reload
 
 **Task D3.11 — Component gallery at `/design/system`**
@@ -1162,7 +1391,10 @@ two) clearly wins. **Record the decision in a short note at the top of
 - **ACTION:** `npm install @fontsource/<display-font> @fontsource/<body-font>` — versions tracked in package.json
 - **ACTION:** Import weights + subsets from `main.tsx`: `import '@fontsource/<body>/400.css'; import '@fontsource/<body>/600.css';` etc.
 - **ACTION:** Update `@theme inline` `--font-display` and `--font-body` to reference the font family names registered by fontsource
-- **VALIDATE:** Network panel in devtools shows font files loading from `/node_modules/@fontsource/…` via Vite; no external font requests
+- **ACTION (dev/prod CSP parity for fonts, S2):** Add `"font-src 'self'"` to the `DEV_CSP` array in `frontend/vite.config.ts`. Production CSP (`backend/src/security/csp.rs::build_html_csp`) already declares `font-src 'self'` explicitly; mirroring it in dev pins the policy so future changes to `default-src` don't silently widen font loading in dev only. Zero functional change today — `@fontsource` fonts are already same-origin from `/node_modules/@fontsource/…` in dev and `/assets/` in prod.
+- **VALIDATE:** Network panel in devtools shows font files loading from `/node_modules/@fontsource/…` via Vite; no external font requests; no CSP violations in the console
+- **VALIDATE (dev CSP parity):** `curl -sI http://localhost:5173/ | tr ';' '\n' | grep -iq "font-src 'self'"` exits 0 — confirms the Vite dev server is returning the updated header.
+- **VALIDATE (prod CSP parity):** Existing `backend/src/security/csp.rs` unit tests assert `font-src 'self'` in `build_html_csp` output. No change needed there; this VALIDATE line documents the parity link for future readers.
 
 **Task D3.17 — Accessibility pass**
 
@@ -1176,10 +1408,19 @@ two) clearly wins. **Record the decision in a short note at the top of
 
 **Task D3.18 — Canonicalise in `docs/design/visual-identity.md`**
 
-- **ACTION:** Create `docs/src/content/docs/design/visual-identity.md` with sections: Tokens (full list), Type Scale, Spacing, Motion, State Philosophy (empty/loading/error), Theme Architecture
+- **ACTION:** Create `docs/src/content/docs/design/visual-identity.md` with sections: Tokens (full list), Type Scale, Spacing, Motion, State Philosophy (empty/loading/error), Theme Architecture, **Theme Cookie Lifecycle**.
 - **ACTION (Theme Architecture content):** Include explicit notes:
   - "Cookie name `reverie_theme` is referenced in three places: `backend/src/auth/theme_cookie.rs` (`THEME_COOKIE_NAME` const), `frontend/src/fouc/fouc.js` (inline FOUC script body), `frontend/src/lib/theme/cookie.ts`. All three MUST change together. The backend unit test on `set_theme_cookie` enforces the backend side; cross-stack drift is tracked in [UNK-105](https://linear.app/unkos/issue/UNK-105)."
+  - "Cookie **attributes** (`Path=/`, `Max-Age=31536000`, `SameSite=Lax`, no `HttpOnly`, no `Secure`) are a parity contract between the two writers: `backend/src/auth/theme_cookie.rs::set_theme_cookie` and `frontend/src/lib/theme/cookie.ts::writeThemeCookie`. Attribute drift produces two cookies of the same name with different path/lifetime in the browser jar; the FOUC script's `document.cookie.split('; ')` then matches non-deterministically. Both writers have unit tests (`set_theme_cookie` unit test on the backend; `cookie.test.ts` attribute-string assertions on the frontend) that fail if either side drifts."
   - "FOUC avoidance relies on a blocking inline `<script>` injected into `index.html` at the `<!-- reverie:fouc-hash -->` marker by `frontend/vite-plugins/csp-hash.ts`. The script body lives in `frontend/src/fouc/fouc.js`; on `vite build` the plugin emits `dist/csp-hashes.json` containing the SHA-256 of the body, and `backend/src/security/dist_validation.rs` reads that at startup to bake the hash into the HTML-route CSP header. The CSP itself is hash-based — there is no per-request nonce and no backend templating of `index.html`. Any change to `fouc.js` regenerates the hash automatically; hash drift between frontend and backend is fail-fast at boot."
+- **ACTION (Theme Cookie Lifecycle section — S3 resolution):** Add a dedicated `## Theme Cookie Lifecycle` section with the following explicit decisions and contrasts:
+  - **Decision:** `reverie_theme` survives logout by design. It is *device state*, not *session state*.
+  - **Why device state:** theme preference is a non-PII visual choice — the same category as language, timezone, or cookie-consent preference. All of these universally persist across users on a shared device. Clearing on logout would cause a FOUC flash on every logout-login cycle (cookie gone → `prefers-color-scheme` fallback → next login's `set_theme_cookie` races first paint).
+  - **Industry precedent:** GitHub's `color_mode` cookie (~1 year, cross-session), MDN/docs sites (localStorage, permanent), self-hosted media apps (Audiobookshelf, Jellyfin, Kavita) all treat theme as device-scoped. Gmail differs only because it has server-side account-sync — we don't.
+  - **Shared-device consideration:** on a shared workstation, user B after logout sees user A's prior theme choice. Acceptable because (a) theme is not PII, (b) the alternative (clearing) produces a visible UX regression on single-user devices, which is the dominant case for a self-hosted library manager.
+  - **Fingerprinting consideration:** the cookie name is present on logged-out requests. Acceptable in a self-hosted context where the "public" attack surface is typically the operator's own LAN; negligible additional entropy vs. the ~unique combination of User-Agent, screen resolution, timezone, and accept-language that any browser leaks anyway.
+  - **Contrast — the general rule for future cookies:** any *session-state* cookie added later (e.g., a CSRF token, a workflow-state cookie, anything that carries per-login meaning) MUST be `HttpOnly` and MUST be cleared on logout. `reverie_theme` is the explicit counterexample: non-HttpOnly (JS must read for FOUC), survives logout (device state). This contrast is the rule; the rule is not "all cookies behave like `reverie_theme`."
+- **ACTION (cross-reference from backend code to this doc):** In `backend/src/auth/theme_cookie.rs`, the module-level `//!` doc comment MUST include a line: `//! Lifecycle: survives logout by design. See docs/design/visual-identity.md § Theme Cookie Lifecycle for rationale and the contrast rule for session-state cookies.` This surfaces the decision at every future code-reading of the helper.
 - **ACTION:** Update `docs/astro.config.mjs` sidebar:
   ```javascript
   {
@@ -1198,47 +1439,83 @@ two) clearly wins. **Record the decision in a short note at the top of
 - **ACTION:** Delete the throwaway file before commit (or keep as a docs example in `visual-identity.md`)
 - **VALIDATE:** Toggle to `sepia` in devtools, `data-theme="sepia"` on `<html>`, tokens apply — architecture confirmed theme-unlimited
 
+**Task D3.20 — Update operator CSP doc for fonts + cookies (C1 resolution)**
+
+- **ACTION:** Edit `docs/security/content-security-policy.md` — the canonical operator surface established by UNK-106. This PR's user-visible additions (explicit `font-src 'self'` in dev CSP, new `reverie_theme` non-HttpOnly cookie) are not currently documented there; an operator reviewing CSP violation reports or performing a cookie audit would have no context.
+- **ACTION (add `## Cookies` section):** Insert a new top-level section before `## Further reading`. Lists every cookie the backend sets:
+  ```markdown
+  ## Cookies
+
+  Reverie sets two cookies on authenticated browsers:
+
+  | Name            | HttpOnly | Max-Age     | Path | SameSite | Purpose                                    | Lifecycle                                          |
+  | --------------- | -------- | ----------- | ---- | -------- | ------------------------------------------ | -------------------------------------------------- |
+  | `id`            | **Yes**  | Session     | `/`  | `Lax`    | tower-sessions session cookie (auth state) | Cleared on logout; short-lived                     |
+  | `reverie_theme` | **No**   | 365 days    | `/`  | `Lax`    | Dark/Light/System preference for FOUC      | Survives logout by design (device state, not PII)  |
+
+  `reverie_theme` is intentionally not `HttpOnly` because JavaScript must
+  read it synchronously before React hydrates to avoid a theme flicker. It
+  carries no PII — only the string `system`, `light`, or `dark`. See
+  `docs/design/visual-identity.md` § Theme Cookie Lifecycle for the full
+  rationale and the contrast rule: any future *session-state* cookie MUST
+  be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the
+  explicit counterexample.
+
+  Neither cookie sets `Secure` in the default deployment because the backend
+  speaks plain HTTP behind a TLS-terminating reverse proxy (matches the HSTS
+  configuration story above). Operators running Reverie with direct HTTPS
+  termination in the backend would typically layer the `Secure` attribute at
+  the proxy via `Set-Cookie` rewriting — Reverie itself does not attempt to
+  detect TLS state.
+  ```
+- **ACTION (extend "Dev mode vs production" table with a fonts row):** Add:
+  ```markdown
+  | font-src policy   | `'self'` (explicit, matches prod)                  | `'self'` (explicit; declared in `csp.rs::build_html_csp`) |
+  ```
+  immediately after the `HSTS` row. Then add a short `### Fonts` subsection after the table:
+  ```markdown
+  ### Fonts
+
+  Reverie self-hosts fonts via `@fontsource`; the `font-src 'self'` directive
+  is sufficient for the default deployment. Operators who need fonts from a
+  CDN (e.g., Google Fonts) must edit `backend/src/security/csp.rs::build_html_csp`
+  to allowlist the required origin(s) and rebuild. No runtime configuration
+  knob exists for this — the policy is intentionally code-declared so that
+  every deployment has an identical, auditable font policy out of the box.
+  ```
+- **VALIDATE:** `cd docs && npm run build` succeeds (if the doc is part of the Starlight site; otherwise check with `mdl` or any markdown linter present). Preview the page, verify the table renders, anchor link `#cookies` resolves.
+- **VALIDATE (cross-reference integrity):** Anchor `visual-identity.md § Theme Cookie Lifecycle` must exist (added in D3.18). If absent, D3.18 did not land correctly — fix D3.18 before marking D3.20 done.
+
 **D3 Exit Gate:** Gallery complete; both themes pass WCAG AA; a11y clean;
 no primitive shows stock shadcn DNA; production bundle free of `/design` code
-(structural manualChunks gate passes — no `design-*.js` in `dist/assets/`).
+(structural manualChunks gate passes — no `design-*.js` in `dist/assets/`);
+operator CSP doc updated with cookies + fonts coverage.
 
 ---
 
-### Phase D4 — Hero Screens
+### Phase D4 — (removed)
 
-**Task D4.1 — Library grid hero (`/design/hero/library`)**
-
-- **ACTION:** Create `frontend/src/pages/design/hero/library.tsx`
-- **ACTION:** Create `frontend/src/pages/design/fixtures/books.ts` with ~30 realistic entries: real titles, real authors, real-looking covers (public-domain classics via Open Library cover URLs or `/public/fixtures/*.jpg`), varied series membership, long/short title edge cases
-- **ACTION:** Render a production-fidelity grid: cover, title, author, series badge, responsive breakpoints (desktop 4-col, tablet 3-col, mobile 2-col), empty/loading/error treatments
-- **VALIDATE:** Dark + Light both render; `npx @axe-core/cli http://localhost:5173/design/hero/library` exits 0; Lighthouse > 90 on Performance, Accessibility, Best Practices
-
-**Task D4.2 — Book detail hero (`/design/hero/book`)**
-
-- **ACTION:** Create `frontend/src/pages/design/hero/book.tsx`
-- **ACTION:** Production-fidelity book detail: hero cover, metadata (title, author, series, ISBN, publisher, language), description block, version history placeholder (static fixture), action buttons (Download, Accept Draft, Edit — all fixture-bound), tabs for Metadata/Versions/Shelves/Health
-- **VALIDATE:** Dark + Light both render; axe-core exits 0; Lighthouse > 90
-
-**Task D4.3 — Responsive validation**
-
-- **ACTION:** Validate both hero routes at 1440×900, 1024×768, 375×812 breakpoints
-- **ACTION:** Fix any layout collapses or overflow; document responsive behaviour in `visual-identity.md` breakpoint section
-- **VALIDATE:** Manual screenshot pass in both themes × three breakpoints
-
-**D4 Exit Gate:** Both hero routes render at production fidelity; both themes;
-responsive; Lighthouse > 90; axe-core clean.
+Hero screens and fixture-driven applied-page review are cut from this PR.
+Applied-page design review — library grid, book detail, search UI — is Step
+11's scope and is reviewed in that PR against real `/api/books` endpoints and
+the `/library` / `/book/:slug` routes Step 11 builds on top of this system.
+The `dev/seed-library.sh` script (D0.12) populates the dev library with real
+Standard Ebooks EPUBs so Step 11 inherits a ready dev environment.
 
 ---
 
 ### Phase D5 — Review Gate
 
-**Task D5.1 — Run `/crosscheck`**
+**Task D5.1 — Run `/crosscheck` against the design system artefacts**
 
-- **ACTION:** Invoke `/crosscheck` skill against the design artefacts: `docs/design/*.md`, `frontend/src/styles/themes/*`, `frontend/src/components/ui/*`, `frontend/src/pages/design/*`
-- **ACTION:** If either Opus or Gemini reviewer flags significant issues, loop back to D3 or D4 and iterate
+- **ACTION:** Invoke `/crosscheck` skill against: `docs/design/*.md` (philosophy, visual identity), `frontend/src/styles/themes/*` (light/dark token files), `frontend/src/components/ui/*` (shadcn primitives), `frontend/src/pages/design/system.tsx` (primitive gallery)
+- **ACTION:** Reviewers should judge: coherence between philosophy and tokens, token adequacy for a realistic product, primitive restyling (no stock shadcn DNA), a11y in every primitive state, theme semantics (dark/light parity), visual-identity docs clarity
+- **ACTION:** Reviewers are NOT judging applied-page layouts (library grid, book detail, search) — that review lives in Step 11
+- **ACTION:** If either Opus or Gemini reviewer flags significant issues, loop back to D3 and iterate
 - **VALIDATE:** Both reviewers pass
 
-**D5 Exit Gate:** Crosscheck green. Step 11 unblocked.
+**D5 Exit Gate:** Crosscheck green. Step 11 unblocked (seeded dev library
+ready for applied-page design review).
 
 ---
 
@@ -1248,8 +1525,8 @@ responsive; Lighthouse > 90; axe-core clean.
 
 | Test file | Test cases | Validates |
 |---|---|---|
-| `frontend/src/lib/theme/__tests__/cookie.test.ts` | parse missing / malformed / well-formed; write; round-trip | Cookie helper correctness |
-| `frontend/src/lib/theme/__tests__/ThemeProvider.test.tsx` | initial resolution from `data-theme` attribute; fetch-me reconciliation; optimistic setter + PATCH success; optimistic setter + PATCH failure (rollback); `system` preference reacts to `matchMedia` change; **BroadcastChannel message from another tab updates state without triggering a PATCH** | Theme state machine + cross-tab sync |
+| `frontend/src/lib/theme/__tests__/cookie.test.ts` | `readThemeCookie`: returns `null` on missing cookie, on malformed value, on unknown-value; returns `"system"`/`"light"`/`"dark"` on well-formed. `writeThemeCookie("dark")`: written string contains `Path=/`, `Max-Age=31536000`, `SameSite=Lax`; does NOT contain `HttpOnly` or `Secure`; starts with `reverie_theme=dark` (verbatim string compare — enforces UNK-105 cross-stack const). Round-trip: write then read returns the same value. | Cookie helper correctness + cross-stack attribute parity with backend `set_theme_cookie` |
+| `frontend/src/lib/theme/__tests__/ThemeProvider.test.tsx` | **Initial-state derivation matrix (D3 finding):** (a) `cookie="system"` + `dataset.theme="dark"` → `preference="system"`, `effective="dark"`; (b) `cookie="light"` + `dataset.theme="light"` → both `"light"`; (c) missing cookie + `dataset.theme="dark"` → `preference="system"`, `effective="dark"`; (d) malformed cookie + `dataset.theme="dark"` → `preference="system"`, `effective="dark"`; (e) missing `dataset.theme` + cookie=`"dark"` → `preference="dark"`, `effective="dark"` (re-derive fallback). Logged-out visitor (`/auth/me` → 401): stays on cookie-derived preference, no reconciliation. Logged-in reconciliation: server `theme_preference` differs from cookie → server value wins, cookie + DOM + state updated. Optimistic setter + PATCH success (no rollback). Optimistic setter + PATCH failure (cookie + DOM revert to prior value). `system` preference reacts to `matchMedia('(prefers-color-scheme: dark)')` change mid-session (effective updates, preference unchanged). **BroadcastChannel message from another tab updates state without triggering a PATCH.** | Theme state machine (preference/effective separation, D3) + reconciliation + cross-tab sync |
 | `frontend/src/components/__tests__/theme-switcher.test.tsx` | renders three options; selecting calls `setPreference`; disabled state when mutation pending | UI behaviour |
 | `frontend/src/__tests__/hex-ban.test.ts` | ESLint `RuleTester` (in-process, no subprocess): valid cases pass, hex-literal cases fail with the expected message | Lint rule correctness |
 | `backend/src/auth/theme_cookie.rs` unit test | `set_theme_cookie(jar, "dark")` produces a cookie with name `"reverie_theme"` (verbatim string compare — enforces UNK-105 cross-stack const), `http_only = false`, `same_site = Lax`, `path = "/"`, `max_age = 365 days` | Cookie helper correctness + cross-stack name drift guard |
@@ -1262,17 +1539,18 @@ after login) is tracked separately under [UNK-104](https://linear.app/unkos/issu
 ### Integration Tests (in D3 scope)
 
 - Production build structural gate (CI): `npm run build && test -z "$(ls frontend/dist/assets/design-*.js 2>/dev/null)"` exits zero (no `design-*` chunk emitted in production)
-- axe-core on `/design/system` + both hero routes
-- Lighthouse (manual) on `/design/hero/library`
+- axe-core on `/design/system` — hard gate, every shadcn primitive in every state must pass WCAG 2.2 AA
+- No Lighthouse gate in this PR: Performance/Best Practices scores are not meaningful on a primitive gallery. Lighthouse Accessibility is redundant with the axe-core gate. Applied-page Lighthouse targets live in Step 11.
 
 ### Edge Cases Checklist
 
 - [ ] Empty cookie string (no `reverie_theme=`) → falls back to `prefers-color-scheme`
 - [ ] Malformed cookie value (e.g. `reverie_theme=bogus`) → FOUC script's catch falls back to `light`
 - [ ] `system` preference + OS theme change mid-session → effective theme updates without reload
+- [ ] **User stored `system` preference → theme switcher shows `System` selected, not the effective theme** (D3: `preference` comes from cookie, not `dataset.theme`)
 - [ ] Logged-out visitor → no `/auth/me` call fails provider init (provider detects 401 and stays on cookie value)
 - [ ] Two tabs open, theme changed in one → BroadcastChannel propagates the change to the other tab in real time (no reload required)
-- [ ] Logout → session cookie cleared; `reverie_theme` cookie persists (user's device preference, not session state)
+- [ ] Logout → session cookie (`id`, HttpOnly, short-lived) is cleared; `reverie_theme` cookie **intentionally persists** (see `visual-identity.md` § Theme Cookie Lifecycle for rationale). Theme is device state, not session state; cleared-on-logout would cause FOUC flash on every logout-login cycle and diverges from universal industry pattern (GitHub `color_mode`, Audiobookshelf, Jellyfin, Kavita all treat theme as device-scoped). S3 finding resolved by explicit documentation, not behaviour change.
 - [ ] Invalid theme in PATCH body → 422 (`AppError::Validation`), no row modified
 - [ ] Revert migration mid-development → row data loss (acceptable pre-release per repo memory)
 
@@ -1286,11 +1564,12 @@ this plan's adversarial-review pass to include:
 - `cargo test` (includes new `#[sqlx::test]`s + the `set_theme_cookie` unit test + the D0.11 cookie-middleware verification)
 - `cargo clippy -- -D warnings`
 - `npm run build && npm run lint && npm test -- --run`
-- `npx @axe-core/cli` against `/design/system`, `/design/hero/library`, `/design/hero/book`
+- `npx @axe-core/cli http://localhost:5173/design/system` (hard gate)
 - `npx eslint frontend/src --max-warnings 0` + `npx stylelint "frontend/src/**/*.css" --max-warnings 0`
 - Production bundle structural gate: `npm run build && test -z "$(ls frontend/dist/assets/design-*.js 2>/dev/null)"` exits zero (no `design-*` chunk in production output)
-- Manual cold-load FOUC check (happy path + malformed-cookie path) + Lighthouse audit
+- Manual cold-load FOUC check (happy path + malformed-cookie path)
 - Manual two-tab cross-tab theme sync check (BroadcastChannel)
+- Dev seed validation: `./dev/seed-library.sh && curl -X POST http://localhost:3000/api/ingestion/scan` returns a non-zero book count with covers extracted from the seeded EPUBs
 
 ---
 
@@ -1299,15 +1578,16 @@ this plan's adversarial-review pass to include:
 Mirrors BLUEPRINT Step 10 Exit Criteria (lines 1859–1870):
 
 - [ ] `docs/design/philosophy.md` captures emotional target, anti-patterns, usage context
-- [ ] `docs/design/visual-identity.md` is the canonical spec: tokens, type scale, spacing, motion, state philosophy, theme architecture
+- [ ] `docs/design/visual-identity.md` is the canonical spec: tokens, type scale, spacing, motion, state philosophy, theme architecture, Theme Cookie Lifecycle section (S3)
+- [ ] `docs/security/content-security-policy.md` has `## Cookies` inventory section and `### Fonts` subsection in dev-vs-prod table (C1)
 - [ ] Dark + Light themes implemented as CSS variable overrides under `[data-theme]`; theme switcher works; preference persists across reload and across devices (DB + cookie)
 - [ ] Cross-tab theme changes propagate in real time via `BroadcastChannel('reverie-theme')`
 - [ ] shadcn primitives installed and restyled — none show stock shadcn visual DNA
 - [ ] `/design/system` route shows every primitive in every state; both themes
-- [ ] `/design/hero/library` and `/design/hero/book` render at production fidelity
-- [ ] WCAG 2.2 AA contrast in both themes (axe-core + manual)
+- [ ] WCAG 2.2 AA contrast in both themes (axe-core hard gate against `/design/system`, manual spot-checks of edge states)
 - [ ] ESLint blocks raw hex literals in `.tsx` (verified by in-process `RuleTester` test); Stylelint blocks raw hex in `.css` outside `src/styles/themes/**`
-- [ ] Crosscheck (Opus + Gemini) passes on design artefacts and hero screens
+- [ ] Crosscheck (Opus + Gemini) passes on design system artefacts (docs, tokens, themes, primitives) — applied-page review is deferred to Step 11
+- [ ] `dev/seed-library.sh` commits with pinned Standard Ebooks URLs + SHA-256 checksums; running it populates `$REVERIE_LIBRARY_ROOT` with the curated set
 - [ ] Architecture supports unlimited themes (proven via D3.19 smoke test)
 - [ ] First paint on cold load matches stored theme preference — no FOUC; malformed-cookie path falls back to `light`
 - [ ] CI structural bundle gate: no `design-*.js` chunk in `frontend/dist/assets/` in production builds
@@ -1325,8 +1605,8 @@ Mirrors BLUEPRINT Step 10 Exit Criteria (lines 1859–1870):
 | `@theme inline` prevents Tailwind from generating some utilities that reference unresolved runtime values | LOW | MED | If discovered during D3.9, fall back to split utilities (stable tokens in `@theme`, runtime-swapped values in component classes via `var()`) — documented in shadcn Tailwind v4 guide |
 | Vite dev proxy misconfigures cookie domain | LOW | HIGH | `changeOrigin: true` is load-bearing; test by inspecting `document.cookie` after login — if session cookie appears, theme cookie will too. Dev topology unchanged post-CSP: Vite still serves `index.html` in dev (the `csp-hash.ts` plugin participates in `serve` as well as `build`). Prod topology: backend serves `/` and SPA fallback via `backend/src/routes/spa.rs`, with startup dist-validation gating on the FE/BE hash match. |
 | `fouc.js` content contains `</script>` | LOW | HIGH | `vite-plugins/csp-hash.ts` throws at build time if the body contains `</script>` (case-insensitive). Keep FOUC body pure ES5; never build script literals with `</script>` substrings. Test fixture in `vite-plugins/__tests__/csp-hash.test.ts` covers this. |
-| FOUC edit lands without hash regen in deploy | LOW | HIGH | Cannot happen in practice: the plugin runs on every `vite build`, `csp-hashes.json` ships in `dist/`, and `backend/src/security/dist_validation.rs` fails the server boot if the frontend hash doesn't match the CSP the backend would emit. Manual sanity check: `openssl dgst -sha256 -binary frontend/src/fouc/fouc.js \| base64` should equal the value in `dist/csp-hashes.json` after build. |
-| Crosscheck fails at D5 on a high-cost iteration loop | MED | HIGH | Don't run crosscheck on a broken build — walk the exit gates at D3 and D4 manually first; iterate D3/D4 tightly before invoking D5 |
+| FOUC edit lands without hash regen in deploy | LOW | HIGH | **Four overlapping guards make silent drift near-impossible** (C3 adversarial-review finding resolved by documentation, not additional code): (1) `cspHashPlugin()` runs on every `vite build` via the `transformIndexHtml` hook — sidecar regenerates automatically from the current `frontend/src/fouc/fouc.js` bytes; (2) `frontend/vite-plugins/__tests__/csp-hash.test.ts` e2e test runs a real `vite build` against a synthetic `fouc.js` fixture and asserts `sha256(inlined-body) === sidecar-hash[0]` — catches any regression in the plugin's source→sidecar identity; (3) `backend/src/security/dist_validation.rs` validates sidecar shape on server boot and fails fast if the sidecar is empty/malformed/missing; (4) if somehow a stale sidecar reaches a running deployment, the browser CSP-blocks the inline script at first paint — visible to any dev running the app (FOUC flash + console error). Manual sanity check if ever needed: `openssl dgst -sha256 -binary frontend/src/fouc/fouc.js \| base64` should equal the value in `dist/csp-hashes.json` after build. C3 considered adding a fifth guard (post-build source-to-sidecar parity check in CI); declined because the first four are already strong and the marginal value is low. |
+| Crosscheck fails at D5 on a high-cost iteration loop | MED | HIGH | Don't run crosscheck on a broken build — walk the D3 exit gate (axe-core clean on `/design/system`, structural bundle gate passing, both themes visually reviewed) manually first; iterate D3 tightly before invoking D5 |
 | Migration revert in production loses user theme preferences | LOW (pre-release) | LOW | Acknowledged in BLUEPRINT rollback; pre-release schema is mutable per repo memory |
 | Third-party font licensing overlooked during D2/D3 font selection | LOW | HIGH | Constrain font choice to SIL OFL / Apache 2.0 / `@fontsource` catalogue (all bundled fonts are explicitly licensed) |
 
