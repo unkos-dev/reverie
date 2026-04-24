@@ -20,6 +20,10 @@ RUN useradd -r -s /bin/false reverie
 
 COPY --from=backend-builder /build/target/release/reverie-api /usr/local/bin/reverie-api
 COPY --from=frontend-builder /build/dist /srv/frontend
+# UNK-106: the backend serves /assets/* and falls back to index.html for SPA
+# routes when this env var is set. Validation at startup panics the process
+# if the dir or its csp-hashes.json sidecar is missing.
+ENV REVERIE_FRONTEND_DIST_PATH=/srv/frontend
 
 USER reverie
 EXPOSE 3000

@@ -33,6 +33,23 @@ cd frontend && npm install && npm run dev
 docker compose up
 ```
 
+## Security posture
+
+Reverie ships a strict hash-based `Content-Security-Policy`, opt-in HSTS, and
+the full Permissions-Policy / X-Content-Type-Options / Referrer-Policy /
+X-Frame-Options header set by default. The backend owns all security
+response headers — reverse proxies should pass them through unchanged.
+
+Target grade: **A+** on [securityheaders.com](https://securityheaders.com)
+and [Mozilla Observatory](https://observatory.mozilla.org) for any
+deployment behind TLS.
+
+See [docs/security/content-security-policy.md](docs/security/content-security-policy.md)
+for operator configuration (HSTS subdomain behaviour, CSP violation
+reporting, dev-vs-prod differences) and
+[docs/deployment/reverse-proxy.md](docs/deployment/reverse-proxy.md) for
+Caddy / nginx / Traefik samples.
+
 ## License
 
 This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).

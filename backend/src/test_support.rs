@@ -9,7 +9,7 @@ pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use crate::auth::backend::AuthBackend;
 use crate::auth::oidc::OidcClient;
 use crate::config::{
-    CleanupMode, Config, CoverConfig, EnrichmentConfig, OpdsConfig, WritebackConfig,
+    CleanupMode, Config, CoverConfig, EnrichmentConfig, OpdsConfig, SecurityConfig, WritebackConfig,
 };
 use crate::state::AppState;
 
@@ -64,6 +64,17 @@ pub fn test_config() -> Config {
             page_size: 50,
             realm: "Reverie OPDS".into(),
             public_url: Some(url::Url::parse("http://localhost:3000").unwrap()),
+        },
+        security: SecurityConfig {
+            behind_https: false,
+            hsts_include_subdomains: false,
+            hsts_preload: false,
+            csp_report_endpoint: None,
+            frontend_dist_path: None,
+            csp_html_header: None,
+            csp_api_header: String::from(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            ),
         },
         openlibrary_base_url: "https://openlibrary.org".into(),
         googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),

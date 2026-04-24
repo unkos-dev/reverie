@@ -20,6 +20,7 @@ pub struct Config {
     pub cover: CoverConfig,
     pub writeback: WritebackConfig,
     pub opds: OpdsConfig,
+    pub security: SecurityConfig,
     pub openlibrary_base_url: String,
     pub googlebooks_base_url: String,
     pub googlebooks_api_key: Option<String>,
@@ -70,6 +71,29 @@ pub struct WritebackConfig {
     pub concurrency: u32,
     pub poll_idle_secs: u64,
     pub max_attempts: u32,
+}
+
+/// Response-header policy (UNK-106).
+///
+/// Two-phase initialisation: `from_env()` populates the booleans +
+/// `csp_report_endpoint` + `frontend_dist_path` and leaves both CSP-header
+/// fields unset (`csp_api_header = String::new()`, `csp_html_header =
+/// None`). `main()` then finalises them by calling
+/// [`crate::security::csp::build_api_csp`] (unconditionally) and
+/// [`crate::security::csp::build_html_csp`] (only when `frontend_dist_path`
+/// is `Some` and `validate_frontend_dist` has yielded the script-src hash
+/// list). A `SecurityConfig` obtained directly from `from_env()` — without
+/// this second pass — will not emit a useful `Content-Security-Policy`
+/// header.
+#[derive(Debug, Clone)]
+pub struct SecurityConfig {
+    pub behind_https: bool,
+    pub hsts_include_subdomains: bool,
+    pub hsts_preload: bool,
+    pub csp_report_endpoint: Option<url::Url>,
+    pub frontend_dist_path: Option<std::path::PathBuf>,
+    pub csp_html_header: Option<String>,
+    pub csp_api_header: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +183,7 @@ impl Config {
         let cover = CoverConfig::from_env()?;
         let writeback = WritebackConfig::from_env()?;
         let opds = OpdsConfig::from_env()?;
+        let security = SecurityConfig::from_env()?;
 
         let openlibrary_base_url = env::var("REVERIE_OPENLIBRARY_BASE_URL")
             .unwrap_or_else(|_| "https://openlibrary.org".into());
@@ -203,6 +228,7 @@ impl Config {
             cover,
             writeback,
             opds,
+            security,
             openlibrary_base_url,
             googlebooks_base_url,
             googlebooks_api_key,
@@ -334,14 +360,110 @@ impl OpdsConfig {
     }
 }
 
+impl SecurityConfig {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let behind_https = parse_bool("REVERIE_BEHIND_HTTPS", false)?;
+        let hsts_include_subdomains = parse_bool("REVERIE_HSTS_INCLUDE_SUBDOMAINS", false)?;
+        let hsts_preload = parse_bool("REVERIE_HSTS_PRELOAD", false)?;
+
+        if hsts_include_subdomains && !behind_https {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_HSTS_INCLUDE_SUBDOMAINS".into(),
+                reason: "requires REVERIE_BEHIND_HTTPS=true".into(),
+            });
+        }
+        if hsts_preload && !hsts_include_subdomains {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_HSTS_PRELOAD".into(),
+                reason: "requires REVERIE_HSTS_INCLUDE_SUBDOMAINS=true".into(),
+            });
+        }
+
+        let csp_report_endpoint = match env::var("REVERIE_CSP_REPORT_ENDPOINT")
+            .ok()
+            .filter(|s| !s.is_empty())
+        {
+            Some(s) => {
+                // Header-injection guard: this URL flows into a response header
+                // (Reporting-Endpoints / report-to / report-uri). Reject quote
+                // and CR/LF/semicolon which would split or escape values.
+                if s.chars().any(|c| matches!(c, '"' | ';' | '\r' | '\n')) {
+                    return Err(ConfigError::Invalid {
+                        var: "REVERIE_CSP_REPORT_ENDPOINT".into(),
+                        reason: "must not contain \" ; CR or LF".into(),
+                    });
+                }
+                let parsed = url::Url::parse(&s).map_err(|e| ConfigError::Invalid {
+                    var: "REVERIE_CSP_REPORT_ENDPOINT".into(),
+                    reason: e.to_string(),
+                })?;
+                if !matches!(parsed.scheme(), "http" | "https") {
+                    return Err(ConfigError::Invalid {
+                        var: "REVERIE_CSP_REPORT_ENDPOINT".into(),
+                        reason: format!("scheme must be http or https, got '{}'", parsed.scheme()),
+                    });
+                }
+                Some(parsed)
+            }
+            None => None,
+        };
+
+        let frontend_dist_path = env::var("REVERIE_FRONTEND_DIST_PATH")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from);
+
+        Ok(Self {
+            behind_https,
+            hsts_include_subdomains,
+            hsts_preload,
+            csp_report_endpoint,
+            frontend_dist_path,
+            csp_html_header: None,
+            csp_api_header: String::new(),
+        })
+    }
+
+    /// HSTS response-header value. `None` when `behind_https=false` — the
+    /// middleware must not emit HSTS on plaintext HTTP or the cookie would be
+    /// refused on the next TLS-less request.
+    pub fn hsts_header_value(&self) -> Option<axum::http::HeaderValue> {
+        if !self.behind_https {
+            return None;
+        }
+        let mut v = String::from("max-age=31536000");
+        if self.hsts_include_subdomains {
+            v.push_str("; includeSubDomains");
+        }
+        if self.hsts_preload {
+            v.push_str("; preload");
+        }
+        // The composition is ASCII + punctuation we just appended ourselves —
+        // from_str cannot fail here. Return Option to stay defensive.
+        axum::http::HeaderValue::from_str(&v).ok()
+    }
+
+    /// `Reporting-Endpoints: csp-endpoint="<url>"`. `None` when
+    /// `csp_report_endpoint` is unset.
+    pub fn reporting_endpoints_header_value(&self) -> Option<axum::http::HeaderValue> {
+        let url = self.csp_report_endpoint.as_ref()?;
+        let v = format!("csp-endpoint=\"{}\"", url.as_str());
+        axum::http::HeaderValue::from_str(&v).ok()
+    }
+}
+
 fn parse_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
+    // Strict: accept only lowercase "true"/"false" (exact match). The previous
+    // lenient form accepted "1"/"0"/"yes"/"no" with case-insensitivity; it was
+    // tightened in UNK-106 so operator-facing values have a single canonical
+    // form. Pre-MVP: no operators to migrate.
     match env::var(var) {
-        Ok(v) => match v.to_lowercase().as_str() {
-            "true" | "1" | "yes" => Ok(true),
-            "false" | "0" | "no" => Ok(false),
+        Ok(v) => match v.as_str() {
+            "true" => Ok(true),
+            "false" => Ok(false),
             _ => Err(ConfigError::Invalid {
                 var: var.into(),
-                reason: format!("expected boolean, got '{v}'"),
+                reason: format!("expected 'true' or 'false', got '{v}'"),
             }),
         },
         Err(_) => Ok(default),
@@ -758,6 +880,199 @@ mod tests {
                 );
             },
         );
+    }
+
+    // Clearing list for tests that exercise SecurityConfig::from_env directly.
+    const SECURITY_CLEAR: &[&str] = &[
+        "REVERIE_BEHIND_HTTPS",
+        "REVERIE_HSTS_INCLUDE_SUBDOMAINS",
+        "REVERIE_HSTS_PRELOAD",
+        "REVERIE_CSP_REPORT_ENDPOINT",
+        "REVERIE_FRONTEND_DIST_PATH",
+    ];
+
+    #[test]
+    fn security_defaults_all_off() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let saved: Vec<_> = SECURITY_CLEAR
+            .iter()
+            .map(|k| ((*k).to_string(), env::var(*k).ok()))
+            .collect();
+        #[allow(unsafe_code)]
+        // SAFETY: ENV_LOCK serialises all env-mutating tests in this crate.
+        unsafe {
+            for k in SECURITY_CLEAR {
+                env::remove_var(k);
+            }
+        }
+        let cfg = SecurityConfig::from_env().unwrap();
+        assert!(!cfg.behind_https);
+        assert!(!cfg.hsts_include_subdomains);
+        assert!(!cfg.hsts_preload);
+        assert!(cfg.csp_report_endpoint.is_none());
+        assert!(cfg.frontend_dist_path.is_none());
+        #[allow(unsafe_code)]
+        // SAFETY: same lock guard — restore previous environment state.
+        unsafe {
+            for (k, v) in saved {
+                match v {
+                    Some(val) => env::set_var(k, val),
+                    None => env::remove_var(k),
+                }
+            }
+        }
+    }
+
+    fn with_security_env<F: FnOnce()>(vars: &[(&str, &str)], f: F) {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let saved: Vec<_> = SECURITY_CLEAR
+            .iter()
+            .map(|k| ((*k).to_string(), env::var(*k).ok()))
+            .collect();
+        #[allow(unsafe_code)]
+        // SAFETY: ENV_LOCK serialises all env-mutating tests in this crate.
+        unsafe {
+            for k in SECURITY_CLEAR {
+                env::remove_var(k);
+            }
+            for (k, v) in vars {
+                env::set_var(k, v);
+            }
+        }
+        f();
+        #[allow(unsafe_code)]
+        // SAFETY: same lock guard — restore captured state.
+        unsafe {
+            for (k, v) in saved {
+                match v {
+                    Some(val) => env::set_var(k, val),
+                    None => env::remove_var(k),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn security_hsts_subdomains_without_https_errors() {
+        with_security_env(&[("REVERIE_HSTS_INCLUDE_SUBDOMAINS", "true")], || {
+            let err = SecurityConfig::from_env().unwrap_err();
+            assert!(
+                err.to_string().contains("REVERIE_HSTS_INCLUDE_SUBDOMAINS"),
+                "unexpected: {err}"
+            );
+        });
+    }
+
+    #[test]
+    fn security_hsts_preload_without_subdomains_errors() {
+        with_security_env(
+            &[
+                ("REVERIE_BEHIND_HTTPS", "true"),
+                ("REVERIE_HSTS_PRELOAD", "true"),
+            ],
+            || {
+                let err = SecurityConfig::from_env().unwrap_err();
+                assert!(
+                    err.to_string().contains("REVERIE_HSTS_PRELOAD"),
+                    "unexpected: {err}"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn security_hsts_full_stack_ok() {
+        with_security_env(
+            &[
+                ("REVERIE_BEHIND_HTTPS", "true"),
+                ("REVERIE_HSTS_INCLUDE_SUBDOMAINS", "true"),
+                ("REVERIE_HSTS_PRELOAD", "true"),
+            ],
+            || {
+                let cfg = SecurityConfig::from_env().unwrap();
+                assert!(cfg.behind_https);
+                assert!(cfg.hsts_include_subdomains);
+                assert!(cfg.hsts_preload);
+                let v = cfg.hsts_header_value().unwrap();
+                assert_eq!(
+                    v.to_str().unwrap(),
+                    "max-age=31536000; includeSubDomains; preload"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn security_hsts_header_absent_when_plaintext() {
+        with_security_env(&[], || {
+            let cfg = SecurityConfig::from_env().unwrap();
+            assert!(cfg.hsts_header_value().is_none());
+        });
+    }
+
+    #[test]
+    fn security_report_endpoint_bad_scheme_errors() {
+        with_security_env(
+            &[("REVERIE_CSP_REPORT_ENDPOINT", "ftp://bad.example")],
+            || {
+                let err = SecurityConfig::from_env().unwrap_err();
+                assert!(err.to_string().contains("scheme"), "unexpected: {err}");
+            },
+        );
+    }
+
+    #[test]
+    fn security_report_endpoint_malformed_url_errors() {
+        with_security_env(&[("REVERIE_CSP_REPORT_ENDPOINT", "not a url")], || {
+            let err = SecurityConfig::from_env().unwrap_err();
+            assert!(
+                err.to_string().contains("REVERIE_CSP_REPORT_ENDPOINT"),
+                "unexpected: {err}"
+            );
+        });
+    }
+
+    #[test]
+    fn security_report_endpoint_injection_chars_errors() {
+        for bad in [
+            "https://ok.example/\";x=y",
+            "https://ok.example/;evil",
+            "https://ok.example/\r\nX-Injected: 1",
+        ] {
+            with_security_env(&[("REVERIE_CSP_REPORT_ENDPOINT", bad)], || {
+                let err = SecurityConfig::from_env().unwrap_err();
+                assert!(
+                    err.to_string().contains("must not contain"),
+                    "unexpected: {err}"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn security_report_endpoint_happy_path() {
+        with_security_env(
+            &[("REVERIE_CSP_REPORT_ENDPOINT", "https://log.example/csp")],
+            || {
+                let cfg = SecurityConfig::from_env().unwrap();
+                let url = cfg.csp_report_endpoint.as_ref().unwrap();
+                assert_eq!(url.as_str(), "https://log.example/csp");
+                let hv = cfg.reporting_endpoints_header_value().unwrap();
+                assert_eq!(
+                    hv.to_str().unwrap(),
+                    r#"csp-endpoint="https://log.example/csp""#
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn security_parse_bool_rejects_legacy_truthy() {
+        // UNK-110: strict form rejects the old "1"/"yes" spellings.
+        with_security_env(&[("REVERIE_BEHIND_HTTPS", "yes")], || {
+            let err = SecurityConfig::from_env().unwrap_err();
+            assert!(err.to_string().contains("REVERIE_BEHIND_HTTPS"));
+        });
     }
 
     #[test]

@@ -68,6 +68,37 @@ trait design, pattern matching, lifetime minimization) live in the
   scope at the boundary; only `#[allow(unsafe_code)]`-marked code may use
   unsafe, and that marking requires reviewer justification.
 
+## Security headers (UNK-106)
+
+Backend owns response-header policy. Every response carries XCTO,
+Referrer-Policy, Permissions-Policy, X-Frame-Options unconditionally, and a
+route-class-differentiated `Content-Security-Policy`: HTML routes get a
+hash-based CSP (one inline FOUC script pinned via `'sha256-...'`), API
+routes get `default-src 'none'`.
+
+- Implementation: `backend/src/security/` (`csp.rs` builders,
+  `dist_validation.rs` startup check, `headers.rs` middleware + composite
+  fallback).
+- Wiring: `backend/src/main.rs` precomputes the CSP strings on
+  `SecurityConfig` at startup; `build_router` applies per-router
+  `.layer(api_csp_layer)` / `.layer(html_csp_layer)` plus an outermost
+  `security_headers` uniform middleware; the single composite
+  `.fallback(composite_fallback)` manually attaches CSP to unmatched paths.
+- Operator surface: `docs/security/content-security-policy.md`.
+- Tests: `backend/src/security/**/tests` are co-located; integration tests
+  in `security::headers::tests` use `test_server_with_security()` to inject
+  custom `SecurityConfig` fixtures.
+
+**Never add inline `<script>` tags to `frontend/index.html` without a matching
+CSP hash.** The Vite plugin `frontend/vite-plugins/csp-hash.ts` hashes one
+specific script (`frontend/src/fouc/fouc.js`) at build time. Additional
+inline scripts require either a new hash source in the plugin or an overhaul
+to nonce-based CSP (out of scope pre-v1.0).
+
+**Never emit duplicate CSP headers from the reverse proxy.** Reverie's CSP
+is route-class-differentiated; stacking a proxy-level CSP on top nullifies
+the differentiation.
+
 ## Database Migration Rules
 
 - **Pre-v1.0 schema is freely mutable.** Add migrations and constraints now

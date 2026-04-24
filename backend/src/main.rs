@@ -4,6 +4,7 @@ mod db;
 mod error;
 mod models;
 mod routes;
+mod security;
 mod services;
 mod state;
 #[cfg(test)]
@@ -35,7 +36,10 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
 
     let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    let mut router = Router::new()
+    // Reserved-prefix routes — /api, /auth, /health, /opds. API CSP layered on
+    // matched responses; unmatched paths flow into the composite fallback
+    // below which attaches API CSP manually for reserved-prefix 404s.
+    let mut api_like = Router::new()
         .merge(routes::health::router())
         .merge(routes::auth::router())
         .merge(routes::tokens::router())
@@ -46,9 +50,36 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
         // with a session cookie regardless of OPDS availability).
         .merge(routes::opds::covers_router());
     if let Some(opds) = routes::opds::router_enabled(&state.config.opds) {
-        router = router.merge(opds);
+        api_like = api_like.merge(opds);
     }
-    router
+    let api_like = api_like.layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        security::headers::api_csp_layer,
+    ));
+
+    // SPA assets router (None in API-only dev — Vite owns the HTML).
+    let spa =
+        routes::spa::router_enabled(state.config.security.frontend_dist_path.as_deref()).map(|r| {
+            r.layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                security::headers::html_csp_layer,
+            ))
+        });
+
+    let mut composite = api_like;
+    if let Some(spa) = spa {
+        composite = composite.merge(spa);
+    }
+
+    composite
+        // Single composite fallback — Axum 0.8 rejects merging two routers
+        // that both carry a fallback, so the SPA router has none and this
+        // handler path-dispatches JSON-404 vs SPA index.html itself.
+        .fallback(security::headers::composite_fallback)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            security::headers::security_headers,
+        ))
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
@@ -56,7 +87,22 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
 
 #[tokio::main]
 async fn main() {
-    let config = Config::from_env().expect("invalid configuration");
+    let mut config = Config::from_env().expect("invalid configuration");
+
+    // Finalise CSP header strings once at startup. API CSP has no dynamic
+    // inputs besides the optional report endpoint. HTML CSP consumes the
+    // script-src hash list produced by `vite build`'s csp-hash plugin and
+    // read back from the committed sidecar.
+    config.security.csp_api_header =
+        security::csp::build_api_csp(config.security.csp_report_endpoint.as_ref());
+    if let Some(dist_path) = config.security.frontend_dist_path.clone() {
+        let validated = security::dist_validation::validate_frontend_dist(&dist_path)
+            .expect("frontend dist validation failed — rebuild frontend (vite build)");
+        config.security.csp_html_header = Some(security::csp::build_html_csp(
+            &validated.script_src_hashes,
+            config.security.csp_report_endpoint.as_ref(),
+        ));
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(

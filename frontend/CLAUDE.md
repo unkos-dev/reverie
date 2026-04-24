@@ -91,6 +91,7 @@
 ## Testing & tooling
 
 - Vitest + React Testing Library. Test behaviour, not implementation.
+- Plugin tests live in `vite-plugins/__tests__/` and run via `npm test`.
 - Formatting enforced by ESLint. Do not disable rules without a documented
   reason.
 
@@ -103,11 +104,13 @@ frontend/
 │   ├── api/             # API client functions
 │   ├── components/      # Reusable UI components
 │   │   └── ui/          # shadcn/ui components (generated)
+│   ├── fouc/            # Pre-paint script hashed into HTML CSP at build
 │   ├── hooks/           # Custom React hooks
 │   ├── pages/           # Route-level page components
 │   ├── lib/             # Utilities
 │   ├── App.tsx          # Root component
 │   └── main.tsx         # Entrypoint
+├── vite-plugins/        # Custom Vite plugins (csp-hash.ts)
 ├── index.html
 ├── tailwind.config.ts
 ├── tsconfig.json
