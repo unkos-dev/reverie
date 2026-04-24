@@ -1,28 +1,19 @@
-# Plan: Design System & Visual Identity (BLUEPRINT Step 10)
+1# Plan: Design System & Visual Identity (BLUEPRINT Step 10)
 
-> [!WARNING]
-> **PARKED — pending [UNK-106](https://linear.app/unkos/issue/UNK-106) (introduce
-> Content-Security-Policy).**
->
-> Surfaced 2026-04-23 during adversarial review of this plan (finding C5): the
-> FOUC inline-script pattern (Task D3.13) requires CSP nonce treatment, which
-> in turn requires backend templating of `index.html`. Implementing the
-> design-system before CSP would mean re-architecting the FOUC pattern after
-> it ships and discovering shadcn/Radix/Tailwind/CSP conflicts retroactively.
->
-> **Sequence:** complete UNK-106 (CSP brainstorm → plan → implementation) →
-> resume this plan → run a fresh adversarial review (catches CSP-induced
-> deltas to FOUC pattern, Vite proxy, and bundle structure) → implement.
->
-> The plan body has been updated to incorporate the 17 resolutions from the
-> 2026-04-23 adversarial review. Sections affected by CSP integration (FOUC
-> inline script, Vite proxy, backend topology) will need another pass once
-> UNK-106 nails down the specifics.
+> [!NOTE]
+> **Unblocked 2026-04-24.** UNK-106 (CSP) shipped in PR #50 (`f070b97`) with a
+> **hash-based** CSP (not nonce-based, as this plan originally assumed). The
+> FOUC integration hook is already staged: `frontend/src/fouc/fouc.js` is a
+> placeholder whose contents D3.13 will replace, and `frontend/vite-plugins/
+> csp-hash.ts` injects the script into `index.html` at the `<!-- reverie:fouc-
+> hash -->` marker and emits `dist/csp-hashes.json` on build. No backend
+> templating of `index.html`; no per-request nonce. Sections touching CSP have
+> been reconciled against the shipped mechanism.
 >
 > **Related Linear issues:** [UNK-104](https://linear.app/unkos/issue/UNK-104)
 > (OIDC e2e test), [UNK-105](https://linear.app/unkos/issue/UNK-105)
 > (shared-constants pipeline), [UNK-106](https://linear.app/unkos/issue/UNK-106)
-> (CSP — blocks this plan).
+> (CSP — shipped).
 
 ## Summary
 
@@ -165,7 +156,11 @@ Implementation agent MUST read these before starting any task.
 | P0 | `plans/BLUEPRINT.md` | 1708–1870 | Step 10 spec — this plan operationalises it |
 | P0 | `plans/DESIGN_BRIEF.md` | 1–622 | Product identity; philosophy inputs for D1 |
 | P0 | `frontend/CLAUDE.md` | 1–37 | Frontend conventions (no `any`, shadcn via CLI, API calls centralised, no arbitrary hex, Vitest+RTL) |
-| P0 | `frontend/index.html` | 1–13 | FOUC inline script target |
+| P0 | `frontend/index.html` | 1–14 | Contains `<!-- reverie:fouc-hash -->` marker on line 8; the Vite plugin injects `<script>${fouc.js body}</script>` here at build. Do not hand-edit the marker. `<title>frontend</title>` on line 7 still needs updating to `Reverie` as part of D3.13. |
+| P0 | `frontend/src/fouc/fouc.js` | 1–5 | Placeholder set up by UNK-106; D3.13 replaces its contents with the FOUC script body (plain JS, no `<script>` tags). Any change regenerates `sha256-…` in `dist/csp-hashes.json` automatically at next build. Script body MUST NOT contain `</script>` — the plugin throws at build time if it does. |
+| P0 | `frontend/vite-plugins/csp-hash.ts` | 1–80 | Reads `fouc.js`, replaces the marker, emits `dist/csp-hashes.json`. `transformIndexHtml` runs in both `serve` and `build`; sidecar is only written on `build`. Injection-safety guard enforced here. |
+| P0 | `backend/src/security/dist_validation.rs` | 1–270 | Reads `dist/csp-hashes.json` at startup, validates it matches the CSP header the server will emit for HTML routes. Failure mode is fail-fast at boot — no hash drift between FE and BE can slip into a running server. |
+| P0 | `backend/src/security/csp.rs` | 1–125 | Builds the differentiated CSP: HTML gets `script-src 'self' 'sha256-…'`; API gets `default-src 'none'`. Route-class dispatch lives in `backend/src/routes/spa.rs` via a single composite `.fallback`. |
 | P0 | `frontend/src/main.tsx` | 1–10 | React entrypoint to wrap in `ThemeProvider` + `RouterProvider` |
 | P0 | `frontend/src/index.css` | 1 | Single `@import "tailwindcss"`; `@theme` layer + theme override selectors go here |
 | P0 | `frontend/vite.config.ts` | 1–7 | Will gain `server.proxy` + `test` key |
@@ -365,7 +360,7 @@ use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use time::Duration;
 
 /// Cookie name for the FOUC theme preference. Duplicated in:
-///   - frontend/index.html inline FOUC script
+///   - frontend/src/fouc/fouc.js (inline FOUC script body, CSP-hashed at build)
 ///   - frontend/src/lib/theme/cookie.ts
 /// All three MUST agree. Tracked as instance 1 under UNK-105.
 pub const THEME_COOKIE_NAME: &str = "reverie_theme";
@@ -563,29 +558,33 @@ Three load-bearing patterns:
 3. Theme value overrides live on regular selectors (`:root`, `[data-theme="dark"]`) **outside** `@theme`. `@theme` itself cannot be nested under any selector per Tailwind v4 docs.
 
 **FOUC_INLINE_SCRIPT** — blocking script that runs before React bundle loads.
-Lives in `frontend/index.html` between `<meta charset>` and `<link rel=icon>`:
+The script **body** lives in `frontend/src/fouc/fouc.js`; the Vite plugin
+`vite-plugins/csp-hash.ts` injects it as `<script>${fouc}</script>` at the
+`<!-- reverie:fouc-hash -->` marker in `index.html` (during both `serve` and
+`build`). On `build` the plugin also emits `dist/csp-hashes.json` with the
+SHA-256 of the body, which `backend/src/security/dist_validation.rs` reads at
+startup. No `<script>` tags belong in `fouc.js` itself, and its contents MUST
+NOT contain `</script>` (plugin throws):
 
-```html
-<!-- FOUC avoidance: set data-theme before any CSS paints or React mounts -->
-<script>
-  (function () {
-    try {
-      var cookie = document.cookie
-        .split('; ')
-        .find(function (c) { return c.startsWith('reverie_theme='); });
-      var pref = cookie ? cookie.split('=')[1] : 'system';
-      var effective = pref;
-      if (pref === 'system') {
-        effective = window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light';
-      }
-      document.documentElement.dataset.theme = effective;
-    } catch (e) {
-      document.documentElement.dataset.theme = 'light';
+```javascript
+// Contents of frontend/src/fouc/fouc.js — NO surrounding <script> tag
+(function () {
+  try {
+    var cookie = document.cookie
+      .split('; ')
+      .find(function (c) { return c.startsWith('reverie_theme='); });
+    var pref = cookie ? cookie.split('=')[1] : 'system';
+    var effective = pref;
+    if (pref === 'system') {
+      effective = window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
     }
-  })();
-</script>
+    document.documentElement.dataset.theme = effective;
+  } catch (e) {
+    document.documentElement.dataset.theme = 'light';
+  }
+})();
 ```
 
 Plain ES5 (no bundling needed), self-invoking, no dependencies, try/catch
@@ -748,7 +747,8 @@ Frontend (substantial):
 | `frontend/tsconfig.app.json` | UPDATE | `types: ["vitest/globals", "vitest/jsdom", "@testing-library/jest-dom"]` |
 | `frontend/eslint.config.js` | UPDATE | Add `no-restricted-syntax` rule banning hex literals in `.tsx` |
 | `frontend/.stylelintrc.json` | CREATE | `color-no-hex` rule with `overrides` exempting `src/styles/themes/*.css` |
-| `frontend/index.html` | UPDATE | Inject FOUC inline `<script>` before `<link rel=icon>`; update `<title>` |
+| `frontend/index.html` | UPDATE | Update `<title>frontend>` → `<title>Reverie</title>`; leave the `<!-- reverie:fouc-hash -->` marker untouched (injection is automated by `vite-plugins/csp-hash.ts`). |
+| `frontend/src/fouc/fouc.js` | UPDATE | Replace placeholder body with FOUC_INLINE_SCRIPT contents (plain JS, no `<script>` tags; no `</script>` substrings). Build regenerates `dist/csp-hashes.json`. |
 | `frontend/src/main.tsx` | UPDATE | Wrap `<App />` in `<ThemeProvider>` + `<RouterProvider>` |
 | `frontend/src/App.tsx` | REPLACE | Delete Vite scaffold; replace with minimal app shell (header + `<Outlet />`) |
 | `frontend/src/App.css` | DELETE | Legacy Vite scaffold CSS |
@@ -1088,12 +1088,14 @@ two) clearly wins. **Record the decision in a short note at the top of
   In production mode, Vite tree-shakes the entire `design-*` chunk because `import.meta.env.DEV` is replaced with the literal `false` and the `if`-branch is dead code. No `design-*.js` is emitted. In dev mode the chunk is emitted because the branch executes.
 - **VALIDATE (structural, not substring):** `npm run build && test -z "$(ls frontend/dist/assets/design-*.js 2>/dev/null)"` exits zero (no chunk emitted). Substring grep against minified output is unreliable (Vite mangles names); this check is against the build manifest structure.
 
-**Task D3.13 — Inline FOUC script in `index.html`**
+**Task D3.13 — Replace placeholder contents of `frontend/src/fouc/fouc.js`**
 
-- **ACTION:** Inject the "FOUC_INLINE_SCRIPT" block in `frontend/index.html` between `<meta charset>` and `<link rel=icon>`; update `<title>Reverie</title>`
+- **ACTION:** Replace the current 5-line placeholder in `frontend/src/fouc/fouc.js` with the FOUC_INLINE_SCRIPT body shown above (JS only — no surrounding `<script>` tags; the Vite plugin wraps it). Do **not** touch the `<!-- reverie:fouc-hash -->` marker or its location in `index.html`.
+- **ACTION:** Separately, update `<title>frontend</title>` → `<title>Reverie</title>` on line 7 of `frontend/index.html`.
+- **CONSTRAINT:** Script body must not contain the literal `</script>` (case-insensitive). `vite-plugins/csp-hash.ts` throws at build time if present, because a raw `</script>` in inline script content would escape the element and render as HTML.
+- **VALIDATE (build regen):** `npm run build` succeeds and `dist/csp-hashes.json` contains a single `sha256-...` entry whose value matches `openssl dgst -sha256 -binary frontend/src/fouc/fouc.js | base64`. Backend dist-validation picks this up on its next start.
 - **VALIDATE (happy path):** Set `reverie_theme=dark` cookie, hard-reload, open devtools, confirm `<html data-theme="dark">` is set before any React mount event.
 - **VALIDATE (catch-block path):** Set `reverie_theme=<malformed>` (e.g. `reverie_theme=` with a control character, or `reverie_theme=javascript:alert(1)`), hard-reload, confirm `<html data-theme="light">` (the try/catch fallback). The catch branch handles malformed-cookie cases at runtime; JS-disabled is out of scope (the entire app is React; unstyled no-JS rendering is not a supported configuration).
-- **NOTE (CSP dependency):** Under CSP (tracked in UNK-106), this script tag will gain a `nonce="{nonce}"` attribute, requiring backend templating of `index.html`. The inline script *content* stays the same. Revisit this task during the CSP resume.
 
 **Task D3.14 — ESLint + Stylelint hex bans**
 
@@ -1176,8 +1178,8 @@ two) clearly wins. **Record the decision in a short note at the top of
 
 - **ACTION:** Create `docs/src/content/docs/design/visual-identity.md` with sections: Tokens (full list), Type Scale, Spacing, Motion, State Philosophy (empty/loading/error), Theme Architecture
 - **ACTION (Theme Architecture content):** Include explicit notes:
-  - "Cookie name `reverie_theme` is referenced in three places: `backend/src/auth/theme_cookie.rs` (`THEME_COOKIE_NAME` const), `frontend/index.html` inline FOUC script, `frontend/src/lib/theme/cookie.ts`. All three MUST change together. The backend unit test on `set_theme_cookie` enforces the backend side; cross-stack drift is tracked in [UNK-105](https://linear.app/unkos/issue/UNK-105)."
-  - "FOUC avoidance requires an inline `<script>` in `index.html`. Under CSP (tracked in [UNK-106](https://linear.app/unkos/issue/UNK-106)), this requires a per-request nonce attribute matching the `script-src` directive in the CSP header — implemented via backend templating of `index.html`. Until CSP lands the script tag has no nonce; revisit on CSP completion."
+  - "Cookie name `reverie_theme` is referenced in three places: `backend/src/auth/theme_cookie.rs` (`THEME_COOKIE_NAME` const), `frontend/src/fouc/fouc.js` (inline FOUC script body), `frontend/src/lib/theme/cookie.ts`. All three MUST change together. The backend unit test on `set_theme_cookie` enforces the backend side; cross-stack drift is tracked in [UNK-105](https://linear.app/unkos/issue/UNK-105)."
+  - "FOUC avoidance relies on a blocking inline `<script>` injected into `index.html` at the `<!-- reverie:fouc-hash -->` marker by `frontend/vite-plugins/csp-hash.ts`. The script body lives in `frontend/src/fouc/fouc.js`; on `vite build` the plugin emits `dist/csp-hashes.json` containing the SHA-256 of the body, and `backend/src/security/dist_validation.rs` reads that at startup to bake the hash into the HTML-route CSP header. The CSP itself is hash-based — there is no per-request nonce and no backend templating of `index.html`. Any change to `fouc.js` regenerates the hash automatically; hash drift between frontend and backend is fail-fast at boot."
 - **ACTION:** Update `docs/astro.config.mjs` sidebar:
   ```javascript
   {
@@ -1321,7 +1323,9 @@ Mirrors BLUEPRINT Step 10 Exit Criteria (lines 1859–1870):
 | Tailwind v4 `@theme inline` semantics differ subtly across minor versions | LOW | MED | `package-lock.json` is committed and CI uses `npm ci`, so builds are version-reproducible. Renovate (already running on this repo) opens reviewable PRs for any Tailwind minor/major bump — semantic changes to `@theme inline` would surface there before merging. Verify utility generation by eyeballing `/design/system` after each batch. |
 | FOUC script breaks on older browsers | LOW | LOW | Plain ES5, try/catch fallback to `light`; no modern APIs required |
 | `@theme inline` prevents Tailwind from generating some utilities that reference unresolved runtime values | LOW | MED | If discovered during D3.9, fall back to split utilities (stable tokens in `@theme`, runtime-swapped values in component classes via `var()`) — documented in shadcn Tailwind v4 guide |
-| Vite dev proxy misconfigures cookie domain | LOW | HIGH | `changeOrigin: true` is load-bearing; test by inspecting `document.cookie` after login — if session cookie appears, theme cookie will too. **CSP caveat:** UNK-106 will likely have backend serve `index.html` (for nonce templating), which changes the dev topology. Re-validate the proxy + cookie behaviour during the CSP-driven plan refresh. |
+| Vite dev proxy misconfigures cookie domain | LOW | HIGH | `changeOrigin: true` is load-bearing; test by inspecting `document.cookie` after login — if session cookie appears, theme cookie will too. Dev topology unchanged post-CSP: Vite still serves `index.html` in dev (the `csp-hash.ts` plugin participates in `serve` as well as `build`). Prod topology: backend serves `/` and SPA fallback via `backend/src/routes/spa.rs`, with startup dist-validation gating on the FE/BE hash match. |
+| `fouc.js` content contains `</script>` | LOW | HIGH | `vite-plugins/csp-hash.ts` throws at build time if the body contains `</script>` (case-insensitive). Keep FOUC body pure ES5; never build script literals with `</script>` substrings. Test fixture in `vite-plugins/__tests__/csp-hash.test.ts` covers this. |
+| FOUC edit lands without hash regen in deploy | LOW | HIGH | Cannot happen in practice: the plugin runs on every `vite build`, `csp-hashes.json` ships in `dist/`, and `backend/src/security/dist_validation.rs` fails the server boot if the frontend hash doesn't match the CSP the backend would emit. Manual sanity check: `openssl dgst -sha256 -binary frontend/src/fouc/fouc.js \| base64` should equal the value in `dist/csp-hashes.json` after build. |
 | Crosscheck fails at D5 on a high-cost iteration loop | MED | HIGH | Don't run crosscheck on a broken build — walk the exit gates at D3 and D4 manually first; iterate D3/D4 tightly before invoking D5 |
 | Migration revert in production loses user theme preferences | LOW (pre-release) | LOW | Acknowledged in BLUEPRINT rollback; pre-release schema is mutable per repo memory |
 | Third-party font licensing overlooked during D2/D3 font selection | LOW | HIGH | Constrain font choice to SIL OFL / Apache 2.0 / `@fontsource` catalogue (all bundled fonts are explicitly licensed) |
@@ -1348,8 +1352,8 @@ blocked.
 
 ## Confidence Score
 
-**8/10** for one-pass implementation success (post-2026-04-23 adversarial review;
-plan parked pending UNK-106).
+**8/10** for one-pass implementation success (post-2026-04-23 adversarial
+review; post-2026-04-24 CSP reconciliation after UNK-106 shipped).
 
 **Rationale for 8:**
 
@@ -1359,4 +1363,4 @@ plan parked pending UNK-106).
 - **Medium confidence** on D1/D2 creative phases — these are deliberately open-ended. The plan cannot drive them to a single answer; exit gates rely on human review.
 - **Verified load-bearing assumptions** (during 2026-04-23 review): `axum-extra::CookieJar` is the correct mechanism (no `CookieManagerLayer` mounting question, composes with `Redirect` via tuple return); helper signatures `create_adult_and_basic_auth(pool, name)` and `server_with_real_pools(app_pool, ingestion_pool)` confirmed in `backend/src/test_support.rs`; `AppError::Validation` (422) confirmed as the project's chosen error variant for input validation (no `BadRequest`).
 - **Known unknowns:** tweakcn export format compatibility with `@theme inline` (docs cite both but I haven't hand-verified a tweakcn export running through Tailwind v4); shadcn's latest Form primitive may pull in `react-hook-form` + `zod` whose versions need pinning.
-- **Open dependency:** UNK-106 (CSP) must complete before this plan resumes. The FOUC inline script needs nonce treatment and the backend may end up serving `index.html` (changing the Vite proxy story). A fresh adversarial review after CSP lands will surface those deltas.
+- **CSP dependency (resolved):** UNK-106 shipped 2026-04-24 (PR #50, `f070b97`) with a **hash-based** CSP rather than the nonce+templating shape this plan originally anticipated. Reconciliation: D3.13 now edits `frontend/src/fouc/fouc.js` instead of `index.html` directly; the Vite plugin at `frontend/vite-plugins/csp-hash.ts` handles injection and `dist/csp-hashes.json` emission; `backend/src/security/dist_validation.rs` gates server boot on FE/BE hash match. Vite dev topology is unchanged (Vite still serves `index.html` via the plugin); prod serves from `backend/src/routes/spa.rs`. A fresh adversarial review should still run before implementation starts — the 2026-04-23 review predates this reconciliation pass.
