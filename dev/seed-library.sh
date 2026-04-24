@@ -2,7 +2,7 @@
 #
 # Seed a dev library with a curated set of Standard Ebooks public-domain EPUBs.
 #
-# Target directory: $REVERIE_LIBRARY_ROOT, or backend/tests/fixtures/library/
+# Target directory: $REVERIE_LIBRARY_PATH, or backend/tests/fixtures/library/
 # relative to the repo root if unset. The fallback directory is gitignored;
 # running this script never writes into tracked paths.
 #
@@ -26,15 +26,15 @@
 #
 # Usage:
 #   ./dev/seed-library.sh
-#   REVERIE_LIBRARY_ROOT=/path/to/library ./dev/seed-library.sh
+#   REVERIE_LIBRARY_PATH=/path/to/library ./dev/seed-library.sh
 
 set -euo pipefail
 
-if [[ -z "${REVERIE_LIBRARY_ROOT:-}" ]]; then
+if [[ -z "${REVERIE_LIBRARY_PATH:-}" ]]; then
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   TARGET="${repo_root}/backend/tests/fixtures/library"
 else
-  TARGET="${REVERIE_LIBRARY_ROOT}"
+  TARGET="${REVERIE_LIBRARY_PATH}"
 fi
 
 mkdir -p "${TARGET}"
