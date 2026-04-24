@@ -19,6 +19,23 @@
       "description": "One PR per dep — matches existing per-dependency Linear-ticket cadence",
       "matchManagers": ["cargo", "npm", "dockerfile", "docker-compose", "github-actions"],
       "groupName": null
+    },
+    {
+      "description": "Auto-merge patch updates for GitHub Actions and Docker base images (low-risk regardless of version)",
+      "matchManagers": ["github-actions", "dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "Auto-merge patch updates for stable (v1.0.0+) cargo and npm dependencies. Pre-v1.0 (0.x.y) deps stay manual — SemVer isn't binding below 1.0 and Rust/npm 0.x patches can include behavioural changes",
+      "matchManagers": ["cargo", "npm"],
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0\\./",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
     }
   ]
 }
