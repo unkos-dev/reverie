@@ -18,8 +18,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  analyze:
-    name: Analyze (${{ matrix.language }})
+  # Detect which languages' source actually changed so downstream analyze
+  # jobs can skip when their inputs are untouched. Scheduled runs always
+  # analyze everything — the path filter is skipped and the analyze jobs
+  # fall through the `schedule` branch of their `if:` expressions.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      actions: ${{ steps.filter.outputs.actions }}
+      javascript-typescript: ${{ steps.filter.outputs.javascript-typescript }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        if: github.event_name != 'schedule'
+        id: filter
+        with:
+          filters: |
+            actions:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+              - '.github/codeql/**'
+            javascript-typescript:
+              - 'frontend/**'
+              - '**/*.html'
+              - '.github/workflows/codeql.yml'
+              - '.github/codeql/**'
+            rust:
+              - 'backend/**'
+              - '.github/workflows/codeql.yml'
+              - '.github/codeql/**'
+
+  analyze-actions:
+    name: Analyze (actions)
+    needs: changes
+    if: github.event_name == 'schedule' || needs.changes.outputs.actions == 'true'
     runs-on: ubuntu-latest
     permissions:
       # CodeQL needs security-events: write to upload SARIF results.
@@ -27,17 +61,61 @@ jobs:
       # actions: read lets the Actions extractor fetch referenced workflows.
       actions: read
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [actions, javascript-typescript, rust]
     steps:
       - uses: actions/checkout@v6
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: ${{ matrix.language }}
+          languages: actions
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:actions
+
+  analyze-javascript-typescript:
+    name: Analyze (javascript-typescript)
+    needs: changes
+    if: github.event_name == 'schedule' || needs.changes.outputs.javascript-typescript == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+
+  analyze-rust:
+    name: Analyze (rust)
+    needs: changes
+    if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: rust
           # All three languages use build-mode: none. The Rust extractor
           # (codeql/rust-queries, beta) currently pins Rust to `none` and
           # rejects `manual`/`autobuild`; the extractor invokes cargo
@@ -48,4 +126,4 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:${{ matrix.language }}
+          category: /language:rust
