@@ -45,3 +45,6 @@ zip = "8"
 [dev-dependencies]
 axum-test = "20"
 wiremock = "0.6"
+
+[lints.rust]
+unsafe_code = "deny"

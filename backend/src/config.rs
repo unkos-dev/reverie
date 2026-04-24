@@ -376,6 +376,7 @@ mod tests {
     // so that db tests reading DATABASE_URL are also serialized against these tests.
     use crate::test_support::ENV_LOCK;
 
+    #[allow(unsafe_code)]
     fn with_env<F: FnOnce()>(vars: &[(&str, &str)], clear: &[&str], f: F) {
         let _guard = ENV_LOCK.lock().unwrap();
         let saved: Vec<(String, Option<String>)> = vars
@@ -394,6 +395,8 @@ mod tests {
             }
         }
         f();
+        // SAFETY: same ENV_LOCK held for the whole function — this block
+        // restores the pre-test env snapshot captured above.
         unsafe {
             for (k, v) in saved {
                 match v {
