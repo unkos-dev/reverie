@@ -79,10 +79,12 @@ pub async fn api_csp_layer(
     resp
 }
 
-/// Sets `Content-Security-Policy` to the HTML CSP for all responses from the
-/// SPA router (matched `/assets/*`). When the HTML CSP is not configured
-/// (API-only dev runs), no header is written — dev mode relies on Vite's
-/// own `server.headers` block.
+/// Sets `Content-Security-Policy` to the HTML CSP on responses from the
+/// matched `/assets/*` routes. Does NOT cover SPA `index.html` responses —
+/// those come from the composite fallback, which attaches HTML CSP directly
+/// via [`attach_html_csp`]. When the HTML CSP is not configured (API-only
+/// dev runs), no header is written — dev mode relies on Vite's own
+/// `server.headers` block.
 pub async fn html_csp_layer(
     State(state): State<AppState>,
     req: Request<Body>,

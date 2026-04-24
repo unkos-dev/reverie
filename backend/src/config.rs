@@ -73,11 +73,18 @@ pub struct WritebackConfig {
     pub max_attempts: u32,
 }
 
-/// Response-header policy (UNK-106). `csp_html_header` / `csp_api_header` are
-/// precomputed strings: API CSP is built at startup from
-/// `csp_report_endpoint`; HTML CSP is built in `main()` after
-/// `validate_frontend_dist` yields the script-src hash list, and remains
-/// `None` when no frontend dist is configured (API-only dev runs).
+/// Response-header policy (UNK-106).
+///
+/// Two-phase initialisation: `from_env()` populates the booleans +
+/// `csp_report_endpoint` + `frontend_dist_path` and leaves both CSP-header
+/// fields unset (`csp_api_header = String::new()`, `csp_html_header =
+/// None`). `main()` then finalises them by calling
+/// [`crate::security::csp::build_api_csp`] (unconditionally) and
+/// [`crate::security::csp::build_html_csp`] (only when `frontend_dist_path`
+/// is `Some` and `validate_frontend_dist` has yielded the script-src hash
+/// list). A `SecurityConfig` obtained directly from `from_env()` — without
+/// this second pass — will not emit a useful `Content-Security-Policy`
+/// header.
 #[derive(Debug, Clone)]
 pub struct SecurityConfig {
     pub behind_https: bool,

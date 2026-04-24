@@ -60,7 +60,7 @@ PRs without tests will not be approved. See [CLAUDE.md](CLAUDE.md) Hard Rule 5 f
 
 1. Create a feature branch from `main` using the appropriate prefix
 2. Write tests for your changes (see above)
-3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `npm run lint`, `npm run build` as applicable)
+3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `npm run lint`, `npm test`, `npm run build` as applicable)
 4. Open the PR — it will load a template; fill in **Summary**, **Why** (if motivation isn't obvious from the diff), and **Test plan**
 5. Labels auto-apply based on paths touched — no manual labelling needed
 6. Wait for maintainer review and approval
