@@ -39,6 +39,45 @@ Run migrations as the schema owner:
 - **Formatting:** `cargo fmt` is enforced by CI. Do not fight the formatter.
 - **Linting:** `cargo clippy -- -D warnings` is enforced by CI. Fix warnings, don't
   suppress them with `#[allow(...)]` unless there's a documented reason.
+- **Time:** use the `time` crate, not `chrono`. The blueprint mentions chrono
+  but the scaffold predates that decision — don't reintroduce chrono.
+
+## Rust Code Rules
+
+Project-specific hard rules. Broader Rust idioms (ownership, iterators,
+trait design, pattern matching, lifetime minimization) live in the
+`rust-patterns` skill — invoke it for deep patterns.
+
+- **No `unwrap()` or `expect()` in non-test code.** Propagate with `?` or
+  handle explicitly. Tests may use them freely.
+- **No `let _ = <Result>`.** Either log and continue via
+  `if let Err(e) = ... { tracing::warn!(…); }`, or propagate with `?`.
+  Silently discarding errors is forbidden.
+- **No wildcard imports** (`use foo::*`). Name what you import.
+- **`&str` over `String` in function parameters** when the function does not
+  need ownership. Callers pass owned strings via auto-deref.
+- **`#[non_exhaustive]` on public enums and structs that may grow** at crate
+  boundaries — protects downstream `match` exhaustiveness from breakage.
+- **Enums over boolean flags** for distinct states with different behaviour
+  (`enum Mode { Read, Write, ReadWrite }`, not `read: bool, write: bool`).
+- **`From<SourceError>` via `thiserror`'s `#[from]`** for `?` propagation
+  across error boundaries.
+- **`unsafe` requires a `// SAFETY:` comment per block** explaining the
+  invariant. Adjacent unsafe blocks under the same invariant each get their
+  own comment. Crate-level `unsafe_code = "deny"` (see `Cargo.toml`) enforces
+  scope at the boundary; only `#[allow(unsafe_code)]`-marked code may use
+  unsafe, and that marking requires reviewer justification.
+
+## Database Migration Rules
+
+- **Pre-v1.0 schema is freely mutable.** Add migrations and constraints now
+  rather than deferring for a future cleanup PR.
+- **Enum column type changes:** `DROP DEFAULT` before `ALTER COLUMN TYPE`,
+  then `SET DEFAULT` after. Postgres requires the default expression to
+  type-check against the current column type.
+- **Test data for `find_or_create` with `pg_trgm`:** titles must use distinct
+  vocabulary. Shared words push trigram similarity above the 0.6 match
+  threshold and cause false-positive de-duplication in tests.
 
 ## Project Structure (as it grows)
 
