@@ -19,6 +19,14 @@
           - "docs/**"
           - "README.md"
 
+"area/infra":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "Dockerfile"
+          - "docker-compose*.yml"
+          - "*.dockerfile"
+
 "security":
   - changed-files:
       - any-glob-to-any-file:
