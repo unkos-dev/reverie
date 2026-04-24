@@ -1,7 +1,6 @@
 name: Feature request
 description: Propose a new feature or improvement to Reverie
 title: "feat: "
-labels: ["Feature"]
 body:
   - type: markdown
     attributes:
