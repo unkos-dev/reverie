@@ -5,9 +5,10 @@
 //! the previous page — the next SELECT uses it as an inclusive-exclusive
 //! upper bound via `WHERE (created_at, id) < ($1, $2)`.
 //!
-//! No HMAC: homelab trust model. Cursor timestamps already leak via the feed
-//! body, and an attacker flipping a cursor gets a different page of rows they
-//! can already see — authoritative scoping lives in RLS, not the cursor.
+//! No HMAC: self-hosted trusted-network deployment model. Cursor timestamps
+//! already leak via the feed body, and an attacker flipping a cursor gets a
+//! different page of rows they can already see — authoritative scoping lives
+//! in RLS, not the cursor.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
 use time::OffsetDateTime;

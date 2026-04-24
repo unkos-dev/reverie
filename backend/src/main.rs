@@ -21,8 +21,8 @@ use crate::state::AppState;
 pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
     // NOTE: MemoryStore does not evict expired sessions server-side — the cookie
     // expires client-side but the HashMap entry stays until process restart.
-    // Acceptable for single-instance homelab; replace with tower-sessions-sqlx-store
-    // if memory growth under sustained use becomes an issue.
+    // Acceptable for single-instance self-hosted deployments; replace with
+    // tower-sessions-sqlx-store if memory growth under sustained use becomes an issue.
     let session_store = MemoryStore::default();
     // Secure flag intentionally omitted: backend runs behind a TLS-terminating
     // reverse proxy and sees plain HTTP, so Secure would prevent cookie delivery.
