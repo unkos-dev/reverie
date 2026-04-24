@@ -1,0 +1,38 @@
+# Config for actions/labeler@v5.
+# Labels are auto-applied to PRs based on changed file paths.
+# Matching rules follow the v5 "any-glob-to-any-file" semantics — a label is
+# applied if ANY changed file matches ANY of the globs listed under it.
+
+"area/backend":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "backend/**"
+
+"area/frontend":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "frontend/**"
+
+"area/docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "README.md"
+
+"security":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".claude/security/**"
+          - "backend/src/auth/**"
+          - ".github/workflows/codeql.yml"
+          - "**/*csp*"
+          - "**/*security-headers*"
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/Cargo.lock"
+          - "**/Cargo.toml"
+          - "**/package.json"
+          - "**/package-lock.json"
+          - "**/pnpm-lock.yaml"
