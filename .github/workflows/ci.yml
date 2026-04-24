@@ -142,5 +142,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm test
+
+      - name: Stylelint
+        # Non-blocking in D0 (no .stylelintrc.json yet). D3 task D3.14
+        # creates the config and tightens this to a hard gate.
+        run: npx stylelint 'src/**/*.css' --max-warnings 0 || true
+
       - name: Build
         run: npm run build

@@ -21,9 +21,32 @@ export default defineConfig({
     headers: {
       "Content-Security-Policy": DEV_CSP,
     },
+    proxy: {
+      "/api": { target: "http://localhost:3000", changeOrigin: true },
+      "/auth": { target: "http://localhost:3000", changeOrigin: true },
+      "/opds": { target: "http://localhost:3000", changeOrigin: true },
+    },
   },
   test: {
-    environment: "node",
-    include: ["vite-plugins/**/__tests__/**/*.test.ts"],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "vite-plugins",
+          environment: "node",
+          include: ["vite-plugins/**/__tests__/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "frontend",
+          environment: "jsdom",
+          globals: true,
+          setupFiles: ["./tests/setup.ts"],
+          include: ["src/**/*.{test,spec}.{ts,tsx}"],
+        },
+      },
+    ],
   },
 });
