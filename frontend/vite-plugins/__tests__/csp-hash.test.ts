@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -149,9 +150,11 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
     writeFileSync(join(root, "vite.config.ts"), viteConfig, "utf8");
 
     // Re-use the parent project's node_modules for vite + plugin types
-    // by symlinking instead of a full `npm install` here.
+    // by symlinking instead of a full `npm install` here. Direct fs call
+    // rather than `ln -s` via shell so CodeQL doesn't flag a shell command
+    // built from a non-constant path.
     const parentNodeModules = resolve(thisDir, "..", "..", "node_modules");
-    execSync(`ln -s ${JSON.stringify(parentNodeModules)} ${JSON.stringify(join(root, "node_modules"))}`);
+    symlinkSync(parentNodeModules, join(root, "node_modules"));
 
     execSync("npx vite build", { cwd: root, stdio: "pipe" });
 
@@ -162,7 +165,9 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
     expect(hashes).toHaveLength(1);
 
     const builtHtml = readFileSync(join(root, "dist", "index.html"), "utf8");
-    const match = builtHtml.match(/<script>([\s\S]*?)<\/script>/);
+    // Case-insensitive match — Vite emits lowercase but CodeQL flags
+    // case-sensitive <script> extraction as a bad HTML filter.
+    const match = builtHtml.match(/<script>([\s\S]*?)<\/script>/i);
     expect(match).not.toBeNull();
     const inlineBody = match![1];
     const expected = `sha256-${createHash("sha256").update(inlineBody).digest("base64")}`;
