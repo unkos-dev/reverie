@@ -66,13 +66,14 @@
 }
 
 .mg-root {
-  /* Sans-only typography post-D5 decision. Two-axis hierarchy: heading
-   * sans for display-class text (titles, hero, shelf headers), body sans
-   * for chrome and content paragraphs. --mg-font-display retained as an
-   * alias for --mg-font-heading so existing rules keep working. */
-  --mg-font-heading: "Bricolage Grotesque Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Locked typography: Author (display) + Satoshi (body). Both variable
+   * faces with italic counterparts are loaded in fontshare.css. Project-
+   * lead weight mapping documented inline at the rules below.
+   * --mg-font-display kept as alias for --mg-font-heading so existing
+   * rules keep working. */
+  --mg-font-heading: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mg-font-display: var(--mg-font-heading);
-  --mg-font-text:    "Manrope Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mg-font-text:    "Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mg-font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --mg-type-micro:  10px;
@@ -136,82 +137,21 @@
 
 .mg-root > * { position: relative; z-index: 1; }
 
-/* ------------------------- Font pairing variants ------------------------- */
-/* D2-only font picker. D3 task 20 narrows to the chosen heading + body
- * pair and removes the rest along with the picker UI. */
-
-/* Heading axis — display-class candidates. */
-.mg-root[data-heading="bricolage-grotesque"] { --mg-font-heading: "Bricolage Grotesque Variable", system-ui, sans-serif; }
-.mg-root[data-heading="clash-display"]       { --mg-font-heading: "ClashDisplay-Variable", "Clash Display", "Bricolage Grotesque Variable", system-ui, sans-serif; }
-.mg-root[data-heading="author"]              { --mg-font-heading: "Author", "Bricolage Grotesque Variable", system-ui, sans-serif; }
-
-/* Body axis — chrome and content paragraphs. */
-.mg-root[data-body="manrope"] { --mg-font-text: "Manrope Variable", system-ui, sans-serif; }
-.mg-root[data-body="satoshi"] { --mg-font-text: "Satoshi", "Manrope Variable", system-ui, sans-serif; }
-.mg-root[data-body="synonym"] { --mg-font-text: "Synonym", "Manrope Variable", system-ui, sans-serif; }
-
-/* ------------------------- Font picker chrome ------------------------- */
-
-.mg-fontpicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 var(--mg-space-3);
-  margin-right: var(--mg-space-2);
-  border-left: 1px solid var(--mg-border);
-  align-self: stretch;
+/* Tabular numerals on stats, table data cells, and any place numbers
+ * align column-wise. Satoshi ships the OpenType `tnum` feature.
+ * `font-variant-numeric: tabular-nums` is the canonical CSS-feature
+ * surface; font-feature-settings: "tnum" 1 is the lower-level fallback. */
+.mg-stat-num,
+.mg-table td,
+.mg-table th,
+.mg-tile-progress,
+.mg-progress-bar,
+.mg-table .col-num,
+.mg-detail-aside dd,
+.mg-bulk-count strong {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
-
-.mg-fontpicker:last-of-type {
-  border-right: 1px solid var(--mg-border);
-  margin-right: var(--mg-space-3);
-}
-
-.mg-fontpicker-label {
-  font-size: 9px;
-  letter-spacing: var(--mg-tracking-caps);
-  text-transform: uppercase;
-  color: var(--mg-fg-faint);
-  font-weight: 500;
-  margin-right: 2px;
-  align-self: center;
-}
-
-.mg-fontpicker-swatch {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--mg-border);
-  background: var(--mg-surface);
-  border-radius: 4px;
-  cursor: pointer;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  line-height: 1;
-  color: var(--mg-fg-muted);
-  transition: all var(--mg-motion-fast) var(--mg-ease-out);
-}
-
-.mg-fontpicker-swatch:hover {
-  border-color: var(--mg-border-strong);
-  color: var(--mg-fg);
-}
-
-.mg-fontpicker-swatch[aria-pressed="true"] {
-  background: var(--mg-canvas);
-  border-color: var(--mg-accent);
-  color: var(--mg-accent);
-  box-shadow: 0 0 0 1px var(--mg-accent);
-}
-
-.mg-fontpicker-swatch[data-heading="bricolage-grotesque"] span { font-family: "Bricolage Grotesque Variable", sans-serif; }
-.mg-fontpicker-swatch[data-heading="clash-display"] span       { font-family: "ClashDisplay-Variable", "Clash Display", sans-serif; font-weight: 600; }
-.mg-fontpicker-swatch[data-heading="author"] span              { font-family: "Author", sans-serif; font-style: italic; }
-
-.mg-fontpicker-swatch[data-body="manrope"] span { font-family: "Manrope Variable", sans-serif; }
-.mg-fontpicker-swatch[data-body="satoshi"] span { font-family: "Satoshi", sans-serif; }
-.mg-fontpicker-swatch[data-body="synonym"] span { font-family: "Synonym", sans-serif; }
 
 /* ------------------------- Top chrome ------------------------- */
 
@@ -442,7 +382,7 @@
 
 .mg-hero-h {
   font-family: var(--mg-font-display);
-  font-weight: 400;
+  font-weight: 500; /* Author 500 — hero h1 weight per locked mapping */
   font-size: var(--mg-type-display);
   letter-spacing: var(--mg-tracking-display);
   line-height: var(--mg-leading-display);
@@ -473,7 +413,7 @@
   border: none;
   border-radius: var(--mg-radius-control);
   font-size: var(--mg-type-body);
-  font-weight: 500;
+  font-weight: 700; /* Satoshi 700 — chrome button strong label */
   letter-spacing: var(--mg-tracking-chrome);
   cursor: pointer;
   text-decoration: none;
@@ -510,7 +450,7 @@
 .mg-shelf-title {
   font-family: var(--mg-font-display);
   font-size: var(--mg-type-h3);
-  font-weight: 400;
+  font-weight: 600; /* Author 600 — section header weight */
   letter-spacing: var(--mg-tracking-tight);
   margin: 0;
   color: var(--mg-fg);
@@ -775,7 +715,7 @@
 .mg-stat-num {
   font-family: var(--mg-font-display);
   font-size: var(--mg-type-h1);
-  font-weight: 400;
+  font-weight: 500; /* Author 500 — display-class stat numerals */
   letter-spacing: var(--mg-tracking-display);
   line-height: 1;
   color: var(--mg-fg);
@@ -938,7 +878,7 @@
 .mg-detail-title {
   font-family: var(--mg-font-display);
   font-size: 64px;
-  font-weight: 400;
+  font-weight: 500; /* Author 500 — title (display) weight */
   letter-spacing: -0.02em;
   line-height: 1.05;
   margin: 0 0 var(--mg-space-4);
@@ -1019,7 +959,7 @@
 .mg-detail-section h3 {
   font-family: var(--mg-font-display);
   font-size: var(--mg-type-h3);
-  font-weight: 400;
+  font-weight: 600; /* Author 600 — section header weight */
   letter-spacing: -0.01em;
   margin: 0 0 var(--mg-space-4);
 }
@@ -1050,7 +990,7 @@
 .mg-library-title {
   font-family: var(--mg-font-display);
   font-size: var(--mg-type-h2);
-  font-weight: 400;
+  font-weight: 600; /* Author 600 — section header weight */
   letter-spacing: var(--mg-tracking-tight);
   margin: 0;
 }

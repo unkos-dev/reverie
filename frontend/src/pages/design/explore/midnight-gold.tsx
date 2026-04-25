@@ -1,29 +1,10 @@
 import { useState, useRef, useEffect, type ReactElement, type CSSProperties } from "react";
 import { Link } from "react-router";
 
-// Sans-only typography after project-lead D5-style decision. D3 task 20
-// narrows to the chosen heading + body pair and uninstalls the rest.
-// @fontsource-installed candidates:
-import "@fontsource-variable/bricolage-grotesque/index.css";
-import "@fontsource-variable/manrope/index.css";
-// Fontshare candidates (Clash Display, Author, Satoshi, Synonym) self-
-// hosted under public/fonts/fontshare. Fontshare's CDN sets cookies on
-// its CSS responses, which trips Chromium's Opaque Response Blocking
-// (ERR_BLOCKED_BY_ORB) on cross-origin <link> loads — even without
-// crossorigin. Self-hosting bypasses ORB entirely and matches the
-// production CSP (font-src 'self').
-//
-// 'Boldonse' (project lead's pick) isn't on the public Fontshare API
-// (1-byte empty response). Clash Display substituted as the strongest
-// match for the same hypothesis: dense modern editorial-grotesque
-// display.
-//
-// Italics aren't separately reachable on the public API for Author /
-// Synonym (returns 500 for `400i` syntax, 1-byte empty for `-italic`
-// suffix). Spike uses synthetic italic (browser slants the regular
-// face) — Author's true cursive italic isn't visible without manually
-// downloading the italic woff2 from Fontshare's full font pack.
-
+// Locked typography: Author (display) + Satoshi (body). Both variable
+// faces with italic counterparts are self-hosted under public/fonts/
+// fontshare/files/, bypassing Fontshare CDN's cookie-set/ORB issue and
+// matching the production CSP (font-src 'self').
 import "../../../design/explore/midnight-gold/fontshare.css";
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
@@ -41,20 +22,6 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type HeadingFont = "bricolage-grotesque" | "clash-display" | "author";
-type BodyFont = "manrope" | "satoshi" | "synonym";
-
-const HEADING_FONTS: { id: HeadingFont; label: string; sample: string }[] = [
-  { id: "bricolage-grotesque", label: "Bricolage Grotesque · variable display", sample: "Ag" },
-  { id: "clash-display", label: "Clash Display · dense editorial-grotesque", sample: "Ag" },
-  { id: "author", label: "Author · distinctive italic grotesque", sample: "Ag" },
-];
-
-const BODY_FONTS: { id: BodyFont; label: string; sample: string }[] = [
-  { id: "manrope", label: "Manrope · compact", sample: "Ag" },
-  { id: "satoshi", label: "Satoshi · neutral workhorse", sample: "Ag" },
-  { id: "synonym", label: "Synonym · humanist warm hybrid", sample: "Ag" },
-];
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
   const hue = bookHue(book.id);
@@ -798,11 +765,9 @@ function renderCell(b: Book, id: ColumnId, theme: Theme): ReactElement {
 export default function MidnightGold(): ReactElement {
   const [theme, setTheme] = useState<Theme>("dark");
   const [mock, setMock] = useState<Mock>("home");
-  const [headingFont, setHeadingFont] = useState<HeadingFont>("bricolage-grotesque");
-  const [bodyFont, setBodyFont] = useState<BodyFont>("manrope");
 
   return (
-    <div className="mg-root" data-theme={theme} data-heading={headingFont} data-body={bodyFont}>
+    <div className="mg-root" data-theme={theme}>
       <header className="mg-topbar">
         <div className="mg-wordmark">
           Reverie<span>.</span>
@@ -838,40 +803,6 @@ export default function MidnightGold(): ReactElement {
           <span>03</span> Library full-grid
         </button>
         <div className="mg-spacer" />
-        <div className="mg-fontpicker" role="group" aria-label="Heading font">
-          <span className="mg-fontpicker-label">Heading</span>
-          {HEADING_FONTS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="mg-fontpicker-swatch"
-              data-heading={p.id}
-              aria-pressed={headingFont === p.id}
-              aria-label={`Heading font: ${p.label}`}
-              title={p.label}
-              onClick={() => setHeadingFont(p.id)}
-            >
-              <span>{p.sample}</span>
-            </button>
-          ))}
-        </div>
-        <div className="mg-fontpicker" role="group" aria-label="Body font">
-          <span className="mg-fontpicker-label">Body</span>
-          {BODY_FONTS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="mg-fontpicker-swatch"
-              data-body={p.id}
-              aria-pressed={bodyFont === p.id}
-              aria-label={`Body font: ${p.label}`}
-              title={p.label}
-              onClick={() => setBodyFont(p.id)}
-            >
-              <span>{p.sample}</span>
-            </button>
-          ))}
-        </div>
         <Link
           to="/design/explore"
           style={{
