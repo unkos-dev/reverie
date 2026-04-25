@@ -56,6 +56,39 @@
   --ai-grain-opacity: 0.04;
 }
 
+/* ---- Accent variants (D2 exploration) ----
+ * Default accent for both themes is chartreuse (declared above). These
+ * override-rules let the page chrome cycle through alternate signature
+ * accents without rebuilding the whole token set. fg-on-accent stays
+ * #0E1015 (ink) so contrast against any saturated mid-tone reads OK.
+ */
+
+.ai-root[data-accent="persimmon"][data-theme="dark"] {
+  --ai-accent:        #E36A2F;
+  --ai-accent-soft:   #3D2114;
+  --ai-accent-strong: #F47D40;
+  --ai-fg-on-accent:  #1A0E07;
+}
+.ai-root[data-accent="persimmon"][data-theme="light"] {
+  --ai-accent:        #B0531F;
+  --ai-accent-soft:   #F8DAC4;
+  --ai-accent-strong: #893E10;
+  --ai-fg-on-accent:  #FBF8F1;
+}
+
+.ai-root[data-accent="carmine"][data-theme="dark"] {
+  --ai-accent:        #D63F55;
+  --ai-accent-soft:   #3A141C;
+  --ai-accent-strong: #EC5169;
+  --ai-fg-on-accent:  #14060A;
+}
+.ai-root[data-accent="carmine"][data-theme="light"] {
+  --ai-accent:        #A82A3D;
+  --ai-accent-soft:   #F4D0D7;
+  --ai-accent-strong: #821E2E;
+  --ai-fg-on-accent:  #FBF8F1;
+}
+
 .ai-root {
   --ai-font-display: "Sectra", "Tiempos Headline", "Source Serif 4", "Iowan Old Style", Georgia, serif;
   --ai-font-text:    "Söhne", "Inter Display", "Inter", system-ui, -apple-system, sans-serif;
@@ -1030,6 +1063,42 @@
   outline: 1px solid var(--ai-rule);
   outline-offset: -1px;
 }
+
+/* ------------------------- Accent picker (D2 only) ------------------------- */
+
+.ai-accent-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ai-space-2);
+  padding: 0 var(--ai-space-4);
+  margin-right: var(--ai-space-3);
+  border-left: 1px solid var(--ai-rule);
+  border-right: 1px solid var(--ai-rule);
+  align-self: stretch;
+}
+
+.ai-accent-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--ai-rule-strong);
+  background: var(--swatch-color, #888);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--ai-motion-fast) var(--ai-ease-decisive),
+              box-shadow var(--ai-motion-fast) var(--ai-ease-out);
+}
+
+.ai-accent-swatch:hover { transform: scale(1.12); }
+
+.ai-accent-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--ai-canvas), 0 0 0 3px var(--swatch-color, #888);
+  transform: scale(1.08);
+}
+
+.ai-accent-swatch-chartreuse { --swatch-color: #C5E84A; }
+.ai-accent-swatch-persimmon  { --swatch-color: #E36A2F; }
+.ai-accent-swatch-carmine    { --swatch-color: #D63F55; }
 
 /* ------------------------- Theme toggle ------------------------- */
 

@@ -15,6 +15,7 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
+type Accent = "chartreuse" | "persimmon" | "carmine";
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
   const hue = bookHue(book.id);
@@ -392,9 +393,10 @@ function Library({ theme }: { theme: Theme }): ReactElement {
 export default function AtelierInk(): ReactElement {
   const [theme, setTheme] = useState<Theme>("dark");
   const [mock, setMock] = useState<Mock>("home");
+  const [accent, setAccent] = useState<Accent>("chartreuse");
 
   return (
-    <div className="ai-root" data-theme={theme}>
+    <div className="ai-root" data-theme={theme} data-accent={accent}>
       <header className="ai-topbar">
         <div className="ai-wordmark">
           REVERIE<em>.</em>
@@ -430,6 +432,29 @@ export default function AtelierInk(): ReactElement {
           <span className="num">iii</span> Library
         </button>
         <div className="ai-spacer" />
+        <div className="ai-accent-picker" role="group" aria-label="Accent">
+          <button
+            type="button"
+            className="ai-accent-swatch ai-accent-swatch-chartreuse"
+            aria-pressed={accent === "chartreuse"}
+            aria-label="Chartreuse accent"
+            onClick={() => setAccent("chartreuse")}
+          />
+          <button
+            type="button"
+            className="ai-accent-swatch ai-accent-swatch-persimmon"
+            aria-pressed={accent === "persimmon"}
+            aria-label="Persimmon accent"
+            onClick={() => setAccent("persimmon")}
+          />
+          <button
+            type="button"
+            className="ai-accent-swatch ai-accent-swatch-carmine"
+            aria-pressed={accent === "carmine"}
+            aria-label="Carmine accent"
+            onClick={() => setAccent("carmine")}
+          />
+        </div>
         <Link
           to="/design/explore"
           style={{
