@@ -7,17 +7,10 @@ import { cspHashPlugin } from "./vite-plugins/csp-hash";
 // Vite HMR, esbuild error overlays, and Tailwind JIT work. The production CSP
 // is a strict, hash-based policy served by the backend (see
 // backend/src/security/csp.rs). These dev relaxations do not ship to prod.
-//
-// Fontshare allowances (api.fontshare.com / cdn.fontshare.com) are D2 spike
-// scaffolding for the typography font picker. D3.1 prunes the picker; D3
-// task 20 either downloads the chosen font's woff2 files into public/fonts
-// for self-hosting, or replaces with a self-hosted alternative — Fontshare
-// won't appear in the production CSP.
 const DEV_CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'self' 'unsafe-inline' https://api.fontshare.com",
-  "font-src 'self' https://cdn.fontshare.com data:",
+  "style-src 'self' 'unsafe-inline'",
   "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173",
   "img-src 'self' data:",
 ].join("; ");

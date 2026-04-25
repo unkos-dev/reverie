@@ -1,9 +1,9 @@
-/* Fontshare candidates — Boldonse, Author (heading); Satoshi, Synonym
- * (body). External CDN dependency is D2-spike-only; D3 task 20 downloads
- * the chosen font's woff2 files into public/fonts for self-hosting and
- * removes this @import. Dev CSP is relaxed in vite.config.ts to permit
- * api.fontshare.com / cdn.fontshare.com. */
-@import url("https://api.fontshare.com/v2/css?f[]=boldonse@400&f[]=satoshi@400,500,700&f[]=author@400,500,700,400i,500i,700i&f[]=synonym@400,500,700,400i,500i&display=swap");
+/* Fontshare candidates (Boldonse, Author, Satoshi, Synonym) load via a
+ * dynamically-injected <link crossorigin="anonymous"> in midnight-gold.tsx.
+ * CSS @import url() to a cross-origin host is blocked by Chromium ORB
+ * without explicit CORS opt-in; <link crossorigin> bypasses ORB cleanly.
+ * D2-spike-only — D3 task 20 self-hosts the chosen font's woff2 files
+ * in public/fonts and removes the runtime CDN dependency. */
 
 /*
  * Reverie · Design system · D2 direction: Midnight Gold
@@ -142,7 +142,7 @@
 
 /* Heading axis — display-class candidates. */
 .mg-root[data-heading="bricolage-grotesque"] { --mg-font-heading: "Bricolage Grotesque Variable", system-ui, sans-serif; }
-.mg-root[data-heading="boldonse"]            { --mg-font-heading: "Boldonse", "Bricolage Grotesque Variable", system-ui, sans-serif; }
+.mg-root[data-heading="clash-display"]       { --mg-font-heading: "ClashDisplay-Variable", "Clash Display", "Bricolage Grotesque Variable", system-ui, sans-serif; }
 .mg-root[data-heading="author"]              { --mg-font-heading: "Author", "Bricolage Grotesque Variable", system-ui, sans-serif; }
 
 /* Body axis — chrome and content paragraphs. */
@@ -206,7 +206,7 @@
 }
 
 .mg-fontpicker-swatch[data-heading="bricolage-grotesque"] span { font-family: "Bricolage Grotesque Variable", sans-serif; }
-.mg-fontpicker-swatch[data-heading="boldonse"] span            { font-family: "Boldonse", sans-serif; }
+.mg-fontpicker-swatch[data-heading="clash-display"] span       { font-family: "ClashDisplay-Variable", "Clash Display", sans-serif; font-weight: 600; }
 .mg-fontpicker-swatch[data-heading="author"] span              { font-family: "Author", sans-serif; font-style: italic; }
 
 .mg-fontpicker-swatch[data-body="manrope"] span { font-family: "Manrope Variable", sans-serif; }

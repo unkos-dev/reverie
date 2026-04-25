@@ -6,9 +6,25 @@ import { Link } from "react-router";
 // @fontsource-installed candidates:
 import "@fontsource-variable/bricolage-grotesque/index.css";
 import "@fontsource-variable/manrope/index.css";
-// Fontshare candidates (Boldonse, Author, Satoshi, Synonym) load via
-// @import in midnight-gold/tokens.css — Fontshare doesn't ship via npm.
+// Fontshare candidates (Clash Display, Author, Satoshi, Synonym) self-
+// hosted under public/fonts/fontshare. Fontshare's CDN sets cookies on
+// its CSS responses, which trips Chromium's Opaque Response Blocking
+// (ERR_BLOCKED_BY_ORB) on cross-origin <link> loads — even without
+// crossorigin. Self-hosting bypasses ORB entirely and matches the
+// production CSP (font-src 'self').
+//
+// 'Boldonse' (project lead's pick) isn't on the public Fontshare API
+// (1-byte empty response). Clash Display substituted as the strongest
+// match for the same hypothesis: dense modern editorial-grotesque
+// display.
+//
+// Italics aren't separately reachable on the public API for Author /
+// Synonym (returns 500 for `400i` syntax, 1-byte empty for `-italic`
+// suffix). Spike uses synthetic italic (browser slants the regular
+// face) — Author's true cursive italic isn't visible without manually
+// downloading the italic woff2 from Fontshare's full font pack.
 
+import "../../../design/explore/midnight-gold/fontshare.css";
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
   BOOKS,
@@ -25,12 +41,12 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type HeadingFont = "bricolage-grotesque" | "boldonse" | "author";
+type HeadingFont = "bricolage-grotesque" | "clash-display" | "author";
 type BodyFont = "manrope" | "satoshi" | "synonym";
 
 const HEADING_FONTS: { id: HeadingFont; label: string; sample: string }[] = [
   { id: "bricolage-grotesque", label: "Bricolage Grotesque · variable display", sample: "Ag" },
-  { id: "boldonse", label: "Boldonse · condensed editorial-grotesque", sample: "Ag" },
+  { id: "clash-display", label: "Clash Display · dense editorial-grotesque", sample: "Ag" },
   { id: "author", label: "Author · distinctive italic grotesque", sample: "Ag" },
 ];
 

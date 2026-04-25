@@ -1,0 +1,100 @@
+/* Clash Display */
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/fontshare/files/BSY64LPT.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/fontshare/files/JTSL5QES.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/fontshare/files/Z3MGHFHX.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/fontshare/files/53RZKGOD.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+  font-style: normal;
+}
+
+/* Satoshi */
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/fontshare/files/KFIAZD4R.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/fontshare/files/7AHDUZ4A.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/fontshare/files/GHM6WVH6.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+  font-style: normal;
+}
+
+/* Author */
+@font-face {
+  font-family: 'Author';
+  src: url('/fonts/fontshare/files/S4GQQ4OY.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Author';
+  src: url('/fonts/fontshare/files/6LYCTMFT.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Author';
+  src: url('/fonts/fontshare/files/XPBQYLR3.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+  font-style: normal;
+}
+
+/* Synonym */
+@font-face {
+  font-family: 'Synonym';
+  src: url('/fonts/fontshare/files/EMRNL4XM.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Synonym';
+  src: url('/fonts/fontshare/files/DXASCID3.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Synonym';
+  src: url('/fonts/fontshare/files/LICKIETV.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+  font-style: normal;
+}
+
+
