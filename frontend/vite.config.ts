@@ -21,6 +21,13 @@ export default defineConfig({
     headers: {
       "Content-Security-Policy": DEV_CSP,
     },
+    // DNS-rebinding guard disabled in dev so contributors using cloud dev
+    // environments (Coder, Codespaces, Gitpod, ngrok) can reach the dev
+    // server through their assigned hostname. The dev server has no
+    // credentials and serves only the public OSS source bundle; the
+    // theoretical DNS-rebinding read of dev assets is the same content
+    // already on GitHub. Production is unaffected — Vite is dev-only.
+    allowedHosts: true,
     proxy: {
       "/api": { target: "http://localhost:3000", changeOrigin: true },
       "/auth": { target: "http://localhost:3000", changeOrigin: true },
