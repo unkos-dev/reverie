@@ -3,13 +3,10 @@ import { Link } from "react-router";
 
 // Sans-only typography after project-lead D5-style decision. D3 task 20
 // narrows to the chosen heading + body pair and uninstalls the rest.
-import "@fontsource-variable/inter/index.css";
-import "@fontsource-variable/manrope/index.css";
-import "@fontsource-variable/geist/index.css";
-import "@fontsource-variable/plus-jakarta-sans/index.css";
 import "@fontsource-variable/bricolage-grotesque/index.css";
 import "@fontsource-variable/space-grotesk/index.css";
-import "@fontsource/anton/400.css";
+import "@fontsource-variable/manrope/index.css";
+import "@fontsource-variable/geist/index.css";
 
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
@@ -27,21 +24,17 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type HeadingFont = "manrope" | "bricolage-grotesque" | "space-grotesk" | "anton";
-type BodyFont = "inter" | "manrope" | "geist" | "plus-jakarta-sans";
+type HeadingFont = "bricolage-grotesque" | "space-grotesk";
+type BodyFont = "manrope" | "geist";
 
 const HEADING_FONTS: { id: HeadingFont; label: string; sample: string }[] = [
-  { id: "manrope", label: "Manrope · compact neutral", sample: "Ag" },
   { id: "bricolage-grotesque", label: "Bricolage Grotesque · variable display", sample: "Ag" },
   { id: "space-grotesk", label: "Space Grotesk · distinctive geometric", sample: "Ag" },
-  { id: "anton", label: "Anton · compressed dramatic", sample: "Ag" },
 ];
 
 const BODY_FONTS: { id: BodyFont; label: string; sample: string }[] = [
-  { id: "inter", label: "Inter · neutral geometric", sample: "Ag" },
   { id: "manrope", label: "Manrope · compact", sample: "Ag" },
   { id: "geist", label: "Geist · technical grotesque", sample: "Ag" },
-  { id: "plus-jakarta-sans", label: "Plus Jakarta Sans · friendly geometric", sample: "Ag" },
 ];
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
@@ -786,7 +779,7 @@ function renderCell(b: Book, id: ColumnId, theme: Theme): ReactElement {
 export default function MidnightGold(): ReactElement {
   const [theme, setTheme] = useState<Theme>("dark");
   const [mock, setMock] = useState<Mock>("home");
-  const [headingFont, setHeadingFont] = useState<HeadingFont>("manrope");
+  const [headingFont, setHeadingFont] = useState<HeadingFont>("bricolage-grotesque");
   const [bodyFont, setBodyFont] = useState<BodyFont>("manrope");
 
   return (
