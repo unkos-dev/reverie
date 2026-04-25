@@ -1,4 +1,4 @@
-import { useState, type ReactElement, type CSSProperties } from "react";
+import { useState, useRef, useEffect, type ReactElement, type CSSProperties } from "react";
 import { Link } from "react-router";
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
@@ -8,6 +8,7 @@ import {
   USER_SHELVES,
   bookHue,
   bookTier,
+  relDays,
   type Book,
 } from "./_shared/books";
 
@@ -101,16 +102,76 @@ function Tile({ book, theme, size = "default", showStatus = false }: TileProps):
   );
 }
 
+interface MarqueeProps {
+  children: ReactElement[];
+  speed?: number;
+  reverse?: boolean;
+}
+
+function Marquee({ children, speed = 80, reverse = false }: MarqueeProps): ReactElement {
+  const duplicated = children.map((child, i) =>
+    typeof child === "object" && child !== null && "props" in child
+      ? { ...child, key: `b-${i}` }
+      : child,
+  );
+  const styleVar: CSSProperties = {
+    animationDuration: `${speed}s`,
+    animationDirection: reverse ? "reverse" : "normal",
+  };
+  return (
+    <div className="mg-marquee" aria-roledescription="carousel">
+      <div className="mg-marquee-track" style={styleVar}>
+        <div className="mg-marquee-set">{children}</div>
+        <div className="mg-marquee-set" aria-hidden="true">{duplicated}</div>
+      </div>
+    </div>
+  );
+}
+
 interface HomeProps {
   theme: Theme;
 }
 
 function Home({ theme }: HomeProps): ReactElement {
   const featured = SHELVES.inProgress[0] ?? BOOKS[0];
+  const heroRef = useRef<HTMLElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const hero = heroRef.current;
+    const backdrop = backdropRef.current;
+    if (!hero || !backdrop) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let frame = 0;
+    const onMove = (e: MouseEvent) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rect = hero.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width - 0.5;
+        const y = (e.clientY - rect.top) / rect.height - 0.5;
+        backdrop.style.transform = `translate(${x * -18}px, ${y * -12}px) scale(1.05)`;
+      });
+    };
+    const onLeave = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        backdrop.style.transform = "translate(0, 0) scale(1.05)";
+      });
+    };
+    hero.addEventListener("mousemove", onMove);
+    hero.addEventListener("mouseleave", onLeave);
+    return () => {
+      hero.removeEventListener("mousemove", onMove);
+      hero.removeEventListener("mouseleave", onLeave);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+
   return (
     <>
-      <section className="mg-hero">
-        <div className="mg-hero-backdrop" style={coverBackdropStyle(featured)} />
+      <section className="mg-hero" ref={heroRef}>
+        <div className="mg-hero-backdrop" ref={backdropRef} style={coverBackdropStyle(featured)} />
         <div className="mg-hero-content">
           <div className="mg-eyebrow">Wednesday evening · Continue</div>
           <h1 className="mg-hero-h">
@@ -139,11 +200,11 @@ function Home({ theme }: HomeProps): ReactElement {
             <span>{SHELVES.inProgress.length} active</span>
           </div>
         </div>
-        <div className="mg-carousel">
-          {SHELVES.inProgress.map((b) => (
-            <Tile key={b.id} book={b} theme={theme} size="lg" showStatus />
+        <Marquee speed={70} reverse={false}>
+          {SHELVES.inProgress.map((b, i) => (
+            <Tile key={`a-${b.id}-${i}`} book={b} theme={theme} size="lg" showStatus />
           ))}
-        </div>
+        </Marquee>
       </section>
 
       <section className="mg-shelf">
@@ -153,11 +214,11 @@ function Home({ theme }: HomeProps): ReactElement {
             <a href="#">See all →</a>
           </div>
         </div>
-        <div className="mg-carousel">
-          {SHELVES.recentlyAdded.map((b) => (
-            <Tile key={b.id} book={b} theme={theme} />
+        <Marquee speed={90} reverse={true}>
+          {SHELVES.recentlyAdded.map((b, i) => (
+            <Tile key={`a-${b.id}-${i}`} book={b} theme={theme} />
           ))}
-        </div>
+        </Marquee>
       </section>
 
       <section className="mg-shelf">
@@ -169,11 +230,11 @@ function Home({ theme }: HomeProps): ReactElement {
             <span className="mg-badge">Discovery</span>
           </div>
         </div>
-        <div className="mg-carousel">
-          {SHELVES.forgotten.map((b) => (
-            <Tile key={b.id} book={b} theme={theme} />
+        <Marquee speed={80} reverse={false}>
+          {SHELVES.forgotten.map((b, i) => (
+            <Tile key={`a-${b.id}-${i}`} book={b} theme={theme} />
           ))}
-        </div>
+        </Marquee>
       </section>
 
       <section className="mg-shelf">
@@ -183,11 +244,11 @@ function Home({ theme }: HomeProps): ReactElement {
             <span className="mg-badge">Smart shelf</span>
           </div>
         </div>
-        <div className="mg-carousel">
-          {SHELVES.byYusra.map((b) => (
-            <Tile key={b.id} book={b} theme={theme} showStatus />
+        <Marquee speed={75} reverse={true}>
+          {SHELVES.byYusra.map((b, i) => (
+            <Tile key={`a-${b.id}-${i}`} book={b} theme={theme} showStatus />
           ))}
-        </div>
+        </Marquee>
       </section>
 
       <section className="mg-stats">
@@ -303,12 +364,69 @@ function Detail({ theme }: { theme: Theme }): ReactElement {
   );
 }
 
+type ColumnId =
+  | "title" | "author" | "series" | "seriesNum" | "genres"
+  | "lastRead" | "added" | "progress"
+  | "language" | "pages" | "isbn"
+  | "ratingGoogle" | "ratingHardcover" | "ratingGoodreads";
+
+interface ColumnDef {
+  id: ColumnId;
+  label: string;
+  optional?: boolean;
+}
+
+const COLUMNS: ColumnDef[] = [
+  { id: "title", label: "Title" },
+  { id: "author", label: "Author" },
+  { id: "series", label: "Series" },
+  { id: "seriesNum", label: "#" },
+  { id: "genres", label: "Genre(s)" },
+  { id: "lastRead", label: "Last read" },
+  { id: "added", label: "Added" },
+  { id: "progress", label: "Progress" },
+  { id: "language", label: "Lang", optional: true },
+  { id: "pages", label: "Pages", optional: true },
+  { id: "isbn", label: "ISBN", optional: true },
+  { id: "ratingGoogle", label: "G", optional: true },
+  { id: "ratingHardcover", label: "Hc", optional: true },
+  { id: "ratingGoodreads", label: "GR", optional: true },
+];
+
+const DEFAULT_VISIBLE: ColumnId[] = [
+  "title", "author", "series", "seriesNum", "genres", "lastRead", "added", "progress",
+];
+
+const DEFAULT_SORT: { col: ColumnId; dir: "asc" | "desc" }[] = [
+  { col: "lastRead", dir: "desc" },
+  { col: "author", dir: "asc" },
+];
+
+function ratingCell(v?: number): ReactElement {
+  if (v === undefined) return <span className="mg-fg-faint">—</span>;
+  return <span style={{ fontVariantNumeric: "tabular-nums" }}>{v.toFixed(1)}</span>;
+}
+
 function Library({ theme }: { theme: Theme }): ReactElement {
   const [size, setSize] = useState<GridSize>("m");
-  const [view, setView] = useState<ViewMode>("grid");
+  const [view, setView] = useState<ViewMode>("table");
   const [shelf, setShelf] = useState<string>("All");
+  const [visibleCols, setVisibleCols] = useState<Set<ColumnId>>(new Set(DEFAULT_VISIBLE));
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [sortStack] = useState(DEFAULT_SORT);
 
   const shelves = ["All", ...USER_SHELVES.map((s) => s.name)];
+  const cols = COLUMNS.filter((c) => visibleCols.has(c.id));
+
+  const sorted = [...BOOKS].sort((a, b) => {
+    for (const { col, dir } of sortStack) {
+      const av = sortValue(a, col);
+      const bv = sortValue(b, col);
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      if (cmp !== 0) return dir === "asc" ? cmp : -cmp;
+    }
+    return 0;
+  });
 
   return (
     <div className="mg-library">
@@ -329,6 +447,40 @@ function Library({ theme }: { theme: Theme }): ReactElement {
             <button type="button" aria-pressed={view === "grid"} onClick={() => setView("grid")}>Tiles</button>
             <button type="button" aria-pressed={view === "table"} onClick={() => setView("table")}>Table</button>
           </div>
+          {view === "table" && (
+            <div className="mg-columns-menu">
+              <button
+                type="button"
+                className="mg-button-secondary"
+                onClick={() => setColumnsOpen((v) => !v)}
+                aria-expanded={columnsOpen}
+              >
+                Columns · {visibleCols.size}/{COLUMNS.length}
+              </button>
+              {columnsOpen && (
+                <div className="mg-columns-pop">
+                  <div className="mg-columns-pop-head">Visible columns</div>
+                  {COLUMNS.map((c) => (
+                    <label key={c.id} className="mg-columns-row">
+                      <input
+                        type="checkbox"
+                        checked={visibleCols.has(c.id)}
+                        onChange={() => {
+                          const next = new Set(visibleCols);
+                          if (next.has(c.id)) next.delete(c.id);
+                          else next.add(c.id);
+                          setVisibleCols(next);
+                        }}
+                      />
+                      <span>{c.label}</span>
+                      {c.optional && <span className="mg-columns-row-tag">optional</span>}
+                    </label>
+                  ))}
+                  <div className="mg-columns-pop-foot">Saved to your account</div>
+                </div>
+              )}
+            </div>
+          )}
           <button className="mg-button-secondary" type="button">+ New shelf</button>
         </div>
       </div>
@@ -354,51 +506,140 @@ function Library({ theme }: { theme: Theme }): ReactElement {
         })}
       </div>
 
+      {view === "table" && (
+        <div className="mg-sort-bar">
+          <span className="mg-sort-bar-label">Sorted by</span>
+          {sortStack.map((s, i) => {
+            const col = COLUMNS.find((c) => c.id === s.col);
+            return (
+              <span key={s.col} className="mg-sort-chip">
+                {i > 0 && <span className="mg-sort-then">then</span>}
+                {col?.label} <span className="mg-sort-arrow">{s.dir === "asc" ? "↑" : "↓"}</span>
+              </span>
+            );
+          })}
+          <button type="button" className="mg-sort-edit">Edit sort →</button>
+        </div>
+      )}
+
       {view === "grid" ? (
         <div className="mg-grid" data-size={size}>
-          {BOOKS.map((b) => (
+          {sorted.map((b) => (
             <Tile key={b.id} book={b} theme={theme} showStatus />
           ))}
         </div>
       ) : (
-        <table className="mg-table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Year</th>
-              <th>Pages</th>
-              <th>Status</th>
-              <th>Added</th>
-            </tr>
-          </thead>
-          <tbody>
-            {BOOKS.map((b) => (
-              <tr key={b.id}>
-                <td>
-                  <span className="mg-mini-cover" style={coverStyle(b, theme)} aria-hidden="true" />
-                  <span style={{ verticalAlign: "middle" }}>
-                    <span className="title">{b.title}</span>
-                    <div className="author">{b.author}</div>
-                  </span>
-                </td>
-                <td>{b.year}</td>
-                <td>{b.pages}</td>
-                <td>
-                  <span className="mg-tile-status">
-                    <span className={`mg-status-dot ${b.status}`} />
-                    {b.status === "in-progress"
-                      ? `${Math.round((b.progress ?? 0) * 100)}%`
-                      : b.status === "finished" ? "Finished" : "Unread"}
-                  </span>
-                </td>
-                <td>{b.addedDays}d</td>
+        <div className="mg-table-wrap">
+          <table className="mg-table">
+            <thead>
+              <tr>
+                {cols.map((c) => {
+                  const sort = sortStack.find((s) => s.col === c.id);
+                  const cls = ["sortable", sort ? `sorted-${sort.dir}` : ""].join(" ");
+                  return <th key={c.id} className={cls}>{c.label}</th>;
+                })}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sorted.map((b) => (
+                <tr key={b.id}>
+                  {cols.map((c) => (
+                    <td key={c.id} className={cellClass(c.id)}>
+                      {renderCell(b, c.id, theme)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
+}
+
+function cellClass(id: ColumnId): string {
+  switch (id) {
+    case "title": return "col-title";
+    case "pages":
+    case "ratingGoogle":
+    case "ratingHardcover":
+    case "ratingGoodreads":
+    case "seriesNum":
+      return "col-num";
+    default: return "";
+  }
+}
+
+function sortValue(b: Book, id: ColumnId): number | string {
+  switch (id) {
+    case "title": return b.title.toLowerCase();
+    case "author": return b.author.toLowerCase();
+    case "series": return b.series?.name.toLowerCase() ?? "￿";
+    case "seriesNum": return b.series?.index ?? 999;
+    case "genres": return b.genres?.[0]?.toLowerCase() ?? "￿";
+    case "lastRead": return b.lastReadDays ?? 99999;
+    case "added": return b.addedDays;
+    case "progress": return b.progress ?? (b.status === "finished" ? 1 : 0);
+    case "language": return b.language ?? "";
+    case "pages": return b.pages;
+    case "isbn": return b.isbn ?? "";
+    case "ratingGoogle": return b.ratings?.google ?? 0;
+    case "ratingHardcover": return b.ratings?.hardcover ?? 0;
+    case "ratingGoodreads": return b.ratings?.goodreads ?? 0;
+  }
+}
+
+function renderCell(b: Book, id: ColumnId, theme: Theme): ReactElement {
+  switch (id) {
+    case "title":
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          <span className="mg-mini-cover" style={coverStyle(b, theme)} aria-hidden="true" />
+          <span>
+            <span className="title">{b.title}</span>
+            {b.format === "pdf" && <span className="mg-tag-format" style={{ marginLeft: 6 }}>PDF</span>}
+          </span>
+        </span>
+      );
+    case "author":
+      return <span>{b.author}</span>;
+    case "series":
+      return b.series ? <span>{b.series.name}</span> : <span style={{ color: "var(--mg-fg-faint)" }}>—</span>;
+    case "seriesNum":
+      return b.series ? <span>{b.series.index}/{b.series.total}</span> : <span style={{ color: "var(--mg-fg-faint)" }}>—</span>;
+    case "genres":
+      return <span>{b.genres?.join(", ") ?? "—"}</span>;
+    case "lastRead":
+      return <span>{relDays(b.lastReadDays)}</span>;
+    case "added":
+      return <span>{relDays(b.addedDays)}</span>;
+    case "progress":
+      if (b.status === "finished") {
+        return <span style={{ color: "var(--mg-success)" }}>✓ Read</span>;
+      }
+      if (b.status === "unread") {
+        return <span style={{ color: "var(--mg-fg-faint)" }}>—</span>;
+      }
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>
+          <span className="mg-progress-bar"><span className="mg-progress-bar-fill" style={{ width: `${(b.progress ?? 0) * 100}%` }} /></span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round((b.progress ?? 0) * 100)}%</span>
+        </span>
+      );
+    case "language":
+      return <span style={{ textTransform: "uppercase", fontFamily: "var(--mg-font-mono)", fontSize: 11 }}>{b.language ?? "—"}</span>;
+    case "pages":
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{b.pages}</span>;
+    case "isbn":
+      return <span style={{ fontFamily: "var(--mg-font-mono)", fontSize: 11, color: "var(--mg-fg-muted)" }}>{b.isbn ?? "—"}</span>;
+    case "ratingGoogle":
+      return ratingCell(b.ratings?.google);
+    case "ratingHardcover":
+      return ratingCell(b.ratings?.hardcover);
+    case "ratingGoodreads":
+      return ratingCell(b.ratings?.goodreads);
+  }
 }
 
 export default function MidnightGold(): ReactElement {

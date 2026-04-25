@@ -266,6 +266,9 @@
   z-index: 0;
   opacity: 0.45;
   filter: blur(72px) saturate(0.9);
+  transform: scale(1.05);
+  transition: transform 480ms var(--mg-ease-out);
+  will-change: transform;
 }
 
 .mg-hero-content {
@@ -404,6 +407,66 @@
 
 .mg-carousel::-webkit-scrollbar { height: 6px; }
 .mg-carousel::-webkit-scrollbar-thumb { background: var(--mg-border-strong); border-radius: 3px; }
+
+/* Auto-shifting carousel — Apple Books "marquee" pattern.
+ * Pause on hover so users can read titles. Falls back to non-animated
+ * static row when prefers-reduced-motion is set. */
+
+.mg-marquee {
+  position: relative;
+  margin-left: calc(-1 * var(--mg-space-7));
+  margin-right: calc(-1 * var(--mg-space-7));
+  overflow: hidden;
+  /* Soft fade at edges to imply continuation rather than hard clip. */
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black var(--mg-space-7),
+    black calc(100% - var(--mg-space-7)),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black var(--mg-space-7),
+    black calc(100% - var(--mg-space-7)),
+    transparent 100%
+  );
+}
+
+.mg-marquee-track {
+  display: flex;
+  width: max-content;
+  animation-name: mg-marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.mg-marquee-set {
+  display: flex;
+  gap: var(--mg-space-4);
+  padding: 0 calc(var(--mg-space-4) / 2);
+  flex-shrink: 0;
+}
+
+.mg-marquee:hover .mg-marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes mg-marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-marquee-track { animation: none; }
+  .mg-marquee {
+    overflow-x: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .mg-marquee-set:nth-child(2) { display: none; }
+}
 
 /* ------------------------- Tile ------------------------- */
 
@@ -860,36 +923,186 @@
 
 .mg-grid .mg-tile { width: auto; }
 
-/* ------------------------- Library table ------------------------- */
+/* ------------------------- Columns menu ------------------------- */
 
-.mg-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--mg-type-body);
+.mg-columns-menu {
+  position: relative;
 }
 
-.mg-table th, .mg-table td {
-  text-align: left;
-  padding: var(--mg-space-3) var(--mg-space-4);
-  border-bottom: 1px solid var(--mg-border);
-}
-
-.mg-table th {
+.mg-columns-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  min-width: 200px;
+  background: var(--mg-surface);
+  border: 1px solid var(--mg-border-strong);
+  border-radius: var(--mg-radius-card);
+  padding: var(--mg-space-3) 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.02) inset;
   font-size: var(--mg-type-small);
+}
+
+.mg-columns-pop-head, .mg-columns-pop-foot {
+  padding: 0 var(--mg-space-4);
+  font-size: 10px;
   letter-spacing: var(--mg-tracking-caps);
   text-transform: uppercase;
   color: var(--mg-fg-faint);
   font-weight: 500;
 }
 
-.mg-table td .title {
-  font-family: var(--mg-font-display);
-  font-size: var(--mg-type-large);
-  font-weight: 400;
+.mg-columns-pop-head { padding-bottom: var(--mg-space-2); border-bottom: 1px solid var(--mg-border); }
+.mg-columns-pop-foot { padding-top: var(--mg-space-2); border-top: 1px solid var(--mg-border); margin-top: var(--mg-space-2); font-style: italic; }
+
+.mg-columns-row {
+  display: flex;
+  align-items: center;
+  gap: var(--mg-space-2);
+  padding: 4px var(--mg-space-4);
+  cursor: pointer;
+  font-size: var(--mg-type-small);
+  color: var(--mg-fg);
+  transition: background var(--mg-motion-fast) var(--mg-ease-out);
+}
+
+.mg-columns-row:hover { background: var(--mg-surface-2); }
+
+.mg-columns-row input { accent-color: var(--mg-accent); }
+
+.mg-columns-row-tag {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: var(--mg-tracking-caps);
+  text-transform: uppercase;
+  color: var(--mg-fg-faint);
+  font-weight: 500;
+}
+
+/* ------------------------- Multi-level sort bar ------------------------- */
+
+.mg-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--mg-space-2);
+  margin-bottom: var(--mg-space-4);
+  padding: var(--mg-space-2) var(--mg-space-3);
+  background: var(--mg-surface);
+  border: 1px solid var(--mg-border);
+  border-radius: var(--mg-radius-control);
+  font-size: var(--mg-type-small);
+}
+
+.mg-sort-bar-label {
+  font-size: 10px;
+  letter-spacing: var(--mg-tracking-caps);
+  text-transform: uppercase;
+  color: var(--mg-fg-faint);
+  font-weight: 500;
+  margin-right: var(--mg-space-2);
+}
+
+.mg-sort-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: var(--mg-canvas);
+  border: 1px solid var(--mg-border-strong);
+  border-radius: 999px;
   color: var(--mg-fg);
 }
 
-.mg-table td .author { color: var(--mg-fg-muted); font-size: var(--mg-type-small); margin-top: 2px; }
+.mg-sort-then {
+  font-size: 10px;
+  letter-spacing: var(--mg-tracking-caps);
+  text-transform: uppercase;
+  color: var(--mg-fg-faint);
+  margin-right: 4px;
+}
+
+.mg-sort-arrow {
+  color: var(--mg-accent);
+  font-weight: 600;
+}
+
+.mg-sort-edit {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  letter-spacing: var(--mg-tracking-chrome);
+  color: var(--mg-fg-muted);
+  cursor: pointer;
+  font-family: var(--mg-font-text);
+  transition: color var(--mg-motion-fast) var(--mg-ease-out);
+}
+
+.mg-sort-edit:hover { color: var(--mg-accent); }
+
+/* ------------------------- Library table ------------------------- */
+
+.mg-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--mg-border);
+  border-radius: var(--mg-radius-card);
+  background: var(--mg-canvas);
+}
+
+.mg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--mg-type-small);
+  font-variant-numeric: tabular-nums;
+  table-layout: auto;
+}
+
+.mg-table td.col-title { min-width: 220px; max-width: 320px; }
+.mg-table td.col-num { width: 1%; }
+
+.mg-table th, .mg-table td {
+  text-align: left;
+  padding: 6px var(--mg-space-3);
+  border-bottom: 1px solid var(--mg-border);
+  white-space: nowrap;
+}
+
+.mg-table td.col-title { white-space: normal; }
+.mg-table td.col-num { text-align: right; }
+
+.mg-table th {
+  font-size: 10px;
+  letter-spacing: var(--mg-tracking-caps);
+  text-transform: uppercase;
+  color: var(--mg-fg-faint);
+  font-weight: 500;
+  background: var(--mg-canvas-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-top: var(--mg-space-2);
+  padding-bottom: var(--mg-space-2);
+}
+
+.mg-table th.sortable { cursor: pointer; }
+.mg-table th.sortable::after { content: " ↕"; color: var(--mg-fg-faint); opacity: 0.4; }
+.mg-table th.sorted-asc::after  { content: " ↑"; color: var(--mg-accent); opacity: 1; }
+.mg-table th.sorted-desc::after { content: " ↓"; color: var(--mg-accent); opacity: 1; }
+
+.mg-table td .title {
+  font-family: var(--mg-font-display);
+  font-size: var(--mg-type-body);
+  font-weight: 400;
+  color: var(--mg-fg);
+  line-height: 1.2;
+}
+
+.mg-table td .author {
+  color: var(--mg-fg-muted);
+  font-size: 11px;
+  margin-top: 1px;
+  letter-spacing: var(--mg-tracking-chrome);
+}
 
 .mg-table tbody tr {
   cursor: pointer;
@@ -898,14 +1111,47 @@
 
 .mg-table tbody tr:hover { background: var(--mg-surface); }
 
+.mg-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--mg-surface) 35%, transparent); }
+.mg-table tbody tr:nth-child(even):hover { background: var(--mg-surface); }
+
 .mg-mini-cover {
-  width: 32px;
-  height: 48px;
-  border-radius: 3px;
+  width: 18px;
+  height: 27px;
+  border-radius: 2px;
   display: inline-block;
   vertical-align: middle;
-  margin-right: var(--mg-space-3);
+  margin-right: var(--mg-space-2);
   box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.mg-tag-format {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border-radius: 2px;
+  background: var(--mg-surface-2);
+  color: var(--mg-fg-muted);
+  font-family: var(--mg-font-mono);
+}
+
+.mg-progress-bar {
+  display: inline-block;
+  width: 60px;
+  height: 4px;
+  background: var(--mg-border);
+  border-radius: 2px;
+  vertical-align: middle;
+  position: relative;
+  margin-right: 6px;
+}
+
+.mg-progress-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--mg-accent);
+  border-radius: 2px;
 }
 
 /* ------------------------- Footer / theme switch ------------------------- */
