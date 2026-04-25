@@ -1,21 +1,14 @@
 import { useState, useRef, useEffect, type ReactElement, type CSSProperties } from "react";
 import { Link } from "react-router";
 
-// Font candidates loaded eagerly for the D2 font-pairing picker. D3 task 20
-// will install only the chosen pairing's @fontsource package and remove the
-// rest along with the picker UI.
-// Sans candidates:
+// Sans-only typography after project-lead D5-style decision. D3 task 20
+// narrows to the chosen heading + body pair and uninstalls the rest.
 import "@fontsource-variable/inter/index.css";
 import "@fontsource-variable/manrope/index.css";
 import "@fontsource-variable/geist/index.css";
-// Display serif candidates:
-import "@fontsource/spectral/400.css";
-import "@fontsource/spectral/400-italic.css";
-import "@fontsource/spectral/500.css";
-import "@fontsource/spectral/500-italic.css";
-import "@fontsource/spectral/600.css";
-import "@fontsource/dm-serif-display/400.css";
-import "@fontsource/dm-serif-display/400-italic.css";
+import "@fontsource-variable/plus-jakarta-sans/index.css";
+import "@fontsource-variable/bricolage-grotesque/index.css";
+import "@fontsource-variable/outfit/index.css";
 
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
@@ -33,19 +26,21 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type DisplayFont = "spectral" | "dm-serif-display" | "none";
-type SansFont = "inter" | "manrope" | "geist";
+type HeadingFont = "manrope" | "bricolage-grotesque" | "outfit" | "inter";
+type BodyFont = "inter" | "manrope" | "geist" | "plus-jakarta-sans";
 
-const DISPLAY_FONTS: { id: DisplayFont; label: string; sample: string }[] = [
-  { id: "spectral", label: "Spectral · calm", sample: "Aa" },
-  { id: "dm-serif-display", label: "DM Serif Display · dramatic", sample: "Aa" },
-  { id: "none", label: "None · sans-only content", sample: "—" },
+const HEADING_FONTS: { id: HeadingFont; label: string; sample: string }[] = [
+  { id: "manrope", label: "Manrope · compact", sample: "Ag" },
+  { id: "bricolage-grotesque", label: "Bricolage Grotesque · variable display", sample: "Ag" },
+  { id: "outfit", label: "Outfit · geometric distinctive", sample: "Ag" },
+  { id: "inter", label: "Inter · neutral geometric", sample: "Ag" },
 ];
 
-const SANS_FONTS: { id: SansFont; label: string; sample: string }[] = [
-  { id: "inter", label: "Inter · neutral geometric", sample: "Aa" },
-  { id: "manrope", label: "Manrope · semi-grotesque", sample: "Aa" },
-  { id: "geist", label: "Geist · technical grotesque", sample: "Aa" },
+const BODY_FONTS: { id: BodyFont; label: string; sample: string }[] = [
+  { id: "inter", label: "Inter · neutral geometric", sample: "Ag" },
+  { id: "manrope", label: "Manrope · compact", sample: "Ag" },
+  { id: "geist", label: "Geist · technical grotesque", sample: "Ag" },
+  { id: "plus-jakarta-sans", label: "Plus Jakarta Sans · friendly geometric", sample: "Ag" },
 ];
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
@@ -790,11 +785,11 @@ function renderCell(b: Book, id: ColumnId, theme: Theme): ReactElement {
 export default function MidnightGold(): ReactElement {
   const [theme, setTheme] = useState<Theme>("dark");
   const [mock, setMock] = useState<Mock>("home");
-  const [displayFont, setDisplayFont] = useState<DisplayFont>("spectral");
-  const [sansFont, setSansFont] = useState<SansFont>("inter");
+  const [headingFont, setHeadingFont] = useState<HeadingFont>("manrope");
+  const [bodyFont, setBodyFont] = useState<BodyFont>("manrope");
 
   return (
-    <div className="mg-root" data-theme={theme} data-display={displayFont} data-sans={sansFont}>
+    <div className="mg-root" data-theme={theme} data-heading={headingFont} data-body={bodyFont}>
       <header className="mg-topbar">
         <div className="mg-wordmark">
           Reverie<span>.</span>
@@ -830,35 +825,35 @@ export default function MidnightGold(): ReactElement {
           <span>03</span> Library full-grid
         </button>
         <div className="mg-spacer" />
-        <div className="mg-fontpicker" role="group" aria-label="Display font">
-          <span className="mg-fontpicker-label">Serif</span>
-          {DISPLAY_FONTS.map((p) => (
+        <div className="mg-fontpicker" role="group" aria-label="Heading font">
+          <span className="mg-fontpicker-label">Heading</span>
+          {HEADING_FONTS.map((p) => (
             <button
               key={p.id}
               type="button"
               className="mg-fontpicker-swatch"
-              data-display={p.id}
-              aria-pressed={displayFont === p.id}
-              aria-label={`Display font: ${p.label}`}
+              data-heading={p.id}
+              aria-pressed={headingFont === p.id}
+              aria-label={`Heading font: ${p.label}`}
               title={p.label}
-              onClick={() => setDisplayFont(p.id)}
+              onClick={() => setHeadingFont(p.id)}
             >
               <span>{p.sample}</span>
             </button>
           ))}
         </div>
-        <div className="mg-fontpicker" role="group" aria-label="Sans font">
-          <span className="mg-fontpicker-label">Sans</span>
-          {SANS_FONTS.map((p) => (
+        <div className="mg-fontpicker" role="group" aria-label="Body font">
+          <span className="mg-fontpicker-label">Body</span>
+          {BODY_FONTS.map((p) => (
             <button
               key={p.id}
               type="button"
               className="mg-fontpicker-swatch"
-              data-sans={p.id}
-              aria-pressed={sansFont === p.id}
-              aria-label={`Sans font: ${p.label}`}
+              data-body={p.id}
+              aria-pressed={bodyFont === p.id}
+              aria-label={`Body font: ${p.label}`}
               title={p.label}
-              onClick={() => setSansFont(p.id)}
+              onClick={() => setBodyFont(p.id)}
             >
               <span>{p.sample}</span>
             </button>
