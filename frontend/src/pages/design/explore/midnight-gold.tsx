@@ -40,12 +40,23 @@ function coverStyle(book: Book, theme: Theme): CSSProperties {
   };
 }
 
-function coverBackdropStyle(book: Book): CSSProperties {
+function coverBackdropStyle(book: Book, theme: Theme): CSSProperties {
   const hue = bookHue(book.id);
+  // Warm-clamp hue range matches the cover palette family: amber/ochre.
+  const warmHue = 22 + (hue % 28);
+  if (theme === "dark") {
+    return {
+      background: `radial-gradient(60% 50% at 30% 30%, hsl(${warmHue}, 32%, 22%), transparent 68%),
+                   radial-gradient(55% 45% at 75% 60%, hsl(${warmHue + 10}, 26%, 18%), transparent 70%),
+                   #14130E`,
+    };
+  }
+  // Light: pale warm tints on cream canvas, much lower contrast so the
+  // backdrop reads as warmth, not a muddy wash that drowns the foreground.
   return {
-    background: `radial-gradient(60% 50% at 30% 30%, hsl(${hue}, 35%, 18%), transparent 70%),
-                 radial-gradient(50% 50% at 75% 60%, hsl(${(hue + 60) % 360}, 30%, 22%), transparent 70%),
-                 #14130E`,
+    background: `radial-gradient(60% 50% at 30% 30%, hsl(${warmHue}, 38%, 86%), transparent 72%),
+                 radial-gradient(55% 45% at 75% 60%, hsl(${warmHue + 10}, 32%, 80%), transparent 72%),
+                 #F4ECDC`,
   };
 }
 
@@ -190,7 +201,7 @@ function Home({ theme }: HomeProps): ReactElement {
   return (
     <>
       <section className="mg-hero" ref={heroRef}>
-        <div className="mg-hero-backdrop" ref={backdropRef} style={coverBackdropStyle(featured)} />
+        <div className="mg-hero-backdrop" ref={backdropRef} style={coverBackdropStyle(featured, theme)} />
         <div className="mg-hero-grid">
           <div className="mg-hero-content">
             <div className="mg-eyebrow">Wednesday evening · Continue</div>
@@ -321,7 +332,7 @@ function Detail({ theme }: { theme: Theme }): ReactElement {
   const moreByAuthor = BOOKS.filter((b) => b.author === book.author && b.id !== book.id).slice(0, 4);
   return (
     <article className="mg-detail">
-      <div className="mg-detail-backdrop" style={coverBackdropStyle(book)} />
+      <div className="mg-detail-backdrop" style={coverBackdropStyle(book, theme)} />
       <div className="mg-detail-grid">
         <aside>
           <div className="mg-detail-cover">

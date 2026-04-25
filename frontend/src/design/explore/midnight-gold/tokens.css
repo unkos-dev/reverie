@@ -274,11 +274,16 @@
   position: absolute;
   inset: -8%;
   z-index: 0;
-  opacity: 0.6;
+  opacity: 0.7;
   filter: blur(80px) saturate(1.05);
   transform: scale(1.08);
   transition: transform 520ms var(--mg-ease-out);
   will-change: transform;
+}
+
+.mg-root[data-theme="light"] .mg-hero-backdrop {
+  opacity: 0.45;
+  filter: blur(96px) saturate(0.9);
 }
 
 .mg-hero-content {
