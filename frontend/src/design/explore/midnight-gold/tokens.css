@@ -126,20 +126,17 @@
 
 /* ------------------------- Font pairing variants ------------------------- */
 /* D2-only font picker. D3 task 20 narrows to the chosen pairing and
- * removes the rest. Each variant only overrides --mg-font-display; the
- * sans companion stays Inter Variable to keep the comparison clean. */
+ * removes the rest. Picker exposes both axes (display serif + chrome sans)
+ * since varying display alone produced too-similar results in the spec's
+ * narrow eligible-serif zone. */
 
-.mg-root[data-font="fraunces"] {
-  --mg-font-display: "Fraunces Variable", "Spectral", "Iowan Old Style", Georgia, serif;
-}
+.mg-root[data-display="fraunces"]         { --mg-font-display: "Fraunces Variable", "Spectral", Georgia, serif; }
+.mg-root[data-display="newsreader"]       { --mg-font-display: "Newsreader Variable", "Spectral", Georgia, serif; }
+.mg-root[data-display="dm-serif-display"] { --mg-font-display: "DM Serif Display", "Spectral", Georgia, serif; }
 
-.mg-root[data-font="newsreader"] {
-  --mg-font-display: "Newsreader Variable", "Spectral", "Iowan Old Style", Georgia, serif;
-}
-
-.mg-root[data-font="source-serif-4"] {
-  --mg-font-display: "Source Serif 4 Variable", "Spectral", "Iowan Old Style", Georgia, serif;
-}
+.mg-root[data-sans="dm-sans"]     { --mg-font-text: "DM Sans Variable", "Inter Variable", system-ui, sans-serif; }
+.mg-root[data-sans="manrope"]     { --mg-font-text: "Manrope Variable", "Inter Variable", system-ui, sans-serif; }
+.mg-root[data-sans="public-sans"] { --mg-font-text: "Public Sans Variable", "Inter Variable", system-ui, sans-serif; }
 
 /* ------------------------- Font picker chrome ------------------------- */
 
@@ -147,16 +144,30 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 0 var(--mg-space-4);
-  margin-right: var(--mg-space-3);
+  padding: 0 var(--mg-space-3);
+  margin-right: var(--mg-space-2);
   border-left: 1px solid var(--mg-border);
-  border-right: 1px solid var(--mg-border);
   align-self: stretch;
 }
 
+.mg-fontpicker:last-of-type {
+  border-right: 1px solid var(--mg-border);
+  margin-right: var(--mg-space-3);
+}
+
+.mg-fontpicker-label {
+  font-size: 9px;
+  letter-spacing: var(--mg-tracking-caps);
+  text-transform: uppercase;
+  color: var(--mg-fg-faint);
+  font-weight: 500;
+  margin-right: 2px;
+  align-self: center;
+}
+
 .mg-fontpicker-swatch {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--mg-border);
   background: var(--mg-surface);
   border-radius: 4px;
@@ -164,7 +175,7 @@
   padding: 0;
   display: grid;
   place-items: center;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   color: var(--mg-fg-muted);
   transition: all var(--mg-motion-fast) var(--mg-ease-out);
@@ -182,10 +193,15 @@
   box-shadow: 0 0 0 1px var(--mg-accent);
 }
 
-.mg-fontpicker-swatch[data-font="spectral"] span        { font-family: "Spectral", serif; }
-.mg-fontpicker-swatch[data-font="fraunces"] span        { font-family: "Fraunces Variable", serif; }
-.mg-fontpicker-swatch[data-font="newsreader"] span      { font-family: "Newsreader Variable", serif; }
-.mg-fontpicker-swatch[data-font="source-serif-4"] span  { font-family: "Source Serif 4 Variable", serif; }
+.mg-fontpicker-swatch[data-display="spectral"] span         { font-family: "Spectral", serif; font-style: italic; }
+.mg-fontpicker-swatch[data-display="fraunces"] span         { font-family: "Fraunces Variable", serif; font-style: italic; }
+.mg-fontpicker-swatch[data-display="newsreader"] span       { font-family: "Newsreader Variable", serif; font-style: italic; }
+.mg-fontpicker-swatch[data-display="dm-serif-display"] span { font-family: "DM Serif Display", serif; font-style: italic; }
+
+.mg-fontpicker-swatch[data-sans="inter"] span       { font-family: "Inter Variable", sans-serif; }
+.mg-fontpicker-swatch[data-sans="dm-sans"] span     { font-family: "DM Sans Variable", sans-serif; }
+.mg-fontpicker-swatch[data-sans="manrope"] span     { font-family: "Manrope Variable", sans-serif; }
+.mg-fontpicker-swatch[data-sans="public-sans"] span { font-family: "Public Sans Variable", sans-serif; }
 
 /* ------------------------- Top chrome ------------------------- */
 

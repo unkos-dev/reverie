@@ -4,7 +4,12 @@ import { Link } from "react-router";
 // Font candidates loaded eagerly for the D2 font-pairing picker. D3 task 20
 // will install only the chosen pairing's @fontsource package and remove the
 // rest along with the picker UI.
+// Sans candidates:
 import "@fontsource-variable/inter/index.css";
+import "@fontsource-variable/dm-sans/index.css";
+import "@fontsource-variable/manrope/index.css";
+import "@fontsource-variable/public-sans/index.css";
+// Display serif candidates:
 import "@fontsource/spectral/400.css";
 import "@fontsource/spectral/400-italic.css";
 import "@fontsource/spectral/500.css";
@@ -14,8 +19,8 @@ import "@fontsource-variable/fraunces/index.css";
 import "@fontsource-variable/fraunces/wght-italic.css";
 import "@fontsource-variable/newsreader/index.css";
 import "@fontsource-variable/newsreader/wght-italic.css";
-import "@fontsource-variable/source-serif-4/index.css";
-import "@fontsource-variable/source-serif-4/wght-italic.css";
+import "@fontsource/dm-serif-display/400.css";
+import "@fontsource/dm-serif-display/400-italic.css";
 
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
@@ -33,13 +38,21 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type FontPairing = "spectral" | "fraunces" | "newsreader" | "source-serif-4";
+type DisplayFont = "spectral" | "fraunces" | "newsreader" | "dm-serif-display";
+type SansFont = "inter" | "dm-sans" | "manrope" | "public-sans";
 
-const FONT_PAIRINGS: { id: FontPairing; label: string; sample: string }[] = [
+const DISPLAY_FONTS: { id: DisplayFont; label: string; sample: string }[] = [
   { id: "spectral", label: "Spectral", sample: "Aa" },
   { id: "fraunces", label: "Fraunces", sample: "Aa" },
   { id: "newsreader", label: "Newsreader", sample: "Aa" },
-  { id: "source-serif-4", label: "Source Serif 4", sample: "Aa" },
+  { id: "dm-serif-display", label: "DM Serif Display", sample: "Aa" },
+];
+
+const SANS_FONTS: { id: SansFont; label: string; sample: string }[] = [
+  { id: "inter", label: "Inter", sample: "Aa" },
+  { id: "dm-sans", label: "DM Sans", sample: "Aa" },
+  { id: "manrope", label: "Manrope", sample: "Aa" },
+  { id: "public-sans", label: "Public Sans", sample: "Aa" },
 ];
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
@@ -784,10 +797,11 @@ function renderCell(b: Book, id: ColumnId, theme: Theme): ReactElement {
 export default function MidnightGold(): ReactElement {
   const [theme, setTheme] = useState<Theme>("dark");
   const [mock, setMock] = useState<Mock>("home");
-  const [font, setFont] = useState<FontPairing>("spectral");
+  const [displayFont, setDisplayFont] = useState<DisplayFont>("spectral");
+  const [sansFont, setSansFont] = useState<SansFont>("inter");
 
   return (
-    <div className="mg-root" data-theme={theme} data-font={font}>
+    <div className="mg-root" data-theme={theme} data-display={displayFont} data-sans={sansFont}>
       <header className="mg-topbar">
         <div className="mg-wordmark">
           Reverie<span>.</span>
@@ -824,16 +838,34 @@ export default function MidnightGold(): ReactElement {
         </button>
         <div className="mg-spacer" />
         <div className="mg-fontpicker" role="group" aria-label="Display font">
-          {FONT_PAIRINGS.map((p) => (
+          <span className="mg-fontpicker-label">Serif</span>
+          {DISPLAY_FONTS.map((p) => (
             <button
               key={p.id}
               type="button"
               className="mg-fontpicker-swatch"
-              data-font={p.id}
-              aria-pressed={font === p.id}
+              data-display={p.id}
+              aria-pressed={displayFont === p.id}
               aria-label={`Display font: ${p.label}`}
               title={p.label}
-              onClick={() => setFont(p.id)}
+              onClick={() => setDisplayFont(p.id)}
+            >
+              <span>{p.sample}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mg-fontpicker" role="group" aria-label="Sans font">
+          <span className="mg-fontpicker-label">Sans</span>
+          {SANS_FONTS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="mg-fontpicker-swatch"
+              data-sans={p.id}
+              aria-pressed={sansFont === p.id}
+              aria-label={`Sans font: ${p.label}`}
+              title={p.label}
+              onClick={() => setSansFont(p.id)}
             >
               <span>{p.sample}</span>
             </button>
