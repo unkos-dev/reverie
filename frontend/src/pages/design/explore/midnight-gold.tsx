@@ -6,19 +6,14 @@ import { Link } from "react-router";
 // rest along with the picker UI.
 // Sans candidates:
 import "@fontsource-variable/inter/index.css";
-import "@fontsource-variable/dm-sans/index.css";
 import "@fontsource-variable/manrope/index.css";
-import "@fontsource-variable/public-sans/index.css";
+import "@fontsource-variable/geist/index.css";
 // Display serif candidates:
 import "@fontsource/spectral/400.css";
 import "@fontsource/spectral/400-italic.css";
 import "@fontsource/spectral/500.css";
 import "@fontsource/spectral/500-italic.css";
 import "@fontsource/spectral/600.css";
-import "@fontsource-variable/fraunces/index.css";
-import "@fontsource-variable/fraunces/wght-italic.css";
-import "@fontsource-variable/newsreader/index.css";
-import "@fontsource-variable/newsreader/wght-italic.css";
 import "@fontsource/dm-serif-display/400.css";
 import "@fontsource/dm-serif-display/400-italic.css";
 
@@ -38,21 +33,19 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type DisplayFont = "spectral" | "fraunces" | "newsreader" | "dm-serif-display";
-type SansFont = "inter" | "dm-sans" | "manrope" | "public-sans";
+type DisplayFont = "spectral" | "dm-serif-display" | "none";
+type SansFont = "inter" | "manrope" | "geist";
 
 const DISPLAY_FONTS: { id: DisplayFont; label: string; sample: string }[] = [
-  { id: "spectral", label: "Spectral", sample: "Aa" },
-  { id: "fraunces", label: "Fraunces", sample: "Aa" },
-  { id: "newsreader", label: "Newsreader", sample: "Aa" },
-  { id: "dm-serif-display", label: "DM Serif Display", sample: "Aa" },
+  { id: "spectral", label: "Spectral · calm", sample: "Aa" },
+  { id: "dm-serif-display", label: "DM Serif Display · dramatic", sample: "Aa" },
+  { id: "none", label: "None · sans-only content", sample: "—" },
 ];
 
 const SANS_FONTS: { id: SansFont; label: string; sample: string }[] = [
-  { id: "inter", label: "Inter", sample: "Aa" },
-  { id: "dm-sans", label: "DM Sans", sample: "Aa" },
-  { id: "manrope", label: "Manrope", sample: "Aa" },
-  { id: "public-sans", label: "Public Sans", sample: "Aa" },
+  { id: "inter", label: "Inter · neutral geometric", sample: "Aa" },
+  { id: "manrope", label: "Manrope · semi-grotesque", sample: "Aa" },
+  { id: "geist", label: "Geist · technical grotesque", sample: "Aa" },
 ];
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {

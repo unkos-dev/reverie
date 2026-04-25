@@ -125,18 +125,25 @@
 .mg-root > * { position: relative; z-index: 1; }
 
 /* ------------------------- Font pairing variants ------------------------- */
-/* D2-only font picker. D3 task 20 narrows to the chosen pairing and
- * removes the rest. Picker exposes both axes (display serif + chrome sans)
- * since varying display alone produced too-similar results in the spec's
- * narrow eligible-serif zone. */
+/* D2-only font picker. D3 task 20 narrows to the chosen pairing and removes
+ * the rest. After the first font review, the picker pivoted from 'four
+ * similar serifs' to 'restraint vs drama vs no serif' on the display axis,
+ * and 'three flavours of neutral' on the sans axis. Eliminations from the
+ * first round (Fraunces, Newsreader, DM Sans, Public Sans) are gone. */
 
-.mg-root[data-display="fraunces"]         { --mg-font-display: "Fraunces Variable", "Spectral", Georgia, serif; }
-.mg-root[data-display="newsreader"]       { --mg-font-display: "Newsreader Variable", "Spectral", Georgia, serif; }
-.mg-root[data-display="dm-serif-display"] { --mg-font-display: "DM Serif Display", "Spectral", Georgia, serif; }
+.mg-root[data-display="dm-serif-display"] {
+  --mg-font-display: "DM Serif Display", "Spectral", Georgia, serif;
+}
 
-.mg-root[data-sans="dm-sans"]     { --mg-font-text: "DM Sans Variable", "Inter Variable", system-ui, sans-serif; }
-.mg-root[data-sans="manrope"]     { --mg-font-text: "Manrope Variable", "Inter Variable", system-ui, sans-serif; }
-.mg-root[data-sans="public-sans"] { --mg-font-text: "Public Sans Variable", "Inter Variable", system-ui, sans-serif; }
+/* Sans-only mode: content typography uses the active sans, not a serif.
+ * Tests whether MG's character holds without the chrome-sans/content-serif
+ * rule from philosophy spec §6. */
+.mg-root[data-display="none"] {
+  --mg-font-display: var(--mg-font-text);
+}
+
+.mg-root[data-sans="manrope"] { --mg-font-text: "Manrope Variable", "Inter Variable", system-ui, sans-serif; }
+.mg-root[data-sans="geist"]   { --mg-font-text: "Geist Variable", "Inter Variable", system-ui, sans-serif; }
 
 /* ------------------------- Font picker chrome ------------------------- */
 
@@ -194,14 +201,12 @@
 }
 
 .mg-fontpicker-swatch[data-display="spectral"] span         { font-family: "Spectral", serif; font-style: italic; }
-.mg-fontpicker-swatch[data-display="fraunces"] span         { font-family: "Fraunces Variable", serif; font-style: italic; }
-.mg-fontpicker-swatch[data-display="newsreader"] span       { font-family: "Newsreader Variable", serif; font-style: italic; }
 .mg-fontpicker-swatch[data-display="dm-serif-display"] span { font-family: "DM Serif Display", serif; font-style: italic; }
+.mg-fontpicker-swatch[data-display="none"] span             { font-family: var(--mg-font-text); font-size: 18px; opacity: 0.6; }
 
-.mg-fontpicker-swatch[data-sans="inter"] span       { font-family: "Inter Variable", sans-serif; }
-.mg-fontpicker-swatch[data-sans="dm-sans"] span     { font-family: "DM Sans Variable", sans-serif; }
-.mg-fontpicker-swatch[data-sans="manrope"] span     { font-family: "Manrope Variable", sans-serif; }
-.mg-fontpicker-swatch[data-sans="public-sans"] span { font-family: "Public Sans Variable", sans-serif; }
+.mg-fontpicker-swatch[data-sans="inter"] span    { font-family: "Inter Variable", sans-serif; }
+.mg-fontpicker-swatch[data-sans="manrope"] span  { font-family: "Manrope Variable", sans-serif; }
+.mg-fontpicker-swatch[data-sans="geist"] span    { font-family: "Geist Variable", sans-serif; }
 
 /* ------------------------- Top chrome ------------------------- */
 
