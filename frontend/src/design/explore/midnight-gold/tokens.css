@@ -1,3 +1,10 @@
+/* Fontshare candidates — Boldonse, Author (heading); Satoshi, Synonym
+ * (body). External CDN dependency is D2-spike-only; D3 task 20 downloads
+ * the chosen font's woff2 files into public/fonts for self-hosting and
+ * removes this @import. Dev CSP is relaxed in vite.config.ts to permit
+ * api.fontshare.com / cdn.fontshare.com. */
+@import url("https://api.fontshare.com/v2/css?f[]=boldonse@400&f[]=satoshi@400,500,700&f[]=author@400,500,700,400i,500i,700i&f[]=synonym@400,500,700,400i,500i&display=swap");
+
 /*
  * Reverie · Design system · D2 direction: Midnight Gold
  *
@@ -133,13 +140,15 @@
 /* D2-only font picker. D3 task 20 narrows to the chosen heading + body
  * pair and removes the rest along with the picker UI. */
 
-/* Heading axis — display-class candidates with proportion variety. */
+/* Heading axis — display-class candidates. */
 .mg-root[data-heading="bricolage-grotesque"] { --mg-font-heading: "Bricolage Grotesque Variable", system-ui, sans-serif; }
-.mg-root[data-heading="space-grotesk"]       { --mg-font-heading: "Space Grotesk Variable", system-ui, sans-serif; }
+.mg-root[data-heading="boldonse"]            { --mg-font-heading: "Boldonse", "Bricolage Grotesque Variable", system-ui, sans-serif; }
+.mg-root[data-heading="author"]              { --mg-font-heading: "Author", "Bricolage Grotesque Variable", system-ui, sans-serif; }
 
 /* Body axis — chrome and content paragraphs. */
 .mg-root[data-body="manrope"] { --mg-font-text: "Manrope Variable", system-ui, sans-serif; }
-.mg-root[data-body="geist"]   { --mg-font-text: "Geist Variable", system-ui, sans-serif; }
+.mg-root[data-body="satoshi"] { --mg-font-text: "Satoshi", "Manrope Variable", system-ui, sans-serif; }
+.mg-root[data-body="synonym"] { --mg-font-text: "Synonym", "Manrope Variable", system-ui, sans-serif; }
 
 /* ------------------------- Font picker chrome ------------------------- */
 
@@ -197,10 +206,12 @@
 }
 
 .mg-fontpicker-swatch[data-heading="bricolage-grotesque"] span { font-family: "Bricolage Grotesque Variable", sans-serif; }
-.mg-fontpicker-swatch[data-heading="space-grotesk"] span       { font-family: "Space Grotesk Variable", sans-serif; }
+.mg-fontpicker-swatch[data-heading="boldonse"] span            { font-family: "Boldonse", sans-serif; }
+.mg-fontpicker-swatch[data-heading="author"] span              { font-family: "Author", sans-serif; font-style: italic; }
 
 .mg-fontpicker-swatch[data-body="manrope"] span { font-family: "Manrope Variable", sans-serif; }
-.mg-fontpicker-swatch[data-body="geist"] span   { font-family: "Geist Variable", sans-serif; }
+.mg-fontpicker-swatch[data-body="satoshi"] span { font-family: "Satoshi", sans-serif; }
+.mg-fontpicker-swatch[data-body="synonym"] span { font-family: "Synonym", sans-serif; }
 
 /* ------------------------- Top chrome ------------------------- */
 

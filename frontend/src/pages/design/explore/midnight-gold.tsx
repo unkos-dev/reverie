@@ -3,10 +3,11 @@ import { Link } from "react-router";
 
 // Sans-only typography after project-lead D5-style decision. D3 task 20
 // narrows to the chosen heading + body pair and uninstalls the rest.
+// @fontsource-installed candidates:
 import "@fontsource-variable/bricolage-grotesque/index.css";
-import "@fontsource-variable/space-grotesk/index.css";
 import "@fontsource-variable/manrope/index.css";
-import "@fontsource-variable/geist/index.css";
+// Fontshare candidates (Boldonse, Author, Satoshi, Synonym) load via
+// @import in midnight-gold/tokens.css — Fontshare doesn't ship via npm.
 
 import "../../../design/explore/midnight-gold/tokens.css";
 import {
@@ -24,17 +25,19 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type HeadingFont = "bricolage-grotesque" | "space-grotesk";
-type BodyFont = "manrope" | "geist";
+type HeadingFont = "bricolage-grotesque" | "boldonse" | "author";
+type BodyFont = "manrope" | "satoshi" | "synonym";
 
 const HEADING_FONTS: { id: HeadingFont; label: string; sample: string }[] = [
   { id: "bricolage-grotesque", label: "Bricolage Grotesque · variable display", sample: "Ag" },
-  { id: "space-grotesk", label: "Space Grotesk · distinctive geometric", sample: "Ag" },
+  { id: "boldonse", label: "Boldonse · condensed editorial-grotesque", sample: "Ag" },
+  { id: "author", label: "Author · distinctive italic grotesque", sample: "Ag" },
 ];
 
 const BODY_FONTS: { id: BodyFont; label: string; sample: string }[] = [
   { id: "manrope", label: "Manrope · compact", sample: "Ag" },
-  { id: "geist", label: "Geist · technical grotesque", sample: "Ag" },
+  { id: "satoshi", label: "Satoshi · neutral workhorse", sample: "Ag" },
+  { id: "synonym", label: "Synonym · humanist warm hybrid", sample: "Ag" },
 ];
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
