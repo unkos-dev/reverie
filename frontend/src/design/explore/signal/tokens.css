@@ -122,49 +122,10 @@
               color var(--sig-motion-theme) var(--sig-ease-out);
 }
 
-/* Ambient layer — grid drift + accent-tinted glow that breathes. */
-.sig-root::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--sig-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--sig-grid-line) 1px, transparent 1px);
-  background-size: 64px 64px;
-  background-position: 0 0;
-  animation: sig-grid var(--sig-ambient-drift) linear infinite;
-  pointer-events: none;
-  z-index: 0;
-  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
-}
-
-.sig-root::after {
-  content: "";
-  position: fixed;
-  inset: -10%;
-  background:
-    radial-gradient(35% 28% at 18% 22%, color-mix(in srgb, var(--sig-accent) 28%, transparent) 0%, transparent 65%),
-    radial-gradient(45% 35% at 80% 78%, color-mix(in srgb, var(--sig-accent) 22%, transparent) 0%, transparent 70%);
-  filter: blur(80px);
-  animation: sig-glow calc(var(--sig-ambient-drift) * 0.7) ease-in-out infinite alternate;
-  pointer-events: none;
-  z-index: 0;
-}
-
-@keyframes sig-grid {
-  0%   { background-position: 0 0; }
-  100% { background-position: 64px 64px; }
-}
-
-@keyframes sig-glow {
-  0%   { transform: translate(0, 0) scale(1);    opacity: 0.6; }
-  50%  { transform: translate(2%, -2%) scale(1.05); opacity: 1; }
-  100% { transform: translate(-3%, 2%) scale(1.02); opacity: 0.7; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sig-root::before, .sig-root::after { animation: none; }
-}
+/* Canvas-wide ambient drift removed per project-lead feedback —
+ * detracted from the dark-mode register. The interaction layer
+ * (hover, theme transition, in-progress status-dot pulse) remains
+ * the motion signal. */
 
 .sig-root > * { position: relative; z-index: 1; }
 

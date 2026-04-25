@@ -116,30 +116,11 @@
               color var(--mg-motion-theme) var(--mg-ease-out);
 }
 
-/* Ambient layer — gold-tinted gradient drift, atmospheric. */
-.mg-root::before {
-  content: "";
-  position: fixed;
-  inset: -10%;
-  background:
-    radial-gradient(55% 45% at 18% 22%, color-mix(in srgb, var(--mg-accent) 38%, transparent) 0%, transparent 60%),
-    radial-gradient(40% 30% at 78% 18%, color-mix(in srgb, var(--mg-accent) 22%, transparent) 0%, transparent 70%),
-    radial-gradient(50% 40% at 82% 82%, color-mix(in srgb, var(--mg-accent) 32%, transparent) 0%, transparent 65%);
-  filter: blur(70px);
-  animation: mg-drift var(--mg-ambient-drift) ease-in-out infinite alternate;
-  pointer-events: none;
-  z-index: 0;
-}
-
-@keyframes mg-drift {
-  0%   { transform: translate(0, 0) scale(1);    opacity: 0.6; }
-  50%  { transform: translate(5%, -3%) scale(1.08); opacity: 1; }
-  100% { transform: translate(-4%, 4%) scale(1.05); opacity: 0.75; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mg-root::before { animation: none; }
-}
+/* Canvas-wide ambient drift removed per project-lead feedback —
+ * detracted from the dark-mode register. The interaction layer
+ * (hover, theme transition, in-progress status-dot pulse) remains
+ * the motion signal. Localized hero/cover-backdrop motion may
+ * return later if Step 11 wants it. */
 
 .mg-root > * { position: relative; z-index: 1; }
 
