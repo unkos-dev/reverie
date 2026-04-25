@@ -258,23 +258,84 @@
   position: relative;
   padding: var(--mg-space-9) var(--mg-space-7) var(--mg-space-7);
   overflow: hidden;
+  min-height: 540px;
+}
+
+.mg-hero-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: var(--mg-space-8);
+  align-items: center;
 }
 
 .mg-hero-backdrop {
   position: absolute;
-  inset: 0;
+  inset: -8%;
   z-index: 0;
-  opacity: 0.45;
-  filter: blur(72px) saturate(0.9);
-  transform: scale(1.05);
-  transition: transform 480ms var(--mg-ease-out);
+  opacity: 0.6;
+  filter: blur(80px) saturate(1.05);
+  transform: scale(1.08);
+  transition: transform 520ms var(--mg-ease-out);
   will-change: transform;
 }
 
 .mg-hero-content {
+  max-width: 600px;
+}
+
+/* Cover stack on the right side of the hero — multi-layer parallax target. */
+.mg-hero-stack {
   position: relative;
+  height: 360px;
+  transition: transform 520ms var(--mg-ease-out);
+  will-change: transform;
+}
+
+.mg-hero-stack-tile {
+  position: absolute;
+  width: 220px;
+  aspect-ratio: 2 / 3;
+  transition: transform 480ms var(--mg-ease-out);
+  will-change: transform;
+}
+
+.mg-hero-stack-tile .mg-tile-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--mg-radius-card);
+  box-shadow: var(--mg-shadow-hero);
+}
+
+.mg-hero-stack-tile[data-position="0"] {
+  z-index: 3;
+  top: 20px;
+  left: 36%;
+  transform-origin: center;
+  rotate: 4deg;
+}
+
+.mg-hero-stack-tile[data-position="1"] {
+  z-index: 2;
+  top: 60px;
+  left: 8%;
+  rotate: -7deg;
+  opacity: 0.95;
+}
+
+.mg-hero-stack-tile[data-position="2"] {
   z-index: 1;
-  max-width: 720px;
+  top: 100px;
+  left: 64%;
+  rotate: 11deg;
+  opacity: 0.85;
+  width: 180px;
+}
+
+@media (max-width: 1100px) {
+  .mg-hero-grid { grid-template-columns: 1fr; }
+  .mg-hero-stack { display: none; }
 }
 
 .mg-eyebrow {
@@ -1048,6 +1109,147 @@
   border-radius: var(--mg-radius-card);
   background: var(--mg-canvas);
 }
+
+.mg-table .col-select {
+  width: 32px;
+  min-width: 32px;
+  padding-left: var(--mg-space-3);
+  padding-right: var(--mg-space-2);
+}
+
+.mg-table input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--mg-border-strong);
+  border-radius: 3px;
+  background: var(--mg-canvas);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  transition: all var(--mg-motion-fast) var(--mg-ease-out);
+  position: relative;
+}
+
+.mg-table input[type="checkbox"]:hover {
+  border-color: var(--mg-accent);
+}
+
+.mg-table input[type="checkbox"]:checked {
+  background: var(--mg-accent);
+  border-color: var(--mg-accent);
+}
+
+.mg-table input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid var(--mg-fg-on-accent);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.mg-table input[type="checkbox"]:indeterminate {
+  background: var(--mg-accent);
+  border-color: var(--mg-accent);
+}
+
+.mg-table input[type="checkbox"]:indeterminate::after {
+  content: "";
+  width: 7px;
+  height: 1.5px;
+  background: var(--mg-fg-on-accent);
+  transform: none;
+  border: none;
+}
+
+.mg-table tbody tr.selected {
+  background: color-mix(in srgb, var(--mg-accent-soft) 60%, transparent);
+}
+
+.mg-table tbody tr.selected:hover {
+  background: color-mix(in srgb, var(--mg-accent-soft) 80%, transparent);
+}
+
+/* ------------------------- Bulk action bar ------------------------- */
+
+.mg-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--mg-space-2);
+  margin-bottom: var(--mg-space-4);
+  padding: var(--mg-space-3) var(--mg-space-4);
+  background: color-mix(in srgb, var(--mg-accent-soft) 80%, var(--mg-canvas));
+  border: 1px solid var(--mg-accent);
+  border-radius: var(--mg-radius-control);
+  font-size: var(--mg-type-small);
+  color: var(--mg-fg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mg-accent) 20%, transparent);
+}
+
+.mg-bulk-count {
+  font-family: var(--mg-font-display);
+  font-size: var(--mg-type-body);
+  color: var(--mg-fg);
+  margin-right: var(--mg-space-2);
+}
+
+.mg-bulk-count strong {
+  color: var(--mg-accent-strong);
+  font-weight: 500;
+  font-size: var(--mg-type-h4);
+  margin-right: 4px;
+}
+
+.mg-bulk-sep {
+  color: var(--mg-border-strong);
+}
+
+.mg-bulk-action {
+  background: transparent;
+  border: 1px solid var(--mg-border-strong);
+  border-radius: var(--mg-radius-control);
+  color: var(--mg-fg);
+  padding: 5px 10px;
+  font-family: var(--mg-font-text);
+  font-size: var(--mg-type-small);
+  letter-spacing: var(--mg-tracking-chrome);
+  cursor: pointer;
+  transition: all var(--mg-motion-fast) var(--mg-ease-out);
+}
+
+.mg-bulk-action:hover {
+  border-color: var(--mg-accent);
+  color: var(--mg-accent);
+}
+
+.mg-bulk-action.danger {
+  margin-left: auto;
+  color: var(--mg-danger);
+  border-color: color-mix(in srgb, var(--mg-danger) 50%, transparent);
+}
+
+.mg-bulk-action.danger:hover {
+  border-color: var(--mg-danger);
+  background: color-mix(in srgb, var(--mg-danger) 12%, transparent);
+}
+
+.mg-bulk-clear {
+  background: transparent;
+  border: none;
+  color: var(--mg-fg-faint);
+  font-size: 11px;
+  letter-spacing: var(--mg-tracking-caps);
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: var(--mg-font-text);
+  margin-left: var(--mg-space-2);
+  padding: 4px 8px;
+  transition: color var(--mg-motion-fast) var(--mg-ease-out);
+}
+
+.mg-bulk-clear:hover { color: var(--mg-fg); }
 
 .mg-table {
   width: 100%;

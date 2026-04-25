@@ -136,11 +136,14 @@ function Home({ theme }: HomeProps): ReactElement {
   const featured = SHELVES.inProgress[0] ?? BOOKS[0];
   const heroRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const stackRef = useRef<HTMLDivElement>(null);
+  const heroCoverStack = SHELVES.inProgress.slice(0, 3);
 
   useEffect(() => {
     const hero = heroRef.current;
     const backdrop = backdropRef.current;
-    if (!hero || !backdrop) return;
+    const stack = stackRef.current;
+    if (!hero) return;
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     let frame = 0;
@@ -150,13 +153,29 @@ function Home({ theme }: HomeProps): ReactElement {
         const rect = hero.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width - 0.5;
         const y = (e.clientY - rect.top) / rect.height - 0.5;
-        backdrop.style.transform = `translate(${x * -18}px, ${y * -12}px) scale(1.05)`;
+        if (backdrop) {
+          backdrop.style.transform = `translate(${x * -32}px, ${y * -22}px) scale(1.08)`;
+        }
+        if (stack) {
+          stack.style.transform = `translate(${x * 18}px, ${y * 14}px)`;
+          const tiles = stack.querySelectorAll<HTMLDivElement>("[data-depth]");
+          tiles.forEach((tile) => {
+            const d = parseFloat(tile.dataset.depth ?? "0");
+            tile.style.transform = `translate(${x * d * -8}px, ${y * d * -6}px)`;
+          });
+        }
       });
     };
     const onLeave = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        backdrop.style.transform = "translate(0, 0) scale(1.05)";
+        if (backdrop) backdrop.style.transform = "translate(0, 0) scale(1.08)";
+        if (stack) {
+          stack.style.transform = "translate(0, 0)";
+          stack.querySelectorAll<HTMLDivElement>("[data-depth]").forEach((tile) => {
+            tile.style.transform = "translate(0, 0)";
+          });
+        }
       });
     };
     hero.addEventListener("mousemove", onMove);
@@ -172,23 +191,45 @@ function Home({ theme }: HomeProps): ReactElement {
     <>
       <section className="mg-hero" ref={heroRef}>
         <div className="mg-hero-backdrop" ref={backdropRef} style={coverBackdropStyle(featured)} />
-        <div className="mg-hero-content">
-          <div className="mg-eyebrow">Wednesday evening · Continue</div>
-          <h1 className="mg-hero-h">
-            Two pages back into <em>{featured.title}</em>.
-          </h1>
-          <p className="mg-hero-sub">
-            You left off at chapter twelve. {Math.round((featured.progress ?? 0) * 100)} percent of
-            the way through. Pick it up where you stopped.
-          </p>
-          <button className="mg-hero-cta" type="button">
-            Resume reading
-            <span aria-hidden="true">→</span>
-          </button>
-          <div className="mg-hero-meta">
-            <span><strong>{STATS.totalBooks.toLocaleString()}</strong> books in library</span>
-            <span><strong>{STATS.inProgress}</strong> in progress</span>
-            <span><strong>{STATS.finishedThisYear}</strong> finished this year</span>
+        <div className="mg-hero-grid">
+          <div className="mg-hero-content">
+            <div className="mg-eyebrow">Wednesday evening · Continue</div>
+            <h1 className="mg-hero-h">
+              Two pages back into <em>{featured.title}</em>.
+            </h1>
+            <p className="mg-hero-sub">
+              You left off at chapter twelve. {Math.round((featured.progress ?? 0) * 100)} percent of
+              the way through. Pick it up where you stopped.
+            </p>
+            <button className="mg-hero-cta" type="button">
+              Resume reading
+              <span aria-hidden="true">→</span>
+            </button>
+            <div className="mg-hero-meta">
+              <span><strong>{STATS.totalBooks.toLocaleString()}</strong> books in library</span>
+              <span><strong>{STATS.inProgress}</strong> in progress</span>
+              <span><strong>{STATS.finishedThisYear}</strong> finished this year</span>
+            </div>
+          </div>
+          <div className="mg-hero-stack" ref={stackRef} aria-hidden="true">
+            {heroCoverStack.map((b, i) => (
+              <div
+                key={b.id}
+                className="mg-hero-stack-tile"
+                data-depth={i === 0 ? 3 : i === 1 ? 1.6 : 0.8}
+                data-position={i}
+              >
+                <div className="mg-tile-cover">
+                  <div className="mg-tile-cover-inner" style={coverStyle(b, theme)}>
+                    <div>
+                      <div className="mg-tile-cover-rule" />
+                      <div className="mg-tile-cover-author">{b.author}</div>
+                    </div>
+                    <div className="mg-tile-cover-title">{b.title}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -414,6 +455,7 @@ function Library({ theme }: { theme: Theme }): ReactElement {
   const [visibleCols, setVisibleCols] = useState<Set<ColumnId>>(new Set(DEFAULT_VISIBLE));
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [sortStack] = useState(DEFAULT_SORT);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const shelves = ["All", ...USER_SHELVES.map((s) => s.name)];
   const cols = COLUMNS.filter((c) => visibleCols.has(c.id));
@@ -427,6 +469,21 @@ function Library({ theme }: { theme: Theme }): ReactElement {
     }
     return 0;
   });
+
+  const allSelected = selected.size === sorted.length && sorted.length > 0;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  const toggleRow = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+
+  const toggleAll = () => {
+    if (selected.size === 0) setSelected(new Set(sorted.map((b) => b.id)));
+    else setSelected(new Set());
+  };
 
   return (
     <div className="mg-library">
@@ -506,7 +563,7 @@ function Library({ theme }: { theme: Theme }): ReactElement {
         })}
       </div>
 
-      {view === "table" && (
+      {view === "table" && selected.size === 0 && (
         <div className="mg-sort-bar">
           <span className="mg-sort-bar-label">Sorted by</span>
           {sortStack.map((s, i) => {
@@ -522,6 +579,27 @@ function Library({ theme }: { theme: Theme }): ReactElement {
         </div>
       )}
 
+      {view === "table" && selected.size > 0 && (
+        <div className="mg-bulk-bar">
+          <span className="mg-bulk-count">
+            <strong>{selected.size}</strong> selected
+          </span>
+          <span className="mg-bulk-sep" aria-hidden="true">·</span>
+          <button type="button" className="mg-bulk-action">Add to shelf</button>
+          <button type="button" className="mg-bulk-action">Send to device</button>
+          <button type="button" className="mg-bulk-action">Mark as read</button>
+          <button type="button" className="mg-bulk-action">Edit metadata</button>
+          <button type="button" className="mg-bulk-action danger">Remove from library</button>
+          <button
+            type="button"
+            className="mg-bulk-clear"
+            onClick={() => setSelected(new Set())}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {view === "grid" ? (
         <div className="mg-grid" data-size={size}>
           {sorted.map((b) => (
@@ -533,6 +611,15 @@ function Library({ theme }: { theme: Theme }): ReactElement {
           <table className="mg-table">
             <thead>
               <tr>
+                <th className="col-select">
+                  <input
+                    type="checkbox"
+                    aria-label={allSelected ? "Deselect all" : "Select all"}
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                    onChange={toggleAll}
+                  />
+                </th>
                 {cols.map((c) => {
                   const sort = sortStack.find((s) => s.col === c.id);
                   const cls = ["sortable", sort ? `sorted-${sort.dir}` : ""].join(" ");
@@ -541,15 +628,26 @@ function Library({ theme }: { theme: Theme }): ReactElement {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((b) => (
-                <tr key={b.id}>
-                  {cols.map((c) => (
-                    <td key={c.id} className={cellClass(c.id)}>
-                      {renderCell(b, c.id, theme)}
+              {sorted.map((b) => {
+                const isSelected = selected.has(b.id);
+                return (
+                  <tr key={b.id} className={isSelected ? "selected" : undefined}>
+                    <td className="col-select">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${b.title}`}
+                        checked={isSelected}
+                        onChange={() => toggleRow(b.id)}
+                      />
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {cols.map((c) => (
+                      <td key={c.id} className={cellClass(c.id)}>
+                        {renderCell(b, c.id, theme)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
