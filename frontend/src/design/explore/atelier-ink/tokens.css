@@ -89,6 +89,19 @@
   --ai-fg-on-accent:  #FBF8F1;
 }
 
+.ai-root[data-accent="cobalt-teal"][data-theme="dark"] {
+  --ai-accent:        #1FB3B3;
+  --ai-accent-soft:   #0D2E2E;
+  --ai-accent-strong: #38C9C9;
+  --ai-fg-on-accent:  #06181A;
+}
+.ai-root[data-accent="cobalt-teal"][data-theme="light"] {
+  --ai-accent:        #128585;
+  --ai-accent-soft:   #BDE5E5;
+  --ai-accent-strong: #0A6464;
+  --ai-fg-on-accent:  #FBF8F1;
+}
+
 .ai-root {
   --ai-font-display: "Sectra", "Tiempos Headline", "Source Serif 4", "Iowan Old Style", Georgia, serif;
   --ai-font-text:    "Söhne", "Inter Display", "Inter", system-ui, -apple-system, sans-serif;
@@ -130,9 +143,10 @@
   --ai-motion-fast: 140ms;
   --ai-motion-base: 200ms;
   --ai-motion-slow: 320ms;
+  --ai-motion-theme: 320ms;
   --ai-ease-out:    cubic-bezier(0.32, 0.72, 0, 1);
   --ai-ease-decisive: cubic-bezier(0.16, 0.84, 0.30, 1);
-  --ai-ambient-drift: 18s;
+  --ai-ambient-drift: 12s;
 
   background: var(--ai-canvas);
   color: var(--ai-fg);
@@ -142,6 +156,8 @@
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+  transition: background var(--ai-motion-theme) var(--ai-ease-out),
+              color var(--ai-motion-theme) var(--ai-ease-out);
 }
 
 /* Ambient layer — paper-grain noise + slow edge gradient drift. */
@@ -161,17 +177,19 @@
   position: fixed;
   inset: -10%;
   background:
-    radial-gradient(40% 30% at 12% 8%, color-mix(in srgb, var(--ai-accent) 6%, transparent) 0%, transparent 70%),
-    radial-gradient(50% 40% at 88% 92%, color-mix(in srgb, var(--ai-accent) 4%, transparent) 0%, transparent 70%);
-  filter: blur(60px);
+    radial-gradient(35% 28% at 18% 18%, color-mix(in srgb, var(--ai-accent) 32%, transparent) 0%, transparent 65%),
+    radial-gradient(40% 30% at 75% 35%, color-mix(in srgb, var(--ai-accent) 22%, transparent) 0%, transparent 70%),
+    radial-gradient(50% 38% at 85% 88%, color-mix(in srgb, var(--ai-accent) 28%, transparent) 0%, transparent 70%);
+  filter: blur(80px);
   animation: ai-drift var(--ai-ambient-drift) ease-in-out infinite alternate;
   pointer-events: none;
   z-index: 0;
 }
 
 @keyframes ai-drift {
-  0%   { transform: translate(0, 0); opacity: 0.6; }
-  100% { transform: translate(-1.5%, 1.5%); opacity: 1; }
+  0%   { transform: translate(0, 0) scale(1);    opacity: 0.5; }
+  50%  { transform: translate(-5%, 4%) scale(1.08); opacity: 1; }
+  100% { transform: translate(4%, -3%) scale(1.04); opacity: 0.7; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1096,9 +1114,10 @@
   transform: scale(1.08);
 }
 
-.ai-accent-swatch-chartreuse { --swatch-color: #C5E84A; }
-.ai-accent-swatch-persimmon  { --swatch-color: #E36A2F; }
-.ai-accent-swatch-carmine    { --swatch-color: #D63F55; }
+.ai-accent-swatch-chartreuse  { --swatch-color: #C5E84A; }
+.ai-accent-swatch-persimmon   { --swatch-color: #E36A2F; }
+.ai-accent-swatch-carmine     { --swatch-color: #D63F55; }
+.ai-accent-swatch-cobalt-teal { --swatch-color: #1FB3B3; }
 
 /* ------------------------- Theme toggle ------------------------- */
 

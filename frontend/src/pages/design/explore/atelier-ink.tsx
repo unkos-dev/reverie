@@ -15,7 +15,7 @@ type Theme = "dark" | "light";
 type Mock = "home" | "detail" | "library";
 type GridSize = "s" | "m" | "l";
 type ViewMode = "grid" | "table";
-type Accent = "chartreuse" | "persimmon" | "carmine";
+type Accent = "chartreuse" | "persimmon" | "carmine" | "cobalt-teal";
 
 function coverStyle(book: Book, theme: Theme): CSSProperties {
   const hue = bookHue(book.id);
@@ -453,6 +453,13 @@ export default function AtelierInk(): ReactElement {
             aria-pressed={accent === "carmine"}
             aria-label="Carmine accent"
             onClick={() => setAccent("carmine")}
+          />
+          <button
+            type="button"
+            className="ai-accent-swatch ai-accent-swatch-cobalt-teal"
+            aria-pressed={accent === "cobalt-teal"}
+            aria-label="Cobalt teal accent"
+            onClick={() => setAccent("cobalt-teal")}
           />
         </div>
         <Link

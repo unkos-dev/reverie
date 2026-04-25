@@ -99,9 +99,10 @@
   --mg-motion-fast: 220ms;
   --mg-motion-base: 300ms;
   --mg-motion-slow: 480ms;
+  --mg-motion-theme: 380ms;
   --mg-ease-out:    cubic-bezier(0.22, 0.61, 0.36, 1);
   --mg-ease-decisive: cubic-bezier(0.16, 0.78, 0.30, 1);
-  --mg-ambient-drift: 22s;
+  --mg-ambient-drift: 14s;
 
   background: var(--mg-canvas);
   color: var(--mg-fg);
@@ -111,25 +112,29 @@
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+  transition: background var(--mg-motion-theme) var(--mg-ease-out),
+              color var(--mg-motion-theme) var(--mg-ease-out);
 }
 
-/* Ambient layer — slow gradient drift in background. */
+/* Ambient layer — gold-tinted gradient drift, atmospheric. */
 .mg-root::before {
   content: "";
   position: fixed;
   inset: -10%;
   background:
-    radial-gradient(60% 50% at 18% 22%, color-mix(in srgb, var(--mg-accent) 12%, transparent) 0%, transparent 60%),
-    radial-gradient(50% 40% at 82% 78%, color-mix(in srgb, var(--mg-accent) 8%, transparent) 0%, transparent 70%);
-  filter: blur(40px);
+    radial-gradient(55% 45% at 18% 22%, color-mix(in srgb, var(--mg-accent) 38%, transparent) 0%, transparent 60%),
+    radial-gradient(40% 30% at 78% 18%, color-mix(in srgb, var(--mg-accent) 22%, transparent) 0%, transparent 70%),
+    radial-gradient(50% 40% at 82% 82%, color-mix(in srgb, var(--mg-accent) 32%, transparent) 0%, transparent 65%);
+  filter: blur(70px);
   animation: mg-drift var(--mg-ambient-drift) ease-in-out infinite alternate;
   pointer-events: none;
   z-index: 0;
 }
 
 @keyframes mg-drift {
-  0%   { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(2%, -1.5%) scale(1.04); }
+  0%   { transform: translate(0, 0) scale(1);    opacity: 0.6; }
+  50%  { transform: translate(5%, -3%) scale(1.08); opacity: 1; }
+  100% { transform: translate(-4%, 4%) scale(1.05); opacity: 0.75; }
 }
 
 @media (prefers-reduced-motion: reduce) {
