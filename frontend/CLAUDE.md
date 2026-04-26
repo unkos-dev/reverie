@@ -84,8 +84,10 @@
 ## Styling
 
 - Tailwind CSS (v4) utility classes. Tailwind is configured via
-  `@tailwindcss/vite` in `vite.config.ts`; design tokens live in
-  `src/index.css` (`@theme` block) — never use arbitrary hex values.
+  `@tailwindcss/vite` in `vite.config.ts`. Canonical design tokens are
+  codified in D3 — until then, the D2 explore tree carries
+  direction-specific tokens under `src/design/explore/*/tokens.css`.
+  Never use arbitrary hex values; reuse a token.
 - **shadcn/ui:** components added via CLI (`npx shadcn@latest add <component>`).
   Do not manually create shadcn components.
 

@@ -118,8 +118,9 @@ brand fonts. The browser falls back to the system stack defined in the
 font-family rule (Inter, ui-sans-serif, system-ui, ...). Visually it
 degrades but the application is fully functional. A paid Fontshare licence
 permitting self-hosting is the supported path for offline installs; see
-`frontend/public/fonts/fontshare/README.md` for the rationale and
-re-introduction procedure.
+`frontend/public/fonts/fontshare/README.md` for the rationale and the
+CDN URL re-discovery procedure (used when Fontshare rotates the woff2
+hashes).
 
 ## `style-src 'unsafe-inline'` — why it's still there
 
