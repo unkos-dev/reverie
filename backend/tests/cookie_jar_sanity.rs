@@ -47,8 +47,9 @@ async fn cookie_jar_tuple_with_status_emits_set_cookie() {
 
 #[tokio::test]
 async fn cookie_jar_tuple_with_redirect_emits_set_cookie() {
-    // TestServer follows redirects by default; disable so we see the 307
-    // response headers directly.
+    // expect_failure() asserts non-2xx; without it, axum-test panics on
+    // the 307. The mock transport never auto-follows redirects regardless,
+    // so the response headers are always the originating handler's.
     let server = TestServer::new(router());
     let resp = server.get("/_test/cookie-redirect").expect_failure().await;
     assert_eq!(resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
