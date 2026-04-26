@@ -16,7 +16,11 @@ const router = createBrowserRouter([
   { path: '/design/explore/atelier-ink', element: <AtelierInk /> },
 ])
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root')
+if (!rootElement) {
+  throw new Error('Reverie: #root element not found in document. Check index.html.')
+}
+createRoot(rootElement).render(
   <StrictMode>
     <RouterProvider router={router} />
   </StrictMode>,
