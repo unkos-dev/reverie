@@ -89,13 +89,38 @@ absolute `http(s)://` URL.
 | Surface           | Dev (Vite dev server)                              | Production (Docker container)                              |
 | ----------------- | -------------------------------------------------- | ---------------------------------------------------------- |
 | HTML CSP          | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket    | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'`    |
-| API CSP           | N/A (Vite doesn't proxy the API yet)               | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` |
+| API CSP           | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` |
 | HSTS              | Off                                                | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
 | index.html source | Vite dev server, transformed with plugin markers   | Pre-built `dist/index.html` served by the backend          |
 
 **Dev relaxations do not ship to prod.** `'unsafe-inline' 'unsafe-eval'` in
 dev are declared in `frontend/vite.config.ts` `server.headers` and apply
 only when running `npm run dev`.
+
+## `font-src` — Fontshare CDN allowlist
+
+The HTML CSP allows fonts from `cdn.fontshare.com` in addition to `'self'`:
+
+```
+font-src 'self' https://cdn.fontshare.com
+```
+
+Reverie's brand identity uses two Fontshare typefaces (Author and Satoshi).
+The Fontshare Free License prohibits self-hosting on a public server, so
+the woff2 files are loaded from Fontshare's CDN at runtime. We author the
+`@font-face` block ourselves (`frontend/src/design/explore/midnight-gold/fontshare.css`)
+to bypass Fontshare's CSS API — the API sets a cookie that trips Chromium's
+Opaque Response Blocking; the woff2 URLs themselves are cookie-free and
+CORS-permissive.
+
+**Operator implication:** fully air-gapped deployments will not load the
+brand fonts. The browser falls back to the system stack defined in the
+font-family rule (Inter, ui-sans-serif, system-ui, ...). Visually it
+degrades but the application is fully functional. A paid Fontshare licence
+permitting self-hosting is the supported path for offline installs; see
+`frontend/public/fonts/fontshare/README.md` for the rationale and the
+CDN URL re-discovery procedure (used when Fontshare rotates the CDN
+paths).
 
 ## `style-src 'unsafe-inline'` — why it's still there
 

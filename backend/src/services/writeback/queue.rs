@@ -388,7 +388,7 @@ mod tests {
                 csp_report_endpoint: None,
                 frontend_dist_path: None,
                 csp_html_header: None,
-                csp_api_header: String::new(),
+                csp_api_header: None,
             },
             openlibrary_base_url: "https://example.invalid".into(),
             googlebooks_base_url: "https://example.invalid".into(),

@@ -23,6 +23,10 @@ export default defineConfig({
           ],
         },
         {
+          label: "Design",
+          autogenerate: { directory: "design" },
+        },
+        {
           label: "Reference",
           autogenerate: { directory: "reference" },
         },

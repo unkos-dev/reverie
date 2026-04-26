@@ -1,12 +1,14 @@
-//! Response-header middleware wiring (UNK-106).
+//! Response-header middleware wiring.
 //!
 //! Three concerns, three surfaces:
 //! - [`security_headers`] — outermost uniform middleware. Sets XCTO,
 //!   Referrer-Policy, Permissions-Policy, X-Frame-Options, and (conditional)
-//!   HSTS + Reporting-Endpoints. Applied on the composite router.
+//!   HSTS + Reporting-Endpoints from precomputed `HeaderValue` fields on
+//!   `SecurityConfig`. Applied on the composite router.
 //! - [`api_csp_layer`] / [`html_csp_layer`] — per-router middleware that
-//!   writes `Content-Security-Policy` from the precomputed string on
-//!   `SecurityConfig`. Attached to matched routes only.
+//!   writes `Content-Security-Policy` from the precomputed `HeaderValue` on
+//!   `SecurityConfig` (validated at startup in `main()`). Attached to matched
+//!   routes only.
 //! - [`composite_fallback`] — the single fallback handler for the composite.
 //!   Path-prefix-dispatches to either a JSON 404 + API CSP (reserved
 //!   prefixes) or an `index.html` + HTML CSP (SPA fallback). Neither the
@@ -72,9 +74,9 @@ pub async fn api_csp_layer(
     next: Next,
 ) -> Response {
     let mut resp = next.run(req).await;
-    if let Ok(v) = HeaderValue::from_str(&state.config.security.csp_api_header) {
+    if let Some(v) = state.config.security.csp_api_header.as_ref() {
         resp.headers_mut()
-            .insert(header::CONTENT_SECURITY_POLICY, v);
+            .insert(header::CONTENT_SECURITY_POLICY, v.clone());
     }
     resp
 }
@@ -91,11 +93,9 @@ pub async fn html_csp_layer(
     next: Next,
 ) -> Response {
     let mut resp = next.run(req).await;
-    if let Some(h) = state.config.security.csp_html_header.as_deref()
-        && let Ok(v) = HeaderValue::from_str(h)
-    {
+    if let Some(v) = state.config.security.csp_html_header.as_ref() {
         resp.headers_mut()
-            .insert(header::CONTENT_SECURITY_POLICY, v);
+            .insert(header::CONTENT_SECURITY_POLICY, v.clone());
     }
     resp
 }
@@ -160,18 +160,16 @@ fn plain_404() -> Response {
 }
 
 fn attach_api_csp(resp: &mut Response, state: &AppState) {
-    if let Ok(v) = HeaderValue::from_str(&state.config.security.csp_api_header) {
+    if let Some(v) = state.config.security.csp_api_header.as_ref() {
         resp.headers_mut()
-            .insert(header::CONTENT_SECURITY_POLICY, v);
+            .insert(header::CONTENT_SECURITY_POLICY, v.clone());
     }
 }
 
 fn attach_html_csp(resp: &mut Response, state: &AppState) {
-    if let Some(h) = state.config.security.csp_html_header.as_deref()
-        && let Ok(v) = HeaderValue::from_str(h)
-    {
+    if let Some(v) = state.config.security.csp_html_header.as_ref() {
         resp.headers_mut()
-            .insert(header::CONTENT_SECURITY_POLICY, v);
+            .insert(header::CONTENT_SECURITY_POLICY, v.clone());
     }
 }
 
@@ -228,7 +226,7 @@ mod tests {
         }
     }
 
-    // ---------- Integration tests (UNK-106 Tasks 13 + 14) ----------
+    // ---------- Integration tests ----------
     //
     // These exercise the full composite router via `test_support::test_server()`
     // and a sibling `test_server_with_security()` helper that injects a custom
@@ -307,8 +305,9 @@ mod tests {
     #[tokio::test]
     async fn matched_api_route_has_api_csp() {
         let mut security = crate::test_support::test_config().security;
-        security.csp_api_header =
-            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'".into();
+        security.csp_api_header = Some(HeaderValue::from_static(
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        ));
         let server = test_server_with_security(security);
         let r = server.get("/health").await;
         r.assert_status_ok();
@@ -328,8 +327,9 @@ mod tests {
     #[tokio::test]
     async fn api_typo_returns_json_404_with_api_csp() {
         let mut security = crate::test_support::test_config().security;
-        security.csp_api_header =
-            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'".into();
+        security.csp_api_header = Some(HeaderValue::from_static(
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        ));
         let server = test_server_with_security(security);
         let r = server.get("/api/__nope__").await;
         r.assert_status(axum::http::StatusCode::NOT_FOUND);
@@ -352,7 +352,9 @@ mod tests {
     #[tokio::test]
     async fn deep_api_typo_returns_404_with_api_csp() {
         let server = test_server_with_security(SecurityConfig {
-            csp_api_header: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'".into(),
+            csp_api_header: Some(HeaderValue::from_static(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            )),
             ..crate::test_support::test_config().security
         });
         let r = server.get("/api/books/9999/covr").await;
@@ -370,7 +372,9 @@ mod tests {
     #[tokio::test]
     async fn auth_typo_returns_json_404_with_api_csp() {
         let server = test_server_with_security(SecurityConfig {
-            csp_api_header: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'".into(),
+            csp_api_header: Some(HeaderValue::from_static(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            )),
             ..crate::test_support::test_config().security
         });
         let r = server.get("/auth/__nope__").await;
@@ -381,7 +385,9 @@ mod tests {
     #[tokio::test]
     async fn health_typo_returns_json_404_with_api_csp() {
         let server = test_server_with_security(SecurityConfig {
-            csp_api_header: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'".into(),
+            csp_api_header: Some(HeaderValue::from_static(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            )),
             ..crate::test_support::test_config().security
         });
         let r = server.get("/health/__nope__").await;
@@ -395,7 +401,9 @@ mod tests {
         // it must fall through to the composite fallback and come back as
         // reserved-prefix JSON 404, NOT SPA html.
         let server = test_server_with_security(SecurityConfig {
-            csp_api_header: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'".into(),
+            csp_api_header: Some(HeaderValue::from_static(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            )),
             ..crate::test_support::test_config().security
         });
         let r = server.get("/opds/__nope__").await;
@@ -419,8 +427,10 @@ mod tests {
         let dist = fixture_dist(html);
         let security = SecurityConfig {
             frontend_dist_path: Some(dist.path().to_path_buf()),
-            csp_html_header: Some("default-src 'self'; script-src 'self' 'sha256-AAAA'".into()),
-            csp_api_header: "default-src 'none'".into(),
+            csp_html_header: Some(HeaderValue::from_static(
+                "default-src 'self'; script-src 'self' 'sha256-AAAA'",
+            )),
+            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
             ..crate::test_support::test_config().security
         };
         let server = test_server_with_security(security);
@@ -448,8 +458,8 @@ mod tests {
         let dist = fixture_dist(html);
         let server = test_server_with_security(SecurityConfig {
             frontend_dist_path: Some(dist.path().to_path_buf()),
-            csp_html_header: Some("default-src 'self'".into()),
-            csp_api_header: "default-src 'none'".into(),
+            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
+            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
             ..crate::test_support::test_config().security
         });
         let r = server.get("/").await;
@@ -462,8 +472,8 @@ mod tests {
         let dist = fixture_dist(b"<!doctype html>");
         let server = test_server_with_security(SecurityConfig {
             frontend_dist_path: Some(dist.path().to_path_buf()),
-            csp_html_header: Some("default-src 'self'".into()),
-            csp_api_header: "default-src 'none'".into(),
+            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
+            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
             ..crate::test_support::test_config().security
         });
         let r = server.get("/assets/main.js").await;

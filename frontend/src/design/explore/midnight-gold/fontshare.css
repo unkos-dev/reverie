@@ -1,0 +1,67 @@
+/*
+ * Reverie · Midnight Gold · locked typography
+ *
+ * Author (display) + Satoshi (body), variable axes delivered via Fontshare's
+ * CDN at cdn.fontshare.com. Both faces use variable + variable-italic, so
+ * every weight in the project lead's mapping is covered:
+ *
+ *   Author:   400 (body-of-display) · 500 (hero h1) · 600 (section
+ *             headers) · 700 (occasional emphasis) · italics 400-700
+ *   Satoshi:  400 (body) · 500 (emphasis) · 700 (chrome buttons /
+ *             strong labels) · italics 400-500
+ *
+ * Black weights (900) are deliberately not loaded — they fight the
+ * boutique register.
+ *
+ * Why CDN, not self-host: the Fontshare Free EULA (clause 02) prohibits
+ * uploading the font files to a public server and prohibits transmitting
+ * them in font serving from infrastructure other than Fontshare's own.
+ * Fontshare's CDN is the EULA's intended delivery path. Why we still
+ * self-author @font-face: Fontshare's CSS API at api.fontshare.com sets a
+ * `_fontshare_key` cookie on its CSS responses, which trips Chromium's
+ * Opaque Response Blocking on cross-origin <link> loads. By writing the
+ * @font-face block ourselves and pointing src directly at
+ * cdn.fontshare.com woff2 URLs (cookie-free, CORS-permissive, font/woff2
+ * MIME), we get same-result delivery without the ORB hit.
+ *
+ * URL discovery: Fontshare's CSS API does not expose variable axes (only
+ * static instances at specific weights). The four URLs below are the
+ * variable-axis woff2 URLs as served on Fontshare's own marketing site
+ * (fontshare.com/fonts/{author,satoshi}); they were verified by sha256
+ * against the Fontshare distribution zip's WEB/fonts/*.woff2. If the URLs
+ * stop resolving, re-run the discovery: load the marketing pages with
+ * Playwright, capture cdn.fontshare.com woff2 requests, match by file
+ * size against the variable woff2s in the zip.
+ */
+
+@font-face {
+  font-family: 'Author Variable';
+  src: url('https://cdn.fontshare.com/wf/QZLHF3POTW3Q4X3B52OFR36T6QNVHQFS/5FBYPSFR2SRQ6KYXCBCN3RAWZYT24FWF/U3WWVCRZ5YHQTK3ABY6QQSB4YY63S65B.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Author Variable';
+  src: url('https://cdn.fontshare.com/wf/J3IKMZZZ53F75WBIOJVUHEVKJKYNOXXF/UK6TMU4KDUOBA2TQL35OYZWT4CNBGRHR/JP2S43GCZFWRA6HO554DNBR74NVQDKCI.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi Variable';
+  src: url('https://cdn.fontshare.com/wf/NWBQYJIM7GCZ5XWD7D26ARB3VDY55ZRT/K63EV2KZIGKLE7RANQ2U42S6SVHU5RJ7/X6XYTKIVDUW7GZTZPZNN4EUM5KH54KHF.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Satoshi Variable';
+  src: url('https://cdn.fontshare.com/wf/3JZIFUW7KLFSPLVCIUI2DLGNIER6IFCX/MMP4RUF5LYGUAZS3DCJC3GJ6F6SAGKSN/E3NEPGEAHYCHR37DSBXHV33XCYYRE2CY.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}

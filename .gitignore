@@ -37,6 +37,14 @@ coverage/
 *.lcov
 /plans/
 
+# Dev library seed target (populated by dev/seed-library.sh when
+# REVERIE_LIBRARY_PATH is unset)
+backend/tests/fixtures/library/
+
 # Gemini CLI security scanner scratch directory (mid-run temp files;
 # security_report.json persists when --json is requested)
 .gemini_security/
+
+# Playwright MCP scratch (snapshots, console logs) + agent screenshot scratch
+.playwright-mcp/
+d2-*.png

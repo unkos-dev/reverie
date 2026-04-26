@@ -83,15 +83,21 @@
 
 ## Styling
 
-- Tailwind CSS utility classes. Use project design tokens
-  (`tailwind.config.ts`) — never arbitrary hex values.
+- Tailwind CSS (v4) utility classes. Tailwind is configured via
+  `@tailwindcss/vite` in `vite.config.ts`. Canonical design tokens are
+  codified in D3 — until then, the D2 explore tree carries
+  direction-specific tokens under `src/design/explore/*/tokens.css`.
+  Never use arbitrary hex values; reuse a token.
 - **shadcn/ui:** components added via CLI (`npx shadcn@latest add <component>`).
   Do not manually create shadcn components.
 
 ## Testing & tooling
 
 - Vitest + React Testing Library. Test behaviour, not implementation.
-- Plugin tests live in `vite-plugins/__tests__/` and run via `npm test`.
+- Two test projects in `vite.config.ts`: `vite-plugins` (node env, plugin
+  tests under `vite-plugins/__tests__/`) and `frontend` (jsdom env, component
+  and unit tests under `src/**/*.{test,spec}.{ts,tsx}` with setup file at
+  `tests/setup.ts`). Both run together via `npm test`.
 - Formatting enforced by ESLint. Do not disable rules without a documented
   reason.
 
@@ -111,8 +117,8 @@ frontend/
 │   ├── App.tsx          # Root component
 │   └── main.tsx         # Entrypoint
 ├── vite-plugins/        # Custom Vite plugins (csp-hash.ts)
+├── tests/               # Vitest setup (setup.ts)
 ├── index.html
-├── tailwind.config.ts
 ├── tsconfig.json
-└── vite.config.ts
+└── vite.config.ts       # Tailwind v4 + Vitest projects configured here
 ```

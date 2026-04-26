@@ -27,7 +27,7 @@ pub fn build_html_csp(script_src_hashes: &[String], report_endpoint: Option<&url
     out.push_str(&script_src);
     out.push_str("; style-src 'self' 'unsafe-inline'");
     out.push_str("; img-src 'self' data:");
-    out.push_str("; font-src 'self'");
+    out.push_str("; font-src 'self' https://cdn.fontshare.com");
     out.push_str("; connect-src 'self'");
     out.push_str("; frame-ancestors 'none'");
     out.push_str("; base-uri 'self'");
@@ -77,9 +77,9 @@ mod tests {
             got,
             "default-src 'self'; script-src 'self' 'sha256-ABCD'; \
              style-src 'self' 'unsafe-inline'; img-src 'self' data:; \
-             font-src 'self'; connect-src 'self'; frame-ancestors 'none'; \
-             base-uri 'self'; form-action 'self'; object-src 'none'; \
-             upgrade-insecure-requests"
+             font-src 'self' https://cdn.fontshare.com; connect-src 'self'; \
+             frame-ancestors 'none'; base-uri 'self'; form-action 'self'; \
+             object-src 'none'; upgrade-insecure-requests"
                 .replace("             ", "")
         );
     }
@@ -121,5 +121,31 @@ mod tests {
              report-to csp-endpoint; report-uri https://log.example/csp"
                 .replace("             ", "")
         );
+    }
+
+    #[test]
+    fn builder_outputs_are_valid_header_values() {
+        // Locks in the startup contract: main() converts these strings into
+        // axum HeaderValue with .unwrap_or_else(panic). If a future builder
+        // change introduces a byte outside the HTTP visible-ASCII range this
+        // test catches it before production startup does.
+        let report = url("https://log.example/csp");
+        let cases: &[(&str, String)] = &[
+            ("build_api_csp(None)", build_api_csp(None)),
+            ("build_api_csp(Some)", build_api_csp(Some(&report))),
+            (
+                "build_html_csp(hashes, None)",
+                build_html_csp(&h("sha256-YWJjZA=="), None),
+            ),
+            (
+                "build_html_csp(hashes, Some)",
+                build_html_csp(&h("sha256-YWJjZA=="), Some(&report)),
+            ),
+        ];
+        for (label, value) in cases {
+            axum::http::HeaderValue::from_str(value).unwrap_or_else(|e| {
+                panic!("{label} produced invalid HTTP header value ({e}): {value:?}")
+            });
+        }
     }
 }
