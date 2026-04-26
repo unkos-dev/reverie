@@ -1,8 +1,7 @@
-//! D0.11 — verify that `axum_extra::extract::cookie::CookieJar` returned as
-//! part of a tuple response emits a `Set-Cookie` header for both `StatusCode`
-//! and `Redirect` response-tails. The design-system backend sliver
-//! (theme PATCH handler, OIDC callback cookie seed) depends on this contract.
-//! Failing fast here is the whole point of D0.
+//! Verify that `axum_extra::extract::cookie::CookieJar` returned as part of
+//! a tuple response emits a `Set-Cookie` header for both `StatusCode` and
+//! `Redirect` response-tails. The theme PATCH handler and the OIDC callback
+//! cookie seed depend on this contract.
 //!
 //! This test lives under `backend/tests/` so the routes are automatically
 //! cfg-gated to `test` — they never exist in the production router.

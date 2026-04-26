@@ -5,7 +5,7 @@
  * Modern serif on book content (Spectral-class). Slow-decisive motion lean.
  *
  * Scoped under .mg-root to avoid colliding with other directions on the same
- * dev server. D3.1 prunes this file.
+ * dev server.
  */
 
 .mg-root[data-theme="dark"] {

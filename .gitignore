@@ -38,7 +38,7 @@ coverage/
 /plans/
 
 # Dev library seed target (populated by dev/seed-library.sh when
-# REVERIE_LIBRARY_ROOT is unset)
+# REVERIE_LIBRARY_PATH is unset)
 backend/tests/fixtures/library/
 
 # Gemini CLI security scanner scratch directory (mid-run temp files;

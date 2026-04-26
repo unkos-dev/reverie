@@ -119,8 +119,8 @@ font-family rule (Inter, ui-sans-serif, system-ui, ...). Visually it
 degrades but the application is fully functional. A paid Fontshare licence
 permitting self-hosting is the supported path for offline installs; see
 `frontend/public/fonts/fontshare/README.md` for the rationale and the
-CDN URL re-discovery procedure (used when Fontshare rotates the woff2
-hashes).
+CDN URL re-discovery procedure (used when Fontshare rotates the CDN
+paths).
 
 ## `style-src 'unsafe-inline'` — why it's still there
 

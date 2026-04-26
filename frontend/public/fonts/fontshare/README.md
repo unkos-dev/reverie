@@ -73,5 +73,3 @@ font origin requires updating both.
   of static-weight stacks (8+ files per face).
 - Black weights (900) are deliberately not loaded — they fight the
   boutique register per the project lead's handoff notes.
-- D3 task 20 will inline the `@font-face` block into the canonical
-  theme CSS at `frontend/src/styles/themes/`.

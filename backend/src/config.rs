@@ -76,9 +76,10 @@ pub struct WritebackConfig {
 /// Response-header policy.
 ///
 /// CSP values are stored as precomputed `HeaderValue`s. They depend on
-/// `validate_frontend_dist` (an async filesystem check), so `csp_api_header`
-/// and `csp_html_header` are left as `None` after `from_env()` and finalised
-/// by `main()` via [`crate::security::csp::build_api_csp`] /
+/// `validate_frontend_dist` reading the on-disk FOUC script to derive its
+/// hash, so `csp_api_header` and `csp_html_header` are left as `None` after
+/// `from_env()` and finalised by `main()` via
+/// [`crate::security::csp::build_api_csp`] /
 /// [`crate::security::csp::build_html_csp`]. A non-conformant CSP string
 /// panics in `main()` rather than silently dropping the header at request
 /// time.

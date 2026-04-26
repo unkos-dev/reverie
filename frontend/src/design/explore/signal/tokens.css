@@ -5,7 +5,7 @@
  * Bricolage Grotesque (display) + Geist (text). Tests whether the
  * chrome-sans / content-serif rule actually earns its keep.
  *
- * Scoped under .sig-root. D3.1 prunes this file.
+ * Scoped under .sig-root.
  */
 
 .sig-root[data-theme="dark"] {

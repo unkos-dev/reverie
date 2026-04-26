@@ -16,14 +16,13 @@
  * Why CDN, not self-host: the Fontshare Free EULA (clause 02) prohibits
  * uploading the font files to a public server and prohibits transmitting
  * them in font serving from infrastructure other than Fontshare's own.
- * The earlier self-host commit shipped the woff2 in this repo — that was
- * a license violation. Fontshare's CDN is the EULA's intended delivery
- * path. Why we still self-author @font-face: Fontshare's CSS API at
- * api.fontshare.com sets a `_fontshare_key` cookie on its CSS responses,
- * which trips Chromium's Opaque Response Blocking on cross-origin <link>
- * loads. By writing the @font-face block ourselves and pointing src
- * directly at cdn.fontshare.com woff2 URLs (cookie-free, CORS-permissive,
- * font/woff2 MIME), we get same-result delivery without the ORB hit.
+ * Fontshare's CDN is the EULA's intended delivery path. Why we still
+ * self-author @font-face: Fontshare's CSS API at api.fontshare.com sets a
+ * `_fontshare_key` cookie on its CSS responses, which trips Chromium's
+ * Opaque Response Blocking on cross-origin <link> loads. By writing the
+ * @font-face block ourselves and pointing src directly at
+ * cdn.fontshare.com woff2 URLs (cookie-free, CORS-permissive, font/woff2
+ * MIME), we get same-result delivery without the ORB hit.
  *
  * URL discovery: Fontshare's CSS API does not expose variable axes (only
  * static instances at specific weights). The four URLs below are the
@@ -33,9 +32,6 @@
  * stop resolving, re-run the discovery: load the marketing pages with
  * Playwright, capture cdn.fontshare.com woff2 requests, match by file
  * size against the variable woff2s in the zip.
- *
- * D3 task 20 will inline this @font-face block into the canonical theme
- * CSS at frontend/src/styles/themes/.
  */
 
 @font-face {
