@@ -13,6 +13,7 @@ const DEV_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173",
   "img-src 'self' data:",
+  "font-src 'self' https://cdn.fontshare.com",
 ].join("; ");
 
 export default defineConfig({
