@@ -4,6 +4,11 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::models::theme_preference::ThemePreference;
+
+// `theme_preference` is decoded directly via sqlx::Type (Postgres ENUM
+// `theme_preference`); only `role` needs the ::text cast because it
+// stays a String on the model side.
 const USER_COLUMNS: &str = "id, oidc_subject, display_name, email, role::text, is_child, \
                             created_at, updated_at, session_version, theme_preference";
 
@@ -19,7 +24,7 @@ struct UserRow {
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
     session_version: i32,
-    theme_preference: String,
+    theme_preference: ThemePreference,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -33,7 +38,7 @@ pub struct User {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub session_version: i32,
-    pub theme_preference: String,
+    pub theme_preference: ThemePreference,
     #[serde(skip)]
     session_version_bytes: Vec<u8>,
 }

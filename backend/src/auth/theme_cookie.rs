@@ -23,6 +23,8 @@
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use time::Duration;
 
+use crate::models::theme_preference::ThemePreference;
+
 /// Cookie name for the FOUC theme preference. Duplicated in:
 ///   - frontend/src/fouc/fouc.js (inline FOUC script body, CSP-hashed at build)
 ///   - frontend/src/lib/theme/cookie.ts
@@ -30,14 +32,8 @@ use time::Duration;
 /// All three MUST agree. Tracked as instance 1 under UNK-105.
 pub const THEME_COOKIE_NAME: &str = "reverie_theme";
 
-/// Server-side allowlist for `theme_preference`. The set is shared with the
-/// frontend `ThemePreference` union literal type ("system" | "light" | "dark"
-/// in `frontend/src/lib/theme/cookie.ts`); cross-stack drift is tracked under
-/// UNK-105.
-pub const ALLOWED_THEMES: &[&str] = &["system", "light", "dark"];
-
-pub fn set_theme_cookie(jar: CookieJar, value: &str, secure: bool) -> CookieJar {
-    let mut builder = Cookie::build((THEME_COOKIE_NAME, value.to_owned()))
+pub fn set_theme_cookie(jar: CookieJar, value: ThemePreference, secure: bool) -> CookieJar {
+    let mut builder = Cookie::build((THEME_COOKIE_NAME, value.as_str().to_owned()))
         .path("/")
         .http_only(false)
         .same_site(SameSite::Lax)
@@ -55,7 +51,7 @@ mod tests {
 
     #[test]
     fn set_theme_cookie_writes_canonical_attributes_without_secure() {
-        let jar = set_theme_cookie(CookieJar::new(), "dark", false);
+        let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Dark, false);
 
         // String-compare the literal so a rename of THEME_COOKIE_NAME trips
         // the test and surfaces UNK-105 cross-stack drift before it lands.
@@ -76,7 +72,7 @@ mod tests {
 
     #[test]
     fn set_theme_cookie_sets_secure_when_behind_https() {
-        let jar = set_theme_cookie(CookieJar::new(), "light", true);
+        let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Light, true);
 
         let cookie = jar
             .get("reverie_theme")
@@ -92,10 +88,4 @@ mod tests {
         assert_eq!(cookie.secure(), Some(true));
     }
 
-    #[test]
-    fn allowed_themes_matches_frontend_union() {
-        // Sanity: any change here must mirror `ThemePreference` in
-        // frontend/src/lib/theme/cookie.ts. UNK-105 drift guard.
-        assert_eq!(ALLOWED_THEMES, &["system", "light", "dark"]);
-    }
 }

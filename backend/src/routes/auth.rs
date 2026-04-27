@@ -12,7 +12,8 @@ use openidconnect::{
 use crate::auth::backend::OidcCredentials;
 use crate::auth::middleware::{AuthCtx, CurrentUser};
 use crate::auth::oidc;
-use crate::auth::theme_cookie::{ALLOWED_THEMES, set_theme_cookie};
+use crate::auth::theme_cookie::set_theme_cookie;
+use crate::models::theme_preference::ThemePreference;
 use crate::error::AppError;
 use crate::models::user;
 use crate::state::AppState;
@@ -164,7 +165,7 @@ async fn callback(
     // FOUC script reads the same value on next cold load.
     let jar = set_theme_cookie(
         jar,
-        &user.theme_preference,
+        user.theme_preference,
         state.config.security.behind_https,
     );
 
@@ -199,7 +200,7 @@ async fn me(
 
 #[derive(serde::Deserialize)]
 struct UpdateThemeRequest {
-    theme_preference: String,
+    theme_preference: ThemePreference,
 }
 
 async fn update_theme(
@@ -208,18 +209,15 @@ async fn update_theme(
     jar: CookieJar,
     Json(body): Json<UpdateThemeRequest>,
 ) -> Result<(CookieJar, Json<serde_json::Value>), AppError> {
-    if !ALLOWED_THEMES.contains(&body.theme_preference.as_str()) {
-        return Err(AppError::Validation("invalid theme_preference".into()));
-    }
     sqlx::query("UPDATE users SET theme_preference = $1, updated_at = now() WHERE id = $2")
-        .bind(&body.theme_preference)
+        .bind(body.theme_preference)
         .bind(current_user.user_id)
         .execute(&state.pool)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     let jar = set_theme_cookie(
         jar,
-        &body.theme_preference,
+        body.theme_preference,
         state.config.security.behind_https,
     );
     Ok((
@@ -232,6 +230,7 @@ async fn update_theme(
 mod tests {
     use axum::http::StatusCode;
 
+    use crate::models::theme_preference::ThemePreference;
     use crate::test_support;
 
     #[tokio::test]
@@ -340,12 +339,13 @@ mod tests {
             "expected reverie_theme=dark prefix; got: {set_cookie}"
         );
 
-        let stored: String = sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_one(&app_pool)
-            .await
-            .expect("read back theme_preference");
-        assert_eq!(stored, "dark");
+        let stored: ThemePreference =
+            sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("read back theme_preference");
+        assert_eq!(stored, ThemePreference::Dark);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -366,12 +366,17 @@ mod tests {
         // AppError::Validation maps to 422 (NOT 400) — see backend/src/error.rs.
         assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
-        let stored: String = sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_one(&app_pool)
-            .await
-            .expect("read back theme_preference");
-        assert_eq!(stored, "system", "row must remain default after rejection");
+        let stored: ThemePreference =
+            sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("read back theme_preference");
+        assert_eq!(
+            stored,
+            ThemePreference::System,
+            "row must remain default after rejection"
+        );
         // Filter to reverie_theme= specifically — session middleware may
         // emit its own Set-Cookie on authenticated routes, and that's
         // unrelated to the theme-rejection invariant we're testing.
