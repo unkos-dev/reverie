@@ -13,8 +13,8 @@ use crate::auth::backend::OidcCredentials;
 use crate::auth::middleware::{AuthCtx, CurrentUser};
 use crate::auth::oidc;
 use crate::auth::theme_cookie::set_theme_cookie;
-use crate::models::theme_preference::ThemePreference;
 use crate::error::AppError;
+use crate::models::theme_preference::ThemePreference;
 use crate::models::user;
 use crate::state::AppState;
 

@@ -87,5 +87,4 @@ mod tests {
         // Secure set when behind_https=true (direct TLS or HTTPS proxy).
         assert_eq!(cookie.secure(), Some(true));
     }
-
 }

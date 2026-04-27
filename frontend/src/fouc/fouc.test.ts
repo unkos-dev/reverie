@@ -5,14 +5,12 @@
 // because there was no jsdom evaluation of the script body. These tests
 // close that gap.
 
-import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+// `?raw` is Vite's built-in raw-text import — works under Vitest because
+// it shares the Vite resolver. Importing the script body avoids needing
+// node:fs/path/url (and @types/node) in the jsdom test project.
+import FOUC_BODY from "./fouc.js?raw";
 import { THEME_COOKIE_NAME } from "../lib/theme/cookie";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const FOUC_BODY = readFileSync(resolve(HERE, "./fouc.js"), "utf8");
 
 function runFouc(): void {
   // The script is an IIFE; evaluating it in the current jsdom realm via
