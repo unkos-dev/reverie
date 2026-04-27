@@ -1186,6 +1186,13 @@ two) clearly wins. **Record the decision in a short note at the top of
 
 ### Phase D3 — Codify Design System
 
+> [!NOTE]
+> **D3 superseded.** As of 2026-04-26, the D3 phase is canonically described
+> in `.claude/PRPs/plans/design-system-d3.plan.md`, which refreshes the
+> sub-tasks below to align with the brand identity at
+> [unkos-dev/reverie-branding](https://github.com/unkos-dev/reverie-branding).
+> Do not execute the section below as-is; use the superseding plan.
+
 **Skills:** `design-system`, `accessibility`.
 
 **Task D3.1 — Prune D2 exploration artefacts (first action in D3)**
