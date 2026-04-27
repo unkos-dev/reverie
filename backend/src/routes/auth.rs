@@ -268,6 +268,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn patch_theme_returns_401_without_auth() {
+        let server = test_support::test_server();
+        let response = server
+            .patch("/auth/me/theme")
+            .json(&serde_json::json!({"theme_preference": "dark"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+        let theme_cookies: Vec<&str> = response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .filter(|c| c.starts_with("reverie_theme="))
+            .collect();
+        assert!(
+            theme_cookies.is_empty(),
+            "unauthenticated request must not emit a reverie_theme cookie; got: {theme_cookies:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn logout_returns_204_without_session() {
         let server = test_support::test_server();
         let response = server.post("/auth/logout").await;
@@ -317,35 +338,51 @@ mod tests {
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let (user_id, basic) =
-            test_support::db::create_adult_and_basic_auth(&app_pool, "theme-patch-happy").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-        let resp = server
-            .patch("/auth/me/theme")
-            .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"theme_preference": "dark"}))
+        // Cover every allowed value: a typo or column-type bug that
+        // accepted only a subset would otherwise pass undetected.
+        for (label, wire, expected) in [
+            ("light", "light", ThemePreference::Light),
+            ("dark", "dark", ThemePreference::Dark),
+            ("system", "system", ThemePreference::System),
+        ] {
+            let (user_id, basic) = test_support::db::create_adult_and_basic_auth(
+                &app_pool,
+                &format!("theme-patch-happy-{label}"),
+            )
             .await;
-        assert_eq!(resp.status_code(), StatusCode::OK);
 
-        let set_cookie = resp
-            .headers()
-            .get("set-cookie")
-            .expect("set-cookie header missing on PATCH success")
-            .to_str()
-            .expect("set-cookie header not ascii");
-        assert!(
-            set_cookie.starts_with("reverie_theme=dark"),
-            "expected reverie_theme=dark prefix; got: {set_cookie}"
-        );
+            let resp = server
+                .patch("/auth/me/theme")
+                .add_header(AUTHORIZATION, basic)
+                .json(&serde_json::json!({"theme_preference": wire}))
+                .await;
+            assert_eq!(
+                resp.status_code(),
+                StatusCode::OK,
+                "expected 200 for theme_preference={wire}"
+            );
 
-        let stored: ThemePreference =
-            sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
-                .bind(user_id)
-                .fetch_one(&app_pool)
-                .await
-                .expect("read back theme_preference");
-        assert_eq!(stored, ThemePreference::Dark);
+            let set_cookie = resp
+                .headers()
+                .get("set-cookie")
+                .unwrap_or_else(|| panic!("set-cookie header missing on PATCH success ({wire})"))
+                .to_str()
+                .expect("set-cookie header not ascii");
+            assert!(
+                set_cookie.starts_with(&format!("reverie_theme={wire}")),
+                "expected reverie_theme={wire} prefix; got: {set_cookie}"
+            );
+
+            let stored: ThemePreference =
+                sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
+                    .bind(user_id)
+                    .fetch_one(&app_pool)
+                    .await
+                    .expect("read back theme_preference");
+            assert_eq!(stored, expected, "theme_preference={wire}");
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
