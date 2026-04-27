@@ -29,19 +29,19 @@ export function readThemeCookie(): ThemePreference | null {
 //   Path=/            — matches backend
 //   Max-Age=31536000  — matches backend's Duration::days(365)
 //   SameSite=Lax      — matches backend
+//   Secure            — always set. Reverie requires HTTPS for any
+//                       publicly-reachable deployment (see backend
+//                       theme_cookie.rs module header). Browsers accept
+//                       Secure cookies on http://localhost as a secure
+//                       context, so dev still works.
 //   HttpOnly          — intentionally absent on BOTH sides (JS reads for FOUC)
-//   Secure            — conditional on the user-facing protocol. The backend
-//                       gates it on SecurityConfig::behind_https; the
-//                       frontend gates it on location.protocol === 'https:'.
-//                       Both reduce to the same answer the browser sees.
 // Drift is caught by the backend `set_theme_cookie_*` tests plus this
 // module's `cookie.test.ts` attribute assertions.
 export function writeThemeCookie(value: ThemePreference): void {
-  const secure = location.protocol === "https:" ? "; Secure" : "";
   document.cookie =
     `${THEME_COOKIE_NAME}=${value}; ` +
     `Path=/; ` +
     `Max-Age=${ONE_YEAR_SECONDS}; ` +
-    `SameSite=Lax` +
-    secure;
+    `SameSite=Lax; ` +
+    `Secure`;
 }

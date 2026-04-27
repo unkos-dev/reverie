@@ -163,11 +163,7 @@ async fn callback(
 
     // Seed reverie_theme cookie from the freshly-loaded user record so the
     // FOUC script reads the same value on next cold load.
-    let jar = set_theme_cookie(
-        jar,
-        user.theme_preference,
-        state.config.security.behind_https,
-    );
+    let jar = set_theme_cookie(jar, user.theme_preference);
 
     Ok((jar, Redirect::temporary("/")))
 }
@@ -215,11 +211,7 @@ async fn update_theme(
         .execute(&state.pool)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let jar = set_theme_cookie(
-        jar,
-        body.theme_preference,
-        state.config.security.behind_https,
-    );
+    let jar = set_theme_cookie(jar, body.theme_preference);
     Ok((
         jar,
         Json(serde_json::json!({ "theme_preference": body.theme_preference })),

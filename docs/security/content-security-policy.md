@@ -134,12 +134,18 @@ full rationale and the contrast rule: any future *session-state* cookie
 MUST be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the
 explicit counterexample.
 
-Neither cookie sets `Secure` in the default deployment because the
-backend speaks plain HTTP behind a TLS-terminating reverse proxy (matches
-the HSTS configuration story above). Operators running Reverie with
-direct HTTPS termination would typically layer the `Secure` attribute at
-the proxy via `Set-Cookie` rewriting — Reverie itself does not attempt
-to detect TLS state.
+`reverie_theme` is always emitted with `Secure`. Reverie's threat model
+is "multi-user exposed instance," and a publicly-reachable HTTP-only
+deployment in 2026 is a misconfiguration we don't bend the design to
+support. Localhost dev still works because Chrome (≥v89) and Firefox
+treat `http://localhost` as a secure context and accept Secure cookies
+on it. An operator running Reverie behind a public DNS name on plain
+HTTP will see the browser silently reject the cookie — the documented
+signal to put the deployment behind TLS, whether terminated at a proxy
+or directly.
+
+The session cookie (`id`) does not set `Secure` today; that's tracked as
+a follow-up to apply the same treatment.
 
 ## `style-src 'unsafe-inline'` — why it's still there
 

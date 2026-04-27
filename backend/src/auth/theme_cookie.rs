@@ -9,16 +9,17 @@
 //!
 //! Attribute parity: the frontend `writeThemeCookie`
 //! (`frontend/src/lib/theme/cookie.ts`) MUST produce matching attributes
-//! (Path=/, Max-Age=31536000, SameSite=Lax, no HttpOnly). Drift produces
-//! two cookies of the same name with divergent attributes in the browser
-//! jar.
+//! (Path=/, Max-Age=31536000, SameSite=Lax, Secure, no HttpOnly). Drift
+//! produces two cookies of the same name with divergent attributes in
+//! the browser jar.
 //!
-//! Secure is conditional on the deployment context (`SecurityConfig::
-//! behind_https`): when the user-facing connection is HTTPS — whether
-//! TLS-terminated at a reverse proxy or directly at the backend — the
-//! cookie is emitted with Secure. The frontend mirrors this via
-//! `location.protocol === 'https:'`, which converges to the same answer
-//! the browser sees.
+//! Secure is always set. Reverie's threat model is "multi-user exposed
+//! instance"; HTTP-only public deployments are unsupported. Localhost
+//! dev still works because Chrome (≥v89) and Firefox treat
+//! `http://localhost` as a secure context and accept Secure cookies on
+//! it. An operator running HTTP-only behind a public DNS name will see
+//! the cookie silently rejected by the browser — the documented signal
+//! to put the deployment behind TLS.
 
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use time::Duration;
@@ -32,16 +33,15 @@ use crate::models::theme_preference::ThemePreference;
 /// All three MUST agree. Tracked as instance 1 under UNK-105.
 pub const THEME_COOKIE_NAME: &str = "reverie_theme";
 
-pub fn set_theme_cookie(jar: CookieJar, value: ThemePreference, secure: bool) -> CookieJar {
-    let mut builder = Cookie::build((THEME_COOKIE_NAME, value.as_str().to_owned()))
+pub fn set_theme_cookie(jar: CookieJar, value: ThemePreference) -> CookieJar {
+    let cookie = Cookie::build((THEME_COOKIE_NAME, value.as_str().to_owned()))
         .path("/")
         .http_only(false)
+        .secure(true)
         .same_site(SameSite::Lax)
-        .max_age(Duration::days(365));
-    if secure {
-        builder = builder.secure(true);
-    }
-    jar.add(builder.build())
+        .max_age(Duration::days(365))
+        .build();
+    jar.add(cookie)
 }
 
 #[cfg(test)]
@@ -50,8 +50,8 @@ mod tests {
     use axum_extra::extract::cookie::CookieJar;
 
     #[test]
-    fn set_theme_cookie_writes_canonical_attributes_without_secure() {
-        let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Dark, false);
+    fn set_theme_cookie_writes_canonical_attributes() {
+        let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Dark);
 
         // String-compare the literal so a rename of THEME_COOKIE_NAME trips
         // the test and surfaces UNK-105 cross-stack drift before it lands.
@@ -65,26 +65,7 @@ mod tests {
         assert_eq!(cookie.same_site(), Some(SameSite::Lax));
         assert_eq!(cookie.path(), Some("/"));
         assert_eq!(cookie.max_age(), Some(Duration::days(365)));
-        // Secure must be absent when behind_https=false (plain HTTP
-        // dev environment, or HTTP-only homelab without a TLS proxy).
-        assert_eq!(cookie.secure(), None);
-    }
-
-    #[test]
-    fn set_theme_cookie_sets_secure_when_behind_https() {
-        let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Light, true);
-
-        let cookie = jar
-            .get("reverie_theme")
-            .expect("cookie present in returned jar");
-
-        // Other attributes unchanged from the false case.
-        assert_eq!(cookie.value(), "light");
-        assert_eq!(cookie.http_only(), Some(false));
-        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
-        assert_eq!(cookie.path(), Some("/"));
-        assert_eq!(cookie.max_age(), Some(Duration::days(365)));
-        // Secure set when behind_https=true (direct TLS or HTTPS proxy).
+        // Secure is always set — see module-level rationale.
         assert_eq!(cookie.secure(), Some(true));
     }
 }

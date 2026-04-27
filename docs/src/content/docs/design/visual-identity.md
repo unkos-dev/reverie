@@ -147,7 +147,8 @@ The cookie attributes are a parity contract between
 - `Max-Age=31536000` (one year, matches `Duration::days(365)` exactly)
 - `SameSite=Lax`
 - **No** `HttpOnly` (JS must read it before hydration)
-- **No** `Secure` (TLS proxy fronts plain HTTP; matches session cookie)
+- `Secure` (always set — Reverie requires HTTPS in production; localhost
+  is a browser-recognised secure context, so dev still works)
 
 Drift on either side produces two cookies of the same name with
 divergent attributes; FOUC's `document.cookie.split('; ')` then matches

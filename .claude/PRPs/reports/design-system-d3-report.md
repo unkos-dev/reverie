@@ -184,10 +184,10 @@ fix.
 
 | Test File | Tests |
 |---|---|
-| `backend/src/auth/theme_cookie.rs#tests` | `set_theme_cookie_writes_canonical_attributes_without_secure` and `set_theme_cookie_sets_secure_when_behind_https` (cross-stack drift guard + behind_https branching) |
+| `backend/src/auth/theme_cookie.rs#tests` | `set_theme_cookie_writes_canonical_attributes` (cross-stack drift guard, including `Secure`) |
 | `backend/src/models/theme_preference.rs#tests` | `as_str_matches_serde_lowercase`, `json_roundtrip_uses_lowercase_string`, `json_rejects_unknown_variant` (wire-format parity + serde validation gate) |
 | `backend/src/routes/auth.rs#tests` | `me_returns_theme_preference_default`; `patch_theme_returns_401_without_auth`; `patch_theme_updates_user_row` (parametrized over `light` / `dark` / `system`); `patch_theme_rejects_invalid_value` (422 + no row mutation + no `reverie_theme=` Set-Cookie) |
-| `frontend/src/lib/theme/cookie.test.ts` | 9 tests: round-trip, malformed → null, ignores other cookies, attribute parity on http: (no Secure) and on https: (Secure) |
+| `frontend/src/lib/theme/cookie.test.ts` | 8 tests: round-trip, malformed → null, ignores other cookies, attribute parity (`Path=/`, `Max-Age=31536000`, `SameSite=Lax`, `Secure`, NOT `HttpOnly`) |
 | `frontend/src/lib/theme/ThemeProvider.test.tsx` | 8 tests: initial-state matrix (cookie × dataset.theme × matchMedia), 401 → no PATCH, server reconciliation, optimistic update + 422 rollback, matchMedia reactivity |
 | `frontend/src/fouc/fouc.test.ts` | 7 tests: jsdom evaluation of the inline FOUC body — cookie ∈ {dark, light, system + matchMedia, no cookie}, malformed cookie, matchMedia throws → catch warns + defaults to light |
 
@@ -215,14 +215,10 @@ operator surface `docs/security/content-security-policy.md ## Cookies`:
 on logout.** `reverie_theme` is the explicit counterexample.
 
 The cookie attribute string (`Path=/, Max-Age=31536000, SameSite=Lax,
-no HttpOnly`) is pinned by symmetric unit tests on backend
+Secure, no HttpOnly`) is pinned by symmetric unit tests on backend
 (verbatim string asserts on the built `Cookie` struct) and frontend
-(string asserts on the written `document.cookie` input). The `Secure`
-attribute is conditional on user-facing protocol — gated by
-`SecurityConfig::behind_https` on the backend and
-`location.protocol === 'https:'` on the frontend; both stacks have
-tests for the present and absent cases. Drift on either side fails
-the corresponding test in the same PR.
+(string asserts on the written `document.cookie` input). Drift on
+either side fails the corresponding test in the same PR.
 
 ### (b) CSP strengthening — `font-src` drops the CDN
 
@@ -280,9 +276,15 @@ the same branch. The fixes:
   `useTheme` from `next-themes` (which was never wired). Wired through
   the project's `ThemeProvider`, mounted in `main.tsx`, dropped the
   `next-themes` dep.
-- Theme cookie's `Secure` attribute is now conditional on
-  `SecurityConfig::behind_https`. Frontend mirrors via
-  `location.protocol === 'https:'`. Closes the CodeQL high-sev alert.
+- Theme cookie's `Secure` attribute is now always set. Initial fix made
+  it conditional on `SecurityConfig::behind_https`, but CodeQL's
+  data-flow analysis still flagged the false-branch path. Reverie's
+  threat model ("multi-user exposed instance") doesn't endorse
+  publicly-reachable HTTP deployments, and localhost is a
+  browser-recognised secure context, so always-Secure works for dev,
+  HTTPS proxy, and direct-TLS production. Operators running HTTP-only
+  behind a public DNS name see the browser reject the cookie — the
+  documented signal to put the deployment behind TLS.
 - `theme_preference` was promoted from a stringly-typed value to a
   Postgres ENUM + Rust `enum ThemePreference` (with `sqlx::Type` +
   `serde`). The runtime `ALLOWED_THEMES.contains` check is gone — serde
