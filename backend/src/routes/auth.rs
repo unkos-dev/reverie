@@ -147,10 +147,18 @@ async fn callback(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
 
-    // Clean up single-use OIDC flow state from session
-    let _ = auth_session.session.remove::<String>("pkce_verifier").await;
-    let _ = auth_session.session.remove::<String>("csrf_token").await;
-    let _ = auth_session.session.remove::<String>("nonce").await;
+    // Clean up single-use OIDC flow state from session. A failure here
+    // leaves residual OIDC material in the session store but must not abort
+    // the login redirect — the user is already authenticated. Log instead.
+    if let Err(e) = auth_session.session.remove::<String>("pkce_verifier").await {
+        tracing::warn!(error = %e, "failed to remove pkce_verifier from session after OIDC callback");
+    }
+    if let Err(e) = auth_session.session.remove::<String>("csrf_token").await {
+        tracing::warn!(error = %e, "failed to remove csrf_token from session after OIDC callback");
+    }
+    if let Err(e) = auth_session.session.remove::<String>("nonce").await {
+        tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
+    }
 
     // Seed reverie_theme cookie from the freshly-loaded user record so the
     // FOUC script reads the same value on next cold load.
