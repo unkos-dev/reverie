@@ -1,0 +1,35 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "rules": {
+    "at-rule-no-unknown": [
+      true,
+      {
+        "ignoreAtRules": [
+          "theme",
+          "custom-variant",
+          "layer",
+          "utility",
+          "apply",
+          "config",
+          "tailwind",
+          "source",
+          "variant"
+        ]
+      }
+    ],
+    "color-no-hex": true,
+    "import-notation": null,
+    "value-keyword-case": null,
+    "comment-empty-line-before": null,
+    "no-empty-source": null,
+    "selector-class-pattern": null
+  },
+  "overrides": [
+    {
+      "files": ["src/styles/themes/**/*.css", "src/styles/fonts.css"],
+      "rules": {
+        "color-no-hex": null
+      }
+    }
+  ]
+}

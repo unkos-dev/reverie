@@ -146,9 +146,11 @@ jobs:
         run: npm test
 
       - name: Stylelint
-        # Non-blocking in D0 (no .stylelintrc.json yet). D3 task D3.14
-        # creates the config and tightens this to a hard gate.
-        run: npx stylelint 'src/**/*.css' --max-warnings 0 || true
+        run: npx stylelint 'src/**/*.css' --max-warnings 0
+
+      - name: Verify font integrity
+        working-directory: frontend/public/fonts/fontshare/files
+        run: sha256sum -c SHA256SUMS
 
       - name: Build
         run: npm run build

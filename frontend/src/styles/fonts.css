@@ -1,0 +1,60 @@
+/**
+ * Self-hosted variable woff2 @font-face declarations for the
+ * canonical type stack. Files live at
+ * `frontend/public/fonts/fontshare/files/`; SHA256SUMS in the same
+ * directory pins integrity. URL paths are absolute (`/fonts/...`)
+ * because Vite serves `public/` at the root in both dev and prod.
+ *
+ * - Author Variable — display (Lockup, headings, hero copy).
+ * - Satoshi Variable — body, chrome, UI labels.
+ * - JetBrains Mono Regular — code/mono surfaces; usage conditional
+ *   pending UNK-113 review post-0.1.0.
+ *
+ * font-display: swap so the system fallback paints first and the
+ * webfont swaps in when ready, avoiding FOIT on slow connections.
+ *
+ * FFL clause-02 acceptance is documented in
+ * `frontend/public/fonts/fontshare/README.md` — self-hosting these
+ * files in the public repo formally violates the Fontshare Free
+ * EULA. Accepted in exchange for Chromium ORB compatibility on
+ * cookie-bearing CDN responses and a `font-src 'self'` CSP.
+ */
+@font-face {
+  font-family: "Author Variable";
+  src: url("/fonts/fontshare/files/Author-Variable.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Author Variable";
+  src: url("/fonts/fontshare/files/Author-VariableItalic.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi Variable";
+  src: url("/fonts/fontshare/files/Satoshi-Variable.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi Variable";
+  src: url("/fonts/fontshare/files/Satoshi-VariableItalic.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/fontshare/files/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

@@ -37,7 +37,7 @@ ingestion_jobs     (standalone)
 
 | Table | Purpose | Key Columns |
 |---|---|---|
-| `users` | User accounts (OIDC) | `oidc_subject`, `role`, `is_child` |
+| `users` | User accounts (OIDC) | `oidc_subject`, `role`, `is_child`, `theme_preference` |
 | `works` | Abstract titles | `title`, `sort_title`, `search_vector` |
 | `authors` | Author/contributor records | `name`, `sort_name` |
 | `work_authors` | Work-Author join (M:N) | `work_id`, `author_id`, `role`, `position` |

@@ -21,8 +21,8 @@ update it there first, then sync the affected ship files into this directory.
 | ----------------------------------- | ---------------------------------------------- |
 | `glyph/slot.svg`                    | Canonical mark — used in app chrome.           |
 | `glyph/slot-favicon.svg`            | Thicker-slot variant for sub-24px raster.      |
-| `lockup/lockup-on-dark.svg`         | Inline lockup on dark surfaces.                |
-| `lockup/lockup-on-light.svg`        | Inline lockup on light surfaces.               |
+| `lockup/lockup-on-dark.svg`         | Static lockup asset (e.g. share cards, README). The runtime lockup is rendered by `frontend/src/components/Lockup.tsx`. |
+| `lockup/lockup-on-light.svg`        | Static lockup asset (light variant). See `Lockup.tsx` note above. |
 | `raster/favicon-16.png`             | Browser-tab favicon, legacy fallback.          |
 | `raster/favicon-32.png`             | Browser-tab favicon, high-DPI.                 |
 | `raster/favicon-48.png`             | Windows shortcut icon.                         |

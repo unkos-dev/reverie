@@ -25,7 +25,18 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Path aliases for shadcn imports (@/* → src/*). `baseUrl` is
+       still required as the anchor for the path mapping; the TS 7.0
+       deprecation note is suppressed via `ignoreDeprecations` per
+       the official migration guidance. Vite's resolve.alias in
+       vite.config.ts mirrors this for runtime resolution. */
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src"]
 }

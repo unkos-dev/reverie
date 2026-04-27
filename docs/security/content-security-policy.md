@@ -91,36 +91,61 @@ absolute `http(s)://` URL.
 | HTML CSP          | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket    | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'`    |
 | API CSP           | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` |
 | HSTS              | Off                                                | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
+| `font-src` policy | `'self'` (matches prod)                            | `'self'` (declared in `csp.rs::build_html_csp`)            |
 | index.html source | Vite dev server, transformed with plugin markers   | Pre-built `dist/index.html` served by the backend          |
 
 **Dev relaxations do not ship to prod.** `'unsafe-inline' 'unsafe-eval'` in
 dev are declared in `frontend/vite.config.ts` `server.headers` and apply
 only when running `npm run dev`.
 
-## `font-src` — Fontshare CDN allowlist
+### Fonts
 
-The HTML CSP allows fonts from `cdn.fontshare.com` in addition to `'self'`:
+Reverie self-hosts variable woff2 fonts at
+`frontend/public/fonts/fontshare/files/`; the `font-src 'self'` directive
+is sufficient for the default deployment. Operators who need fonts from
+a CDN (e.g., Google Fonts, custom asset host) must edit
+`backend/src/security/csp.rs::build_html_csp` to allowlist the required
+origin(s) and rebuild. No runtime configuration knob exists for this —
+the policy is intentionally code-declared so every deployment has an
+identical, auditable font policy out of the box.
 
-```
-font-src 'self' https://cdn.fontshare.com
-```
+The canonical theme tree (`frontend/src/styles/themes/`,
+`frontend/src/styles/fonts.css`) declares Author + Satoshi as variable
+woff2 from Fontshare and JetBrains Mono Regular. Author and Satoshi
+italics are pulled from Fontshare's per-font download endpoint (the
+public weight CSS API does not expose italic variable axes). FFL
+clause-02 acceptance is documented in
+`frontend/public/fonts/fontshare/README.md`.
 
-Reverie's brand identity uses two Fontshare typefaces (Author and Satoshi).
-The Fontshare Free License prohibits self-hosting on a public server, so
-the woff2 files are loaded from Fontshare's CDN at runtime. We author the
-`@font-face` block ourselves (`frontend/src/design/explore/midnight-gold/fontshare.css`)
-to bypass Fontshare's CSS API — the API sets a cookie that trips Chromium's
-Opaque Response Blocking; the woff2 URLs themselves are cookie-free and
-CORS-permissive.
+## Cookies
 
-**Operator implication:** fully air-gapped deployments will not load the
-brand fonts. The browser falls back to the system stack defined in the
-font-family rule (Inter, ui-sans-serif, system-ui, ...). Visually it
-degrades but the application is fully functional. A paid Fontshare licence
-permitting self-hosting is the supported path for offline installs; see
-`frontend/public/fonts/fontshare/README.md` for the rationale and the
-CDN URL re-discovery procedure (used when Fontshare rotates the CDN
-paths).
+Reverie sets two cookies on authenticated browsers:
+
+| Name            | HttpOnly | Max-Age     | Path | SameSite | Purpose                                    | Lifecycle                                          |
+| --------------- | -------- | ----------- | ---- | -------- | ------------------------------------------ | -------------------------------------------------- |
+| `id`            | **Yes**  | Session     | `/`  | `Lax`    | tower-sessions session cookie (auth state) | Cleared on logout; short-lived                     |
+| `reverie_theme` | **No**   | 365 days    | `/`  | `Lax`    | Dark/Light/System preference for FOUC      | Survives logout by design (device state, not PII)  |
+
+`reverie_theme` is intentionally not `HttpOnly` because JavaScript must
+read it synchronously before React hydrates to avoid a theme flicker. It
+carries no PII — only the literal string `system`, `light`, or `dark`.
+See `docs/design/visual-identity.md` § Theme Cookie Lifecycle for the
+full rationale and the contrast rule: any future *session-state* cookie
+MUST be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the
+explicit counterexample.
+
+`reverie_theme` is always emitted with `Secure`. Reverie's threat model
+is "multi-user exposed instance," and a publicly-reachable HTTP-only
+deployment in 2026 is a misconfiguration we don't bend the design to
+support. Localhost dev still works because Chrome (≥v89) and Firefox
+treat `http://localhost` as a secure context and accept Secure cookies
+on it. An operator running Reverie behind a public DNS name on plain
+HTTP will see the browser silently reject the cookie — the documented
+signal to put the deployment behind TLS, whether terminated at a proxy
+or directly.
+
+The session cookie (`id`) does not set `Secure` today; that's tracked as
+a follow-up to apply the same treatment.
 
 ## `style-src 'unsafe-inline'` — why it's still there
 

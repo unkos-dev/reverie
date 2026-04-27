@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -13,11 +14,38 @@ const DEV_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173",
   "img-src 'self' data:",
-  "font-src 'self' https://cdn.fontshare.com",
+  "font-src 'self'",
 ].join("; ");
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), cspHashPlugin()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Route the dev-only design tree into its own chunk. main.tsx gates
+        // the import behind `if (import.meta.env.DEV)`; in production
+        // `import.meta.env.DEV` is replaced with literal `false`, the
+        // dynamic-import branch becomes dead code, Vite tree-shakes the
+        // chunk, and no `design-*.js` is emitted into `dist/assets/`.
+        // Substring-grepping the minified output is unreliable (Vite
+        // mangles names); the Level 4 gate in the plan checks for the
+        // chunk file's structural absence instead.
+        manualChunks(id) {
+          if (
+            id.includes("/src/routes/design") ||
+            id.includes("/src/pages/design/")
+          ) {
+            return "design";
+          }
+        },
+      },
+    },
+  },
   server: {
     headers: {
       "Content-Security-Policy": DEV_CSP,
