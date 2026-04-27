@@ -32,7 +32,6 @@ impl Role {
     /// Wire string for the JSON value and any other place that needs the
     /// canonical lowercase form. Matches the `#[serde(rename_all)]` and
     /// `#[sqlx(rename_all)]` mappings.
-    #[allow(dead_code)] // Anchors wire-format invariant; consumers will land with admin UI work.
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Admin => "admin",
