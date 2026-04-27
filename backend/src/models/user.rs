@@ -5,7 +5,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 const USER_COLUMNS: &str = "id, oidc_subject, display_name, email, role::text, is_child, \
-                            created_at, updated_at, session_version";
+                            created_at, updated_at, session_version, theme_preference";
 
 /// Raw row from the database. Use `User::from` to get the public type.
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -19,6 +19,7 @@ struct UserRow {
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
     session_version: i32,
+    theme_preference: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +33,7 @@ pub struct User {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub session_version: i32,
+    pub theme_preference: String,
     #[serde(skip)]
     session_version_bytes: Vec<u8>,
 }
@@ -49,6 +51,7 @@ impl From<UserRow> for User {
             created_at: row.created_at,
             updated_at: row.updated_at,
             session_version: row.session_version,
+            theme_preference: row.theme_preference,
             session_version_bytes,
         }
     }

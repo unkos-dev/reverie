@@ -1,7 +1,8 @@
 use axum::extract::State;
 use axum::response::{IntoResponse, Redirect};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use axum_extra::extract::cookie::CookieJar;
 use openidconnect::core::CoreResponseType;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, CsrfToken, Nonce, PkceCodeChallenge, PkceCodeVerifier,
@@ -11,6 +12,7 @@ use openidconnect::{
 use crate::auth::backend::OidcCredentials;
 use crate::auth::middleware::{AuthCtx, CurrentUser};
 use crate::auth::oidc;
+use crate::auth::theme_cookie::{ALLOWED_THEMES, set_theme_cookie};
 use crate::error::AppError;
 use crate::models::user;
 use crate::state::AppState;
@@ -21,6 +23,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/callback", get(callback))
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
+        .route("/auth/me/theme", patch(update_theme))
 }
 
 #[derive(serde::Deserialize)]
@@ -68,8 +71,9 @@ async fn login(
 async fn callback(
     State(state): State<AppState>,
     mut auth_session: AuthCtx,
+    jar: CookieJar,
     axum::extract::Query(params): axum::extract::Query<CallbackParams>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<(CookieJar, Redirect), AppError> {
     let session = &auth_session.session;
 
     // Validate CSRF token
@@ -148,7 +152,11 @@ async fn callback(
     let _ = auth_session.session.remove::<String>("csrf_token").await;
     let _ = auth_session.session.remove::<String>("nonce").await;
 
-    Ok(Redirect::temporary("/"))
+    // Seed reverie_theme cookie from the freshly-loaded user record so the
+    // FOUC script reads the same value on next cold load.
+    let jar = set_theme_cookie(jar, &user.theme_preference);
+
+    Ok((jar, Redirect::temporary("/")))
 }
 
 async fn logout(mut auth_session: AuthCtx) -> Result<impl IntoResponse, AppError> {
@@ -173,7 +181,35 @@ async fn me(
         "email": u.email,
         "role": u.role,
         "is_child": u.is_child,
+        "theme_preference": u.theme_preference,
     })))
+}
+
+#[derive(serde::Deserialize)]
+struct UpdateThemeRequest {
+    theme_preference: String,
+}
+
+async fn update_theme(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(body): Json<UpdateThemeRequest>,
+) -> Result<(CookieJar, Json<serde_json::Value>), AppError> {
+    if !ALLOWED_THEMES.contains(&body.theme_preference.as_str()) {
+        return Err(AppError::Validation("invalid theme_preference".into()));
+    }
+    sqlx::query("UPDATE users SET theme_preference = $1, updated_at = now() WHERE id = $2")
+        .bind(&body.theme_preference)
+        .bind(current_user.user_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let jar = set_theme_cookie(jar, &body.theme_preference);
+    Ok((
+        jar,
+        Json(serde_json::json!({ "theme_preference": body.theme_preference })),
+    ))
 }
 
 #[cfg(test)]
@@ -234,5 +270,94 @@ mod tests {
             .add_query_param("state", "fake-state")
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn me_returns_theme_preference_default(pool: sqlx::PgPool) {
+        use axum::http::header::AUTHORIZATION;
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "theme-me-default").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server.get("/auth/me").add_header(AUTHORIZATION, basic).await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+
+        let body: serde_json::Value = resp.json();
+        assert_eq!(
+            body.get("theme_preference").and_then(|v| v.as_str()),
+            Some("system"),
+            "default theme_preference must be 'system' (matches migration default)"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_theme_updates_user_row(pool: sqlx::PgPool) {
+        use axum::http::header::AUTHORIZATION;
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "theme-patch-happy").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .patch("/auth/me/theme")
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"theme_preference": "dark"}))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+
+        let set_cookie = resp
+            .headers()
+            .get("set-cookie")
+            .expect("set-cookie header missing on PATCH success")
+            .to_str()
+            .expect("set-cookie header not ascii");
+        assert!(
+            set_cookie.starts_with("reverie_theme=dark"),
+            "expected reverie_theme=dark prefix; got: {set_cookie}"
+        );
+
+        let stored: String =
+            sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("read back theme_preference");
+        assert_eq!(stored, "dark");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_theme_rejects_invalid_value(pool: sqlx::PgPool) {
+        use axum::http::header::AUTHORIZATION;
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "theme-patch-invalid").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .patch("/auth/me/theme")
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"theme_preference": "purple"}))
+            .await;
+        // AppError::Validation maps to 422 (NOT 400) — see backend/src/error.rs.
+        assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let stored: String =
+            sqlx::query_scalar("SELECT theme_preference FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("read back theme_preference");
+        assert_eq!(stored, "system", "row must remain default after rejection");
+        assert!(
+            resp.headers().get("set-cookie").is_none(),
+            "rejected request must not emit Set-Cookie"
+        );
     }
 }
