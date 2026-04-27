@@ -100,17 +100,6 @@
   `styles/themes/index.css`, so stock primitives render brand-aligned
   without per-file rewrites.
 
-  **CLI-output exemption.** Files generated under `src/components/ui/` by
-  `npx shadcn@latest add` are exempt from the project bans on
-  `import * as React` (wildcard imports), `as React.CSSProperties`-style
-  casts on inline-style literals, and the inline-style-object rule. The
-  exemption is scoped strictly to that directory and to the shape of the
-  CLI output — a project-edited file there (e.g. `sonner.tsx` rewired to
-  the in-house `ThemeProvider`) keeps the CLI's casts and wildcard imports
-  intact rather than becoming a partial rewrite. Anything beyond the CLI's
-  default shape (new logic, custom helpers, additional types) follows the
-  normal rules.
-
 ## Testing & tooling
 
 - Vitest + React Testing Library. Test behaviour, not implementation.
