@@ -35,6 +35,14 @@ Run migrations as the schema owner:
   parallel thanks to database isolation; no manual fixture cleanup is required.
   `DATABASE_URL` must point at the schema owner so `sqlx::test` can create
   per-test databases (locally: `postgres://reverie:reverie@localhost:5433/reverie_dev`).
+- **OIDC integration tests use `crate::test_support::oidc_mock`.** Spins up
+  a `wiremock` server with `/jwks` + `/token` endpoints, generates a
+  per-test 2048-bit RSA keypair, and exposes an `OidcClient` with the
+  JWKS embedded so `id_token_verifier` does not need network IO. Tests
+  needing the OIDC `nonce` set in the session by `/auth/login` build the
+  router via `crate::build_router_with_session_store(state, auth_backend, store)`
+  with a shared `tower_sessions::MemoryStore` so the test can read it
+  back before driving `/auth/callback`.
 - **Logging:** Use `tracing` with structured fields. Never `println!` or `eprintln!`.
 - **Formatting:** `cargo fmt` is enforced by CI. Do not fight the formatter.
 - **Linting:** `cargo clippy -- -D warnings` is enforced by CI. Fix warnings, don't
@@ -80,10 +88,14 @@ routes get `default-src 'none'`.
   `dist_validation.rs` startup check, `headers.rs` middleware + composite
   fallback).
 - Wiring: `backend/src/main.rs` precomputes the CSP strings on
-  `SecurityConfig` at startup; `build_router` applies per-router
-  `.layer(api_csp_layer)` / `.layer(html_csp_layer)` plus an outermost
-  `security_headers` uniform middleware; the single composite
+  `SecurityConfig` at startup; `build_router_with_session_store` applies
+  per-router `.layer(api_csp_layer)` / `.layer(html_csp_layer)` plus an
+  outermost `security_headers` uniform middleware; the single composite
   `.fallback(composite_fallback)` manually attaches CSP to unmatched paths.
+  `build_router` is a thin wrapper that calls
+  `build_router_with_session_store` with `MemoryStore::default()` for
+  production; tests pass their own store to share session state with the
+  harness (see Testing in `## Conventions`).
 - Operator surface: `docs/security/content-security-policy.md`.
 - Tests: `backend/src/security/**/tests` are co-located; integration tests
   in `security::headers::tests` use `test_server_with_security()` to inject
