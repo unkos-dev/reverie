@@ -30,10 +30,10 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
 /// Same as [`build_router`] but with a caller-provided session store.
 ///
 /// Used by integration tests to share a `MemoryStore` between the test
-/// harness and the running server, so the test can inspect (or pre-seed)
-/// session state — e.g. read a server-generated `nonce` to mint a matching
-/// ID token in the OIDC callback test.
-pub fn build_router_with_session_store<S>(
+/// harness and the running server, so the test can read server-written
+/// session state — e.g. the OIDC `nonce` set by `/auth/login` that the
+/// callback test needs to embed in a matching mock-issued ID token.
+pub(crate) fn build_router_with_session_store<S>(
     state: AppState,
     auth_backend: AuthBackend,
     session_store: S,

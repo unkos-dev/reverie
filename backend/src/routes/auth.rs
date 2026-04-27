@@ -521,6 +521,17 @@ mod tests {
             "/",
         );
 
+        // Session-fixation defence: axum-login's login() must rotate the
+        // session id, so the cookie value after callback differs from the
+        // one issued by /auth/login. A regression where login() stops
+        // cycling would let a pre-auth attacker plant a session id that
+        // becomes authenticated post-login.
+        let new_session_value = cb_resp.cookie("id").value().to_string();
+        assert_ne!(
+            new_session_value, session_cookie_value,
+            "session id must rotate across login() to prevent fixation"
+        );
+
         // Step 5: callback emits a `reverie_theme` cookie reflecting the
         // upserted user's default ThemePreference::System.
         let theme_cookie = cb_resp

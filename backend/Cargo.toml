@@ -46,6 +46,12 @@ zip = "8"
 
 [dev-dependencies]
 axum-test = "20"
+# chrono: backend/CLAUDE.md mandates the `time` crate over `chrono` in
+# production code. Documented dev-only exception: openidconnect 4.x's
+# CoreIdTokenClaims::new signature accepts `chrono::DateTime<Utc>` for
+# `exp` / `iat`, with no `time`-crate alternative. Confined to test
+# scaffolding under `#[cfg(test)]` and dev-deps; production code path
+# in `src/auth/oidc.rs` uses no chrono.
 chrono = "0.4"
 rand_core_06 = { package = "rand_core", version = "0.6", features = ["std", "getrandom"] }
 rsa = { version = "0.9", features = ["pem"] }
