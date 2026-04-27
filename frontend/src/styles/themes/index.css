@@ -1,0 +1,144 @@
+/**
+ * Reverie canonical theme tree.
+ *
+ * Token names and palette values are sourced from the brand identity at
+ * https://github.com/unkos-dev/reverie-branding/blob/main/identity.md (§4)
+ * and the philosophy spec §10 (`plans/2026-04-25-design-system-philosophy-design.md`,
+ * gitignored). State-color tokens (`--color-success`, `--color-warning`,
+ * `--color-danger`, `--color-info`) are deliberately absent — see
+ * philosophy §11A: state communicates through typography weight, surface
+ * opacity, motion, and the gold accent, not hue.
+ *
+ * Self-hosted variable woff2 `@font-face` blocks live in
+ * `frontend/src/styles/fonts.css` (created in D3.16) and are imported
+ * alongside this file from `frontend/src/index.css`. Between the time
+ * this file lands and D3.16 lands, the font-family declarations below
+ * fall through to `system-ui`; that is the intentional intermediate
+ * state.
+ */
+@import "tailwindcss";
+
+/* Teach Tailwind that the `dark:` variant activates when [data-theme="dark"]
+   is on an ancestor (or the element itself). Required because Tailwind v4's
+   default dark-mode detection is media-query based; we want [data-theme]-driven
+   so the FOUC script can flip the theme synchronously before hydration. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Tokens that generate utilities (bg-canvas, text-fg, border-border, etc.).
+   `inline` keyword is what allows tokens to reference runtime var(--…) values. */
+@theme inline {
+  --color-canvas:        var(--canvas);
+  --color-canvas-2:      var(--canvas-2);
+  --color-surface:       var(--surface);
+  --color-surface-2:     var(--surface-2);
+  --color-border:        var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg:            var(--fg);
+  --color-fg-muted:      var(--fg-muted);
+  --color-fg-faint:      var(--fg-faint);
+  --color-accent:        var(--accent);
+  --color-accent-soft:   var(--accent-soft);
+  --color-accent-strong: var(--accent-strong);
+  --color-fg-on-accent:  var(--fg-on-accent);
+
+  /* Typography — Satoshi for body/chrome, Author for display, JetBrains
+     Mono is loaded but conditional (UNK-113 reviews adoption post-0.1.0). */
+  --font-display: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body:    "Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radius scaffolding — sourced from D2 outcomes; brand-neutral. */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* shadcn-compatibility alias layer — rebinds shadcn's expected token
+     names onto the canonical brand palette so stock primitives in
+     components/ui/* render brand-aligned without per-file rewrites.
+     New code should prefer the canonical --color-canvas/--color-fg/etc.
+     names; this layer exists so the shadcn registry primitives we
+     install (button, card, dropdown-menu, etc.) drop in without
+     visual drift to the default neutral-grey palette.
+
+     Destructive tokens deliberately alias to fg/border so banned
+     hue-coded state expression (red error) collapses into the
+     §11A no-hue mapping (font-semibold + gold recovery action).
+     The aliases keep the utilities renderable so primitives compile;
+     the actual error-state UX is enforced at the surface level. */
+  --color-background:           var(--canvas);
+  --color-foreground:           var(--fg);
+  --color-card:                 var(--surface);
+  --color-card-foreground:      var(--fg);
+  --color-popover:              var(--surface);
+  --color-popover-foreground:   var(--fg);
+  --color-primary:              var(--accent);
+  --color-primary-foreground:   var(--fg-on-accent);
+  --color-secondary:            var(--surface-2);
+  --color-secondary-foreground: var(--fg);
+  --color-muted:                var(--surface);
+  --color-muted-foreground:     var(--fg-muted);
+  --color-accent-foreground:    var(--fg-on-accent);
+  --color-input:                var(--border);
+  --color-ring:                 var(--accent);
+  --color-destructive:          var(--fg);
+  --color-destructive-foreground: var(--fg-on-accent);
+
+  /* Motion tokens — philosophy §8 timing budget (interaction motion 200–300ms;
+     page transitions ≤300ms). Theme transition is a longer 300ms because it
+     touches the entire surface. */
+  --duration-fast:   180ms;
+  --duration-base:   240ms;
+  --duration-slow:   320ms;
+  --duration-theme:  300ms;
+  --ease-standard:   cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-emphasised: cubic-bezier(0.16, 0.78, 0.30, 1);
+}
+
+/* Default + explicit Light theme (Parchment).
+   Runtime values live on regular selectors, NOT inside @theme (which can't
+   be nested per Tailwind v4 docs). */
+:root,
+[data-theme="light"] {
+  --canvas:        #E8DCC2; /* Parchment */
+  --canvas-2:      #DFD2B4;
+  --surface:       #F0E6CF;
+  --surface-2:     #E5D8BC;
+  --border:        #C7B894;
+  --border-strong: #B0A07C;
+  --fg:            #0E0D0A; /* Ink */
+  --fg-muted:      #5A5244;
+  --fg-faint:      #8A8170;
+  /* Reverie Gold #C9A961 darkened for Light theme. Sourced from philosophy
+     spec §10, not identity.md (which only locks #C9A961). Passes 1.4.11
+     (UI 3:1) + 1.4.3 large-text on Parchment; does NOT pass normal-text
+     4.5:1 — restrict to focus rings, large CTAs, recovery actions. */
+  --accent:        #8E6F38;
+  --accent-soft:   #DCC890;
+  --accent-strong: #6E5424;
+  --fg-on-accent:  #E8DCC2; /* Parchment */
+}
+
+/* Dark theme — Ink-leaning canvas + warm surfaces + Reverie Gold accent. */
+[data-theme="dark"] {
+  --canvas:        #14120E;
+  --canvas-2:      #1A1812;
+  --surface:       #221F18;
+  --surface-2:     #2A261D;
+  --border:        #2E2A22;
+  --border-strong: #3A3528;
+  --fg:            #E8E0D0; /* Cream */
+  --fg-muted:      #A8A090;
+  --fg-faint:      #6E6858;
+  --accent:        #C9A961; /* Reverie Gold */
+  --accent-soft:   #4A3C24;
+  --accent-strong: #D4B070;
+  --fg-on-accent:  #0E0D0A; /* Ink */
+}
+
+/* Loading-pulse keyframe — philosophy §11A loading-state expression.
+   Loading state communicates via opacity pulse on the loading region,
+   not a separate `--color-loading` token. */
+@keyframes loading-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.85; }
+}

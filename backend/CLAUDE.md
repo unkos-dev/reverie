@@ -123,6 +123,7 @@ backend/
 │   │   ├── basic_only.rs # BasicOnly extractor (OPDS Basic-only auth)
 │   │   ├── middleware.rs # CurrentUser extractor (session + Basic auth)
 │   │   ├── oidc.rs      # OIDC client init and discovery
+│   │   ├── theme_cookie.rs # FOUC theme cookie (set_theme_cookie, attribute parity)
 │   │   └── token.rs     # Device token generation and sha256 constant-time verification
 │   ├── routes/          # Axum route handlers, grouped by domain
 │   ├── models/          # Database models and queries

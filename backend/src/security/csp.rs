@@ -27,7 +27,7 @@ pub fn build_html_csp(script_src_hashes: &[String], report_endpoint: Option<&url
     out.push_str(&script_src);
     out.push_str("; style-src 'self' 'unsafe-inline'");
     out.push_str("; img-src 'self' data:");
-    out.push_str("; font-src 'self' https://cdn.fontshare.com");
+    out.push_str("; font-src 'self'");
     out.push_str("; connect-src 'self'");
     out.push_str("; frame-ancestors 'none'");
     out.push_str("; base-uri 'self'");
@@ -77,7 +77,7 @@ mod tests {
             got,
             "default-src 'self'; script-src 'self' 'sha256-ABCD'; \
              style-src 'self' 'unsafe-inline'; img-src 'self' data:; \
-             font-src 'self' https://cdn.fontshare.com; connect-src 'self'; \
+             font-src 'self'; connect-src 'self'; \
              frame-ancestors 'none'; base-uri 'self'; form-action 'self'; \
              object-src 'none'; upgrade-insecure-requests"
                 .replace("             ", "")

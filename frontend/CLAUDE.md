@@ -84,12 +84,21 @@
 ## Styling
 
 - Tailwind CSS (v4) utility classes. Tailwind is configured via
-  `@tailwindcss/vite` in `vite.config.ts`. Canonical design tokens are
-  codified in D3 — until then, the D2 explore tree carries
-  direction-specific tokens under `src/design/explore/*/tokens.css`.
-  Never use arbitrary hex values; reuse a token.
+  `@tailwindcss/vite` in `vite.config.ts`. Canonical design tokens
+  live in `src/styles/themes/index.css` (`@theme inline` declarations
+  exposing `--color-canvas`, `--color-fg`, `--color-accent`, etc.) and
+  the matching palette overrides in `:root` / `[data-theme="dark"]`.
+  Self-hosted variable woff2 fonts at
+  `public/fonts/fontshare/files/` (Author + Satoshi + JetBrains Mono).
+  Never use arbitrary hex values — reuse a token. The Lockup component
+  is the documented exemption (philosophy §11C invariant; must render
+  correctly even before the theme tree resolves).
 - **shadcn/ui:** components added via CLI (`npx shadcn@latest add <component>`).
-  Do not manually create shadcn components.
+  Do not manually create shadcn components. The shadcn-namespace CSS
+  variables (`--color-background`, `--color-card`, `--color-primary`,
+  etc.) are aliased onto the canonical brand palette in
+  `styles/themes/index.css`, so stock primitives render brand-aligned
+  without per-file rewrites.
 
 ## Testing & tooling
 
