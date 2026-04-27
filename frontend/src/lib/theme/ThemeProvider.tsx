@@ -76,7 +76,7 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
-  const initial = useMemo(deriveInitialState, []);
+  const initial = useMemo(() => deriveInitialState(), []);
   const [preference, setPreferenceState] = useState<ThemePreference>(
     initial.preference,
   );
@@ -84,6 +84,9 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
     initial.effective,
   );
   const channelRef = useRef<BroadcastChannel | null>(null);
+  // Captures preference at mount so the reconcile effect can compare
+  // server vs. mount-time without re-firing on every preference change.
+  const mountPreferenceRef = useRef<ThemePreference>(initial.preference);
 
   // System-preference media query: keep `effective` in sync when the user
   // chose `system` and the OS toggles light/dark mid-session.
@@ -105,15 +108,19 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
 
   // Reconcile with the server on mount. Logged-out visitors (401) stay on
   // the cookie-derived preference; transient errors are ignored (the
-  // existing cookie is the authoritative fallback).
+  // existing cookie is the authoritative fallback). Effect runs once
+  // (empty deps); the comparison uses mountPreferenceRef so later
+  // preference changes — which already flow through setPreference and
+  // BroadcastChannel — don't re-fire the reconcile.
   useEffect(() => {
+    const mountPreference = mountPreferenceRef.current;
     const controller = new AbortController();
     const reconcile = async (): Promise<void> => {
       try {
         const result = await fetchMe(controller.signal);
         if (controller.signal.aborted) return;
         if (result.kind !== "ok") return;
-        if (result.theme_preference === preference) return;
+        if (result.theme_preference === mountPreference) return;
         const serverPref = result.theme_preference;
         const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
         const nextEffective = resolveEffective(serverPref, systemDark);
@@ -135,10 +142,6 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
     };
     void reconcile();
     return () => controller.abort();
-    // The mount-time preference is used only for the initial divergence
-    // check; later updates flow through setPreference and broadcast,
-    // so re-reconciling on every change is unnecessary.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Cross-tab sync: receive remote changes without re-PATCHing.

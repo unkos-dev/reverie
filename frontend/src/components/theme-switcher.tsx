@@ -30,7 +30,10 @@ export function ThemeSwitcher(): ReactElement {
         <DropdownMenuRadioGroup
           value={preference}
           onValueChange={(value) => {
-            void setPreference(value as ThemePreference);
+            // Narrow via OPTIONS (the closed source of values the radio
+            // group can emit) instead of an `as` assertion.
+            const opt = OPTIONS.find((o) => o.value === value);
+            if (opt) void setPreference(opt.value);
           }}
         >
           {OPTIONS.map((opt) => (

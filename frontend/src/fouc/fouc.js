@@ -33,5 +33,11 @@
     document.documentElement.dataset.theme = effective;
   } catch (e) {
     document.documentElement.dataset.theme = 'light';
+    // Surface the failure so a regression in this hashed inline script
+    // (e.g. d29a7cc which fixed a </'+'script literal that the catch
+    // would otherwise have hidden) leaves a breadcrumb for debugging.
+    if (window.console && window.console.warn) {
+      window.console.warn('[reverie] FOUC theme resolution failed; defaulting to light', e);
+    }
   }
 })();
