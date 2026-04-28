@@ -1,0 +1,63 @@
+# Excludes for the graphify knowledge graph.
+# Same syntax as .gitignore. Anything matched here is skipped during extraction.
+
+# Build artefacts
+target/
+dist/
+node_modules/
+.vite/
+.next/
+build/
+docs/.astro/
+docs/dist/
+.svelte-kit/
+
+# Coverage / test output
+coverage/
+*.lcov
+
+# Agent instructions — these describe how agents should behave, not the system
+CLAUDE.md
+**/CLAUDE.md
+AGENTS.md
+GEMINI.md
+SDL.md
+
+# Planning artefacts — transient, not architectural ground truth
+.claude/PRPs/
+plans/
+
+# Reverse migrations — redundant with up.sql for schema understanding
+**/*.down.sql
+
+# Lock files (dependency pins, not architecture)
+Cargo.lock
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# graphify itself
+graphify-out/
+.graphifyignore
+
+# Untracked design-system mockups in repo root (not committed; scratch only)
+d2-*.png
+d2-*.svg
+*.tmp.png
+*.tmp.svg
+
+# Brand assets and favicons (icons, not architecture)
+frontend/public/brand/
+frontend/public/icons.svg
+docs/public/
+docs/src/assets/
+
+# Test fixtures and sample data
+**/fixtures/
+**/__fixtures__/
+**/test-data/
+dev/seed-library/
+
+# Large generated reports and PRP archives (transient artefacts)
+.claude/PRPs/reports/
+.claude/PRPs/reviews/

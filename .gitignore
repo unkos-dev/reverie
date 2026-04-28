@@ -48,3 +48,14 @@ backend/tests/fixtures/library/
 # Playwright MCP scratch (snapshots, console logs) + agent screenshot scratch
 .playwright-mcp/
 d2-*.png
+
+# graphify — commit graph.json + graph.html + GRAPH_REPORT.md so teammates
+# (and fresh agent sessions) get the knowledge graph immediately on clone.
+# Skip the extraction cache (regenerable, ~3MB), pipeline transients
+# (.graphify_*.json), and local-only artefacts (manifest.json mtime cache,
+# cost.json token tracking, machine-specific Python path).
+graphify-out/cache/
+graphify-out/memory/
+graphify-out/.graphify_*
+graphify-out/manifest.json
+graphify-out/cost.json
