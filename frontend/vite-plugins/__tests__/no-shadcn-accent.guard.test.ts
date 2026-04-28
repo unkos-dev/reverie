@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 // UNK-114 issue 4 regression guard. Brand `--color-accent` (Reverie Gold) is
 // the signature for primary affordances and must never appear as a shadcn
@@ -12,19 +12,18 @@ import { join } from "node:path";
 // before merging. This guard fails the build if a primitive reintroduces the
 // pattern.
 //
-// If you legitimately need shadcn-namespace `bg-accent`/`text-accent-foreground`
-// for some surface, add an explicit allow-comment with `// allow-accent-hover:`
-// followed by the rationale on the same line as the utility — the guard scans
-// for the exact class strings and that comment sits outside the className
-// string.
-const UI_DIR = join(__dirname);
+// Lives under `vite-plugins/__tests__/` (not co-located with the primitives)
+// because the scan needs node env + node types and the app's tsconfig is
+// browser-only — placing it under `src/` broke `tsc -b` even though vitest
+// itself ran fine.
+const UI_DIR = resolve(__dirname, "..", "..", "src", "components", "ui");
 
 describe("shadcn primitives must not use brand bg-accent for hover/focus", () => {
   const files = readdirSync(UI_DIR)
-    .filter((f) => f.endsWith(".tsx"))
-    .map((f) => join(UI_DIR, f));
+    .filter((f: string) => f.endsWith(".tsx"))
+    .map((f: string) => join(UI_DIR, f));
 
-  it.each(files.map((f) => [f]))("%s does not use bg-accent or text-accent-foreground", (file) => {
+  it.each(files.map((f: string) => [f]))("%s does not use bg-accent or text-accent-foreground", (file: string) => {
     const src = readFileSync(file, "utf8");
     // Match Tailwind classnames literally; we want any occurrence inside
     // className strings to fail. The patterns are deliberately broad — any
