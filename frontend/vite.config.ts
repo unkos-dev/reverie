@@ -10,11 +10,19 @@ import { parseHmrConfig } from "./vite-plugins/hmr-config";
 // Vite HMR, esbuild error overlays, and Tailwind JIT work. The production CSP
 // is a strict, hash-based policy served by the backend (see
 // backend/src/security/csp.rs). These dev relaxations do not ship to prod.
+//
+// `static.cloudflareinsights.com` (script-src) and `cloudflareinsights.com`
+// (connect-src) accommodate the Cloudflare Web Analytics RUM beacon that the
+// edge auto-injects into HTML when a dev hostname is proxied through a CF
+// zone with RUM enabled. Per-hostname Exclude rules are a Cloudflare Pro
+// feature, so the cheapest fix is allowlisting the beacon origins here. The
+// allowlist is dev-only and does not appear in the production CSP. See
+// docs/deployment/cloudflare-edge-dev-hostnames.md.
 const DEV_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173",
+  "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173 https://cloudflareinsights.com",
   "img-src 'self' data:",
   "font-src 'self'",
 ].join("; ");
@@ -38,10 +46,7 @@ export default defineConfig({
         // mangles names); the Level 4 gate in the plan checks for the
         // chunk file's structural absence instead.
         manualChunks(id) {
-          if (
-            id.includes("/src/routes/design") ||
-            id.includes("/src/pages/design/")
-          ) {
+          if (id.includes("/src/routes/design") || id.includes("/src/pages/design/")) {
             return "design";
           }
         },
