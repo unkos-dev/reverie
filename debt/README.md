@@ -7,10 +7,10 @@ remove it.
 
 `debt/` is sister to `adr/`, not a subset:
 
-| Artefact | Purpose | Lifecycle |
-|---|---|---|
-| `adr/`  | Decisions ("we chose X over Y, here's why") | proposed → accepted → maybe superseded |
-| `debt/` | Concessions ("we know this is wrong, accepting until Y lifts") | active → lifted (kept for audit) |
+| Artefact | Purpose                                                        | Lifecycle                              |
+| -------- | -------------------------------------------------------------- | -------------------------------------- |
+| `adr/`   | Decisions ("we chose X over Y, here's why")                    | proposed → accepted → maybe superseded |
+| `debt/`  | Concessions ("we know this is wrong, accepting until Y lifts") | active → lifted (kept for audit)       |
 
 If you're recording a deliberate choice, write an ADR. If you're
 recording a constraint you intend to remove, write a debt entry.
@@ -39,15 +39,15 @@ Every entry has YAML frontmatter:
 
 ```yaml
 ---
-status: active           # active | lifted
+status: active # active | lifted
 severity: low|medium|high
 surfaces: [developer, server-operator, end-user, security, ci]
-adopted: 2026-05-05      # when accepted (or recognised, if pre-existing)
+adopted: 2026-05-05 # when accepted (or recognised, if pre-existing)
 adopted-because: <ticket / PR / inline rationale>
 lift-when-class: dep-unblocks | internal-refactor | external-standard | feature-flag | release-tag | infra-gap-closes
 lift-when: <specific measurable condition>
-lifted: ~                # YYYY-MM-DD if status: lifted, else ~
-superseded-by: ~         # PR / commit / ADR link if lifted, else ~
+lifted: ~ # YYYY-MM-DD if status: lifted, else ~
+superseded-by: ~ # PR / commit / ADR link if lifted, else ~
 ---
 ```
 
@@ -122,6 +122,7 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [tower-sessions pinned to 0.14 (axum-login peer pin)](2026-05-21-tower-sessions-0-14-pin.md) — adopted because axum-login 0.18.0 peer-pins tower-sessions 0.14; lifts on axum-login release > 0.18.0 (UNK-101)
 - [Staging compose has no automated CI smoke test](2026-05-08-staging-compose-no-ci-smoke.md) — adopted because CI smoke for `compose.staging.yml` is real eng work; lifts on UNK-185
 - [MemoryStore for production sessions](2026-05-05-memory-store-sessions.md) — adopted because PostgresStore not wired at scaffold; lifts on UNK-163
 - [Vite allowedHosts permissive in dev](2026-05-05-vite-allowed-hosts-permissive.md) — adopted because workspace hostnames unenumerable for static allowlist; lifts on UNK-168
