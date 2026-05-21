@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-21T14:07:07Z",
+  "title": "Design System: Reverie",
+  "extensions": {
+    "colorMeta": {
+      "parchment": {
+        "role": "neutral",
+        "displayName": "Parchment",
+        "canonical": "#E8DCC2",
+        "tonalRamp": [
+          "#1F1A12",
+          "#3A3024",
+          "#5A4A36",
+          "#7B6648",
+          "#9C825D",
+          "#B89E78",
+          "#D2BC9B",
+          "#E8DCC2"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0E0D0A",
+        "tonalRamp": [
+          "#0E0D0A",
+          "#1A1812",
+          "#221F18",
+          "#2A261D",
+          "#3A3528",
+          "#5A5244",
+          "#A8A090",
+          "#E8E0D0"
+        ]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream",
+        "canonical": "#E8E0D0",
+        "tonalRamp": [
+          "#221F18",
+          "#3A3528",
+          "#5A5244",
+          "#7A7160",
+          "#9A9080",
+          "#BAAF9C",
+          "#D6CCB8",
+          "#E8E0D0"
+        ]
+      },
+      "reverie-gold": {
+        "role": "primary",
+        "displayName": "Reverie Gold",
+        "canonical": "#C9A961",
+        "tonalRamp": [
+          "#2A2210",
+          "#4A3C24",
+          "#6E5424",
+          "#8E6F38",
+          "#A88848",
+          "#C9A961",
+          "#D4B070",
+          "#E2C58A"
+        ]
+      },
+      "reverie-gold-light": {
+        "role": "primary",
+        "displayName": "Reverie Gold (Light Theme)",
+        "canonical": "#8E6F38",
+        "tonalRamp": [
+          "#2A2210",
+          "#3D2F18",
+          "#5A4624",
+          "#6E5424",
+          "#8E6F38",
+          "#A88848",
+          "#C9A961",
+          "#DCC890"
+        ]
+      },
+      "reverie-alarm": {
+        "role": "secondary",
+        "displayName": "Reverie Alarm",
+        "canonical": "#F26C7B",
+        "tonalRamp": [
+          "#3A0E14",
+          "#5C141C",
+          "#7E1A26",
+          "#A02230",
+          "#BC2937",
+          "#D44958",
+          "#F26C7B",
+          "#F9A2AC"
+        ]
+      },
+      "reverie-alarm-light": {
+        "role": "secondary",
+        "displayName": "Reverie Alarm (Light Theme)",
+        "canonical": "#BC2937",
+        "tonalRamp": [
+          "#3A0E14",
+          "#5C141C",
+          "#7E1A26",
+          "#A02230",
+          "#BC2937",
+          "#D44958",
+          "#F26C7B",
+          "#F9A2AC"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero headlines, book detail titles, marquee surfaces. Author Variable does the editorial work."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headers in the library and detail views. Author Variable, smaller scale than Display."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles, primary affordance labels, navigation items. Satoshi Variable workhorse."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Paragraph text, descriptions, control text. Cap line length 65 to 75ch on prose surfaces."
+      },
+      "label": {
+        "displayName": "Label / Mono",
+        "purpose": "Metadata fields (ISBN, file size, format codes), debug surfaces. Use sparingly; mono is signal, not chrome."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "Lockup component only. Wide-tracked uppercase stamp. Not a heading style; cannot be reused as one."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ring-rest",
+        "value": "0 0 0 1px rgba(255,255,255,0.10)",
+        "purpose": "Rest-state ring on card surfaces. Dark theme. Replaces drop shadow per Flat-By-Default rule."
+      },
+      {
+        "name": "ring-rest-light",
+        "value": "0 0 0 1px rgba(14,13,10,0.10)",
+        "purpose": "Rest-state ring on card surfaces. Light theme."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px rgba(201,169,97,0.50)",
+        "purpose": "Focus-visible ring on interactive primitives. Dark theme. Reverie Gold at 50 percent."
+      },
+      {
+        "name": "focus-ring-light",
+        "value": "0 0 0 3px rgba(142,111,56,0.50)",
+        "purpose": "Focus-visible ring on interactive primitives. Light theme. Reverie Gold (Light) at 50 percent."
+      },
+      {
+        "name": "hero-glow-rest",
+        "value": "0 16px 48px -16px rgba(201,169,97,0.22)",
+        "purpose": "Resting glow on hero-class surfaces only (home hero, book-detail key art). Never on cards or dialogs."
+      },
+      {
+        "name": "hero-glow-hover",
+        "value": "0 24px 64px -20px rgba(201,169,97,0.32)",
+        "purpose": "Hover lift on hero-class surfaces. Transitions in 240ms with ease-emphasised."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration-fast",
+        "value": "180ms",
+        "purpose": "Micro-interactions: ghost-button hover background, dropdown item highlight."
+      },
+      {
+        "name": "duration-base",
+        "value": "240ms",
+        "purpose": "Default interaction duration: primary button hover, hero-glow hover, card lift."
+      },
+      {
+        "name": "duration-slow",
+        "value": "320ms",
+        "purpose": "Considered transitions: dialog enter/exit, sheet slide."
+      },
+      {
+        "name": "duration-theme",
+        "value": "300ms",
+        "purpose": "Theme toggle: light to dark canvas swap. Surface-wide so it gets the longer beat."
+      },
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.22, 0.61, 0.36, 1)",
+        "purpose": "Default ease-out for state changes. No overshoot, no spring."
+      },
+      {
+        "name": "ease-emphasised",
+        "value": "cubic-bezier(0.16, 0.78, 0.30, 1)",
+        "purpose": "Sharper ease-out for hero-class lifts and intent-bearing motion."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" },
+      { "name": "2xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single 'this matters' affordance. At most one per surface.",
+      "html": "<button class=\"ds-btn-primary\">Add to library</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; gap: 0.375rem; background: var(--color-accent, #C9A961); color: var(--color-fg-on-accent, #0E0D0A); border: 1px solid transparent; border-radius: 0.75rem; font-family: \"Satoshi Variable\", system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; letter-spacing: 0; white-space: nowrap; cursor: pointer; transition: background 240ms cubic-bezier(0.22, 0.61, 0.36, 1), transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1); } .ds-btn-primary:hover { background: color-mix(in oklab, var(--color-accent, #C9A961) 80%, transparent); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent, #C9A961) 50%, transparent); } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Everyday button. Multiple per surface OK. The workhorse affordance.",
+      "html": "<button class=\"ds-btn-outline\">Edit metadata</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; gap: 0.375rem; background: var(--color-canvas, #14120E); color: var(--color-fg, #E8E0D0); border: 1px solid var(--color-border, #2E2A22); border-radius: 0.75rem; font-family: \"Satoshi Variable\", system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 180ms cubic-bezier(0.22, 0.61, 0.36, 1); } .ds-btn-outline:hover { background: var(--color-hover, #2A261D); } .ds-btn-outline:focus-visible { outline: none; border-color: var(--color-accent, #C9A961); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent, #C9A961) 50%, transparent); } .ds-btn-outline:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Tertiary affordance. Toolbars, dropdown headers, dense surfaces.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; gap: 0.375rem; background: transparent; color: var(--color-fg, #E8E0D0); border: 1px solid transparent; border-radius: 0.75rem; font-family: \"Satoshi Variable\", system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 180ms cubic-bezier(0.22, 0.61, 0.36, 1); } .ds-btn-ghost:hover { background: var(--color-surface-2, #2A261D); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent, #C9A961) 50%, transparent); }"
+    },
+    {
+      "name": "Destructive Confirm (Alarm Carve-Out)",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Used only inside alert-dialog after typed-name confirmation. Reverie Alarm fill, Ink text.",
+      "html": "<button class=\"ds-btn-destructive\">Delete permanently</button>",
+      "css": ".ds-btn-destructive { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; gap: 0.375rem; background: #F26C7B; color: #0E0D0A; border: 1px solid transparent; border-radius: 0.75rem; font-family: \"Satoshi Variable\", system-ui, sans-serif; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 240ms cubic-bezier(0.22, 0.61, 0.36, 1); } .ds-btn-destructive:hover { background: #F9A2AC; } .ds-btn-destructive:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(242, 108, 123, 0.50); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Default surface container. Flat at rest; ring-1 for shape, no shadow.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-header\"><div class=\"ds-card-title\">The Ones Who Walk Away from Omelas</div><div class=\"ds-card-description\">Ursula K. Le Guin, 1973</div></div><div class=\"ds-card-content\">Short story. Added to library 2026-05-12.</div></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 1rem; overflow: hidden; padding: 1rem 0; background: var(--color-surface, #221F18); color: var(--color-fg, #E8E0D0); border-radius: 0.875rem; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10); font-family: \"Satoshi Variable\", system-ui, sans-serif; font-size: 0.875rem; } .ds-card-header { display: grid; gap: 0.25rem; padding: 0 1rem; } .ds-card-title { font-size: 1.125rem; font-weight: 500; line-height: 1.35; color: var(--color-fg, #E8E0D0); } .ds-card-description { font-size: 0.8125rem; color: var(--color-fg-muted, #A8A090); font-style: italic; font-family: \"Author Variable\", system-ui, serif; } .ds-card-content { padding: 0 1rem; color: var(--color-fg-muted, #A8A090); line-height: 1.55; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text field. h-8, rounded-lg, border-input. Focus shows the gold 3px ring at 50 percent opacity.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search the library\" />",
+      "css": ".ds-input { display: inline-flex; width: 100%; min-width: 0; height: 2rem; padding: 0.25rem 0.625rem; background: transparent; color: var(--color-fg, #E8E0D0); border: 1px solid var(--color-border, #2E2A22); border-radius: 0.75rem; font-family: \"Satoshi Variable\", system-ui, sans-serif; font-size: 0.9375rem; outline: none; transition: border-color 180ms cubic-bezier(0.22, 0.61, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 0.61, 0.36, 1); } .ds-input::placeholder { color: var(--color-fg-muted, #A8A090); } .ds-input:focus-visible { border-color: var(--color-accent, #C9A961); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent, #C9A961) 50%, transparent); } .ds-input:disabled { opacity: 0.5; cursor: not-allowed; background: color-mix(in oklab, var(--color-canvas, #14120E) 50%, transparent); }"
+    },
+    {
+      "name": "Lockup (Dark Theme)",
+      "kind": "custom",
+      "refersTo": "lockup-dark",
+      "description": "Canonical brand mark. Slot glyph (Reverie Gold) + wordmark (Cream on Ink, Satoshi 700, 0.32em tracking, uppercase). Inline-literal hex values, not theme tokens, so the mark renders correctly before the theme tree resolves.",
+      "html": "<span class=\"ds-lockup\" role=\"img\" aria-label=\"Reverie\" style=\"background: #14120E; padding: 0.75rem 1rem;\"><svg class=\"ds-lockup-glyph\" viewBox=\"0 0 32 32\" aria-hidden=\"true\"><rect x=\"4\" y=\"4\" width=\"24\" height=\"24\" fill=\"#C9A961\"/><rect x=\"8\" y=\"17\" width=\"16\" height=\"2\" fill=\"#0E0D0A\"/></svg><span class=\"ds-lockup-word\">Reverie</span></span>",
+      "css": ".ds-lockup { display: inline-flex; align-items: center; gap: 14px; } .ds-lockup-glyph { width: 26.6px; height: 26.6px; } .ds-lockup-word { font-family: \"Satoshi Variable\", system-ui, sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.32em; text-transform: uppercase; padding-left: 0.32em; color: #E8E0D0; line-height: 1; }"
+    },
+    {
+      "name": "Lockup (Light Theme)",
+      "kind": "custom",
+      "refersTo": "lockup-light",
+      "description": "Canonical brand mark, light theme. Glyph fill stays Reverie Gold (#C9A961); wordmark switches to Ink (#0E0D0A) on Parchment.",
+      "html": "<span class=\"ds-lockup-light\" role=\"img\" aria-label=\"Reverie\" style=\"background: #E8DCC2; padding: 0.75rem 1rem;\"><svg class=\"ds-lockup-light-glyph\" viewBox=\"0 0 32 32\" aria-hidden=\"true\"><rect x=\"4\" y=\"4\" width=\"24\" height=\"24\" fill=\"#C9A961\"/><rect x=\"8\" y=\"17\" width=\"16\" height=\"2\" fill=\"#0E0D0A\"/></svg><span class=\"ds-lockup-light-word\">Reverie</span></span>",
+      "css": ".ds-lockup-light { display: inline-flex; align-items: center; gap: 14px; } .ds-lockup-light-glyph { width: 26.6px; height: 26.6px; } .ds-lockup-light-word { font-family: \"Satoshi Variable\", system-ui, sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.32em; text-transform: uppercase; padding-left: 0.32em; color: #0E0D0A; line-height: 1; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Curator's Archive",
+    "overview": "Reverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome stays out of the reader's way. Cinematic-boutique is the locked visual register: motion is felt in localised heroes, typography does the structural work, and information hierarchy is disciplined. The library and detail views carry the identity; the reader recedes into a calm long-form surface that inherits palette and motion language but withdraws nearly all chrome. Restraint is the rule: the brand has exactly one accent (Reverie Gold) and exactly one alarm (Reverie Alarm), and every other state, hierarchy, and emphasis signal is carried by weight, opacity, type scale, density, and motion. No severity ladder. No third hue earns its screen.",
+    "keyCharacteristics": [
+      "Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata).",
+      "Two anchored canvases: Parchment for light, Ink for dark. Both surface ramps tint warmly toward the brand hue. No neutral greys.",
+      "Single gold accent (less than or equal to 10 percent of any screen), single alarm (fill-only, two carve-outs only).",
+      "Flat by default; signature shadows reserved for localised hero treatments (home hero, book-detail key art).",
+      "Cinematic-boutique motion budget: 180 to 320 ms ease-out, no bounce, no spring; prefers-reduced-motion respected as a first-class state."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Reverie Gold is the only accent. State, hierarchy, and emphasis below the level of 'this matters' are communicated through weight, opacity, type scale, density, and motion. No additional hues. No severity ladder.",
+        "section": "colors"
+      },
+      {
+        "name": "The Alarm Carve-Out Rule",
+        "body": "Reverie Alarm appears in exactly two contexts: irreversible destructive confirmation and unrecoverable system errors that would otherwise survive as a wrong 'it's working' mental model. Nowhere else.",
+        "section": "colors"
+      },
+      {
+        "name": "The Light-Gold Restriction Rule",
+        "body": "On Parchment, #8E6F38 passes WCAG 1.4.11 (UI 3:1) and 1.4.3 large-text, but not 1.4.3 normal text (4.5:1). Gold on light surfaces is therefore used only for focus rings, large CTAs, and recovery actions out of error states.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Black-No-White Rule",
+        "body": "#000 and #fff are prohibited. Every neutral tints warmly toward the brand hue: Ink is #0E0D0A, Cream is #E8E0D0, Parchment is #E8DCC2.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sans-Only Rule",
+        "body": "Reverie deliberately rejected the chrome-sans / content-serif convention. Author and Satoshi both sit in the sans family. There is no content serif in the system.",
+        "section": "typography"
+      },
+      {
+        "name": "The 65-75ch Body Rule",
+        "body": "Body text caps at 65-75ch on prose surfaces (book descriptions, blog-shape content). Library cards and detail panels are not prose and may run wider. Reader text is user-configurable and overrides the system default.",
+        "section": "typography"
+      },
+      {
+        "name": "The Italic-as-Editorial-Accent Rule",
+        "body": "Italics use Author italic (the editorial counterweight), not Satoshi italic. Reserved for book titles, ship-names, internal-monologue, and the tagline (which uses Author 400 regular). Not for general emphasis.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Black-Weight Rule",
+        "body": "Author and Satoshi black weights (900) are not loaded. Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or use tracking.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Surfaces are flat at rest. Depth comes from tonal layering (canvas to surface to surface-2). Shadows appear only on hero-class surfaces carved out by the philosophy spec, or as a response to state (the focus ring, the hero hover lift).",
+        "section": "elevation"
+      },
+      {
+        "name": "The No-Ambient-Drift Rule",
+        "body": "No canvas-wide ambient drift. No background gradient that runs across the whole surface. Atmospheric interest comes from cover art, gold accent, typography, and the localised hero treatments.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One-Primary-Per-Surface Rule",
+        "body": "Each surface has at most one Primary button. If two actions seem to need primary weight, one of them is actually destructive (route to alert-dialog) or the surface is doing two jobs.",
+        "section": "components"
+      },
+      {
+        "name": "The No-Bottom-Nav Rule",
+        "body": "Mobile nav is a sheet, not a bottom bar. Bottom-nav is a phone-app reflex and reads consumer-app.",
+        "section": "components"
+      },
+      {
+        "name": "The Lockup-As-Brand-Carrier Rule",
+        "body": "The Lockup component is invariant. It uses inline hex values, not theme tokens. It must render correctly even before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its glyph or wordmark separately as decorative elements.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do anchor every screen on Parchment (#E8DCC2) or Ink (#14120E); the two canvases are the only legitimate page backgrounds.",
+      "Do use Reverie Gold (#C9A961 dark / #8E6F38 light) for focus rings, primary CTAs, recovery actions out of error states, and the Slot mark fill. Nothing else.",
+      "Do restrict Reverie Alarm to fill, border, or icon, never body text. Use it in exactly the two carve-out contexts (irreversible destructive confirm, unrecoverable system error).",
+      "Do carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.",
+      "Do cap body text at 65-75ch on prose surfaces; cards and detail panels are not prose and may run wider.",
+      "Do keep cards flat at rest (ring-1 ring-foreground/10, no shadow). Tonal layering does the depth work.",
+      "Do reserve shadows for hero-class surfaces only (home hero, book-detail key art). The signature hero-glow token is the only legitimate shadow in the system.",
+      "Do respect prefers-reduced-motion: status pulses become static, hover lift becomes opacity, cursor parallax disables. The cinematic register survives in palette and typography when motion withdraws.",
+      "Do use the Lockup component for the brand mark, never the glyph or wordmark alone (except in the carved-out edge cases: favicons, footer microtext)."
+    ],
+    "donts": [
+      "Don't introduce a severity colour ladder. No red/amber/green pills. No info-blue callouts. No 'did you know' banners. Gold says 'this matters'; Reverie Alarm says 'stop'; everything else is weight + density + motion.",
+      "Don't ship surfaces that look like SaaS-cream AI-workflow chrome (Linear, Stripe, vercel-cream marketing). It is the first-order category trap for self-hosted media managers in 2026.",
+      "Don't ship surfaces that look like generic ebook UI (Calibre, Plex-clone shelves, default-Tailwind grids of identical title + author + cover cards). The category cliché.",
+      "Don't ship surfaces that look like a cozy reading nook (lamp, paper, warm-domestic, hand-drawn book stacks). The library is an archive, not a corner of a living room.",
+      "Don't ship surfaces that look like a severity-coloured dashboard (red/amber/green pills, info-blue callouts, status banners, hero-metric templates).",
+      "Don't use #000 or #fff. Every neutral tints warmly toward the brand hue. Ink is #0E0D0A, Cream is #E8E0D0, Parchment is #E8DCC2.",
+      "Don't put Reverie Gold on Parchment normal-size body text. The light-theme accent at #8E6F38 passes WCAG 1.4.11 and 1.4.3 large-text only.",
+      "Don't use bg-black/50 as a dialog backdrop. Currently flagged by impeccable detect in alert-dialog.tsx, dialog.tsx, sheet.tsx; fix in the next modal-touching PR.",
+      "Don't load Author or Satoshi black weights (900). Both fight the boutique register.",
+      "Don't use side-stripe borders (border-left greater than 1px as a coloured accent). Absolute ban.",
+      "Don't use gradient text (background-clip: text with a gradient). Decorative, never meaningful.",
+      "Don't reach for glassmorphism, hero-metric templates, or identical card grids by default. All three are anti-pattern reflexes for this category.",
+      "Don't use em dashes in UI copy. Commas, colons, semicolons, periods, or parentheses do the work.",
+      "Don't centre the Slot in the glyph. It sits at 53 percent from top. Centred reads mail-slot; below-centre reads inscribed.",
+      "Don't recolour the glyph block, change the wordmark tracking, stack the Lockup vertically, or apply effects (shadow, glow, gradient, bevel, outline) to either.",
+      "Don't invent additional accents or alarms. Gold is the only accent; Reverie Alarm is the only alarm. Identity.md §4 logs every accent already considered and rejected."
+    ]
+  }
+}
