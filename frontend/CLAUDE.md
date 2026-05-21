@@ -4,43 +4,38 @@
 
 - Functional components only. No class components.
 - One primary export per file (small helpers may share a file).
-- Components render UI only — business logic lives in custom hooks.
+- Components render UI only — logic in custom hooks.
 - Props:
-  - TypeScript interface named `XxxProps`.
-  - Callback props use `onXxx` naming (`onClick`, `onSubmit`).
-- Return type: `ReactElement` (not `JSX.Element`, deprecated in React 19).
-- No complex expressions inline in JSX — extract to named variables or helper
-  functions.
-- Page-level components must have an error boundary.
-- Every async operation handles all four UI states: loading, error, empty,
-  success. Show user-friendly messages; log raw errors to console.
-- No inline style objects (except for genuinely dynamic values). No
-  `!important`. Use `clsx` / `cn` for conditional classes.
+  - TS interface `XxxProps`.
+  - Callbacks: `onXxx` (`onClick`, `onSubmit`).
+- Return type: `ReactElement` (not `JSX.Element`, deprecated React 19).
+- No complex inline JSX expressions — extract to vars or helpers.
+- Page components need error boundary.
+- Every async op handles four states: loading, error, empty, success. User-friendly messages; log raw errors to console.
+- No inline style objects (except dynamic values). No `!important`. Use `clsx` / `cn` for conditional classes.
 
 ## Hooks
 
-- Custom hook file and export names prefixed with `use` (`useAuth.ts`).
-- A hook does one thing only.
-- `useEffect` has a complete dependency array. Never suppress with
-  `// eslint-disable-next-line`.
-- `useEffect` with side effects returns a cleanup function.
-- Never pass an async function directly to `useEffect`. Use the
-  `AbortController` pattern:
+- Custom hook file + export names prefixed `use` (`useAuth.ts`).
+- One thing per hook.
+- `useEffect` has complete dep array. Never suppress with `// eslint-disable-next-line`.
+- `useEffect` with side effects returns cleanup.
+- Never pass async fn directly to `useEffect`. Use `AbortController` pattern:
 
   ```tsx
   useEffect(() => {
-    const controller = new AbortController()
+    const controller = new AbortController();
     const load = async () => {
       try {
-        const data = await fetchData({ signal: controller.signal })
-        setData(data)
+        const data = await fetchData({ signal: controller.signal });
+        setData(data);
       } catch (error) {
-        if (!controller.signal.aborted) setError(error)
+        if (!controller.signal.aborted) setError(error);
       }
-    }
-    load()
-    return () => controller.abort()
-  }, [])
+    };
+    load();
+    return () => controller.abort();
+  }, []);
   ```
 
 ## Performance

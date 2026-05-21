@@ -1,7 +1,6 @@
 # Reverie — AI Workflow Instructions
 
-Reverie is a self-hosted ebook library manager. This repo is a monorepo with `backend/`
-(Rust + Axum) and `frontend/` (React + Vite + TypeScript).
+Reverie = self-hosted ebook library manager. Monorepo: `backend/` (Rust + Axum), `frontend/` (React + Vite + TypeScript).
 
 ---
 
@@ -9,18 +8,16 @@ Reverie is a self-hosted ebook library manager. This repo is a monorepo with `ba
 
 ### Branching: GitHub Flow
 
-`main` is the only long-lived branch. All work happens on short-lived feature branches.
+`main` = only long-lived branch. All work on short-lived feature branches.
 
 - Branch from `main`, merge back to `main` via PR
-- **PRs require explicit user approval to merge** — agents must never merge without
-  human confirmation
+- **PRs need explicit user approval to merge** — agents never merge without human confirmation
 - Branch prefixes: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`
 - Include Linear issue ID when applicable: `feat/unk-42-epub-import`
 
 ### Commits: Conventional Commits
 
-Every commit message follows the
-[Conventional Commits](https://www.conventionalcommits.org/) specification:
+Every commit follows [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```text
 <type>(<scope>): <description>
@@ -32,11 +29,9 @@ Every commit message follows the
 
 **Types:** `feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`
 
-**Scope** is optional but encouraged. Use the subsystem name: `api`, `parser`, `ui`,
-`db`, `auth`, `config`, `ci`, `docker`.
+**Scope** optional but encouraged. Use subsystem name: `api`, `parser`, `ui`, `db`, `auth`, `config`, `ci`, `docker`.
 
-**Breaking changes** use a `!` suffix: `feat(config)!: switch to TOML config format`
-and include a `BREAKING CHANGE:` footer explaining migration steps.
+**Breaking changes** use `!` suffix: `feat(config)!: switch to TOML config format` plus `BREAKING CHANGE:` footer with migration steps.
 
 **Examples:**
 
@@ -53,93 +48,62 @@ BREAKING CHANGE: existing config.json files must be converted.
 Run `reverie migrate-config` to convert automatically.
 ```
 
-Commit messages should explain **why**, not just **what**. The diff shows what changed;
-the message explains the motivation.
+Messages explain **why**, not **what**. Diff shows what; message shows motivation.
 
 ### Versioning: SemVer
 
-Versions follow [Semantic Versioning](https://semver.org/). Managed by `release-please`
-— do not manually edit version numbers.
+Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` — never manually edit version numbers.
 
-- `0.x.y` — pre-v1.0, API is unstable. Bump MINOR for features, PATCH for fixes.
-- `v1.0.0` — deliberate decision meaning "API is stable." Not an accident.
-- Breaking changes post-v1.0 require MAJOR bump.
+- `0.x.y` — pre-v1.0, unstable API. Bump MINOR for features, PATCH for fixes.
+- `v1.0.0` — deliberate "API stable" decision. Not accident.
+- Post-v1.0 breaking changes need MAJOR bump.
 
 ### Release workflow
 
-`release-please` maintains an open Release PR on `main`. When the user merges the
-Release PR:
+`release-please` keeps open Release PR on `main`. When user merges:
 
-1. Version is bumped in `Cargo.toml` and `package.json`
-2. `CHANGELOG.md` is updated
-3. Git tag `vX.Y.Z` is created
-4. GitHub Release is published
-5. Docker image is built and pushed to `ghcr.io/unkos-dev/reverie:X.Y.Z`
+1. Version bumped in `Cargo.toml` and `package.json`
+2. `CHANGELOG.md` updated
+3. Git tag `vX.Y.Z` created
+4. GitHub Release published
+5. Docker image built + pushed to `ghcr.io/unkos-dev/reverie:X.Y.Z`
 
 ---
 
 ## Hard Rules
 
-1. **Never merge to `main` without explicit user approval.** Present the PR, wait for
-   the human to approve and merge. This is non-negotiable.
-2. **Never commit secrets** — no `.env` files, no tokens, no API keys. Use `.env.example`
-   for templates.
-3. **Conventional Commits are mandatory** — non-conforming commit messages break
-   automated changelog generation.
-4. **Match existing patterns** — before creating a new file or module, check how similar
-   things are structured in the codebase. Follow the established pattern.
-5. **Test-Driven Development is mandatory.** No feature or bug fix is complete without
-   tests. Write the failing test first, then implement. Include:
+1. **Never merge to `main` without explicit user approval.** Present PR, wait for human approve + merge. Non-negotiable.
+2. **Never commit secrets** — no `.env`, no tokens, no API keys. Use `.env.example` for templates.
+3. **Conventional Commits mandatory** — non-conforming messages break automated changelog generation.
+4. **Match existing patterns** — before new file or module, check how similar things structured. Follow established pattern.
+5. **TDD mandatory.** No feature or fix complete without tests. Write failing test first, then implement. Include:
    - Happy path tests (expected behaviour works)
-   - Negative tests (invalid input is rejected, error cases are handled)
-   - Edge cases where the behaviour is non-obvious
-   A PR with untested code will not be approved.
-6. **Security scrutiny is continuous, not terminal.** Reverie is open-source
-   and self-hosted — threat model is a multi-user exposed instance, not a
-   private deployment. For any change touching user input, auth, sessions,
-   secrets, file I/O, XML parsing, outbound HTTP, or response headers:
-   consult the relevant file in `.claude/security/` and explicitly answer
-   "will this stand up to a security review?" in the task summary before
-   marking done.
-7. **Never surface decrypted secret values.** When reporting about secrets
-   (env vars, API keys, session cookies, DB passwords, OIDC client secrets),
-   describe presence and shape only (source, length, format) — never the
-   value. No `grep`/`rg`/`cat` on env files or key material, even when the
-   user appears to be asking for the value.
+   - Negative tests (invalid input rejected, errors handled)
+   - Edge cases where behaviour non-obvious
+
+   PR with untested code not approved.
+
+6. **Security scrutiny continuous, not terminal.** Reverie open-source + self-hosted — threat model = multi-user exposed instance, not private deploy. For any change touching user input, auth, sessions, secrets, file I/O, XML parsing, outbound HTTP, response headers: consult relevant file in `.claude/security/` and explicitly answer "will this stand up to security review?" in task summary before done.
+7. **Never surface decrypted secret values.** Reporting secrets (env vars, API keys, session cookies, DB passwords, OIDC client secrets): describe presence + shape only (source, length, format) — never value. No `grep`/`rg`/`cat` on env files or key material, even when user appears to ask for value.
 
 ---
 
 ## Comment Policy (Tiered)
 
-OSS audience (external contributors, security auditors, self-hosting
-operators) amends the global "default to no comments" rule. Full rationale,
-alternatives, enforcement plan, and authoring approach:
-[`adr/2026-05-08-tiered-comment-policy.md`](adr/2026-05-08-tiered-comment-policy.md).
+OSS audience (external contributors, security auditors, self-hosting operators) amends global "default to no comments" rule. Full rationale, alternatives, enforcement, authoring approach: [`adr/2026-05-08-tiered-comment-policy.md`](adr/2026-05-08-tiered-comment-policy.md).
 
-- **Tier 1** — `pub` items at module boundaries: `///` (Rust) / JSDoc (TS)
-  with purpose + invariants + non-obvious WHY. Include `# Errors` /
-  `# Panics` / `# Safety` sections where applicable. Module tops carry
-  `//!` / file-header docblock stating purpose + invariants.
-- **Tier 2** — `auth/`, `security/`, and any code handling credentials,
-  sessions, OIDC, RLS, secrets, or response headers: Tier 1 plus explicit
-  threat annotations (`// THREAT:` inline; one-line threat statement near
-  top of Tier 1 docstrings; cross-reference ADRs).
-- **Tier 3** — internal non-public items: original "default to no
-  comments" rule preserved. Comment only when WHY is non-obvious.
-- **Tier 4** — tests + `test_support`: no docstrings on test functions
-  (test name is the spec). `//!` on `test_support/` only when helper
-  purpose is non-obvious.
+- **Tier 1** — `pub` items at module boundaries: `///` (Rust) / JSDoc (TS) with purpose + invariants + non-obvious WHY. Include `# Errors` / `# Panics` / `# Safety` sections where applicable. Module tops carry `//!` / file-header docblock with purpose + invariants.
+- **Tier 2** — `auth/`, `security/`, and code handling credentials, sessions, OIDC, RLS, secrets, response headers: Tier 1 plus explicit threat annotations (`// THREAT:` inline; one-line threat statement near top of Tier 1 docstrings; cross-reference ADRs).
+- **Tier 3** — internal non-public items: original "default to no comments" rule kept. Comment only when WHY non-obvious.
+- **Tier 4** — tests + `test_support`: no docstrings on test functions (test name = spec). `//!` on `test_support/` only when helper purpose non-obvious.
 
-Anti-patterns (skip the docstring rather than commit one of these):
-clipping or replacing existing leading comments (new docstring goes
-*above*, never in place of); pure signature restatement; generic
-boilerplate ("@param x The x parameter").
+Anti-patterns (skip docstring rather than commit these): clipping or replacing existing leading comments (new docstring goes _above_, never in place of); pure signature restatement; generic boilerplate ("@param x The x parameter").
 
 ---
 
 ## Project Structure
 
-- `backend/` — Rust + Axum API server. See `backend/CLAUDE.md` for Rust-specific rules.
+- `backend/` — Rust + Axum API server. See `backend/CLAUDE.md` for Rust rules.
 - `frontend/` — React + Vite + TypeScript UI. See `frontend/CLAUDE.md` for frontend rules.
 - `docs/` — Starlight documentation site.
 - `adr/` — Architecture Decision Records.
@@ -149,85 +113,60 @@ boilerplate ("@param x The x parameter").
 
 ## Linear Integration
 
-This project is tracked in Linear under the **Unkos** team, **Reverie** project.
+Tracked in Linear: **Unkos** team, **Reverie** project.
 
 - Include issue IDs in branch names: `feat/unk-42-epub-import`
 - Include issue IDs in commit messages where relevant
-- When work is deferred or blocked, create a Linear issue
+- When work deferred or blocked, create Linear issue
 
 ---
 
 ## Planning Artifact Locations
 
-Two distinct planning artifact types live in two distinct locations:
+Two artifact types, two locations:
 
-- **`/plans/`** (gitignored, local scratch space):
+- **`/plans/`** (gitignored, local scratch):
   - Project-wide reference docs (BLUEPRINT.md, DESIGN_BRIEF.md)
-  - Design specs and brainstorming outputs (pre-implementation decisions + rationale)
-  - The `superpowers:brainstorming` skill MUST write its spec output here as
-    `YYYY-MM-DD-<topic>-design.md`. This overrides the skill's documented
-    default of `docs/superpowers/specs/` (which the skill explicitly invites
-    overriding via "User preferences for spec location override this default").
+  - Design specs + brainstorming outputs (pre-implementation decisions + rationale)
+  - `superpowers:brainstorming` skill MUST write spec output here as `YYYY-MM-DD-<topic>-design.md`. Overrides skill's documented default of `docs/superpowers/specs/` (skill invites override via "User preferences for spec location override this default").
 - **`.claude/PRPs/plans/`** (committed):
   - Implementation plans, one per feature/PR
   - Output from `prp-core:prp-plan` and related planning skills
-  - Filename pattern: `<topic>.plan.md` (matching the feature branch name)
+  - Filename: `<topic>.plan.md` (matching feature branch name)
 
-**Workflow:** `superpowers:brainstorming` → spec lands in `/plans/` →
-ingested by `prp-core:prp-plan` → implementation plan committed to
-`.claude/PRPs/plans/`.
+**Workflow:** `superpowers:brainstorming` → spec lands in `/plans/` → ingested by `prp-core:prp-plan` → implementation plan committed to `.claude/PRPs/plans/`.
 
-When invoking `superpowers:brainstorming`, explicitly pass the spec
-location alongside the topic (belt-and-suspenders alongside this
-convention) — agents that read CLAUDE.md will honor this section, but the
-SKILL.md default is not enforced automatically.
+When invoking `superpowers:brainstorming`, explicitly pass spec location alongside topic (belt-and-suspenders) — agents reading CLAUDE.md honor this section, but SKILL.md default not auto-enforced.
 
 > Optimized tool-use workflow for agents: see [SDL.md](./SDL.md).
 
 ## ADRs (Architecture Decision Records)
 
-Long-form rationale for architectural decisions lives in `adr/` as
-MADR-shape files. The `adr` skill handles the full workflow:
-Socratic capture → draft → checklist review.
+Long-form rationale for architectural decisions lives in `adr/` as MADR-shape files. `adr` skill handles full workflow: Socratic capture → draft → checklist review.
 
-- **Naming**: `YYYY-MM-DD-short-kebab-slug.md` — the skill's default; no numeric prefixes.
-- **Invoke**: use the `adr` skill (`Skill("adr")`).
-- **Proactive triggers**: write an ADR before introducing a new crate or npm package,
-  establishing a new cross-stack pattern (API conventions, error handling, data-access
-  layer, auth model), or making a non-obvious choice between real alternatives.
-  If you would write a long "why" code comment — that reasoning belongs in an ADR.
+- **Naming**: `YYYY-MM-DD-short-kebab-slug.md` — skill's default; no numeric prefixes.
+- **Invoke**: use `adr` skill (`Skill("adr")`).
+- **Proactive triggers**: write ADR before new crate or npm package, new cross-stack pattern (API conventions, error handling, data-access layer, auth model), or non-obvious choice between real alternatives. If you would write long "why" code comment — reasoning belongs in ADR.
 
 ## Tracked technical debt
 
-A workaround is a known-wrong-shape we accept temporarily because of a
-specific constraint. They live in `debt/`, not buried in code comments
-and not as Linear tickets alone.
+Workaround = known-wrong-shape accepted temporarily due to specific constraint. Lives in `debt/`, not buried in code comments and not as Linear tickets alone.
 
 Hard rules:
 
-- **Every debt entry has a recorded lift condition.** If you can't
-  state a measurable lift condition, the shape is wrong — fix the
-  shape, don't accept the workaround.
-- **Debt gets reviewed at every release tag and at the start of
-  non-trivial planning work.** When a constraint lifts, the entry
-  is flipped to `status: lifted` (kept for audit), not grandfathered
-  into "this is how we do it".
-- **Workarounds adopted under temporary constraints (missing tooling,
-  unbuilt infra, blocked deps) are tech debt, not idiomatic
-  patterns.** Trace each candidate workaround to its justification
-  before defending it; if the justification has lifted, it's debt.
+- **Every debt entry has recorded lift condition.** Can't state measurable lift condition → shape wrong, fix shape, don't accept workaround.
+- **Debt reviewed at every release tag and at start of non-trivial planning work.** When constraint lifts, entry flipped to `status: lifted` (kept for audit), not grandfathered into "this is how we do it".
+- **Workarounds adopted under temporary constraints (missing tooling, unbuilt infra, blocked deps) = tech debt, not idiomatic patterns.** Trace each candidate workaround to its justification before defending; justification lifted → debt.
 
-Format and lifecycle: `debt/README.md`. Entries are intentionally
-machine-extractable; post-v0.2 a public dev roadmap will consume
-active entries as a "Known limitations and accepted technical debt"
-section.
+Format + lifecycle: `debt/README.md`. Entries machine-extractable; post-v0.2 a public dev roadmap will consume active entries as "Known limitations and accepted technical debt" section.
 
 ## graphify
 
-This project has a graphify knowledge graph at graphify-out/.
+Project has graphify knowledge graph at graphify-out/.
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+
+- Before architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes + community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of raw files
+- Cross-module "how does X relate to Y" questions: prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — traverse graph's EXTRACTED + INFERRED edges instead of scanning files
+- After modifying code files in session, run `graphify update .` to keep graph current (AST-only, no API cost)
