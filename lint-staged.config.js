@@ -11,9 +11,15 @@ module.exports = {
   // ignores the staged-file list so the same command runs locally and in
   // CI (`npm --prefix frontend run detect`).
   //
-  // Advisory posture (`|| true`) until the deferred `bg-black` findings in
-  // stock shadcn overlays are addressed — see memory entry
-  // `project_bg_black_overlays_deferred`. Strip `|| true` and flip the CI
-  // `continue-on-error` flag at the same time as that fix lands.
-  "frontend/src/**/*.{ts,tsx,html,css}": () => "npm --prefix frontend run detect || true",
+  // Advisory posture until the deferred `bg-black` findings in stock
+  // shadcn overlays are addressed — see memory entry
+  // `project_bg_black_overlays_deferred`. The shell wrapper (`sh -c`)
+  // is load-bearing: lint-staged's function form runs the returned
+  // string via execa without a shell, so a bare `||` would reach
+  // `npm` as an argv token (impeccable then receives `||` and `true`
+  // as positional paths and reports "cannot access ||"). Wrapping in
+  // `sh -c '...'` restores shell semantics. Strip the wrapper and the
+  // `|| true` at the same time as the bg-black fix lands, alongside
+  // flipping the CI `continue-on-error` flag.
+  "frontend/src/**/*.{ts,tsx,html,css}": () => "sh -c 'npm --prefix frontend run detect || true'",
 };
