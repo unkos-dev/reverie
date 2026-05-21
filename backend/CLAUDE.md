@@ -2,8 +2,8 @@
 
 ## Dev Database
 
-Start the dev postgres: `docker compose up -d` from the repo root.
-Port 5433 (5432 is taken by the host's shared-postgres).
+Start dev postgres: `docker compose up -d` from repo root.
+Port 5433 (5432 taken by host's shared-postgres).
 
 **Roles** (created by `docker/init-roles.sql` on first start):
 
@@ -14,24 +14,23 @@ Port 5433 (5432 is taken by the host's shared-postgres).
 | `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev` | Background pipeline. Scoped RLS.                      |
 | `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5433/reverie_dev`   | Debug/reporting. SELECT only.                         |
 
-The `tower_sessions` schema (created by migration
-`20260507000001_tower_sessions_postgres_store`) is RLS-exempt — sessions
-rows are not user-scoped in the same way as application data. The
-session id (a cryptographically random `tower_sessions::session::Id`)
-is the bootstrap that resolves the user, so RLS-gating the lookup is
-chicken-and-egg. Access is controlled at the role-grant boundary:
-`reverie_app` gets DML, `reverie_readonly` gets SELECT, `reverie_ingestion`
-gets nothing.
+`tower_sessions` schema (created by migration
+`20260507000001_tower_sessions_postgres_store`) RLS-exempt — session
+rows not user-scoped like application data. Session id
+(cryptographically random `tower_sessions::session::Id`) bootstraps
+user resolution, so RLS-gating lookup is chicken-and-egg. Access
+controlled at role-grant boundary: `reverie_app` gets DML,
+`reverie_readonly` gets SELECT, `reverie_ingestion` gets nothing.
 
-Run migrations as the schema owner:
+Run migrations as schema owner:
 `DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev sqlx migrate run`
 
 ### Upgrade note: postgres:18 mount path
 
-The volume mount changed from `pgdata:/var/lib/postgresql/data` to
-`pgdata:/var/lib/postgresql` to match postgres:18's major-version
-subdirectory layout. Existing dev volumes from before the change must
-be dropped:
+Volume mount changed from `pgdata:/var/lib/postgresql/data` to
+`pgdata:/var/lib/postgresql` to match postgres:18 major-version
+subdirectory layout. Existing dev volumes from before change must be
+dropped:
 
 ```bash
 docker compose down
@@ -42,187 +41,193 @@ DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev sqlx migrate 
 
 ### Coder workspace caveat
 
-Inside the Coder workspace (DooD), bind-mounts of files at workspace
-paths don't resolve on the host docker daemon — `init-roles.sql` gets
-mounted as a directory and the entrypoint init silently fails to seed
-the runtime roles. Seed manually after `docker compose up -d`:
+Inside Coder workspace (DooD), bind-mounts of files at workspace paths
+don't resolve on host docker daemon — `init-roles.sql` mounted as
+directory, entrypoint init silently fails to seed runtime roles. Seed
+manually after `docker compose up -d`:
 
 ```bash
 docker cp docker/init-roles.sql reverie-postgres:/tmp/init-roles.sql
 docker exec reverie-postgres psql -U reverie -d reverie_dev -f /tmp/init-roles.sql
 ```
 
-Real LXC hosts don't have this constraint — the staging deploy needs no
+Real LXC hosts don't have this constraint — staging deploy needs no
 workaround.
 
 ## Conventions
 
-- **Error handling:** Use `thiserror` for library errors, `anyhow` for application
-  errors. Axum handlers return `Result<impl IntoResponse, AppError>` where `AppError`
-  implements `IntoResponse`.
+- **Error handling:** `thiserror` for library errors, `anyhow` for
+  application errors. Axum handlers return
+  `Result<impl IntoResponse, AppError>` where `AppError` implements
+  `IntoResponse`.
 - **Database:** `sqlx` with compile-time checked queries — `query!`,
-  `query_as!`, `query_scalar!` macros validate SQL and types against the
-  live dev DB at compile time, then check against the committed
-  `backend/.sqlx/` cache for offline builds (CI, Docker). Data-path
-  queries went all-macro under [UNK-167](https://linear.app/unkos/issue/UNK-167)
-  (PR series #157–#162, closer #163). Runtime
-  `sqlx::query(...)` is reserved for documented carve-outs only; CI
-  grep-guard (`.github/sqlx-runtime-allowlist.txt`) fails any new
-  invocation outside the registry. Carve-out classes:
+  `query_as!`, `query_scalar!` macros validate SQL + types against live
+  dev DB at compile time, then check against committed `backend/.sqlx/`
+  cache for offline builds (CI, Docker). Data-path queries went
+  all-macro under [UNK-167](https://linear.app/unkos/issue/UNK-167)
+  (PR series #157–#162, closer #163). Runtime `sqlx::query(...)`
+  reserved for documented carve-outs only; CI grep-guard
+  (`.github/sqlx-runtime-allowlist.txt`) fails any new invocation
+  outside registry. Carve-out classes:
   - **DDL** (`CREATE`, `DROP`, `ALTER TYPE`) — macros can't validate
-    against schema that doesn't exist yet at prepare time.
+    against schema not existing yet at prepare time.
   - **Dynamic SQL** built from runtime input (rare; flag in review).
   - **`SELECT set_config(...)`** — Postgres GUC calls for RLS context
-    injection (`app.current_user_id`, transaction-local — the RLS
+    injection (`app.current_user_id`, transaction-local — RLS
     enforcement seam consumed by every user-facing query) and
-    writeback pool identity (`app.system_context`, session-scoped — the
-    seam the `manifestations_*_system` policies match against). Not
-    data access; macros cannot validate GUC mutation against schema at
+    writeback pool identity (`app.system_context`, session-scoped —
+    seam `manifestations_*_system` policies match against). Not data
+    access; macros can't validate GUC mutation against schema at
     prepare time.
   - **Enum-drift test probes** — `models/manifestation_format.rs` and
     `models/user.rs` use `ALTER TYPE ... ADD VALUE` + cast to detect
-    code-vs-schema enum drift at test time; both require runtime SQL.
+    code-vs-schema enum drift at test time; both need runtime SQL.
 
-  The canonical carve-out registry is `.github/sqlx-runtime-allowlist.txt`.
-  Adding a new entry requires reviewer justification in the PR adding it.
+  Canonical carve-out registry: `.github/sqlx-runtime-allowlist.txt`.
+  New entry needs reviewer justification in PR adding it.
 
-  Established type-binding tactics (see
-  `backend/src/models/work.rs` and `backend/src/models/user.rs`):
+  Established type-binding tactics (see `backend/src/models/work.rs`
+  and `backend/src/models/user.rs`):
   - Custom Postgres ENUMs from string params: bind as text, cast in
-    SQL — `($N::text)::enum_type`. Avoids needing a Rust→PG-enum
-    mapping for `&str`.
-  - NUMERIC columns from `f64` / `Option<f64>`: bind as `float8` and
-    let Postgres implicitly cast — `$N::float8`. Avoids requiring
-    sqlx's `bigdecimal` feature.
-  - `query_as!` struct fields with custom enum types: use the
-    column-type override syntax — `column AS "name: Type"`. Forces
-    the macro to validate the column's PG OID against the Rust type's
-    `sqlx::Type` impl at prepare time.
-  - `format!()`-injected column lists are dynamic SQL and incompatible
+    SQL — `($N::text)::enum_type`. Avoids Rust→PG-enum mapping for
+    `&str`.
+  - NUMERIC columns from `f64` / `Option<f64>`: bind as `float8`, let
+    Postgres implicitly cast — `$N::float8`. Avoids sqlx's
+    `bigdecimal` feature.
+  - `query_as!` struct fields with custom enum types: use column-type
+    override syntax — `column AS "name: Type"`. Forces macro to
+    validate column's PG OID against Rust type's `sqlx::Type` impl at
+    prepare time.
+  - `format!()`-injected column lists are dynamic SQL, incompatible
     with macros. Inline columns at each call site; macro validation
     catches column drift independently per site.
 
   Cache regeneration: `DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo sqlx prepare -- --tests`
-  from `backend/`. CI guards against stale cache via
+  from `backend/`. CI guards stale cache via
   `cargo sqlx prepare --check -- --tests`. Migrations in
   `backend/migrations/`.
 
-- **Testing:** Use `axum-test` for integration tests. Unit tests live alongside the
-  code in `#[cfg(test)]` modules.
-- **DB-backed tests use `#[sqlx::test(migrations = "./migrations")]`.** The macro
-  provisions a fresh isolated database per test, runs every migration, and
-  injects a `PgPool` owned by the schema owner (`reverie` — bypasses RLS). Tests
-  that need the runtime roles (`reverie_app`, `reverie_ingestion`) build
-  secondary pools against the same per-test DB via
-  `crate::test_support::db::{app_pool_for, ingestion_pool_for}`. Tests run in
-  parallel thanks to database isolation; no manual fixture cleanup is required.
-  `DATABASE_URL` must point at the schema owner so `sqlx::test` can create
-  per-test databases (locally: `postgres://reverie:reverie@localhost:5433/reverie_dev`).
-- **OIDC integration tests use `crate::test_support::oidc_mock`.** Spins up
-  a `wiremock` server with `/jwks` + `/token` endpoints, generates a
-  per-test 2048-bit RSA keypair, and exposes an `OidcClient` with the
-  JWKS embedded so `id_token_verifier` does not need network IO. Tests
-  needing the OIDC `nonce` set in the session by `/auth/login` build the
-  router via `crate::build_router_with_session_store(state, auth_backend, store)`
-  with a shared `tower_sessions::MemoryStore` so the test can read it
-  back before driving `/auth/callback`.
-- **Logging:** Use `tracing` with structured fields. Never `println!` or `eprintln!`.
-- **Operator env-var namespacing:** when introducing an operator-facing
-  knob that overlaps with a Rust ecosystem default (e.g. `RUST_LOG`),
-  prefer a `REVERIE_*` name and cascade with `REVERIE_*` taking
-  precedence over the ecosystem name. Resolve the cascade once in
-  `config.rs` so the precedence is a single source of truth.
-  Rationale: operators read the `REVERIE_*` namespace from staging
-  docs; devs reach for the ecosystem default. Cascading honours both
-  without forcing either audience to learn the other's convention.
-  Exception: ecosystem names that _are_ the canonical operator
-  surface (e.g. `DATABASE_URL` — the URL-spec name, no namespace
-  alternative) are honoured directly without cascade.
-- **Formatting:** `cargo fmt` is enforced by CI. Do not fight the formatter.
-- **Linting:** `cargo clippy -- -D warnings` is enforced by CI. Fix warnings, don't
-  suppress them with `#[allow(...)]` unless there's a documented reason.
-- **Time:** use the `time` crate, not `chrono`. The blueprint mentions chrono
-  but the scaffold predates that decision — don't reintroduce chrono in
-  first-party code. The single documented exception is
-  `test_support.rs::oidc_mock`, where `openidconnect` v4's public API
-  (`CoreIdTokenClaims::new`) forces chrono types on the call site. That
-  use is contained to the OIDC mock and must not spread elsewhere.
+- **Testing:** `axum-test` for integration tests. Unit tests live
+  alongside code in `#[cfg(test)]` modules.
+- **DB-backed tests use `#[sqlx::test(migrations = "./migrations")]`.**
+  Macro provisions fresh isolated database per test, runs every
+  migration, injects `PgPool` owned by schema owner (`reverie` —
+  bypasses RLS). Tests needing runtime roles (`reverie_app`,
+  `reverie_ingestion`) build secondary pools against same per-test DB
+  via `crate::test_support::db::{app_pool_for, ingestion_pool_for}`.
+  Tests run parallel via database isolation; no manual fixture cleanup
+  required. `DATABASE_URL` must point at schema owner so `sqlx::test`
+  can create per-test databases (locally:
+  `postgres://reverie:reverie@localhost:5433/reverie_dev`).
+- **OIDC integration tests use `crate::test_support::oidc_mock`.**
+  Spins up `wiremock` server with `/jwks` + `/token` endpoints,
+  generates per-test 2048-bit RSA keypair, exposes `OidcClient` with
+  JWKS embedded so `id_token_verifier` needs no network IO. Tests
+  needing OIDC `nonce` set in session by `/auth/login` build router
+  via `crate::build_router_with_session_store(state, auth_backend, store)`
+  with shared `tower_sessions::MemoryStore` so test can read back
+  before driving `/auth/callback`.
+- **Logging:** `tracing` with structured fields. Never `println!` or
+  `eprintln!`.
+- **Operator env-var namespacing:** when introducing operator-facing
+  knob overlapping with Rust ecosystem default (e.g. `RUST_LOG`),
+  prefer `REVERIE_*` name and cascade with `REVERIE_*` taking
+  precedence over ecosystem name. Resolve cascade once in `config.rs`
+  so precedence is single source of truth. Rationale: operators read
+  `REVERIE_*` namespace from staging docs; devs reach for ecosystem
+  default. Cascading honours both without forcing either audience to
+  learn the other. Exception: ecosystem names that _are_ canonical
+  operator surface (e.g. `DATABASE_URL` — URL-spec name, no namespace
+  alternative) honoured directly without cascade.
+- **Formatting:** `cargo fmt` enforced by CI. Don't fight formatter.
+- **Linting:** `cargo clippy -- -D warnings` enforced by CI. Fix
+  warnings, don't suppress with `#[allow(...)]` unless documented
+  reason.
+- **Time:** use `time` crate, not `chrono`. Blueprint mentions chrono
+  but scaffold predates that decision — don't reintroduce chrono in
+  first-party code. Single documented exception:
+  `test_support.rs::oidc_mock`, where `openidconnect` v4 public API
+  (`CoreIdTokenClaims::new`) forces chrono types on call site. Use
+  contained to OIDC mock, must not spread elsewhere.
 
 ## Rust Code Rules
 
 Project-specific hard rules. Broader Rust idioms (ownership, iterators,
-trait design, pattern matching, lifetime minimization) live in the
-`rust-patterns` skill — invoke it for deep patterns.
+trait design, pattern matching, lifetime minimization) live in
+`rust-patterns` skill — invoke for deep patterns.
 
-- **No `unwrap()` or `expect()` in non-test code** — compiler-enforced via
-  `clippy::unwrap_used = "deny"` / `expect_used = "deny"` in `Cargo.toml`.
-  Propagate with `?` or handle explicitly. Tests may use them freely
-  because `backend/clippy.toml` sets `allow-unwrap-in-tests = true` and
-  `allow-expect-in-tests = true`; the exemption covers `#[test]` functions,
-  `#[cfg(test)]` modules, and integration tests under `tests/`.
+- **No `unwrap()` or `expect()` in non-test code** — compiler-enforced
+  via `clippy::unwrap_used = "deny"` / `expect_used = "deny"` in
+  `Cargo.toml`. Propagate with `?` or handle explicitly. Tests may use
+  them freely because `backend/clippy.toml` sets
+  `allow-unwrap-in-tests = true` and `allow-expect-in-tests = true`;
+  exemption covers `#[test]` functions, `#[cfg(test)]` modules, and
+  integration tests under `tests/`.
 - **No `let _ = <Result>`.** Either log and continue via
   `if let Err(e) = ... { tracing::warn!(…); }`, or propagate with `?`.
   Silently discarding errors is forbidden.
 - **No wildcard imports** (`use foo::*`). Name what you import.
-- **`&str` over `String` in function parameters** when the function does not
+- **`&str` over `String` in function parameters** when function doesn't
   need ownership. Callers pass owned strings via auto-deref.
-- **`#[non_exhaustive]` on public enums and structs that may grow** at crate
-  boundaries — protects downstream `match` exhaustiveness from breakage.
-- **Enums over boolean flags** for distinct states with different behaviour
-  (`enum Mode { Read, Write, ReadWrite }`, not `read: bool, write: bool`).
-- **`From<SourceError>` via `thiserror`'s `#[from]`** for `?` propagation
-  across error boundaries.
-- **`unsafe` requires a `// SAFETY:` comment per block** explaining the
-  invariant. Adjacent unsafe blocks under the same invariant each get their
-  own comment. Crate-level `unsafe_code = "deny"` (see `Cargo.toml`) enforces
-  scope at the boundary; only `#[allow(unsafe_code)]`-marked code may use
-  unsafe, and that marking requires reviewer justification.
+- **`#[non_exhaustive]` on public enums and structs that may grow** at
+  crate boundaries — protects downstream `match` exhaustiveness from
+  breakage.
+- **Enums over boolean flags** for distinct states with different
+  behaviour (`enum Mode { Read, Write, ReadWrite }`, not
+  `read: bool, write: bool`).
+- **`From<SourceError>` via `thiserror`'s `#[from]`** for `?`
+  propagation across error boundaries.
+- **`unsafe` requires `// SAFETY:` comment per block** explaining
+  invariant. Adjacent unsafe blocks under same invariant each get own
+  comment. Crate-level `unsafe_code = "deny"` (see `Cargo.toml`)
+  enforces scope at boundary; only `#[allow(unsafe_code)]`-marked code
+  may use unsafe, marking requires reviewer justification.
 
 ## Security headers (UNK-106)
 
 Backend owns response-header policy. Every response carries XCTO,
-Referrer-Policy, Permissions-Policy, X-Frame-Options unconditionally, and a
-route-class-differentiated `Content-Security-Policy`: HTML routes get a
-hash-based CSP (one inline FOUC script pinned via `'sha256-...'`), API
-routes get `default-src 'none'`.
+Referrer-Policy, Permissions-Policy, X-Frame-Options unconditionally,
+and route-class-differentiated `Content-Security-Policy`: HTML routes
+get hash-based CSP (one inline FOUC script pinned via `'sha256-...'`),
+API routes get `default-src 'none'`.
 
 - Implementation: `backend/src/security/` (`csp.rs` builders,
-  `dist_validation.rs` startup check, `headers.rs` middleware + composite
-  fallback).
-- Wiring: `backend/src/lib.rs::run` precomputes the CSP strings on
-  `SecurityConfig` at startup; `build_router_with_session_store` applies
-  per-router `.layer(api_csp_layer)` / `.layer(html_csp_layer)` plus an
-  outermost `security_headers` uniform middleware; the single composite
-  `.fallback(composite_fallback)` manually attaches CSP to unmatched paths.
-  `build_router` is a thin wrapper that calls
+  `dist_validation.rs` startup check, `headers.rs` middleware +
+  composite fallback).
+- Wiring: `backend/src/lib.rs::run` precomputes CSP strings on
+  `SecurityConfig` at startup; `build_router_with_session_store`
+  applies per-router `.layer(api_csp_layer)` / `.layer(html_csp_layer)`
+  plus outermost `security_headers` uniform middleware; single
+  composite `.fallback(composite_fallback)` manually attaches CSP to
+  unmatched paths. `build_router` is thin wrapper calling
   `build_router_with_session_store` with `PostgresStore` (backed by
-  `state.pool`) for production; tests pass their own `MemoryStore` to
-  share session state with the harness (see Testing in `## Conventions`).
+  `state.pool`) for production; tests pass own `MemoryStore` to share
+  session state with harness (see Testing in `## Conventions`).
 - Operator surface: `docs/security/content-security-policy.md`.
-- Tests: `backend/src/security/**/tests` are co-located; integration tests
-  in `security::headers::tests` use `test_server_with_security()` to inject
-  custom `SecurityConfig` fixtures.
+- Tests: `backend/src/security/**/tests` co-located; integration tests
+  in `security::headers::tests` use `test_server_with_security()` to
+  inject custom `SecurityConfig` fixtures.
 
-**Never add inline `<script>` tags to `frontend/index.html` without a matching
-CSP hash.** The Vite plugin `frontend/vite-plugins/csp-hash.ts` hashes one
-specific script (`frontend/src/fouc/fouc.js`) at build time. Additional
-inline scripts require either a new hash source in the plugin or an overhaul
-to nonce-based CSP (out of scope pre-v1.0).
+**Never add inline `<script>` tags to `frontend/index.html` without
+matching CSP hash.** Vite plugin `frontend/vite-plugins/csp-hash.ts`
+hashes one specific script (`frontend/src/fouc/fouc.js`) at build
+time. Additional inline scripts need either new hash source in plugin
+or overhaul to nonce-based CSP (out of scope pre-v1.0).
 
-**Never emit duplicate CSP headers from the reverse proxy.** Reverie's CSP
-is route-class-differentiated; stacking a proxy-level CSP on top nullifies
-the differentiation.
+**Never emit duplicate CSP headers from reverse proxy.** Reverie's CSP
+is route-class-differentiated; stacking proxy-level CSP on top
+nullifies differentiation.
 
 ## Database Migration Rules
 
-- **Pre-v1.0 schema is freely mutable.** Add migrations and constraints now
-  rather than deferring for a future cleanup PR.
-- **Enum column type changes:** `DROP DEFAULT` before `ALTER COLUMN TYPE`,
-  then `SET DEFAULT` after. Postgres requires the default expression to
-  type-check against the current column type.
-- **Test data for `find_or_create` with `pg_trgm`:** titles must use distinct
-  vocabulary. Shared words push trigram similarity above the 0.6 match
-  threshold and cause false-positive de-duplication in tests.
+- **Pre-v1.0 schema freely mutable.** Add migrations and constraints
+  now rather than deferring for future cleanup PR.
+- **Enum column type changes:** `DROP DEFAULT` before
+  `ALTER COLUMN TYPE`, then `SET DEFAULT` after. Postgres requires
+  default expression to type-check against current column type.
+- **Test data for `find_or_create` with `pg_trgm`:** titles must use
+  distinct vocabulary. Shared words push trigram similarity above 0.6
+  match threshold, cause false-positive de-duplication in tests.
 
 ## Project Structure (as it grows)
 
