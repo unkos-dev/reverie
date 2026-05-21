@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import { BookOpen, LayoutGrid, List, Search, SlidersHorizontal } from "lucide-react";
 import { Lockup } from "@/components/Lockup";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -37,12 +38,12 @@ function BookCard({ book }: BookCardProps): ReactElement {
       </div>
       <div className="flex flex-col gap-1">
         <h3 className="font-display font-semibold text-fg text-sm leading-tight line-clamp-2">
-          <a
-            href={`/design/hero/book?id=${book.id}`}
+          <Link
+            to={`/design/hero/book?id=${book.id}`}
             className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             {book.title}
-          </a>
+          </Link>
         </h3>
         <p className="text-fg-muted text-xs leading-tight line-clamp-1">
           {book.authors.join(", ")}
@@ -58,8 +59,8 @@ interface BookRowProps {
 
 function BookRow({ book }: BookRowProps): ReactElement {
   return (
-    <a
-      href={`/design/hero/book?id=${book.id}`}
+    <Link
+      to={`/design/hero/book?id=${book.id}`}
       className="flex gap-4 items-center px-3 py-3 -mx-3 rounded-md border border-transparent hover:bg-surface-2 hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas transition-colors"
     >
       <div className="w-12 shrink-0">
@@ -84,7 +85,7 @@ function BookRow({ book }: BookRowProps): ReactElement {
         <span className="font-mono">{book.formats.join(" · ")}</span>
         {book.readingState === "reading" ? <Badge>Reading</Badge> : null}
       </div>
-    </a>
+    </Link>
   );
 }
 

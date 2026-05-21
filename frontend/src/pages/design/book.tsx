@@ -1,4 +1,5 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { Link, useSearchParams } from "react-router";
 import {
   ArrowLeft,
   BookOpen,
@@ -18,14 +19,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import { bookById, BOOKS, FEATURED_BOOK_ID, type Book } from "./fixtures/books";
 
-function selectBook(): Book {
-  if (typeof window !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("id");
-    if (id) {
-      const match = bookById(id);
-      if (match) return match;
-    }
+function resolveBook(idParam: string | null): Book {
+  if (idParam) {
+    const match = bookById(idParam);
+    if (match) return match;
   }
   const featured = bookById(FEATURED_BOOK_ID);
   return featured ?? BOOKS[0];
@@ -33,7 +30,7 @@ function selectBook(): Book {
 
 interface MetadataRowProps {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 function MetadataRow({ label, children }: MetadataRowProps): ReactElement {
@@ -72,7 +69,8 @@ function VersionRow({ version, source, status, timestamp }: VersionRowProps): Re
 
 export default function HeroBookPage(): ReactElement {
   const { effective } = useTheme();
-  const book = selectBook();
+  const [searchParams] = useSearchParams();
+  const book = resolveBook(searchParams.get("id"));
 
   return (
     <main className="bg-canvas text-fg min-h-screen">
@@ -80,12 +78,12 @@ export default function HeroBookPage(): ReactElement {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-4">
           <Lockup size={24} theme={effective === "dark" ? "dark" : "light"} />
           <nav aria-label="Breadcrumb" className="hidden sm:flex items-center gap-1 text-xs">
-            <a
-              href="/design/hero/library"
+            <Link
+              to="/design/hero/library"
               className="text-fg-muted hover:text-fg rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas px-1"
             >
               library
-            </a>
+            </Link>
             <ChevronRight className="w-3.5 h-3.5 text-fg-faint" aria-hidden="true" />
             <span className="text-fg-faint truncate max-w-[16rem]">{book.title}</span>
           </nav>
@@ -97,9 +95,9 @@ export default function HeroBookPage(): ReactElement {
             className="sm:hidden"
             aria-label="Back to library"
           >
-            <a href="/design/hero/library">
+            <Link to="/design/hero/library">
               <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            </a>
+            </Link>
           </Button>
           <ThemeSwitcher />
         </div>
@@ -137,12 +135,12 @@ export default function HeroBookPage(): ReactElement {
             <header className="flex flex-col gap-2">
               {book.series ? (
                 <p className="text-fg-faint text-xs uppercase tracking-[0.22em]">
-                  <a
-                    href={`/design/hero/library?series=${encodeURIComponent(book.series.name)}`}
+                  <Link
+                    to={`/design/hero/library?series=${encodeURIComponent(book.series.name)}`}
                     className="hover:text-fg rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
                   >
                     {book.series.name}
-                  </a>
+                  </Link>
                   <span className="text-fg-faint">
                     {" · book "}
                     {String(book.series.position)}
