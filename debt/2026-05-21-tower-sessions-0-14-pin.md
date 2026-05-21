@@ -38,8 +38,9 @@ cuts v0.19.0 (or higher).
 inline note at L52-58 explaining the `tower-sessions-sqlx-store` 0.15
 ↔ tower-sessions 0.14 pairing (ADR
 [`2026-05-08-tower-sessions-sqlx-store.md`](../adr/2026-05-08-tower-sessions-sqlx-store.md)).
-The inline note references axum-login#320 but the load-bearing PR
-is #315; refresh on next touch.
+The inline note now references the load-bearing upstream PR,
+axum-login#315 (refreshed in the same change that adopted this
+debt entry).
 
 ## Why this isn't the right shape
 
