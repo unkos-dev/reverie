@@ -27,19 +27,19 @@
 /* Tokens that generate utilities (bg-canvas, text-fg, border-border, etc.).
    `inline` keyword is what allows tokens to reference runtime var(--…) values. */
 @theme inline {
-  --color-canvas:        var(--canvas);
-  --color-canvas-2:      var(--canvas-2);
-  --color-surface:       var(--surface);
-  --color-surface-2:     var(--surface-2);
-  --color-border:        var(--border);
+  --color-canvas: var(--canvas);
+  --color-canvas-2: var(--canvas-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
   --color-border-strong: var(--border-strong);
-  --color-fg:            var(--fg);
-  --color-fg-muted:      var(--fg-muted);
-  --color-fg-faint:      var(--fg-faint);
-  --color-accent:        var(--accent);
-  --color-accent-soft:   var(--accent-soft);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-faint: var(--fg-faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-accent-strong: var(--accent-strong);
-  --color-fg-on-accent:  var(--fg-on-accent);
+  --color-fg-on-accent: var(--fg-on-accent);
   /* `bg-hover` is the shadcn-primitive hover/focus lift token.
      Decoupled from brand `--color-accent` (Reverie Gold) so dropdown,
      select, and similar primitives don't saturate gold on every hover.
@@ -47,13 +47,13 @@
      gold is the signature for primary affordance, not a hover treatment.
      Aliased to `--color-surface-2` so hover reads as a quiet elevation
      in both themes; redefine if hover needs to diverge from surface-2. */
-  --color-hover:         var(--surface-2);
+  --color-hover: var(--surface-2);
 
   /* Typography — Satoshi for body/chrome, Author for display, JetBrains
      Mono is loaded but conditional (UNK-113 reviews adoption post-0.1.0). */
   --font-display: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-body:    "Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-body: "Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Radius scaffolding — sourced from D2 outcomes; brand-neutral. */
   --radius-sm: 0.25rem;
@@ -73,32 +73,55 @@
      §11A no-hue mapping (font-semibold + gold recovery action).
      The aliases keep the utilities renderable so primitives compile;
      the actual error-state UX is enforced at the surface level. */
-  --color-background:           var(--canvas);
-  --color-foreground:           var(--fg);
-  --color-card:                 var(--surface);
-  --color-card-foreground:      var(--fg);
-  --color-popover:              var(--surface);
-  --color-popover-foreground:   var(--fg);
-  --color-primary:              var(--accent);
-  --color-primary-foreground:   var(--fg-on-accent);
-  --color-secondary:            var(--surface-2);
+  --color-background: var(--canvas);
+  --color-foreground: var(--fg);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--fg-on-accent);
+  --color-secondary: var(--surface-2);
   --color-secondary-foreground: var(--fg);
-  --color-muted:                var(--surface);
-  --color-muted-foreground:     var(--fg-muted);
-  --color-input:                var(--border);
-  --color-ring:                 var(--accent);
-  --color-destructive:          var(--fg);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--fg-muted);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --color-destructive: var(--fg);
   --color-destructive-foreground: var(--fg-on-accent);
+
+  /* Cover-artwork palette (theme-independent).
+     Production cover art comes from EPUB / enrichment; the design-system
+     D4 fixtures render typographic stand-ins via these tokens. Treated as
+     publisher-series spines — they do NOT switch when the reader toggles
+     Light↔Dark, by intent. No `[data-theme]` override block defines
+     `--cover-*`, so the @theme inline mapping resolves to constants.
+     Generates Tailwind utilities `bg-cover-ink`, `fill-cover-gold`, etc. */
+  --color-cover-ink: var(--cover-ink);
+  --color-cover-cream: var(--cover-cream);
+  --color-cover-parchment: var(--cover-parchment);
+  --color-cover-gold: var(--cover-gold);
 
   /* Motion tokens — philosophy §8 timing budget (interaction motion 200–300ms;
      page transitions ≤300ms). Theme transition is a longer 300ms because it
      touches the entire surface. */
-  --duration-fast:   180ms;
-  --duration-base:   240ms;
-  --duration-slow:   320ms;
-  --duration-theme:  300ms;
-  --ease-standard:   cubic-bezier(0.22, 0.61, 0.36, 1);
-  --ease-emphasised: cubic-bezier(0.16, 0.78, 0.30, 1);
+  --duration-fast: 180ms;
+  --duration-base: 240ms;
+  --duration-slow: 320ms;
+  --duration-theme: 300ms;
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-emphasised: cubic-bezier(0.16, 0.78, 0.3, 1);
+}
+
+/* Cover-artwork palette — declared once on :root only. Intentionally NOT
+   overridden by [data-theme="dark"] so cover artwork stays brand-fixed
+   across theme switches (see philosophy §11C — Lockup invariant; covers
+   inherit the same artwork-stability rule). */
+:root {
+  --cover-ink: #0e0d0a;
+  --cover-cream: #e8e0d0;
+  --cover-parchment: #e8dcc2;
+  --cover-gold: #c9a961;
 }
 
 /* Default + explicit Light theme (Parchment).
@@ -106,46 +129,51 @@
    be nested per Tailwind v4 docs). */
 :root,
 [data-theme="light"] {
-  --canvas:        #E8DCC2; /* Parchment */
-  --canvas-2:      #DFD2B4;
-  --surface:       #F0E6CF;
-  --surface-2:     #E5D8BC;
-  --border:        #C7B894;
-  --border-strong: #B0A07C;
-  --fg:            #0E0D0A; /* Ink */
-  --fg-muted:      #5A5244;
-  --fg-faint:      #8A8170;
+  --canvas: #e8dcc2; /* Parchment */
+  --canvas-2: #dfd2b4;
+  --surface: #f0e6cf;
+  --surface-2: #e5d8bc;
+  --border: #c7b894;
+  --border-strong: #b0a07c;
+  --fg: #0e0d0a; /* Ink */
+  --fg-muted: #5a5244;
+  --fg-faint: #8a8170;
   /* Reverie Gold #C9A961 darkened for Light theme. Sourced from philosophy
      spec §10, not identity.md (which only locks #C9A961). Passes 1.4.11
      (UI 3:1) + 1.4.3 large-text on Parchment; does NOT pass normal-text
      4.5:1 — restrict to focus rings, large CTAs, recovery actions. */
-  --accent:        #8E6F38;
-  --accent-soft:   #DCC890;
-  --accent-strong: #6E5424;
-  --fg-on-accent:  #E8DCC2; /* Parchment */
+  --accent: #8e6f38;
+  --accent-soft: #dcc890;
+  --accent-strong: #6e5424;
+  --fg-on-accent: #e8dcc2; /* Parchment */
 }
 
 /* Dark theme — Ink-leaning canvas + warm surfaces + Reverie Gold accent. */
 [data-theme="dark"] {
-  --canvas:        #14120E;
-  --canvas-2:      #1A1812;
-  --surface:       #221F18;
-  --surface-2:     #2A261D;
-  --border:        #2E2A22;
-  --border-strong: #3A3528;
-  --fg:            #E8E0D0; /* Cream */
-  --fg-muted:      #A8A090;
-  --fg-faint:      #6E6858;
-  --accent:        #C9A961; /* Reverie Gold */
-  --accent-soft:   #4A3C24;
-  --accent-strong: #D4B070;
-  --fg-on-accent:  #0E0D0A; /* Ink */
+  --canvas: #14120e;
+  --canvas-2: #1a1812;
+  --surface: #221f18;
+  --surface-2: #2a261d;
+  --border: #2e2a22;
+  --border-strong: #3a3528;
+  --fg: #e8e0d0; /* Cream */
+  --fg-muted: #a8a090;
+  --fg-faint: #6e6858;
+  --accent: #c9a961; /* Reverie Gold */
+  --accent-soft: #4a3c24;
+  --accent-strong: #d4b070;
+  --fg-on-accent: #0e0d0a; /* Ink */
 }
 
 /* Loading-pulse keyframe — philosophy §11A loading-state expression.
    Loading state communicates via opacity pulse on the loading region,
    not a separate `--color-loading` token. */
 @keyframes loading-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.85; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
