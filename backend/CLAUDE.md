@@ -103,7 +103,7 @@ workaround.
     catches column drift independently per site.
 
   Cache regeneration: `DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo sqlx prepare -- --tests`
-  from `backend/`. CI guards stale cache via
+  from `backend/`. CI guards against stale cache via
   `cargo sqlx prepare --check -- --tests`. Migrations in
   `backend/migrations/`.
 
@@ -147,8 +147,8 @@ workaround.
   but scaffold predates that decision — don't reintroduce chrono in
   first-party code. Single documented exception:
   `test_support.rs::oidc_mock`, where `openidconnect` v4 public API
-  (`CoreIdTokenClaims::new`) forces chrono types on call site. Use
-  contained to OIDC mock, must not spread elsewhere.
+  (`CoreIdTokenClaims::new`) forces chrono types on call site. That
+  use is contained to OIDC mock, must not spread elsewhere.
 
 ## Rust Code Rules
 

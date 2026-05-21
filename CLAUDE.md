@@ -80,7 +80,9 @@ Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` �
    - Happy path tests (expected behaviour works)
    - Negative tests (invalid input rejected, errors handled)
    - Edge cases where behaviour non-obvious
-     PR with untested code not approved.
+
+   PR with untested code not approved.
+
 6. **Security scrutiny continuous, not terminal.** Reverie open-source + self-hosted — threat model = multi-user exposed instance, not private deploy. For any change touching user input, auth, sessions, secrets, file I/O, XML parsing, outbound HTTP, response headers: consult relevant file in `.claude/security/` and explicitly answer "will this stand up to security review?" in task summary before done.
 7. **Never surface decrypted secret values.** Reporting secrets (env vars, API keys, session cookies, DB passwords, OIDC client secrets): describe presence + shape only (source, length, format) — never value. No `grep`/`rg`/`cat` on env files or key material, even when user appears to ask for value.
 
