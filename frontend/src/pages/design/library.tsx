@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { BookOpen, LayoutGrid, List, Search, SlidersHorizontal } from "lucide-react";
 import { Lockup } from "@/components/Lockup";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -21,34 +21,37 @@ interface BookCardProps {
 function BookCard({ book }: BookCardProps): ReactElement {
   const seriesLabel = book.series ? `${book.series.name} · #${String(book.series.position)}` : null;
 
+  // Whole card is one link target — cover + title both navigate to the
+  // detail route, matching BookRow's contract and the visual hover-lift
+  // affordance on the article wrapper.
   return (
-    <article className="group flex flex-col gap-3 transition-transform duration-200 hover:-translate-y-0.5 focus-within:-translate-y-0.5">
-      <div className="relative overflow-hidden rounded-md border border-border group-hover:border-border-strong group-focus-within:border-border-strong transition-colors">
-        <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
-        {seriesLabel ? (
-          <span className="absolute top-2 left-2 bg-canvas/85 text-fg text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm border border-border backdrop-blur-sm">
-            {seriesLabel}
-          </span>
-        ) : null}
-        {book.readingState === "reading" ? (
-          <span className="absolute bottom-2 right-2 bg-accent text-fg-on-accent text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm font-semibold">
-            Reading
-          </span>
-        ) : null}
-      </div>
-      <div className="flex flex-col gap-1">
-        <h3 className="font-display font-semibold text-fg text-sm leading-tight line-clamp-2">
-          <Link
-            to={`/design/hero/book?id=${book.id}`}
-            className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
-          >
+    <article className="group">
+      <Link
+        to={`/design/hero/book?id=${book.id}`}
+        className="flex flex-col gap-3 rounded-md transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+      >
+        <div className="relative overflow-hidden rounded-md border border-border group-hover:border-border-strong transition-colors">
+          <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
+          {seriesLabel ? (
+            <span className="absolute top-2 left-2 bg-canvas/85 text-fg text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm border border-border backdrop-blur-sm">
+              {seriesLabel}
+            </span>
+          ) : null}
+          {book.readingState === "reading" ? (
+            <span className="absolute bottom-2 right-2 bg-accent text-fg-on-accent text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm font-semibold">
+              Reading
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-1">
+          <h3 className="font-display font-semibold text-fg text-sm leading-tight line-clamp-2">
             {book.title}
-          </Link>
-        </h3>
-        <p className="text-fg-muted text-xs leading-tight line-clamp-1">
-          {book.authors.join(", ")}
-        </p>
-      </div>
+          </h3>
+          <p className="text-fg-muted text-xs leading-tight line-clamp-1">
+            {book.authors.join(", ")}
+          </p>
+        </div>
+      </Link>
     </article>
   );
 }
@@ -91,14 +94,30 @@ function BookRow({ book }: BookRowProps): ReactElement {
 
 export default function HeroLibraryPage(): ReactElement {
   const { effective } = useTheme();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [query, setQuery] = useState("");
   const [activeShelf, setActiveShelf] = useState<string | null>(null);
+
+  // `?series=<name>` (set by the book-detail series link) drives a
+  // dedicated series filter alongside the shelf chips. Series and
+  // shelves overlap conceptually but are distinct fields in the
+  // fixture; treat them as independent filters that AND together.
+  const activeSeries = searchParams.get("series");
+
+  function clearSeriesFilter(): void {
+    const next = new URLSearchParams(searchParams);
+    next.delete("series");
+    setSearchParams(next, { replace: true });
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return BOOKS.filter((book) => {
       if (activeShelf && !(book.shelves?.includes(activeShelf) ?? false)) {
+        return false;
+      }
+      if (activeSeries && book.series?.name !== activeSeries) {
         return false;
       }
       if (q.length === 0) return true;
@@ -108,7 +127,7 @@ export default function HeroLibraryPage(): ReactElement {
         (book.series?.name.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [query, activeShelf]);
+  }, [query, activeShelf, activeSeries]);
 
   const allShelves = useMemo(() => {
     const set = new Set<string>();
@@ -176,10 +195,21 @@ export default function HeroLibraryPage(): ReactElement {
           />
         </div>
 
+        {activeSeries ? (
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-fg-faint text-xs uppercase tracking-[0.16em]">Series filter</span>
+            <span className="font-display font-semibold text-fg">{activeSeries}</span>
+            <Button variant="ghost" size="sm" onClick={clearSeriesFilter}>
+              Clear
+            </Button>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap gap-2 items-center mb-6">
           <Button
             variant={activeShelf === null ? "outline" : "ghost"}
             size="sm"
+            aria-pressed={activeShelf === null}
             onClick={() => {
               setActiveShelf(null);
             }}
@@ -191,6 +221,7 @@ export default function HeroLibraryPage(): ReactElement {
               key={shelf}
               variant={activeShelf === shelf ? "outline" : "ghost"}
               size="sm"
+              aria-pressed={activeShelf === shelf}
               onClick={() => {
                 setActiveShelf(shelf);
               }}
@@ -241,6 +272,7 @@ export default function HeroLibraryPage(): ReactElement {
               onClick={() => {
                 setQuery("");
                 setActiveShelf(null);
+                if (activeSeries) clearSeriesFilter();
               }}
             >
               Clear filters

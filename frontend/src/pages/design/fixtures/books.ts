@@ -359,7 +359,7 @@ export const BOOKS: [Book, ...Book[]] = [
     isbn13: "9781566894883",
     pageCount: 272,
     formats: ["EPUB"],
-    shelves: ["American gothic", "Booker winners"],
+    shelves: ["American gothic"],
     readingState: "unread",
   },
 ];
