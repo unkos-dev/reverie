@@ -33,7 +33,7 @@ Editorial, weighted, permanent — with a cinematic-boutique register on the col
 - **Editorial** — typography is opinionated and disciplined; Author for display moments, Satoshi for the workhorse, JetBrains Mono for metadata. The voice is restrained, deliberate, British-spelled. No breezy SaaS copy. No exclamation marks. No trailing em dashes.
 - **Weighted** — the mark is a stone tablet with an inscription cut into it. Every chrome element should feel grounded, considered, like it could not be moved by accident. The opposite of frictionless.
 - **Permanent** — inscription, not refresh. Adding a book is committing it to the record. The interface reinforces this: undo where feasible, typed-name confirmation where not, no clever delete affordances.
-- **Cinematic, boutique** — the library and detail surfaces carry motion as a register signal (slow ambient drift in localised heroes, parallax on cover backdrops, 200–300ms ease-out interactions). The reader withdraws. The cinematic half makes the archive feel alive; the boutique half keeps it from drifting into arcade.
+- **Cinematic, boutique** — the library and detail surfaces carry motion as a register signal (slow ambient drift in localised heroes, parallax on cover backdrops, 180–320 ms ease-out interactions). The reader withdraws. The cinematic half makes the archive feel alive; the boutique half keeps it from drifting into arcade.
 
 ## Anti-references
 
@@ -54,7 +54,7 @@ Drift-checks: if a designer can guess theme + palette from category alone, the f
 
 3. **The library does identity work; the reader recedes.** The cinematic-boutique register lives in the collector's-archive surfaces (home, library grid, book detail). The reader inherits palette and motion language but its chrome is the most minimal of all views. Two rooms in one house, both serving their primary task.
 
-4. **Motion is felt, not flaunted.** No canvas-wide ambient drift. Localised hero treatments only. 200–300ms ease-out (quart/quint/expo), never bounce, elastic, or spring. `prefers-reduced-motion` is respected as a first-class state — the cinematic register lives in palette and typography when motion recedes.
+4. **Motion is felt, not flaunted.** No canvas-wide ambient drift. Localised hero treatments only. 180–320 ms ease-out (quart/quint/expo), never bounce, elastic, or spring. `prefers-reduced-motion` is respected as a first-class state — the cinematic register lives in palette and typography when motion recedes.
 
 5. **Self-hosting is a posture, not a feature.** Treat users as operators with taste, not as customers of a hosted service. No upsells, no telemetry prompts, no trial-CTA scaffolding, no marketing growth-hook patterns. The product is for people who chose to own their library; the surfaces must respect that choice.
 

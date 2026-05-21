@@ -97,7 +97,7 @@ components:
     padding: "0 0.625rem"
     height: "2rem"
   button-ghost:
-    backgroundColor: "{colors.surface-dark}"
+    backgroundColor: "transparent"
     textColor: "{colors.fg-dark}"
     rounded: "{rounded.lg}"
     padding: "0 0.625rem"
@@ -304,7 +304,7 @@ Three forms ranked by canonicality: (1) lockup with glyph — canonical; (2) gly
 
 ### Do:
 
-- **Do** anchor every screen on Parchment (`#E8DCC2`) or Ink (`#14120E`); the two canvases are the only legitimate page backgrounds.
+- **Do** anchor every screen on Parchment (`#E8DCC2`) or the Ink-anchored dark canvas (`#14120E`); the two canvases are the only legitimate page backgrounds. Canonical Ink (`#0E0D0A`) is the foreground colour on light surfaces, not a canvas value.
 - **Do** use Reverie Gold (`#C9A961` dark / `#8E6F38` light) for focus rings, primary CTAs, recovery actions out of error states, and the Slot mark fill. Nothing else.
 - **Do** restrict Reverie Alarm to fill, border, or icon — never body text. Use it in exactly the two carve-out contexts (irreversible destructive confirm, unrecoverable system error).
 - **Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.
