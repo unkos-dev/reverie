@@ -246,6 +246,14 @@ jobs:
       - name: Stylelint
         run: npx stylelint 'src/**/*.css' --max-warnings 0
 
+      # impeccable design anti-pattern detector (advisory). Flip to
+      # blocking once the 3 known `bg-black` findings in stock shadcn
+      # overlays are addressed (see memory entry
+      # `project_bg_black_overlays_deferred`).
+      - name: Detect (impeccable, advisory)
+        run: npm run detect
+        continue-on-error: true
+
       - name: Verify font integrity
         working-directory: frontend/public/fonts/fontshare/files
         run: sha256sum -c SHA256SUMS
