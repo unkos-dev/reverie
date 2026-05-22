@@ -1,0 +1,29 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/backend/target/**": true,
+    "**/target/**": true,
+    "**/dist/**": true,
+    "**/graphify-out/**": true,
+    "**/.next/**": true,
+    "**/coverage/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/backend/target": true,
+    "**/dist": true,
+    "**/graphify-out": true,
+    "**/coverage": true
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true
+  },
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "package.json": ".commitlintrc*, .coderabbit.yaml, .editorconfig, .gitattributes, .gitignore, .lintstagedrc*, .markdownlint*, .npmrc, .nvmrc, .prettier*, _typos.toml, .typos.toml, commitlint.config.*, lint-staged.config.*, package-lock.json, pnpm-lock.yaml, yarn.lock, tsconfig*.json"
+  }
+}
