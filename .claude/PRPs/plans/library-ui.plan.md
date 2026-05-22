@@ -108,7 +108,7 @@ Single committed plan file (this one). Sub-phase PRs each cite this plan plus op
 ║   │   /api/books           (list + filter + sort + cursor)              │     ║
 ║   │   /api/books/:id       (detail w/ versions + status)                │     ║
 ║   │   /api/works/:id       (work + manifestations grouped)              │     ║
-║   │   /api/library/search  (tsvector + trigram hybrid)                  │     ║
+║   │   /api/search          (tsvector + trigram hybrid)                  │     ║
 ║   │   /api/series/:id      (work group)                                 │     ║
 ║   │   /api/shelves         (CRUD)                                       │     ║
 ║   │   /api/shelves/:id/items (reorder)                                  │     ║
@@ -302,7 +302,7 @@ impl IntoResponse for AppError {
                 (500, "internal", "Internal Server Error", "An internal error occurred.".into())
             }
         };
-        let instance = current_request_uri();  // tower extension populated by problem_instance_layer
+        let instance = current_request_uri();  // reads tokio task-local set by problem_instance_layer middleware
         let body = serde_json::json!({
             "type":     format!("https://reverie.example/probs/{problem_type}"),
             "title":    title,
@@ -465,6 +465,29 @@ async function problemFromResponse(
     problem?.detail ?? "",
   );
 }
+
+/** Shape of an RFC 7807 Problem Details body. Fields optional — partial responses tolerated. */
+interface ProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  instance?: string;
+}
+
+/**
+ * Peek at a response body as RFC 7807 Problem Details; null on non-JSON or parse failure.
+ * Clones the response so downstream code can still consume the body (Response bodies are single-shot).
+ */
+async function peekProblem(res: Response): Promise<ProblemDetails | null> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/problem+json") && !ct.includes("application/json")) return null;
+  try {
+    return (await res.clone().json()) as ProblemDetails;
+  } catch {
+    return null;
+  }
+}
 ```
 
 **FRONTEND_API_ERRORS** (`src/api/errors.ts`):
@@ -498,24 +521,33 @@ export class ApiError extends Error {
 import { QueryClient, QueryCache } from "@tanstack/react-query";
 import { ApiError } from "@/api/errors";
 
-/** Global QueryClient configured for same-origin cookie auth. */
-export function makeQueryClient(onUnauthenticated: () => void): QueryClient {
-  return new QueryClient({
-    queryCache: new QueryCache({
-      onError: (err) => {
-        if (err instanceof ApiError && err.status === 401) onUnauthenticated();
-      },
-    }),
-    defaultOptions: {
-      queries: {
-        retry: (count, err) =>
-          !(err instanceof ApiError && (err.status === 401 || err.status === 403)) && count < 2,
-        staleTime: 30_000,
-      },
-    },
-  });
+// Module-level handler slot; `<App/>` sets this once `useNavigate` is available.
+// Avoids circular dep between QueryClient and react-router.
+let unauthenticatedHandler: (() => void) | null = null;
+
+/** Called from `<App/>` once react-router context is mounted. */
+export function setUnauthenticatedHandler(fn: () => void): void {
+  unauthenticatedHandler = fn;
 }
+
+/** Singleton QueryClient. Route loaders import it for prefetch; main.tsx uses it for QueryClientProvider. */
+export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) unauthenticatedHandler?.();
+    },
+  }),
+  defaultOptions: {
+    queries: {
+      retry: (count, err) =>
+        !(err instanceof ApiError && (err.status === 401 || err.status === 403)) && count < 2,
+      staleTime: 30_000,
+    },
+  },
+});
 ```
+
+Pattern note: `queryClient` is a **module singleton** (not a factory call). Route loaders (`ROUTE_LOADER_PREFETCH` below) import it directly. `<App/>` calls `setUnauthenticatedHandler(() => navigate("/login"))` inside an effect after `useNavigate` is available — wires 401 redirect without circular dep. Task 16 implements this handoff.
 
 **ROUTE_LOADER_PREFETCH** (new convention):
 
@@ -630,7 +662,7 @@ pub async fn list(
 | `frontend/src/api/shelves.ts`                      | CREATE (11d) | CRUD                                                                                                                                                                                                                                     |
 | `frontend/src/api/users.ts`                        | CREATE (11e) | Admin                                                                                                                                                                                                                                    |
 | `frontend/src/api/settings.ts`                     | CREATE (11f) | Settings                                                                                                                                                                                                                                 |
-| `frontend/src/lib/query/client.ts`                 | CREATE       | `makeQueryClient`                                                                                                                                                                                                                        |
+| `frontend/src/lib/query/client.ts`                 | CREATE       | `queryClient` singleton + `setUnauthenticatedHandler` (see `REACT_QUERY_SETUP` pattern)                                                                                                                                                  |
 | `frontend/src/lib/query/keys.ts`                   | CREATE       | Centralised `queryKey` factory: `books.list(params)`, `books.detail(id)`, etc. (mirrors the Tkdodo "query key factory" pattern)                                                                                                          |
 | `frontend/src/hooks/useUnauthenticatedRedirect.ts` | CREATE       | Wires `QueryCache.onError` 401 → `navigate('/login')`                                                                                                                                                                                    |
 | `frontend/src/routes/library.tsx`                  | CREATE       | Loader + lazy component for `/library` (and `/`)                                                                                                                                                                                         |
@@ -648,8 +680,8 @@ pub async fn list(
 | `frontend/src/pages/settings/SettingsPage.tsx`     | CREATE (11f) |                                                                                                                                                                                                                                          |
 | `frontend/src/components/CoverImage.tsx`           | CREATE       | `<img>` wrapping `/api/books/:id/cover/thumb` with `loading="lazy"`, `decoding="async"`, dimension hints, fallback to `CoverArtwork` (use existing dev component but produce a production variant that doesn't ship the fixture palette) |
 | `frontend/src/components/CommandPalette.tsx`       | CREATE (11b) | Cmd-K wrapping shadcn `Command` + react-router navigate                                                                                                                                                                                  |
-| `frontend/tests/api/*.test.ts`                     | CREATE       | API client tests with `vi.fn()` fetch mocks                                                                                                                                                                                              |
-| `frontend/tests/pages/*.test.tsx`                  | CREATE       | Page-level RTL tests using `MemoryRouter` + a test QueryClient                                                                                                                                                                           |
+| `frontend/src/api/__tests__/*.test.ts`             | CREATE       | API client tests with `vi.fn()` fetch mocks                                                                                                                                                                                              |
+| `frontend/src/pages/__tests__/*.test.tsx`          | CREATE       | Page-level RTL tests using `MemoryRouter` + a test QueryClient                                                                                                                                                                           |
 
 ### Frontend — modified files
 
@@ -762,7 +794,7 @@ These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 
 #### Task 1c: Backend — CSRF synchronizer token pattern
 
 - **ACTION**: CREATE `backend/src/security/csrf.rs` implementing the OWASP synchronizer token pattern:
-  - On session creation (`auth_session.login(&user)` in `routes/auth.rs::callback`), generate a 32-byte random token via `rand::rngs::OsRng`, base64url-encode, and store in the session under the key `csrf_token`.
+  - On session creation (`auth_session.login(&user)` in `routes/auth.rs::callback`), generate a 32-byte random token using the existing project idiom: `let mut bytes = [0u8; 32]; rand::fill(&mut bytes); let csrf_token = Base64UrlUnpadded::encode_string(&bytes);` (mirror `backend/src/auth/token.rs:50-56`). Store the base64url string in the session under the key `csrf_token`. Reverie pins `rand = "0.10.1"` — DO NOT use `rand::rngs::OsRng` (rand 0.10 reworked the `rngs` module surface and the codebase has standardised on `rand::fill`).
   - Expose a way for the frontend to read the token: ADD `csrf_token` field to the `/auth/me` JSON response (or — alternative — return it via a dedicated `GET /api/csrf-token` endpoint; ADR picks one). Recommend folding into `/auth/me` since the frontend already calls it on mount via `ThemeProvider`.
   - Add tower middleware layer `csrf_required` applied to every non-safe-verb (POST/PUT/PATCH/DELETE) request under `/api/*`. Layer reads `X-CSRF-Token` header; if absent → 428 `{"type": ".../csrf-missing", "status": 428, ...}`; if present but doesn't match `session.get::<String>("csrf_token")` → 403 `{"type": ".../csrf-mismatch", ...}`. Constant-time string compare (`subtle::ConstantTimeEq` or `ring::constant_time::verify_slices_are_equal`).
   - On `POST /auth/logout`, the token is destroyed with the session.
@@ -891,7 +923,7 @@ These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 
 
 #### Task 10: Frontend — failing test for `apiFetch` + `listBooks` (RED)
 
-- **ACTION**: CREATE `frontend/tests/api/books.test.ts` mocking `global.fetch`. Assertions:
+- **ACTION**: CREATE `frontend/src/api/__tests__/books.test.ts` mocking `global.fetch`. Assertions:
   - `credentials: 'same-origin'` set on every request
   - GET requests do NOT include `X-CSRF-Token`
   - POST/PUT/PATCH/DELETE requests DO include `X-CSRF-Token: <token>` header (mock `getCsrfToken()` to return a fixture)
@@ -913,7 +945,7 @@ These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 
 
 #### Task 12: Frontend — `QueryClient` + `QueryClientProvider`
 
-- **ACTION**: CREATE `src/lib/query/client.ts` (`makeQueryClient`), `src/lib/query/keys.ts` (key factory), modify `src/main.tsx` to wrap the router in `<QueryClientProvider>`.
+- **ACTION**: CREATE `src/lib/query/client.ts` (exports `queryClient` singleton + `setUnauthenticatedHandler` setter, per `REACT_QUERY_SETUP` pattern), `src/lib/query/keys.ts` (key factory), modify `src/main.tsx` to wrap the router in `<QueryClientProvider client={queryClient}>`.
 - **PATTERN**: `QueryCache({ onError })` for 401 redirect (per research). 401 redirect target = `/login` (= `/auth/login` proxy passthrough; the navigation triggers the existing OIDC flow).
 - **DEVTOOLS**: dev-only via `import.meta.env.DEV` dynamic import — same pattern as `designRoutes`.
 - **VALIDATE**: `npm run build` succeeds; type-check passes.
@@ -936,7 +968,7 @@ These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 
 - **COVER IMAGES**: `<img src={`/api/books/${book.id}/cover/thumb`} loading="lazy" decoding="async" />`. Fallback to a typographic placeholder when 404 (`onError` swap). Production `CoverImage` component handles this.
 - **PRESERVE_VISUAL_TARGET**: the layout, spacing, fonts, tokens all stay identical to the dev hero. The diff is data-source, not pixels.
 - **ROUTE_PARAMS**: `?view=grid|list`, `?sort=recent|title|author`, `?cursor=...`. URL is source of truth; component state mirrors URL via `useSearchParams`.
-- **TDD ORDER**: write `frontend/tests/pages/library/LibraryPage.test.tsx` first (render inside a `MemoryRouter` with a stubbed `QueryClient` seeded with fixture data, assert grid renders 3 covers and "Load more" appears when `next_cursor` is set) — RED. Then implement the component — GREEN.
+- **TDD ORDER**: write `frontend/src/pages/__tests__/library/LibraryPage.test.tsx` first (render inside a `MemoryRouter` with a stubbed `QueryClient` seeded with fixture data, assert grid renders 3 covers and "Load more" appears when `next_cursor` is set) — RED. Then implement the component — GREEN.
 - **VALIDATE**: `npm test`; visit `localhost:5173/library` against the dev backend, screenshot via `agent-browser` and visually compare against `/design/hero/library`.
 
 #### Task 15: Frontend — `BookPage` (RTL test red → component green)
@@ -948,7 +980,7 @@ These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 
 
 #### Task 16: Frontend — auth boundary (login redirect on 401)
 
-- **ACTION**: Wire `makeQueryClient` to a `useNavigate`-based redirect using `react-router`. Because `QueryClient` is module-scoped, expose an `onUnauthenticated` setter that `App` sets once `useNavigate` is available.
+- **ACTION**: Wire the `queryClient` singleton 401 handler to a `useNavigate`-based redirect. Inside `<App/>`, an effect calls `setUnauthenticatedHandler(() => navigate("/login"))` once on mount. Avoids circular dep: `client.ts` cannot import react-router (which needs QueryClientProvider already mounted to render routes), so the handler is injected after both are alive.
 - **TEST**: assert `QueryCache.onError` of an `ApiError` 401 calls the provided callback.
 - **VALIDATE**: `npm test`.
 
@@ -1193,7 +1225,7 @@ All sub-phases land AFTER 11a Task 1b (RFC 7807 migration). Every test that asse
 
 Optional third element `, detail: "<text>"` means the test also asserts `body["detail"] == "<text>"` (used only when the detail string is contractually stable; default is not to assert detail to decouple from copywriting changes).
 
-Helper: `test_support::db::assert_problem(response, status, slug)` and `assert_problem_with_detail(response, status, slug, detail)` (Task 1b adds these). Frontend tests use a `expectProblem(err, status, slug)` Vitest helper in `frontend/tests/helpers/problem.ts`.
+Helper: `test_support::db::assert_problem(response, status, slug)` and `assert_problem_with_detail(response, status, slug, detail)` (Task 1b adds these). Frontend tests use a `expectProblem(err, status, slug)` Vitest helper in `frontend/src/api/__tests__/problem.ts`.
 
 ### Edge cases (must cover at least once across sub-phases)
 
