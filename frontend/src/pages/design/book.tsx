@@ -158,9 +158,7 @@ export default function HeroBookPage(): ReactElement {
               <p className="font-body text-fg-muted text-lg">{book.authors.join(", ")}</p>
               <div className="flex flex-wrap items-center gap-2 mt-2">
                 {book.readingState === "reading" ? (
-                  <Badge className="bg-accent-soft text-fg border-transparent">
-                    Currently reading
-                  </Badge>
+                  <Badge className="bg-surface-2 text-fg font-semibold">Currently reading</Badge>
                 ) : null}
                 {book.readingState === "finished" ? (
                   <Badge variant="outline">Finished</Badge>

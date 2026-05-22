@@ -45,7 +45,7 @@ function BookCard({ book }: BookCardProps): ReactElement {
             </span>
           ) : null}
           {book.readingState === "reading" ? (
-            <span className="absolute bottom-2 right-2 bg-accent-soft text-fg text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm font-semibold">
+            <span className="absolute bottom-2 right-2 bg-surface-2 text-fg text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm font-semibold border border-border">
               Reading
             </span>
           ) : null}
@@ -94,7 +94,7 @@ function BookRow({ book }: BookRowProps): ReactElement {
         <span>{String(book.publishedYear)}</span>
         <span className="font-mono">{book.formats.join(" · ")}</span>
         {book.readingState === "reading" ? (
-          <Badge className="bg-accent-soft text-fg border-transparent">Reading</Badge>
+          <Badge className="bg-surface-2 text-fg font-semibold">Reading</Badge>
         ) : null}
       </div>
     </Link>
@@ -234,7 +234,7 @@ export default function HeroLibraryPage(): ReactElement {
               aria-pressed={activeShelf === shelf}
               className={selectedClass(activeShelf === shelf)}
               onClick={() => {
-                setActiveShelf(shelf);
+                setActiveShelf(activeShelf === shelf ? null : shelf);
               }}
             >
               {shelf}
