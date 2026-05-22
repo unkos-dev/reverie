@@ -51,10 +51,12 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResult> {
 /**
  * Persist the user's theme preference server-side. Fire-and-observe shape:
  * the returned object surfaces only `ok` and `status` so the caller can
- * branch between "rolled back, surface a toast" (4xx non-401) and "keep the
- * optimistic update, log a warning" (401 / 5xx). Deliberate omission of
- * the response body — the provider's optimistic update is the source of
- * truth and a re-read would race with the in-flight cookie write.
+ * branch across the three outcomes the provider's `setPreference` flow
+ * acts on — `ok: true` (broadcast + return), `ok: false` with status 401
+ * or ≥500 (keep the optimistic update, log a warning), `ok: false` with
+ * any other 4xx (roll back + toast). Deliberate omission of the response
+ * body — the provider's optimistic update is the source of truth and a
+ * re-read would race with the in-flight cookie write.
  *
  * @param value - Preference to persist; same allowlist the cookie carries.
  * @param signal - Optional abort signal; pass through from caller's

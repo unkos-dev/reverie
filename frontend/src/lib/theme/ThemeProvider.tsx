@@ -70,9 +70,11 @@ interface ThemeProviderProps {
  * preference, the resolved effective theme, and the async `setPreference`
  * callback that owns the optimistic-update + PATCH + rollback flow.
  *
- * Mount-time work:
- *   - Sync derive from cookie + FOUC-set `data-theme` so first render is
- *     correct.
+ * Initial render (synchronous, via `useMemo`):
+ *   - Derive initial preference + effective theme from cookie + FOUC-set
+ *     `data-theme` so first render is correct.
+ *
+ * Mount-time effects (three `useEffect` blocks):
  *   - Reconcile against `/auth/me` once (logged-in path; logged-out 401
  *     keeps the cookie value).
  *   - Subscribe to `prefers-color-scheme` so a `"system"` preference picks
