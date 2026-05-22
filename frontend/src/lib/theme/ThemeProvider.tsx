@@ -10,15 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import {
-  readThemeCookie,
-  writeThemeCookie,
-  type ThemePreference,
-} from "./cookie";
+import { readThemeCookie, writeThemeCookie, type ThemePreference } from "./cookie";
 import { fetchMe, patchTheme } from "./api";
 
-const PATCH_FAILURE_MESSAGE =
-  "Could not save theme preference. Reverted to your previous setting.";
+const PATCH_FAILURE_MESSAGE = "Could not save theme preference. Reverted to your previous setting.";
 
 type EffectiveTheme = "light" | "dark";
 
@@ -50,9 +45,7 @@ function deriveInitialState(): InitialState {
   if (painted === "dark" || painted === "light") {
     effective = painted;
   } else if (preference === "system") {
-    effective = matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
+    effective = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   } else {
     effective = preference;
   }
@@ -63,10 +56,7 @@ function applyEffective(theme: EffectiveTheme): void {
   document.documentElement.dataset.theme = theme;
 }
 
-function resolveEffective(
-  preference: ThemePreference,
-  systemDark: boolean,
-): EffectiveTheme {
+function resolveEffective(preference: ThemePreference, systemDark: boolean): EffectiveTheme {
   if (preference === "system") return systemDark ? "dark" : "light";
   return preference;
 }
@@ -82,12 +72,8 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
   // the optimistic-update + PATCH + rollback flow. Renaming would collide
   // with that public API.
   /* eslint-disable @eslint-react/use-state -- naming collides with public setPreference callback */
-  const [preference, setPreferenceState] = useState<ThemePreference>(
-    initial.preference,
-  );
-  const [effective, setEffectiveState] = useState<EffectiveTheme>(
-    initial.effective,
-  );
+  const [preference, setPreferenceState] = useState<ThemePreference>(initial.preference);
+  const [effective, setEffectiveState] = useState<EffectiveTheme>(initial.effective);
   /* eslint-enable @eslint-react/use-state */
   const channelRef = useRef<BroadcastChannel | null>(null);
   // Captures preference at mount so the reconcile effect can compare
@@ -109,7 +95,9 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
       });
     };
     mql.addEventListener("change", onChange);
-    return () => { mql.removeEventListener("change", onChange); };
+    return () => {
+      mql.removeEventListener("change", onChange);
+    };
   }, []);
 
   // Reconcile with the server on mount. Logged-out visitors (401) stay on
@@ -135,10 +123,7 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
         setPreferenceState(serverPref);
         setEffectiveState(nextEffective);
       } catch (error) {
-        if (
-          error instanceof DOMException &&
-          error.name === "AbortError"
-        ) {
+        if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
         // Reconciliation is best-effort; the cookie is the source of
@@ -147,7 +132,9 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
       }
     };
     void reconcile();
-    return () => { controller.abort(); };
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   // Cross-tab sync: receive remote changes without re-PATCHing.
@@ -160,11 +147,7 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
     channel.addEventListener("message", (event) => {
       const msg = event.data as { preference?: unknown };
       const candidate = msg.preference;
-      if (
-        candidate !== "system" &&
-        candidate !== "light" &&
-        candidate !== "dark"
-      ) {
+      if (candidate !== "system" && candidate !== "light" && candidate !== "dark") {
         return;
       }
       const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -195,24 +178,34 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
 
       try {
         const result = await patchTheme(next);
-        if (!result.ok) {
-          // Roll back on PATCH failure (validation rejection,
-          // network error, server error).
-          writeThemeCookie(prevPreference);
-          applyEffective(prevEffective);
-          setPreferenceState(prevPreference);
-          setEffectiveState(prevEffective);
-          toast.error(PATCH_FAILURE_MESSAGE);
+        if (result.ok) {
+          channelRef.current?.postMessage({ preference: next });
           return;
         }
-        channelRef.current?.postMessage({ preference: next });
-      } catch (error) {
+        // 401 (anonymous) and 5xx (backend unavailable) are not real
+        // failures — the cookie is the documented source of truth for
+        // the theme preference and survives logout / backend outages by
+        // design (see docs/.../design/visual-identity.md, § Theme
+        // cookie lifecycle). Keep the optimistic update; emit a quiet
+        // console warning so the situation is visible in devtools but
+        // never surface a toast that contradicts the cookie's
+        // authority. Validation rejections (4xx other than 401) still
+        // roll back + toast — those represent a real disagreement
+        // between client and server.
+        if (result.status === 401 || result.status >= 500) {
+          console.warn(`theme PATCH returned ${String(result.status)}; cookie persists`);
+          return;
+        }
         writeThemeCookie(prevPreference);
         applyEffective(prevEffective);
         setPreferenceState(prevPreference);
         setEffectiveState(prevEffective);
-        console.warn("theme PATCH failed; rolled back", error);
         toast.error(PATCH_FAILURE_MESSAGE);
+      } catch (error) {
+        // Network-level failure (DNS, offline, fetch reject). Cookie
+        // already holds the optimistic value; treat the same as a 5xx —
+        // device-state semantics, not session-state.
+        console.warn("theme PATCH failed; cookie persists", error);
       }
     },
     [preference, effective],

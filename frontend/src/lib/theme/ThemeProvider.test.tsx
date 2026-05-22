@@ -1,13 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  test,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
 import { THEME_COOKIE_NAME } from "./cookie";
 
@@ -56,9 +49,7 @@ function Probe(): ReactElement {
       <span data-testid="effective">{ctx.effective}</span>
       <button onClick={() => void ctx.setPreference("dark")}>set-dark</button>
       <button onClick={() => void ctx.setPreference("light")}>set-light</button>
-      <button onClick={() => void ctx.setPreference("system")}>
-        set-system
-      </button>
+      <button onClick={() => void ctx.setPreference("system")}>set-system</button>
     </div>
   );
 }
@@ -159,12 +150,9 @@ describe("ThemeProvider initial-state derivation", () => {
       </ThemeProvider>,
     );
 
-    await waitFor(() =>
-      { expect(fetchMock).toHaveBeenCalledWith(
-        "/auth/me",
-        expect.any(Object),
-      ); },
-    );
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/auth/me", expect.any(Object));
+    });
     expect(screen.getByTestId("preference").textContent).toBe("light");
     expect(fetchMock).toHaveBeenCalledTimes(1); // /auth/me only, no PATCH
   });
@@ -183,9 +171,9 @@ describe("ThemeProvider reconciliation", () => {
       </ThemeProvider>,
     );
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("preference").textContent).toBe("dark"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
     expect(screen.getByTestId("effective").textContent).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
@@ -214,9 +202,9 @@ describe("ThemeProvider setPreference", () => {
       screen.getByText("set-dark").click();
     });
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("preference").textContent).toBe("dark"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
@@ -242,11 +230,91 @@ describe("ThemeProvider setPreference", () => {
       screen.getByText("set-dark").click();
     });
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("preference").textContent).toBe("light"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("light");
+    });
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=light`);
+  });
+
+  test("PATCH 401 (anonymous) → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMeUnauthenticated();
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({}),
+    });
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+  });
+
+  test("PATCH 502 (backend down) → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMe("light");
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      json: () => Promise.resolve({}),
+    });
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+  });
+
+  test("PATCH network error → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMe("light");
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
   });
 });
 
@@ -270,9 +338,9 @@ describe("ThemeProvider system-preference reactivity", () => {
       mql.trigger();
     });
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("effective").textContent).toBe("dark"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("effective").textContent).toBe("dark");
+    });
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });
