@@ -171,9 +171,25 @@ export default defineConfig([
             ArrowFunctionExpression: false,
             FunctionExpression: false,
           },
+          // `ExportNamedDeclaration > VariableDeclaration` is the obvious
+          // selector for `export const FOO = ...` but does not work:
+          // `eslint-plugin-jsdoc`'s comment-attachment reducer
+          // (`getReducedASTNode` in `@es-joy/jsdoccomment`) has cases for
+          // `FunctionDeclaration` / `ClassDeclaration` / `TSInterface*` /
+          // `TSTypeAlias*` that walk up to the surrounding
+          // `ExportNamedDeclaration` so JSDoc above `export` is found, but
+          // it has no case for `VariableDeclaration`. That selector matches
+          // the inner node and the rule looks for a JSDoc token immediately
+          // before the `const`/`let` keyword — the `export` keyword sits
+          // between, so the rule can never be satisfied. Discovered while
+          // authoring Stage C-1 of UNK-236 (`DEFAULT_LOOPBACK_HOSTS` in
+          // `vite-plugins/allowed-hosts.ts`). Match `ExportNamedDeclaration`
+          // with an attribute filter on `.declaration.type` instead — the
+          // selector ESLint resolves to the parent node, whose JSDoc-bearing
+          // token *is* `export`.
           contexts: [
             "ExportNamedDeclaration > FunctionDeclaration",
-            "ExportNamedDeclaration > VariableDeclaration",
+            "ExportNamedDeclaration[declaration.type='VariableDeclaration']",
             "ExportNamedDeclaration > TSInterfaceDeclaration",
             "ExportNamedDeclaration > TSTypeAliasDeclaration",
             "ExportNamedDeclaration > ClassDeclaration",
