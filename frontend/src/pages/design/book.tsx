@@ -23,6 +23,13 @@ function resolveBook(idParam: string | null): Book {
   if (idParam) {
     const match = bookById(idParam);
     if (match) return match;
+    // Surface unmatched ids in dev so a typo in `?id=` doesn't silently
+    // render the featured book as if it were the requested one.
+    if (import.meta.env.DEV) {
+      console.warn(
+        `[design/hero/book] no fixture matched id="${idParam}"; falling back to featured book.`,
+      );
+    }
   }
   const featured = bookById(FEATURED_BOOK_ID);
   return featured ?? BOOKS[0];
@@ -72,6 +79,19 @@ function VersionRow({ version, source, status, timestamp }: VersionRowProps): Re
   );
 }
 
+/**
+ * Book-detail hero page (`/design/hero/library/book?id=<book-id>`).
+ *
+ * Dev-only design-system surface that exercises the eventual book-detail
+ * layout against fixture data: sticky-cover panel, metadata anatomy, and
+ * three tabs (Overview / Versions / Activity). Resolves the displayed
+ * book from the `?id=` search param via {@link bookById}; falls back to
+ * {@link FEATURED_BOOK_ID} when the param is missing or unmatched so
+ * the route always renders something.
+ *
+ * Lives under `src/pages/design/` and ships only in the dev-only `design`
+ * Vite chunk — not part of the production bundle.
+ */
 export default function HeroBookPage(): ReactElement {
   const { effective } = useTheme();
   const [searchParams] = useSearchParams();

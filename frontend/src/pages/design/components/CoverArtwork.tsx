@@ -103,6 +103,20 @@ interface CoverArtworkProps {
   className?: string;
 }
 
+/**
+ * Typographic book-cover SVG keyed deterministically to a book id.
+ *
+ * Renders a 3:4 brand-palette cover from {@link CoverArtworkProps.title}
+ * and the first entry of {@link CoverArtworkProps.authors}; the palette
+ * is chosen by hashing {@link CoverArtworkProps.bookId} against the
+ * six-variant `PALETTES` table so the same book always gets the same
+ * cover across renders, themes, and reloads.
+ *
+ * Theme-independent by design — the cover acts as a publisher's spine
+ * and is intentionally not overridden by the dark/light theme. Marked
+ * `aria-hidden` because surrounding link text already provides the
+ * accessible label; the SVG itself carries no semantic information.
+ */
 export function CoverArtwork({
   bookId,
   title,

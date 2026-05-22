@@ -16,6 +16,17 @@
  * shape and migrate the hero pages with it.
  */
 
+/**
+ * Book record consumed by the D4 hero screens.
+ *
+ * Field shape mirrors the eventual REST API shape from Step 11 closely
+ * enough that hero pages prototype real component contracts. Optional
+ * fields (`series`, `pageCount`, `description`, `shelves`, `readingState`)
+ * are absent on books for which the metadata is not yet curated.
+ *
+ * `formats` is a closed set of `"EPUB" | "PDF" | "MOBI"` — extending it
+ * is a breaking change for the cover-format Badges in `book.tsx`.
+ */
 export interface Book {
   id: string;
   title: string;
@@ -35,6 +46,13 @@ export interface Book {
   readingState?: "unread" | "reading" | "finished";
 }
 
+/**
+ * Canonical fixture array for the D4 hero screens.
+ *
+ * Non-empty tuple type (`[Book, ...Book[]]`) so consumers can rely on
+ * `BOOKS[0]` without a runtime guard. Book `id` values are unique within
+ * this array; downstream lookups via {@link bookById} assume uniqueness.
+ */
 export const BOOKS: [Book, ...Book[]] = [
   {
     id: "brothers-karamazov",
@@ -364,12 +382,30 @@ export const BOOKS: [Book, ...Book[]] = [
   },
 ];
 
+/**
+ * Look up a {@link Book} by its `id`. Returns `undefined` when no fixture
+ * matches — callers are expected to handle the missing case (the hero
+ * book page falls back to {@link FEATURED_BOOK_ID}).
+ */
 export function bookById(id: string): Book | undefined {
   return BOOKS.find((b) => b.id === id);
 }
 
+/**
+ * Stable id of the book rendered as the hero default when the book-detail
+ * route is visited without an `?id=` param or with an unmatched id.
+ * Must be present in {@link BOOKS}.
+ */
 export const FEATURED_BOOK_ID = "wind-up-bird";
 
+/**
+ * Reading-state shelves derived from {@link BOOKS}, in display order.
+ *
+ * Counts are computed once at module load — fixture data is static, so
+ * a recompute is unnecessary. Order is load-bearing for the hero page:
+ * the "Currently reading" entry is referenced by name (not index) in
+ * the library page header.
+ */
 export const SHELVES: { name: string; count: number }[] = [
   { name: "Currently reading", count: BOOKS.filter((b) => b.readingState === "reading").length },
   { name: "Want to read", count: BOOKS.filter((b) => b.readingState === "unread").length },

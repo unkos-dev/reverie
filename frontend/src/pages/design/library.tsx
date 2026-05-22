@@ -102,6 +102,18 @@ function BookRow({ book }: BookRowProps): ReactElement {
   );
 }
 
+/**
+ * Library hero page (`/design/hero/library`).
+ *
+ * Dev-only design-system surface that exercises the eventual library
+ * grid against fixture data: cover-led grid, shelf-chip filters,
+ * URL-driven series filter (`?series=<name>`), text search across
+ * title/author/series, and grid/list view toggle. The three filter
+ * axes (shelf, series, text query) AND together via `useMemo`.
+ *
+ * Lives under `src/pages/design/` and ships only in the dev-only `design`
+ * Vite chunk — not part of the production bundle.
+ */
 export default function HeroLibraryPage(): ReactElement {
   const { effective } = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -183,8 +195,9 @@ export default function HeroLibraryPage(): ReactElement {
             A library worth keeping.
           </h1>
           <p className="text-fg-muted max-w-xl">
-            {String(BOOKS.length)} works · {String(SHELVES[0]?.count ?? 0)} in progress · last
-            imported 2 hours ago
+            {String(BOOKS.length)} works ·{" "}
+            {String(SHELVES.find((s) => s.name === "Currently reading")?.count ?? 0)} in progress ·
+            last imported 2 hours ago
           </p>
         </section>
 
