@@ -24,11 +24,11 @@ export default defineConfig({
         },
         {
           label: "Design",
-          autogenerate: { directory: "design" },
+          items: [{ autogenerate: { directory: "design" } }],
         },
         {
           label: "Reference",
-          autogenerate: { directory: "reference" },
+          items: [{ autogenerate: { directory: "reference" } }],
         },
       ],
     }),
