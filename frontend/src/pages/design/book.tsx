@@ -62,7 +62,12 @@ function VersionRow({ version, source, status, timestamp }: VersionRowProps): Re
         </div>
         <p className="text-fg-faint text-xs mt-0.5">{timestamp}</p>
       </div>
-      <Badge variant={status === "accepted" ? "default" : "outline"}>{status}</Badge>
+      <Badge
+        variant="outline"
+        className={status === "accepted" ? "font-semibold text-fg" : "text-fg-muted"}
+      >
+        {status}
+      </Badge>
     </div>
   );
 }
@@ -216,6 +221,7 @@ export default function HeroBookPage(): ReactElement {
               </TabsContent>
 
               <TabsContent value="versions" className="flex flex-col gap-4">
+                <h2 className="sr-only">Metadata versions</h2>
                 <p className="text-fg-muted text-sm">
                   Reverie tracks each metadata revision. Accept a draft to make it canonical;
                   rejected versions stay in history.
@@ -243,6 +249,7 @@ export default function HeroBookPage(): ReactElement {
               </TabsContent>
 
               <TabsContent value="activity" className="flex flex-col gap-4">
+                <h2 className="sr-only">Reading activity</h2>
                 <p className="text-fg-muted text-sm">
                   Reading activity is captured by sync adapters; none are wired to this fixture yet.
                 </p>

@@ -234,7 +234,9 @@ export default function HeroLibraryPage(): ReactElement {
             <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">Sort</span>
           </Button>
-          <Separator orientation="vertical" className="!h-6" />
+          <div className="flex h-6 items-center">
+            <Separator orientation="vertical" />
+          </div>
           <Button
             variant={viewMode === "grid" ? "outline" : "ghost"}
             size="sm"
@@ -259,6 +261,7 @@ export default function HeroLibraryPage(): ReactElement {
           </Button>
         </div>
 
+        <h2 className="sr-only">Books</h2>
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center gap-3 border border-dashed border-border rounded-md">
             <BookOpen className="w-8 h-8 text-fg-muted" aria-hidden="true" />
