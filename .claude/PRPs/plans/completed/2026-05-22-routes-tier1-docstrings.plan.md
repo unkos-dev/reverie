@@ -1,5 +1,10 @@
 # Feature: Tier 1 docstring backfill for `backend/src/routes/` (Phase 3)
 
+> **Status: superseded.** Phase 3 routes graduation shipped under PR #200
+> (2026-05-12) following a different shape; this draft was abandoned before
+> execution. Retained for audit. Successor plan for the remaining frontend
+> Phase 4 scope: `.claude/PRPs/plans/unk-236-frontend-jsdoc.plan.md`.
+
 ## Summary
 
 Phase 3 graduation of `backend/src/routes/` under the tiered comment policy

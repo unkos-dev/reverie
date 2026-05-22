@@ -140,8 +140,9 @@ export default defineConfig([
   // security surfaces). `require-param-description` and
   // `require-returns-description` are explicitly NOT enabled —
   // they would create machine pressure toward the
-  // `@param x - the x parameter` boilerplate that the parent
-  // tiered-comment-policy ADR bans as anti-pattern.
+  // `@param x The x parameter` boilerplate that the parent
+  // tiered-comment-policy ADR bans as anti-pattern
+  // (`adr/2026-05-08-tiered-comment-policy.md` line 107).
   //
   // Scope: in-scope files for the Phase 4 backfill. Tier 4 carve-outs
   // (shadcn `components/ui/**`, test files) handled by the overrides
@@ -152,9 +153,24 @@ export default defineConfig([
     files: ["src/**/*.{ts,tsx,js}", "vite-plugins/**/*.ts"],
     plugins: { jsdoc },
     rules: {
+      // `contexts` is additive to `require`'s defaults — `FunctionDeclaration`
+      // defaults to `true`, so without the explicit `require` block below the
+      // rule would also fire on internal helper functions, violating the ADR
+      // ("Public exports only; internal helpers in the same file are Tier 3
+      // and exempt by construction"). Greptile P2 on PR #293 caught this: the
+      // `44 warnings / 31 unique sites` gap in the Stage B census was the
+      // rule double-firing on Tier 3 helpers, not cosmetic. Explicit `false`
+      // on every `require.*` default restricts enforcement to `contexts`.
       "jsdoc/require-jsdoc": [
         "warn",
         {
+          require: {
+            FunctionDeclaration: false,
+            MethodDefinition: false,
+            ClassDeclaration: false,
+            ArrowFunctionExpression: false,
+            FunctionExpression: false,
+          },
           contexts: [
             "ExportNamedDeclaration > FunctionDeclaration",
             "ExportNamedDeclaration > VariableDeclaration",
@@ -172,9 +188,10 @@ export default defineConfig([
   },
   // Tier 4 carve-out: shadcn primitives are generator output —
   // `npx shadcn@latest add` does not emit JSDoc and rewriting CLI
-  // output would conflict with future registry updates. Parent ADR
-  // (`adr/2026-05-08-tiered-comment-policy.md` § Tier 4) carves
-  // these out by category.
+  // output would conflict with future registry updates. Authority:
+  // `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs
+  // (item 1) extends parent ADR Tier 4 (tests + test_support) to
+  // CLI-generated code as a category.
   {
     files: ["src/components/ui/**"],
     rules: {
