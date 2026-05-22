@@ -92,12 +92,39 @@ jobs:
       # and the `cargo install` invocation reference this; bumping it in
       # one place without the other would let a stale binary be restored.
       SQLX_CLI_VERSION: "0.8.6"
+      # CI build-speed tweaks (CI-only — local dev untouched).
+      #
+      # Incremental builds add metadata-tracking overhead that's wasted in
+      # CI's single-shot scenario. rust-cache's own README recommends
+      # disabling for CI.
+      CARGO_INCREMENTAL: 0
+      # Trim test/dev debuginfo to `line-tables-only`: keeps panic
+      # backtraces with `file:line` but drops full debug symbols. Cuts
+      # link size + link time meaningfully (~10-20% on a 600-dep
+      # workspace) without hiding panic detail in CI logs. Local dev
+      # keeps default `debug = true` because `CARGO_PROFILE_*` is a
+      # process-env override, not a Cargo.toml mutation.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      # mold linker via GCC's `-fuse-ld=` driver flag (GCC 12+ supports
+      # mold directly; Ubuntu 24.04 ships GCC 13). Cuts link time by
+      # roughly 5-10× vs default `ld`, which is the single-threaded
+      # bottleneck at the end of every cargo invocation. First CI run
+      # after this PR pays a one-time rust-cache miss (RUSTFLAGS is part
+      # of the cache key); subsequent runs see the speedup.
+      RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v6
 
       - name: Create database roles
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
+
+      # mold itself; the RUSTFLAGS at the job level routes the linker
+      # invocation through it. Installs in ~5s from apt; pinned-version
+      # not required because mold is ABI-compatible at the linker
+      # interface and the binary is exercised only at build time.
+      - name: Install mold linker
+        run: sudo apt-get install -y --no-install-recommends mold
 
       - uses: dtolnay/rust-toolchain@stable
         with:
