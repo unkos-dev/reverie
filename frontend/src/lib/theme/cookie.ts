@@ -28,11 +28,12 @@ export type ThemePreference = "system" | "light" | "dark";
 
 /**
  * Read the FOUC theme cookie. Returns one of the three valid preferences or
- * `null` (cookie absent or value not in the strict allowlist). Treating an
- * unrecognised value as `null` instead of a soft default lets the caller
- * branch between "no preference recorded yet" and "explicitly chose
- * `system`" — the provider uses that distinction to decide whether the
- * mount-time reconcile with the backend should write the cookie.
+ * `null` (cookie absent, malformed, or value outside the strict allowlist).
+ * Caller is responsible for collapsing `null` to a default — the current
+ * caller (`ThemeProvider.deriveInitialState`) coalesces to `"system"`.
+ * Returning `null` rather than a baked-in default keeps the function pure
+ * w.r.t. the default choice and lets the FOUC script and React provider
+ * each pick their own (both happen to pick `"system"` today).
  *
  * Defensive parse: `document.cookie` is a string the user can edit via
  * devtools or a malicious extension, so the validate-then-narrow walk is
