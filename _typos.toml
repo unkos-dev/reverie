@@ -1,0 +1,27 @@
+[default.extend-words]
+# Domain vocabulary (FRBR cataloguing model)
+frbr = "frbr"
+
+# Color spaces / design tokens
+oklch = "oklch"
+
+# Crate / library names that look like typos
+axum = "axum"
+sqlx = "sqlx"
+serde = "serde"
+tokio = "tokio"
+reqwest = "reqwest"
+
+# EPUB spec vocabulary
+opf = "opf"
+
+[files]
+extend-exclude = [
+  "target/",
+  "node_modules/",
+  "frontend/dist/",
+  "frontend/public/brand/",
+  "graphify-out/",
+  "*.lock",
+  "package-lock.json",
+]
