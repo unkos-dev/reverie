@@ -166,7 +166,7 @@ jobs:
       # cargo-nextest, so this is a ~5s download.
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest@0.9
 
       - name: Apply migrations
         run: sqlx migrate run
