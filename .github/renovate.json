@@ -7,11 +7,7 @@
     ":prHourlyLimitNone"
   ],
   "timezone": "Australia/Perth",
-  "schedule": [
-    "after 10pm every weekday",
-    "before 6am every weekday",
-    "every weekend"
-  ],
+  "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
   "dependencyDashboardTitle": "Dependency dashboard: Renovate",
   "labels": ["dependencies"],
   "rangeStrategy": "bump",
@@ -50,6 +46,23 @@
       "matchManagers": ["cargo"],
       "matchDepNames": ["rand_core_06"],
       "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Rust-crate tools pinned inline via taiki-e/install-action `with: tool: <crate>@<ver>` syntax. install-action's manifest silently advances unpinned tools, so the project pins versions inline. Renovate's github-actions manager doesn't reach inside `with:` values, so without this manager those pins stay frozen. Hand-listed depNames avoid false matches on any non-Rust install-action entry that might appear later (today's only one is cargo-nextest; sqlx-cli uses a different idiom — see the second manager).",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "matchStrings": ["tool:\\s+(?<depName>cargo-nextest)@(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "crate"
+    },
+    {
+      "description": "sqlx-cli is pinned via a job-level SQLX_CLI_VERSION env var rather than install-action's `tool:` syntax (PR #288 moved it because install-action has no sqlx-cli manifest and was falling through to a 2-minute cargo install — the env var is now the single source of truth referenced by both the actions/cache key and the cargo install fallback). The env-var form doesn't match the `tool:` regex, so it needs its own manager. depNameTemplate hard-codes the crate name because the env-var name alone isn't crate-shaped.",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "matchStrings": ["SQLX_CLI_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""],
+      "depNameTemplate": "sqlx-cli",
+      "datasourceTemplate": "crate"
     }
   ]
 }
