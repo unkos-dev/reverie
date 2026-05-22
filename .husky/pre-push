@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Backend pre-push verification: fmt + clippy.
+# Tests run in CI — keeping pre-push fast (~30-60s warm) avoids shared dev-DB
+# contention across worktrees. See debt/ and feedback in memory for rationale.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)/backend"
+
+echo "→ cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "→ cargo clippy --workspace --all-targets -- -D warnings"
+cargo clippy --workspace --all-targets --locked -- -D warnings
