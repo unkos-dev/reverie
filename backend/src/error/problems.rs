@@ -1,0 +1,82 @@
+//! RFC 7807 problem-type URI registry.
+//!
+//! One `const` per [`crate::error::AppError`] variant. URIs are stable
+//! identifiers — they do not need to dereference at first
+//! (RFC 7807 §3.1). The host portion uses the placeholder
+//! `reverie.example` until the OSS release pins a canonical project
+//! URL; the slugs are the load-bearing part and stay frozen across
+//! that swap.
+//!
+//! Convention: each problem-type URI is `{PROBLEM_BASE}/{slug}`. The
+//! [`problem_type`] helper assembles the full URI from a slug.
+
+/// Base URI prefix shared by every Reverie problem-type identifier.
+///
+/// Placeholder host: `reverie.example`. Swap on OSS release; the
+/// slugs identified by [`NOT_FOUND`], [`UNAUTHORIZED`], etc. remain
+/// stable across the swap.
+pub const PROBLEM_BASE: &str = "https://reverie.example/probs";
+
+/// Resource not found (RLS-hidden rows resolve to this, not
+/// `forbidden`, to avoid leaking resource existence).
+pub const NOT_FOUND: &str = "not-found";
+
+/// Caller is unauthenticated. JSON API variant — does not emit
+/// `WWW-Authenticate: Basic`; see also [`crate::error::AppError::BasicAuthRequired`].
+pub const UNAUTHORIZED: &str = "unauthorized";
+
+/// Caller is authenticated but lacks the role or policy to perform
+/// the requested action.
+pub const FORBIDDEN: &str = "forbidden";
+
+/// Request body or query failed validation; `detail` carries the
+/// caller-visible message.
+pub const VALIDATION: &str = "validation";
+
+/// `X-CSRF-Token` header missing on a mutating-verb request under
+/// `/api/*`. HTTP 428 Precondition Required.
+pub const CSRF_MISSING: &str = "csrf-missing";
+
+/// `X-CSRF-Token` header present but does not match the session
+/// token (constant-time compare). HTTP 403 Forbidden.
+pub const CSRF_MISMATCH: &str = "csrf-mismatch";
+
+/// `If-Match` header missing on a precondition-protected endpoint.
+/// HTTP 428 Precondition Required.
+pub const IF_MATCH_REQUIRED: &str = "if-match-required";
+
+/// `If-Match` header present but `ETag` does not match resource
+/// state. HTTP 412 Precondition Failed.
+pub const IF_MATCH_MISMATCH: &str = "if-match-mismatch";
+
+/// Generic internal error (anything wrapped in
+/// [`crate::error::AppError::Internal`]). `detail` is a fixed
+/// non-leaking string; the inner cause is `tracing::error!`-logged
+/// for operator triage.
+pub const INTERNAL: &str = "internal";
+
+/// Assemble a full problem-type URI from a slug.
+///
+/// `problem_type("not-found")` →
+/// `"https://reverie.example/probs/not-found"`.
+#[must_use]
+pub fn problem_type(slug: &str) -> String {
+    format!("{PROBLEM_BASE}/{slug}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn problem_type_assembles_full_uri() {
+        assert_eq!(
+            problem_type(NOT_FOUND),
+            "https://reverie.example/probs/not-found"
+        );
+        assert_eq!(
+            problem_type(CSRF_MISMATCH),
+            "https://reverie.example/probs/csrf-mismatch"
+        );
+    }
+}

@@ -158,19 +158,18 @@ pub async fn composite_fallback(State(state): State<AppState>, uri: Uri) -> Resp
     }
 }
 
-/// 404 JSON + API CSP. Mirrors the [`crate::error::AppError::NotFound`]
-/// shape (`{"error":"not found"}`).
+/// 404 RFC 7807 Problem Details + API CSP. Delegates body construction
+/// to [`crate::error::AppError::NotFound`] so the fallback shape stays
+/// in lockstep with handler-emitted 404s (same `type` URI, same
+/// `title`, same Content-Type `application/problem+json`).
 ///
-/// Written here instead of reusing `AppError` so the CSP header can be
-/// attached without extra layering. Drift between this body and
-/// `AppError::NotFound` is a low-impact UX issue (clients keying off the
-/// JSON shape would break) but not a security regression.
+/// The `instance` field is populated when the
+/// [`crate::error::instance::problem_instance_layer`] middleware is
+/// active on the request (production wiring in `lib.rs`); when the
+/// task-local is unset (some test paths), `instance` is omitted per
+/// RFC 7807 §3.1.
 pub fn api_404_with_csp(state: &AppState) -> Response {
-    let mut resp = (
-        StatusCode::NOT_FOUND,
-        axum::Json(serde_json::json!({"error": "not found"})),
-    )
-        .into_response();
+    let mut resp = crate::error::AppError::NotFound.into_response();
     attach_api_csp(&mut resp, state);
     resp
 }
@@ -393,12 +392,23 @@ mod tests {
         let server = test_server_with_security(security);
         let r = server.get("/api/__nope__").await;
         r.assert_status(axum::http::StatusCode::NOT_FOUND);
+        let ct = r
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .expect("Content-Type set")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            ct.contains("application/problem+json"),
+            "expected problem+json content-type, got: {ct}",
+        );
         let body = r.text();
         assert!(
-            body.contains("\"error\""),
-            "expected json error body, got: {body}"
+            body.contains("/probs/not-found"),
+            "expected RFC 7807 not-found type URI, got: {body}",
         );
-        assert!(body.contains("not found"));
+        assert!(body.contains("Not Found"));
         let csp = r
             .headers()
             .get("content-security-policy")
@@ -439,7 +449,7 @@ mod tests {
         });
         let r = server.get("/auth/__nope__").await;
         r.assert_status(axum::http::StatusCode::NOT_FOUND);
-        assert!(r.text().contains("not found"));
+        assert!(r.text().contains("Not Found"));
     }
 
     #[tokio::test]

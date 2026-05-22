@@ -147,6 +147,14 @@ where
             state.clone(),
             security::headers::security_headers,
         ))
+        // Capture the request path into a task-local so
+        // `AppError::into_response` (called anywhere in the handler
+        // stack below) can emit a populated RFC 7807 `instance`
+        // field. Applies to all routes including the composite
+        // fallback so 404s on `/api/*` carry the instance too.
+        .layer(axum::middleware::from_fn(
+            error::instance::problem_instance_layer,
+        ))
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
