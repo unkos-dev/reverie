@@ -90,9 +90,10 @@ equivalent of `# Errors` is therefore not required.
 ### Ratchet — single big-bang flip
 
 Run the rules at `warn` during the Stage B install PR and through
-every Stage C authoring PR. The final PR in the Stage C sequence
-flips both rules to `error` and adds `--max-warnings 0` enforcement
-in CI. Rationale: backend's per-module ratchet existed because
+every Stage C authoring PR. A subsequent flip PR (Stage D, see
+Implementation Plan below) flips both rules to `error` and adds
+`--max-warnings 0` enforcement in CI. Rationale: backend's
+per-module ratchet existed because
 backend had ~342 `pub` items across nine modules; per-directory
 graduation distributed review burden. Frontend's 18 files across
 five groupings make per-directory ratchet overhead
