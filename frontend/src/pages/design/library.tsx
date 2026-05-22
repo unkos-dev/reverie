@@ -14,6 +14,13 @@ import { BOOKS, SHELVES, type Book } from "./fixtures/books";
 
 type ViewMode = "grid" | "list";
 
+// Per philosophy state table, "Selected" maps to `bg-accent-soft +
+// text-fg`; shadcn's Button variants don't ship a selected mode, so
+// overlay the brand mapping on the ghost variant when aria-pressed.
+function selectedClass(active: boolean): string {
+  return active ? "bg-accent-soft text-fg hover:bg-accent-soft" : "";
+}
+
 interface BookCardProps {
   book: Book;
 }
@@ -38,7 +45,7 @@ function BookCard({ book }: BookCardProps): ReactElement {
             </span>
           ) : null}
           {book.readingState === "reading" ? (
-            <span className="absolute bottom-2 right-2 bg-accent text-fg-on-accent text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm font-semibold">
+            <span className="absolute bottom-2 right-2 bg-accent-soft text-fg text-[0.62rem] uppercase tracking-[0.14em] px-2 py-1 rounded-sm font-semibold">
               Reading
             </span>
           ) : null}
@@ -86,7 +93,9 @@ function BookRow({ book }: BookRowProps): ReactElement {
       <div className="hidden md:flex shrink-0 items-center gap-3 text-xs text-fg-muted">
         <span>{String(book.publishedYear)}</span>
         <span className="font-mono">{book.formats.join(" · ")}</span>
-        {book.readingState === "reading" ? <Badge>Reading</Badge> : null}
+        {book.readingState === "reading" ? (
+          <Badge className="bg-accent-soft text-fg border-transparent">Reading</Badge>
+        ) : null}
       </div>
     </Link>
   );
@@ -207,9 +216,10 @@ export default function HeroLibraryPage(): ReactElement {
 
         <div className="flex flex-wrap gap-2 items-center mb-6">
           <Button
-            variant={activeShelf === null ? "outline" : "ghost"}
+            variant="ghost"
             size="sm"
             aria-pressed={activeShelf === null}
+            className={selectedClass(activeShelf === null)}
             onClick={() => {
               setActiveShelf(null);
             }}
@@ -219,9 +229,10 @@ export default function HeroLibraryPage(): ReactElement {
           {allShelves.map((shelf) => (
             <Button
               key={shelf}
-              variant={activeShelf === shelf ? "outline" : "ghost"}
+              variant="ghost"
               size="sm"
               aria-pressed={activeShelf === shelf}
+              className={selectedClass(activeShelf === shelf)}
               onClick={() => {
                 setActiveShelf(shelf);
               }}
@@ -238,24 +249,26 @@ export default function HeroLibraryPage(): ReactElement {
             <Separator orientation="vertical" />
           </div>
           <Button
-            variant={viewMode === "grid" ? "outline" : "ghost"}
+            variant="ghost"
             size="sm"
             onClick={() => {
               setViewMode("grid");
             }}
             aria-label="Grid view"
             aria-pressed={viewMode === "grid"}
+            className={selectedClass(viewMode === "grid")}
           >
             <LayoutGrid className="w-4 h-4" aria-hidden="true" />
           </Button>
           <Button
-            variant={viewMode === "list" ? "outline" : "ghost"}
+            variant="ghost"
             size="sm"
             onClick={() => {
               setViewMode("list");
             }}
             aria-label="List view"
             aria-pressed={viewMode === "list"}
+            className={selectedClass(viewMode === "list")}
           >
             <List className="w-4 h-4" aria-hidden="true" />
           </Button>

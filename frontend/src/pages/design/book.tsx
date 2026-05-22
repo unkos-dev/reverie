@@ -111,7 +111,7 @@ export default function HeroBookPage(): ReactElement {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] xl:grid-cols-[22rem_1fr] gap-8 lg:gap-12">
           <aside className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
-            <div className="rounded-md overflow-hidden border border-border shadow-sm">
+            <div className="mx-auto w-40 sm:w-56 lg:w-full rounded-md overflow-hidden border border-border shadow-sm">
               <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
             </div>
             <div className="flex flex-col gap-2">
@@ -157,7 +157,11 @@ export default function HeroBookPage(): ReactElement {
               </h1>
               <p className="font-body text-fg-muted text-lg">{book.authors.join(", ")}</p>
               <div className="flex flex-wrap items-center gap-2 mt-2">
-                {book.readingState === "reading" ? <Badge>Currently reading</Badge> : null}
+                {book.readingState === "reading" ? (
+                  <Badge className="bg-accent-soft text-fg border-transparent">
+                    Currently reading
+                  </Badge>
+                ) : null}
                 {book.readingState === "finished" ? (
                   <Badge variant="outline">Finished</Badge>
                 ) : null}
