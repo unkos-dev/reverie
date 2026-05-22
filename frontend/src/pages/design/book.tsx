@@ -43,7 +43,10 @@ function resolveBook(rawIdParam: string | null): Book {
         `[design/hero/book] no fixture matched id="${parsed.data}"; falling back to featured book.`,
       );
     }
-  } else if (parsed && !parsed.success && import.meta.env.DEV) {
+  } else if (parsed && import.meta.env.DEV) {
+    // parsed is truthy here, and the `parsed?.success` branch above
+    // already handled the success case — so this is the parse-failed
+    // path on a non-null raw param.
     console.warn(
       `[design/hero/book] ?id= failed validation; falling back to featured book.`,
       parsed.error.issues,
