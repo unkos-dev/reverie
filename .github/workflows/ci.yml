@@ -88,6 +88,10 @@ jobs:
       # and run migrations against them; role pools for reverie_app /
       # reverie_ingestion are built per-test in code.
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
+      # Single source of truth for the sqlx-cli pin. Both the cache key
+      # and the `cargo install` invocation reference this; bumping it in
+      # one place without the other would let a stale binary be restored.
+      SQLX_CLI_VERSION: "0.8.6"
     steps:
       - uses: actions/checkout@v6
 
@@ -103,9 +107,32 @@ jobs:
         with:
           workspaces: backend
 
-      - uses: taiki-e/install-action@v2
+      # sqlx-cli has no upstream prebuilt binaries (launchbadge/sqlx never
+      # publishes GitHub release assets and has no quickinstall mirror), so
+      # install-action's only path was a 2-minute `cargo install` from source
+      # on every run. Two-pronged fix:
+      #
+      # 1. Feature-trim — drop sqlite, mysql, native-tls, completions; keep
+      #    only rustls + postgres (Reverie's actual surface). Cuts the
+      #    cold-cache compile to ~60-90s.
+      # 2. Dedicated cache keyed on sqlx-cli version + features alone (not
+      #    workspace Cargo.lock). Renovate-triggered lock churn no longer
+      #    invalidates the binary cache. Warm-cache restore is ~5s.
+      #
+      # If the sqlx-cli version or features change, bump the cache key
+      # suffix so a stale binary isn't restored.
+      - name: Cache sqlx-cli binary
+        id: cache-sqlx-cli
+        uses: actions/cache@v4
         with:
-          tool: sqlx-cli@0.8.6
+          path: |
+            ~/.cargo/bin/sqlx
+            ~/.cargo/bin/cargo-sqlx
+          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SQLX_CLI_VERSION }}-postgres-rustls
+
+      - name: Install sqlx-cli (cache miss only)
+        if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres --locked
 
       - name: Apply migrations
         run: sqlx migrate run
