@@ -194,6 +194,9 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
         // between client and server.
         if (result.status === 401 || result.status >= 500) {
           console.warn(`theme PATCH returned ${String(result.status)}; cookie persists`);
+          // Cookie wins → broadcast so other tabs converge without a
+          // reload. Same contract as the 2xx success path.
+          channelRef.current?.postMessage({ preference: next });
           return;
         }
         writeThemeCookie(prevPreference);
@@ -204,8 +207,10 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
       } catch (error) {
         // Network-level failure (DNS, offline, fetch reject). Cookie
         // already holds the optimistic value; treat the same as a 5xx —
-        // device-state semantics, not session-state.
+        // device-state semantics, not session-state. Broadcast so other
+        // tabs converge without a reload.
         console.warn("theme PATCH failed; cookie persists", error);
+        channelRef.current?.postMessage({ preference: next });
       }
     },
     [preference, effective],

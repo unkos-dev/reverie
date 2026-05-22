@@ -1,8 +1,21 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { toast } from "sonner";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
 import { THEME_COOKIE_NAME } from "./cookie";
+
+// Mock sonner so the "no toast" guarantee on the 401 / 5xx / network
+// branches is enforced explicitly, not inferred from the absence of a
+// rollback. The 422-rollback test asserts toast.error WAS called; the
+// quiet branches assert it WAS NOT.
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    message: vi.fn(),
+  },
+}));
 
 interface MatchMediaShim {
   set: (matches: boolean) => void;
@@ -62,6 +75,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-theme");
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(toast.error).mockClear();
 });
 
 afterEach(() => {
@@ -235,6 +249,7 @@ describe("ThemeProvider setPreference", () => {
     });
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=light`);
+    expect(toast.error).toHaveBeenCalled();
   });
 
   test("PATCH 401 (anonymous) → cookie wins, no rollback, no toast", async () => {
@@ -263,6 +278,7 @@ describe("ThemeProvider setPreference", () => {
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   test("PATCH 502 (backend down) → cookie wins, no rollback, no toast", async () => {
@@ -291,6 +307,7 @@ describe("ThemeProvider setPreference", () => {
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   test("PATCH network error → cookie wins, no rollback, no toast", async () => {
@@ -315,6 +332,7 @@ describe("ThemeProvider setPreference", () => {
     });
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 
