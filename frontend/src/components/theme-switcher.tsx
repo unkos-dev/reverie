@@ -17,6 +17,24 @@ const OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
+/**
+ * App-shell theme switcher. Renders a shadcn `DropdownMenu` with a radio
+ * group of the three `ThemePreference` values plus a status line that
+ * surfaces what the user picked (or `"auto"` when they deferred to the
+ * OS). Reads + writes the theme stack via `useTheme()` — the provider
+ * owns the optimistic-update + PATCH + rollback flow.
+ *
+ * The `onValueChange` handler narrows the radio group's `string` payload
+ * through the closed `OPTIONS` list instead of an `as ThemePreference`
+ * cast (`frontend/CLAUDE.md` § TypeScript bans object-literal `as`
+ * assertions and the radio group's value type is `string`). An unknown
+ * value is silently ignored — the radio group cannot emit one in
+ * practice, but defending against shadcn API drift here costs one
+ * `.find` call.
+ *
+ * @returns The dropdown subtree. Must be mounted inside a
+ *   `<ThemeProvider>` — `useTheme()` throws otherwise.
+ */
 export function ThemeSwitcher(): ReactElement {
   const { preference, setPreference } = useTheme();
   return (
