@@ -120,7 +120,7 @@ fn http_client() -> Result<openidconnect::reqwest::Client> {
 ///
 /// Returns an error if `OIDC_ISSUER_URL` or `OIDC_REDIRECT_URI` is not a
 /// valid URL, if the HTTP client cannot be constructed, or if the provider
-/// discovery request fails or returns an unparseable response.
+/// discovery request fails or returns an unparsable response.
 pub async fn init_oidc_client(config: &Config) -> Result<OidcClient> {
     // Validate both URLs syntactically before the network call so an operator
     // configuration error fails fast at startup rather than after a discovery
