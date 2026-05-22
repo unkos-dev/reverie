@@ -161,6 +161,13 @@ jobs:
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
         run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres --locked
 
+      # cargo-nextest replaces the default `cargo test` runner for the
+      # Test step below. install-action ships a prebuilt binary for
+      # cargo-nextest, so this is a ~5s download.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Apply migrations
         run: sqlx migrate run
 
@@ -206,8 +213,24 @@ jobs:
               exit 1
           fi
 
+      # nextest runs each test in its own process — better parallelism
+      # than the default thread-per-test runner, and a crashing test
+      # can't take down its siblings. Each `#[sqlx::test]` already gets
+      # an isolated per-test database, so the per-process model adds
+      # connection pressure (default nextest fans out to one process
+      # per CPU; ubuntu-latest = 4 vCPUs × ~10 conns/process ≈ 40
+      # concurrent conns vs. Postgres's default `max_connections=100`).
+      # Comfortable headroom; first cold-run on this PR validates it
+      # empirically.
       - name: Test
-        run: cargo test
+        run: cargo nextest run --workspace
+
+      # nextest does not run doctests. Reverie has none today, but the
+      # tiered comment policy (`adr/2026-05-08-tiered-comment-policy.md`)
+      # will add examples on Tier 1 surface; keep this step so doctest
+      # drift fails CI from day one. Near-instant while empty.
+      - name: Doctests
+        run: cargo test --doc --workspace
 
   audit:
     name: Security Audit
