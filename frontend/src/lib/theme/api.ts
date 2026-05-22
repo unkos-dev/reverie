@@ -13,6 +13,24 @@ export type MeResult =
   | { kind: "unauthenticated" }
   | { kind: "error"; status: number };
 
+/**
+ * Fetch the authenticated user's record (currently only the
+ * `theme_preference` field is consumed). The discriminated `MeResult` lets
+ * callers distinguish "logged out" (401 → `unauthenticated`) from "broken
+ * request" (other non-2xx, or 200 with a malformed body → `error`).
+ *
+ * Treats `unauthenticated` as a normal outcome, not an error, because the
+ * provider's reconcile path runs unconditionally on mount: throwing for
+ * anonymous visitors would flood console.warn and noise out real failures.
+ *
+ * @param signal - Optional abort signal; passed through to `fetch`.
+ *   Caller is responsible for wiring up `AbortController` (see
+ *   ThemeProvider's reconcile effect).
+ * @returns `ok` with the validated preference, `unauthenticated` on 401,
+ *   or `error` with the response status (also returned when the body's
+ *   `theme_preference` is missing or unrecognised — schema drift would
+ *   otherwise read as a successful fetch).
+ */
 export async function fetchMe(signal?: AbortSignal): Promise<MeResult> {
   const opts: RequestInit = {
     credentials: "same-origin",
@@ -30,6 +48,23 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResult> {
   return { kind: "error", status: 200 };
 }
 
+/**
+ * Persist the user's theme preference server-side. Fire-and-observe shape:
+ * the returned object surfaces only `ok` and `status` so the caller can
+ * branch across the three outcomes the provider's `setPreference` flow
+ * acts on — `ok: true` (broadcast + return), `ok: false` with status 401
+ * or ≥500 (keep the optimistic update, log a warning), `ok: false` with
+ * any other 4xx (roll back + toast). Deliberate omission of the response
+ * body — the provider's optimistic update is the source of truth and a
+ * re-read would race with the in-flight cookie write.
+ *
+ * @param value - Preference to persist; same allowlist the cookie carries.
+ * @param signal - Optional abort signal; pass through from caller's
+ *   AbortController.
+ * @returns `{ ok, status }` extracted from the response. Network failures
+ *   throw (caller branches via try/catch, see ThemeProvider's
+ *   `setPreference`).
+ */
 export async function patchTheme(
   value: ThemePreference,
   signal?: AbortSignal,

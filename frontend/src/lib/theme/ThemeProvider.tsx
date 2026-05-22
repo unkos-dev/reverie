@@ -65,6 +65,32 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Top-level provider for the theme stack. Holds the cookie-derived
+ * preference, the resolved effective theme, and the async `setPreference`
+ * callback that owns the optimistic-update + PATCH + rollback flow.
+ *
+ * Initial render (synchronous, via `useMemo`):
+ *   - Derive initial preference + effective theme from cookie + FOUC-set
+ *     `data-theme` so first render is correct.
+ *
+ * Mount-time effects (three `useEffect` blocks):
+ *   - Reconcile against `/auth/me` once (logged-in path; logged-out 401
+ *     keeps the cookie value).
+ *   - Subscribe to `prefers-color-scheme` so a `"system"` preference picks
+ *     up OS theme toggles mid-session.
+ *   - Subscribe to a same-origin BroadcastChannel so other tabs converge
+ *     without re-PATCHing the backend.
+ *
+ * Failure model: the cookie is the documented source of truth. Network or
+ * server failures during PATCH keep the optimistic update; only validation
+ * rejections (4xx other than 401) roll back and surface a toast — those
+ * represent real client/server disagreement. Rationale lives inline in
+ * `setPreference`.
+ *
+ * @param props.children - Subtree that consumes `useTheme()`.
+ * @returns React element wrapping the children in the theme context.
+ */
 export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
   const initial = useMemo(() => deriveInitialState(), []);
   // Raw `useState` setters intentionally suffixed with `State` because the
@@ -224,6 +250,18 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
   return <ThemeContext value={value}>{children}</ThemeContext>;
 }
 
+/**
+ * Consume the theme context. Throws when called outside a `ThemeProvider`
+ * subtree — preferred over returning `null` and forcing every callsite
+ * to nullable-handle a developer mistake. The provider must wrap any
+ * component that touches theme state.
+ *
+ * @returns `{ preference, effective, setPreference }` from the surrounding
+ *   `ThemeProvider`. `preference` is what the user chose (incl. `"system"`);
+ *   `effective` is the concrete `"light"`/`"dark"` actually applied;
+ *   `setPreference` triggers the optimistic-update + PATCH flow.
+ * @throws Error if no `ThemeProvider` is mounted above the caller.
+ */
 // eslint-disable-next-line react-refresh/only-export-components -- co-locating the hook with the provider keeps the public API discoverable.
 export function useTheme(): ThemeContextValue {
   const ctx = use(ThemeContext);
