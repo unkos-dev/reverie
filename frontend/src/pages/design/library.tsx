@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { BookOpen, LayoutGrid, List, Search, SlidersHorizontal } from "lucide-react";
+import { BookOpen, LayoutGrid, List, Search } from "lucide-react";
 import { Lockup } from "@/components/Lockup";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { CoverArtwork } from "./components/CoverArtwork";
@@ -74,9 +74,6 @@ function BookRow({ book }: BookRowProps): ReactElement {
       to={`/design/hero/book?id=${book.id}`}
       className="flex gap-4 items-center px-3 py-3 -mx-3 rounded-md border border-transparent hover:bg-surface-2 hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas transition-colors"
     >
-      <div className="w-12 shrink-0">
-        <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
-      </div>
       <div className="min-w-0 flex-1">
         <h3 className="font-display font-semibold text-fg text-sm leading-tight truncate">
           {book.title}
@@ -255,13 +252,6 @@ export default function HeroLibraryPage(): ReactElement {
             </Button>
           ))}
           <div className="flex-1" />
-          <Button variant="ghost" size="sm" aria-label="Sort and filter">
-            <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Sort</span>
-          </Button>
-          <div className="flex h-6 items-center">
-            <Separator orientation="vertical" />
-          </div>
           {/* Grid / list are mutually exclusive — wrap in a labelled
               group so assistive tech announces the context as a single
               control rather than two independent toggle buttons. */}

@@ -244,6 +244,10 @@ export default function HeroBookPage(): ReactElement {
 
               <TabsContent value="versions" className="flex flex-col gap-4">
                 <h2 className="sr-only">Metadata versions</h2>
+                <div className="rounded-md border border-dashed border-border bg-surface-2/40 px-3 py-2 text-fg-muted text-xs">
+                  Sample data — illustrates the metadata-versioning model. Real version history
+                  lands with the Step 11 Library API.
+                </div>
                 <p className="text-fg-muted text-sm">
                   Reverie tracks each metadata revision. Accept a draft to make it canonical;
                   rejected versions stay in history.
@@ -251,21 +255,21 @@ export default function HeroBookPage(): ReactElement {
                 <div>
                   <VersionRow
                     version="v3 · current"
-                    source="Open Library · enrichment"
+                    source="Sample · enrichment"
                     status="accepted"
-                    timestamp="Accepted 2 days ago"
+                    timestamp="Sample accepted revision"
                   />
                   <VersionRow
                     version="v2"
-                    source="Google Books · enrichment"
+                    source="Sample · enrichment"
                     status="draft"
-                    timestamp="Suggested 2 days ago"
+                    timestamp="Sample suggested revision"
                   />
                   <VersionRow
                     version="v1"
-                    source="EPUB OPF · ingestion"
+                    source="Sample · ingestion"
                     status="rejected"
-                    timestamp="Captured on import"
+                    timestamp="Sample captured-on-import revision"
                   />
                 </div>
               </TabsContent>
@@ -273,14 +277,13 @@ export default function HeroBookPage(): ReactElement {
               <TabsContent value="activity" className="flex flex-col gap-4">
                 <h2 className="sr-only">Reading activity</h2>
                 <p className="text-fg-muted text-sm">
-                  Reading activity is captured by sync adapters; none are wired to this fixture yet.
+                  Reading activity is captured by sync adapters; none are wired yet.
                 </p>
                 <div className="border border-dashed border-border rounded-md p-8 flex flex-col items-center justify-center gap-2 text-center">
                   <History className="w-6 h-6 text-fg-muted" aria-hidden="true" />
                   <p className="text-fg text-sm font-display">No reading activity yet.</p>
                   <p className="text-fg-muted text-xs max-w-sm">
-                    Once a Kobo, KOReader or OPDS-Progression sync is connected, progress and notes
-                    will land here.
+                    Progress, notes and highlights from connected reading apps will land here.
                   </p>
                 </div>
               </TabsContent>
