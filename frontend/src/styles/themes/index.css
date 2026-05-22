@@ -115,8 +115,11 @@
 
 /* Cover-artwork palette — declared once on :root only. Intentionally NOT
    overridden by [data-theme="dark"] so cover artwork stays brand-fixed
-   across theme switches (see philosophy §11C — Lockup invariant; covers
-   inherit the same artwork-stability rule). */
+   across theme switches; covers inherit the same artwork-stability rule
+   that keeps the Lockup component glyph constant. The cream and parchment
+   values intentionally duplicate the Dark `--fg` and Light `--canvas`
+   sources — they live here as independent constants so a future
+   palette pass on either theme cannot silently mutate the cover spine. */
 :root {
   --cover-ink: #0e0d0a;
   --cover-cream: #e8e0d0;

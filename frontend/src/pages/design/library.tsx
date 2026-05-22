@@ -29,8 +29,9 @@ function BookCard({ book }: BookCardProps): ReactElement {
   const seriesLabel = book.series ? `${book.series.name} · #${String(book.series.position)}` : null;
 
   // Whole card is one link target — cover + title both navigate to the
-  // detail route, matching BookRow's contract and the visual hover-lift
-  // affordance on the article wrapper.
+  // detail route. The hover-lift affordance on the article wrapper
+  // visually communicates that the entire surface is interactive, so
+  // anchoring only the title would mismatch the affordance.
   return (
     <article className="group">
       <Link
@@ -248,30 +249,35 @@ export default function HeroLibraryPage(): ReactElement {
           <div className="flex h-6 items-center">
             <Separator orientation="vertical" />
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setViewMode("grid");
-            }}
-            aria-label="Grid view"
-            aria-pressed={viewMode === "grid"}
-            className={selectedClass(viewMode === "grid")}
-          >
-            <LayoutGrid className="w-4 h-4" aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setViewMode("list");
-            }}
-            aria-label="List view"
-            aria-pressed={viewMode === "list"}
-            className={selectedClass(viewMode === "list")}
-          >
-            <List className="w-4 h-4" aria-hidden="true" />
-          </Button>
+          {/* Grid / list are mutually exclusive — wrap in a labelled
+              group so assistive tech announces the context as a single
+              control rather than two independent toggle buttons. */}
+          <div role="group" aria-label="View mode" className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setViewMode("grid");
+              }}
+              aria-label="Grid view"
+              aria-pressed={viewMode === "grid"}
+              className={selectedClass(viewMode === "grid")}
+            >
+              <LayoutGrid className="w-4 h-4" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setViewMode("list");
+              }}
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
+              className={selectedClass(viewMode === "list")}
+            >
+              <List className="w-4 h-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
 
         <h2 className="sr-only">Books</h2>

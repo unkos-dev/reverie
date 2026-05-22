@@ -31,7 +31,7 @@ interface PaletteClasses {
   groundFill: string;
 }
 
-const PALETTES: PaletteClasses[] = [
+const PALETTES: [PaletteClasses, ...PaletteClasses[]] = [
   // 0: ink ground, cream type, gold rule
   {
     ground: "bg-cover-ink",

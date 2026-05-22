@@ -8,7 +8,7 @@
  *
  * This file lives under `src/pages/design/` so it is included in the
  * dev-only `design` chunk and dead-stripped from the production bundle
- * by the Vite `manualChunks` rule (`vite.config.ts:48`).
+ * by the Vite `manualChunks` rule in `frontend/vite.config.ts`.
  *
  * Field shape mirrors the eventual REST API shape from Step 11 closely
  * enough that the hero screens prototype real component contracts, but
