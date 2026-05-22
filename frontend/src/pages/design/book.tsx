@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
+import { z } from "zod";
 import {
   ArrowLeft,
   BookOpen,
@@ -19,17 +20,34 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import { bookById, BOOKS, FEATURED_BOOK_ID, type Book } from "./fixtures/books";
 
-function resolveBook(idParam: string | null): Book {
-  if (idParam) {
-    const match = bookById(idParam);
+// Per `frontend/CLAUDE.md`, URL params are validated at the boundary
+// before use. Book ids are short kebab/alphanumeric slugs in the fixture
+// (e.g. "wind-up-bird"); cap length defensively and require non-empty
+// after trim. Failed parse is treated as "no id supplied".
+const bookIdParamSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^[a-z0-9-]+$/i);
+
+function resolveBook(rawIdParam: string | null): Book {
+  const parsed = rawIdParam !== null ? bookIdParamSchema.safeParse(rawIdParam) : null;
+  if (parsed?.success) {
+    const match = bookById(parsed.data);
     if (match) return match;
     // Surface unmatched ids in dev so a typo in `?id=` doesn't silently
     // render the featured book as if it were the requested one.
     if (import.meta.env.DEV) {
       console.warn(
-        `[design/hero/book] no fixture matched id="${idParam}"; falling back to featured book.`,
+        `[design/hero/book] no fixture matched id="${parsed.data}"; falling back to featured book.`,
       );
     }
+  } else if (parsed && !parsed.success && import.meta.env.DEV) {
+    console.warn(
+      `[design/hero/book] ?id= failed validation; falling back to featured book.`,
+      parsed.error.issues,
+    );
   }
   const featured = bookById(FEATURED_BOOK_ID);
   return featured ?? BOOKS[0];

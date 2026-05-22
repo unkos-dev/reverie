@@ -1,5 +1,7 @@
 import type { ReactElement } from "react";
 
+import { cn } from "@/lib/utils";
+
 /**
  * Typographic cover artwork.
  *
@@ -125,16 +127,12 @@ export function CoverArtwork({
 }: CoverArtworkProps): ReactElement {
   const palette = PALETTES[hashId(bookId) % PALETTES.length] ?? PALETTES[0];
   const author = authors[0] ?? "";
-  const containerClass = [
-    "relative aspect-[3/4] w-full overflow-hidden",
-    palette.ground,
-    className ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   return (
-    <div className={containerClass} aria-hidden="true">
+    <div
+      className={cn("relative aspect-[3/4] w-full overflow-hidden", palette.ground, className)}
+      aria-hidden="true"
+    >
       <svg
         viewBox="0 0 300 400"
         className="absolute inset-0 h-full w-full"
@@ -152,12 +150,18 @@ export function CoverArtwork({
       <div className="absolute inset-0 flex flex-col justify-between p-[6%]">
         <div className="h-[18%]" />
         <div
-          className={`font-display font-semibold leading-[1.05] tracking-tight text-base sm:text-lg lg:text-xl line-clamp-4 ${palette.display}`}
+          className={cn(
+            "font-display font-semibold leading-[1.05] tracking-tight text-base sm:text-lg lg:text-xl line-clamp-4",
+            palette.display,
+          )}
         >
           {title}
         </div>
         <div
-          className={`font-body text-[0.62rem] sm:text-[0.7rem] uppercase tracking-[0.18em] opacity-85 ${palette.body}`}
+          className={cn(
+            "font-body text-[0.62rem] sm:text-[0.7rem] uppercase tracking-[0.18em] opacity-85",
+            palette.body,
+          )}
         >
           {author}
         </div>

@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { z } from "zod";
 import { BookOpen, LayoutGrid, List, Search } from "lucide-react";
 import { Lockup } from "@/components/Lockup";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -13,6 +14,14 @@ import { useTheme } from "@/lib/theme/ThemeProvider";
 import { BOOKS, SHELVES, type Book } from "./fixtures/books";
 
 type ViewMode = "grid" | "list";
+
+// Per `frontend/CLAUDE.md`, URL params and form inputs are validated at
+// the boundary before use. The query string is bounded length-wise to
+// keep the case-insensitive substring scan predictable; the series
+// filter is a series-name slug from the fixture and is non-empty after
+// trim. Failed parse is treated as "no filter".
+const seriesParamSchema = z.string().trim().min(1).max(120);
+const queryInputSchema = z.string().trim().max(200);
 
 // Per philosophy state table, "Selected" maps to `bg-accent-soft +
 // text-fg`; shadcn's Button variants don't ship a selected mode, so
@@ -122,7 +131,9 @@ export default function HeroLibraryPage(): ReactElement {
   // dedicated series filter alongside the shelf chips. Series and
   // shelves overlap conceptually but are distinct fields in the
   // fixture; treat them as independent filters that AND together.
-  const activeSeries = searchParams.get("series");
+  const rawSeries = searchParams.get("series");
+  const parsedSeries = rawSeries !== null ? seriesParamSchema.safeParse(rawSeries) : null;
+  const activeSeries: string | null = parsedSeries?.success ? parsedSeries.data : null;
 
   function clearSeriesFilter(): void {
     const next = new URLSearchParams(searchParams);
@@ -131,7 +142,8 @@ export default function HeroLibraryPage(): ReactElement {
   }
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const parsedQuery = queryInputSchema.safeParse(query);
+    const q = (parsedQuery.success ? parsedQuery.data : "").toLowerCase();
     return BOOKS.filter((book) => {
       if (activeShelf && !(book.shelves?.includes(activeShelf) ?? false)) {
         return false;
