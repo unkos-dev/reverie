@@ -1,15 +1,21 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  test,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { toast } from "sonner";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
 import { THEME_COOKIE_NAME } from "./cookie";
+
+// Mock sonner so the "no toast" guarantee on the 401 / 5xx / network
+// branches is enforced explicitly, not inferred from the absence of a
+// rollback. The 422-rollback test asserts toast.error WAS called; the
+// quiet branches assert it WAS NOT.
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    message: vi.fn(),
+  },
+}));
 
 interface MatchMediaShim {
   set: (matches: boolean) => void;
@@ -56,9 +62,7 @@ function Probe(): ReactElement {
       <span data-testid="effective">{ctx.effective}</span>
       <button onClick={() => void ctx.setPreference("dark")}>set-dark</button>
       <button onClick={() => void ctx.setPreference("light")}>set-light</button>
-      <button onClick={() => void ctx.setPreference("system")}>
-        set-system
-      </button>
+      <button onClick={() => void ctx.setPreference("system")}>set-system</button>
     </div>
   );
 }
@@ -71,6 +75,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-theme");
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(toast.error).mockClear();
 });
 
 afterEach(() => {
@@ -159,12 +164,9 @@ describe("ThemeProvider initial-state derivation", () => {
       </ThemeProvider>,
     );
 
-    await waitFor(() =>
-      { expect(fetchMock).toHaveBeenCalledWith(
-        "/auth/me",
-        expect.any(Object),
-      ); },
-    );
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/auth/me", expect.any(Object));
+    });
     expect(screen.getByTestId("preference").textContent).toBe("light");
     expect(fetchMock).toHaveBeenCalledTimes(1); // /auth/me only, no PATCH
   });
@@ -183,9 +185,9 @@ describe("ThemeProvider reconciliation", () => {
       </ThemeProvider>,
     );
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("preference").textContent).toBe("dark"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
     expect(screen.getByTestId("effective").textContent).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
@@ -214,9 +216,9 @@ describe("ThemeProvider setPreference", () => {
       screen.getByText("set-dark").click();
     });
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("preference").textContent).toBe("dark"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
@@ -242,11 +244,95 @@ describe("ThemeProvider setPreference", () => {
       screen.getByText("set-dark").click();
     });
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("preference").textContent).toBe("light"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("light");
+    });
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=light`);
+    expect(toast.error).toHaveBeenCalled();
+  });
+
+  test("PATCH 401 (anonymous) → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMeUnauthenticated();
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({}),
+    });
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  test("PATCH 502 (backend down) → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMe("light");
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      json: () => Promise.resolve({}),
+    });
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  test("PATCH network error → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMe("light");
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 
@@ -270,9 +356,9 @@ describe("ThemeProvider system-preference reactivity", () => {
       mql.trigger();
     });
 
-    await waitFor(() =>
-      { expect(screen.getByTestId("effective").textContent).toBe("dark"); },
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("effective").textContent).toBe("dark");
+    });
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });
