@@ -88,6 +88,10 @@ jobs:
       # and run migrations against them; role pools for reverie_app /
       # reverie_ingestion are built per-test in code.
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
+      # Single source of truth for the sqlx-cli pin. Both the cache key
+      # and the `cargo install` invocation reference this; bumping it in
+      # one place without the other would let a stale binary be restored.
+      SQLX_CLI_VERSION: "0.8.6"
     steps:
       - uses: actions/checkout@v6
 
@@ -124,11 +128,11 @@ jobs:
           path: |
             ~/.cargo/bin/sqlx
             ~/.cargo/bin/cargo-sqlx
-          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-0.8.6-postgres-rustls
+          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SQLX_CLI_VERSION }}-postgres-rustls
 
       - name: Install sqlx-cli (cache miss only)
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked
+        run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres --locked
 
       - name: Apply migrations
         run: sqlx migrate run
