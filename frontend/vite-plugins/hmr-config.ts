@@ -5,18 +5,28 @@
 // tunnel does not forward it. REVERIE_DEV_HMR_CLIENT_PORT carries that
 // override value.
 /**
- * Parse the REVERIE_DEV_HMR_CLIENT_PORT environment value into a Vite HMR client port configuration.
+ * Parse `REVERIE_DEV_HMR_CLIENT_PORT` into the partial Vite `server` config
+ * the dev server merges with its own defaults. Empty / unset / whitespace
+ * resolves to an empty object so the caller can spread the result
+ * unconditionally without branching on the env var being present.
  *
- * If `envValue` is `undefined` or blank, the function treats the setting as unset and returns an empty object.
+ * Validation is strict on purpose: the env var ends up in a websocket URL
+ * the browser dials, and silently coercing junk would turn into a
+ * connection-refused loop that is hard to diagnose from the browser
+ * console. The error message JSON-encodes the original value so quoting
+ * artefacts (a trailing newline, a stray whitespace character) survive to
+ * the operator's terminal verbatim.
  *
- * @param envValue - The raw value of `REVERIE_DEV_HMR_CLIENT_PORT` (may be `undefined` or whitespace)
- * @returns An object containing `hmr.clientPort` when `envValue` is a valid port; otherwise an empty object
- * @throws Error if `envValue` cannot be parsed to an integer in the range 1..=65535. The error message includes the original value JSON-encoded.
+ * Cross-reference: `frontend/CLAUDE.md` § Dev environment variables for the
+ * operator contract.
+ *
+ * @param envValue - Raw `REVERIE_DEV_HMR_CLIENT_PORT` value or undefined.
+ * @returns Empty object when the env var is unset; `{ hmr: { clientPort } }`
+ *   when a valid port literal is supplied.
+ * @throws Error if the value is non-empty but is not an integer in
+ *   1..=65535.
  */
-
-export function parseHmrConfig(
-  envValue: string | undefined,
-): { hmr?: { clientPort: number } } {
+export function parseHmrConfig(envValue: string | undefined): { hmr?: { clientPort: number } } {
   if (envValue === undefined || envValue.trim().length === 0) return {};
   const trimmed = envValue.trim();
   const invalid = new Error(

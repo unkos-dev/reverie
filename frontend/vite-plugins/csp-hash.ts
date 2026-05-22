@@ -10,10 +10,43 @@ const SIDECAR_FILENAME = "csp-hashes.json";
 const STANDARD_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
- * Custom Vite plugin for UNK-106. Injects the `src/fouc/fouc.js` contents as
- * an inline `<script>` where `index.html` has `<!-- reverie:fouc-hash -->`,
- * and (on `vite build` only) writes `dist/csp-hashes.json` with the sha256
- * hash of the inline body.
+ * Custom Vite plugin (UNK-106) that turns `src/fouc/fouc.js` into a CSP-hashed
+ * inline `<script>` in `index.html` and, on `vite build` only, emits the
+ * matching sha256 in `dist/csp-hashes.json` for the backend CSP middleware to
+ * consume at startup.
+ *
+ * THREAT: every byte of inline JavaScript shipped to the browser is
+ * unconditionally executed. The runtime CSP only protects against *future*
+ * injection, not against compromise of the bundled FOUC script itself. The
+ * plugin hashes ONLY the literal contents of `src/fouc/fouc.js`; any other
+ * inline `<script>` introduced into `index.html` is intentionally unhashed
+ * and will be refused by the browser at navigation time. Two adversary
+ * surfaces are closed by guards in `transformIndexHtml`:
+ *
+ *   1. `<!-- reverie:fouc-hash -->` marker presence + uniqueness. A duplicate
+ *      or missing marker fails the build rather than producing an HTML
+ *      document with the FOUC script in the wrong place.
+ *   2. Closing-script-tag literal detection inside `fouc.js`. The HTML parser
+ *      terminates an inline `<script>` at `</script` + whitespace/`/`/`>`;
+ *      a literal in source would escape the script element and execute as
+ *      page-level HTML. The regex `/<\/script[\s/>]/i` matches the parser's
+ *      terminator definition. UNK-114 issue 5 broadened the original
+ *      `/<\/script>/i` after a comment-embedded literal in fouc.js silently
+ *      terminated the script under D3.13 — the broader regex is load-bearing.
+ *
+ * The emitted base64 is checked against the RFC 4648 §4 standard alphabet
+ * (CSP L3 rejects base64url) so a future Node version that switches digest
+ * encoding fails the build instead of producing a CSP that browsers ignore.
+ *
+ * Cross-references:
+ *   - `adr/2026-05-08-tiered-comment-policy.md` § Tier 2 (threat-annotation
+ *     shape).
+ *   - `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs (the `.js`
+ *     scope inclusion is for this plugin's pinned source file).
+ *   - `backend/src/security/csp.rs` (the consumer of `csp-hashes.json`).
+ *
+ * @returns Vite plugin that injects + hashes `src/fouc/fouc.js` into the
+ *   HTML build output. No public API beyond the standard `Plugin` shape.
  */
 export function cspHashPlugin(): Plugin {
   let resolvedConfig: ResolvedConfig | undefined;
