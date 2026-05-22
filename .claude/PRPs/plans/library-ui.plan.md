@@ -144,54 +144,54 @@ Single committed plan file (this one). Sub-phase PRs each cite this plan plus op
 
 **Implementation agent (and each sub-phase agent) MUST read these files before starting any task:**
 
-| Priority | File                                                                                   | Lines               | Why Read This                                                                                     |
-| -------- | -------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------- |
-| P0       | `/home/coder/reverie/backend/src/routes/opds/library.rs`                               | 47-356              | Canonical list/search/cursor pattern — every JSON list endpoint mirrors this                      |
-| P0       | `/home/coder/reverie/backend/src/routes/enrichment.rs`                                 | 46-155              | Canonical JSON handler pattern (CurrentUser + State + Path + Query + Json)                        |
-| P0       | `/home/coder/reverie/backend/src/db.rs`                                                | 98-108              | `acquire_with_rls` — mandatory on every user-scoped DB touch                                      |
-| P0       | `/home/coder/reverie/backend/src/auth/middleware.rs`                                   | 50-103, 196-222     | `CurrentUser`, `require_admin`, `require_not_child`                                               |
-| P0       | `/home/coder/reverie/backend/src/error.rs`                                             | 31-103              | `AppError` enum + JSON error envelope `{"error": "..."}`                                          |
-| P0       | `/home/coder/reverie/backend/src/routes/metadata.rs`                                   | 188-336, 391-502    | Accept/reject/revert handlers + `apply_version` field dispatch — 11c builds on this               |
-| P0       | `/home/coder/reverie/backend/src/routes/opds/cursor.rs`                                | all                 | Base64url cursor format used unchanged                                                            |
-| P0       | `/home/coder/reverie/backend/src/test_support.rs`                                      | 130-141, 266-423    | `test_server`, `server_with_real_pools`, user/shelf/manifestation fixtures                        |
-| P1       | `/home/coder/reverie/backend/src/routes/auth.rs`                                       | 192-199             | JSON response shape for `/auth/me` (snake_case, no rename) — convention                           |
-| P1       | `/home/coder/reverie/backend/src/routes/mod.rs`                                        | 1-24                | Route module convention (`pub fn router() -> Router<AppState>`)                                   |
-| P1       | `/home/coder/reverie/backend/src/lib.rs`                                               | 102-153             | Router assembly + CSP wiring (HTML CSP vs API CSP layers)                                         |
-| P1       | `/home/coder/reverie/backend/migrations/20260412150007_search_rls_and_reserved.up.sql` | 1-119               | RLS policies on `manifestations` (4 policies) + trigram + GIN indexes                             |
-| P1       | `/home/coder/reverie/backend/migrations/20260417000001_add_enrichment_pipeline.up.sql` | 22-144              | `metadata_versions` shape + canonical `*_version_id` pointers — "accepted" mechanic               |
-| P1       | `/home/coder/reverie/backend/src/models/work.rs`                                       | 88-203              | `match_existing` (trigram find) + `upgrade_stub` (multi-step write)                               |
-| P0       | `/home/coder/reverie/frontend/src/pages/design/library.tsx`                            | all                 | Visual target for `/library`; component contract                                                  |
-| P0       | `/home/coder/reverie/frontend/src/pages/design/book.tsx`                               | all                 | Visual target for `/b/:id`; Tabs + sticky cover layout                                            |
-| P0       | `/home/coder/reverie/frontend/src/pages/design/fixtures/books.ts`                      | all                 | `Book` interface — explicitly authored to mirror Step 11 API shape                                |
-| P0       | `/home/coder/reverie/frontend/src/main.tsx`                                            | 1-30                | Router bootstrap + dev-only `designRoutes` dynamic import                                         |
-| P0       | `/home/coder/reverie/frontend/src/lib/theme/api.ts`                                    | all                 | Existing fetch pattern: `credentials: "same-origin"`, no token header                             |
-| P0       | `/home/coder/reverie/frontend/src/lib/theme/ThemeProvider.tsx`                         | 109-138             | 401-as-happy-path pattern (cookie fallback) — same applies to react-query 401 handler             |
-| P0       | `/home/coder/reverie/frontend/vite.config.ts`                                          | 21-28, 48-51, 84-88 | Dev CSP, design-chunk gate, dev proxy `/api → :3000`                                              |
-| P1       | `/home/coder/reverie/frontend/src/styles/themes/index.css`                             | 64-181              | All design tokens used by hero screens — production routes inherit identically                    |
-| P1       | `/home/coder/reverie/frontend/eslint.config.js`                                        | 151-193             | jsdoc rules at `warn` — every new exported function/type/interface needs `/** */` per ADR ratchet |
-| P1       | `/home/coder/reverie/frontend/components.json`                                         | all                 | `radix-nova` style, alias map; use for `npx shadcn add`                                           |
-| P1       | `/home/coder/reverie/CLAUDE.md` (Tiered Comment Policy)                                | 92-101              | Tier 1 JSDoc on public exports; Tier 4 on tests; Tier 2 unlikely in Step 11                       |
-| P1       | `/home/coder/reverie/backend/CLAUDE.md`                                                | (whole)             | Rust-side conventions, sqlx allowlist                                                             |
-| P1       | `/home/coder/reverie/frontend/CLAUDE.md`                                               | (whole)             | Frontend conventions, `src/api/` mandate                                                          |
-| P2       | `/home/coder/reverie/adr/2026-05-08-tiered-comment-policy.md`                          | all                 | Tier rationale                                                                                    |
-| P2       | `/home/coder/reverie/adr/2026-05-22-frontend-docstring-tooling.md`                     | all                 | jsdoc ratchet timing                                                                              |
-| P2       | `/home/coder/reverie/SDL.md`                                                           | all                 | Tool-use workflow (note: sdl-mcp connectivity can drop mid-session — fall back to Read/Grep)      |
+| Priority | File                                                                                   | Lines               | Why Read This                                                                                             |
+| -------- | -------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------- |
+| P0       | `/home/coder/reverie/backend/src/routes/opds/library.rs`                               | 47-356              | Canonical list/search/cursor pattern — every JSON list endpoint mirrors this                              |
+| P0       | `/home/coder/reverie/backend/src/routes/enrichment.rs`                                 | 46-155              | Canonical JSON handler pattern (CurrentUser + State + Path + Query + Json)                                |
+| P0       | `/home/coder/reverie/backend/src/db.rs`                                                | 98-108              | `acquire_with_rls` — mandatory on every user-scoped DB touch                                              |
+| P0       | `/home/coder/reverie/backend/src/auth/middleware.rs`                                   | 50-103, 196-222     | `CurrentUser`, `require_admin`, `require_not_child`                                                       |
+| P0       | `/home/coder/reverie/backend/src/error.rs`                                             | 31-103              | `AppError` enum + pre-migration `{"error": "..."}` envelope. Task 1b rewrites to RFC 7807 Problem Details |
+| P0       | `/home/coder/reverie/backend/src/routes/metadata.rs`                                   | 188-336, 391-502    | Accept/reject/revert handlers + `apply_version` field dispatch — 11c builds on this                       |
+| P0       | `/home/coder/reverie/backend/src/routes/opds/cursor.rs`                                | all                 | Base64url cursor format used unchanged                                                                    |
+| P0       | `/home/coder/reverie/backend/src/test_support.rs`                                      | 130-141, 266-423    | `test_server`, `server_with_real_pools`, user/shelf/manifestation fixtures                                |
+| P1       | `/home/coder/reverie/backend/src/routes/auth.rs`                                       | 192-199             | JSON response shape for `/auth/me` (snake_case, no rename) — convention                                   |
+| P1       | `/home/coder/reverie/backend/src/routes/mod.rs`                                        | 1-24                | Route module convention (`pub fn router() -> Router<AppState>`)                                           |
+| P1       | `/home/coder/reverie/backend/src/lib.rs`                                               | 102-153             | Router assembly + CSP wiring (HTML CSP vs API CSP layers)                                                 |
+| P1       | `/home/coder/reverie/backend/migrations/20260412150007_search_rls_and_reserved.up.sql` | 1-119               | RLS policies on `manifestations` (4 policies) + trigram + GIN indexes                                     |
+| P1       | `/home/coder/reverie/backend/migrations/20260417000001_add_enrichment_pipeline.up.sql` | 22-144              | `metadata_versions` shape + canonical `*_version_id` pointers — "accepted" mechanic                       |
+| P1       | `/home/coder/reverie/backend/src/models/work.rs`                                       | 88-203              | `match_existing` (trigram find) + `upgrade_stub` (multi-step write)                                       |
+| P0       | `/home/coder/reverie/frontend/src/pages/design/library.tsx`                            | all                 | Visual target for `/library`; component contract                                                          |
+| P0       | `/home/coder/reverie/frontend/src/pages/design/book.tsx`                               | all                 | Visual target for `/b/:id`; Tabs + sticky cover layout                                                    |
+| P0       | `/home/coder/reverie/frontend/src/pages/design/fixtures/books.ts`                      | all                 | `Book` interface — explicitly authored to mirror Step 11 API shape                                        |
+| P0       | `/home/coder/reverie/frontend/src/main.tsx`                                            | 1-30                | Router bootstrap + dev-only `designRoutes` dynamic import                                                 |
+| P0       | `/home/coder/reverie/frontend/src/lib/theme/api.ts`                                    | all                 | Existing fetch pattern: `credentials: "same-origin"`, no token header                                     |
+| P0       | `/home/coder/reverie/frontend/src/lib/theme/ThemeProvider.tsx`                         | 109-138             | 401-as-happy-path pattern (cookie fallback) — same applies to react-query 401 handler                     |
+| P0       | `/home/coder/reverie/frontend/vite.config.ts`                                          | 21-28, 48-51, 84-88 | Dev CSP, design-chunk gate, dev proxy `/api → :3000`                                                      |
+| P1       | `/home/coder/reverie/frontend/src/styles/themes/index.css`                             | 64-181              | All design tokens used by hero screens — production routes inherit identically                            |
+| P1       | `/home/coder/reverie/frontend/eslint.config.js`                                        | 151-193             | jsdoc rules at `warn` — every new exported function/type/interface needs `/** */` per ADR ratchet         |
+| P1       | `/home/coder/reverie/frontend/components.json`                                         | all                 | `radix-nova` style, alias map; use for `npx shadcn add`                                                   |
+| P1       | `/home/coder/reverie/CLAUDE.md` (Tiered Comment Policy)                                | 92-101              | Tier 1 JSDoc on public exports; Tier 4 on tests; Tier 2 unlikely in Step 11                               |
+| P1       | `/home/coder/reverie/backend/CLAUDE.md`                                                | (whole)             | Rust-side conventions, sqlx allowlist                                                                     |
+| P1       | `/home/coder/reverie/frontend/CLAUDE.md`                                               | (whole)             | Frontend conventions, `src/api/` mandate                                                                  |
+| P2       | `/home/coder/reverie/adr/2026-05-08-tiered-comment-policy.md`                          | all                 | Tier rationale                                                                                            |
+| P2       | `/home/coder/reverie/adr/2026-05-22-frontend-docstring-tooling.md`                     | all                 | jsdoc ratchet timing                                                                                      |
+| P2       | `/home/coder/reverie/SDL.md`                                                           | all                 | Tool-use workflow (note: sdl-mcp connectivity can drop mid-session — fall back to Read/Grep)              |
 
 **External Documentation:**
 
-| Source                                                                                                                          | Section                              | Why Needed                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| [axum 0.8.9 — Extractors](https://docs.rs/axum/0.8.9/axum/extract/index.html)                                                   | Path/Query/Json + extractor order    | Confirm path syntax `{id}` (NOT `:id`); typed JsonRejection                                                               |
-| [axum-extra Query](https://docs.rs/axum-extra/latest/axum_extra/extract/struct.Query.html)                                      | repeated-key params                  | Built-in axum `Query<T>` cannot deserialize `?tag=a&tag=b` into `Vec`; need axum-extra or serde_qs                        |
-| [sqlx 0.8 — QueryBuilder](https://docs.rs/sqlx/0.8.6/sqlx/query_builder/struct.QueryBuilder.html)                               | dynamic WHERE / tuple cursor         | Dynamic filtering — `query!` macros can't do this; use `QueryBuilder` with `build_query_as`                               |
-| [TanStack Query v5 — QueryCache onError](https://tanstack.com/query/v5/docs/reference/QueryCache)                               | global error handling                | v5 removed `defaultOptions.queries.onError`; correct hook is `QueryCache({ onError })` for 401 → redirect                 |
-| [TanStack Query v5 — useQuery / useSuspenseQuery](https://tanstack.com/query/v5/docs/framework/react/reference/useQuery)        | hook usage + retry                   | `retry: (count, err) => err.status !== 401` to avoid retrying auth failures                                               |
-| [React Router v7 — Data Mode](https://reactrouter.com/start/data/data-loading)                                                  | loaders + lazy                       | Loader pattern: `queryClient.prefetchQuery` inside loader, `useQuery` in component (Tkdodo pattern, officially supported) |
-| [PostgreSQL textsearch-controls](https://www.postgresql.org/docs/current/textsearch-controls.html)                              | `websearch_to_tsquery`, `ts_rank_cd` | Use `websearch_to_tsquery` for the search input (handles quotes, `OR`, `-exclude`); not `plainto_tsquery`                 |
-| [OWASP CSRF Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html) | custom header defense                | SameSite=Lax alone is insufficient per OWASP; require custom `X-Requested-With` header on mutating verbs                  |
-| [MDN HTTP caching](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching)                                            | `private, no-cache` + ETag           | Cover Cache-Control: switch from `no-store` to `private, no-cache` + ETag (cover hash) — bandwidth win, RLS-safe          |
-| [shadcn — Data Table](https://ui.shadcn.com/docs/components/data-table)                                                         | manualPagination                     | Server-side pagination requires `manualPagination: true` + skipping `getPaginationRowModel`                               |
-| [shadcn — Command](https://ui.shadcn.com/docs/components/command)                                                               | CommandDialog                        | Cmd-K wraps Command in a Radix Dialog                                                                                     |
+| Source                                                                                                                          | Section                              | Why Needed                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [axum 0.8.9 — Extractors](https://docs.rs/axum/0.8.9/axum/extract/index.html)                                                   | Path/Query/Json + extractor order    | Confirm path syntax `{id}` (NOT `:id`); typed JsonRejection                                                                                                                                                                                                            |
+| [axum-extra Query](https://docs.rs/axum-extra/latest/axum_extra/extract/struct.Query.html)                                      | repeated-key params                  | Built-in axum `Query<T>` cannot deserialize `?tag=a&tag=b` into `Vec`; need axum-extra or serde_qs                                                                                                                                                                     |
+| [sqlx 0.8 — QueryBuilder](https://docs.rs/sqlx/0.8.6/sqlx/query_builder/struct.QueryBuilder.html)                               | dynamic WHERE / tuple cursor         | Dynamic filtering — `query!` macros can't do this; use `QueryBuilder` with `build_query_as`                                                                                                                                                                            |
+| [TanStack Query v5 — QueryCache onError](https://tanstack.com/query/v5/docs/reference/QueryCache)                               | global error handling                | v5 removed `defaultOptions.queries.onError`; correct hook is `QueryCache({ onError })` for 401 → redirect                                                                                                                                                              |
+| [TanStack Query v5 — useQuery / useSuspenseQuery](https://tanstack.com/query/v5/docs/framework/react/reference/useQuery)        | hook usage + retry                   | `retry: (count, err) => err.status !== 401` to avoid retrying auth failures                                                                                                                                                                                            |
+| [React Router v7 — Data Mode](https://reactrouter.com/start/data/data-loading)                                                  | loaders + lazy                       | Loader pattern: `queryClient.prefetchQuery` inside loader, `useQuery` in component (Tkdodo pattern, officially supported)                                                                                                                                              |
+| [PostgreSQL textsearch-controls](https://www.postgresql.org/docs/current/textsearch-controls.html)                              | `websearch_to_tsquery`, `ts_rank_cd` | Use `websearch_to_tsquery` for the search input (handles quotes, `OR`, `-exclude`); not `plainto_tsquery`                                                                                                                                                              |
+| [OWASP CSRF Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html) | synchronizer token pattern           | SameSite=Lax alone is insufficient per OWASP. Reverie ships OWASP synchronizer-token pattern: session-stored 32-byte random token, surfaced via `/auth/me`, validated server-side via `X-CSRF-Token` header on mutating verbs (constant-time compare). See 11a Task 1c |
+| [MDN HTTP caching](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching)                                            | `private, no-cache` + ETag           | Cover Cache-Control: switch from `no-store` to `private, no-cache` + ETag (cover hash) — bandwidth win, RLS-safe                                                                                                                                                       |
+| [shadcn — Data Table](https://ui.shadcn.com/docs/components/data-table)                                                         | manualPagination                     | Server-side pagination requires `manualPagination: true` + skipping `getPaginationRowModel`                                                                                                                                                                            |
+| [shadcn — Command](https://ui.shadcn.com/docs/components/command)                                                               | CommandDialog                        | Cmd-K wraps Command in a Radix Dialog                                                                                                                                                                                                                                  |
 
 **Version constraints (from package.json / Cargo.toml):**
 
@@ -282,6 +282,10 @@ async fn list(
 
 ```rust
 // SOURCE: NEW — backend/src/error.rs IntoResponse impl after Task 1b migration.
+// `instance` (RFC 7807 §3.1) is injected by a small middleware that captures
+// `OriginalUri` and stores it in request extensions, then `into_response` reads it.
+// This keeps `AppError` itself free of request-coupled state while still
+// emitting a spec-compliant `instance` field on every error.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, problem_type, title, detail) = match self {
@@ -298,11 +302,13 @@ impl IntoResponse for AppError {
                 (500, "internal", "Internal Server Error", "An internal error occurred.".into())
             }
         };
+        let instance = current_request_uri();  // tower extension populated by problem_instance_layer
         let body = serde_json::json!({
-            "type":   format!("https://reverie.example/probs/{problem_type}"),
-            "title":  title,
-            "status": status,
-            "detail": detail,
+            "type":     format!("https://reverie.example/probs/{problem_type}"),
+            "title":    title,
+            "status":   status,
+            "detail":   detail,
+            "instance": instance,
         });
         let mut response = (StatusCode::from_u16(status).unwrap(), Json(body)).into_response();
         response.headers_mut().insert(
@@ -313,6 +319,8 @@ impl IntoResponse for AppError {
     }
 }
 ```
+
+Wiring: Task 1b adds a tiny `problem_instance_layer` tower middleware in `backend/src/error/instance.rs` that captures `OriginalUri` into request extensions on entry. The `current_request_uri()` helper (also in `error/instance.rs`) reads from a task-local set by the middleware (`tokio::task_local!`). The middleware mounts globally on the `/api` route group in `build_router_with_session_store`. ~30 LOC including tests.
 
 **JSON_PUT_HANDLER_WITH_TYPED_REJECTION** (backend, new convention for 11c, 11d, 11e, 11f):
 
@@ -358,14 +366,11 @@ async fn books_list_returns_only_visible_to_current_user(pool: PgPool) {
 }
 ```
 
-**ERROR_ENVELOPE_CONSISTENCY**:
+**ERROR_ENVELOPE_CONSISTENCY** (post Task 1b — RFC 7807):
 
-```rust
-// SOURCE: backend/src/error.rs:101 — every error body is {"error": "..."}
-// Step 11 MUST NOT introduce {"errors": [...]} or other shapes.
-let body = serde_json::json!({ "error": message });
-(status, axum::Json(body)).into_response()
-```
+After Task 1b lands, the canonical error envelope is RFC 7807 Problem Details (see `PROBLEM_DETAILS_ERROR_ENVELOPE` pattern above). Every handler funnels errors through `AppError::into_response()`; no handler builds its own error body. The pre-migration shape `{"error": "<msg>"}` ceases to exist after Task 1b — do NOT add new handlers that emit the pre-migration shape, and do NOT add a new top-level field to the Problem Details body without registering a new problem-type URI in `backend/src/error/problems.rs`.
+
+Audit grep before merge: `rg '"error":' backend/src` must return zero matches (or only the migration-grep-command line itself).
 
 **FRONTEND_API_CLIENT_MODULE** (new convention, mirrors existing fetch shape from `src/lib/theme/api.ts`):
 
@@ -743,6 +748,17 @@ Step 11's blueprint exit criteria are reads + curation + admin + settings. The f
 - **TESTS**: every existing test that asserts `body["error"]` updates to assert `body["title"]`, `body["status"]`, `body["type"]`. Use a small `assert_problem(response, type_slug, status)` helper in `test_support.rs` to keep test diffs small.
 - **VALIDATE**: `cargo test` green across all existing route modules (auth, ingestion, enrichment, metadata, tokens) after migration.
 
+#### Task 1d: ADRs — new dependency adoption
+
+Per CLAUDE.md proactive trigger ("write ADR before new crate or npm package"), this plan introduces multiple new dependencies. Each needs its own short ADR captured via the `adr` skill — one combined ADR per stack is acceptable to avoid micro-ADR sprawl. Bundle as:
+
+- **`adr/{date}-frontend-data-layer-deps.md`** — covers `@tanstack/react-query` (+ devtools, +`@tanstack/react-table` if 11b adopts the data-table component) and `@dnd-kit/sortable` (11d). One paragraph each: alternative considered, why this, supply-chain audit notes (download stats, recent activity, transitive count via `npm ls`).
+- **`adr/{date}-backend-aux-crates.md`** — covers `axum-extra` (multi-value query params), `subtle` (constant-time compare for CSRF + future password/token checks), `serde_with` (RFC 7396 sparse-update encoding). Same shape.
+
+These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 9, 1c all add the deps. Authoring time is ~1 hr each; can be drafted in parallel with implementation.
+
+- **VALIDATE**: `adr` skill checklist passes for each; entries added to `adr/README.md` index. Sub-phase 11d's `@dnd-kit/sortable` adoption is gated on the frontend-data-layer ADR landing (write it once, scope it to cover all four packages).
+
 #### Task 1c: Backend — CSRF synchronizer token pattern
 
 - **ACTION**: CREATE `backend/src/security/csrf.rs` implementing the OWASP synchronizer token pattern:
@@ -791,8 +807,8 @@ Step 11's blueprint exit criteria are reads + curation + admin + settings. The f
   - happy: admin lists books they own (envelope shape, item count, cursor present when overflow)
   - happy: adult lists, sees only RLS-visible manifestations
   - happy: child lists, sees only manifestations shelved on their own shelves (`create_child_user_and_basic_auth` + `create_shelf` + `add_to_shelf`)
-  - negative: unauthenticated → 401 `{"error": "unauthorized"}`
-  - negative: malformed cursor → 422 `{"error": "invalid cursor"}`
+  - negative: unauthenticated → `(401, "unauthorized")`
+  - negative: malformed cursor → `(422, "validation")` with detail "invalid cursor"
   - edge: `?sort=title` orders alphabetically
 - **MIRROR**: `backend/src/routes/opds/tests.rs:73-99`.
 - **VALIDATE**: `cargo test -p reverie list_endpoint` — RED.
@@ -875,16 +891,23 @@ Step 11's blueprint exit criteria are reads + curation + admin + settings. The f
 
 #### Task 10: Frontend — failing test for `apiFetch` + `listBooks` (RED)
 
-- **ACTION**: CREATE `frontend/tests/api/books.test.ts` mocking `global.fetch`. Assertions: includes `credentials: 'same-origin'`, `X-Requested-With: XMLHttpRequest` header, throws `ApiError(401)` on 401 response, throws `ApiError(500)` on 500.
+- **ACTION**: CREATE `frontend/tests/api/books.test.ts` mocking `global.fetch`. Assertions:
+  - `credentials: 'same-origin'` set on every request
+  - GET requests do NOT include `X-CSRF-Token`
+  - POST/PUT/PATCH/DELETE requests DO include `X-CSRF-Token: <token>` header (mock `getCsrfToken()` to return a fixture)
+  - 401 response → throws `ApiError` with `.status === 401`, `.type` parsed from RFC 7807 body
+  - 500 response → throws `ApiError` with `.status === 500`, `.title === "Internal Server Error"`
+  - 403 with `type` ending in `/csrf-mismatch` → triggers `refreshCsrfToken()` once then retries
 - **VALIDATE**: `npm test api/books` — fails because `src/api/*` not yet present.
 
 #### Task 11: Frontend — `src/api/` scaffold (GREEN)
 
-- **ACTION**: CREATE `src/api/errors.ts`, `src/api/fetch.ts`, `src/api/books.ts`, `src/api/index.ts`.
-- **IMPLEMENT**:
-  - `ApiError` class with `status: number` and `body: unknown`.
-  - `apiFetch(input, init?)` wrapping `fetch` with `credentials: 'same-origin'`, `'Accept': 'application/json'`, `'X-Requested-With': 'XMLHttpRequest'`. Throws `ApiError` on non-2xx.
-  - `listBooks(params, signal?)`, `getBook(id, signal?)`, `getWork(id, signal?)`.
+- **ACTION**: CREATE `src/api/errors.ts`, `src/api/fetch.ts`, `src/api/csrf.ts`, `src/api/books.ts`, `src/api/index.ts`.
+- **IMPLEMENT**: code matches the `FRONTEND_API_ERRORS`, `FRONTEND_API_FETCH_WRAPPER`, and `FRONTEND_API_CLIENT_MODULE` patterns above. Specifically:
+  - `ApiError` class as defined in `FRONTEND_API_ERRORS` — fields `status`, `type`, `title`, `detail` (RFC 7807 shape), plus `problemSlug` getter. Do NOT use the simpler `{status, body}` shape.
+  - `apiFetch(input, init?)` as defined in `FRONTEND_API_FETCH_WRAPPER` — injects `X-CSRF-Token` on mutating verbs, parses RFC 7807 Problem Details on error responses, retries once on `csrf-mismatch` after `refreshCsrfToken()`.
+  - `getCsrfToken()` / `refreshCsrfToken()` in `csrf.ts` — module-level state, hydrated from `/auth/me` response.
+  - `listBooks(params, signal?)`, `getBook(id, signal?)`, `getWork(id, signal?)` use `apiFetch`. GETs do NOT trigger CSRF header injection.
 - **DOCSTRING**: JSDoc on every exported function/type per ESLint `jsdoc/require-jsdoc` warn → ratchet to error (Stage D).
 - **VALIDATE**: `cd frontend && npm run test -- api/books` GREEN, plus `npm run lint`.
 
@@ -994,7 +1017,7 @@ cd frontend && npm run lint && npm run test && npm run build
    - happy: `websearch` operators — `"war and peace"` (quoted phrase), `tolstoy -anna` (exclude) work as expected
    - happy: filter `?author=<id>` returns only that author's books
    - happy: multi-tag `?tag=scifi&tag=hugo` AND-matches (or OR — decide and document)
-   - negative: empty `q` → 422 `{"error": "query required"}`
+   - negative: empty `q` → `(422, "validation")` with detail "query required"
    - negative: oversized `q` (>200 chars) → 422
    - negative: SQL-injection probe (`'); DROP TABLE works;--`) safely escaped via parameterised query — assert table still exists post-test
    - edge: child-account search returns only manifestations on their shelves (RLS join)
@@ -1027,7 +1050,7 @@ cd frontend && npm run lint && npm run test && npm run build
 4. ADD `GET /api/manifestations/{id}/metadata` is already there; expose pending rows in `BookDetail.metadata_versions` for the Versions tab.
 5. FRONTEND: `VersionsTab.tsx` — per-field rows: current canonical | pending alternatives | accept/reject/revert buttons. Use react-query mutations with optimistic update + invalidation of `['books', 'detail', id]`.
 6. FRONTEND: edit form (modal sheet) — form fields per metadata field. Submit calls `PATCH /api/books/{id}/metadata` with only the touched fields. Confirm with shadcn `<AlertDialog>` before applying when the change would clear a previously-set field. Form state tracks `touched` flag per field so the request body only contains user-modified keys.
-7. TESTS: PATCH with `{ fields: { title: "New" } }` updates only title; PATCH with `{ fields: { description: null } }` clears description and creates an audit-trail `metadata_versions` row with `new_value = null`; PATCH with empty body is 422 (`{"error": "no fields"}`); child accounts blocked (403); writeback job enqueued on every accept/manual edit; manual edit on a field with a pending AI draft accepts the manual value and leaves the AI draft `status = 'pending'` (don't auto-reject — operator may later revert to it).
+7. TESTS: PATCH with `{ fields: { title: "New" } }` updates only title; PATCH with `{ fields: { description: null } }` clears description and creates an audit-trail `metadata_versions` row with `new_value = null`; PATCH with empty body → `(422, "validation")` with detail "no fields"; child accounts blocked → `(403, "forbidden")`; writeback job enqueued on every accept/manual edit; manual edit on a field with a pending AI draft accepts the manual value and leaves the AI draft `status = 'pending'` (don't auto-reject — operator may later revert to it).
 
 ### Exit Criteria (11c)
 
@@ -1050,7 +1073,7 @@ cd frontend && npm run lint && npm run test && npm run build
 4. ADD shelf items:
    - `POST /api/shelves/{id}/items` (add manifestation — appends at `max(position) + 1`)
    - `DELETE /api/shelves/{id}/items/{manifestation_id}` (remove)
-   - `PUT /api/shelves/{id}/items` (reorder — accepts full ordered array, transactionally rewrites `shelf_items.position`). **Optimistic-concurrency gate:** require `If-Match: "<shelves.updated_at as RFC3339>"` header. Inside the transaction: `SELECT updated_at FROM shelves WHERE id = $1 FOR UPDATE`; if it doesn't match the `If-Match` value, return 412 Precondition Failed `{"error": "shelf modified"}`. On success, `UPDATE shelves SET updated_at = now() WHERE id = $1` and return the new ETag in the response.
+   - `PUT /api/shelves/{id}/items` (reorder — accepts full ordered array, transactionally rewrites `shelf_items.position`). **Optimistic-concurrency gate:** require `If-Match: "<shelves.updated_at as RFC3339>"` header. Inside the transaction: `SELECT updated_at FROM shelves WHERE id = $1 FOR UPDATE`; if it doesn't match the `If-Match` value, return `(412, "if-match-mismatch")`. On success, `UPDATE shelves SET updated_at = now() WHERE id = $1` and return the new ETag in the response.
    - Response on every shelf read endpoint includes `ETag: "<updated_at as RFC3339>"` so frontend can capture and pass back on PUT.
 5. FRONTEND: `SeriesPage.tsx` — ordered list with completeness indicator (own/total).
 6. FRONTEND: shelves sidebar with create/rename/delete; drag-and-drop reorder via `@dnd-kit/sortable` (small additional dep). Optimistic update via react-query mutation. On 412, react-query rollback + toast "Shelf changed on another device — refresh and retry."
@@ -1058,13 +1081,13 @@ cd frontend && npm run lint && npm run test && npm run build
    - happy: GET /api/shelves returns user's shelves
    - happy: POST + PATCH + DELETE round-trip
    - happy: PUT items with correct `If-Match` reorders successfully and returns new ETag
-   - negative: DELETE on `is_system = true` shelf → 409 `{"error": "system shelf"}`
+   - negative: DELETE on `is_system = true` shelf → `(409, "system-shelf-immutable")` (NEW problem-type slug — add to registry in Task 1b)
    - negative: ownership boundary — adult A cannot mutate adult B's shelf (404, NOT 403, existence-not-leaked)
    - negative: child cannot CREATE/DELETE shelves (403)
    - negative: child CAN view their own shelves (200)
    - **CONCURRENCY:** two parallel PUT reorders with the same `If-Match` — exactly one succeeds (200), one returns 412
    - edge: PUT items with stale `If-Match` → 412
-   - edge: PUT items without `If-Match` header → 428 Precondition Required `{"error": "if_match_required"}` (RFC 6585)
+   - edge: PUT items without `If-Match` header → `(428, "if-match-required")` (RFC 6585 status, RFC 7807 envelope)
 
 ### Exit Criteria (11d)
 
@@ -1082,7 +1105,7 @@ cd frontend && npm run lint && npm run test && npm run build
 ### Task overview (11e)
 
 1. ADD `GET /api/users` (admin only — `current_user.require_admin()?`) returning all users.
-2. ADD `PUT /api/users/{id}/role` (admin only). **Last-admin protection (TOCTOU-safe):** inside the transaction, BEFORE the UPDATE, run `SELECT id FROM users WHERE role = 'admin' FOR UPDATE`. Recount the locked rows; reject (422 `{"error": "would leave zero admins"}`) if the demotion would drop the admin count to zero. Under READ COMMITTED, two concurrent demotions serialize on the lock — second transaction sees the updated count after the first commits. Bumping a user's role bumps `users.session_version` (in the same transaction) to invalidate their existing sessions. Test must include a concurrency case: two admins simultaneously POST demote-the-other; assert exactly one succeeds and one returns 422.
+2. ADD `PUT /api/users/{id}/role` (admin only). **Last-admin protection (TOCTOU-safe):** inside the transaction, BEFORE the UPDATE, run `SELECT id FROM users WHERE role = 'admin' FOR UPDATE`. Recount the locked rows; reject with `(422, "validation")` detail "would leave zero admins" if the demotion would drop the admin count to zero. Under READ COMMITTED, two concurrent demotions serialize on the lock — second transaction sees the updated count after the first commits. Bumping a user's role bumps `users.session_version` (in the same transaction) to invalidate their existing sessions. Test must include a concurrency case: two admins simultaneously POST demote-the-other; assert exactly one succeeds and one returns the 422.
 3. ADD `PUT /api/users/{id}/child-status` (admin only). When toggling `is_child` ON, the `chk_child_role_sync` CHECK constraint requires `role = 'child'`; do both updates in one transaction.
 4. ADD `PATCH /api/users/{id}` (admin only) for display_name + email edits.
 5. FRONTEND: `src/routes/admin.tsx` — guard: render redirect if `useQuery(['auth', 'me']).data.role !== 'admin'`. Otherwise show table.
@@ -1096,7 +1119,7 @@ cd frontend && npm run lint && npm run test && npm run build
    - negative: adult GETs /api/users → 403
    - negative: child GETs /api/users → 403
    - negative: non-admin PUT /api/users/{id}/role → 403
-   - **SECURITY (last-admin):** single concurrent test: spawn two parallel demote-the-other transactions; assert exactly one succeeds, one returns 422 `{"error": "would leave zero admins"}`
+   - **SECURITY (last-admin):** single concurrent test: spawn two parallel demote-the-other transactions; assert exactly one succeeds, one returns `(422, "validation")` with detail "would leave zero admins"
    - negative: admin demoting self when sole admin → 422
    - negative: PATCH with email already in use by another user → 422
    - edge: `chk_child_role_sync` enforced — PUT role='adult' on a `is_child = true` user without first toggling child off → 422 surfacing the CHECK violation
@@ -1136,7 +1159,7 @@ cd frontend && npm run lint && npm run test && npm run build
    - negative: non-admin GET → 403
    - negative: non-admin PUT → 403
    - negative: PUT with invalid value (e.g. `concurrency = -1`) → 422 with field-level diagnostic (per the ADR's decision on single-error vs field-level envelope shape — defaults to single-error per existing pattern unless ADR overrides)
-   - edge: env-set field PUT — behavior per ADR (env-wins → 200 returns `effective_value` from env, `db_value` reflects stored attempt; OR rejection 409 `{"error": "field locked by env"}`). Test asserts whichever the ADR chose
+   - edge: env-set field PUT — behavior per ADR (env-wins → 200 returns `effective_value` from env, `db_value` reflects stored attempt; OR rejection `(409, "field-locked-by-env")` — NEW problem-type slug to register in Task 1b if path B chosen). Test asserts whichever the ADR chose
    - edge: PUT empty body → 422
    - edge: ADR-mandated reload semantics — for live-reloadable fields, assert effect visible within N ms; for restart-required fields, assert response includes `"restart_required": true` flag
 
@@ -1162,20 +1185,34 @@ cd frontend && npm run lint && npm run test && npm run build
 | Frontend component             | Pages render with seeded `QueryClient`; snapshot via inline assertions, not toMatchSnapshot | `vitest` + RTL + `MemoryRouter`                                                          |
 | Browser QA                     | Real-DB visual check vs hero                                                                | `agent-browser` screenshots + `localhost:5173` (persistent)                              |
 
+### Error-response assertion shorthand
+
+All sub-phases land AFTER 11a Task 1b (RFC 7807 migration). Every test that asserts an error response MUST assert the RFC 7807 shape, never the pre-migration `{"error": "..."}` shape. To keep test bullets short, this plan uses the shorthand:
+
+> `(<status>, "<problem-slug>")` means: `body["status"] == <status> AND body["type"].ends_with("/<problem-slug>") AND body["title"]` is non-empty AND `body["instance"]` matches the request path.
+
+Optional third element `, detail: "<text>"` means the test also asserts `body["detail"] == "<text>"` (used only when the detail string is contractually stable; default is not to assert detail to decouple from copywriting changes).
+
+Helper: `test_support::db::assert_problem(response, status, slug)` and `assert_problem_with_detail(response, status, slug, detail)` (Task 1b adds these). Frontend tests use a `expectProblem(err, status, slug)` Vitest helper in `frontend/tests/helpers/problem.ts`.
+
 ### Edge cases (must cover at least once across sub-phases)
 
-- [ ] Cursor base64 corruption → 422 with `{"error": "invalid cursor"}`
-- [ ] Empty result page → empty `items` array, `next_cursor: null`
-- [ ] Same `(created_at, id)` boundary (no overlap)
+- [ ] Cursor base64 corruption → `(422, "validation")` with detail "invalid cursor"
+- [ ] Empty result page → empty `items` array, `next_cursor: null`, NO `Link: rel="next"` header
+- [ ] Same `(created_at, id)` boundary (no overlap) — cursor decode of last page yields `next_cursor: null`
 - [ ] RLS: adult cannot see admin's `manifestations` not on a shared shelf (works by default; verify)
 - [ ] RLS: child sees only manifestations on their own shelves
-- [ ] Search: empty query string → 422 (per OPDS pattern at `library.rs:201-208`)
-- [ ] Search: SQL-injection-style input quoted by `plainto_tsquery` — verify not exploitable
-- [ ] Metadata PUT with non-existent field name → 422
-- [ ] Demote last admin → 422
-- [ ] Non-admin hits `/api/users` → 403 envelope
-- [ ] CSRF: mutating verb without `X-Requested-With` header → ADR decision (could be 403 or accept-but-warn — document in 11a ADR)
+- [ ] Search: empty query string → `(422, "validation")` with detail "query required"
+- [ ] Search: SQL-injection-style input quoted by `websearch_to_tsquery` — verify not exploitable (post-test, `works` table still exists, row count unchanged)
+- [ ] Metadata PATCH with non-existent field name → `(422, "validation")`
+- [ ] Demote last admin → `(422, "validation")` with detail "would leave zero admins"
+- [ ] Non-admin hits `/api/users` → `(403, "forbidden")`
+- [ ] CSRF: mutating verb without `X-CSRF-Token` header → `(428, "csrf-missing")` per 11a Task 1c spec
+- [ ] CSRF: mutating verb with wrong `X-CSRF-Token` value → `(403, "csrf-mismatch")`
+- [ ] If-Match: shelf reorder without header → `(428, "if-match-required")`
+- [ ] If-Match: shelf reorder with stale ETag → `(412, "if-match-mismatch")`
 - [ ] 11f: env-overridden field PUT → 200 with `effective_value` from env (per ADR)
+- [ ] RFC 7807 `instance` field present on every error response and matches `request.path`
 
 ---
 
