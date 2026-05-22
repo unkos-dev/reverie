@@ -32,3 +32,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [GHA build cache + cargo-chef Dockerfile layering for Docker publish](2026-05-13-image-build-cache.md) (accepted, 2026-05-13)
 - [Outbound HTTP clients in Reverie must send an explicit User-Agent](2026-05-18-outbound-http-user-agent.md) (proposed, 2026-05-18)
 - [Adopt `impeccable` as the frontend design anti-pattern detector](2026-05-21-impeccable-adoption.md) (proposed, 2026-05-21)
+- [Frontend docstring linting via `eslint-plugin-jsdoc`](2026-05-22-frontend-docstring-tooling.md) (accepted, 2026-05-22)
