@@ -7,11 +7,7 @@
     ":prHourlyLimitNone"
   ],
   "timezone": "Australia/Perth",
-  "schedule": [
-    "after 10pm every weekday",
-    "before 6am every weekday",
-    "every weekend"
-  ],
+  "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
   "dependencyDashboardTitle": "Dependency dashboard: Renovate",
   "labels": ["dependencies"],
   "rangeStrategy": "bump",
@@ -50,6 +46,15 @@
       "matchManagers": ["cargo"],
       "matchDepNames": ["rand_core_06"],
       "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Track Rust-crate tool pins used via taiki-e/install-action in workflows. install-action's manifest silently advances unpinned tools, so the project pins versions inline (e.g. `tool: sqlx-cli@0.8.6`). Without this manager, Renovate's github-actions manager doesn't reach inside the `tool:` value to spot the crates.io version, so bumps stay manual. Hand-listed depNames avoid false matches on non-Rust install-action entries.",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "matchStrings": ["tool:\\s+(?<depName>cargo-nextest|sqlx-cli)@(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "crate"
     }
   ]
 }
