@@ -131,8 +131,11 @@ export default defineConfig([
   // ADR: docstring linting for the tiered comment policy (UNK-236).
   // See `adr/2026-05-22-frontend-docstring-tooling.md` (accepted).
   //
-  // Tool: eslint-plugin-jsdoc. Rules at `warn` during Stage B and
-  // Stage C; flip to `error` in Stage D per the ADR ratchet.
+  // Tool: eslint-plugin-jsdoc. Stage D ratchet complete — rules at
+  // `error` after Stage C-1..C-5 backfilled every in-scope public
+  // export (PRs #294, #297, #298, #299, #300). `npm run lint` passes
+  // `--max-warnings 0` so any future regression fails locally and in
+  // CI.
   //
   // Rule set is intentionally minimal — TS types encode the WHAT
   // (parameter / return types); JSDoc carries the WHY (purpose,
@@ -162,7 +165,7 @@ export default defineConfig([
       // rule double-firing on Tier 3 helpers, not cosmetic. Explicit `false`
       // on every `require.*` default restricts enforcement to `contexts`.
       "jsdoc/require-jsdoc": [
-        "warn",
+        "error",
         {
           require: {
             FunctionDeclaration: false,
@@ -199,7 +202,7 @@ export default defineConfig([
           enableFixer: false,
         },
       ],
-      "jsdoc/require-description": "warn",
+      "jsdoc/require-description": "error",
     },
   },
   // Tier 4 carve-out: shadcn primitives are generator output —
