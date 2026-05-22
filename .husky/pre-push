@@ -3,7 +3,7 @@
 # Tests run in CI — keeping pre-push fast (~30-60s warm) avoids shared dev-DB
 # contention across worktrees. See debt/ and feedback in memory for rationale.
 
-set -euo pipefail
+set -eu
 
 cd "$(git rev-parse --show-toplevel)/backend"
 
