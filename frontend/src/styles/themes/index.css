@@ -49,6 +49,16 @@
      in both themes; redefine if hover needs to diverge from surface-2. */
   --color-hover: var(--surface-2);
 
+  /* `bg-overlay` is the scrim token for modal / dialog / sheet / popover
+     backdrops. Theme-aware: Light theme uses a gentle ink scrim that
+     reads against the warm Parchment canvas; Dark theme uses a deeper
+     ink scrim because a low-alpha tint against the near-black Ink canvas
+     (#14120e) gives almost no visual separation. Both directions stay
+     ink-shifted (no inverted cream-on-dark scrim) to keep the
+     ink/parchment brand identity coherent across themes. The runtime
+     value lives on each theme selector below. */
+  --color-overlay: var(--overlay);
+
   /* Typography — Satoshi for body/chrome, Author for display, JetBrains
      Mono is loaded but conditional (UNK-113 reviews adoption post-0.1.0). */
   --font-display: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -149,6 +159,7 @@
   --accent-soft: #dcc890;
   --accent-strong: #6e5424;
   --fg-on-accent: #e8dcc2; /* Parchment */
+  --overlay: rgb(0 0 0 / 15%);
 }
 
 /* Dark theme — Ink-leaning canvas + warm surfaces + Reverie Gold accent. */
@@ -166,6 +177,7 @@
   --accent-soft: #4a3c24;
   --accent-strong: #d4b070;
   --fg-on-accent: #0e0d0a; /* Ink */
+  --overlay: rgb(0 0 0 / 60%);
 }
 
 /* Loading-pulse keyframe — philosophy §11A loading-state expression.
