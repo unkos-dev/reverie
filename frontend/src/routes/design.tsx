@@ -1,5 +1,7 @@
 import type { RouteObject } from "react-router";
 import DesignSystemPage from "@/pages/design/system";
+import HeroLibraryPage from "@/pages/design/library";
+import HeroBookPage from "@/pages/design/book";
 
 /**
  * Dev-only route tree. main.tsx imports this dynamically inside an
@@ -13,4 +15,6 @@ import DesignSystemPage from "@/pages/design/system";
  */
 export const designRoutes: RouteObject[] = [
   { path: "/design/system", element: <DesignSystemPage /> },
+  { path: "/design/hero/library", element: <HeroLibraryPage /> },
+  { path: "/design/hero/book", element: <HeroBookPage /> },
 ];
