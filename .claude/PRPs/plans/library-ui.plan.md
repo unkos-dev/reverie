@@ -606,15 +606,15 @@ pub async fn list(
 
 ### Backend — modified files
 
-| File                          | Action               | Justification                                                                                                                                        |
-| ----------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend/src/routes/mod.rs`   | UPDATE               | Register new modules                                                                                                                                 |
-| `backend/src/lib.rs`          | UPDATE               | Wire new routers + CSRF layer into `build_router_with_session_store`                                                                                 |
-| `backend/src/error.rs`        | UPDATE (11a Task 1b) | Rewrite `IntoResponse` to emit RFC 7807 `application/problem+json`; add `CsrfMissing`, `CsrfMismatch`, `IfMatchRequired`, `IfMatchMismatch` variants |
-| `backend/src/routes/auth.rs`  | UPDATE (11a Task 1c) | Generate CSRF token on session creation; expose via `/auth/me`                                                                                       |
-| `backend/src/models/user.rs`  | UPDATE (11a Task 1c) | `/auth/me` response shape includes `csrf_token: String` field                                                                                        |
-| `backend/src/test_support.rs` | UPDATE               | Add `assert_problem(response, type_slug, status)` helper; existing tests update to use it                                                            |
-| `backend/Cargo.toml`          | UPDATE (11a Task 4)  | Add `axum-extra = { version = "0.10", features = ["query"] }`; add `subtle = "2"` for constant-time CSRF compare                                     |
+| File                          | Action               | Justification                                                                                                                                                                                                                             |
+| ----------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend/src/routes/mod.rs`   | UPDATE               | Register new modules                                                                                                                                                                                                                      |
+| `backend/src/lib.rs`          | UPDATE               | Wire new routers + CSRF layer into `build_router_with_session_store`                                                                                                                                                                      |
+| `backend/src/error.rs`        | UPDATE (11a Task 1b) | Rewrite `IntoResponse` to emit RFC 7807 `application/problem+json`; add `CsrfMissing`, `CsrfMismatch`, `IfMatchRequired`, `IfMatchMismatch` variants                                                                                      |
+| `backend/src/routes/auth.rs`  | UPDATE (11a Task 1c) | Generate CSRF token on session creation; expose via `/auth/me`                                                                                                                                                                            |
+| `backend/src/models/user.rs`  | UPDATE (11a Task 1c) | `/auth/me` response shape includes `csrf_token: String` field                                                                                                                                                                             |
+| `backend/src/test_support.rs` | UPDATE               | Add `assert_problem(response, type_slug, status)` helper; existing tests update to use it                                                                                                                                                 |
+| `backend/Cargo.toml`          | UPDATE (11a Task 4)  | EDIT existing `axum-extra` entry: add `"query"` to its feature list (kept at 0.12.6 — do not downgrade). Add `serde_with = "3"` for `double_option` RFC 7396 sparse-update plumbing (11c). `subtle` already present at 2.6.1 — no change. |
 
 ### Frontend — new files
 
@@ -753,7 +753,7 @@ Step 11's blueprint exit criteria are reads + curation + admin + settings. The f
 Per CLAUDE.md proactive trigger ("write ADR before new crate or npm package"), this plan introduces multiple new dependencies. Each needs its own short ADR captured via the `adr` skill — one combined ADR per stack is acceptable to avoid micro-ADR sprawl. Bundle as:
 
 - **`adr/{date}-frontend-data-layer-deps.md`** — covers `@tanstack/react-query` (+ devtools, +`@tanstack/react-table` if 11b adopts the data-table component) and `@dnd-kit/sortable` (11d). One paragraph each: alternative considered, why this, supply-chain audit notes (download stats, recent activity, transitive count via `npm ls`).
-- **`adr/{date}-backend-aux-crates.md`** — covers `axum-extra` (multi-value query params), `subtle` (constant-time compare for CSRF + future password/token checks), `serde_with` (RFC 7396 sparse-update encoding). Same shape.
+- **`adr/{date}-backend-aux-crates.md`** — covers `serde_with` (RFC 7396 sparse-update encoding for 11c PATCH endpoint). Same shape. Notes: `axum-extra` and `subtle` are already in tree; this PR only adds a feature flag to `axum-extra` and consumes `subtle` for the first time. The ADR documents the new consumer pattern for `subtle` (constant-time CSRF compare in Task 1c) but does NOT propose adding the crate.
 
 These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 9, 1c all add the deps. Authoring time is ~1 hr each; can be drafted in parallel with implementation.
 
@@ -842,7 +842,7 @@ These ADRs are 11a prerequisites (block the sub-phase merging) because Tasks 4, 
   - `title` → `ORDER BY w.sort_title ASC, w.id ASC` + cursor predicate `(w.sort_title, w.id) > ($1, $2)`
   - `author` → join `LATERAL (SELECT a.sort_name FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = w.id ORDER BY wa.position ASC LIMIT 1) first_author` + `ORDER BY first_author.sort_name ASC, w.id ASC` + cursor predicate `(first_author.sort_name, w.id) > ($1, $2)`
 - **MIRROR**: `backend/src/routes/opds/library.rs:263-356` (`emit_new`) for the RLS tx + batch-load envelope.
-- **DEP**: Use `axum_extra::extract::Query` (NOT built-in `axum::Query`) for `ListParams` to make 11b's multi-value filter params (`?tag=a&tag=b`) drop in without rewriting handlers. Add `axum-extra = { version = "0.10", features = ["query"] }` (verify against axum 0.8.9) to `backend/Cargo.toml`.
+- **DEP**: Use `axum_extra::extract::Query` (NOT built-in `axum::Query`) for `ListParams` to make 11b's multi-value filter params (`?tag=a&tag=b`) drop in without rewriting handlers. `axum-extra` is already in `backend/Cargo.toml` at `0.12.6` with `features = ["cookie"]` — EDIT the existing entry to add `"query"` to the features list: `axum-extra = { version = "0.12.6", features = ["cookie", "query"] }`. Do NOT add a duplicate entry. Do NOT change the version (downgrade would break axum 0.8.9 compat). `subtle` (used by Task 1c for constant-time CSRF compare) is also already in `backend/Cargo.toml` at `2.6.1` — no change needed.
 - **PAGE_SIZE**: reuse `state.config.opds.page_size`; add `REVERIE_API_PAGE_SIZE` env var in a follow-up if divergence wanted.
 - **DOCSTRING**: `///` with `# Errors` section per Tier 1.
 - **REGISTER**: in `backend/src/routes/mod.rs` and merge into router at `backend/src/lib.rs`.
