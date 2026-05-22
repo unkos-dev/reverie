@@ -195,9 +195,7 @@ review burden per PR. A second config diff per Stage C PR
 (authoring + flip) doubles the PR-config surface for an enforcement
 property that the single big-bang flip captures identically.
 
-### Full rule set (require-jsdoc + require-description +
-
-require-param-description + require-returns-description)
+### Full rule set (require-jsdoc + require-description + require-param-description + require-returns-description)
 
 Maximum machine enforcement. Catches authors who omit
 `@param`/`@returns` content when they choose to write those tags.
@@ -289,8 +287,12 @@ wiring (UNK-236)`.
 - **Change**: flip `jsdoc/require-jsdoc` and
   `jsdoc/require-description` from `warn` to `error` in the
   in-scope block. Carve-out overrides remain.
-- **CI**: `npm run lint` invocation in CI gets `--max-warnings 0`
-  appended (or the equivalent flat-config-level enforcement).
+- **CI**: `npm run lint` invocation in CI gets `-- --max-warnings 0`
+  appended (i.e. `npm run lint -- --max-warnings 0` — the `--`
+  separator is required so npm forwards the flag to ESLint instead
+  of treating it as an npm config flag), or the `lint` script in
+  `frontend/package.json` is updated to embed `--max-warnings 0`
+  directly.
 - **Validation**:
 
   ```bash
@@ -316,7 +318,9 @@ wiring (UNK-236)`.
       `frontend/src/components/ui/**` and all test paths.
 - [ ] Rules at `warn` during Stage B and Stage C; at `error`
       after Stage D.
-- [ ] CI runs `npm run lint --max-warnings 0` after Stage D.
+- [ ] CI runs `npm run lint -- --max-warnings 0` (or
+      `npx eslint . --max-warnings 0`) after Stage D — the `--`
+      separator is required for the flag to reach ESLint.
 - [ ] At Stage D acceptance, all 18 in-scope files carry Tier 1
       (or Tier 1+2) JSDoc; `npx eslint . --max-warnings 0` exits
       0 on the frontend tree.
