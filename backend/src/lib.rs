@@ -246,7 +246,7 @@ pub async fn run() -> anyhow::Result<()> {
     if let Some(err) = log_level_parse_err {
         tracing::warn!(
             error = %err,
-            "configured log level is unparseable; falling back to info. \
+            "configured log level is unparsable; falling back to info. \
              Fix REVERIE_LOG_LEVEL (or RUST_LOG fallback) to silence this warning."
         );
     }

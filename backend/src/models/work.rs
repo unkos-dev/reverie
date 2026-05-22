@@ -7,7 +7,7 @@
 //!    title+author fuzzy match, else `None`.
 //! 2. `create_stub` — inserts an empty-placeholder work so the manifestation FK
 //!    is satisfied before any drafts are written.
-//! 3. `upgrade_stub` — UPDATEs the stub with the metadata and wires
+//! 3. `upgrade_stub` — runs an `UPDATE` against the stub with the metadata and wires
 //!    `works.{title,description,language}_version_id` + `work_authors.source_version_id`
 //!    from the draft IDs returned by `metadata::draft::write_drafts`.
 //!
