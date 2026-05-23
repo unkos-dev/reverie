@@ -6,6 +6,26 @@ Build the JSON REST API surface that the production web UI consumes, and the Rea
 
 Step 11 is the largest blueprint step (20 tasks across 9 endpoints + 11 frontend features). This plan breaks it into **six sub-phases (11a–11f)**, each shippable as a standalone PR with its own validation gate. Sub-phase 11a is the foundation; 11b–11e build out functionality on the same scaffold; 11f is architecturally separable (introduces persisted settings).
 
+## Status (rolling)
+
+| Sub-phase                   | PR                                                                                                            | Merge commit | Date       | Status      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | ----------- |
+| 11a — Foundations           | [#310](https://github.com/unkos-dev/reverie/pull/310) + [#311](https://github.com/unkos-dev/reverie/pull/311) | (squash)     | 2026-05-22 | ✅ merged   |
+| 11b — Search + filters      | [#314](https://github.com/unkos-dev/reverie/pull/314)                                                         | `21b53fe`    | 2026-05-23 | ✅ merged   |
+| 11c — Manual metadata edit  | —                                                                                                             | —            | —          | next        |
+| 11d — Series + shelves CRUD | —                                                                                                             | —            | —          | pending     |
+| 11e — Admin                 | —                                                                                                             | —            | —          | pending     |
+| 11f — Settings (persisted)  | —                                                                                                             | —            | —          | gated (ADR) |
+
+### Carry-over from merged sub-phases
+
+**From 11b (PR #314 + close-out commit `4ee16e0`):**
+
+- **B5 picker affordances deferred to 11d.** 11b ships clear-only filter chips on `LibraryPage`. Author/series/shelf/tag _pickers_ need shelves CRUD (`GET/POST /api/shelves`) and `GET /api/series/{id}` — those are 11d scope. When 11d lands, replace clear-only chips with picker affordances + clear.
+- **Browser QA on `/library` deferred to staging.** Production route requires backend + OIDC session. Coder workspace has no OIDC stub and the workspace's sqlx cache/live-DB drift on `orchestrator.rs` blocks a clean `cargo run`. Component contracts covered by Vitest + cargo test; runtime browser QA happens on staging. Track as exit criterion on 11d/11e where staging deploy is part of the loop.
+- **Malformed-UUID filter rejection shape is non-RFC-7807.** `?author=garbage`, `?series=garbage`, `?shelf=garbage` fail at `axum_extra::extract::Query` deserialization and emit the framework's default rejection (400 plain text). Pre-existing inconsistency with the `Path<Uuid>` 400 path (see `detail_endpoint_malformed_uuid_returns_400`). Either ship `impl From<QueryRejection> for AppError` in 11c (so the new RFC 7807 path covers this) or document the carve-out. Add a test in the same PR.
+- **Exclude operator is best-effort.** Hybrid CTE honours `-token` in the tsquery leg; trigram leg may re-include the excluded token via raw-string similarity. Test asserts the non-excluded match is present, not that the excluded match is absent. Not a blocker; matches Postgres semantics. Leave as-is unless user feedback surfaces.
+
 ## User Story
 
 As an **adult or admin Reverie user**
