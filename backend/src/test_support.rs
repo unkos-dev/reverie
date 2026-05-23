@@ -140,6 +140,81 @@ pub fn test_server() -> TestServer {
     TestServer::new(app)
 }
 
+/// Assert that an `axum-test` response carries an RFC 7807 Problem
+/// Details body with the expected status, problem-type slug, and
+/// `application/problem+json` Content-Type.
+///
+/// Use in tests that previously asserted `body["error"] == "..."`
+/// against the pre-7807 envelope. The helper checks the four
+/// must-be-present fields (`type`, `title`, `status`, `detail`) and
+/// returns the parsed body so callers can drill into the
+/// caller-supplied `detail` when needed.
+///
+/// ```ignore
+/// let r = server.get("/api/__nope__").await;
+/// let problem = test_support::assert_problem(
+///     &r,
+///     crate::error::problems::NOT_FOUND,
+///     axum::http::StatusCode::NOT_FOUND,
+/// );
+/// assert_eq!(problem["title"], "Not Found");
+/// ```
+///
+/// # Panics
+///
+/// Panics when the response does not match the expected RFC 7807
+/// contract: HTTP status differs from `status`; Content-Type missing
+/// or not `application/problem+json`; body fails to parse as JSON;
+/// required fields (`type`, `title`, `status`, `detail`) absent; or
+/// `type` URI does not end in `/{type_slug}`. Intended for test code
+/// only — the panic shape is the assertion-failure surface.
+pub fn assert_problem(
+    response: &axum_test::TestResponse,
+    type_slug: &str,
+    status: axum::http::StatusCode,
+) -> serde_json::Value {
+    assert_eq!(
+        response.status_code(),
+        status,
+        "expected HTTP {status}, got {}",
+        response.status_code(),
+    );
+    let content_type = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        content_type.contains("application/problem+json"),
+        "expected application/problem+json Content-Type, got: {content_type}",
+    );
+    let body: serde_json::Value = response.json();
+    let typ = body["type"]
+        .as_str()
+        .expect("RFC 7807 `type` field present");
+    assert!(
+        typ.ends_with(&format!("/{type_slug}")),
+        "expected `type` ending in /{type_slug}, got {typ}",
+    );
+    assert_eq!(
+        body["status"]
+            .as_u64()
+            .expect("RFC 7807 `status` field present"),
+        u64::from(status.as_u16()),
+        "RFC 7807 `status` field must match HTTP status",
+    );
+    assert!(
+        body["title"].as_str().is_some(),
+        "RFC 7807 `title` field present, got: {body}",
+    );
+    assert!(
+        body["detail"].as_str().is_some(),
+        "RFC 7807 `detail` field present, got: {body}",
+    );
+    body
+}
+
 /// Real-DB helpers for tests that exercise the live schema + RLS policies.
 ///
 /// Tests use `#[sqlx::test(migrations = "./migrations")]`, which provisions

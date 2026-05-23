@@ -147,6 +147,14 @@ where
             state.clone(),
             security::headers::security_headers,
         ))
+        // Capture the request path into a task-local so
+        // `AppError::into_response` (called anywhere in the handler
+        // stack below) can emit a populated RFC 7807 `instance`
+        // field. Applies to all routes including the composite
+        // fallback so 404s on `/api/*` carry the instance too.
+        .layer(axum::middleware::from_fn(
+            error::instance::problem_instance_layer,
+        ))
         .layer(auth_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
@@ -364,6 +372,27 @@ mod tests {
         let response = server.get("/health").await;
         response.assert_status_ok();
         response.assert_text("ok");
+    }
+
+    /// Regression coverage for the `problem_instance_layer` wiring on
+    /// the composite router (see `build_router_with_session_store`).
+    /// A future layer-order edit that drops or repositions the
+    /// middleware would silently lose the RFC 7807 `instance` field;
+    /// this test fails before that change ships.
+    #[tokio::test]
+    async fn unmatched_api_route_returns_problem_with_instance() {
+        let server = test_support::test_server();
+        let r = server.get("/api/__definitely_not_a_route__").await;
+        let body = test_support::assert_problem(
+            &r,
+            crate::error::problems::NOT_FOUND,
+            axum::http::StatusCode::NOT_FOUND,
+        );
+        assert_eq!(
+            body["instance"].as_str(),
+            Some("/api/__definitely_not_a_route__"),
+            "instance must be populated by problem_instance_layer, got: {body}",
+        );
     }
 
     // resolve_log_filter parses `configured_level` directly — env precedence
