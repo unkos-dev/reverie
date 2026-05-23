@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series (name, sort_name) VALUES ('Alpha Saga', 'Alpha Saga') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [false]
+  },
+  "hash": "09bfedadf0eca44ec30160463ef2f0088d59dc0a361340d940f9fea1cb23db0e"
+}
