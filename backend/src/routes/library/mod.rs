@@ -55,27 +55,26 @@ pub fn router() -> Router<AppState> {
 /// Decoded via [`axum_extra::extract::Query`] (not built-in
 /// `axum::Query`) so future multi-value filter params (`?tag=a&tag=b`)
 /// can extend this struct without a router-side rewrite.
+///
+/// Private to the route module — handler-internal wire shape, not
+/// part of the crate's external API.
 #[derive(Debug, Default, Deserialize)]
-pub struct ListParams {
-    /// Opaque base64url cursor from the previous response's
-    /// `next_cursor` field (or the `Link: rel="next"` URL).
+struct ListParams {
     #[serde(default)]
-    pub cursor: Option<String>,
-    /// Sort axis; defaults to [`SortMode::Recent`].
+    cursor: Option<String>,
     #[serde(default)]
-    pub sort: SortMode,
+    sort: SortMode,
 }
 
 /// `GET /api/books` response envelope. Carries the page rows plus
 /// the opaque cursor for the following page; pagination is also
 /// signalled via the RFC 8288 `Link` header on the response.
+///
+/// Private to the route module — handler-internal wire shape.
 #[derive(Debug, Serialize)]
-pub struct BookListResponse {
-    /// Page of [`BookListRow`]s ordered per the requested sort.
-    pub items: Vec<BookListRow>,
-    /// Opaque cursor for the next page; `None` when this is the
-    /// final page.
-    pub next_cursor: Option<String>,
+struct BookListResponse {
+    items: Vec<BookListRow>,
+    next_cursor: Option<String>,
 }
 
 /// List the manifestations visible to the current user, paginated

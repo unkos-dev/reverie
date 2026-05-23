@@ -28,6 +28,7 @@ use crate::models::ingestion_status::IngestionStatus;
 /// [`BookListRow`] and [`BookDetail`]; `None` when the work isn't on
 /// any series.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct SeriesRef {
     /// Series primary key.
     pub id: Uuid,
@@ -42,6 +43,7 @@ pub struct SeriesRef {
 /// against the query in `routes/library::list`, then enriched with
 /// the batch-loaded `authors` slot and serialised straight to JSON.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct BookListRow {
     /// `manifestations.id` — the canonical book id on the wire.
     pub id: Uuid,
@@ -79,6 +81,7 @@ pub struct BookListRow {
 /// plus the work-level prose and metadata-version summary surfaced
 /// in the book-detail UI.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 #[allow(
     dead_code,
     reason = "consumed by the GET /api/books/{id} handler in the 11a-A.4 slice"
@@ -123,6 +126,7 @@ pub struct BookDetail {
 
 /// Counts surfaced on the book-detail Versions tab.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 #[allow(
     dead_code,
     reason = "consumed alongside BookDetail in the 11a-A.4 slice"
@@ -137,6 +141,7 @@ pub struct MetadataVersionSummary {
 /// `/api/works/{id}` response. Lists every manifestation the user
 /// can see for a given work, grouped under the work-level prose.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 #[allow(
     dead_code,
     reason = "consumed by the GET /api/works/{id} handler in the 11a-A.4 slice"
@@ -160,6 +165,7 @@ pub struct WorkDetail {
 
 /// One manifestation row embedded in a [`WorkDetail`] response.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 #[allow(
     dead_code,
     reason = "consumed alongside WorkDetail in the 11a-A.4 slice"

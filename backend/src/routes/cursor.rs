@@ -41,6 +41,7 @@ use uuid::Uuid;
 /// Sort axis selectable via `?sort=...` on `/api/books`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum SortMode {
     /// Newest manifestations first (`manifestations.created_at DESC`).
     #[default]
@@ -53,6 +54,7 @@ pub enum SortMode {
 
 /// Cursor key tagged with the sort axis that produced it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CursorKey {
     /// Recent-sort cursor: `(manifestations.created_at, manifestations.id)`.
     Recent {
