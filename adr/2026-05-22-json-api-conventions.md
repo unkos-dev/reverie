@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-22
 decision-makers: john
 ---
@@ -127,11 +127,14 @@ status)` helper collapses into one line per assertion.
 `instance` is the request path. `AppError` is a value, not a
 request-coupled construct, so the path is captured by a tiny
 `problem_instance_layer` tower middleware in
-`backend/src/error/instance.rs` that stores `OriginalUri` into a
-`tokio::task_local!` slot on request entry. `AppError::into_response`
-reads from that task-local. The middleware mounts globally on the
-`/api` route group inside `build_router_with_session_store`. The
-slot is `None` outside an HTTP request (e.g. unit tests calling
+`backend/src/error/instance.rs` that stores the request path into
+a `tokio::task_local!` slot on request entry. `AppError::into_response`
+reads from that task-local. The middleware mounts on the outermost
+composite router inside `build_router_with_session_store` — wrapping
+matched API routes AND the composite fallback — so that
+reserved-prefix typos (`/api/__nope__`, `/auth/__nope__`) emitted
+by `composite_fallback` carry the `instance` field too. The slot is
+`None` outside an HTTP request (e.g. unit tests calling
 `AppError::Validation(...).into_response()` directly), in which
 case `instance` is omitted from the body — RFC 7807 §3.1 permits
 omission.
