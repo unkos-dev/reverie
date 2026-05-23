@@ -113,6 +113,7 @@ where
         .merge(routes::ingestion::router())
         .merge(routes::enrichment::router())
         .merge(routes::metadata::router())
+        .merge(routes::library::router())
         // /api/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
         // with a session cookie regardless of OPDS availability).
         .merge(routes::opds::covers_router());

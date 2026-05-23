@@ -12,6 +12,8 @@ pub mod enrichment_status;
 pub mod ingestion_job;
 /// Closed value set for the `ingestion_status` Postgres `ENUM`.
 pub mod ingestion_status;
+/// Response DTOs for the JSON library API (`/api/books`, `/api/works`).
+pub mod library;
 /// Closed value set for the `manifestation_format` Postgres `ENUM`.
 pub mod manifestation_format;
 /// Per-`(user, manifestation)` reading-progress and last-read timestamp.

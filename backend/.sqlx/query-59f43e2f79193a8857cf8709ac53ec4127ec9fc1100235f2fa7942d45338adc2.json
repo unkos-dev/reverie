@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series (name, sort_name) VALUES ('Bravo Saga', 'Bravo Saga') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [false]
+  },
+  "hash": "59f43e2f79193a8857cf8709ac53ec4127ec9fc1100235f2fa7942d45338adc2"
+}
