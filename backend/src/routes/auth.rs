@@ -58,14 +58,19 @@ async fn login(
         .set_pkce_challenge(pkce_challenge)
         .url();
 
-    // Store OIDC flow state in the underlying session
+    // Store OIDC flow state in the underlying session. The OIDC
+    // transient anti-forgery state lives under `oidc_csrf_state` — a
+    // dedicated key so it can never shadow or be confused with the
+    // long-lived app-level `csrf_token` (synchronizer-token Phase 1)
+    // that `/auth/callback` writes after a successful login. See
+    // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
     let session = &auth_session.session;
     session
         .insert("pkce_verifier", pkce_verifier.secret().clone())
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     session
-        .insert("csrf_token", csrf_token.secret().clone())
+        .insert("oidc_csrf_state", csrf_token.secret().clone())
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     session
@@ -84,9 +89,13 @@ async fn callback(
 ) -> Result<(CookieJar, Redirect), AppError> {
     let session = &auth_session.session;
 
-    // Validate CSRF token
+    // Validate OIDC anti-forgery state (the `state` query param echoed
+    // back by the IdP must match the value `/auth/login` stored under
+    // `oidc_csrf_state`). This is the OIDC transient — distinct from
+    // the long-lived `csrf_token` that the synchronizer-token defense
+    // writes after `auth_session.login()` below.
     let stored_csrf: String = session
-        .get("csrf_token")
+        .get("oidc_csrf_state")
         .await
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or(AppError::Unauthorized)?;
@@ -160,8 +169,12 @@ async fn callback(
     if let Err(e) = auth_session.session.remove::<String>("pkce_verifier").await {
         tracing::warn!(error = %e, "failed to remove pkce_verifier from session after OIDC callback");
     }
-    if let Err(e) = auth_session.session.remove::<String>("csrf_token").await {
-        tracing::warn!(error = %e, "failed to remove csrf_token from session after OIDC callback");
+    if let Err(e) = auth_session
+        .session
+        .remove::<String>("oidc_csrf_state")
+        .await
+    {
+        tracing::warn!(error = %e, "failed to remove oidc_csrf_state from session after OIDC callback");
     }
     if let Err(e) = auth_session.session.remove::<String>("nonce").await {
         tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
@@ -179,12 +192,15 @@ async fn callback(
     // (read via `/auth/me`, sent back as `X-CSRF-Token` on mutating verbs)
     // is the primary defense; SameSite + CSP API layer are defense-in-depth.
     //
-    // Stored under session key `csrf_token` — same key the OIDC flow used
-    // for its transient state value (removed two lines above). The OIDC
-    // value is single-use per login; this app-level token is long-lived
-    // per session. Failure here aborts the login because an unguarded
-    // session would leave the browser unable to mutate state once the
-    // Phase 2 middleware turns on.
+    // Stored under session key `csrf_token`. Disjoint from the OIDC
+    // anti-forgery state (`oidc_csrf_state`, removed above) so a
+    // logged-in user re-hitting `/auth/login` cannot overwrite this
+    // value with a transient OIDC parameter and confuse a future
+    // reader. Re-running `/auth/callback` deliberately rotates this
+    // token (each login overwrites the prior session's value).
+    // Failure here aborts the login because an unguarded session
+    // would leave the browser unable to mutate state once the Phase
+    // 2 middleware turns on.
     let mut csrf_bytes = [0u8; 32];
     rand::fill(&mut csrf_bytes);
     let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
@@ -220,13 +236,13 @@ async fn me(
         .ok_or(AppError::Unauthorized)?;
     // THREAT: surfaces the session-bound CSRF synchronizer token to the
     // first-party SPA (see adr/2026-05-22-json-api-conventions.md). The
-    // token must be present whenever the request is authenticated — any
-    // authenticated request that lacks one indicates a session created
-    // outside `/auth/callback` (Basic-auth callers, OPDS clients) for
-    // which Phase 2 middleware exempts read-only verbs. Treat the
-    // missing case as `null` rather than 500: the response shape stays
-    // stable, and the Phase 2 middleware (not this handler) is what
-    // refuses unsafe verbs without a token.
+    // session key `csrf_token` is disjoint from the OIDC transient
+    // `oidc_csrf_state` used by `/auth/login`, so this value is always
+    // the long-lived app token (or absent for sessions that never went
+    // through `/auth/callback`, e.g. Basic-auth OPDS callers). Treat
+    // the missing case as `null` rather than 500: the response shape
+    // stays stable, and the Phase 2 middleware (not this handler) is
+    // what refuses unsafe verbs without a token.
     let csrf_token: Option<String> = auth_session
         .session
         .get("csrf_token")
@@ -549,11 +565,11 @@ mod tests {
         let csrf: String = serde_json::from_value(
             record
                 .data
-                .get("csrf_token")
-                .expect("csrf_token in session")
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
                 .clone(),
         )
-        .expect("csrf_token is string");
+        .expect("oidc_csrf_state is string");
         let nonce: String =
             serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
                 .expect("nonce is string");
@@ -680,6 +696,160 @@ mod tests {
             me_body_2.get("csrf_token").and_then(|v| v.as_str()),
             Some(token),
             "csrf_token must be stable across /auth/me reads in same session"
+        );
+    }
+
+    /// A logged-in user re-hitting `/auth/login` (e.g. mistaken click,
+    /// stale tab) must NOT overwrite their long-lived synchronizer
+    /// token. The OIDC transient state lives under `oidc_csrf_state`
+    /// and the app token under `csrf_token` — disjoint keys. This
+    /// test pins that disjointness so a future refactor that collapses
+    /// the two keys breaks here rather than silently shipping a
+    /// confused-deputy where `/auth/me` returns the OIDC transient
+    /// value pretending to be the app token.
+    ///
+    /// Locks Pass-1 finding D1 from the PR #306 adversarial review.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn re_login_preserves_app_csrf_token(pool: sqlx::PgPool) {
+        use crate::auth::backend::AuthBackend;
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+        };
+        let auth_backend = AuthBackend {
+            pool: app_pool.clone(),
+        };
+        let app = crate::build_router_with_session_store(state, auth_backend, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        // Step 1: drive /login → /callback to mint the app csrf_token.
+        let login_resp = server.get("/auth/login").await;
+        assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let oidc_state_1: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state present after /auth/login")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+        assert!(
+            !record.data.contains_key("csrf_token"),
+            "/auth/login must NOT write the app-level csrf_token key — that \
+             would clobber a returning user's existing app token",
+        );
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            "test-subject-relogin",
+            Some("alice@example.com"),
+            Some("Alice Test"),
+            &nonce,
+        )
+        .await;
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &oidc_state_1)
+            .await;
+        assert_eq!(
+            cb_resp.status_code(),
+            StatusCode::TEMPORARY_REDIRECT,
+            "first callback failed: {}",
+            cb_resp.text()
+        );
+        let token_a = server
+            .get("/auth/me")
+            .await
+            .json::<serde_json::Value>()
+            .get("csrf_token")
+            .and_then(|v| v.as_str())
+            .expect("csrf_token after first callback")
+            .to_owned();
+        assert_eq!(token_a.len(), 43, "token A must be 43-char base64url");
+
+        // Step 2: same authenticated cookie jar — drive /auth/login
+        // AGAIN (no callback). This writes a fresh OIDC transient
+        // under `oidc_csrf_state`. The app token under `csrf_token`
+        // MUST be preserved; otherwise the Phase-2 frontend reader
+        // would see /auth/me return the OIDC transient pretending
+        // to be the app token.
+        let login_resp_2 = server.get("/auth/login").await;
+        assert_eq!(login_resp_2.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let session_cookie_2 = login_resp_2.cookie("id").value().to_string();
+        let session_id_2: SessionId = session_cookie_2.parse().expect("parse session id 2");
+        let record_2 = store
+            .load(&session_id_2)
+            .await
+            .expect("load session record after second /auth/login")
+            .expect("session record present after second /auth/login");
+
+        // The new OIDC transient must be present and must differ from
+        // the first login's transient (otherwise CSRF state is being
+        // reused across login attempts — a separate security smell).
+        let oidc_state_2: String = serde_json::from_value(
+            record_2
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state present after re-login")
+                .clone(),
+        )
+        .expect("oidc_csrf_state 2 is string");
+        assert_ne!(
+            oidc_state_1, oidc_state_2,
+            "OIDC anti-forgery state must rotate per /auth/login call"
+        );
+
+        // The app token under `csrf_token` must survive the re-login
+        // intact. If this fires, /auth/login is shadowing the app
+        // token with OIDC transient state (D1 regression).
+        let preserved_app_token: String = serde_json::from_value(
+            record_2
+                .data
+                .get("csrf_token")
+                .expect("app csrf_token must survive /auth/login re-entry")
+                .clone(),
+        )
+        .expect("preserved csrf_token is string");
+        assert_eq!(
+            preserved_app_token, token_a,
+            "app csrf_token must equal the value minted by the previous \
+             /auth/callback; mismatch indicates /auth/login wrote to the \
+             app-token key and clobbered the long-lived value",
+        );
+
+        // /auth/me on the same cookie must still return token_a (not
+        // the OIDC transient) — final user-facing contract lock.
+        let me_after = server.get("/auth/me").await;
+        assert_eq!(me_after.status_code(), StatusCode::OK);
+        let me_after_body: serde_json::Value = me_after.json();
+        assert_eq!(
+            me_after_body.get("csrf_token").and_then(|v| v.as_str()),
+            Some(token_a.as_str()),
+            "/auth/me must keep returning the app csrf_token (not the \
+             OIDC transient) after a re-login attempt without callback",
         );
     }
 }
