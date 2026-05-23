@@ -483,7 +483,8 @@ async fn detail(
         .remove(&work_id)
         .unwrap_or_default();
     let tags = load_manifestation_tags(&mut tx, id).await?;
-    let pending = count_pending_versions(&mut tx, id).await?;
+    let canonical_ids = canonical_pointer_ids(&row);
+    let pending = count_pending_versions(&mut tx, id, &canonical_ids).await?;
     let accepted_count = accepted_pointer_count(&row);
 
     tx.commit()
@@ -561,6 +562,10 @@ async fn fetch_detail_row(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Option<DetailRow>, AppError> {
+    // Single `LEFT JOIN LATERAL` pulls all three series columns from
+    // the same row, so a future tiebreaker tweak can never let
+    // `series_name` and `series_position` drift onto different
+    // `series_works` rows. Mirrors the list handler's series pattern.
     let row = sqlx::query!(
         r#"
         SELECT m.id                   AS "id!",
@@ -583,22 +588,21 @@ async fn fetch_detail_row(
                m.isbn_10_version_id      AS m_isbn10_v,
                m.isbn_13_version_id      AS m_isbn13_v,
                m.cover_version_id        AS m_cover_v,
-               (SELECT s.id   FROM series_works sw
-                  JOIN series s ON s.id = sw.series_id
-                  WHERE sw.work_id = w.id
-                  ORDER BY sw.position ASC NULLS LAST, s.id ASC
-                  LIMIT 1)                AS series_id,
-               (SELECT s.name FROM series_works sw
-                  JOIN series s ON s.id = sw.series_id
-                  WHERE sw.work_id = w.id
-                  ORDER BY sw.position ASC NULLS LAST, s.id ASC
-                  LIMIT 1)                AS series_name,
-               (SELECT sw.position FROM series_works sw
-                  WHERE sw.work_id = w.id
-                  ORDER BY sw.position ASC NULLS LAST, sw.series_id ASC
-                  LIMIT 1)                AS "series_position: f64"
+               series_one.series_id      AS "series_id?",
+               series_one.series_name    AS "series_name?",
+               series_one.series_position AS "series_position?: f64"
           FROM manifestations m
           JOIN works w ON w.id = m.work_id
+          LEFT JOIN LATERAL (
+              SELECT s.id    AS series_id,
+                     s.name  AS series_name,
+                     sw.position AS series_position
+              FROM series_works sw
+              JOIN series s ON s.id = sw.series_id
+              WHERE sw.work_id = w.id
+              ORDER BY sw.position ASC NULLS LAST, s.id ASC
+              LIMIT 1
+          ) series_one ON TRUE
          WHERE m.id = $1
         "#,
         id,
@@ -650,20 +654,53 @@ async fn load_manifestation_tags(
     .map_err(|e| AppError::Internal(e.into()))
 }
 
+/// Count `metadata_versions` rows with `status = 'pending'` for the
+/// given manifestation, excluding any row that is already the
+/// canonical pointer for some field on the manifestation or its work.
+///
+/// The enum was simplified to `pending|rejected` in
+/// `20260417000001_add_enrichment_pipeline` — promotion lives on the
+/// canonical pointer columns, NOT on a `status = 'accepted'` value, so
+/// a promoted row keeps `status = 'pending'`. Without the exclusion
+/// filter the Versions-tab summary would double-count every promoted
+/// version as both `pending` and `accepted`.
 async fn count_pending_versions(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_id: Uuid,
+    canonical_ids: &[Uuid],
 ) -> Result<u32, AppError> {
     let n = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM metadata_versions \
-         WHERE manifestation_id = $1 AND status = 'pending'::metadata_review_status",
+         WHERE manifestation_id = $1 \
+           AND status = 'pending'::metadata_review_status \
+           AND NOT (id = ANY($2::uuid[]))",
         manifestation_id,
+        canonical_ids,
     )
     .fetch_one(&mut **tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?
     .unwrap_or(0);
     Ok(u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+/// Collect the non-NULL canonical pointer ids on the given detail row
+/// — the set the pending-count query excludes and `accepted_pointer_count`
+/// derives its count from.
+fn canonical_pointer_ids(row: &DetailRow) -> Vec<Uuid> {
+    [
+        row.w_title_v,
+        row.w_desc_v,
+        row.w_lang_v,
+        row.m_publisher_v,
+        row.m_pubdate_v,
+        row.m_isbn10_v,
+        row.m_isbn13_v,
+        row.m_cover_v,
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// "Accepted" = canonical pointer slots currently filled for this
@@ -691,17 +728,19 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
 /// of that work the current user can see.
 ///
 /// `works` carries no RLS policy on its own; RLS lives on
-/// `manifestations`. The handler runs an existence probe inside the
-/// RLS transaction first — `SELECT EXISTS (SELECT 1 FROM
-/// manifestations WHERE work_id = $1)` is RLS-filtered, so it returns
-/// `false` for users who cannot see any manifestation of the work,
-/// which collapses straight to a 404. Without this gate the handler
-/// would happily return `manifestations: []` for hidden works, leaking
-/// the existence of the work row.
+/// `manifestations`. The handler fetches the manifestations first
+/// under the RLS transaction and treats an empty result as 404 — the
+/// same row set drives both visibility gating and the response body,
+/// so an interleaved shelf-revoke or manifestation-delete between
+/// statements (`PostgreSQL` `READ COMMITTED` per-statement snapshots)
+/// cannot leave the existence-not-leaked invariant in an "EXISTS=true,
+/// rows=[]" half-state. Without this, the handler could return 200
+/// with `manifestations: []`, leaking the existence of the work row.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when the work is missing or every
-///   manifestation is RLS-hidden.
+///   manifestation is RLS-hidden (or the work row was deleted between
+///   the manifestations fetch and the work fetch).
 /// - [`AppError::Internal`] on database errors.
 async fn work_detail(
     current_user: CurrentUser,
@@ -711,31 +750,6 @@ async fn work_detail(
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-
-    let visible: Option<bool> = sqlx::query_scalar!(
-        "SELECT EXISTS (SELECT 1 FROM manifestations WHERE work_id = $1)",
-        id,
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    if !visible.unwrap_or(false) {
-        return Err(AppError::NotFound);
-    }
-
-    let work = sqlx::query!(
-        "SELECT id   AS \"id!\", \
-                title AS \"title!\", \
-                description, \
-                language \
-         FROM works WHERE id = $1",
-        id,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .ok_or(AppError::NotFound)?;
 
     let manifestation_rows = sqlx::query!(
         r#"
@@ -755,6 +769,23 @@ async fn work_detail(
     .fetch_all(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
+
+    if manifestation_rows.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    let work = sqlx::query!(
+        "SELECT id   AS \"id!\", \
+                title AS \"title!\", \
+                description, \
+                language \
+         FROM works WHERE id = $1",
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::NotFound)?;
 
     let series_row = sqlx::query!(
         "SELECT s.id   AS \"id!\", \

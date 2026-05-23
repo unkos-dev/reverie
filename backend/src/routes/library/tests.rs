@@ -726,13 +726,36 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
     let summary = &body["metadata_version_summary"];
     assert_eq!(
         summary["pending"].as_u64().unwrap(),
-        2,
-        "two pending versions (title canonical + description draft) — got {body}",
+        1,
+        "canonical title version excluded from pending (only description draft remains) — got {body}",
     );
     assert_eq!(
         summary["accepted"].as_u64().unwrap(),
         1,
         "one canonical pointer set (works.title_version_id) — got {body}",
+    );
+    // Wire-shape regression guard: optional fields must still surface
+    // (null or empty array) so an accidental `skip_serializing_if`
+    // breaking the frontend `BookDetail` contract trips the test.
+    assert!(
+        body.get("tags").is_some_and(serde_json::Value::is_array),
+        "tags must surface as an array (empty when no tags), got {body}",
+    );
+    assert!(
+        body.get("series").is_some_and(serde_json::Value::is_null),
+        "series must surface as null when the work isn't on a series, got {body}",
+    );
+    assert!(
+        body.get("isbn_10").is_some_and(serde_json::Value::is_null),
+        "isbn_10 must surface as null when unset, got {body}",
+    );
+    assert!(
+        body.get("description").is_some(),
+        "description must always be present on the wire (null or string), got {body}",
+    );
+    assert!(
+        body.get("language").is_some(),
+        "language must always be present on the wire (null or string), got {body}",
     );
 }
 
@@ -804,22 +827,25 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
     .execute(&ingestion_pool)
     .await
     .unwrap();
+    let mut insertion_order: Vec<Uuid> = Vec::new();
     for marker in ["epub-vol", "pdf-vol"] {
         let file_path = format!("/tmp/work-test-{marker}.epub");
         let hash = format!("work-test-hash-{marker}");
-        sqlx::query!(
+        let mid: Uuid = sqlx::query_scalar!(
             "INSERT INTO manifestations \
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status)",
+                     'complete'::ingestion_status, 'valid'::validation_status) \
+             RETURNING id",
             work_id,
             file_path,
             hash,
         )
-        .execute(&ingestion_pool)
+        .fetch_one(&ingestion_pool)
         .await
         .unwrap();
+        insertion_order.push(mid);
     }
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
@@ -842,6 +868,20 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
     );
     let manifestations = body["manifestations"].as_array().unwrap();
     assert_eq!(manifestations.len(), 2);
+    // Handler emits ORDER BY created_at ASC, id ASC — must match insertion
+    // order so a regression to an unordered query is caught.
+    let returned_ids: Vec<String> = manifestations
+        .iter()
+        .map(|m| m["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        returned_ids,
+        insertion_order
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        "manifestations must surface in (created_at ASC, id ASC) order",
+    );
     for m in manifestations {
         let mid = m["id"].as_str().unwrap();
         assert_eq!(
@@ -854,6 +894,21 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
         body["series"].is_null(),
         "no series seeded → series must surface null, got {body}",
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn work_endpoint_malformed_uuid_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/works/not-a-uuid")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    // axum 0.8 default `Path<Uuid>` rejection: 400 plain-text body.
+    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "./migrations")]
