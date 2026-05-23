@@ -59,6 +59,14 @@ pub fn router() -> Router<AppState> {
         .route("/api/search", get(search::search))
 }
 
+/// Upper bound on `?tag=` repetitions accepted by `GET /api/books`.
+/// Practical input is ≤ 10 (UI palette caps at a handful); the limit
+/// is set higher than expected use to leave headroom but small enough
+/// to bound the COUNT subquery's parameter array. Exceeding the cap
+/// returns a 422 `validation` problem rather than executing a
+/// pathologically large query.
+const MAX_TAG_FILTERS: usize = 20;
+
 /// `?cursor=` / `?sort=` / filter query parameters for `GET /api/books`.
 ///
 /// Decoded via [`axum_extra::extract::Query`] (not built-in
@@ -71,10 +79,10 @@ pub fn router() -> Router<AppState> {
 ///   pushed onto the existing dynamic query.
 /// - `tag`: multi-value AND-match — a row qualifies only when its
 ///   `manifestation_tags` set covers every supplied tag name (see
-///   [`push_filter_predicates`]).
+///   [`push_filter_predicates`]). Capped at [`MAX_TAG_FILTERS`] entries.
 /// - `shelf` filter is RLS-aware via the join on `shelves.user_id =
-///   current_setting('app.current_user_id')` so a caller cannot probe
-///   another user's shelf membership.
+///   current_setting('app.current_user_id', true)::uuid` so a caller
+///   cannot probe another user's shelf membership.
 #[derive(Debug, Default, Deserialize)]
 struct ListParams {
     #[serde(default)]
@@ -106,9 +114,13 @@ struct BookListResponse {
 /// via an opaque cursor and ordered per the requested sort axis.
 ///
 /// # Errors
-/// - [`AppError::Validation`] when the cursor is malformed or its
-///   tag does not match the requested `sort`.
+/// - [`AppError::Validation`] when the cursor is malformed, the sort
+///   tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.
 /// - [`AppError::Internal`] on database errors.
+#[allow(
+    clippy::too_many_lines,
+    reason = "single dynamic-query assembly; splitting hurts readability of the QueryBuilder flow"
+)]
 async fn list(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -116,6 +128,12 @@ async fn list(
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
     let page_size = i64::from(state.config.opds.page_size);
+
+    if params.tag.len() > MAX_TAG_FILTERS {
+        return Err(AppError::Validation(format!(
+            "too many tag filters: maximum {MAX_TAG_FILTERS}"
+        )));
+    }
 
     let cursor = match params.cursor.as_deref() {
         Some(raw) => Some(
@@ -127,6 +145,7 @@ async fn list(
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
+        .inspect_err(|e| tracing::error!(error = %e, "list: acquire_with_rls failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
@@ -268,16 +287,20 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
 }
 
 /// Push `author` / `series` / `shelf` / `tag` filter predicates onto
-/// the dynamic list query (11b). Every filter is an `EXISTS`-style
-/// subquery so the row set stays at "one manifestation per row" — the
-/// LIMIT and cursor math both assume this invariant.
+/// the dynamic list query (11b). `author`, `series`, and `shelf` are
+/// `EXISTS (SELECT 1 …)` subqueries so the row set stays at "one
+/// manifestation per row" — the LIMIT and cursor math both assume this
+/// invariant.
 ///
 /// `shelf` is hardened against cross-user probes: the inner join on
-/// `shelves.user_id = current_setting('app.current_user_id')::uuid`
+/// `shelves.user_id = current_setting('app.current_user_id', true)::uuid`
 /// rejects shelf ids the caller does not own.
 ///
-/// `tag` AND-matches every supplied name via `HAVING COUNT(DISTINCT
-/// t.name) = N`. Empty `tag` list → no predicate (`Vec::is_empty`).
+/// `tag` AND-matches every supplied name via a scalar correlated
+/// subquery `(SELECT COUNT(DISTINCT t.name) …) = N` — not a GROUP BY
+/// / HAVING. Empty `tag` list → no predicate. Caller validates
+/// `params.tag.len() <= MAX_TAG_FILTERS` before calling, so the
+/// `i64::from(u32)` cast on `tag.len()` is provably in range.
 fn push_filter_predicates(qb: &mut QueryBuilder<'_, Postgres>, params: &ListParams) {
     if let Some(author_id) = params.author {
         qb.push(
@@ -313,9 +336,13 @@ fn push_filter_predicates(qb: &mut QueryBuilder<'_, Postgres>, params: &ListPara
         );
         qb.push_bind(params.tag.clone());
         qb.push(")) = ");
-        // `tag.len()` is bounded by extractor; cast to i64 is lossless
-        // up to 9 EB worth of tags — practical input is ≤ 10.
-        qb.push_bind(i64::try_from(params.tag.len()).unwrap_or(i64::MAX));
+        // Caller has already validated `params.tag.len() <= MAX_TAG_FILTERS`
+        // (a small constant), so the `usize → u32 → i64` step is exact.
+        // `u32::try_from` cannot fail here; the fallback is purely a
+        // defensive layer and would still emit a sensible (non-matching)
+        // predicate rather than 0 rows.
+        let tag_count_u32 = u32::try_from(params.tag.len()).unwrap_or(u32::MAX);
+        qb.push_bind(i64::from(tag_count_u32));
     }
 }
 

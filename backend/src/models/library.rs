@@ -59,8 +59,11 @@ pub struct BookListRow {
     pub series: Option<SeriesRef>,
     /// `manifestations.isbn_13`, when known.
     pub isbn_13: Option<String>,
-    /// Pre-signed thumbnail URL — backend constructs it so the
-    /// frontend has a single source of truth for the cover surface.
+    /// Cover thumbnail URL — relative path served by the
+    /// `/api/books/{id}/cover/thumb` handler under the caller's
+    /// session. Not pre-signed; access is gated by the session cookie.
+    /// Backend constructs it so the frontend has a single source of
+    /// truth for the cover surface.
     pub cover_url: String,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,
@@ -101,7 +104,9 @@ pub struct BookDetail {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
-    /// Pre-signed cover URL.
+    /// Cover thumbnail URL — relative path under
+    /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
+    /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Tag names attached to the manifestation.
     pub tags: Vec<String>,
@@ -193,7 +198,10 @@ pub struct SearchHit {
     /// hit was trigram-only (no tsquery match → headline would be the
     /// raw text without highlighting).
     pub snippet: Option<String>,
-    /// Pre-signed cover URL for `book` results.
+    /// Cover thumbnail URL for `book` results — relative path under
+    /// `/api/books/{id}/cover/thumb`, session-cookie gated. `None`
+    /// when the hit kind has no cover surface (future author/series
+    /// variants).
     pub cover_url: Option<String>,
 }
 
@@ -217,7 +225,9 @@ pub struct WorkManifestation {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
-    /// Pre-signed cover URL.
+    /// Cover thumbnail URL — relative path under
+    /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
+    /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,

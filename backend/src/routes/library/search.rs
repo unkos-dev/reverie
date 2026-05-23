@@ -5,8 +5,15 @@
 //! upgrades over the OPDS variant:
 //! 1. **`websearch_to_tsquery`** in place of `plainto_tsquery` — gains
 //!    quoted-phrase (`"war and peace"`) and exclude (`-tolstoy`)
-//!    operator handling for free, with the same input-validation
-//!    surface (no user-controlled tsquery syntax injection).
+//!    operator handling on the tsquery leg, with the same
+//!    input-validation surface (no user-controlled tsquery syntax
+//!    injection). **Caveat**: the trigram leg compares raw similarity
+//!    against the whole query string and has no notion of token
+//!    negation, so a `-token` excluded row can resurface via trigram
+//!    similarity. The composite contract is therefore "tsquery
+//!    semantics on the tsquery leg; trigram-fallback semantics on
+//!    near-misses" — see the `search_websearch_exclude_operator`
+//!    integration test for the documented limitation.
 //! 2. **Hybrid CTE** — full-text and trigram hits each use their
 //!    native index (GIN on `works.search_vector`, GIST trigram on
 //!    `works.title`) then `UNION ALL`-merge with `MAX(rank)`. A
@@ -17,9 +24,13 @@
 //! # Invariants
 //! - RLS on `manifestations` gates row visibility; the handler never
 //!   adds an ad-hoc `WHERE user_id = …` predicate.
-//! - `ts_headline` markers are non-HTML (`‹` / `›`) so the React
-//!   renderer can split on those characters without
-//!   `dangerouslySetInnerHTML`.
+//! - `ts_headline` markers are ASCII control codepoints
+//!   ([`SNIPPET_HL_START`] = `\x02` STX, [`SNIPPET_HL_END`] = `\x03`
+//!   ETX). They are reserved by Unicode and never appear in valid
+//!   text, so the React renderer can split on those bytes without
+//!   `dangerouslySetInnerHTML` and without colliding with
+//!   user-authored typography (e.g. French `‹›` guillemets). The
+//!   frontend constants must stay in lockstep with these bytes.
 //! - `q` is bound — not interpolated — so the SQL-injection probe
 //!   (`'); DROP TABLE works;--`) hits the parameterised path and the
 //!   schema survives.
@@ -49,9 +60,22 @@ const SEARCH_LIMIT: i64 = 20;
 
 /// Trigram similarity floor — rows below this are dropped from the
 /// `trgm_hits` CTE so the result set isn't padded with near-miss
-/// noise. Matches the value used in the GIST `%` operator default and
-/// the plan's design constraint.
+/// noise. Matches `pg_trgm.similarity_threshold` (Postgres GUC,
+/// default `0.3`) so the floor aligns with what the `%` operator uses
+/// implicitly. Independent of the underlying index kind (GIST/GIN).
 const TRGM_SIMILARITY_FLOOR: f32 = 0.3;
+
+/// `ts_headline` start marker — ASCII STX (`\x02`). Paired with
+/// [`SNIPPET_HL_END`]. Reserved by Unicode and never appears in valid
+/// text, so frontend can split on this byte without colliding with
+/// user-authored typography (French `‹›` guillemets, math notation,
+/// etc.). The frontend's `SNIPPET_HL_START` / `SNIPPET_HL_END`
+/// constants in `frontend/src/components/CommandPalette.tsx` must
+/// stay in lockstep with these bytes.
+const SNIPPET_HL_START: &str = "\u{0002}";
+/// `ts_headline` end marker — ASCII ETX (`\x03`). See
+/// [`SNIPPET_HL_START`].
+const SNIPPET_HL_END: &str = "\u{0003}";
 
 /// `?q=` query parameter for `GET /api/search`.
 #[derive(Debug, Deserialize)]
@@ -69,6 +93,10 @@ pub(super) struct SearchParams {
 /// - [`AppError::Validation`] when `q` is missing, empty, or longer
 ///   than [`MAX_Q_LEN`] characters.
 /// - [`AppError::Internal`] on database errors.
+#[allow(
+    clippy::too_many_lines,
+    reason = "single hybrid CTE assembly; splitting hurts readability of the SQL flow"
+)]
 pub(super) async fn search(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -90,7 +118,17 @@ pub(super) async fn search(
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
+        .inspect_err(|e| tracing::error!(error = %e, "search: acquire_with_rls failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    // ts_headline option string assembled from typed constants so the
+    // marker bytes stay in sync with [`SNIPPET_HL_START`] /
+    // [`SNIPPET_HL_END`] (the frontend reads them at the matching
+    // offsets in `CommandPalette.tsx`).
+    let headline_opts = format!(
+        "StartSel={SNIPPET_HL_START}, StopSel={SNIPPET_HL_END}, \
+         MaxFragments=2, MaxWords=20, MinWords=5"
+    );
 
     let rows = sqlx::query!(
         r#"
@@ -131,6 +169,14 @@ pub(super) async fn search(
                        )
                    ELSE NULL
                END AS snippet
+          -- The JOIN to manifestations fans out one row per
+          -- (work, manifestation) pair, so a work with multiple
+          -- formats (epub + pdf + cbz) emits a separate result per
+          -- format. This is intentional for the command-palette UX:
+          -- each manifestation is its own navigable card, mirroring
+          -- the list-page row shape. The LIMIT is therefore "top-N
+          -- manifestations across all matching works", not
+          -- "top-N works".
           FROM merged
           JOIN works w           ON w.id = merged.id
           JOIN manifestations m  ON m.work_id = w.id
@@ -139,11 +185,12 @@ pub(super) async fn search(
         "#,
         q,
         SEARCH_LIMIT,
-        "StartSel=‹, StopSel=›, MaxFragments=2, MaxWords=20, MinWords=5",
+        headline_opts,
         TRGM_SIMILARITY_FLOOR,
     )
     .fetch_all(&mut *tx)
     .await
+    .inspect_err(|e| tracing::error!(error = %e, "search: hybrid CTE query failed"))
     .map_err(|e| AppError::Internal(e.into()))?;
 
     let work_ids: Vec<Uuid> = rows.iter().map(|r| r.work_id).collect();
@@ -151,6 +198,7 @@ pub(super) async fn search(
 
     tx.commit()
         .await
+        .inspect_err(|e| tracing::error!(error = %e, "search: tx.commit failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let items: Vec<SearchHit> = rows
@@ -191,6 +239,7 @@ async fn load_authors(
     )
     .fetch_all(&mut **tx)
     .await
+    .inspect_err(|e| tracing::error!(error = %e, "search: load_authors batch query failed"))
     .map_err(|e| AppError::Internal(e.into()))?;
     for r in rows {
         out.entry(r.work_id).or_default().push(r.name);

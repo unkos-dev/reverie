@@ -11,10 +11,16 @@
  * keys on the trimmed query — repeating a previous query is free.
  *
  * # Highlighted snippets
- * The backend emits `ts_headline` snippets with non-HTML markers
- * (`‹` / `›`). The `<HighlightedSnippet>` helper splits on those
- * markers and renders `<mark>` runs — no `dangerouslySetInnerHTML`,
- * so a hypothetical attacker-controlled title cannot inject HTML.
+ * The backend emits `ts_headline` snippets bracketed by ASCII control
+ * codepoints `\x02` STX (start) and `\x03` ETX (end). Those bytes are
+ * reserved by Unicode and never appear in valid text, so they don't
+ * collide with user-authored typography (e.g. French guillemets
+ * `‹›`, math notation). The `<HighlightedSnippet>` helper splits on
+ * those bytes and renders `<mark>` runs — no `dangerouslySetInnerHTML`.
+ *
+ * The marker bytes must stay in lockstep with the
+ * `SNIPPET_HL_START` / `SNIPPET_HL_END` constants in
+ * `backend/src/routes/library/search.rs`.
  */
 import { useQuery } from "@tanstack/react-query";
 import { type ReactElement, useEffect, useState } from "react";
@@ -36,6 +42,14 @@ import { queryKeys } from "@/lib/query/keys";
 const DEBOUNCE_MS = 200;
 /** Minimum query length before a request fires — avoids one-char noise. */
 const MIN_Q_LEN = 2;
+/**
+ * Snippet highlight markers — must match `SNIPPET_HL_START` /
+ * `SNIPPET_HL_END` in `backend/src/routes/library/search.rs`. ASCII
+ * STX/ETX are reserved by Unicode and cannot legally appear in
+ * UTF-8 text, so they cannot be confused with user typography.
+ */
+const SNIPPET_HL_START = "";
+const SNIPPET_HL_END = "";
 
 /**
  * Listen for `Cmd-K` / `Ctrl-K` and toggle the palette open. The
@@ -81,12 +95,22 @@ export function CommandPalette(): ReactElement {
   const debouncedQuery = useDebounced(query.trim(), DEBOUNCE_MS);
   const navigate = useNavigate();
 
-  const { data, isFetching, isError } = useQuery({
+  const { data, isFetching, isError, error } = useQuery({
     queryKey: queryKeys.search(debouncedQuery),
     queryFn: ({ signal }) => searchLibrary(debouncedQuery, signal),
     enabled: open && debouncedQuery.length >= MIN_Q_LEN,
     staleTime: 30_000,
   });
+
+  useEffect(() => {
+    if (isError) {
+      // Surface the raw error to the console per frontend/CLAUDE.md.
+      // The visible <CommandEmpty> below stays user-friendly; the
+      // console keeps the operator-actionable detail (ZodError, 5xx
+      // status, network failure shape).
+      console.error("[CommandPalette] search query failed", error);
+    }
+  }, [isError, error]);
 
   function handleSelect(hit: SearchHit): void {
     setOpen(false);
@@ -196,16 +220,17 @@ interface HighlightedSnippetProps {
 }
 
 /**
- * Split a `ts_headline` snippet on the `‹›` markers Postgres emits and
- * render the highlighted runs as `<mark>` — no `dangerouslySetInnerHTML`,
- * so this is safe against HTML-bearing titles or descriptions.
+ * Split a `ts_headline` snippet on the STX/ETX markers Postgres
+ * emits and render the highlighted runs as `<mark>`. Plain text-node
+ * rendering (no `dangerouslySetInnerHTML`) — safe against
+ * HTML-bearing titles or descriptions.
  */
-function HighlightedSnippet({ text, className }: HighlightedSnippetProps): ReactElement {
+export function HighlightedSnippet({ text, className }: HighlightedSnippetProps): ReactElement {
   const parts: { text: string; highlight: boolean; start: number }[] = [];
   let cursor = 0;
   let highlight = false;
   while (cursor < text.length) {
-    const marker = highlight ? "›" : "‹";
+    const marker = highlight ? SNIPPET_HL_END : SNIPPET_HL_START;
     const nextIndex = text.indexOf(marker, cursor);
     if (nextIndex === -1) {
       parts.push({ text: text.slice(cursor), highlight, start: cursor });

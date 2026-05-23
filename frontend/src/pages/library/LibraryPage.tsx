@@ -295,22 +295,53 @@ interface ActiveFilterChipsProps {
   setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
 }
 
+type ChipKey = "author" | "series" | "shelf" | "tag";
+
+interface ActiveChip {
+  /** Unique chip id (`"tag:scifi"` for tag chips, plain key otherwise). */
+  id: string;
+  /** Which URL param the chip controls. */
+  key: ChipKey;
+  /** Human-readable chip label. */
+  label: string;
+  /** Tag value the chip clears, for multi-value `?tag=` chips. */
+  tagValue?: string;
+}
+
 function ActiveFilterChips({
   searchParams,
   setSearchParams,
 }: ActiveFilterChipsProps): ReactElement | null {
-  const filters: { key: "author" | "series" | "shelf"; label: string }[] = [];
+  const filters: ActiveChip[] = [];
   for (const key of ["author", "series", "shelf"] as const) {
     const value = searchParams.get(key);
     if (value !== null && value !== "") {
-      filters.push({ key, label: `${key}: ${shortId(value)}` });
+      filters.push({ id: key, key, label: `${key}: ${shortId(value)}` });
     }
+  }
+  // `?tag=a&tag=b` repeats — one chip per value so the user can clear
+  // them independently. Mirrors the backend's multi-value AND-match
+  // semantics; clearing one tag removes only that name from the filter.
+  for (const tagValue of searchParams.getAll("tag")) {
+    if (tagValue === "") continue;
+    filters.push({
+      id: `tag:${tagValue}`,
+      key: "tag",
+      label: `tag: ${tagValue}`,
+      tagValue,
+    });
   }
   if (filters.length === 0) return null;
 
-  function clear(key: "author" | "series" | "shelf"): void {
+  function clear(chip: ActiveChip): void {
     const updated = new URLSearchParams(searchParams);
-    updated.delete(key);
+    if (chip.key === "tag" && chip.tagValue !== undefined) {
+      const remaining = updated.getAll("tag").filter((v) => v !== chip.tagValue);
+      updated.delete("tag");
+      for (const t of remaining) updated.append("tag", t);
+    } else {
+      updated.delete(chip.key);
+    }
     updated.delete("cursor");
     setSearchParams(updated, { replace: true });
   }
@@ -319,19 +350,22 @@ function ActiveFilterChips({
     <div className="mb-6 flex flex-wrap items-center gap-2" data-testid="active-filters">
       {filters.map((chip) => (
         <Button
-          key={chip.key}
+          key={chip.id}
           type="button"
           variant="outline"
           size="sm"
           aria-pressed
           onClick={() => {
-            clear(chip.key);
+            clear(chip);
           }}
           className="border-border bg-accent-soft text-fg hover:bg-accent-soft/80 h-7 gap-1 rounded-full px-3 font-mono text-xs"
         >
           {chip.label}
           <X className="size-3" aria-hidden="true" />
-          <span className="sr-only">Clear {chip.key} filter</span>
+          <span className="sr-only">
+            Clear {chip.key}
+            {chip.tagValue !== undefined ? ` ${chip.tagValue}` : ""} filter
+          </span>
         </Button>
       ))}
     </div>

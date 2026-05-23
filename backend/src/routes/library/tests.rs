@@ -1084,6 +1084,27 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_filter_too_many_tags_returns_422(pool: PgPool) {
+    // Cap is MAX_TAG_FILTERS=20; 21 tag params must surface as a
+    // validation problem rather than executing a pathologically large
+    // COUNT subquery.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let qs: String = (0..21)
+        .map(|i| format!("tag=t{i}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    let r = server
+        .get(&format!("/api/books?{qs}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_filter_multi_tag_and_match(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1135,7 +1156,9 @@ async fn search_returns_ranked_results(pool: PgPool) {
     assert!(
         items[0]["snippet"]
             .as_str()
-            .is_some_and(|s| s.contains('‹'))
+            .is_some_and(|s| s.contains('\u{0002}')),
+        "snippet must carry STX highlight marker, got {:?}",
+        items[0]["snippet"]
     );
 }
 
@@ -1330,12 +1353,11 @@ async fn search_child_only_sees_shelved_titles(pool: PgPool) {
 
 // ─── 11b — perf gate ─────────────────────────────────────────────────────
 
-/// Performance gate for `GET /api/search`: seed 10K rows, assert p50
-/// of 11 trials stays under 200 ms. `#[ignore]`d so default per-PR
-/// runs skip it; nightly CI lane runs `cargo test -- --ignored`.
-///
-/// Calibrated against the dev DB — treat as a regression alarm (planner
-/// changes, missing index) not a production SLO.
+// Performance gate: seeds 10K rows and asserts p50 of 11 trials
+// stays under 200 ms. `#[ignore]`d so default per-PR runs skip it;
+// the nightly CI lane runs `cargo test -- --ignored`. Calibrated
+// against the dev DB — treat as a regression alarm (planner change,
+// missing index), not a production SLO.
 #[sqlx::test(migrations = "./migrations")]
 #[ignore = "perf gate — run via `cargo test -- --ignored` (nightly CI)"]
 async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
