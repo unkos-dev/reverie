@@ -34,7 +34,12 @@ let cachedToken: string | null = null;
  * avoids coupling the CSRF reader to unrelated server changes.
  */
 const MeBodyShape = z.object({
-  csrf_token: z.string().nullish(),
+  // `.min(1)` rejects empty strings; an empty token would otherwise
+  // populate the cache and Phase 2's `apiFetch` would inject a blank
+  // `X-CSRF-Token` header, which the middleware would treat as a
+  // mismatch on every mutating request. Empty must funnel into the
+  // same null-cache path as `null`, omitted, and schema-drift cases.
+  csrf_token: z.string().min(1).nullish(),
 });
 
 /**

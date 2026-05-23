@@ -54,7 +54,11 @@ describe("refreshCsrfToken", () => {
 
     const init = fetchSpy.mock.calls[0]?.[1];
     expect(init).toBeDefined();
-    expect((init as RequestInit).signal).toBeUndefined();
+    // Implementation uses a conditional spread, so the `signal` key is
+    // absent (not present-and-undefined) when no signal is passed.
+    // Asserting on key presence is stricter than `.signal === undefined`
+    // and keeps the test honest if the implementation switches shape.
+    expect(init && typeof init === "object" && "signal" in init).toBe(false);
   });
 
   test("forwards AbortSignal when provided", async () => {
@@ -66,7 +70,10 @@ describe("refreshCsrfToken", () => {
     await refreshCsrfToken(controller.signal);
 
     const init = fetchSpy.mock.calls[0]?.[1];
-    expect((init as RequestInit).signal).toBe(controller.signal);
+    if (!init || typeof init !== "object" || !("signal" in init)) {
+      throw new Error("fetch init missing or has no signal property");
+    }
+    expect(init.signal).toBe(controller.signal);
   });
 
   test("clears cache to null on 401", async () => {
@@ -118,6 +125,16 @@ describe("refreshCsrfToken", () => {
 
   test("rejects non-string csrf_token (schema drift)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ csrf_token: 12345 }));
+
+    expect(await refreshCsrfToken()).toBeNull();
+    expect(getCsrfToken()).toBeNull();
+  });
+
+  test("clears cache when csrf_token is empty string", async () => {
+    // Empty-string token would otherwise inject a blank `X-CSRF-Token`
+    // header in Phase 2 → guaranteed 403 on every mutating request.
+    // Schema's `.min(1)` funnels this into the null-cache path.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ csrf_token: "" }));
 
     expect(await refreshCsrfToken()).toBeNull();
     expect(getCsrfToken()).toBeNull();
