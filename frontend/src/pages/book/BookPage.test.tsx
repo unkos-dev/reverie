@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
@@ -84,6 +85,7 @@ describe("BookPage", () => {
   });
 
   test("Versions tab shows pending + accepted counts", async () => {
+    const user = userEvent.setup();
     renderBook(
       bookFixture({
         metadata_version_summary: { pending: 3, accepted: 5 },
@@ -92,6 +94,14 @@ describe("BookPage", () => {
     // Tab label badge surfaces the pending count.
     const versionsTab = await screen.findByRole("tab", { name: /versions/i });
     expect(within(versionsTab).getByText("3")).toBeInTheDocument();
+
+    // Switch to the Versions panel and assert the accepted count
+    // (rendered inside the panel body next to "Accepted versions").
+    await user.click(versionsTab);
+    const panel = await screen.findByRole("tabpanel", { name: /versions/i });
+    expect(within(panel).getByText("Pending drafts")).toBeInTheDocument();
+    expect(within(panel).getByText("Accepted versions")).toBeInTheDocument();
+    expect(within(panel).getByText("5")).toBeInTheDocument();
   });
 
   test("falls back to italic placeholder when description is null", async () => {

@@ -11,7 +11,7 @@
  * palette) are deferred to sub-phase 11b. This page renders the grid
  * / list toggle and the Load-more pagination control only.
  */
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { LayoutGrid, List, Loader2 } from "lucide-react";
 import { Suspense, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -48,7 +48,7 @@ function LibraryContent(): ReactElement {
   const cacheParams = { ...params };
   delete cacheParams.cursor;
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSuspenseInfiniteQuery<
     BookListResponse,
     Error,
     InfiniteData<BookListResponse, string | undefined>,
@@ -65,7 +65,7 @@ function LibraryContent(): ReactElement {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
 
-  const items: BookListItem[] = (data?.pages ?? []).flatMap((p) => p.items);
+  const items: BookListItem[] = data.pages.flatMap((p) => p.items);
 
   function setView(next: ViewMode): void {
     const updated = new URLSearchParams(searchParams);

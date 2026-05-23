@@ -252,4 +252,32 @@ describe("apiFetch — body decoding", () => {
     const result = await apiFetch("/api/books/1", { method: "DELETE" });
     expect(result).toBeUndefined();
   });
+
+  test("205 Reset Content returns undefined without parsing", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 205 }));
+
+    const result = await apiFetch("/api/books/1", { method: "DELETE" });
+    expect(result).toBeUndefined();
+  });
+
+  test("204 on csrf-mismatch retry path returns undefined (does not call .json())", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    // Attempt 1: 403 csrf-mismatch.
+    fetchSpy.mockResolvedValueOnce(
+      problemResponse({
+        type: "https://reverie.example/probs/csrf-mismatch",
+        title: "Forbidden",
+        status: 403,
+      }),
+    );
+    // /auth/me refresh.
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }));
+    // Retry: succeeds with 204 (typical for DELETE after rotation).
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const result = await apiFetch("/api/books/1", { method: "DELETE" });
+    expect(result).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
 });

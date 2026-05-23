@@ -63,7 +63,7 @@ export async function apiFetch<T = unknown>(
   const method = (init?.method ?? "GET").toUpperCase();
   const mutating = MUTATING_METHODS.has(method);
 
-  const response = await sendRequest(input, init, method, mutating, /* afterRefresh */ false);
+  const response = await sendRequest(input, init, method, mutating);
   if (response.status === 403 && mutating) {
     const problem = await peekProblem(response);
     if (problem?.type && problem.type.endsWith(`/${CSRF_MISMATCH_SLUG}`)) {
@@ -71,17 +71,27 @@ export async function apiFetch<T = unknown>(
       // the second attempt run — the middleware will return another
       // 403 and the caller will see a real ApiError.
       await refreshCsrfToken();
-      const retried = await sendRequest(input, init, method, mutating, /* afterRefresh */ true);
-      if (!retried.ok) throw await problemFromResponse(retried);
-      return (await retried.json()) as T;
+      const retried = await sendRequest(input, init, method, mutating);
+      return decodeSuccess<T>(retried);
     }
     throw problemToApiError(response.status, response.statusText, problem);
   }
+  return decodeSuccess<T>(response);
+}
+
+/**
+ * Common success/failure decoder shared by the main path and the
+ * csrf-mismatch retry path. Non-2xx throws an {@link ApiError}; 204
+ * and 205 return `undefined`; everything else parses the body as
+ * JSON.
+ */
+async function decodeSuccess<T>(response: Response): Promise<T> {
   if (!response.ok) throw await problemFromResponse(response);
-  // 204 / 205 carry no body; cast to unknown then T so callers that
-  // type the return as `void` don't crash on `.json()`.
   if (response.status === 204 || response.status === 205) {
-    return undefined as unknown as T;
+    // 204 / 205 carry no body. Callers that type the return as `void`
+    // or `undefined` consume this directly; callers typed as a value
+    // shape would be a contract bug — flag at the call site, not here.
+    return undefined as T;
   }
   return (await response.json()) as T;
 }
@@ -97,7 +107,6 @@ async function sendRequest(
   init: RequestInit | undefined,
   method: string,
   mutating: boolean,
-  afterRefresh: boolean,
 ): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
@@ -120,7 +129,6 @@ async function sendRequest(
     headers,
     credentials: "same-origin",
   };
-  void afterRefresh;
   return fetch(input, finalInit);
 }
 

@@ -25,7 +25,15 @@ import { queryKeys } from "@/lib/query/keys";
  * a previous book id.
  */
 export function BookPage(): ReactElement {
-  const { id = "" } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>();
+  // Loader rejects a missing id before the component renders. The
+  // narrow-or-throw here exists for the safety-belt case where this
+  // component is rendered outside the routed flow (e.g. a direct
+  // import in a test that forgets to mount `:id`); explicit failure
+  // beats a `getBook("")` round-trip to the backend.
+  if (typeof id !== "string" || id.length === 0) {
+    throw new Error("BookPage requires the `id` route param.");
+  }
   return (
     <Suspense fallback={<BookSkeleton />}>
       <BookContent id={id} />

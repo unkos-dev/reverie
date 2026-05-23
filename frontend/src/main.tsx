@@ -29,11 +29,13 @@ import { ThemeProvider } from "./lib/theme/ThemeProvider.tsx";
 import { Toaster } from "./components/ui/sonner.tsx";
 import { queryClient } from "./lib/query/client";
 import { bookRoute, libraryRoute } from "./routes/production";
+import { RootErrorBoundary } from "./components/RootErrorBoundary";
 
 const routes: RouteObject[] = [
   {
     path: "/",
     element: <App />,
+    errorElement: <RootErrorBoundary />,
     children: [
       { index: true, element: <Navigate to="/library" replace /> },
       libraryRoute,

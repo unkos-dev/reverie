@@ -12,18 +12,27 @@
  */
 import type { ListBooksParams } from "@/api";
 
+/** Tuple for the root books namespace. */
+export type BooksAllKey = readonly ["books"];
+/** Tuple for the books-list cache slot, keyed by filter/sort/cursor params. */
+export type BooksListKey = readonly ["books", "list", ListBooksParams];
+/** Tuple for the books-detail cache slot, keyed by manifestation id. */
+export type BookDetailKey = readonly ["books", "detail", string];
+/** Tuple for the works-detail cache slot, keyed by work id. */
+export type WorkDetailKey = readonly ["works", "detail", string];
+
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
   books: {
     /** Root namespace; invalidate to wipe every books-* cache slot. */
-    all: ["books"] as const,
+    all: ["books"] as const satisfies BooksAllKey,
     /** List endpoint with filters/sort/cursor. Distinct params = distinct slot. */
-    list: (params: ListBooksParams) => ["books", "list", params] as const,
+    list: (params: ListBooksParams): BooksListKey => ["books", "list", params] as const,
     /** Detail endpoint for one manifestation. */
-    detail: (id: string) => ["books", "detail", id] as const,
+    detail: (id: string): BookDetailKey => ["books", "detail", id] as const,
   },
   works: {
     /** Detail endpoint for one work + its visible manifestations. */
-    detail: (id: string) => ["works", "detail", id] as const,
+    detail: (id: string): WorkDetailKey => ["works", "detail", id] as const,
   },
 };

@@ -51,7 +51,7 @@ hero contract from Step 10 D4 (`/design/hero/library`, `/design/hero/book`).
 | ----------- | ------ | ----------------------------------------------------------------------------- |
 | Type check  | ✅     | `tsc -b` clean                                                                |
 | Lint        | ✅     | `eslint . --max-warnings 0` — 0 errors, 0 warnings                            |
-| Unit tests  | ✅     | 156 passed (16 files); +20 new tests for this sub-phase                       |
+| Unit tests  | ✅     | 183 passed (20 files); +66 new tests for this sub-phase                       |
 | Build       | ✅     | `vite build` — design chunk dead-stripped; library + book lazy chunks emitted |
 | Integration | ⏭️     | Browser QA against live backend deferred — see "Outstanding"                  |
 
@@ -179,7 +179,42 @@ covers`. The route serves the SPA shell (`200 OK` from Vite), and
 | `src/pages/book/BookPage.test.tsx`       | 7 — title + author, series label, Tabs present, Overview description, Versions count badge, null-description placeholder, back link target |
 | `src/App.test.tsx`                       | 2 — 401 → `window.location.assign("/auth/login")`, 500 does not redirect                                                                   |
 
-39 new tests; total suite 156 passing (16 files).
+66 new tests; total suite 183 passing (20 files).
+
+---
+
+## Review-round-2 fixes (post-CodeRabbit / Greptile / adversarial)
+
+PR #311 picked up 16 actionable CodeRabbit comments, 4 Greptile P1/P2 findings, and an independent adversarial review. Convergent findings resolved in a follow-up commit on the same branch:
+
+1. **Skeleton fallback was dead code** (Greptile P1, adversarial P3-X-3). `LibraryPage` used `useInfiniteQuery` (non-suspense) wrapped in a `<Suspense>` boundary — the boundary never fired. Switched to `useSuspenseInfiniteQuery`; `LibrarySkeleton` is now the live cache-miss fallback.
+
+2. **No Zod validation on API responses** (Greptile P1, CodeRabbit on `books.ts:172`, adversarial P1-D-1). Violated `frontend/CLAUDE.md`'s boundary-validation rule. Added Zod schemas for `IngestionStatus`, `EnrichmentStatus`, `SeriesRef`, `BookListItem`, `BookListResponse`, `MetadataVersionSummary`, `BookDetail`, `WorkManifestation`, `WorkDetail`; types are now `z.infer` derivations. `listBooks` / `getBook` / `getWork` parse before returning.
+
+3. **No `errorElement` on the root route** (adversarial P2-C-1, CodeRabbit on `BookPage`, Greptile P2). `throw new Response(404)` from the loader landed on react-router's default unstyled UI. Added `src/components/RootErrorBoundary.tsx` and wired it at the root route. Distinguishes `isRouteErrorResponse` / `ApiError` / generic-error branches.
+
+4. **`204`/`205` on the CSRF-retry success path** (CodeRabbit). The retry branch unconditionally called `.json()`. Extracted a shared `decodeSuccess<T>` helper used by both the main path and the retry path; both honour the empty-body status codes.
+
+5. **`BookPage` `{ id = "" }` default unreachable** (CodeRabbit, adversarial P3-X-4). Replaced with an explicit guard that throws when the id is missing — the unreachable default could otherwise propagate to an empty `getBook("")` call in a non-routed test.
+
+6. **Removed `afterRefresh` dead arg** (adversarial P2-C-4, Greptile). Pure cosmetic dead parameter; deleted along with the `void afterRefresh;` discard.
+
+7. **Explicit return types on key factory** (CodeRabbit). Added named tuple types (`BooksAllKey`, `BooksListKey`, `BookDetailKey`, `WorkDetailKey`) and annotated each builder function. Improves IDE narrowing and surfaces shape drift faster.
+
+8. **New tests** (CodeRabbit + adversarial P3-X-1/2/3/4):
+   - `src/routes/library-params.test.ts` — 7 cases (parser, unknown-key drop, sort enum guard, empty-string forwarding).
+   - `src/routes/library.test.ts` — 4 cases (seed cache, cursor-strip, sort preservation, null return).
+   - `src/routes/book.test.ts` — 4 cases (seed cache, 404 throw on missing/empty id, null return).
+   - `src/lib/query/keys.test.ts` — 6 cases (root namespace, structural equality, distinct slots, ordering).
+   - `src/api/books.test.ts` — +4 cases (`getWork` percent-encoding, Zod-violation rejection for missing fields / bad enum / drifted shape).
+   - `src/api/fetch.test.ts` — +2 cases (`205` main path, `204` on csrf-retry path).
+   - `src/pages/book/BookPage.test.tsx` — Versions tab now asserts the accepted count in addition to pending.
+
+Acknowledged but deferred (out of scope for 11a-A.5):
+
+- **`P2-C-5` `ReadableStream` body replay** — first multipart/streaming caller will need to clone or buffer; tracked in the file-upload PR.
+- **`P3-X-5` Versions badge layout at `pending > 99`** — deferred to 11c when per-row review ships and the badge becomes load-bearing.
+- **`P3-X-6` `Link` header surfacing** — `apiFetch` still reads cursor from body only; flag for observer-driven scroll if/when 11b needs it.
 
 ---
 

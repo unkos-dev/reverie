@@ -146,4 +146,79 @@ describe("getWork", () => {
     const url = fetchSpy.mock.calls[0]?.[0] as string;
     expect(url).toBe("/api/works/w-1");
   });
+
+  test("percent-encodes the id (defensive against malformed input)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        id: "w-1",
+        title: "x",
+        authors: [],
+        description: null,
+        language: null,
+        series: null,
+        manifestations: [],
+      }),
+    );
+
+    await getWork("work/with-slash");
+
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/works/work%2Fwith-slash");
+  });
+});
+
+describe("response schema validation (zod boundary)", () => {
+  test("listBooks throws when the response is missing required fields", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ items: [] }));
+    // `next_cursor` omitted — schema requires it.
+    await expect(listBooks()).rejects.toThrow();
+  });
+
+  test("listBooks throws when ingestion_status is not one of the known variants", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            id: "x",
+            work_id: "w",
+            title: "t",
+            authors: [],
+            series: null,
+            isbn_13: null,
+            cover_url: "",
+            ingestion_status: "bogus_state",
+            validation_status: "valid",
+            enrichment_status: "complete",
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+    await expect(listBooks()).rejects.toThrow();
+  });
+
+  test("getBook throws when description type is wrong (schema drift)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        id: "abc",
+        work_id: "w",
+        title: "x",
+        authors: [],
+        series: null,
+        description: 12345, // should be string | null
+        language: null,
+        isbn_13: null,
+        isbn_10: null,
+        cover_url: "",
+        tags: [],
+        ingestion_status: "complete",
+        validation_status: "valid",
+        enrichment_status: "complete",
+        metadata_version_summary: { pending: 0, accepted: 0 },
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+    await expect(getBook("abc")).rejects.toThrow();
+  });
 });

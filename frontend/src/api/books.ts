@@ -5,55 +5,71 @@
  * names are snake_case to match the wire shape — no `serde(rename)` on
  * the backend, no transform on the frontend. The shape is the same
  * source of truth for both sides; if a field is added on the backend,
- * extend the interface here and the type-checker will surface every
- * call site that needs to handle it.
+ * extend the schema here and the type-checker will surface every call
+ * site that needs to handle it.
+ *
+ * **Runtime validation at the boundary.** Per `frontend/CLAUDE.md`,
+ * every response body is parsed through a Zod schema before being
+ * returned to the caller — `apiFetch` returns `unknown`, and the
+ * schemas here convert `unknown` into the strongly-typed shapes the
+ * UI consumes. A schema-violating response surfaces as a `ZodError`
+ * rather than silently corrupting downstream state.
  *
  * Pagination follows the convention documented in the JSON-API ADR:
- * the server emits both an RFC 8288 `Link: <…>; rel="next"` header and
- * an in-body `next_cursor` for convenience. This module reads the
+ * the server emits both an RFC 8288 `Link: <…>; rel="next"` header
+ * and an in-body `next_cursor` for convenience. This module reads the
  * in-body field — react-query's `getNextPageParam` consumes it.
  */
+import { z } from "zod";
+
 import { apiFetch } from "./fetch";
 
+const IngestionStatusSchema = z.enum(["pending", "processing", "complete", "failed", "skipped"]);
 /** Ingestion lifecycle state. Matches `backend/src/models/ingestion_status.rs`. */
-export type IngestionStatus = "pending" | "processing" | "complete" | "failed" | "skipped";
+export type IngestionStatus = z.infer<typeof IngestionStatusSchema>;
 
+const EnrichmentStatusSchema = z.enum(["pending", "in_progress", "complete", "failed", "skipped"]);
 /** Enrichment lifecycle state. Matches `backend/src/models/enrichment_status.rs`. */
-export type EnrichmentStatus = "pending" | "in_progress" | "complete" | "failed" | "skipped";
+export type EnrichmentStatus = z.infer<typeof EnrichmentStatusSchema>;
 
+const SeriesRefSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  position: z.number().nullable(),
+});
 /**
  * Series membership for a manifestation. `position` is nullable —
  * a work can sit on a series without a known ordinal.
  */
-export interface SeriesRef {
-  id: string;
-  name: string;
-  position: number | null;
-}
+export type SeriesRef = z.infer<typeof SeriesRefSchema>;
 
+const BookListItemSchema = z.object({
+  id: z.string(),
+  work_id: z.string(),
+  title: z.string(),
+  authors: z.array(z.string()),
+  series: SeriesRefSchema.nullable(),
+  isbn_13: z.string().nullable(),
+  cover_url: z.string(),
+  ingestion_status: IngestionStatusSchema,
+  // Raw DB string — reconciled enum lands in a follow-up; backend
+  // docstring on `BookListRow::validation_status` notes the
+  // pending|valid|repaired|degraded variants.
+  validation_status: z.string(),
+  enrichment_status: EnrichmentStatusSchema,
+});
 /**
  * One row of a paginated book list response. Mirrors
  * [`BookListRow`](backend/src/models/library.rs) on the wire.
  */
-export interface BookListItem {
-  id: string;
-  work_id: string;
-  title: string;
-  authors: string[];
-  series: SeriesRef | null;
-  isbn_13: string | null;
-  cover_url: string;
-  ingestion_status: IngestionStatus;
-  /** Raw DB string — reconciled enum lands in a follow-up; see `BookListRow::validation_status`. */
-  validation_status: string;
-  enrichment_status: EnrichmentStatus;
-}
+export type BookListItem = z.infer<typeof BookListItemSchema>;
 
+const BookListResponseSchema = z.object({
+  items: z.array(BookListItemSchema),
+  next_cursor: z.string().nullable(),
+});
 /** Envelope returned by `GET /api/books`. `next_cursor === null` means end-of-list. */
-export interface BookListResponse {
-  items: BookListItem[];
-  next_cursor: string | null;
-}
+export type BookListResponse = z.infer<typeof BookListResponseSchema>;
 
 /** Sort modes accepted by `GET /api/books?sort=…`. */
 export type ListSort = "recent" | "title" | "author";
@@ -68,61 +84,65 @@ export interface ListBooksParams {
   sort?: ListSort;
 }
 
+const MetadataVersionSummarySchema = z.object({
+  pending: z.number().int().nonnegative(),
+  accepted: z.number().int().nonnegative(),
+});
 /**
  * Counts surfaced on the book-detail Versions tab. Mirrors
  * `MetadataVersionSummary` on the wire.
  */
-export interface MetadataVersionSummary {
-  pending: number;
-  accepted: number;
-}
+export type MetadataVersionSummary = z.infer<typeof MetadataVersionSummarySchema>;
 
+const BookDetailSchema = z.object({
+  id: z.string(),
+  work_id: z.string(),
+  title: z.string(),
+  authors: z.array(z.string()),
+  series: SeriesRefSchema.nullable(),
+  description: z.string().nullable(),
+  language: z.string().nullable(),
+  isbn_13: z.string().nullable(),
+  isbn_10: z.string().nullable(),
+  cover_url: z.string(),
+  tags: z.array(z.string()),
+  ingestion_status: IngestionStatusSchema,
+  validation_status: z.string(),
+  enrichment_status: EnrichmentStatusSchema,
+  metadata_version_summary: MetadataVersionSummarySchema,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
 /**
  * `GET /api/books/{id}` response. Carries `BookListItem` fields plus
  * work-level prose and metadata-version counts. Mirrors `BookDetail`.
  */
-export interface BookDetail {
-  id: string;
-  work_id: string;
-  title: string;
-  authors: string[];
-  series: SeriesRef | null;
-  description: string | null;
-  language: string | null;
-  isbn_13: string | null;
-  isbn_10: string | null;
-  cover_url: string;
-  tags: string[];
-  ingestion_status: IngestionStatus;
-  validation_status: string;
-  enrichment_status: EnrichmentStatus;
-  metadata_version_summary: MetadataVersionSummary;
-  created_at: string;
-  updated_at: string;
-}
+export type BookDetail = z.infer<typeof BookDetailSchema>;
 
+const WorkManifestationSchema = z.object({
+  id: z.string(),
+  isbn_13: z.string().nullable(),
+  isbn_10: z.string().nullable(),
+  cover_url: z.string(),
+  ingestion_status: IngestionStatusSchema,
+  validation_status: z.string(),
+  enrichment_status: EnrichmentStatusSchema,
+  created_at: z.string(),
+});
 /** One manifestation row embedded in a [`WorkDetail`] response. */
-export interface WorkManifestation {
-  id: string;
-  isbn_13: string | null;
-  isbn_10: string | null;
-  cover_url: string;
-  ingestion_status: IngestionStatus;
-  validation_status: string;
-  enrichment_status: EnrichmentStatus;
-  created_at: string;
-}
+export type WorkManifestation = z.infer<typeof WorkManifestationSchema>;
 
+const WorkDetailSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  authors: z.array(z.string()),
+  description: z.string().nullable(),
+  language: z.string().nullable(),
+  series: SeriesRefSchema.nullable(),
+  manifestations: z.array(WorkManifestationSchema),
+});
 /** `GET /api/works/{id}` response. Lists every visible manifestation for the work. */
-export interface WorkDetail {
-  id: string;
-  title: string;
-  authors: string[];
-  description: string | null;
-  language: string | null;
-  series: SeriesRef | null;
-  manifestations: WorkManifestation[];
-}
+export type WorkDetail = z.infer<typeof WorkDetailSchema>;
 
 /**
  * Fetch a paginated page of the user's library. `cursor` is opaque
@@ -145,7 +165,8 @@ export async function listBooks(
     q: params.q,
     sort: params.sort,
   });
-  return apiFetch<BookListResponse>(url, signal ? { method: "GET", signal } : { method: "GET" });
+  const body = await apiFetch(url, signal ? { method: "GET", signal } : { method: "GET" });
+  return BookListResponseSchema.parse(body);
 }
 
 /**
@@ -154,10 +175,11 @@ export async function listBooks(
  * `ApiError.status === 404`, not on a distinct "forbidden" code.
  */
 export async function getBook(id: string, signal?: AbortSignal): Promise<BookDetail> {
-  return apiFetch<BookDetail>(
+  const body = await apiFetch(
     `/api/books/${encodeURIComponent(id)}`,
     signal ? { method: "GET", signal } : { method: "GET" },
   );
+  return BookDetailSchema.parse(body);
 }
 
 /**
@@ -165,10 +187,11 @@ export async function getBook(id: string, signal?: AbortSignal): Promise<BookDet
  * Returns 404 when no manifestation is visible (existence-not-leaked).
  */
 export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDetail> {
-  return apiFetch<WorkDetail>(
+  const body = await apiFetch(
     `/api/works/${encodeURIComponent(id)}`,
     signal ? { method: "GET", signal } : { method: "GET" },
   );
+  return WorkDetailSchema.parse(body);
 }
 
 /**
