@@ -1,19 +1,37 @@
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
+import { Outlet } from "react-router";
+
+import { setUnauthenticatedHandler } from "@/lib/query/client";
 
 /**
  * Root route component (`/`).
  *
- * Renders the application shell that the library view will mount into.
- * Currently a brand-canvas placeholder — Step 11 (UNK-80) wires the
- * library list/detail UI into this surface. Kept deliberately empty
- * so the canvas + foreground tokens, the FOUC theme bootstrap, and the
- * router/provider tree can be sighted against a stable baseline
- * between hero-screen iterations and the Step 11 build-out.
+ * Renders the application shell that the data-mode router mounts
+ * child routes (`/library`, `/b/:id`, …) into via `<Outlet />`.
+ *
+ * Owns one cross-cutting effect: wiring the `QueryClient`'s 401
+ * handler to a full-page redirect at `/auth/login`. The backend OIDC
+ * initiator lives at that path (no SPA `/login` route exists), so the
+ * redirect must be a `window.location.assign(...)` — a client-side
+ * `navigate()` would never hit the backend. The handler lives in the
+ * query module to avoid a router import there; injecting it on mount
+ * keeps the two providers decoupled (see `lib/query/client.ts`). On
+ * unmount the handler is reset to a no-op so a remounted router tree
+ * (e.g. during HMR) cannot navigate via a stale closure.
  */
 function App(): ReactElement {
+  useEffect(() => {
+    setUnauthenticatedHandler(() => {
+      window.location.assign("/auth/login");
+    });
+    return () => {
+      setUnauthenticatedHandler(() => {});
+    };
+  }, []);
+
   return (
     <main className="bg-canvas text-fg min-h-screen">
-      {/* Step 11 builds the library view here. */}
+      <Outlet />
     </main>
   );
 }
