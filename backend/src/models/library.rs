@@ -59,8 +59,11 @@ pub struct BookListRow {
     pub series: Option<SeriesRef>,
     /// `manifestations.isbn_13`, when known.
     pub isbn_13: Option<String>,
-    /// Pre-signed thumbnail URL — backend constructs it so the
-    /// frontend has a single source of truth for the cover surface.
+    /// Cover thumbnail URL — relative path served by the
+    /// `/api/books/{id}/cover/thumb` handler under the caller's
+    /// session. Not pre-signed; access is gated by the session cookie.
+    /// Backend constructs it so the frontend has a single source of
+    /// truth for the cover surface.
     pub cover_url: String,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,
@@ -101,7 +104,9 @@ pub struct BookDetail {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
-    /// Pre-signed cover URL.
+    /// Cover thumbnail URL — relative path under
+    /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
+    /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Tag names attached to the manifestation.
     pub tags: Vec<String>,
@@ -156,6 +161,62 @@ pub struct WorkDetail {
     pub manifestations: Vec<WorkManifestation>,
 }
 
+/// `GET /api/search` envelope (11b). Wraps a flat result list — the
+/// frontend groups by [`SearchHit::kind`] client-side. No cursor:
+/// search is bounded by `LIMIT` server-side; pagination is a follow-up
+/// if user-research warrants it.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub struct SearchResponse {
+    /// Result rows, ranked DESC by hybrid `ts_rank_cd + similarity`.
+    pub items: Vec<SearchHit>,
+}
+
+/// One result row of `GET /api/search`. Carries the bare minimum the
+/// command-palette UI needs: a kind tag for grouping, identifiers for
+/// navigation, a short display label, and an optional `ts_headline`
+/// snippet with non-HTML ASCII STX (`\u{0002}`) / ETX (`\u{0003}`)
+/// markers so the React renderer can avoid `dangerouslySetInnerHTML`.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub struct SearchHit {
+    /// Result kind. Currently always `"book"`; `"author"` and
+    /// `"series"` ship in a follow-up that fans the hybrid CTE over
+    /// the existing `authors.name` / `series.name` trigram indexes.
+    pub kind: SearchHitKind,
+    /// Primary id — `manifestations.id` for `book`, `authors.id` for
+    /// `author`, `series.id` for `series`.
+    pub id: Uuid,
+    /// Parent work id when `kind = "book"`, else `None`.
+    pub work_id: Option<Uuid>,
+    /// Display label — work title for `book`.
+    pub title: String,
+    /// Author display names for `book` results.
+    pub authors: Vec<String>,
+    /// `ts_headline` snippet from the work's title+description with
+    /// ASCII STX (`\u{0002}`) / ETX (`\u{0003}`) start/stop markers
+    /// around matched terms. Control codepoints, not valid UTF-8 text,
+    /// so they cannot collide with user typography. `None` when the
+    /// hit was trigram-only (no tsquery match → headline would be the
+    /// raw text without highlighting).
+    pub snippet: Option<String>,
+    /// Cover thumbnail URL for `book` results — relative path under
+    /// `/api/books/{id}/cover/thumb`, session-cookie gated. `None`
+    /// when the hit kind has no cover surface (future author/series
+    /// variants).
+    pub cover_url: Option<String>,
+}
+
+/// Tag identifying which entity a [`SearchHit`] points at. Serialised
+/// in `snake_case` to match the rest of the JSON API conventions.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum SearchHitKind {
+    /// Manifestation hit — id is the `manifestations.id`.
+    Book,
+}
+
 /// One manifestation row embedded in a [`WorkDetail`] response.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
@@ -166,7 +227,9 @@ pub struct WorkManifestation {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
-    /// Pre-signed cover URL.
+    /// Cover thumbnail URL — relative path under
+    /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
+    /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,

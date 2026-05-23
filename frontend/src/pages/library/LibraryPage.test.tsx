@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
@@ -29,15 +30,17 @@ interface RenderOpts {
   items: BookListItem[];
   nextCursor: string | null;
   initialEntries?: string[];
+  /** Params shape to prefill cache under. Defaults to the empty-params slot. */
+  cacheParams?: ListBooksParams;
 }
 
-function renderLibrary({ items, nextCursor, initialEntries }: RenderOpts): {
+function renderLibrary({ items, nextCursor, initialEntries, cacheParams }: RenderOpts): {
   client: QueryClient;
 } {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const params: ListBooksParams = {};
+  const params: ListBooksParams = cacheParams ?? {};
   const response: BookListResponse = { items, next_cursor: nextCursor };
   client.setQueryData(queryKeys.books.list(params), {
     pages: [response],
@@ -117,5 +120,69 @@ describe("LibraryPage", () => {
     });
     const link = await screen.findByRole("link", { name: /stoner/i });
     expect(link.getAttribute("href")).toBe("/b/abc-123");
+  });
+
+  test("renders no active-filter chip row when no filter params are set", async () => {
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    await screen.findByRole("heading", { name: "Library" });
+    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
+  });
+
+  test("renders an active-filter chip when ?author= param is set", async () => {
+    const authorId = "aaaa1111-0000-0000-0000-000000000000";
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: [`/library?author=${authorId}`],
+      cacheParams: { author: authorId },
+    });
+    await screen.findByTestId("active-filters");
+    expect(screen.getByRole("button", { name: /clear author filter/i })).toBeInTheDocument();
+  });
+
+  test("renders one tag chip per ?tag= repetition", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?tag=scifi&tag=hugo"],
+      cacheParams: {},
+    });
+    await screen.findByTestId("active-filters");
+    expect(screen.getByRole("button", { name: /clear tag scifi filter/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear tag hugo filter/i })).toBeInTheDocument();
+  });
+
+  test("clicking a filter chip removes the param and the cursor", async () => {
+    const authorId = "aaaa1111-0000-0000-0000-000000000000";
+    // Pre-fill both the active-author slot AND the empty-params slot
+    // so the suspense-infinite-query has a hit after the chip click
+    // changes the cache key.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
+    client.setQueryData(queryKeys.books.list({ author: authorId }), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+    client.setQueryData(queryKeys.books.list({}), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+    function Wrapper(): ReactElement {
+      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+      const router = createMemoryRouter(routes, {
+        initialEntries: [`/library?author=${authorId}&cursor=eyJ4Ijox`],
+      });
+      return (
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      );
+    }
+    render(<Wrapper />);
+
+    const chip = await screen.findByRole("button", { name: /clear author filter/i });
+    const user = userEvent.setup();
+    await user.click(chip);
+    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
   });
 });

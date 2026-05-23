@@ -21,3 +21,5 @@ export type {
   ListSort,
   ListBooksParams,
 } from "./books";
+export { searchLibrary } from "./search";
+export type { SearchHit, SearchHitKind, SearchResponse } from "./search";
