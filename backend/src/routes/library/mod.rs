@@ -10,11 +10,12 @@
 //! header.
 //!
 //! # Invariants
-//! - Authentication is the cookie-or-Basic [`CurrentUser`] extractor
-//!   (web UI uses the session cookie; e-reader clients lean on
-//!   `/opds/*` instead).
+//! - Authentication is the cookie-or-Basic
+//!   [`crate::auth::middleware::CurrentUser`] extractor (web UI uses
+//!   the session cookie; e-reader clients lean on `/opds/*`
+//!   instead).
 //! - Per-row visibility is delegated to PostgreSQL RLS through
-//!   [`db::acquire_with_rls`]; the handler never adds an
+//!   [`crate::db::acquire_with_rls`]; the handler never adds an
 //!   ad-hoc `WHERE user_id = …` predicate because doing so would
 //!   bypass the unified policy set on `manifestations`.
 //! - Cursor tags are verified against the requested `?sort=` axis so
@@ -257,28 +258,44 @@ fn push_cursor_predicate(
             qb.push_bind(*id);
             qb.push(")");
         }
-        (SortMode::Title, CursorKey::Title { sort_title, id }) => {
-            qb.push(" AND (w.sort_title, w.id) > (");
+        (
+            SortMode::Title,
+            CursorKey::Title {
+                sort_title,
+                work_id,
+                manifestation_id,
+            },
+        ) => {
+            // Triple-row tuple comparison. The `m.id` tiebreaker is
+            // required because a single work can carry multiple
+            // manifestations (epub + pdf of the same edition), and
+            // they all share `(sort_title, work_id)`; without
+            // `m.id` the page boundary between two such siblings
+            // silently drops the second from page N+1.
+            qb.push(" AND (w.sort_title, w.id, m.id) > (");
             qb.push_bind(sort_title.clone());
             qb.push(", ");
-            qb.push_bind(*id);
+            qb.push_bind(*work_id);
+            qb.push(", ");
+            qb.push_bind(*manifestation_id);
             qb.push(")");
         }
         (
             SortMode::Author,
             CursorKey::Author {
                 sort_name: Some(sort_name),
-                id,
+                work_id,
+                manifestation_id,
             },
         ) => {
             // ORDER BY first_author_sort_name ASC NULLS LAST means the
             // NULL-author bucket sits at the tail. Cursor was minted
             // off a non-NULL boundary row, so the next page must
             // emit: rows whose sort_name compares strictly after
-            // (sort_name, id) in lexicographic ASC order, PLUS the
-            // entire trailing NULL bucket. Postgres three-valued
-            // logic would silently drop the NULL bucket from a naive
-            // tuple `>` comparison.
+            // `(sort_name, work_id, m.id)` in lexicographic ASC
+            // order, PLUS the entire trailing NULL bucket. Postgres
+            // three-valued logic would silently drop the NULL bucket
+            // from a naive tuple `>` comparison.
             let author_sub = "(SELECT a.sort_name FROM work_authors wa \
                   JOIN authors a ON a.id = wa.author_id \
                   WHERE wa.work_id = w.id \
@@ -291,9 +308,11 @@ fn push_cursor_predicate(
             qb.push(author_sub);
             qb.push(" = ");
             qb.push_bind(sort_name.clone());
-            qb.push(" AND w.id > ");
-            qb.push_bind(*id);
-            qb.push(") OR ");
+            qb.push(" AND (w.id, m.id) > (");
+            qb.push_bind(*work_id);
+            qb.push(", ");
+            qb.push_bind(*manifestation_id);
+            qb.push(")) OR ");
             qb.push(author_sub);
             qb.push(" IS NULL)");
         }
@@ -301,19 +320,24 @@ fn push_cursor_predicate(
             SortMode::Author,
             CursorKey::Author {
                 sort_name: None,
-                id,
+                work_id,
+                manifestation_id,
             },
         ) => {
             // Cursor pointed at a NULL-author boundary row; remaining
-            // page is the rest of the NULL bucket ordered by w.id.
+            // page is the rest of the NULL bucket ordered by
+            // `(w.id, m.id)`.
             qb.push(
                 " AND (SELECT a.sort_name FROM work_authors wa \
                   JOIN authors a ON a.id = wa.author_id \
                   WHERE wa.work_id = w.id \
                   ORDER BY wa.position ASC LIMIT 1) IS NULL \
-                  AND w.id > ",
+                  AND (w.id, m.id) > (",
             );
-            qb.push_bind(*id);
+            qb.push_bind(*work_id);
+            qb.push(", ");
+            qb.push_bind(*manifestation_id);
+            qb.push(")");
         }
         // `parse_for` already rejected cross-sort cursors; this arm is
         // unreachable but kept exhaustive to satisfy the compiler.
@@ -324,13 +348,18 @@ fn push_cursor_predicate(
 fn push_order_by(qb: &mut QueryBuilder<'_, Postgres>, sort: SortMode) {
     match sort {
         SortMode::Recent => {
+            // `m.id` alone is unique per row, but pair it with
+            // created_at for index-friendly DESC scan.
             qb.push(" ORDER BY m.created_at DESC, m.id DESC");
         }
         SortMode::Title => {
-            qb.push(" ORDER BY w.sort_title ASC, w.id ASC");
+            // `m.id` is the final tiebreaker because a work can have
+            // multiple manifestations (epub + pdf) that share
+            // `(sort_title, w.id)`.
+            qb.push(" ORDER BY w.sort_title ASC, w.id ASC, m.id ASC");
         }
         SortMode::Author => {
-            qb.push(" ORDER BY first_author_sort_name ASC NULLS LAST, w.id ASC");
+            qb.push(" ORDER BY first_author_sort_name ASC NULLS LAST, w.id ASC, m.id ASC");
         }
     }
 }
@@ -354,14 +383,16 @@ fn next_cursor_for_row(row: &sqlx::postgres::PgRow, sort: SortMode) -> CursorKey
         },
         SortMode::Title => CursorKey::Title {
             sort_title: row.get::<String, _>("sort_title"),
-            id: row.get::<Uuid, _>("work_id"),
+            work_id: row.get::<Uuid, _>("work_id"),
+            manifestation_id: row.get::<Uuid, _>("id"),
         },
         SortMode::Author => CursorKey::Author {
             sort_name: row
                 .try_get::<Option<String>, _>("first_author_sort_name")
                 .ok()
                 .flatten(),
-            id: row.get::<Uuid, _>("work_id"),
+            work_id: row.get::<Uuid, _>("work_id"),
+            manifestation_id: row.get::<Uuid, _>("id"),
         },
     }
 }

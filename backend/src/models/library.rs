@@ -6,7 +6,7 @@
 //! `skip_serializing_if`), RFC 3339 timestamps via the `time` crate
 //! default. Mirrors [`crate::models::user::User`] shape.
 //!
-//! [`BookListRow`] doubles as the `sqlx::FromRow` decode target and
+//! [`crate::models::library::BookListRow`] doubles as the `sqlx::FromRow` decode target and
 //! the API response item. The `created_at` field is decoded for use
 //! as a cursor key but is `#[serde(skip)]`-elided from the wire to
 //! keep the response payload aligned with the frontend

@@ -497,3 +497,143 @@ async fn list_endpoint_pagination_walk_emits_link_and_flips_to_null(pool: PgPool
         "final page must not carry a Link rel=next header"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_sort_title_pagination_walk(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Distinct vocabulary keeps the pg_trgm find_or_create dedup
+    // threshold from collapsing these into a single work.
+    for (m, t) in [
+        ("alpha", "Alpha Centauri"),
+        ("bravo", "Bravo Charlie"),
+        ("delta", "Delta Echo"),
+        ("foxtrot", "Foxtrot Golf"),
+        ("hotel", "Hotel India"),
+    ] {
+        insert_book(&ingestion_pool, m, t).await;
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+
+    let mut seen: Vec<String> = Vec::new();
+    let mut url = "/api/books?sort=title".to_string();
+    let mut walked = 0u32;
+    loop {
+        let response = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "page {walked} at {url}"
+        );
+        let body: serde_json::Value = response.json();
+        for item in body["items"].as_array().unwrap() {
+            seen.push(item["title"].as_str().unwrap().to_owned());
+        }
+        walked += 1;
+        assert!(walked < 10, "runaway pagination: seen = {seen:?}");
+        match body["next_cursor"].as_str() {
+            Some(nc) => url = format!("/api/books?sort=title&cursor={nc}"),
+            None => break,
+        }
+    }
+
+    assert_eq!(
+        seen,
+        vec![
+            "Alpha Centauri",
+            "Bravo Charlie",
+            "Delta Echo",
+            "Foxtrot Golf",
+            "Hotel India",
+        ],
+        "title-sort cursor must walk all rows in lexicographic order without duplicates or drops"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Two works, each with two manifestations sharing the same
+    // `(sort_title, work_id)` sort key. Without an `m.id` tiebreaker
+    // in ORDER BY + cursor, the page boundary between the two
+    // siblings would silently drop the second from page N+1.
+    // Regression guard for Greptile finding P1 on PR #308.
+    for (work_title, marker_pdf, marker_epub) in [
+        ("Lima Mike", "lima-pdf", "lima-epub"),
+        ("November Oscar", "november-pdf", "november-epub"),
+    ] {
+        // Two distinct manifestations sharing the same work-id via
+        // shared title — but we want them to share the SAME work
+        // row, not two stub-deduped works. Easiest path: insert the
+        // work once, then insert two manifestations referencing it.
+        let work_id: Uuid = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+            work_title,
+        )
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("insert work");
+        for marker in [marker_pdf, marker_epub] {
+            let file_path = format!("/tmp/multimani-{marker}.epub");
+            let hash = format!("multimani-hash-{marker}");
+            sqlx::query!(
+                "INSERT INTO manifestations \
+                    (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                     file_size_bytes, ingestion_status, validation_status) \
+                 VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                         'complete'::ingestion_status, 'valid'::validation_status)",
+                work_id,
+                file_path,
+                hash,
+            )
+            .execute(&ingestion_pool)
+            .await
+            .expect("insert manifestation");
+        }
+    }
+
+    // page_size = 1 forces a boundary between every sibling pair.
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut url = "/api/books?sort=title".to_string();
+    let mut walked = 0u32;
+    loop {
+        let response = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK, "page {walked}");
+        let body: serde_json::Value = response.json();
+        for item in body["items"].as_array().unwrap() {
+            let id = item["id"].as_str().unwrap().to_owned();
+            assert!(
+                seen.insert(id.clone()),
+                "duplicate manifestation id {id} across cursor walk"
+            );
+        }
+        walked += 1;
+        assert!(
+            walked < 10,
+            "runaway pagination on multi-manifestation walk"
+        );
+        match body["next_cursor"].as_str() {
+            Some(nc) => url = format!("/api/books?sort=title&cursor={nc}"),
+            None => break,
+        }
+    }
+    assert_eq!(
+        seen.len(),
+        4,
+        "all 4 manifestations across 2 works must surface exactly once — regression guard \
+         against `(sort_title, work_id)` tuple comparison dropping sibling manifestations"
+    );
+}

@@ -11,12 +11,24 @@
 //!
 //! Wire encoding: base64url(unpadded) over `<tag>|<key>`, where
 //! `<tag>` is a single byte (`r` | `t` | `a`) identifying the
-//! [`CursorKey`] variant and `<key>` is the variant's textual key
-//! (`<rfc3339>|<uuid>` for `Recent`, `<value>|<uuid>` for `Title` /
-//! `Author`). Mismatched-variant cursors (e.g. `?sort=title` with a
-//! cursor carrying the `r` tag) are rejected with
-//! [`CursorError::SortMismatch`] so callers cannot confuse the
-//! server about which key space they're walking.
+//! [`crate::routes::cursor::CursorKey`] variant and `<key>` is the
+//! variant's textual key:
+//!
+//! - `Recent`: `<rfc3339>|<manifestation_id>`
+//! - `Title`:  `<sort_title>|<work_id>|<manifestation_id>`
+//! - `Author`: `s|<sort_name>|<work_id>|<manifestation_id>`
+//!   (non-NULL bucket) or `n|<work_id>|<manifestation_id>` (NULL
+//!   bucket — pre-enrichment stubs)
+//!
+//! The `manifestation_id` final tiebreaker on `Title` and `Author`
+//! exists because `(sort_title, work_id)` and
+//! `(sort_name, work_id)` are not unique — a single work can carry
+//! several manifestations sharing the work-level sort key.
+//!
+//! Mismatched-variant cursors (e.g. `?sort=title` with a cursor
+//! carrying the `r` tag) are rejected with
+//! [`crate::routes::cursor::CursorError::SortMismatch`] so callers
+//! cannot confuse the server about which key space they're walking.
 //!
 //! No HMAC — same trust model as the OPDS cursor.
 
@@ -49,14 +61,27 @@ pub enum CursorKey {
         /// Tie-breaker `manifestations.id`.
         id: Uuid,
     },
-    /// Title-sort cursor: `(works.sort_title, works.id)`.
+    /// Title-sort cursor:
+    /// `(works.sort_title, works.id, manifestations.id)`.
+    ///
+    /// The `(sort_title, work_id)` pair is not unique — a single
+    /// work can carry multiple manifestations (epub + pdf of the
+    /// same edition, format-priority duplicates). Two such rows
+    /// share their sort key, so the `manifestation_id` third
+    /// tiebreaker is required to keep cursor pagination total: a
+    /// page boundary falling between them would otherwise drop the
+    /// second row from page N+1.
     Title {
         /// Boundary work's `sort_title`.
         sort_title: String,
-        /// Tie-breaker `works.id`.
-        id: Uuid,
+        /// Boundary `works.id`.
+        work_id: Uuid,
+        /// Final-tiebreaker `manifestations.id` (manifestation
+        /// primary key — always unique per row).
+        manifestation_id: Uuid,
     },
-    /// Author-sort cursor: `(authors.sort_name, works.id)` of the
+    /// Author-sort cursor:
+    /// `(authors.sort_name, works.id, manifestations.id)` of the
     /// first author (`work_authors.position = 0`).
     ///
     /// `sort_name` is `Option<String>` because the ORDER BY uses
@@ -65,13 +90,17 @@ pub enum CursorKey {
     /// to distinguish "advance through the non-NULL bucket" from
     /// "advance through the NULL bucket" — encoding NULL as `""`
     /// collapses the two and silently drops rows under three-valued
-    /// SQL comparison.
+    /// SQL comparison. The `manifestation_id` tiebreaker exists for
+    /// the same reason as [`Self::Title`] — same work, multiple
+    /// manifestations share a sort key.
     Author {
         /// Boundary first-author's `sort_name`; `None` when the
         /// boundary row has no first author (NULL bucket).
         sort_name: Option<String>,
-        /// Tie-breaker `works.id`.
-        id: Uuid,
+        /// Boundary `works.id`.
+        work_id: Uuid,
+        /// Final-tiebreaker `manifestations.id`.
+        manifestation_id: Uuid,
     },
 }
 
@@ -116,22 +145,40 @@ impl CursorKey {
                     .expect("OffsetDateTime always formats as Rfc3339");
                 format!("r|{ts}|{}", id.as_hyphenated())
             }
-            Self::Title { sort_title, id } => {
-                format!("t|{sort_title}|{}", id.as_hyphenated())
+            Self::Title {
+                sort_title,
+                work_id,
+                manifestation_id,
+            } => {
+                format!(
+                    "t|{sort_title}|{}|{}",
+                    work_id.as_hyphenated(),
+                    manifestation_id.as_hyphenated()
+                )
             }
             // Author cursors carry a sub-tag (`s` = some / `n` = none)
             // so the NULL-bucket boundary survives base64 round-trip.
             Self::Author {
                 sort_name: Some(value),
-                id,
+                work_id,
+                manifestation_id,
             } => {
-                format!("a|s|{value}|{}", id.as_hyphenated())
+                format!(
+                    "a|s|{value}|{}|{}",
+                    work_id.as_hyphenated(),
+                    manifestation_id.as_hyphenated()
+                )
             }
             Self::Author {
                 sort_name: None,
-                id,
+                work_id,
+                manifestation_id,
             } => {
-                format!("a|n|{}", id.as_hyphenated())
+                format!(
+                    "a|n|{}|{}",
+                    work_id.as_hyphenated(),
+                    manifestation_id.as_hyphenated()
+                )
             }
         };
         Base64UrlUnpadded::encode_string(payload.as_bytes())
@@ -167,11 +214,16 @@ impl CursorKey {
                 if sort != SortMode::Title {
                     return Err(CursorError::SortMismatch);
                 }
-                let (value, uuid) = rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
-                let id = Uuid::parse_str(uuid).map_err(|_| CursorError::MalformedKey)?;
+                let (head, manifestation_str) =
+                    rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
+                let (value, work_str) = head.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
+                let work_id = Uuid::parse_str(work_str).map_err(|_| CursorError::MalformedKey)?;
+                let manifestation_id =
+                    Uuid::parse_str(manifestation_str).map_err(|_| CursorError::MalformedKey)?;
                 Self::Title {
                     sort_title: value.to_owned(),
-                    id,
+                    work_id,
+                    manifestation_id,
                 }
             }
             "a" => {
@@ -181,20 +233,31 @@ impl CursorKey {
                 let (sub_tag, sub_rest) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
                 match sub_tag {
                     "s" => {
-                        let (value, uuid) =
+                        let (head, manifestation_str) =
                             sub_rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
-                        let id = Uuid::parse_str(uuid).map_err(|_| CursorError::MalformedKey)?;
+                        let (value, work_str) =
+                            head.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
+                        let work_id =
+                            Uuid::parse_str(work_str).map_err(|_| CursorError::MalformedKey)?;
+                        let manifestation_id = Uuid::parse_str(manifestation_str)
+                            .map_err(|_| CursorError::MalformedKey)?;
                         Self::Author {
                             sort_name: Some(value.to_owned()),
-                            id,
+                            work_id,
+                            manifestation_id,
                         }
                     }
                     "n" => {
-                        let id =
-                            Uuid::parse_str(sub_rest).map_err(|_| CursorError::MalformedKey)?;
+                        let (work_str, manifestation_str) =
+                            sub_rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
+                        let work_id =
+                            Uuid::parse_str(work_str).map_err(|_| CursorError::MalformedKey)?;
+                        let manifestation_id = Uuid::parse_str(manifestation_str)
+                            .map_err(|_| CursorError::MalformedKey)?;
                         Self::Author {
                             sort_name: None,
-                            id,
+                            work_id,
+                            manifestation_id,
                         }
                     }
                     _ => return Err(CursorError::MalformedKey),
@@ -222,10 +285,10 @@ mod tests {
 
     #[test]
     fn title_roundtrip() {
-        let id = Uuid::new_v4();
         let key = CursorKey::Title {
             sort_title: "neuromancer".into(),
-            id,
+            work_id: Uuid::new_v4(),
+            manifestation_id: Uuid::new_v4(),
         };
         let encoded = key.encode();
         let parsed = CursorKey::parse_for(&encoded, SortMode::Title).expect("roundtrip");
@@ -234,10 +297,10 @@ mod tests {
 
     #[test]
     fn author_roundtrip_some() {
-        let id = Uuid::new_v4();
         let key = CursorKey::Author {
             sort_name: Some("gibson, william".into()),
-            id,
+            work_id: Uuid::new_v4(),
+            manifestation_id: Uuid::new_v4(),
         };
         let encoded = key.encode();
         let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
@@ -246,10 +309,10 @@ mod tests {
 
     #[test]
     fn author_roundtrip_none() {
-        let id = Uuid::new_v4();
         let key = CursorKey::Author {
             sort_name: None,
-            id,
+            work_id: Uuid::new_v4(),
+            manifestation_id: Uuid::new_v4(),
         };
         let encoded = key.encode();
         let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
@@ -258,13 +321,14 @@ mod tests {
 
     #[test]
     fn author_roundtrip_with_pipe_in_value() {
-        // `|` is the encoding delimiter; rsplit_once on the trailing
-        // uuid must peel correctly even when the sort_name contains
-        // pipes.
-        let id = Uuid::new_v4();
+        // `|` is the encoding delimiter; the parser must peel the
+        // two trailing UUIDs by `rsplit_once` *twice* before the
+        // remainder is treated as `sort_name`, so pipes inside the
+        // sort_name survive the round-trip.
         let key = CursorKey::Author {
             sort_name: Some("weird|name|with|pipes".into()),
-            id,
+            work_id: Uuid::new_v4(),
+            manifestation_id: Uuid::new_v4(),
         };
         let encoded = key.encode();
         let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
@@ -282,7 +346,8 @@ mod tests {
         ));
         let title = CursorKey::Title {
             sort_title: "x".into(),
-            id,
+            work_id: id,
+            manifestation_id: id,
         }
         .encode();
         assert!(matches!(
