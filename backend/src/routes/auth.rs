@@ -6,6 +6,7 @@ use axum::response::{IntoResponse, Redirect};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use axum_extra::extract::cookie::CookieJar;
+use base64ct::{Base64UrlUnpadded, Encoding};
 use openidconnect::core::CoreResponseType;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, CsrfToken, Nonce, PkceCodeChallenge, PkceCodeVerifier,
@@ -166,6 +167,33 @@ async fn callback(
         tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
     }
 
+    // OWASP CSRF synchronizer token (Phase 1: token issuance only;
+    // Phase 2 enables the validating middleware — see
+    // adr/2026-05-22-json-api-conventions.md §"CSRF defense" and the
+    // order-of-operations note). 32 bytes from the OS CSPRNG, encoded
+    // as 43-char base64url-unpadded; mirrors `auth::token::generate_device_token`.
+    //
+    // THREAT: `SameSite=Lax` cookies alone don't cover top-level GET CSRF
+    // returning sensitive state and don't protect when a cookie is set
+    // with `SameSite=None`. The synchronizer token bound to this session
+    // (read via `/auth/me`, sent back as `X-CSRF-Token` on mutating verbs)
+    // is the primary defense; SameSite + CSP API layer are defense-in-depth.
+    //
+    // Stored under session key `csrf_token` — same key the OIDC flow used
+    // for its transient state value (removed two lines above). The OIDC
+    // value is single-use per login; this app-level token is long-lived
+    // per session. Failure here aborts the login because an unguarded
+    // session would leave the browser unable to mutate state once the
+    // Phase 2 middleware turns on.
+    let mut csrf_bytes = [0u8; 32];
+    rand::fill(&mut csrf_bytes);
+    let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
+    auth_session
+        .session
+        .insert("csrf_token", &csrf_token)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
     // Seed reverie_theme cookie from the freshly-loaded user record so the
     // FOUC script reads the same value on next cold load.
     let jar = set_theme_cookie(jar, user.theme_preference);
@@ -183,12 +211,27 @@ async fn logout(mut auth_session: AuthCtx) -> Result<impl IntoResponse, AppError
 
 async fn me(
     current_user: CurrentUser,
+    auth_session: AuthCtx,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let u = user::find_by_id(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or(AppError::Unauthorized)?;
+    // THREAT: surfaces the session-bound CSRF synchronizer token to the
+    // first-party SPA (see adr/2026-05-22-json-api-conventions.md). The
+    // token must be present whenever the request is authenticated — any
+    // authenticated request that lacks one indicates a session created
+    // outside `/auth/callback` (Basic-auth callers, OPDS clients) for
+    // which Phase 2 middleware exempts read-only verbs. Treat the
+    // missing case as `null` rather than 500: the response shape stays
+    // stable, and the Phase 2 middleware (not this handler) is what
+    // refuses unsafe verbs without a token.
+    let csrf_token: Option<String> = auth_session
+        .session
+        .get("csrf_token")
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     Ok(Json(serde_json::json!({
         "id": u.id,
         "display_name": u.display_name,
@@ -196,6 +239,7 @@ async fn me(
         "role": u.role,
         "is_child": u.is_child,
         "theme_preference": u.theme_preference,
+        "csrf_token": csrf_token,
     })))
 }
 
@@ -333,6 +377,19 @@ mod tests {
             body.get("theme_preference").and_then(|v| v.as_str()),
             Some("system"),
             "default theme_preference must be 'system' (matches migration default)"
+        );
+        // Basic-auth sessions skip `/auth/callback`, so the CSRF
+        // synchronizer token is never seeded. The field must still be
+        // present (shape stability) but null. Phase 2's `csrf_required`
+        // middleware exempts Basic-auth callers (OPDS clients) from
+        // mutating-verb gating; this assertion locks that contract so
+        // a future "always populate csrf_token" refactor cannot
+        // accidentally start gating Basic-auth without a deliberate
+        // policy change.
+        assert!(
+            body.get("csrf_token")
+                .is_some_and(serde_json::Value::is_null),
+            "Basic-auth /auth/me must include csrf_token: null; got: {body}"
         );
     }
 
@@ -587,6 +644,42 @@ mod tests {
         assert_eq!(
             me_body.get("email").and_then(|v| v.as_str()),
             Some("alice@example.com"),
+        );
+
+        // Step 8: /auth/me carries a session-stored CSRF synchronizer
+        // token (43-char base64url-unpadded ≙ 32 random bytes). Phase 2
+        // wires the middleware that validates `X-CSRF-Token`; Phase 1
+        // ships token issuance + exposure here so the frontend can
+        // start reading it before the middleware turns on. See
+        // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
+        let token = me_body
+            .get("csrf_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("csrf_token missing on /auth/me; body: {me_body}"));
+        assert_eq!(
+            token.len(),
+            43,
+            "csrf_token must be 43-char base64url-unpadded; got {} chars: {token}",
+            token.len()
+        );
+        assert!(
+            token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+            "csrf_token must be base64url charset; got: {token}"
+        );
+
+        // Step 9: token is stable across reads within a session. Phase
+        // 2 will rotate on role change; Phase 1 must NOT rotate per
+        // request — otherwise the frontend's cached token races every
+        // mutating request.
+        let me_resp_2 = server.get("/auth/me").await;
+        assert_eq!(me_resp_2.status_code(), StatusCode::OK);
+        let me_body_2: serde_json::Value = me_resp_2.json();
+        assert_eq!(
+            me_body_2.get("csrf_token").and_then(|v| v.as_str()),
+            Some(token),
+            "csrf_token must be stable across /auth/me reads in same session"
         );
     }
 }
