@@ -156,6 +156,57 @@ pub struct WorkDetail {
     pub manifestations: Vec<WorkManifestation>,
 }
 
+/// `GET /api/search` envelope (11b). Wraps a flat result list — the
+/// frontend groups by [`SearchHit::kind`] client-side. No cursor:
+/// search is bounded by `LIMIT` server-side; pagination is a follow-up
+/// if user-research warrants it.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub struct SearchResponse {
+    /// Result rows, ranked DESC by hybrid `ts_rank_cd + similarity`.
+    pub items: Vec<SearchHit>,
+}
+
+/// One result row of `GET /api/search`. Carries the bare minimum the
+/// command-palette UI needs: a kind tag for grouping, identifiers for
+/// navigation, a short display label, and an optional `ts_headline`
+/// snippet with non-HTML markers (`‹›`) so the React renderer can
+/// avoid `dangerouslySetInnerHTML`.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub struct SearchHit {
+    /// Result kind. Currently always `"book"`; `"author"` and
+    /// `"series"` ship in a follow-up that fans the hybrid CTE over
+    /// the existing `authors.name` / `series.name` trigram indexes.
+    pub kind: SearchHitKind,
+    /// Primary id — `manifestations.id` for `book`, `authors.id` for
+    /// `author`, `series.id` for `series`.
+    pub id: Uuid,
+    /// Parent work id when `kind = "book"`, else `None`.
+    pub work_id: Option<Uuid>,
+    /// Display label — work title for `book`.
+    pub title: String,
+    /// Author display names for `book` results.
+    pub authors: Vec<String>,
+    /// `ts_headline` snippet from the work's title+description with
+    /// `‹›` start/stop markers around matched terms. `None` when the
+    /// hit was trigram-only (no tsquery match → headline would be the
+    /// raw text without highlighting).
+    pub snippet: Option<String>,
+    /// Pre-signed cover URL for `book` results.
+    pub cover_url: Option<String>,
+}
+
+/// Tag identifying which entity a [`SearchHit`] points at. Serialised
+/// in `snake_case` to match the rest of the JSON API conventions.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum SearchHitKind {
+    /// Manifestation hit — id is the `manifestations.id`.
+    Book,
+}
+
 /// One manifestation row embedded in a [`WorkDetail`] response.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]

@@ -12,7 +12,7 @@
  * / list toggle and the Load-more pagination control only.
  */
 import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
-import { LayoutGrid, List, Loader2 } from "lucide-react";
+import { LayoutGrid, List, Loader2, X } from "lucide-react";
 import { Suspense, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -118,6 +118,7 @@ function LibraryContent(): ReactElement {
           </Button>
         </div>
       </header>
+      <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
       <Separator className="mb-8" />
 
       {items.length === 0 ? (
@@ -273,6 +274,73 @@ function EmptyState(): ReactElement {
       <p className="text-sm">Once ingestion completes, books appear here.</p>
     </div>
   );
+}
+
+/**
+ * Active-filter chip row (11b). Renders one chip per URL search-param
+ * filter (`?author=`, `?series=`, `?shelf=`) with a clear (`×`)
+ * affordance — clicking removes that key and triggers a react-query
+ * refetch via the route params hook. `aria-pressed` on the chip itself
+ * signals the filter is on (matches the hero-page chip pattern in
+ * `/design/hero/library`).
+ *
+ * Source-list affordances (browse-by-shelf / browse-by-series chips
+ * with an "add" action) land alongside the GET `/api/series/{id}` and
+ * shelves CRUD endpoints in sub-phase 11d. Here we own the *clear*
+ * half so navigation arrivals (CommandPalette, series link from a book
+ * card) always have a way out.
+ */
+interface ActiveFilterChipsProps {
+  searchParams: URLSearchParams;
+  setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
+}
+
+function ActiveFilterChips({
+  searchParams,
+  setSearchParams,
+}: ActiveFilterChipsProps): ReactElement | null {
+  const filters: { key: "author" | "series" | "shelf"; label: string }[] = [];
+  for (const key of ["author", "series", "shelf"] as const) {
+    const value = searchParams.get(key);
+    if (value !== null && value !== "") {
+      filters.push({ key, label: `${key}: ${shortId(value)}` });
+    }
+  }
+  if (filters.length === 0) return null;
+
+  function clear(key: "author" | "series" | "shelf"): void {
+    const updated = new URLSearchParams(searchParams);
+    updated.delete(key);
+    updated.delete("cursor");
+    setSearchParams(updated, { replace: true });
+  }
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-2" data-testid="active-filters">
+      {filters.map((chip) => (
+        <Button
+          key={chip.key}
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-pressed
+          onClick={() => {
+            clear(chip.key);
+          }}
+          className="border-border bg-accent-soft text-fg hover:bg-accent-soft/80 h-7 gap-1 rounded-full px-3 font-mono text-xs"
+        >
+          {chip.label}
+          <X className="size-3" aria-hidden="true" />
+          <span className="sr-only">Clear {chip.key} filter</span>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/** Render a UUID compactly (first 8 chars) for chip labels. */
+function shortId(value: string): string {
+  return value.length > 10 ? `${value.slice(0, 8)}…` : value;
 }
 
 function LibrarySkeleton(): ReactElement {

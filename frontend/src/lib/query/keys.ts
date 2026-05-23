@@ -20,6 +20,8 @@ export type BooksListKey = readonly ["books", "list", ListBooksParams];
 export type BookDetailKey = readonly ["books", "detail", string];
 /** Tuple for the works-detail cache slot, keyed by work id. */
 export type WorkDetailKey = readonly ["works", "detail", string];
+/** Tuple for the search cache slot, keyed by the trimmed query string. */
+export type SearchKey = readonly ["search", string];
 
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
@@ -35,4 +37,6 @@ export const queryKeys = {
     /** Detail endpoint for one work + its visible manifestations. */
     detail: (id: string): WorkDetailKey => ["works", "detail", id] as const,
   },
+  /** Search-results cache slot. Distinct trimmed `q` = distinct slot. */
+  search: (q: string): SearchKey => ["search", q] as const,
 };

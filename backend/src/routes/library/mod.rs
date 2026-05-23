@@ -44,31 +44,51 @@ use crate::models::library::{
 use crate::routes::cursor::{CursorKey, SortMode};
 use crate::state::AppState;
 
+mod search;
+
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/books*` and `/api/works/{id}` router.
+/// Build the `/api/books*`, `/api/works/{id}`, and `/api/search`
+/// router.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/books", get(list))
         .route("/api/books/{id}", get(detail))
         .route("/api/works/{id}", get(work_detail))
+        .route("/api/search", get(search::search))
 }
 
-/// `?cursor=` / `?sort=` query parameters for `GET /api/books`.
+/// `?cursor=` / `?sort=` / filter query parameters for `GET /api/books`.
 ///
 /// Decoded via [`axum_extra::extract::Query`] (not built-in
-/// `axum::Query`) so future multi-value filter params (`?tag=a&tag=b`)
-/// can extend this struct without a router-side rewrite.
+/// `axum::Query`) so multi-value `?tag=a&tag=b` filters extend without
+/// a router rewrite. Private to the route module — handler-internal
+/// wire shape.
 ///
-/// Private to the route module — handler-internal wire shape, not
-/// part of the crate's external API.
+/// # Filter semantics (11b)
+/// - `author`, `series`, `shelf`: single-value `EXISTS` predicates
+///   pushed onto the existing dynamic query.
+/// - `tag`: multi-value AND-match — a row qualifies only when its
+///   `manifestation_tags` set covers every supplied tag name (see
+///   [`push_filter_predicates`]).
+/// - `shelf` filter is RLS-aware via the join on `shelves.user_id =
+///   current_setting('app.current_user_id')` so a caller cannot probe
+///   another user's shelf membership.
 #[derive(Debug, Default, Deserialize)]
 struct ListParams {
     #[serde(default)]
     cursor: Option<String>,
     #[serde(default)]
     sort: SortMode,
+    #[serde(default)]
+    author: Option<Uuid>,
+    #[serde(default)]
+    series: Option<Uuid>,
+    #[serde(default)]
+    shelf: Option<Uuid>,
+    #[serde(default)]
+    tag: Vec<String>,
 }
 
 /// `GET /api/books` response envelope. Carries the page rows plus
@@ -145,6 +165,7 @@ async fn list(
          ) series_one ON TRUE \
          WHERE TRUE",
     );
+    push_filter_predicates(&mut qb, &params);
     push_cursor_predicate(&mut qb, params.sort, cursor.as_ref());
     push_order_by(&mut qb, params.sort);
     qb.push(" LIMIT ");
@@ -243,6 +264,58 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
     match (id, name) {
         (Some(id), Some(name)) => Some(SeriesRef { id, name, position }),
         _ => None,
+    }
+}
+
+/// Push `author` / `series` / `shelf` / `tag` filter predicates onto
+/// the dynamic list query (11b). Every filter is an `EXISTS`-style
+/// subquery so the row set stays at "one manifestation per row" — the
+/// LIMIT and cursor math both assume this invariant.
+///
+/// `shelf` is hardened against cross-user probes: the inner join on
+/// `shelves.user_id = current_setting('app.current_user_id')::uuid`
+/// rejects shelf ids the caller does not own.
+///
+/// `tag` AND-matches every supplied name via `HAVING COUNT(DISTINCT
+/// t.name) = N`. Empty `tag` list → no predicate (`Vec::is_empty`).
+fn push_filter_predicates(qb: &mut QueryBuilder<'_, Postgres>, params: &ListParams) {
+    if let Some(author_id) = params.author {
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM work_authors wa \
+              WHERE wa.work_id = w.id AND wa.author_id = ",
+        );
+        qb.push_bind(author_id);
+        qb.push(")");
+    }
+    if let Some(series_id) = params.series {
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM series_works sw2 \
+              WHERE sw2.work_id = w.id AND sw2.series_id = ",
+        );
+        qb.push_bind(series_id);
+        qb.push(")");
+    }
+    if let Some(shelf_id) = params.shelf {
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM shelf_items si \
+              JOIN shelves s ON s.id = si.shelf_id \
+              WHERE si.manifestation_id = m.id \
+                AND si.shelf_id = ",
+        );
+        qb.push_bind(shelf_id);
+        qb.push(" AND s.user_id = current_setting('app.current_user_id', true)::uuid)");
+    }
+    if !params.tag.is_empty() {
+        qb.push(
+            " AND (SELECT COUNT(DISTINCT t.name) FROM manifestation_tags mt \
+              JOIN tags t ON t.id = mt.tag_id \
+              WHERE mt.manifestation_id = m.id AND t.name = ANY(",
+        );
+        qb.push_bind(params.tag.clone());
+        qb.push(")) = ");
+        // `tag.len()` is bounded by extractor; cast to i64 is lossless
+        // up to 9 EB worth of tags — practical input is ≤ 10.
+        qb.push_bind(i64::try_from(params.tag.len()).unwrap_or(i64::MAX));
     }
 }
 

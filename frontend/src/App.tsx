@@ -1,6 +1,7 @@
 import { useEffect, type ReactElement } from "react";
 import { Outlet } from "react-router";
 
+import { CommandPalette } from "@/components/CommandPalette";
 import { setUnauthenticatedHandler } from "@/lib/query/client";
 
 /**
@@ -32,6 +33,7 @@ function App(): ReactElement {
   return (
     <main className="bg-canvas text-fg min-h-screen">
       <Outlet />
+      <CommandPalette />
     </main>
   );
 }

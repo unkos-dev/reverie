@@ -945,3 +945,452 @@ async fn work_endpoint_child_without_shelf_returns_404_not_empty_array(pool: PgP
         .await;
     test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }
+
+// ─── 11b — list filters ──────────────────────────────────────────────────
+
+/// Insert a tag and link it to a manifestation via `manifestation_tags`.
+async fn tag_book(ingestion_pool: &PgPool, manifestation_id: Uuid, tag_name: &str) {
+    let tag_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO tags (name, tag_type) VALUES ($1, 'genre'::tag_type) \
+         ON CONFLICT (name, tag_type) DO UPDATE SET name = EXCLUDED.name \
+         RETURNING id",
+        tag_name,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert tag");
+    sqlx::query!(
+        "INSERT INTO manifestation_tags (manifestation_id, tag_id) \
+         VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        manifestation_id,
+        tag_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("insert manifestation_tags");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_by_author(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book_with_author(&ingestion_pool, "g", "Neuromancer", "Gibson, William").await;
+    insert_book_with_author(&ingestion_pool, "a", "Anathem", "Stephenson, Neal").await;
+
+    let author_id: Uuid =
+        sqlx::query_scalar!("SELECT id AS \"id!\" FROM authors WHERE name = 'Gibson, William'")
+            .fetch_one(&ingestion_pool)
+            .await
+            .expect("author id");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books?author={author_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1, "only Gibson's book should match");
+    assert_eq!(items[0]["title"], "Neuromancer");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_by_series(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_a, _m_a) = insert_book(&ingestion_pool, "a", "Vol 1").await;
+    let (work_b, _m_b) = insert_book(&ingestion_pool, "b", "Vol 2").await;
+    insert_book(&ingestion_pool, "c", "Standalone").await;
+
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Test Series', 'Test Series') RETURNING id"
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("series");
+    for (w, pos) in [(work_a, 1.0_f64), (work_b, 2.0)] {
+        sqlx::query!(
+            "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+            series_id,
+            w,
+            pos,
+        )
+        .execute(&ingestion_pool)
+        .await
+        .expect("series_works");
+    }
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books?series={series_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().expect("items");
+    assert_eq!(items.len(), 2, "only series volumes — not the standalone");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
+    // Cross-user shelf probe: caller queries another user's shelf id —
+    // the filter must yield zero rows, not leak shelf contents.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (other_id, _other_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "other-adult").await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "a", "Caller Book").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "b", "Other Book").await;
+
+    let my_shelf = test_support::db::create_shelf(&app_pool, admin_id, "mine").await;
+    let other_shelf = test_support::db::create_shelf(&app_pool, other_id, "theirs").await;
+    test_support::db::add_to_shelf(&app_pool, my_shelf, m1).await;
+    test_support::db::add_to_shelf(&app_pool, other_shelf, m2).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .get(&format!("/api/books?shelf={my_shelf}"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["title"], "Caller Book");
+
+    let r = server
+        .get(&format!("/api/books?shelf={other_shelf}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert!(
+        items.is_empty(),
+        "must not expose another user's shelf members"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_multi_tag_and_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "a", "Both Tags").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "b", "Scifi Only").await;
+    let (_w3, _m3) = insert_book(&ingestion_pool, "c", "Untagged").await;
+
+    tag_book(&ingestion_pool, m1, "scifi").await;
+    tag_book(&ingestion_pool, m1, "hugo").await;
+    tag_book(&ingestion_pool, m2, "scifi").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/books?tag=scifi&tag=hugo")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1, "AND-match — only the book with BOTH tags");
+    assert_eq!(items[0]["title"], "Both Tags");
+}
+
+// ─── 11b — search endpoint ───────────────────────────────────────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_returns_ranked_results(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "1", "The Hitchhiker Guide to the Galaxy").await;
+    insert_book(&ingestion_pool, "2", "Pride and Prejudice").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search?q=galaxy")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let body: serde_json::Value = r.json();
+    let items = body["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1, "only the matching title surfaces");
+    assert_eq!(items[0]["kind"], "book");
+    assert!(
+        items[0]["snippet"]
+            .as_str()
+            .is_some_and(|s| s.contains('‹'))
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_typo_tolerant_via_trigram(pool: PgPool) {
+    // "Hemingwy" (typo) should still find "Hemingway" via the trigram leg.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "h", "Hemingway").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search?q=Hemingwy")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1, "trigram leg recovers the typo");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_websearch_phrase_hits_phrase(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "wp", "War and Peace").await;
+    insert_book(&ingestion_pool, "ak", "Anna Karenina").await;
+    insert_book(&ingestion_pool, "rd", "Resurrection Detail").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search?q=%22war+and+peace%22")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert!(
+        items.iter().any(|i| i["title"] == "War and Peace"),
+        "phrase search hits War and Peace, got {items:?}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_websearch_exclude_operator(pool: PgPool) {
+    // `tolstoy -anna` — the tsquery leg honours `-anna`. The trigram
+    // leg compares raw similarity against the whole query string, so
+    // it does not honour token negation — the excluded row may still
+    // re-surface via trigram. The composite gate is therefore "the
+    // non-excluded match is present in the result set"; tightening to
+    // "the excluded match is absent" would require either dropping
+    // the trigram leg for queries containing `-tokens` (planner
+    // complexity) or post-filtering in Rust (defeats trigram
+    // robustness). Documented limitation; revisit in 11b follow-up if
+    // user research shows exclude is heavily used.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "wp", "Tolstoy War and Peace").await;
+    insert_book(&ingestion_pool, "ak", "Tolstoy Anna Karenina").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search?q=tolstoy+-anna")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    let titles: Vec<String> = items
+        .iter()
+        .map(|i| i["title"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert!(
+        titles.iter().any(|t| t.contains("War and Peace")),
+        "non-Anna Tolstoy must be in results: {titles:?}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_empty_query_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search?q=")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_missing_query_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_oversized_query_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let long_q = "a".repeat(201);
+    let r = server
+        .get(&format!("/api/search?q={long_q}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_sql_injection_probe_is_safe(pool: PgPool) {
+    // Bound parameter path absorbs a malformed query; schema survives.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "x", "Harmless Title").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let _ = server
+        .get("/api/search?q=%27%29%3B+DROP+TABLE+works%3B--")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+
+    let still_there: i64 = sqlx::query_scalar!("SELECT COUNT(*) AS \"c!\" FROM works")
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("works survives");
+    assert!(still_there > 0, "works table must survive the SQL probe");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_unauthenticated_returns_401(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server.get("/api/search?q=anything").await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_child_only_sees_shelved_titles(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (child_id, basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "kiddo").await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "k", "Kid Favourite Story").await;
+    insert_book(&ingestion_pool, "g", "Grown-Up Story").await;
+
+    let shelf = test_support::db::create_shelf(&app_pool, child_id, "kid-shelf").await;
+    test_support::db::add_to_shelf(&app_pool, shelf, m1).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/search?q=story")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1, "child sees only their shelved row");
+    assert_eq!(items[0]["title"], "Kid Favourite Story");
+}
+
+// ─── 11b — perf gate ─────────────────────────────────────────────────────
+
+/// Performance gate for `GET /api/search`: seed 10K rows, assert p50
+/// of 11 trials stays under 200 ms. `#[ignore]`d so default per-PR
+/// runs skip it; nightly CI lane runs `cargo test -- --ignored`.
+///
+/// Calibrated against the dev DB — treat as a regression alarm (planner
+/// changes, missing index) not a production SLO.
+#[sqlx::test(migrations = "./migrations")]
+#[ignore = "perf gate — run via `cargo test -- --ignored` (nightly CI)"]
+async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
+    use std::time::Instant;
+
+    const SEED_ROWS: usize = 10_000;
+    const P50_LIMIT_MS: u128 = 200;
+    const TRIALS: usize = 11;
+
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    for i in 0..SEED_ROWS {
+        let title = format!("Title{i} Book");
+        let work_id: Uuid = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+            title,
+        )
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("seed work");
+        let hash = format!("perf-search-hash-{i}");
+        let file_path = format!("/tmp/perf-search-{i}.epub");
+        sqlx::query!(
+            "INSERT INTO manifestations \
+                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'valid'::validation_status)",
+            work_id,
+            file_path,
+            hash,
+        )
+        .execute(&ingestion_pool)
+        .await
+        .expect("seed manifestation");
+    }
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let mut times_ms: Vec<u128> = Vec::with_capacity(TRIALS);
+    for i in 0..TRIALS {
+        let start = Instant::now();
+        let q = format!("title{i}");
+        let r = server
+            .get(&format!("/api/search?q={q}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        times_ms.push(start.elapsed().as_millis());
+        assert_eq!(r.status_code(), StatusCode::OK);
+    }
+    times_ms.sort_unstable();
+    let p50 = times_ms[TRIALS / 2];
+    assert!(
+        p50 < P50_LIMIT_MS,
+        "p50 {p50} ms over {P50_LIMIT_MS} ms gate (full set {times_ms:?})"
+    );
+}

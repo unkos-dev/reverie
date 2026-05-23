@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id AS \"id!\" FROM authors WHERE name = 'Gibson, William'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [false]
+  },
+  "hash": "3ee0aa5878495b24b82af356d46a26ab85d7892c19e8dd51e3080a284b8ddc2d"
+}

@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH\n            q AS (SELECT websearch_to_tsquery('english', $1) AS tsq),\n            ts_hits AS (\n                SELECT w.id, ts_rank_cd(w.search_vector, q.tsq, 32) AS rank\n                FROM works w, q\n                WHERE w.search_vector @@ q.tsq\n            ),\n            trgm_hits AS (\n                SELECT w.id, similarity(w.title, $1) * 0.5 AS rank\n                FROM works w\n                WHERE w.title % $1\n                  AND similarity(w.title, $1) > $4\n            ),\n            merged AS (\n                SELECT id, MAX(rank) AS rank, BOOL_OR(src = 'ts') AS has_ts\n                FROM (\n                    SELECT id, rank, 'ts'::text AS src FROM ts_hits\n                    UNION ALL\n                    SELECT id, rank, 'trgm'::text AS src FROM trgm_hits\n                ) u\n                GROUP BY id\n            )\n        SELECT m.id                AS \"m_id!\",\n               m.work_id           AS \"work_id!\",\n               w.title             AS \"title!\",\n               merged.rank::float8 AS \"rank!\",\n               merged.has_ts       AS \"has_ts!\",\n               CASE\n                   WHEN merged.has_ts THEN\n                       ts_headline(\n                           'english',\n                           COALESCE(w.title, '') || ' ' || COALESCE(w.description, ''),\n                           (SELECT tsq FROM q),\n                           $3\n                       )\n                   ELSE NULL\n               END AS snippet\n          FROM merged\n          JOIN works w           ON w.id = merged.id\n          JOIN manifestations m  ON m.work_id = w.id\n         ORDER BY merged.rank DESC, m.id ASC\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "m_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "work_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "rank!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "has_ts!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "snippet",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": ["Text", "Int8", "Text", "Float4"]
+    },
+    "nullable": [false, false, false, null, null, null]
+  },
+  "hash": "6b9a8567b4d5c27aaee42918ed55164d12e4c0ca92317fb41c3793e724f9e7fc"
+}
