@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id   AS \"id!\", s.name AS \"name!\", sw.position AS \"position: f64\" FROM series_works sw JOIN series s ON s.id = sw.series_id WHERE sw.work_id = $1 ORDER BY sw.position ASC NULLS LAST, s.id ASC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "position: f64",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [false, false, true]
+  },
+  "hash": "3c097e4080b885d66756bf47c7adafa9236bc8a4c1318fcec690d0fbe19d4333"
+}

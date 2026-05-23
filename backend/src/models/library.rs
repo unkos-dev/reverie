@@ -82,10 +82,6 @@ pub struct BookListRow {
 /// in the book-detail UI.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
-#[allow(
-    dead_code,
-    reason = "consumed by the GET /api/books/{id} handler in the 11a-A.4 slice"
-)]
 pub struct BookDetail {
     /// `manifestations.id`.
     pub id: Uuid,
@@ -127,14 +123,15 @@ pub struct BookDetail {
 /// Counts surfaced on the book-detail Versions tab.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
-#[allow(
-    dead_code,
-    reason = "consumed alongside BookDetail in the 11a-A.4 slice"
-)]
 pub struct MetadataVersionSummary {
-    /// Number of pending (non-accepted, non-rejected) versions.
+    /// Number of `metadata_versions` rows with `status = 'pending'`
+    /// for this manifestation — i.e. unresolved drafts in the journal.
     pub pending: u32,
-    /// Number of versions accepted into the canonical pointer set.
+    /// Number of fields whose canonical pointer is currently set on
+    /// this manifestation or its work — one entry per non-NULL
+    /// `*_version_id` slot. Each slot binds a single
+    /// `metadata_versions` row, so this also counts distinct
+    /// "accepted" versions in play.
     pub accepted: u32,
 }
 
@@ -142,10 +139,6 @@ pub struct MetadataVersionSummary {
 /// can see for a given work, grouped under the work-level prose.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
-#[allow(
-    dead_code,
-    reason = "consumed by the GET /api/works/{id} handler in the 11a-A.4 slice"
-)]
 pub struct WorkDetail {
     /// `works.id`.
     pub id: Uuid,
@@ -166,10 +159,6 @@ pub struct WorkDetail {
 /// One manifestation row embedded in a [`WorkDetail`] response.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
-#[allow(
-    dead_code,
-    reason = "consumed alongside WorkDetail in the 11a-A.4 slice"
-)]
 pub struct WorkManifestation {
     /// `manifestations.id`.
     pub id: Uuid,

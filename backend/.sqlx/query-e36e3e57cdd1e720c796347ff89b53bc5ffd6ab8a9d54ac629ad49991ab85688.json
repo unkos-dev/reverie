@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, status, confidence_score) VALUES ($1, 'opf', 'title', '\"Detailed Tome\"'::jsonb, '\\x01'::bytea, 'title', 'pending'::metadata_review_status, 0.9) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [false]
+  },
+  "hash": "e36e3e57cdd1e720c796347ff89b53bc5ffd6ab8a9d54ac629ad49991ab85688"
+}

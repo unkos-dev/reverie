@@ -23,7 +23,7 @@
 //!   another (see [`crate::routes::cursor::CursorKey::parse_for`]).
 
 use axum::Router;
-use axum::extract::{OriginalUri, State};
+use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
 use axum::response::IntoResponse;
 use axum::routing::get;
@@ -38,16 +38,21 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::ingestion_status::IngestionStatus;
-use crate::models::library::{BookListRow, SeriesRef};
+use crate::models::library::{
+    BookDetail, BookListRow, MetadataVersionSummary, SeriesRef, WorkDetail, WorkManifestation,
+};
 use crate::routes::cursor::{CursorKey, SortMode};
 use crate::state::AppState;
 
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/books*` router.
+/// Build the `/api/books*` and `/api/works/{id}` router.
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/books", get(list))
+    Router::new()
+        .route("/api/books", get(list))
+        .route("/api/books/{id}", get(detail))
+        .route("/api/works/{id}", get(work_detail))
 }
 
 /// `?cursor=` / `?sort=` query parameters for `GET /api/books`.
@@ -446,4 +451,393 @@ async fn load_authors_for_works(
         out.entry(r.work_id).or_default().push(r.name);
     }
     Ok(out)
+}
+
+/// `GET /api/books/{id}` — single-manifestation detail with the
+/// work-level prose, tags, and a metadata-version summary used by the
+/// book-detail Versions tab.
+///
+/// RLS hides manifestations the current user cannot see; the handler
+/// reports those as 404 rather than 403 so existence is not leaked.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the manifestation is missing or
+///   RLS-hidden.
+/// - [`AppError::Internal`] on database errors.
+async fn detail(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<axum::Json<BookDetail>, AppError> {
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let row = fetch_detail_row(&mut tx, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let work_id = row.work_id;
+    let authors = load_authors_for_works(&mut tx, &[work_id])
+        .await?
+        .remove(&work_id)
+        .unwrap_or_default();
+    let tags = load_manifestation_tags(&mut tx, id).await?;
+    let canonical_ids = canonical_pointer_ids(&row);
+    let pending = count_pending_versions(&mut tx, id, &canonical_ids).await?;
+    let accepted_count = accepted_pointer_count(&row);
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let series = match (row.series_id, row.series_name) {
+        (Some(sid), Some(name)) => Some(SeriesRef {
+            id: sid,
+            name,
+            position: row.series_position,
+        }),
+        _ => None,
+    };
+
+    Ok(axum::Json(BookDetail {
+        id: row.id,
+        work_id,
+        title: row.title,
+        authors,
+        series,
+        description: row.description,
+        language: row.language,
+        isbn_13: row.isbn_13,
+        isbn_10: row.isbn_10,
+        cover_url: format!("/api/books/{}/cover/thumb", row.id),
+        tags,
+        ingestion_status: parse_ingestion(&row.ingestion_status)?,
+        validation_status: row.validation_status,
+        enrichment_status: parse_enrichment(&row.enrichment_status)?,
+        metadata_version_summary: MetadataVersionSummary {
+            pending,
+            accepted: accepted_count,
+        },
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }))
+}
+
+/// Row shape decoded from the [`fetch_detail_row`] query — every
+/// column the detail handler needs in one round-trip, including the
+/// canonical pointer slots so [`accepted_pointer_count`] is a memory
+/// op rather than a follow-up query.
+struct DetailRow {
+    id: Uuid,
+    work_id: Uuid,
+    title: String,
+    description: Option<String>,
+    language: Option<String>,
+    isbn_13: Option<String>,
+    isbn_10: Option<String>,
+    created_at: OffsetDateTime,
+    updated_at: OffsetDateTime,
+    ingestion_status: String,
+    validation_status: String,
+    enrichment_status: String,
+    w_title_v: Option<Uuid>,
+    w_desc_v: Option<Uuid>,
+    w_lang_v: Option<Uuid>,
+    m_publisher_v: Option<Uuid>,
+    m_pubdate_v: Option<Uuid>,
+    m_isbn10_v: Option<Uuid>,
+    m_isbn13_v: Option<Uuid>,
+    m_cover_v: Option<Uuid>,
+    series_id: Option<Uuid>,
+    series_name: Option<String>,
+    series_position: Option<f64>,
+}
+
+/// Single-row fetch for [`detail`]. Joins the work for prose +
+/// canonical pointers; RLS on `manifestations` makes the query return
+/// `None` when the user cannot see the row, which the caller then
+/// flips to [`AppError::NotFound`] (existence-not-leaked).
+async fn fetch_detail_row(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    id: Uuid,
+) -> Result<Option<DetailRow>, AppError> {
+    // Single `LEFT JOIN LATERAL` pulls all three series columns from
+    // the same row, so a future tiebreaker tweak can never let
+    // `series_name` and `series_position` drift onto different
+    // `series_works` rows. Mirrors the list handler's series pattern.
+    let row = sqlx::query!(
+        r#"
+        SELECT m.id                   AS "id!",
+               m.work_id              AS "work_id!",
+               w.title                AS "title!",
+               w.description          AS description,
+               w.language             AS language,
+               m.isbn_13              AS isbn_13,
+               m.isbn_10              AS isbn_10,
+               m.created_at           AS "created_at!",
+               m.updated_at           AS "updated_at!",
+               m.ingestion_status::text  AS "ingestion_status!",
+               m.validation_status::text AS "validation_status!",
+               m.enrichment_status::text AS "enrichment_status!",
+               w.title_version_id        AS w_title_v,
+               w.description_version_id  AS w_desc_v,
+               w.language_version_id     AS w_lang_v,
+               m.publisher_version_id    AS m_publisher_v,
+               m.pub_date_version_id     AS m_pubdate_v,
+               m.isbn_10_version_id      AS m_isbn10_v,
+               m.isbn_13_version_id      AS m_isbn13_v,
+               m.cover_version_id        AS m_cover_v,
+               series_one.series_id      AS "series_id?",
+               series_one.series_name    AS "series_name?",
+               series_one.series_position AS "series_position?: f64"
+          FROM manifestations m
+          JOIN works w ON w.id = m.work_id
+          LEFT JOIN LATERAL (
+              SELECT s.id    AS series_id,
+                     s.name  AS series_name,
+                     sw.position AS series_position
+              FROM series_works sw
+              JOIN series s ON s.id = sw.series_id
+              WHERE sw.work_id = w.id
+              ORDER BY sw.position ASC NULLS LAST, s.id ASC
+              LIMIT 1
+          ) series_one ON TRUE
+         WHERE m.id = $1
+        "#,
+        id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(row.map(|r| DetailRow {
+        id: r.id,
+        work_id: r.work_id,
+        title: r.title,
+        description: r.description,
+        language: r.language,
+        isbn_13: r.isbn_13,
+        isbn_10: r.isbn_10,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        ingestion_status: r.ingestion_status,
+        validation_status: r.validation_status,
+        enrichment_status: r.enrichment_status,
+        w_title_v: r.w_title_v,
+        w_desc_v: r.w_desc_v,
+        w_lang_v: r.w_lang_v,
+        m_publisher_v: r.m_publisher_v,
+        m_pubdate_v: r.m_pubdate_v,
+        m_isbn10_v: r.m_isbn10_v,
+        m_isbn13_v: r.m_isbn13_v,
+        m_cover_v: r.m_cover_v,
+        series_id: r.series_id,
+        series_name: r.series_name,
+        series_position: r.series_position,
+    }))
+}
+
+async fn load_manifestation_tags(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<Vec<String>, AppError> {
+    sqlx::query_scalar!(
+        "SELECT t.name FROM manifestation_tags mt \
+         JOIN tags t ON t.id = mt.tag_id \
+         WHERE mt.manifestation_id = $1 \
+         ORDER BY t.name ASC",
+        manifestation_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))
+}
+
+/// Count `metadata_versions` rows with `status = 'pending'` for the
+/// given manifestation, excluding any row that is already the
+/// canonical pointer for some field on the manifestation or its work.
+///
+/// The enum was simplified to `pending|rejected` in
+/// `20260417000001_add_enrichment_pipeline` — promotion lives on the
+/// canonical pointer columns, NOT on a `status = 'accepted'` value, so
+/// a promoted row keeps `status = 'pending'`. Without the exclusion
+/// filter the Versions-tab summary would double-count every promoted
+/// version as both `pending` and `accepted`.
+async fn count_pending_versions(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    canonical_ids: &[Uuid],
+) -> Result<u32, AppError> {
+    let n = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM metadata_versions \
+         WHERE manifestation_id = $1 \
+           AND status = 'pending'::metadata_review_status \
+           AND NOT (id = ANY($2::uuid[]))",
+        manifestation_id,
+        canonical_ids,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .unwrap_or(0);
+    Ok(u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+/// Collect the non-NULL canonical pointer ids on the given detail row
+/// — the set the pending-count query excludes and `accepted_pointer_count`
+/// derives its count from.
+fn canonical_pointer_ids(row: &DetailRow) -> Vec<Uuid> {
+    [
+        row.w_title_v,
+        row.w_desc_v,
+        row.w_lang_v,
+        row.m_publisher_v,
+        row.m_pubdate_v,
+        row.m_isbn10_v,
+        row.m_isbn13_v,
+        row.m_cover_v,
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// "Accepted" = canonical pointer slots currently filled for this
+/// manifestation + its work. Each non-NULL pointer represents one
+/// field whose canonical value has been promoted out of the version
+/// journal.
+fn accepted_pointer_count(row: &DetailRow) -> u32 {
+    let filled = [
+        row.w_title_v.is_some(),
+        row.w_desc_v.is_some(),
+        row.w_lang_v.is_some(),
+        row.m_publisher_v.is_some(),
+        row.m_pubdate_v.is_some(),
+        row.m_isbn10_v.is_some(),
+        row.m_isbn13_v.is_some(),
+        row.m_cover_v.is_some(),
+    ]
+    .into_iter()
+    .filter(|b| *b)
+    .count();
+    u32::try_from(filled).unwrap_or(u32::MAX)
+}
+
+/// `GET /api/works/{id}` — work-level prose with every manifestation
+/// of that work the current user can see.
+///
+/// `works` carries no RLS policy on its own; RLS lives on
+/// `manifestations`. The handler fetches the manifestations first
+/// under the RLS transaction and treats an empty result as 404 — the
+/// same row set drives both visibility gating and the response body,
+/// so an interleaved shelf-revoke or manifestation-delete between
+/// statements (`PostgreSQL` `READ COMMITTED` per-statement snapshots)
+/// cannot leave the existence-not-leaked invariant in an "EXISTS=true,
+/// rows=[]" half-state. Without this, the handler could return 200
+/// with `manifestations: []`, leaking the existence of the work row.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the work is missing or every
+///   manifestation is RLS-hidden (or the work row was deleted between
+///   the manifestations fetch and the work fetch).
+/// - [`AppError::Internal`] on database errors.
+async fn work_detail(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<axum::Json<WorkDetail>, AppError> {
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let manifestation_rows = sqlx::query!(
+        r#"
+        SELECT id          AS "id!",
+               isbn_10,
+               isbn_13,
+               created_at  AS "created_at!",
+               ingestion_status::text  AS "ingestion_status!",
+               validation_status::text AS "validation_status!",
+               enrichment_status::text AS "enrichment_status!"
+          FROM manifestations
+         WHERE work_id = $1
+         ORDER BY created_at ASC, id ASC
+        "#,
+        id,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    if manifestation_rows.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    let work = sqlx::query!(
+        "SELECT id   AS \"id!\", \
+                title AS \"title!\", \
+                description, \
+                language \
+         FROM works WHERE id = $1",
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::NotFound)?;
+
+    let series_row = sqlx::query!(
+        "SELECT s.id   AS \"id!\", \
+                s.name AS \"name!\", \
+                sw.position AS \"position: f64\" \
+         FROM series_works sw \
+         JOIN series s ON s.id = sw.series_id \
+         WHERE sw.work_id = $1 \
+         ORDER BY sw.position ASC NULLS LAST, s.id ASC \
+         LIMIT 1",
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    let authors = load_authors_for_works(&mut tx, &[id])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let mut manifestations: Vec<WorkManifestation> = Vec::with_capacity(manifestation_rows.len());
+    for r in manifestation_rows {
+        manifestations.push(WorkManifestation {
+            id: r.id,
+            isbn_13: r.isbn_13,
+            isbn_10: r.isbn_10,
+            cover_url: format!("/api/books/{}/cover/thumb", r.id),
+            ingestion_status: parse_ingestion(&r.ingestion_status)?,
+            validation_status: r.validation_status,
+            enrichment_status: parse_enrichment(&r.enrichment_status)?,
+            created_at: r.created_at,
+        });
+    }
+
+    let series = series_row.map(|s| SeriesRef {
+        id: s.id,
+        name: s.name,
+        position: s.position,
+    });
+
+    Ok(axum::Json(WorkDetail {
+        id: work.id,
+        title: work.title,
+        authors,
+        description: work.description,
+        language: work.language,
+        series,
+        manifestations,
+    }))
 }

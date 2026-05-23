@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO works (title, sort_title, description, language) VALUES ('Compendium', 'Compendium', 'A long prose summary.', 'en') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [false]
+  },
+  "hash": "0341895ae35402a1a04c1c6d2d87300cb9f4532139081038135ed55be10a766c"
+}
