@@ -52,6 +52,7 @@ use axum::response::{IntoResponse, Response};
 /// explicit at the call site rather than buried inside an `anyhow`
 /// chain.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AppError {
     /// Resource not found. RFC 7807 `type` slug
     /// [`problems::NOT_FOUND`]. HTTP 404. Also the mapping RLS-hidden

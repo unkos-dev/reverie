@@ -1,14 +1,14 @@
 //! Request-path capture for the RFC 7807 `instance` field.
 //!
-//! [`crate::error::AppError::into_response`] is a value-level
-//! conversion with no access to the originating HTTP request. RFC
-//! 7807 §3.1 recommends a problem document carry an `instance` field
-//! identifying the specific occurrence — for our API, the request
-//! path is the natural choice. We bridge the gap with a tokio
-//! task-local: the [`problem_instance_layer`] middleware stores the
-//! request path into the task-local before `next.run()`, and
-//! [`current_request_uri`] reads it back from inside
-//! `into_response`.
+//! The `IntoResponse` impl on [`crate::error::AppError`] is a
+//! value-level conversion with no access to the originating HTTP
+//! request. RFC 7807 §3.1 recommends a problem document carry an
+//! `instance` field identifying the specific occurrence — for our
+//! API, the request path is the natural choice. We bridge the gap
+//! with a tokio task-local: the [`problem_instance_layer`]
+//! middleware stores the request path into the task-local before
+//! `next.run()`, and [`current_request_uri`] reads it back from
+//! inside the `IntoResponse` impl.
 //!
 //! Outside an HTTP request (unit-tests calling `.into_response()`
 //! directly, background tasks) the task-local is unset and
@@ -28,8 +28,9 @@ tokio::task_local! {
 /// for [`current_request_uri`] to read.
 ///
 /// Mount on the outermost API-bearing router so every response that
-/// reaches [`crate::error::AppError::into_response`] can carry an
-/// `instance` field. Cost: one `String` clone per request.
+/// flows through the [`crate::error::AppError`] `IntoResponse` impl
+/// can carry an `instance` field. Cost: one `String` clone per
+/// request.
 pub async fn problem_instance_layer(req: Request, next: Next) -> Response {
     let path = req.uri().path().to_owned();
     CURRENT_URI.scope(path, next.run(req)).await

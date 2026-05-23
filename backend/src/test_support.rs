@@ -159,7 +159,15 @@ pub fn test_server() -> TestServer {
 /// );
 /// assert_eq!(problem["title"], "Not Found");
 /// ```
-#[allow(dead_code)] // first consumers land in 11a Phase B (endpoint tests).
+///
+/// # Panics
+///
+/// Panics when the response does not match the expected RFC 7807
+/// contract: HTTP status differs from `status`; Content-Type missing
+/// or not `application/problem+json`; body fails to parse as JSON;
+/// required fields (`type`, `title`, `status`, `detail`) absent; or
+/// `type` URI does not end in `/{type_slug}`. Intended for test code
+/// only — the panic shape is the assertion-failure surface.
 pub fn assert_problem(
     response: &axum_test::TestResponse,
     type_slug: &str,

@@ -158,17 +158,28 @@ pub async fn composite_fallback(State(state): State<AppState>, uri: Uri) -> Resp
     }
 }
 
-/// 404 RFC 7807 Problem Details + API CSP. Delegates body construction
-/// to [`crate::error::AppError::NotFound`] so the fallback shape stays
-/// in lockstep with handler-emitted 404s (same `type` URI, same
-/// `title`, same Content-Type `application/problem+json`).
+/// 404 RFC 7807 Problem Details + API CSP for reserved-prefix
+/// fallback paths (`/api`, `/auth`, `/health`, `/opds`).
 ///
-/// The `instance` field is populated when the
-/// [`crate::error::instance::problem_instance_layer`] middleware is
-/// active on the request (production wiring in `lib.rs`); when the
-/// task-local is unset (some test paths), `instance` is omitted per
-/// RFC 7807 §3.1.
+/// Threat: reserved-prefix typos must stay on the API problem-details
+/// contract and API CSP. A drift into the SPA fallback would serve
+/// `index.html` with HTML CSP on an `/api/*` URL, downgrading the
+/// response-class differentiation that motivates having two CSP
+/// policies. See `adr/2026-05-22-json-api-conventions.md` for the
+/// fallback contract.
+///
+/// Delegates body construction to [`crate::error::AppError::NotFound`]
+/// so the fallback shape stays in lockstep with handler-emitted 404s
+/// (same `type` URI, same `title`, same Content-Type
+/// `application/problem+json`). The `instance` field is populated
+/// when the [`crate::error::instance::problem_instance_layer`]
+/// middleware is active on the request (production wiring in
+/// `lib.rs`); when the task-local is unset (some test paths),
+/// `instance` is omitted per RFC 7807 §3.1.
 pub fn api_404_with_csp(state: &AppState) -> Response {
+    // THREAT: reserved-prefix fallback responses must carry both the
+    // RFC 7807 body shape AND the API CSP; either drift weakens the
+    // route-class boundary `composite_fallback` enforces.
     let mut resp = crate::error::AppError::NotFound.into_response();
     attach_api_csp(&mut resp, state);
     resp
@@ -391,24 +402,17 @@ mod tests {
         ));
         let server = test_server_with_security(security);
         let r = server.get("/api/__nope__").await;
-        r.assert_status(axum::http::StatusCode::NOT_FOUND);
-        let ct = r
-            .headers()
-            .get(axum::http::header::CONTENT_TYPE)
-            .expect("Content-Type set")
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert!(
-            ct.contains("application/problem+json"),
-            "expected problem+json content-type, got: {ct}",
+        let body = crate::test_support::assert_problem(
+            &r,
+            crate::error::problems::NOT_FOUND,
+            axum::http::StatusCode::NOT_FOUND,
         );
-        let body = r.text();
-        assert!(
-            body.contains("/probs/not-found"),
-            "expected RFC 7807 not-found type URI, got: {body}",
-        );
-        assert!(body.contains("Not Found"));
+        assert_eq!(body["title"].as_str(), Some("Not Found"));
+        // `instance` field proves the problem_instance_layer fires on
+        // composite-fallback responses too (not only matched routes).
+        // A layer-order regression that drops it from the fallback path
+        // breaks this assertion.
+        assert_eq!(body["instance"].as_str(), Some("/api/__nope__"));
         let csp = r
             .headers()
             .get("content-security-policy")
@@ -448,8 +452,12 @@ mod tests {
             ..crate::test_support::test_config().security
         });
         let r = server.get("/auth/__nope__").await;
-        r.assert_status(axum::http::StatusCode::NOT_FOUND);
-        assert!(r.text().contains("Not Found"));
+        let body = crate::test_support::assert_problem(
+            &r,
+            crate::error::problems::NOT_FOUND,
+            axum::http::StatusCode::NOT_FOUND,
+        );
+        assert_eq!(body["instance"].as_str(), Some("/auth/__nope__"));
     }
 
     #[tokio::test]

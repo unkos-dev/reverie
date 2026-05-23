@@ -111,13 +111,19 @@ React-compat with the existing `serde 1.0.228` pin. v2 is
 end-of-life.
 
 Note on `serde_with` surface area: the crate is large (it
-contains many helpers we will not use). We do NOT enable the
-default features list; the import line `serde_with = "3"` picks
-up the default `serde` feature only, which covers the
-`double_option` helper. No `features = [...]` line is needed at
-adoption time. If a future feature is needed (e.g. `chrono` /
-`time` integrations) it is added at that point with an updated
-ADR or per-PR justification.
+contains many helpers we will not use). The default feature set
+is `["std", "macros"]`; `macros` pulls in the `serde_with_macros`
+proc-macro crate, which `double_option` does not require. The
+correct entry for 11c is therefore:
+
+```toml
+serde_with = { version = "3", default-features = false, features = ["std"] }
+```
+
+This drops the proc-macro compile-time cost while keeping the
+helper accessible. If a future use needs `serde_with_macros`
+(e.g. the `#[serde_as]` attribute), add `"macros"` back with an
+updated ADR or per-PR justification.
 
 ### `subtle` — first non-test consumer documented (no Cargo.toml change)
 
@@ -241,7 +247,10 @@ is the path of least resistance.
 
 **Sub-phase 11c (separate PR)** — `serde_with` adoption.
 
-- ADD `serde_with = "3"` to `backend/Cargo.toml` `[dependencies]`.
+- ADD
+  `serde_with = { version = "3", default-features = false, features = ["std"] }`
+  to `backend/Cargo.toml` `[dependencies]`. Omits the default
+  `macros` feature; `double_option` does not require it.
 - First consumer:
   `backend/src/routes/manifestations.rs::update_metadata`
   (PATCH handler with RFC 7396 Merge Patch decode).
@@ -255,8 +264,9 @@ is the path of least resistance.
       `features = ["cookie", "query"]` at version `0.12.6`. No
       duplicate entry.
 - [ ] On 11c adoption: `backend/Cargo.toml` includes
-      `serde_with = "3"` in `[dependencies]`. No `features =
-[...]` line at adoption time.
+      `serde_with = { version = "3", default-features = false, features = ["std"] }`
+      in `[dependencies]`. `macros` deliberately omitted (not
+      needed by `double_option`).
 - [ ] `backend/src/security/csrf.rs` imports
       `subtle::ConstantTimeEq` and uses it for the
       `X-CSRF-Token` compare; tested against
