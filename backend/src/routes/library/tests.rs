@@ -8,11 +8,68 @@
 )]
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
+use axum_test::TestServer;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::problems;
 use crate::test_support;
+
+/// Build a real-pool test server with a custom OPDS `page_size`.
+/// Mirrors [`test_support::db::server_with_real_pools`] but overrides
+/// the page-size knob so pagination-overflow tests can drive small
+/// pages without inserting a hundred fixture rows.
+fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: u32) -> TestServer {
+    use crate::auth::backend::AuthBackend;
+    use crate::config::OpdsConfig;
+    use crate::state::AppState;
+
+    let mut config = test_support::test_config();
+    config.opds = OpdsConfig {
+        enabled: false,
+        page_size,
+        realm: "Reverie OPDS".into(),
+        public_url: Some(url::Url::parse("http://localhost:3000").unwrap()),
+    };
+    let state = AppState {
+        pool: app_pool.clone(),
+        ingestion_pool: ingestion_pool.clone(),
+        config,
+        oidc_client: test_support::test_oidc_client(),
+    };
+    let auth_backend = AuthBackend {
+        pool: app_pool.clone(),
+    };
+    TestServer::new(crate::build_router(state, auth_backend))
+}
+
+/// Insert a work + matching author (returns the manifestation id) so
+/// `sort=author` tests have a non-NULL first-author boundary to
+/// pivot on. Authors get `sort_name = name` for predictable ordering.
+async fn insert_book_with_author(
+    ingestion_pool: &PgPool,
+    marker: &str,
+    title: &str,
+    author_name: &str,
+) -> Uuid {
+    let (work_id, m_id) = insert_book(ingestion_pool, marker, title).await;
+    let author_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO authors (name, sort_name) VALUES ($1, $1) RETURNING id",
+        author_name,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert author");
+    sqlx::query!(
+        "INSERT INTO work_authors (work_id, author_id, position) VALUES ($1, $2, 0)",
+        work_id,
+        author_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("insert work_authors");
+    m_id
+}
 
 /// Insert a `(work, manifestation)` pair via the ingestion pool and
 /// return `(work_id, manifestation_id)`.
@@ -283,5 +340,160 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
             .as_str()
             .unwrap()
             .contains("cursor sort mismatch")
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_sort_author_orders_by_first_author(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Mix of authored works + one stub (no author) — verifies the
+    // NULLS LAST projection and the non-NULL ordering on the same
+    // page.
+    insert_book_with_author(&ingestion_pool, "g", "Neuromancer", "Gibson, William").await;
+    insert_book_with_author(&ingestion_pool, "a", "Anathem", "Stephenson, Neal").await;
+    insert_book_with_author(&ingestion_pool, "p", "Persuasion", "Austen, Jane").await;
+    insert_book(&ingestion_pool, "stub", "Unattributed Stub").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/books?sort=author")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let titles: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|it| it["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        titles,
+        vec![
+            "Persuasion",        // Austen, Jane
+            "Neuromancer",       // Gibson, William
+            "Anathem",           // Stephenson, Neal
+            "Unattributed Stub"  // NULLS LAST
+        ]
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_sort_author_pagination_walk_across_null_boundary(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Two non-NULL + four NULL-author works. With page_size = 2 the
+    // page boundary lands inside the NULL bucket. Naive `(NULL, _) >
+    // ('', _)` predicate would drop NULL-bucket rows from page 2;
+    // regression guard for adversarial-review finding C1.
+    insert_book_with_author(&ingestion_pool, "g", "Neuromancer", "Gibson, William").await;
+    insert_book_with_author(&ingestion_pool, "a", "Anathem", "Stephenson, Neal").await;
+    for (m, t) in [
+        ("stub-1", "Stub Alpha"),
+        ("stub-2", "Stub Bravo"),
+        ("stub-3", "Stub Charlie"),
+        ("stub-4", "Stub Delta"),
+    ] {
+        insert_book(&ingestion_pool, m, t).await;
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+
+    let mut seen: Vec<String> = Vec::new();
+    let mut url = "/api/books?sort=author".to_string();
+    let mut walked = 0u32;
+    loop {
+        let response = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "page {walked} at {url}"
+        );
+        let body: serde_json::Value = response.json();
+        for item in body["items"].as_array().unwrap() {
+            seen.push(item["title"].as_str().unwrap().to_owned());
+        }
+        walked += 1;
+        assert!(walked < 10, "runaway pagination: seen = {seen:?}");
+        match body["next_cursor"].as_str() {
+            Some(nc) => {
+                url = format!("/api/books?sort=author&cursor={nc}");
+            }
+            None => break,
+        }
+    }
+
+    // First two: non-NULL authors ordered by sort_name ASC.
+    assert_eq!(&seen[..2], &["Neuromancer", "Anathem"]);
+    // Tail (4 NULL-author stubs) ordered by w.id ASC (gen_random_uuid
+    // produces unpredictable order — assert by set, not sequence).
+    let tail: std::collections::HashSet<&str> = seen[2..].iter().map(String::as_str).collect();
+    let expected_tail: std::collections::HashSet<&str> =
+        ["Stub Alpha", "Stub Bravo", "Stub Charlie", "Stub Delta"]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        tail, expected_tail,
+        "every NULL-bucket row must surface across the cursor walk — regression guard against C1 \
+         (NULL boundary truncation under naive tuple comparison)"
+    );
+    assert_eq!(seen.len(), 6, "no duplicates across the walk");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_pagination_walk_emits_link_and_flips_to_null(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // page_size = 2, three rows → page 1 carries Link rel=next +
+    // body next_cursor; page 2 carries the third row alone, no Link
+    // header, next_cursor flipped to null.
+    insert_book(&ingestion_pool, "p1", "Page One Alpha").await;
+    insert_book(&ingestion_pool, "p2", "Page One Bravo").await;
+    insert_book(&ingestion_pool, "p3", "Page Two Charlie").await;
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+
+    let response = server
+        .get("/api/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let link = response
+        .headers()
+        .get(axum::http::header::LINK)
+        .expect("RFC 8288 Link header on overflow page")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(link.contains(r#"rel="next""#), "Link header: {link}");
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+    let nc = body["next_cursor"]
+        .as_str()
+        .expect("next_cursor present on overflow")
+        .to_owned();
+    let next_url = format!("/api/books?cursor={nc}");
+
+    let response = server.get(&next_url).add_header(AUTHORIZATION, basic).await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert!(
+        body["next_cursor"].is_null(),
+        "final page next_cursor must be null, got {body}"
+    );
+    assert!(
+        response.headers().get(axum::http::header::LINK).is_none(),
+        "final page must not carry a Link rel=next header"
     );
 }

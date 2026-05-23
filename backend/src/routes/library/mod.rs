@@ -264,17 +264,56 @@ fn push_cursor_predicate(
             qb.push_bind(*id);
             qb.push(")");
         }
-        (SortMode::Author, CursorKey::Author { sort_name, id }) => {
-            qb.push(
-                " AND ((SELECT a.sort_name FROM work_authors wa \
-                       JOIN authors a ON a.id = wa.author_id \
-                       WHERE wa.work_id = w.id \
-                       ORDER BY wa.position ASC LIMIT 1), w.id) > (",
-            );
+        (
+            SortMode::Author,
+            CursorKey::Author {
+                sort_name: Some(sort_name),
+                id,
+            },
+        ) => {
+            // ORDER BY first_author_sort_name ASC NULLS LAST means the
+            // NULL-author bucket sits at the tail. Cursor was minted
+            // off a non-NULL boundary row, so the next page must
+            // emit: rows whose sort_name compares strictly after
+            // (sort_name, id) in lexicographic ASC order, PLUS the
+            // entire trailing NULL bucket. Postgres three-valued
+            // logic would silently drop the NULL bucket from a naive
+            // tuple `>` comparison.
+            let author_sub = "(SELECT a.sort_name FROM work_authors wa \
+                  JOIN authors a ON a.id = wa.author_id \
+                  WHERE wa.work_id = w.id \
+                  ORDER BY wa.position ASC LIMIT 1)";
+            qb.push(" AND (");
+            qb.push(author_sub);
+            qb.push(" > ");
             qb.push_bind(sort_name.clone());
-            qb.push(", ");
+            qb.push(" OR (");
+            qb.push(author_sub);
+            qb.push(" = ");
+            qb.push_bind(sort_name.clone());
+            qb.push(" AND w.id > ");
             qb.push_bind(*id);
-            qb.push(")");
+            qb.push(") OR ");
+            qb.push(author_sub);
+            qb.push(" IS NULL)");
+        }
+        (
+            SortMode::Author,
+            CursorKey::Author {
+                sort_name: None,
+                id,
+            },
+        ) => {
+            // Cursor pointed at a NULL-author boundary row; remaining
+            // page is the rest of the NULL bucket ordered by w.id.
+            qb.push(
+                " AND (SELECT a.sort_name FROM work_authors wa \
+                  JOIN authors a ON a.id = wa.author_id \
+                  WHERE wa.work_id = w.id \
+                  ORDER BY wa.position ASC LIMIT 1) IS NULL \
+                  AND w.id > ",
+            );
+            qb.push_bind(*id);
         }
         // `parse_for` already rejected cross-sort cursors; this arm is
         // unreachable but kept exhaustive to satisfy the compiler.
@@ -321,8 +360,7 @@ fn next_cursor_for_row(row: &sqlx::postgres::PgRow, sort: SortMode) -> CursorKey
             sort_name: row
                 .try_get::<Option<String>, _>("first_author_sort_name")
                 .ok()
-                .flatten()
-                .unwrap_or_default(),
+                .flatten(),
             id: row.get::<Uuid, _>("work_id"),
         },
     }

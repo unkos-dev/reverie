@@ -122,6 +122,7 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [`validation_status` ships as raw String, not a typed enum](2026-05-23-validation-status-untyped.md) — adopted because DB enum and frontend contract vocabularies disagree; lifts on UNK-276 reconciliation PR
 - [tower-sessions pinned to 0.14 (axum-login peer pin)](2026-05-21-tower-sessions-0-14-pin.md) — adopted because axum-login 0.18.0 peer-pins tower-sessions 0.14; lifts on axum-login release > 0.18.0 (UNK-101)
 - [Staging compose has no automated CI smoke test](2026-05-08-staging-compose-no-ci-smoke.md) — adopted because CI smoke for `compose.staging.yml` is real eng work; lifts on UNK-185
 - [MemoryStore for production sessions](2026-05-05-memory-store-sessions.md) — adopted because PostgresStore not wired at scaffold; lifts on UNK-163

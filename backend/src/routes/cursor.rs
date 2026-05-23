@@ -58,9 +58,18 @@ pub enum CursorKey {
     },
     /// Author-sort cursor: `(authors.sort_name, works.id)` of the
     /// first author (`work_authors.position = 0`).
+    ///
+    /// `sort_name` is `Option<String>` because the ORDER BY uses
+    /// `NULLS LAST`: works without authors (pre-enrichment stubs)
+    /// cluster at the tail of the sort, and the cursor predicate has
+    /// to distinguish "advance through the non-NULL bucket" from
+    /// "advance through the NULL bucket" — encoding NULL as `""`
+    /// collapses the two and silently drops rows under three-valued
+    /// SQL comparison.
     Author {
-        /// Boundary first-author's `sort_name`.
-        sort_name: String,
+        /// Boundary first-author's `sort_name`; `None` when the
+        /// boundary row has no first author (NULL bucket).
+        sort_name: Option<String>,
         /// Tie-breaker `works.id`.
         id: Uuid,
     },
@@ -110,8 +119,19 @@ impl CursorKey {
             Self::Title { sort_title, id } => {
                 format!("t|{sort_title}|{}", id.as_hyphenated())
             }
-            Self::Author { sort_name, id } => {
-                format!("a|{sort_name}|{}", id.as_hyphenated())
+            // Author cursors carry a sub-tag (`s` = some / `n` = none)
+            // so the NULL-bucket boundary survives base64 round-trip.
+            Self::Author {
+                sort_name: Some(value),
+                id,
+            } => {
+                format!("a|s|{value}|{}", id.as_hyphenated())
+            }
+            Self::Author {
+                sort_name: None,
+                id,
+            } => {
+                format!("a|n|{}", id.as_hyphenated())
             }
         };
         Base64UrlUnpadded::encode_string(payload.as_bytes())
@@ -158,11 +178,26 @@ impl CursorKey {
                 if sort != SortMode::Author {
                     return Err(CursorError::SortMismatch);
                 }
-                let (value, uuid) = rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
-                let id = Uuid::parse_str(uuid).map_err(|_| CursorError::MalformedKey)?;
-                Self::Author {
-                    sort_name: value.to_owned(),
-                    id,
+                let (sub_tag, sub_rest) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
+                match sub_tag {
+                    "s" => {
+                        let (value, uuid) =
+                            sub_rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
+                        let id = Uuid::parse_str(uuid).map_err(|_| CursorError::MalformedKey)?;
+                        Self::Author {
+                            sort_name: Some(value.to_owned()),
+                            id,
+                        }
+                    }
+                    "n" => {
+                        let id =
+                            Uuid::parse_str(sub_rest).map_err(|_| CursorError::MalformedKey)?;
+                        Self::Author {
+                            sort_name: None,
+                            id,
+                        }
+                    }
+                    _ => return Err(CursorError::MalformedKey),
                 }
             }
             _ => return Err(CursorError::UnknownTag),
@@ -198,10 +233,37 @@ mod tests {
     }
 
     #[test]
-    fn author_roundtrip() {
+    fn author_roundtrip_some() {
         let id = Uuid::new_v4();
         let key = CursorKey::Author {
-            sort_name: "gibson, william".into(),
+            sort_name: Some("gibson, william".into()),
+            id,
+        };
+        let encoded = key.encode();
+        let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
+        assert_eq!(parsed, key);
+    }
+
+    #[test]
+    fn author_roundtrip_none() {
+        let id = Uuid::new_v4();
+        let key = CursorKey::Author {
+            sort_name: None,
+            id,
+        };
+        let encoded = key.encode();
+        let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
+        assert_eq!(parsed, key);
+    }
+
+    #[test]
+    fn author_roundtrip_with_pipe_in_value() {
+        // `|` is the encoding delimiter; rsplit_once on the trailing
+        // uuid must peel correctly even when the sort_name contains
+        // pipes.
+        let id = Uuid::new_v4();
+        let key = CursorKey::Author {
+            sort_name: Some("weird|name|with|pipes".into()),
             id,
         };
         let encoded = key.encode();
