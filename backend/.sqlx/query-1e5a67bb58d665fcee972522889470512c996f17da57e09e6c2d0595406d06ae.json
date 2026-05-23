@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.name FROM manifestation_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.manifestation_id = $1 ORDER BY t.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [false]
+  },
+  "hash": "1e5a67bb58d665fcee972522889470512c996f17da57e09e6c2d0595406d06ae"
+}

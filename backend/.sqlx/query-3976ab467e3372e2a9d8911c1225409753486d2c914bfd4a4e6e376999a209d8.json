@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO authors (name, sort_name) VALUES ('Roe, Avery', 'Roe, Avery') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [false]
+  },
+  "hash": "3976ab467e3372e2a9d8911c1225409753486d2c914bfd4a4e6e376999a209d8"
+}

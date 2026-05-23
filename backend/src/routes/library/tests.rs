@@ -1,4 +1,5 @@
-//! Integration tests for the `/api/books` list endpoint (11a Task 3).
+//! Integration tests for the `/api/books*` and `/api/works/{id}`
+//! endpoints (11a Tasks 3, 5, 7).
 //!
 //! Mirrors [`crate::routes::opds::tests`] — `#[sqlx::test]` per case,
 //! real-pool harness via [`crate::test_support::db::server_with_real_pools`].
@@ -636,4 +637,256 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
         "all 4 manifestations across 2 works must surface exactly once — regression guard \
          against `(sort_title, work_id)` tuple comparison dropping sibling manifestations"
     );
+}
+
+// ---------------------------------------------------------------------------
+// detail_endpoint — GET /api/books/{id}
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id =
+        insert_book_with_author(&ingestion_pool, "detail", "Detailed Tome", "Doe, Jane").await;
+
+    // Seed a pending version + a rejected version + a canonical pointer
+    // (title_version_id on the work) so metadata_version_summary has
+    // non-trivial counts on both sides.
+    let work_id: Uuid =
+        sqlx::query_scalar!("SELECT work_id FROM manifestations WHERE id = $1", m_id)
+            .fetch_one(&ingestion_pool)
+            .await
+            .unwrap();
+    let canonical_v: Uuid = sqlx::query_scalar!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, match_type, status, \
+             confidence_score) \
+         VALUES ($1, 'opf', 'title', '\"Detailed Tome\"'::jsonb, '\\x01'::bytea, 'title', \
+                 'pending'::metadata_review_status, 0.9) \
+         RETURNING id",
+        m_id,
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert canonical version");
+    sqlx::query!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, match_type, status, \
+             confidence_score) \
+         VALUES ($1, 'opf', 'description', '\"draft prose\"'::jsonb, '\\x02'::bytea, 'title', \
+                 'pending'::metadata_review_status, 0.8)",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert pending version");
+    sqlx::query!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, match_type, status, \
+             confidence_score) \
+         VALUES ($1, 'opf', 'publisher', '\"Bad Pub\"'::jsonb, '\\x03'::bytea, 'title', \
+                 'rejected'::metadata_review_status, 0.4)",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert rejected version");
+    sqlx::query!(
+        "UPDATE works SET title_version_id = $1 WHERE id = $2",
+        canonical_v,
+        work_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("link canonical");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["id"].as_str().unwrap(), m_id.to_string());
+    assert_eq!(body["title"].as_str().unwrap(), "Detailed Tome");
+    assert_eq!(
+        body["authors"].as_array().unwrap()[0].as_str().unwrap(),
+        "Doe, Jane",
+    );
+    assert_eq!(
+        body["cover_url"].as_str().unwrap(),
+        format!("/api/books/{m_id}/cover/thumb"),
+    );
+    assert!(body["ingestion_status"].is_string());
+    assert!(body["enrichment_status"].is_string());
+    assert!(body["validation_status"].is_string());
+    let summary = &body["metadata_version_summary"];
+    assert_eq!(
+        summary["pending"].as_u64().unwrap(),
+        2,
+        "two pending versions (title canonical + description draft) — got {body}",
+    );
+    assert_eq!(
+        summary["accepted"].as_u64().unwrap(),
+        1,
+        "one canonical pointer set (works.title_version_id) — got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_hidden_id_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_child, basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "hidden").await;
+
+    // Insert a book the child cannot see (not on any shelf of theirs).
+    let (_w, m_id) = insert_book(&ingestion_pool, "hidden", "Forbidden Tome").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    // RLS hides the row → 404, NOT 403 (existence-not-leaked).
+    test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_malformed_uuid_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/books/not-a-uuid")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    // axum 0.8 default `Path<Uuid>` rejection: 400 plain-text body.
+    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------------------
+// work_endpoint — GET /api/works/{id}
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // One work with two manifestations (epub + pdf-shape sibling). Author
+    // attached to verify the join surfaces in the response.
+    let work_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title, description, language) \
+         VALUES ('Compendium', 'Compendium', 'A long prose summary.', 'en') \
+         RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert work");
+    let author_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO authors (name, sort_name) VALUES ('Roe, Avery', 'Roe, Avery') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert author");
+    sqlx::query!(
+        "INSERT INTO work_authors (work_id, author_id, position) VALUES ($1, $2, 0)",
+        work_id,
+        author_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .unwrap();
+    for marker in ["epub-vol", "pdf-vol"] {
+        let file_path = format!("/tmp/work-test-{marker}.epub");
+        let hash = format!("work-test-hash-{marker}");
+        sqlx::query!(
+            "INSERT INTO manifestations \
+                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'valid'::validation_status)",
+            work_id,
+            file_path,
+            hash,
+        )
+        .execute(&ingestion_pool)
+        .await
+        .unwrap();
+    }
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/works/{work_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["id"].as_str().unwrap(), work_id.to_string());
+    assert_eq!(body["title"].as_str().unwrap(), "Compendium");
+    assert_eq!(
+        body["description"].as_str().unwrap(),
+        "A long prose summary.",
+    );
+    assert_eq!(body["language"].as_str().unwrap(), "en");
+    assert_eq!(
+        body["authors"].as_array().unwrap()[0].as_str().unwrap(),
+        "Roe, Avery",
+    );
+    let manifestations = body["manifestations"].as_array().unwrap();
+    assert_eq!(manifestations.len(), 2);
+    for m in manifestations {
+        let mid = m["id"].as_str().unwrap();
+        assert_eq!(
+            m["cover_url"].as_str().unwrap(),
+            format!("/api/books/{mid}/cover/thumb"),
+        );
+        assert!(m["ingestion_status"].is_string());
+    }
+    assert!(
+        body["series"].is_null(),
+        "no series seeded → series must surface null, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn work_endpoint_hidden_work_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Nonexistent UUID → 404.
+    let response = server
+        .get(&format!("/api/works/{}", Uuid::new_v4()))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn work_endpoint_child_without_shelf_returns_404_not_empty_array(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_child, basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "shelved").await;
+
+    // Work exists, manifestation exists, but the child has not shelved
+    // it — the manifestation is RLS-hidden, so the work must surface as
+    // 404 (existence-not-leaked) rather than 200 with `manifestations: []`.
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "child-hidden", "Adult Material").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/works/{work_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }

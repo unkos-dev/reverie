@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, status, confidence_score) VALUES ($1, 'opf', 'publisher', '\"Bad Pub\"'::jsonb, '\\x03'::bytea, 'title', 'rejected'::metadata_review_status, 0.4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": []
+  },
+  "hash": "56df2578581a7e04e140d85a3f0e9a969cabd43bf43d7769ef6dc193487795e1"
+}
