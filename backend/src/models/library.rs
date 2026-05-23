@@ -175,8 +175,8 @@ pub struct SearchResponse {
 /// One result row of `GET /api/search`. Carries the bare minimum the
 /// command-palette UI needs: a kind tag for grouping, identifiers for
 /// navigation, a short display label, and an optional `ts_headline`
-/// snippet with non-HTML markers (`‹›`) so the React renderer can
-/// avoid `dangerouslySetInnerHTML`.
+/// snippet with non-HTML ASCII STX (`\u{0002}`) / ETX (`\u{0003}`)
+/// markers so the React renderer can avoid `dangerouslySetInnerHTML`.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
 pub struct SearchHit {
@@ -194,7 +194,9 @@ pub struct SearchHit {
     /// Author display names for `book` results.
     pub authors: Vec<String>,
     /// `ts_headline` snippet from the work's title+description with
-    /// `‹›` start/stop markers around matched terms. `None` when the
+    /// ASCII STX (`\u{0002}`) / ETX (`\u{0003}`) start/stop markers
+    /// around matched terms. Control codepoints, not valid UTF-8 text,
+    /// so they cannot collide with user typography. `None` when the
     /// hit was trigram-only (no tsquery match → headline would be the
     /// raw text without highlighting).
     pub snippet: Option<String>,

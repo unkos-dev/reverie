@@ -7,9 +7,12 @@
  * Zod so a schema-violating response surfaces as `ZodError` instead of
  * silently corrupting downstream state, per `frontend/CLAUDE.md`.
  *
- * The `snippet` field carries `‹` / `›` markers from Postgres
- * `ts_headline` (non-HTML start/stop delimiters). Render via the
- * `<HighlightedSnippet>` helper rather than `dangerouslySetInnerHTML`.
+ * The `snippet` field carries ASCII `STX` (0x02) / `ETX` (0x03)
+ * markers from Postgres `ts_headline` (non-HTML start/stop delimiters
+ * — Unicode-reserved control codepoints that cannot legally appear in
+ * valid UTF-8 text, so they cannot collide with user typography).
+ * Render via the `<HighlightedSnippet>` helper rather than
+ * `dangerouslySetInnerHTML`.
  */
 import { z } from "zod";
 

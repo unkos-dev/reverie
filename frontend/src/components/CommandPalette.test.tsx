@@ -147,8 +147,8 @@ describe("CommandPalette — search flow", () => {
 });
 
 describe("HighlightedSnippet", () => {
-  const STX = "";
-  const ETX = "";
+  const STX = "\u0002";
+  const ETX = "\u0003";
 
   test("plain text without markers renders as a single span (no mark)", () => {
     render(<HighlightedSnippet text="plain text" />);

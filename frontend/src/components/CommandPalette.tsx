@@ -48,8 +48,8 @@ const MIN_Q_LEN = 2;
  * STX/ETX are reserved by Unicode and cannot legally appear in
  * UTF-8 text, so they cannot be confused with user typography.
  */
-const SNIPPET_HL_START = "";
-const SNIPPET_HL_END = "";
+const SNIPPET_HL_START = "\u0002";
+const SNIPPET_HL_END = "\u0003";
 
 /**
  * Listen for `Cmd-K` / `Ctrl-K` and toggle the palette open. The
