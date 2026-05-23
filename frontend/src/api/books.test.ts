@@ -1,0 +1,149 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { __resetCsrfTokenForTesting } from "./csrf";
+import { getBook, getWork, listBooks } from "./books";
+
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
+
+beforeEach(() => {
+  __resetCsrfTokenForTesting();
+  vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  __resetCsrfTokenForTesting();
+});
+
+describe("listBooks", () => {
+  test("calls GET /api/books and returns the envelope", async () => {
+    const body = {
+      items: [
+        {
+          id: "11111111-1111-1111-1111-111111111111",
+          work_id: "22222222-2222-2222-2222-222222222222",
+          title: "Stoner",
+          authors: ["John Williams"],
+          series: null,
+          isbn_13: "9781590171998",
+          cover_url: "/api/books/.../cover/thumb",
+          ingestion_status: "complete",
+          validation_status: "valid",
+          enrichment_status: "complete",
+        },
+      ],
+      next_cursor: null,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
+
+    const result = await listBooks();
+
+    expect(result.items).toHaveLength(1);
+    expect(result.next_cursor).toBeNull();
+    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    expect(url.pathname).toBe("/api/books");
+    expect(url.search).toBe("");
+  });
+
+  test("serialises filter params into the query string", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
+
+    await listBooks({
+      author: "aaaa1111",
+      series: "bbbb2222",
+      sort: "title",
+      cursor: "eyJ4Ijox",
+    });
+
+    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.get("author")).toBe("aaaa1111");
+    expect(url.searchParams.get("series")).toBe("bbbb2222");
+    expect(url.searchParams.get("sort")).toBe("title");
+    expect(url.searchParams.get("cursor")).toBe("eyJ4Ijox");
+  });
+
+  test("omits undefined params from the URL", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
+
+    await listBooks({ author: "aaaa1111" });
+
+    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.has("series")).toBe(false);
+    expect(url.searchParams.has("shelf")).toBe(false);
+    expect(url.searchParams.has("q")).toBe(false);
+    expect(url.searchParams.has("sort")).toBe(false);
+    expect(url.searchParams.has("cursor")).toBe(false);
+  });
+
+  test("forwards AbortSignal", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
+
+    await listBooks({}, controller.signal);
+
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+});
+
+describe("getBook", () => {
+  test("calls GET /api/books/{id} with the id percent-encoded", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        id: "abc",
+        work_id: "w-1",
+        title: "x",
+        authors: [],
+        series: null,
+        description: null,
+        language: null,
+        isbn_13: null,
+        isbn_10: null,
+        cover_url: "",
+        tags: [],
+        ingestion_status: "complete",
+        validation_status: "valid",
+        enrichment_status: "complete",
+        metadata_version_summary: { pending: 0, accepted: 0 },
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+
+    await getBook("abc/with-slash");
+
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/books/abc%2Fwith-slash");
+  });
+});
+
+describe("getWork", () => {
+  test("calls GET /api/works/{id}", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        id: "w-1",
+        title: "x",
+        authors: [],
+        description: null,
+        language: null,
+        series: null,
+        manifestations: [],
+      }),
+    );
+
+    await getWork("w-1");
+
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/works/w-1");
+  });
+});
