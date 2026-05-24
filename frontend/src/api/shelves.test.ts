@@ -1,0 +1,202 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { __resetCsrfTokenForTesting } from "./csrf";
+import {
+  addShelfItem,
+  buildEtag,
+  createShelf,
+  deleteShelf,
+  getShelf,
+  listShelves,
+  removeShelfItem,
+  renameShelf,
+  reorderShelfItems,
+} from "./shelves";
+
+function parseJsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error("expected stringified JSON body");
+  return JSON.parse(body);
+}
+
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
+
+function emptyResponse(status = 204): Response {
+  return new Response(null, { status });
+}
+
+beforeEach(() => {
+  __resetCsrfTokenForTesting();
+  vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  __resetCsrfTokenForTesting();
+});
+
+describe("buildEtag", () => {
+  test("wraps the timestamp in double quotes", () => {
+    expect(buildEtag("2026-05-24T03:00:00Z")).toBe('"2026-05-24T03:00:00Z"');
+  });
+});
+
+describe("listShelves", () => {
+  test("returns parsed array", async () => {
+    const body = [
+      {
+        id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        name: "Currently reading",
+        is_system: false,
+        created_at: "2026-05-24T01:00:00Z",
+        updated_at: "2026-05-24T01:00:00Z",
+        item_count: 3,
+      },
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
+    const result = await listShelves();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.name).toBe("Currently reading");
+    expect(result[0]?.item_count).toBe(3);
+  });
+});
+
+describe("getShelf", () => {
+  test("calls GET /api/shelves/{id}", async () => {
+    const body = {
+      id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      name: "Holiday",
+      is_system: false,
+      created_at: "2026-05-24T01:00:00Z",
+      updated_at: "2026-05-24T01:00:00Z",
+      items: [],
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
+    const result = await getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    expect(result.name).toBe("Holiday");
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+  });
+});
+
+describe("createShelf", () => {
+  test("POSTs name and parses response", async () => {
+    const body = {
+      id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      name: "Wishlist",
+      is_system: false,
+      created_at: "2026-05-24T01:00:00Z",
+      updated_at: "2026-05-24T01:00:00Z",
+      item_count: 0,
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(body, { status: 201 }));
+    const result = await createShelf("Wishlist");
+    expect(result.id).toBe("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    const init = fetchSpy.mock.calls[0]?.[1];
+    expect(init?.method).toBe("POST");
+    expect(parseJsonBody(init?.body)).toEqual({ name: "Wishlist" });
+  });
+});
+
+describe("renameShelf", () => {
+  test("surfaces system-shelf-immutable as ApiError", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "https://reverie.example/probs/system-shelf-immutable",
+          title: "Conflict",
+          status: 409,
+          detail: "System shelves cannot be renamed or deleted.",
+        }),
+        {
+          status: 409,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      ),
+    );
+    await expect(renameShelf("dddddddd-dddd-dddd-dddd-dddddddddddd", "Mine")).rejects.toMatchObject(
+      {
+        status: 409,
+        problemSlug: "system-shelf-immutable",
+      },
+    );
+  });
+});
+
+describe("deleteShelf", () => {
+  test("issues DELETE and resolves on 204", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
+    await deleteShelf("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+    const init = fetchSpy.mock.calls[0]?.[1];
+    expect(init?.method).toBe("DELETE");
+  });
+});
+
+describe("shelf items", () => {
+  test("addShelfItem POSTs manifestation_id", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
+    await addShelfItem(
+      "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "00000000-0000-0000-0000-000000000001",
+    );
+    const init = fetchSpy.mock.calls[0]?.[1];
+    expect(init?.method).toBe("POST");
+    expect(parseJsonBody(init?.body)).toEqual({
+      manifestation_id: "00000000-0000-0000-0000-000000000001",
+    });
+  });
+
+  test("removeShelfItem issues DELETE on the nested path", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
+    await removeShelfItem(
+      "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "00000000-0000-0000-0000-000000000002",
+    );
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe(
+      "/api/shelves/ffffffff-ffff-ffff-ffff-ffffffffffff/items/00000000-0000-0000-0000-000000000002",
+    );
+  });
+
+  test("reorderShelfItems sends quoted If-Match header", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
+    await reorderShelfItems(
+      "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      ["00000000-0000-0000-0000-000000000003"],
+      "2026-05-24T03:00:00Z",
+    );
+    const init = fetchSpy.mock.calls[0]?.[1];
+    expect(init?.method).toBe("PUT");
+    const headers = init?.headers as Headers | undefined;
+    expect(headers?.get("If-Match")).toBe('"2026-05-24T03:00:00Z"');
+  });
+
+  test("reorderShelfItems surfaces 412 as ApiError", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "https://reverie.example/probs/if-match-mismatch",
+          title: "Precondition Failed",
+          status: 412,
+          detail: "Resource changed since last read.",
+        }),
+        {
+          status: 412,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      ),
+    );
+    await expect(
+      reorderShelfItems("ffffffff-ffff-ffff-ffff-ffffffffffff", [], "stale"),
+    ).rejects.toMatchObject({
+      status: 412,
+      problemSlug: "if-match-mismatch",
+    });
+  });
+});

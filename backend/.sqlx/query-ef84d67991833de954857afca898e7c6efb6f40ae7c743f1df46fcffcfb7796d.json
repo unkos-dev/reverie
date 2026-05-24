@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT updated_at AS \"ts!\" FROM shelves\n           WHERE id = $1 AND user_id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ts!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid", "Uuid"]
+    },
+    "nullable": [false]
+  },
+  "hash": "ef84d67991833de954857afca898e7c6efb6f40ae7c743f1df46fcffcfb7796d"
+}

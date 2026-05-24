@@ -757,6 +757,47 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
         body.get("language").is_some(),
         "language must always be present on the wire (null or string), got {body}",
     );
+    // 11d carry-over from 11c: `publisher` + `pub_date` surface on
+    // `BookDetail` so the frontend `EditMetadataDialog` can confirm
+    // clears for both fields (`canonicalEditableFields`). Null is the
+    // contractual shape for an unset value.
+    assert!(
+        body.get("publisher").is_some(),
+        "publisher must surface on BookDetail (null when unset), got {body}",
+    );
+    assert!(
+        body.get("pub_date").is_some(),
+        "pub_date must surface on BookDetail (null when unset), got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_surfaces_publisher_and_pub_date(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id =
+        insert_book_with_author(&ingestion_pool, "pubmeta", "With Publisher", "Doe, Jane").await;
+    sqlx::query!(
+        "UPDATE manifestations SET publisher = 'Tor', pub_date = DATE '2024-01-15' WHERE id = $1",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("populate publisher + pub_date");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["publisher"].as_str().unwrap(), "Tor");
+    // ISO 8601 calendar date (YYYY-MM-DD) — matches the frontend
+    // `BookDetailSchema.pub_date` shape.
+    assert_eq!(body["pub_date"].as_str().unwrap(), "2024-01-15");
 }
 
 #[sqlx::test(migrations = "./migrations")]

@@ -1,0 +1,164 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT m.id                   AS \"id!\",\n               m.work_id              AS \"work_id!\",\n               w.title                AS \"title!\",\n               w.description          AS description,\n               w.language             AS language,\n               m.isbn_13              AS isbn_13,\n               m.isbn_10              AS isbn_10,\n               m.publisher            AS publisher,\n               m.pub_date             AS pub_date,\n               m.created_at           AS \"created_at!\",\n               m.updated_at           AS \"updated_at!\",\n               m.ingestion_status::text  AS \"ingestion_status!\",\n               m.validation_status::text AS \"validation_status!\",\n               m.enrichment_status::text AS \"enrichment_status!\",\n               w.title_version_id        AS w_title_v,\n               w.description_version_id  AS w_desc_v,\n               w.language_version_id     AS w_lang_v,\n               m.publisher_version_id    AS m_publisher_v,\n               m.pub_date_version_id     AS m_pubdate_v,\n               m.isbn_10_version_id      AS m_isbn10_v,\n               m.isbn_13_version_id      AS m_isbn13_v,\n               m.cover_version_id        AS m_cover_v,\n               series_one.series_id      AS \"series_id?\",\n               series_one.series_name    AS \"series_name?\",\n               series_one.series_position AS \"series_position?: f64\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n          LEFT JOIN LATERAL (\n              SELECT s.id    AS series_id,\n                     s.name  AS series_name,\n                     sw.position AS series_position\n              FROM series_works sw\n              JOIN series s ON s.id = sw.series_id\n              WHERE sw.work_id = w.id\n              ORDER BY sw.position ASC NULLS LAST, s.id ASC\n              LIMIT 1\n          ) series_one ON TRUE\n         WHERE m.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "work_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "language",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "isbn_13",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "isbn_10",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "publisher",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "pub_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "ingestion_status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "validation_status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "enrichment_status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "w_title_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "w_desc_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 16,
+        "name": "w_lang_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "m_publisher_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 18,
+        "name": "m_pubdate_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 19,
+        "name": "m_isbn10_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 20,
+        "name": "m_isbn13_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 21,
+        "name": "m_cover_v",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 22,
+        "name": "series_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 23,
+        "name": "series_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "series_position?: f64",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      null,
+      null,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b1ee8f5cad3e7444e5fd0c13003649eb1a162511f1e625d41cb7c98397fd4073"
+}

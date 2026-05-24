@@ -128,6 +128,8 @@ const BookDetailSchema = z.object({
   language: z.string().nullable(),
   isbn_13: z.string().nullable(),
   isbn_10: z.string().nullable(),
+  publisher: z.string().nullable(),
+  pub_date: z.string().nullable(),
   cover_url: z.string(),
   tags: z.array(z.string()),
   ingestion_status: IngestionStatusSchema,

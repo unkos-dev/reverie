@@ -30,11 +30,7 @@
           "Custom": {
             "name": "user_role",
             "kind": {
-              "Enum": [
-                "admin",
-                "adult",
-                "child"
-              ]
+              "Enum": ["admin", "adult", "child"]
             }
           }
         }
@@ -66,33 +62,16 @@
           "Custom": {
             "name": "theme_preference",
             "kind": {
-              "Enum": [
-                "system",
-                "light",
-                "dark"
-              ]
+              "Enum": ["system", "light", "dark"]
             }
           }
         }
       }
     ],
     "parameters": {
-      "Left": [
-        "Text"
-      ]
+      "Left": ["Text"]
     },
-    "nullable": [
-      false,
-      false,
-      false,
-      true,
-      false,
-      false,
-      false,
-      false,
-      false,
-      false
-    ]
+    "nullable": [false, false, false, true, false, false, false, false, false, false]
   },
   "hash": "7bdee2a9e666fa26828b1332706b6b29e781b4343f4f1c246468f02cc18bba5b"
 }

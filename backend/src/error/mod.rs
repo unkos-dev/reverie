@@ -107,6 +107,11 @@ pub enum AppError {
     /// [`problems::IF_MATCH_MISMATCH`]. HTTP 412 Precondition Failed.
     #[error("If-Match precondition failed")]
     IfMatchMismatch,
+    /// Mutation attempt on a system-managed shelf (`is_system =
+    /// TRUE`). RFC 7807 `type` [`problems::SYSTEM_SHELF_IMMUTABLE`].
+    /// HTTP 409 Conflict.
+    #[error("system shelf cannot be modified")]
+    SystemShelfImmutable,
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 7807 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
@@ -182,6 +187,12 @@ impl IntoResponse for AppError {
                 problems::IF_MATCH_MISMATCH,
                 "Precondition Failed",
                 "Resource changed since last read.".to_owned(),
+            ),
+            Self::SystemShelfImmutable => (
+                StatusCode::CONFLICT,
+                problems::SYSTEM_SHELF_IMMUTABLE,
+                "Conflict",
+                "System shelves cannot be renamed or deleted.".to_owned(),
             ),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");
@@ -329,6 +340,13 @@ mod tests {
             412,
             "Precondition Failed",
         );
+    }
+
+    #[tokio::test]
+    async fn system_shelf_immutable_returns_409_problem() {
+        let (status, _, json) = parse_problem(AppError::SystemShelfImmutable).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_problem_shape(&json, problems::SYSTEM_SHELF_IMMUTABLE, 409, "Conflict");
     }
 
     #[tokio::test]

@@ -251,7 +251,7 @@ async fn list(
     Ok((headers, axum::Json(BookListResponse { items, next_cursor })))
 }
 
-fn parse_ingestion(raw: &str) -> Result<IngestionStatus, AppError> {
+pub(crate) fn parse_ingestion(raw: &str) -> Result<IngestionStatus, AppError> {
     match raw {
         "pending" => Ok(IngestionStatus::Pending),
         "processing" => Ok(IngestionStatus::Processing),
@@ -264,7 +264,7 @@ fn parse_ingestion(raw: &str) -> Result<IngestionStatus, AppError> {
     }
 }
 
-fn parse_enrichment(raw: &str) -> Result<EnrichmentStatus, AppError> {
+pub(crate) fn parse_enrichment(raw: &str) -> Result<EnrichmentStatus, AppError> {
     match raw {
         "pending" => Ok(EnrichmentStatus::Pending),
         "in_progress" => Ok(EnrichmentStatus::InProgress),
@@ -529,7 +529,7 @@ fn build_next_url(uri: &axum::http::Uri, next_cursor: &str) -> String {
     }
 }
 
-async fn load_authors_for_works(
+pub(crate) async fn load_authors_for_works(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     work_ids: &[Uuid],
 ) -> Result<std::collections::HashMap<Uuid, Vec<String>>, AppError> {
@@ -602,6 +602,13 @@ async fn detail(
         _ => None,
     };
 
+    let pub_date_str = row
+        .pub_date
+        .map(|d| {
+            d.format(&time::format_description::well_known::Iso8601::DATE)
+                .map_err(|e| AppError::Internal(e.into()))
+        })
+        .transpose()?;
     Ok(axum::Json(BookDetail {
         id: row.id,
         work_id,
@@ -612,6 +619,8 @@ async fn detail(
         language: row.language,
         isbn_13: row.isbn_13,
         isbn_10: row.isbn_10,
+        publisher: row.publisher,
+        pub_date: pub_date_str,
         cover_url: format!("/api/books/{}/cover/thumb", row.id),
         tags,
         ingestion_status: parse_ingestion(&row.ingestion_status)?,
@@ -639,6 +648,8 @@ struct DetailRow {
     language: Option<String>,
     isbn_13: Option<String>,
     isbn_10: Option<String>,
+    publisher: Option<String>,
+    pub_date: Option<time::Date>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
     ingestion_status: String,
@@ -678,6 +689,8 @@ async fn fetch_detail_row(
                w.language             AS language,
                m.isbn_13              AS isbn_13,
                m.isbn_10              AS isbn_10,
+               m.publisher            AS publisher,
+               m.pub_date             AS pub_date,
                m.created_at           AS "created_at!",
                m.updated_at           AS "updated_at!",
                m.ingestion_status::text  AS "ingestion_status!",
@@ -722,6 +735,8 @@ async fn fetch_detail_row(
         language: r.language,
         isbn_13: r.isbn_13,
         isbn_10: r.isbn_10,
+        publisher: r.publisher,
+        pub_date: r.pub_date,
         created_at: r.created_at,
         updated_at: r.updated_at,
         ingestion_status: r.ingestion_status,

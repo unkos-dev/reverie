@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT manifestation_id AS \"manifestation_id!\",\n               position         AS \"position!\",\n               added_at         AS \"added_at!\"\n          FROM shelf_items\n         WHERE shelf_id = $1\n         ORDER BY position ASC, added_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "position!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "added_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [false, false, false]
+  },
+  "hash": "1aa25a117201a7e8b7664e1be991ad2749a759572b061239ce6004ae97fd16b8"
+}

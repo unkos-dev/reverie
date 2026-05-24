@@ -31,3 +31,30 @@ export const bookRoute: RouteObject = {
     return { loader: mod.loader, Component: mod.Component };
   },
 };
+
+/** `/series/:id` — series detail with ordered works + completeness indicator. */
+export const seriesRoute: RouteObject = {
+  path: "series/:id",
+  lazy: async () => {
+    const mod = await import("./series");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};
+
+/** `/shelves` — list of the caller's shelves with create / rename / delete. */
+export const shelvesRoute: RouteObject = {
+  path: "shelves",
+  lazy: async () => {
+    const mod = await import("./shelves");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};
+
+/** `/shelves/:id` — shelf detail with drag-to-reorder items. */
+export const shelfDetailRoute: RouteObject = {
+  path: "shelves/:id",
+  lazy: async () => {
+    const mod = await import("./shelf-detail");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};

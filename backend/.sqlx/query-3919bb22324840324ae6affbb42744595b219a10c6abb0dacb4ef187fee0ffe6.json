@@ -4,12 +4,7 @@
   "describe": {
     "columns": [],
     "parameters": {
-      "Left": [
-        "Float4",
-        "Timestamptz",
-        "Uuid",
-        "Uuid"
-      ]
+      "Left": ["Float4", "Timestamptz", "Uuid", "Uuid"]
     },
     "nullable": []
   },

@@ -49,6 +49,12 @@ pub const IF_MATCH_REQUIRED: &str = "if-match-required";
 /// state. HTTP 412 Precondition Failed.
 pub const IF_MATCH_MISMATCH: &str = "if-match-mismatch";
 
+/// Caller attempted to mutate a system-managed shelf (`is_system =
+/// TRUE`). System shelves are append-only from the operator side —
+/// users can add or remove items, but the shelf row itself cannot be
+/// renamed or deleted. HTTP 409 Conflict.
+pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
+
 /// Generic internal error (anything wrapped in
 /// [`crate::error::AppError::Internal`]). `detail` is a fixed
 /// non-leaking string; the inner cause is `tracing::error!`-logged

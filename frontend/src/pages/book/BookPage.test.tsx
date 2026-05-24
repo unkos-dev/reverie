@@ -21,6 +21,8 @@ function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
     language: "en",
     isbn_13: "9780374528379",
     isbn_10: "0374528373",
+    publisher: null,
+    pub_date: null,
     cover_url: "/api/books/abc-123/cover/thumb",
     tags: ["Russian classics"],
     ingestion_status: "complete",

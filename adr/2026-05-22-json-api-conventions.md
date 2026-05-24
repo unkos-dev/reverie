@@ -83,7 +83,8 @@ following body shape:
 - `type` is a stable URI per error variant
   (`not-found`, `unauthorized`, `forbidden`, `validation`,
   `csrf-missing`, `csrf-mismatch`, `if-match-required`,
-  `if-match-mismatch`, `internal`). Per RFC 7807 §3.1 the URI
+  `if-match-mismatch`, `system-shelf-immutable`, `internal`).
+  Per RFC 7807 §3.1 the URI
   identifies the problem type and does not need to dereference at
   first; we register concrete URIs as the deployment story
   matures. `reverie.example` is a placeholder host until that

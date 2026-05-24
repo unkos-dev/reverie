@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM shelf_items WHERE shelf_id = $1 AND manifestation_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Uuid", "Uuid"]
+    },
+    "nullable": []
+  },
+  "hash": "5d706d1853779a90b0ef508cbe67bdd25c57ba5a0bdfe00a75c3426372fe397d"
+}

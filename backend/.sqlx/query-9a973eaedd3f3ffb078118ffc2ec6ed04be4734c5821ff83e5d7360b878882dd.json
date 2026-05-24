@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE shelf_items AS si SET position = updates.pos FROM unnest($1::int4[], $2::uuid[]) AS updates(pos, mid) WHERE si.shelf_id = $3 AND si.manifestation_id = updates.mid",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Int4Array", "UuidArray", "Uuid"]
+    },
+    "nullable": []
+  },
+  "hash": "9a973eaedd3f3ffb078118ffc2ec6ed04be4734c5821ff83e5d7360b878882dd"
+}

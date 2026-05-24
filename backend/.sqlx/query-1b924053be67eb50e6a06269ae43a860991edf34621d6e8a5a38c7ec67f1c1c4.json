@@ -18,13 +18,7 @@
           "Custom": {
             "name": "enrichment_status",
             "kind": {
-              "Enum": [
-                "pending",
-                "in_progress",
-                "complete",
-                "failed",
-                "skipped"
-              ]
+              "Enum": ["pending", "in_progress", "complete", "failed", "skipped"]
             }
           }
         },
@@ -32,9 +26,7 @@
         "Int8"
       ]
     },
-    "nullable": [
-      false
-    ]
+    "nullable": [false]
   },
   "hash": "1b924053be67eb50e6a06269ae43a860991edf34621d6e8a5a38c7ec67f1c1c4"
 }

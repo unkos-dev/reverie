@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series (name, sort_name) VALUES ('Cosmere', 'cosmere') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [false]
+  },
+  "hash": "ef5d48e9b1cad6c93aa841ea79a3e52bde5c9b2559f8e54a509085dbb5fe4a44"
+}

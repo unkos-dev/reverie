@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT is_system AS \"is_system!\" FROM shelves\n           WHERE id = $1 AND user_id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_system!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid", "Uuid"]
+    },
+    "nullable": [false]
+  },
+  "hash": "c143bdbe8d350f72103c815b39b386e47f20c796f13670d3edff652d4c51b3cc"
+}
