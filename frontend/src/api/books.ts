@@ -219,6 +219,15 @@ export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDet
   return WorkDetailSchema.parse(body);
 }
 
+const UpdateBookMetadataFieldsSchema = z.object({
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  language: z.string().nullable().optional(),
+  publisher: z.string().nullable().optional(),
+  pub_date: z.string().nullable().optional(),
+  isbn_10: z.string().nullable().optional(),
+  isbn_13: z.string().nullable().optional(),
+});
 /**
  * RFC 7396 JSON Merge Patch body for `PATCH /api/books/{id}/metadata`.
  *
@@ -231,16 +240,15 @@ export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDet
  * server-side. `title` cannot be cleared (canonical title is NOT NULL
  * on `works`); the server returns 422 if the request body sets `title:
  * null`.
+ *
+ * The exported {@link UpdateBookMetadataFieldsSchema} is the runtime
+ * boundary guard — form callers parse user-assembled bodies through it
+ * before passing to {@link updateBookMetadata}, per the boundary-
+ * validation rule in `frontend/CLAUDE.md`.
  */
-export interface UpdateBookMetadataFields {
-  title?: string | null;
-  description?: string | null;
-  language?: string | null;
-  publisher?: string | null;
-  pub_date?: string | null;
-  isbn_10?: string | null;
-  isbn_13?: string | null;
-}
+export type UpdateBookMetadataFields = z.infer<typeof UpdateBookMetadataFieldsSchema>;
+
+export { UpdateBookMetadataFieldsSchema };
 
 /**
  * Manually edit canonical metadata for a book. Each touched field

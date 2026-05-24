@@ -20,7 +20,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
 import { toast } from "sonner";
 
-import { ApiError, updateBookMetadata, type UpdateBookMetadataFields } from "@/api";
+import {
+  ApiError,
+  UpdateBookMetadataFieldsSchema,
+  updateBookMetadata,
+  type UpdateBookMetadataFields,
+} from "@/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -136,19 +141,24 @@ function EditMetadataForm({
   });
 
   function buildBody(): { body: UpdateBookMetadataFields; clears: string[] } {
-    const body: UpdateBookMetadataFields = {};
+    const raw: Record<string, string | null> = {};
     const clears: string[] = [];
     for (const field of fields) {
       const slot = state[field.name];
       if (!slot || !slot.touched) continue;
       const trimmed = slot.value.trim();
       if (trimmed.length === 0) {
-        body[field.name] = null;
+        raw[field.name] = null;
         if (field.canonical !== null) clears.push(field.label);
       } else {
-        body[field.name] = trimmed;
+        raw[field.name] = trimmed;
       }
     }
+    // Boundary parse — per `frontend/CLAUDE.md`, form inputs must be
+    // schema-validated before crossing into the API client. A parse
+    // failure here is a programmer error (mismatch between the form
+    // and `UpdateBookMetadataFieldsSchema`), not a user-input error.
+    const body = UpdateBookMetadataFieldsSchema.parse(raw);
     return { body, clears };
   }
 
@@ -157,7 +167,15 @@ function EditMetadataForm({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const { body, clears } = buildBody();
+          let body: UpdateBookMetadataFields;
+          let clears: string[];
+          try {
+            ({ body, clears } = buildBody());
+          } catch (err) {
+            console.error("[EditMetadataDialog.buildBody] schema parse failed", err);
+            toast.error("Form has an invalid value. Refresh and try again.");
+            return;
+          }
           if (Object.keys(body).length === 0) {
             toast.error("No fields touched — nothing to save.");
             return;

@@ -21,6 +21,8 @@
  * Out of scope: route-level retries, request deduplication (react-query
  * owns that), suspense/loading state (react-query owns that too).
  */
+import { z } from "zod";
+
 import { ApiError } from "./errors";
 import { getCsrfToken, refreshCsrfToken } from "./csrf";
 
@@ -28,14 +30,20 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const CSRF_MISMATCH_SLUG = "csrf-mismatch";
 
-/** Shape of an RFC 7807 Problem Details body. All fields optional — partial responses tolerated. */
-interface ProblemDetails {
-  type?: string;
-  title?: string;
-  status?: number;
-  detail?: string;
-  instance?: string;
-}
+/**
+ * Shape of an RFC 7807 Problem Details body. All fields optional —
+ * partial responses tolerated. Parsed via Zod so a malformed body
+ * surfaces as `null` (from `safeParse`) rather than corrupting the
+ * downstream `ApiError`.
+ */
+const ProblemDetailsSchema = z.object({
+  type: z.string().optional(),
+  title: z.string().optional(),
+  status: z.number().optional(),
+  detail: z.string().optional(),
+  instance: z.string().optional(),
+});
+type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
 
 /**
  * Issue a JSON request to a same-origin `/api/*` endpoint and parse the
@@ -43,23 +51,23 @@ interface ProblemDetails {
  * `init` shape as `fetch()` plus an optional override of the
  * authentication-failure handling.
  *
- * @typeParam T - Expected shape of the parsed JSON body on success.
- *   Callers pass an explicit type argument; this function does not
- *   validate the body against a schema (each `api/*` module owns its
- *   own zod schema and parses after the call).
+ * Returns `unknown` on 2xx. Each `api/*` module owns its Zod schema
+ * and narrows the result after the call (per `frontend/CLAUDE.md` —
+ * runtime validation at boundaries). Empty 2xx bodies (204/205 and
+ * legacy `200 OK` mutators) resolve to `undefined`; callers that
+ * ignore the return value are unaffected.
+ *
  * @param input - URL or `Request` object, same as `fetch()`.
  * @param init - Standard `RequestInit` (with `method`, `body`, etc).
  *   `credentials` is hardcoded to `same-origin` and cannot be
  *   overridden — opting out would defeat the wrapper's purpose.
- * @returns Parsed JSON body cast to `T` on 2xx. Throws {@link ApiError}
+ * @returns Parsed JSON body as `unknown` on 2xx with body;
+ *   `undefined` on 2xx with empty body. Throws {@link ApiError}
  *   on any non-2xx; throws the underlying `TypeError` on network
  *   failure (per the WHATWG fetch spec, an aborted request rejects
  *   with `DOMException("AbortError")`).
  */
-export async function apiFetch<T = unknown>(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
   const method = (init?.method ?? "GET").toUpperCase();
   const mutating = MUTATING_METHODS.has(method);
 
@@ -72,37 +80,34 @@ export async function apiFetch<T = unknown>(
       // 403 and the caller will see a real ApiError.
       await refreshCsrfToken();
       const retried = await sendRequest(input, init, method, mutating);
-      return decodeSuccess<T>(retried);
+      return decodeSuccess(retried);
     }
     throw problemToApiError(response.status, response.statusText, problem);
   }
-  return decodeSuccess<T>(response);
+  return decodeSuccess(response);
 }
 
 /**
  * Common success/failure decoder shared by the main path and the
  * csrf-mismatch retry path. Non-2xx throws an {@link ApiError}; 204
  * and 205 return `undefined`; everything else parses the body as
- * JSON.
+ * JSON and returns it as `unknown` for caller-side Zod narrowing.
  */
-async function decodeSuccess<T>(response: Response): Promise<T> {
+async function decodeSuccess(response: Response): Promise<unknown> {
   if (!response.ok) throw await problemFromResponse(response);
   if (response.status === 204 || response.status === 205) {
-    // 204 / 205 carry no body. Callers that type the return as `void`
-    // or `undefined` consume this directly; callers typed as a value
-    // shape would be a contract bug — flag at the call site, not here.
-    return undefined as T;
+    // 204 / 205 carry no body.
+    return undefined;
   }
   // Other 2xx may also carry an empty body — e.g. the legacy
   // `/api/manifestations/{id}/metadata/{accept,reject,revert}` mutators
   // emit `200 OK` with no payload. `Response.json()` on an empty body
   // throws SyntaxError, so route through `.text()` and short-circuit
-  // empties. Value-typed callers against an empty-body endpoint stay
-  // a contract bug; their downstream `.parse()` will surface it.
+  // empties.
   const text = await response.text();
-  if (text.length === 0) return undefined as T;
+  if (text.length === 0) return undefined;
   try {
-    return JSON.parse(text) as T;
+    return JSON.parse(text) as unknown;
   } catch (parseErr: unknown) {
     // Wrap the bare `SyntaxError` so the request URL + status + a body
     // preview reach the caller. Without this, a proxy returning HTML
@@ -188,9 +193,12 @@ async function peekProblem(res: Response): Promise<ProblemDetails | null> {
   if (!ct.includes("application/problem+json") && !ct.includes("application/json")) {
     return null;
   }
+  let raw: unknown;
   try {
-    return (await res.clone().json()) as ProblemDetails;
+    raw = await res.clone().json();
   } catch {
     return null;
   }
+  const parsed = ProblemDetailsSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }

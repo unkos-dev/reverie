@@ -7,7 +7,13 @@
 export { ApiError } from "./errors";
 export { apiFetch } from "./fetch";
 export { getCsrfToken, refreshCsrfToken } from "./csrf";
-export { listBooks, getBook, getWork, updateBookMetadata } from "./books";
+export {
+  listBooks,
+  getBook,
+  getWork,
+  updateBookMetadata,
+  UpdateBookMetadataFieldsSchema,
+} from "./books";
 export type {
   BookListItem,
   BookListResponse,

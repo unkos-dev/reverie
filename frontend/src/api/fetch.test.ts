@@ -191,9 +191,9 @@ describe("apiFetch — csrf-mismatch retry", () => {
     // Retry: succeeds.
     fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    const result = await apiFetch<{ ok: boolean }>("/api/books", { method: "POST" });
+    const result = await apiFetch("/api/books", { method: "POST" });
 
-    expect(result.ok).toBe(true);
+    expect(result).toEqual({ ok: true });
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     // First attempt used the seeded token.
     expect(new Headers(fetchSpy.mock.calls[0]?.[1]?.headers).get("X-CSRF-Token")).toBe(
