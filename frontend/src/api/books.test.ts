@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { __resetCsrfTokenForTesting } from "./csrf";
-import { getBook, getWork, listBooks } from "./books";
+import { getBook, getWork, listBooks, updateBookMetadata } from "./books";
+import { ApiError } from "./errors";
+
+function parseJsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error("expected stringified JSON body");
+  return JSON.parse(body);
+}
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -97,6 +103,21 @@ describe("listBooks", () => {
 });
 
 describe("getBook", () => {
+  test("returns 404-bearing ApiError when the manifestation is hidden", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "https://reverie.example/probs/not-found",
+          title: "Not Found",
+          status: 404,
+          detail: "Resource not found.",
+        }),
+        { status: 404, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(getBook("ghost")).rejects.toBeInstanceOf(ApiError);
+  });
+
   test("calls GET /api/books/{id} with the id percent-encoded", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({
@@ -115,6 +136,7 @@ describe("getBook", () => {
         validation_status: "valid",
         enrichment_status: "complete",
         metadata_version_summary: { pending: 0, accepted: 0 },
+        metadata_versions: [],
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       }),
@@ -215,10 +237,50 @@ describe("response schema validation (zod boundary)", () => {
         validation_status: "valid",
         enrichment_status: "complete",
         metadata_version_summary: { pending: 0, accepted: 0 },
+        metadata_versions: [],
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       }),
     );
     await expect(getBook("abc")).rejects.toThrow();
+  });
+});
+
+describe("updateBookMetadata", () => {
+  test("PATCHes /api/books/{id}/metadata with the fields envelope", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await updateBookMetadata("abc-123", { title: "New", description: null });
+
+    const [input, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(input).toBe("/api/books/abc-123/metadata");
+    expect(init?.method).toBe("PATCH");
+    expect(parseJsonBody(init?.body)).toEqual({
+      fields: { title: "New", description: null },
+    });
+  });
+
+  test("surfaces 422 validation as ApiError with the title preserved", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "https://reverie.example/probs/validation",
+          title: "Unprocessable Entity",
+          status: 422,
+          detail: "no fields",
+        }),
+        {
+          status: 422,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      ),
+    );
+
+    await expect(updateBookMetadata("abc", {})).rejects.toMatchObject({
+      status: 422,
+      detail: "no fields",
+    });
   });
 });

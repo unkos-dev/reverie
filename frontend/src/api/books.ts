@@ -94,6 +94,30 @@ const MetadataVersionSummarySchema = z.object({
  */
 export type MetadataVersionSummary = z.infer<typeof MetadataVersionSummarySchema>;
 
+const MetadataVersionRowSchema = z.object({
+  id: z.string(),
+  field_name: z.string(),
+  source: z.string(),
+  new_value: z.unknown(),
+  status: z.string(),
+  confidence_score: z.number(),
+  match_type: z.string(),
+  observation_count: z.number().int(),
+});
+/**
+ * One pending draft surfaced on the Versions tab. Mirrors
+ * `MetadataVersionRow` in `backend/src/models/library.rs`.
+ *
+ * `status` is always `"pending"` here — promotion lives on canonical
+ * pointer columns, not on this enum. Promoted rows are filtered server-
+ * side so the same id never appears twice.
+ *
+ * `new_value` is untyped JSON because field-specific shape varies
+ * (string for `title`, ISO date string for `pub_date`); the consumer
+ * narrows per `field_name` at the render site.
+ */
+export type MetadataVersionRow = z.infer<typeof MetadataVersionRowSchema>;
+
 const BookDetailSchema = z.object({
   id: z.string(),
   work_id: z.string(),
@@ -110,6 +134,7 @@ const BookDetailSchema = z.object({
   validation_status: z.string(),
   enrichment_status: EnrichmentStatusSchema,
   metadata_version_summary: MetadataVersionSummarySchema,
+  metadata_versions: z.array(MetadataVersionRowSchema),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -192,6 +217,65 @@ export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDet
     signal ? { method: "GET", signal } : { method: "GET" },
   );
   return WorkDetailSchema.parse(body);
+}
+
+const UpdateBookMetadataFieldsSchema = z.object({
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  language: z.string().nullable().optional(),
+  publisher: z.string().nullable().optional(),
+  pub_date: z.string().nullable().optional(),
+  isbn_10: z.string().nullable().optional(),
+  isbn_13: z.string().nullable().optional(),
+});
+/**
+ * RFC 7396 JSON Merge Patch body for `PATCH /api/books/{id}/metadata`.
+ *
+ * Each field value distinguishes three states:
+ * * key omitted → field unchanged
+ * * key present, value = string → set field to that value
+ * * key present, value = `null` → clear the canonical column
+ *
+ * The backend types ISBN / pub_date strings; per-field parsing happens
+ * server-side. `title` cannot be cleared (canonical title is NOT NULL
+ * on `works`); the server returns 422 if the request body sets `title:
+ * null`.
+ *
+ * The exported {@link UpdateBookMetadataFieldsSchema} is the runtime
+ * boundary guard — form callers parse user-assembled bodies through it
+ * before passing to {@link updateBookMetadata}, per the boundary-
+ * validation rule in `frontend/CLAUDE.md`.
+ */
+export type UpdateBookMetadataFields = z.infer<typeof UpdateBookMetadataFieldsSchema>;
+
+export { UpdateBookMetadataFieldsSchema };
+
+/**
+ * Manually edit canonical metadata for a book. Each touched field
+ * lands as a new `metadata_versions` row (`source = 'manual'`) and the
+ * canonical pointer is rewired in the same transaction. Pending AI/OPF
+ * drafts on the same field are NOT auto-rejected — operators can
+ * revert to them later via `revertField`.
+ *
+ * Throws an `ApiError` with `status === 422` when the body has no
+ * populated fields, or with `status === 403` for child accounts.
+ *
+ * On success the server returns 204 No Content. Callers should
+ * invalidate the `["books", "detail", id]` query key so the Versions
+ * tab + canonical fields refetch.
+ */
+export async function updateBookMetadata(
+  id: string,
+  fields: UpdateBookMetadataFields,
+  signal?: AbortSignal,
+): Promise<void> {
+  const init: RequestInit = {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+    ...(signal ? { signal } : {}),
+  };
+  await apiFetch(`/api/books/${encodeURIComponent(id)}/metadata`, init);
 }
 
 /**

@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, field_name, source, new_value AS \"new_value!\", status::text AS \"status!\", confidence_score AS \"confidence_score!\", match_type, observation_count FROM metadata_versions WHERE manifestation_id = $1 AND status = 'pending'::metadata_review_status AND new_value != 'null'::jsonb AND NOT (id = ANY($2::uuid[])) ORDER BY last_seen_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "field_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "new_value!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "confidence_score!",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 6,
+        "name": "match_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "observation_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid", "UuidArray"]
+    },
+    "nullable": [false, false, false, false, null, false, false, false]
+  },
+  "hash": "0f5d449e605eae7063381333c2f63268f0d1a29f7aaa94cfc4b17cd2ee58c450"
+}

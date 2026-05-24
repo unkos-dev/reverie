@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM metadata_versions WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'description' AND new_value = 'null'::jsonb",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [null]
+  },
+  "hash": "03f0f18a520ee9487d5f35ddb040d47b02c13ad698f80074746c8aeabd9573d9"
+}
