@@ -12,11 +12,7 @@
           "Custom": {
             "name": "api_cache_kind",
             "kind": {
-              "Enum": [
-                "hit",
-                "miss",
-                "error"
-              ]
+              "Enum": ["hit", "miss", "error"]
             }
           }
         },

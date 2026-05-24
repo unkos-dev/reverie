@@ -30,14 +30,7 @@
           "Custom": {
             "name": "manifestation_format",
             "kind": {
-              "Enum": [
-                "epub",
-                "pdf",
-                "mobi",
-                "azw3",
-                "cbz",
-                "cbr"
-              ]
+              "Enum": ["epub", "pdf", "mobi", "azw3", "cbz", "cbr"]
             }
           }
         }
@@ -84,25 +77,9 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid"
-      ]
+      "Left": ["Uuid"]
     },
-    "nullable": [
-      false,
-      false,
-      false,
-      false,
-      false,
-      true,
-      true,
-      true,
-      true,
-      true,
-      false,
-      true,
-      true
-    ]
+    "nullable": [false, false, false, false, false, true, true, true, true, true, false, true, true]
   },
   "hash": "e7f5de4cfd31ea299ae3a602b832be12e1122e2d200e4387d750912bc89f0a21"
 }

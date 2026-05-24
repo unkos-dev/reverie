@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE shelves SET updated_at = now() WHERE id = $1\n           RETURNING updated_at AS \"ts!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ts!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [false]
+  },
+  "hash": "bbbf872182f286857e569dadc216201e072de047b025baa83884cda3adc80ec9"
+}

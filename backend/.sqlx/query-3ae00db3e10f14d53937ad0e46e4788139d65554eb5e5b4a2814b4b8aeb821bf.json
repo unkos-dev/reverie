@@ -10,13 +10,9 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid"
-      ]
+      "Left": ["Uuid"]
     },
-    "nullable": [
-      true
-    ]
+    "nullable": [true]
   },
   "hash": "3ae00db3e10f14d53937ad0e46e4788139d65554eb5e5b4a2814b4b8aeb821bf"
 }

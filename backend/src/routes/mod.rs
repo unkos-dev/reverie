@@ -23,6 +23,10 @@ pub mod library;
 pub mod metadata;
 /// OPDS 1.2 catalog routes (feeds, downloads, cover dual-mount).
 pub mod opds;
+/// Series JSON API (`/api/series/{id}`).
+pub mod series;
+/// Shelves CRUD JSON API (`/api/shelves*`).
+pub mod shelves;
 /// Single-page-app asset-serving router (`/assets/*` mount).
 pub mod spa;
 /// Per-user device-token issue / list / revoke endpoints.

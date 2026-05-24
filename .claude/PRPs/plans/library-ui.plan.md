@@ -13,7 +13,7 @@ Step 11 is the largest blueprint step (20 tasks across 9 endpoints + 11 frontend
 | 11a — Foundations           | [#310](https://github.com/unkos-dev/reverie/pull/310) + [#311](https://github.com/unkos-dev/reverie/pull/311) | (squash)     | 2026-05-22 | ✅ merged   |
 | 11b — Search + filters      | [#314](https://github.com/unkos-dev/reverie/pull/314)                                                         | `21b53fe`    | 2026-05-23 | ✅ merged   |
 | 11c — Manual metadata edit  | [#316](https://github.com/unkos-dev/reverie/pull/316)                                                         | `e096807`    | 2026-05-24 | ✅ merged   |
-| 11d — Series + shelves CRUD | —                                                                                                             | —            | —          | next        |
+| 11d — Series + shelves CRUD | (open)                                                                                                        | —            | 2026-05-24 | in review   |
 | 11e — Admin                 | —                                                                                                             | —            | —          | pending     |
 | 11f — Settings (persisted)  | —                                                                                                             | —            | —          | gated (ADR) |
 

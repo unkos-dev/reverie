@@ -20,6 +20,10 @@ pub mod manifestation_format;
 pub mod reading_state;
 /// Closed value set for the `user_role` Postgres `ENUM`.
 pub mod role;
+/// Response DTOs for the series API (`/api/series/{id}`).
+pub mod series;
+/// Response DTOs for the shelves CRUD API (`/api/shelves*`).
+pub mod shelf;
 /// Closed value set for the `theme_preference` Postgres `ENUM`.
 pub mod theme_preference;
 /// User accounts and OIDC-driven upsert/promotion flow.

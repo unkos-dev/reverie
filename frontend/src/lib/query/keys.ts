@@ -39,4 +39,18 @@ export const queryKeys = {
   },
   /** Search-results cache slot. Distinct trimmed `q` = distinct slot. */
   search: (q: string): SearchKey => ["search", q] as const,
+  series: {
+    /** Root namespace; invalidate to wipe every series-* cache slot. */
+    all: ["series"] as const,
+    /** Detail endpoint for one series. */
+    detail: (id: string) => ["series", "detail", id] as const,
+  },
+  shelves: {
+    /** Root namespace; invalidate to refetch every shelves-* slot. */
+    all: ["shelves"] as const,
+    /** `GET /api/shelves` list. */
+    list: () => ["shelves", "list"] as const,
+    /** Single shelf detail (with items). */
+    detail: (id: string) => ["shelves", "detail", id] as const,
+  },
 };

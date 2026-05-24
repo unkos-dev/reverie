@@ -32,3 +32,17 @@ export type {
 export { searchLibrary } from "./search";
 export type { SearchHit, SearchHitKind, SearchResponse } from "./search";
 export { acceptVersion, rejectVersion, revertField } from "./metadata";
+export { getSeries } from "./series";
+export type { SeriesDetail, SeriesWork, SeriesWorkManifestation } from "./series";
+export {
+  buildEtag,
+  listShelves,
+  getShelf,
+  createShelf,
+  renameShelf,
+  deleteShelf,
+  addShelfItem,
+  removeShelfItem,
+  reorderShelfItems,
+} from "./shelves";
+export type { Shelf, ShelfItem, ShelfWithItems } from "./shelves";

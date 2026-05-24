@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET publisher = 'Tor', pub_date = DATE '2024-01-15' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": []
+  },
+  "hash": "03796c5390a53091f38403e26412b51d922584a274b3da0200a5048a71a004bd"
+}

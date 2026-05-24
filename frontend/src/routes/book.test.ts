@@ -24,6 +24,8 @@ function bookDetail(id: string): Record<string, unknown> {
     language: null,
     isbn_13: null,
     isbn_10: null,
+    publisher: null,
+    pub_date: null,
     cover_url: "",
     tags: [],
     ingestion_status: "complete",

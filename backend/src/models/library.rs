@@ -105,6 +105,13 @@ pub struct BookDetail {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
+    /// `manifestations.publisher` — canonical publisher string. Surfaced
+    /// on `BookDetail` so the manual-edit dialog can confirm clears
+    /// (`EditMetadataDialog.canonicalEditableFields`).
+    pub publisher: Option<String>,
+    /// `manifestations.pub_date` formatted as an ISO 8601 calendar date.
+    /// Surfaced for the manual-edit dialog's clear-confirmation flow.
+    pub pub_date: Option<String>,
     /// Cover thumbnail URL — relative path under
     /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
     /// [`BookListRow::cover_url`].

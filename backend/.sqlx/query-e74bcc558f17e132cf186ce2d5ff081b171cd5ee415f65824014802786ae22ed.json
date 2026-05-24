@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id          AS \"id!\",\n               s.name        AS \"name!\",\n               s.is_system   AS \"is_system!\",\n               s.created_at  AS \"created_at!\",\n               s.updated_at  AS \"updated_at!\",\n               (SELECT COUNT(*) FROM shelf_items si WHERE si.shelf_id = s.id)\n                             AS \"item_count!\"\n          FROM shelves s\n         WHERE s.user_id = $1\n         ORDER BY s.is_system DESC, s.name ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_system!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "item_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": [false, false, false, false, false, null]
+  },
+  "hash": "e74bcc558f17e132cf186ce2d5ff081b171cd5ee415f65824014802786ae22ed"
+}

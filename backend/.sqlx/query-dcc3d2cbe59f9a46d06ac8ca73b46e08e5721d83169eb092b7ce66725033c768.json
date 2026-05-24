@@ -15,11 +15,7 @@
           "Custom": {
             "name": "api_cache_kind",
             "kind": {
-              "Enum": [
-                "hit",
-                "miss",
-                "error"
-              ]
+              "Enum": ["hit", "miss", "error"]
             }
           }
         }
@@ -36,17 +32,9 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Text",
-        "Text"
-      ]
+      "Left": ["Text", "Text"]
     },
-    "nullable": [
-      false,
-      false,
-      true,
-      false
-    ]
+    "nullable": [false, false, true, false]
   },
   "hash": "dcc3d2cbe59f9a46d06ac8ca73b46e08e5721d83169eb092b7ce66725033c768"
 }

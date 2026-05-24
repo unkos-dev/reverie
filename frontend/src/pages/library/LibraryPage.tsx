@@ -11,13 +11,28 @@
  * palette) are deferred to sub-phase 11b. This page renders the grid
  * / list toggle and the Load-more pagination control only.
  */
-import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
-import { LayoutGrid, List, Loader2, X } from "lucide-react";
-import { Suspense, type ReactElement } from "react";
+import { useQuery, useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { Filter, LayoutGrid, List, Loader2, X } from "lucide-react";
+import { Suspense, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import { listBooks, type BookListItem, type BookListResponse } from "@/api";
+import {
+  listBooks,
+  listShelves,
+  type BookListItem,
+  type BookListResponse,
+  type Shelf,
+} from "@/api";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queryKeys } from "@/lib/query/keys";
@@ -118,7 +133,10 @@ function LibraryContent(): ReactElement {
           </Button>
         </div>
       </header>
-      <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
+        <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
+      </div>
       <Separator className="mb-8" />
 
       {items.length === 0 ? (
@@ -312,11 +330,25 @@ function ActiveFilterChips({
   searchParams,
   setSearchParams,
 }: ActiveFilterChipsProps): ReactElement | null {
+  // 11d: resolve shelf id → name via the shelves cache when present
+  // so the chip reads "shelf: Wishlist" instead of "shelf: a1b2c3d4…".
+  // `useQuery` with `enabled: false` would block the first render; we
+  // unconditionally subscribe to the cache and let the picker mutation
+  // populate it on first use.
+  const { data: shelves } = useQuery<Shelf[]>({
+    queryKey: ["shelves", "list"] as const,
+    queryFn: ({ signal }) => listShelves(signal),
+    staleTime: 60_000,
+  });
+  const shelfNameFor = (id: string): string =>
+    shelves?.find((s) => s.id === id)?.name ?? shortId(id);
+
   const filters: ActiveChip[] = [];
   for (const key of ["author", "series", "shelf"] as const) {
     const value = searchParams.get(key);
     if (value !== null && value !== "") {
-      filters.push({ id: key, key, label: `${key}: ${shortId(value)}` });
+      const label = key === "shelf" ? `Shelf: ${shelfNameFor(value)}` : `${key}: ${shortId(value)}`;
+      filters.push({ id: key, key, label });
     }
   }
   // `?tag=a&tag=b` repeats — one chip per value so the user can clear
@@ -375,6 +407,75 @@ function ActiveFilterChips({
 /** Render a UUID compactly (first 8 chars) for chip labels. */
 function shortId(value: string): string {
   return value.length > 10 ? `${value.slice(0, 8)}…` : value;
+}
+
+interface ShelfPickerButtonProps {
+  searchParams: URLSearchParams;
+  setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
+}
+
+/**
+ * Picker affordance for the `?shelf=` filter (11d). Opens a Command
+ * popover listing the caller's shelves; selecting one sets the URL
+ * param and triggers a refetch via the existing react-router data
+ * mode. Author / series pickers are blocked on missing `GET
+ * /api/authors` and `GET /api/series` list endpoints (recorded as a
+ * follow-up in the 11d report).
+ */
+function ShelfPickerButton({
+  searchParams,
+  setSearchParams,
+}: ShelfPickerButtonProps): ReactElement {
+  const [open, setOpen] = useState(false);
+  const { data: shelves, isLoading } = useQuery<Shelf[]>({
+    queryKey: ["shelves", "list"] as const,
+    queryFn: ({ signal }) => listShelves(signal),
+    staleTime: 60_000,
+  });
+  function pick(shelfId: string): void {
+    const updated = new URLSearchParams(searchParams);
+    updated.set("shelf", shelfId);
+    updated.delete("cursor");
+    setSearchParams(updated, { replace: true });
+    setOpen(false);
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 rounded-full px-3 text-xs"
+          aria-label="Filter by shelf"
+        >
+          <Filter className="size-3" aria-hidden="true" />
+          Shelf
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="p-0">
+        <Command>
+          <CommandInput placeholder="Filter by shelf…" />
+          <CommandList>
+            <CommandEmpty>{isLoading ? "Loading shelves…" : "No shelves yet."}</CommandEmpty>
+            <CommandGroup heading="Shelves">
+              {(shelves ?? []).map((shelf) => (
+                <CommandItem
+                  key={shelf.id}
+                  value={`${shelf.name} ${shelf.id}`}
+                  onSelect={() => {
+                    pick(shelf.id);
+                  }}
+                >
+                  {shelf.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function LibrarySkeleton(): ReactElement {

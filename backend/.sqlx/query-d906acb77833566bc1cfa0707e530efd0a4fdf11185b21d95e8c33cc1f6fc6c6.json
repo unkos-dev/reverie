@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO shelf_items (shelf_id, manifestation_id, position) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Uuid", "Uuid", "Int4"]
+    },
+    "nullable": []
+  },
+  "hash": "d906acb77833566bc1cfa0707e530efd0a4fdf11185b21d95e8c33cc1f6fc6c6"
+}

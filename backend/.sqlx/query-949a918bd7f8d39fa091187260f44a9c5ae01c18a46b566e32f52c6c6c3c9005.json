@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE shelves SET updated_at = now() + interval '1 second' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Uuid"]
+    },
+    "nullable": []
+  },
+  "hash": "949a918bd7f8d39fa091187260f44a9c5ae01c18a46b566e32f52c6c6c3c9005"
+}

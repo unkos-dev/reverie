@@ -10,24 +10,16 @@
           "Custom": {
             "name": "theme_preference",
             "kind": {
-              "Enum": [
-                "system",
-                "light",
-                "dark"
-              ]
+              "Enum": ["system", "light", "dark"]
             }
           }
         }
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid"
-      ]
+      "Left": ["Uuid"]
     },
-    "nullable": [
-      false
-    ]
+    "nullable": [false]
   },
   "hash": "95fac35a839f02ffe45d537aba49a0b6181e6e4279f27abf99740aacdb3905b4"
 }

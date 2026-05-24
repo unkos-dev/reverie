@@ -59,15 +59,12 @@ export function VersionsTab({ book }: VersionsTabProps): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
   const fieldsWithDrafts = Object.keys(grouped).sort();
-  // Editable fields are limited to those whose canonical value is
-  // present on `BookDetail`. `publisher` / `pub_date` live on
-  // `manifestations` but are not yet surfaced in the wire shape;
-  // including them here would let the operator clear a populated
-  // field without the AlertDialog confirm (the dialog gates on
-  // `canonical !== null`, which the missing-field case fakes as
-  // "unset"). Re-add once `BookDetail` carries those columns.
+  // Editable fields cover every canonical column now surfaced on
+  // `BookDetail`. 11d expanded the wire shape to include
+  // `publisher` + `pub_date`, so the AlertDialog clear-confirm flow
+  // covers them too (gates on `canonical !== null`).
   const canonicalEditableFields = (
-    ["title", "description", "language", "isbn_10", "isbn_13"] as const
+    ["title", "description", "language", "publisher", "pub_date", "isbn_10", "isbn_13"] as const
   ).map((name) => ({
     name,
     label: FIELD_LABEL[name] ?? name,
@@ -314,10 +311,9 @@ function canonicalValue(book: BookDetail, field: string): string | null {
     case "isbn_13":
       return book.isbn_13;
     case "publisher":
+      return book.publisher;
     case "pub_date":
-      // Not currently surfaced on `BookDetail`; render as unknown so
-      // the operator sees the pending value without confusion.
-      return null;
+      return book.pub_date;
     default:
       return null;
   }
