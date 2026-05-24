@@ -398,6 +398,21 @@ async fn apply_version(
     manifestation_id: Uuid,
     work_id: Uuid,
 ) -> Result<(), AppError> {
+    // Refuse to promote a null-valued audit row to canonical. Manual
+    // clears (PATCH `{field}: null`) write a `'null'::jsonb` audit row
+    // with `status = 'pending'` so operators can revert to them; the
+    // Versions tab filters those rows out, but `accept_manifestation`
+    // and `revert_manifestation` accept any pending row by id. Without
+    // this guard, `value.as_str()` returns `None`, `value.to_string()`
+    // yields the literal `"null"`, and non-date canonical columns get
+    // corrupted with the string `"null"`. Callers wanting to clear a
+    // field must go through `clear_field` (PATCH null or revert with
+    // `version_id = null`), not /accept.
+    if value.is_null() {
+        return Err(AppError::Validation(
+            "cannot accept a null-value audit row; use revert/clear instead".into(),
+        ));
+    }
     let str_val = value
         .as_str()
         .map_or_else(|| value.to_string(), str::to_owned);
@@ -1502,6 +1517,80 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn accept_rejects_null_value_audit_row(pool: sqlx::PgPool) {
+        // Regression for the null-accept corruption path: PATCH-clear
+        // inserts a `new_value = 'null'::jsonb` audit row; the Versions
+        // tab filters it, but POST /accept used to fetch any row by id
+        // and run `apply_version`, which fell through to writing the
+        // literal string "null" into the canonical column. The handler
+        // must reject that promotion with 422.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let seed = format!("seed prose {marker}");
+        let seed_v = insert_version(&ing_pool, m_id, "description", serde_json::json!(&seed)).await;
+        sqlx::query!(
+            "UPDATE works SET description = $1, description_version_id = $2 WHERE id = $3",
+            seed,
+            seed_v,
+            work_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed description");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // PATCH description -> null. Creates a `new_value = 'null'`
+        // audit row + clears the canonical column.
+        let r = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NO_CONTENT);
+
+        // Fetch the null-value row id directly. The Versions tab filter
+        // hides it, so we read it from the table.
+        let null_row_id: Uuid = sqlx::query_scalar!(
+            "SELECT id FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name = 'description' \
+             AND new_value = 'null'::jsonb AND source = 'manual' \
+             ORDER BY created_at DESC LIMIT 1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("null audit row exists");
+
+        let accept = server
+            .post(&format!("/api/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": null_row_id}))
+            .await;
+        assert_eq!(
+            accept.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "accept of null-value row must 422; got body = {}",
+            accept.text()
+        );
+
+        // Canonical column stays NULL (the PATCH-clear committed it).
+        // No literal-"null" string corruption.
+        let description: Option<String> =
+            sqlx::query_scalar!("SELECT description FROM works WHERE id = $1", work_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch description");
+        assert_eq!(
+            description, None,
+            "canonical description must stay NULL, not be overwritten with literal \"null\""
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn patch_reuses_conflicting_row_and_resets_status_to_pending(pool: sqlx::PgPool) {
         // Operator rejects their own manual entry, then re-saves the
         // same value. The conflict path must reset status back to
@@ -1528,12 +1617,13 @@ mod tests {
         // Mark that manual row rejected directly (simulates an operator
         // rejecting their own manual entry via the per-row Reject button).
         let v1: Uuid = sqlx::query_scalar!(
-            "SELECT title_version_id AS \"id!\" FROM works WHERE id = $1",
+            "SELECT title_version_id AS \"id?\" FROM works WHERE id = $1",
             work_id
         )
         .fetch_one(&app_pool)
         .await
-        .expect("fetch v1");
+        .expect("fetch v1")
+        .expect("title_version_id wired by prior PATCH");
         sqlx::query!(
             "UPDATE metadata_versions SET status = 'rejected', resolved_at = now() WHERE id = $1",
             v1,
