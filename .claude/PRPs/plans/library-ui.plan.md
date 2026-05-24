@@ -12,8 +12,8 @@ Step 11 is the largest blueprint step (20 tasks across 9 endpoints + 11 frontend
 | --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | ----------- |
 | 11a — Foundations           | [#310](https://github.com/unkos-dev/reverie/pull/310) + [#311](https://github.com/unkos-dev/reverie/pull/311) | (squash)     | 2026-05-22 | ✅ merged   |
 | 11b — Search + filters      | [#314](https://github.com/unkos-dev/reverie/pull/314)                                                         | `21b53fe`    | 2026-05-23 | ✅ merged   |
-| 11c — Manual metadata edit  | —                                                                                                             | —            | —          | next        |
-| 11d — Series + shelves CRUD | —                                                                                                             | —            | —          | pending     |
+| 11c — Manual metadata edit  | [#316](https://github.com/unkos-dev/reverie/pull/316)                                                         | `e096807`    | 2026-05-24 | ✅ merged   |
+| 11d — Series + shelves CRUD | —                                                                                                             | —            | —          | next        |
 | 11e — Admin                 | —                                                                                                             | —            | —          | pending     |
 | 11f — Settings (persisted)  | —                                                                                                             | —            | —          | gated (ADR) |
 
@@ -25,6 +25,17 @@ Step 11 is the largest blueprint step (20 tasks across 9 endpoints + 11 frontend
 - **Browser QA on `/library` deferred to staging.** Production route requires backend + OIDC session. Coder workspace has no OIDC stub and the workspace's sqlx cache/live-DB drift on `orchestrator.rs` blocks a clean `cargo run`. Component contracts covered by Vitest + cargo test; runtime browser QA happens on staging. Track as exit criterion on 11d/11e where staging deploy is part of the loop.
 - **Malformed-UUID filter rejection shape is non-RFC-7807.** `?author=garbage`, `?series=garbage`, `?shelf=garbage` fail at `axum_extra::extract::Query` deserialization and emit the framework's default rejection (400 plain text). Pre-existing inconsistency with the `Path<Uuid>` 400 path (see `detail_endpoint_malformed_uuid_returns_400`). Either ship `impl From<QueryRejection> for AppError` in 11c (so the new RFC 7807 path covers this) or document the carve-out. Add a test in the same PR.
 - **Exclude operator is best-effort.** Hybrid CTE honours `-token` in the tsquery leg; trigram leg may re-include the excluded token via raw-string similarity. Test asserts the non-excluded match is present, not that the excluded match is absent. Not a blocker; matches Postgres semantics. Leave as-is unless user feedback surfaces.
+
+**From 11c (PR #316 + fix commits `f45f9ed`, `d8458cc`, `52eebc8`):**
+
+- **Optimistic update not implemented.** Plan §11c-task-5 calls for optimistic update + invalidation; PR ships invalidation-only. Pessimistic react-query default is correct enough for first cut; optimistic UX can ship as a follow-up if operator feedback flags perceived latency.
+- **`publisher`/`pub_date` UI confirmation gap.** PATCH backend accepts clears for both; `EditMetadataDialog` excludes them from `canonicalEditableFields` because `BookDetail` wire shape lacks the canonical columns. A hand-crafted PATCH can clear a populated `publisher`/`pub_date` without UI confirmation. Re-add once BookDetail carries those columns (likely 11d when shelves/series API expands the detail shape).
+- **`publisher` whitespace hash-normalization divergence.** Manual `insert_manual_version` hashes via `value.to_string()`; enrichment pipeline's `value_hash::value_hash()` trims whitespace before hashing. A manual save of `"  Foo Bar  "` and an enrichment entry of `"Foo Bar"` will not dedup via `ON CONFLICT`. Correctness gap in the dedup model, not a security issue. Address when canonicalising the manual + auto paths.
+- **`load_pending_versions` unbounded query.** No `LIMIT`; pending row count grows with enrichment runs. Add `LIMIT 200` or document the size bound in `debt/`. Multi-user exposed threat model worth bounding.
+- **ISBN format not validated on PATCH.** `isbn_10` / `isbn_13` accept any string. Operator can store `"not-an-isbn"`; `rematch_on_isbn_change` then searches on the malformed value. Add checksum or length guard.
+- **`title`-null-clear → 422 path untested.** Handler docstring promises it; `clear_field:537-541` returns the error; no test exercises the path. Add a test next time `metadata.rs` opens.
+- **Hook refactor → [UNK-284](https://linear.app/unkos/issue/UNK-284).** CodeRabbit flagged `EditMetadataDialog` + `VersionsTab` for owning orchestration that should live in custom hooks per `frontend/CLAUDE.md`. Heavy-lift refactor; tracked separately.
+- **No browser QA on `/b/:id`.** Same Coder-workspace OIDC-stub gap as 11b; deferred to staging.
 
 ## User Story
 
