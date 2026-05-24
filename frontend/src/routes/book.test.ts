@@ -30,6 +30,7 @@ function bookDetail(id: string): Record<string, unknown> {
     validation_status: "valid",
     enrichment_status: "complete",
     metadata_version_summary: { pending: 0, accepted: 0 },
+    metadata_versions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   };

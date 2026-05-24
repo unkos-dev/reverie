@@ -18,6 +18,7 @@
 //! `(manifestation, author)` pair.
 
 use serde::Serialize;
+use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -119,10 +120,44 @@ pub struct BookDetail {
     pub enrichment_status: EnrichmentStatus,
     /// Metadata-version counts for the Versions tab.
     pub metadata_version_summary: MetadataVersionSummary,
+    /// Pending `metadata_versions` rows for this manifestation. Filtered
+    /// to `status = 'pending'` AND not currently promoted as a canonical
+    /// pointer. Ordered by `last_seen_at DESC`. Empty when the operator
+    /// has no drafts to review. Surfaced for the Versions-tab UI; the
+    /// summary counts above remain so clients can render the tab badge
+    /// without parsing the full list.
+    pub metadata_versions: Vec<MetadataVersionRow>,
     /// `manifestations.created_at`.
     pub created_at: OffsetDateTime,
     /// `manifestations.updated_at`.
     pub updated_at: OffsetDateTime,
+}
+
+/// One pending draft row surfaced on the Versions tab. Mirrors the
+/// shape served by `GET /api/manifestations/{id}/metadata` so a
+/// frontend can render either feed against the same component.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub struct MetadataVersionRow {
+    /// `metadata_versions.id` — primary key for accept/reject calls.
+    pub id: Uuid,
+    /// Canonical field name (`title`, `description`, `language`,
+    /// `publisher`, `pub_date`, `isbn_10`, `isbn_13`, `cover`).
+    pub field_name: String,
+    /// Source identifier — `openlibrary`, `google_books`, `manual`, etc.
+    pub source: String,
+    /// Proposed value, untyped JSON; field-specific shape (string for
+    /// title/description, ISO date for `pub_date`, …).
+    pub new_value: Value,
+    /// Always `pending` for rows surfaced here; promotion lives on
+    /// canonical pointer columns, not this enum.
+    pub status: String,
+    /// Confidence in `[0.0, 1.0]` from the enrichment pipeline.
+    pub confidence_score: f32,
+    /// Match-type tag from the enrichment pipeline (`isbn`, `title`, …).
+    pub match_type: String,
+    /// Number of times the pipeline has observed this exact value.
+    pub observation_count: i32,
 }
 
 /// Counts surfaced on the book-detail Versions tab.

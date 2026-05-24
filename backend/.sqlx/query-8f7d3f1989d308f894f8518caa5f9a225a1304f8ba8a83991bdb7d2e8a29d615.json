@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score, status, resolved_by, resolved_at) VALUES ($1, 'manual', $2, $3, $4, 'manual', 1.0, 'pending'::metadata_review_status, $5, now()) ON CONFLICT (manifestation_id, source, field_name, value_hash) DO UPDATE SET last_seen_at = now(), observation_count = metadata_versions.observation_count + 1, resolved_by = $5, resolved_at = now() RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": ["Uuid", "Text", "Jsonb", "Bytea", "Uuid"]
+    },
+    "nullable": [false]
+  },
+  "hash": "8f7d3f1989d308f894f8518caa5f9a225a1304f8ba8a83991bdb7d2e8a29d615"
+}

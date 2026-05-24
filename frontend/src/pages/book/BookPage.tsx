@@ -5,9 +5,9 @@
  * (`/design/hero/book`). Data sourced from `GET /api/books/{id}` via
  * `useSuspenseQuery`; the loader has already primed the cache.
  *
- * The Versions tab in 11a renders the version-count summary only
- * (pending + accepted). Per-row accept / reject / revert buttons land
- * in sub-phase 11c when `PATCH /api/books/{id}/metadata` ships.
+ * The Versions tab is implemented in [`VersionsTab`] (sub-phase 11c):
+ * per-field pending rows with accept / reject / revert affordances
+ * plus a manual edit form (`PATCH /api/books/{id}/metadata`).
  */
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, type ReactElement } from "react";
@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { queryKeys } from "@/lib/query/keys";
+
+import { VersionsTab } from "./VersionsTab";
 
 /**
  * Outer page component. Splits suspense boundary from the data layer
@@ -151,21 +153,6 @@ function OverviewTab({ book }: TabProps): ReactElement {
             </dd>
           </div>
         ) : null}
-      </dl>
-    </div>
-  );
-}
-
-function VersionsTab({ book }: TabProps): ReactElement {
-  const { pending, accepted } = book.metadata_version_summary;
-  return (
-    <div className="space-y-4">
-      <p className="text-fg-muted text-sm">
-        Per-field version review (accept / reject / revert) ships in sub-phase 11c.
-      </p>
-      <dl className="border-border grid grid-cols-2 gap-x-6 gap-y-3 border-t pt-6 text-sm">
-        <Field label="Pending drafts" value={String(pending)} />
-        <Field label="Accepted versions" value={String(accepted)} />
       </dl>
     </div>
   );

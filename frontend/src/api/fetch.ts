@@ -93,7 +93,15 @@ async function decodeSuccess<T>(response: Response): Promise<T> {
     // shape would be a contract bug — flag at the call site, not here.
     return undefined as T;
   }
-  return (await response.json()) as T;
+  // Other 2xx may also carry an empty body — e.g. the legacy
+  // `/api/manifestations/{id}/metadata/{accept,reject,revert}` mutators
+  // emit `200 OK` with no payload. `Response.json()` on an empty body
+  // throws SyntaxError, so route through `.text()` and short-circuit
+  // empties. Value-typed callers against an empty-body endpoint stay
+  // a contract bug; their downstream `.parse()` will surface it.
+  const text = await response.text();
+  if (text.length === 0) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 /**

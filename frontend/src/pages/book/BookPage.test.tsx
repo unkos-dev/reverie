@@ -27,6 +27,7 @@ function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
     validation_status: "valid",
     enrichment_status: "complete",
     metadata_version_summary: { pending: 0, accepted: 0 },
+    metadata_versions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -84,24 +85,39 @@ describe("BookPage", () => {
     expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
   });
 
-  test("Versions tab shows pending + accepted counts", async () => {
+  test("Versions tab badges the pending count and exposes the editor", async () => {
     const user = userEvent.setup();
     renderBook(
       bookFixture({
         metadata_version_summary: { pending: 3, accepted: 5 },
+        metadata_versions: [
+          {
+            id: "v-1",
+            field_name: "title",
+            source: "openlibrary",
+            new_value: "Alt Title",
+            status: "pending",
+            confidence_score: 0.91,
+            match_type: "isbn",
+            observation_count: 1,
+          },
+        ],
       }),
     );
     // Tab label badge surfaces the pending count.
     const versionsTab = await screen.findByRole("tab", { name: /versions/i });
     expect(within(versionsTab).getByText("3")).toBeInTheDocument();
 
-    // Switch to the Versions panel and assert the accepted count
-    // (rendered inside the panel body next to "Accepted versions").
     await user.click(versionsTab);
     const panel = await screen.findByRole("tabpanel", { name: /versions/i });
-    expect(within(panel).getByText("Pending drafts")).toBeInTheDocument();
-    expect(within(panel).getByText("Accepted versions")).toBeInTheDocument();
-    expect(within(panel).getByText("5")).toBeInTheDocument();
+    // Per-field section header for the one pending draft.
+    expect(within(panel).getByRole("heading", { name: /title/i, level: 3 })).toBeInTheDocument();
+    // Pending row exposes the draft value + Accept/Reject buttons.
+    expect(within(panel).getByText("Alt Title")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /accept/i })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /reject/i })).toBeInTheDocument();
+    // Manual edit button is always present.
+    expect(within(panel).getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
   });
 
   test("falls back to italic placeholder when description is null", async () => {

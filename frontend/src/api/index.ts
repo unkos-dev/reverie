@@ -7,7 +7,7 @@
 export { ApiError } from "./errors";
 export { apiFetch } from "./fetch";
 export { getCsrfToken, refreshCsrfToken } from "./csrf";
-export { listBooks, getBook, getWork } from "./books";
+export { listBooks, getBook, getWork, updateBookMetadata } from "./books";
 export type {
   BookListItem,
   BookListResponse,
@@ -16,10 +16,13 @@ export type {
   WorkManifestation,
   SeriesRef,
   MetadataVersionSummary,
+  MetadataVersionRow,
   IngestionStatus,
   EnrichmentStatus,
   ListSort,
   ListBooksParams,
+  UpdateBookMetadataFields,
 } from "./books";
 export { searchLibrary } from "./search";
 export type { SearchHit, SearchHitKind, SearchResponse } from "./search";
+export { acceptVersion, rejectVersion, revertField } from "./metadata";

@@ -8,9 +8,10 @@ use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -61,6 +62,7 @@ pub fn router() -> Router<AppState> {
             "/api/manifestations/{id}/metadata/unlock",
             post(unlock_field),
         )
+        .route("/api/books/{id}/metadata", patch(update_book_metadata))
 }
 
 #[derive(Debug, Serialize)]
@@ -609,6 +611,231 @@ async fn clear_field(
     Ok(())
 }
 
+// ── manual metadata edit (RFC 7396 JSON Merge Patch) ──────────────────────
+
+/// Per-field sparse update body for `PATCH /api/books/{id}/metadata`.
+///
+/// Encodes RFC 7396 JSON Merge Patch semantics via
+/// `serde_with::rust::double_option` (per
+/// `adr/2026-05-22-backend-aux-crates.md`):
+/// * absent key → `None`         → leave field unchanged.
+/// * key = `null` → `Some(None)` → clear the canonical value.
+/// * key = value → `Some(Some(v))` → set the canonical value.
+///
+/// `cover` is not yet operator-editable from this endpoint — cover
+/// promotion happens via a separate file-upload path.
+#[allow(
+    clippy::option_option,
+    reason = "RFC 7396 sparse-update encoding — outer Option distinguishes absent (None) from present-and-null (Some(None))"
+)]
+#[derive(Debug, Default, Deserialize)]
+struct UpdateMetadataFields {
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    title: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    description: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    language: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    publisher: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub_date: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    isbn_10: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    isbn_13: Option<Option<String>>,
+}
+
+/// Outer envelope for `PATCH /api/books/{id}/metadata`. The `fields`
+/// wrapper keeps the door open for future top-level keys (eg. `tags`,
+/// `series_position`) without forcing a body-shape migration.
+#[derive(Debug, Deserialize)]
+struct UpdateMetadataRequest {
+    fields: UpdateMetadataFields,
+}
+
+impl UpdateMetadataFields {
+    /// Collect every populated entry as `(field_name, optional value)`
+    /// — `None` means "clear this field", `Some(_)` means "set to this".
+    ///
+    /// `None` for the outer Option means the key was absent from the
+    /// JSON body and is therefore not iterated; that case never appears
+    /// in the returned vec.
+    #[allow(
+        clippy::option_option,
+        reason = "see UpdateMetadataFields struct attribute"
+    )]
+    fn populated(self) -> Vec<(&'static str, Option<String>)> {
+        let mut out: Vec<(&'static str, Option<String>)> = Vec::new();
+        if let Some(v) = self.title {
+            out.push(("title", v));
+        }
+        if let Some(v) = self.description {
+            out.push(("description", v));
+        }
+        if let Some(v) = self.language {
+            out.push(("language", v));
+        }
+        if let Some(v) = self.publisher {
+            out.push(("publisher", v));
+        }
+        if let Some(v) = self.pub_date {
+            out.push(("pub_date", v));
+        }
+        if let Some(v) = self.isbn_10 {
+            out.push(("isbn_10", v));
+        }
+        if let Some(v) = self.isbn_13 {
+            out.push(("isbn_13", v));
+        }
+        out
+    }
+}
+
+/// `PATCH /api/books/{id}/metadata` — manual operator edit.
+///
+/// RFC 7396 JSON Merge Patch shape. For each touched field the handler
+/// inserts a `metadata_versions` row with `source = 'manual'` and then
+/// either promotes that row to canonical via [`apply_version`] (when a
+/// value is supplied) or clears the canonical column via [`clear_field`]
+/// (when the value is `null`). The pending AI/OPF drafts on the same
+/// field stay `status = 'pending'` — the operator can revert to one of
+/// them later.
+///
+/// # Errors
+/// - [`AppError::Validation`] when the body has no populated fields,
+///   when an ISBN/date value fails parsing, or when the operator tries
+///   to clear `title` (canonical title is `NOT NULL` on `works`).
+/// - [`AppError::NotFound`] when the manifestation is missing or hidden
+///   by RLS for the current user (existence-not-leaked).
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::Internal`] on database errors.
+#[allow(clippy::too_many_lines)]
+async fn update_book_metadata(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(manifestation_id): Path<Uuid>,
+    body: Result<axum::Json<UpdateMetadataRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_not_child()?;
+    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+    let fields = req.fields.populated();
+    if fields.is_empty() {
+        return Err(AppError::Validation("no fields".into()));
+    }
+
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    // Lock the manifestation + parent work for the duration of the tx.
+    // Mirrors `revert_manifestation` — serialises concurrent edits and
+    // gates RLS-hidden rows to 404 (the join through `manifestations`
+    // applies the RLS predicate).
+    let work_id: Option<Uuid> = sqlx::query_scalar!(
+        "SELECT m.work_id FROM manifestations m \
+         JOIN works w ON w.id = m.work_id \
+         WHERE m.id = $1 FOR UPDATE OF m, w",
+        manifestation_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    let work_id = work_id.ok_or(AppError::NotFound)?;
+
+    let mut touched_isbn = false;
+    for (field, maybe_value) in fields {
+        if let Some(value) = maybe_value {
+            let json = serde_json::Value::String(value);
+            let version_id = insert_manual_version(
+                &mut tx,
+                manifestation_id,
+                current_user.user_id,
+                field,
+                &json,
+            )
+            .await?;
+            apply_version(&mut tx, field, &json, version_id, manifestation_id, work_id).await?;
+            if field == "isbn_10" || field == "isbn_13" {
+                touched_isbn = true;
+            }
+        } else {
+            // Audit-trail row: source='manual', new_value=null,
+            // resolved_by = caller. `clear_field` does NOT wire a
+            // canonical pointer to this row — by design — so it lives
+            // in the journal as an orphan record of the clear action,
+            // but `resolved_by` makes the action accountable.
+            insert_manual_version(
+                &mut tx,
+                manifestation_id,
+                current_user.user_id,
+                field,
+                &serde_json::Value::Null,
+            )
+            .await?;
+            clear_field(&mut tx, field, manifestation_id, work_id).await?;
+        }
+    }
+
+    if touched_isbn {
+        work::rematch_on_isbn_change(&mut tx, manifestation_id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Insert one `metadata_versions` row with `source='manual'`, returning
+/// its id. `value_hash` is the canonical SHA-256 of the serialised
+/// value — same shape as the enrichment pipeline emits, so duplicate
+/// manual saves of the same value collide on the existing
+/// `(manifestation, source, field, value_hash)` unique. We surface
+/// that collision as a no-op by bumping `last_seen_at` /
+/// `observation_count` on the existing row and re-recording who
+/// touched it last.
+///
+/// `resolved_by` + `resolved_at` are stamped to the calling operator
+/// so the journal carries accountability for every manual touch,
+/// including audit-trail rows that record a clear (`new_value = null`).
+async fn insert_manual_version(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    user_id: Uuid,
+    field: &str,
+    value: &Value,
+) -> Result<Uuid, AppError> {
+    let mut hasher = Sha256::new();
+    hasher.update(value.to_string().as_bytes());
+    let hash = hasher.finalize().to_vec();
+
+    let id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, \
+             match_type, confidence_score, status, resolved_by, resolved_at) \
+         VALUES ($1, 'manual', $2, $3, $4, 'manual', 1.0, \
+                 'pending'::metadata_review_status, $5, now()) \
+         ON CONFLICT (manifestation_id, source, field_name, value_hash) \
+         DO UPDATE SET last_seen_at = now(), \
+                       observation_count = metadata_versions.observation_count + 1, \
+                       resolved_by = $5, \
+                       resolved_at = now() \
+         RETURNING id",
+        manifestation_id,
+        field,
+        value,
+        hash,
+        user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(id)
+}
+
 fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
     use time::format_description::well_known::Iso8601;
     // `s.len()` is in bytes; user-submitted strings can contain multi-byte
@@ -919,5 +1146,233 @@ mod tests {
         .await
         .expect("fetch job count");
         assert_eq!(job_count, 2, "two accepts must enqueue two rows (no dedup)");
+    }
+
+    // ── PATCH /api/books/{id}/metadata (manual edit, RFC 7396) ───────────
+
+    #[tokio::test]
+    async fn patch_book_metadata_requires_auth() {
+        let server = test_support::test_server();
+        let id = Uuid::new_v4();
+        let response = server
+            .patch(&format!("/api/books/{id}/metadata"))
+            .json(&serde_json::json!({"fields": {"title": "X"}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_sets_title_and_writes_canonical(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let new_title = format!("Manual Title {marker}");
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": new_title}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        let row = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch work");
+        assert_eq!(row.title, new_title, "canonical title not written");
+
+        let version_id = row.title_version_id.expect("title_version_id wired");
+        let v = sqlx::query!(
+            "SELECT source, status::text AS \"status!\", new_value AS \"new_value!\" \
+             FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch version");
+        assert_eq!(v.source, "manual");
+        assert_eq!(v.status, "pending");
+        assert_eq!(v.new_value, serde_json::json!(new_title));
+
+        let job_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch job count");
+        assert_eq!(job_count, 1, "manual edit must enqueue one writeback");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_clears_description_with_null(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let initial = format!("Existing prose {marker}");
+        let seed_v =
+            insert_version(&ing_pool, m_id, "description", serde_json::json!(&initial)).await;
+        sqlx::query!(
+            "UPDATE works SET description = $1, description_version_id = $2 WHERE id = $3",
+            initial,
+            seed_v,
+            work_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed description");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        let row = sqlx::query!(
+            "SELECT description, description_version_id FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch work");
+        assert!(row.description.is_none(), "description should be cleared");
+        assert!(
+            row.description_version_id.is_none(),
+            "version pointer should be cleared"
+        );
+
+        // Audit-trail row recorded with new_value = JSON null.
+        let null_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" \
+             FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' \
+               AND field_name = 'description' AND new_value = 'null'::jsonb",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch null count");
+        assert_eq!(null_count, 1, "audit-trail row missing for clear action");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_with_empty_body_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response.text();
+        assert!(
+            body.contains("no fields"),
+            "expected 'no fields' detail, got: {body}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_child_account_forbidden(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_child_id, basic) =
+            test_support::db::create_child_user_and_basic_auth(&app_pool, "patch").await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": "Nope"}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_leaves_sibling_pending_drafts_alone(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        // AI draft sitting pending on `title` BEFORE the manual edit.
+        let ai_draft = insert_version(
+            &ing_pool,
+            m_id,
+            "title",
+            serde_json::json!("AI Draft Title"),
+        )
+        .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": "Operator-chosen"}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+
+        // AI draft stays pending — operator can later revert to it.
+        let status: Option<String> = sqlx::query_scalar!(
+            "SELECT status::text FROM metadata_versions WHERE id = $1",
+            ai_draft,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch ai draft status");
+        assert_eq!(
+            status.as_deref(),
+            Some("pending"),
+            "sibling AI draft was mutated by the manual edit"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_returns_404_for_missing_manifestation(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let fake = Uuid::new_v4();
+        let response = server
+            .patch(&format!("/api/books/{fake}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": "ghost"}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
 }

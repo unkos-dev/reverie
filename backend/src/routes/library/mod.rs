@@ -39,7 +39,8 @@ use crate::error::AppError;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::library::{
-    BookDetail, BookListRow, MetadataVersionSummary, SeriesRef, WorkDetail, WorkManifestation,
+    BookDetail, BookListRow, MetadataVersionRow, MetadataVersionSummary, SeriesRef, WorkDetail,
+    WorkManifestation,
 };
 use crate::routes::cursor::{CursorKey, SortMode};
 use crate::state::AppState;
@@ -584,7 +585,8 @@ async fn detail(
         .unwrap_or_default();
     let tags = load_manifestation_tags(&mut tx, id).await?;
     let canonical_ids = canonical_pointer_ids(&row);
-    let pending = count_pending_versions(&mut tx, id, &canonical_ids).await?;
+    let pending_versions = load_pending_versions(&mut tx, id, &canonical_ids).await?;
+    let pending = u32::try_from(pending_versions.len()).unwrap_or(u32::MAX);
     let accepted_count = accepted_pointer_count(&row);
 
     tx.commit()
@@ -619,6 +621,7 @@ async fn detail(
             pending,
             accepted: accepted_count,
         },
+        metadata_versions: pending_versions,
         created_at: row.created_at,
         updated_at: row.updated_at,
     }))
@@ -754,34 +757,52 @@ async fn load_manifestation_tags(
     .map_err(|e| AppError::Internal(e.into()))
 }
 
-/// Count `metadata_versions` rows with `status = 'pending'` for the
-/// given manifestation, excluding any row that is already the
-/// canonical pointer for some field on the manifestation or its work.
+/// Load every `metadata_versions` row with `status = 'pending'` for the
+/// given manifestation, excluding any row that is already the canonical
+/// pointer for some field. Ordered `last_seen_at DESC` so the freshest
+/// draft is first on the Versions tab.
 ///
 /// The enum was simplified to `pending|rejected` in
 /// `20260417000001_add_enrichment_pipeline` — promotion lives on the
 /// canonical pointer columns, NOT on a `status = 'accepted'` value, so
 /// a promoted row keeps `status = 'pending'`. Without the exclusion
-/// filter the Versions-tab summary would double-count every promoted
-/// version as both `pending` and `accepted`.
-async fn count_pending_versions(
+/// filter the Versions tab would surface accepted versions as if they
+/// were still draft.
+async fn load_pending_versions(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_id: Uuid,
     canonical_ids: &[Uuid],
-) -> Result<u32, AppError> {
-    let n = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM metadata_versions \
+) -> Result<Vec<MetadataVersionRow>, AppError> {
+    let rows = sqlx::query!(
+        "SELECT id, field_name, source, \
+                new_value AS \"new_value!\", \
+                status::text AS \"status!\", \
+                confidence_score AS \"confidence_score!\", \
+                match_type, observation_count \
+         FROM metadata_versions \
          WHERE manifestation_id = $1 \
            AND status = 'pending'::metadata_review_status \
-           AND NOT (id = ANY($2::uuid[]))",
+           AND NOT (id = ANY($2::uuid[])) \
+         ORDER BY last_seen_at DESC",
         manifestation_id,
         canonical_ids,
     )
-    .fetch_one(&mut **tx)
+    .fetch_all(&mut **tx)
     .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .unwrap_or(0);
-    Ok(u32::try_from(n).unwrap_or(u32::MAX))
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(rows
+        .into_iter()
+        .map(|r| MetadataVersionRow {
+            id: r.id,
+            field_name: r.field_name,
+            source: r.source,
+            new_value: r.new_value,
+            status: r.status,
+            confidence_score: r.confidence_score,
+            match_type: r.match_type,
+            observation_count: r.observation_count,
+        })
+        .collect())
 }
 
 /// Collect the non-NULL canonical pointer ids on the given detail row
