@@ -125,6 +125,37 @@ describe("BookPage", () => {
     expect(await screen.findByText(/no description yet/i)).toBeInTheDocument();
   });
 
+  test("Clear button on a draft field opens the confirmation AlertDialog", async () => {
+    const user = userEvent.setup();
+    renderBook(
+      bookFixture({
+        description: "Existing prose",
+        metadata_version_summary: { pending: 1, accepted: 0 },
+        metadata_versions: [
+          {
+            id: "v-1",
+            field_name: "description",
+            source: "openlibrary",
+            new_value: "Alt description",
+            status: "pending",
+            confidence_score: 0.8,
+            match_type: "title",
+            observation_count: 1,
+          },
+        ],
+      }),
+    );
+    const versionsTab = await screen.findByRole("tab", { name: /versions/i });
+    await user.click(versionsTab);
+    const panel = await screen.findByRole("tabpanel", { name: /versions/i });
+    const clearButton = within(panel).getByRole("button", { name: /^clear$/i });
+    await user.click(clearButton);
+    // AlertDialog is portal-rendered outside the panel — search at screen scope.
+    expect(
+      await screen.findByRole("alertdialog", { name: /clear description/i }),
+    ).toBeInTheDocument();
+  });
+
   test("back link points to /library", async () => {
     renderBook(bookFixture());
     const back = await screen.findByRole("link", { name: /library/i });

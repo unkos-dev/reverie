@@ -101,7 +101,22 @@ async function decodeSuccess<T>(response: Response): Promise<T> {
   // a contract bug; their downstream `.parse()` will surface it.
   const text = await response.text();
   if (text.length === 0) return undefined as T;
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch (parseErr: unknown) {
+    // Wrap the bare `SyntaxError` so the request URL + status + a body
+    // preview reach the caller. Without this, a proxy returning HTML
+    // (e.g. an upstream gateway error page) on an apparent 2xx surfaces
+    // as `SyntaxError: Unexpected token <` with no context.
+    const detail = parseErr instanceof Error ? parseErr.message : "JSON parse failed";
+    const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+    throw new ApiError(
+      response.status,
+      null,
+      "Malformed JSON response",
+      `${detail} (url=${response.url}, body=${preview})`,
+    );
+  }
 }
 
 /**

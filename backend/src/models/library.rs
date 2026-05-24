@@ -133,9 +133,12 @@ pub struct BookDetail {
     pub updated_at: OffsetDateTime,
 }
 
-/// One pending draft row surfaced on the Versions tab. Mirrors the
-/// shape served by `GET /api/manifestations/{id}/metadata` so a
-/// frontend can render either feed against the same component.
+/// One pending draft row surfaced on the Versions tab. Serialised as
+/// JSON in the `metadata_versions` array of `GET /api/books/{id}`;
+/// the row shape is decoded from the [`metadata_versions`] table with
+/// the canonical columns plus a stringified enum.
+///
+/// [`metadata_versions`]: ../../migrations/20260412150003_series_and_metadata.up.sql
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
 pub struct MetadataVersionRow {

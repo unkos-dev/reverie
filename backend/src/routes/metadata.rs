@@ -745,6 +745,12 @@ async fn update_book_metadata(
 
     let mut touched_isbn = false;
     for (field, maybe_value) in fields {
+        // ISBN edits — set OR clear — change the matching surface.
+        // Rematch is read-only on rejection so it's safe to gate on
+        // the column name alone without inspecting the new value.
+        if field == "isbn_10" || field == "isbn_13" {
+            touched_isbn = true;
+        }
         if let Some(value) = maybe_value {
             let json = serde_json::Value::String(value);
             let version_id = insert_manual_version(
@@ -756,9 +762,6 @@ async fn update_book_metadata(
             )
             .await?;
             apply_version(&mut tx, field, &json, version_id, manifestation_id, work_id).await?;
-            if field == "isbn_10" || field == "isbn_13" {
-                touched_isbn = true;
-            }
         } else {
             // Audit-trail row: source='manual', new_value=null,
             // resolved_by = caller. `clear_field` does NOT wire a
@@ -798,9 +801,11 @@ async fn update_book_metadata(
 /// `observation_count` on the existing row and re-recording who
 /// touched it last.
 ///
-/// `resolved_by` + `resolved_at` are stamped to the calling operator
-/// so the journal carries accountability for every manual touch,
-/// including audit-trail rows that record a clear (`new_value = null`).
+/// `resolved_by` + `resolved_at` here denote the *author* of the
+/// manual entry, not a resolution action — the row stays
+/// `status = 'pending'` after insert so the accept/reject machinery
+/// can still operate on it. The accountability use of these columns
+/// is project-local and documented in the manual-edit ADR.
 async fn insert_manual_version(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -812,6 +817,12 @@ async fn insert_manual_version(
     hasher.update(value.to_string().as_bytes());
     let hash = hasher.finalize().to_vec();
 
+    // `status` is reset to `pending` on conflict so a previously-
+    // rejected manual entry of the same value is re-offered for
+    // promotion rather than left stranded as `rejected`. Without this
+    // reset, `apply_version` could write a canonical pointer to a row
+    // still flagged rejected, leaving the journal internally
+    // inconsistent.
     let id: Uuid = sqlx::query_scalar!(
         "INSERT INTO metadata_versions \
             (manifestation_id, source, field_name, new_value, value_hash, \
@@ -821,6 +832,7 @@ async fn insert_manual_version(
          ON CONFLICT (manifestation_id, source, field_name, value_hash) \
          DO UPDATE SET last_seen_at = now(), \
                        observation_count = metadata_versions.observation_count + 1, \
+                       status = 'pending'::metadata_review_status, \
                        resolved_by = $5, \
                        resolved_at = now() \
          RETURNING id",
@@ -1374,5 +1386,177 @@ mod tests {
             .json(&serde_json::json!({"fields": {"title": "ghost"}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_isbn_set_triggers_rematch(pool: sqlx::PgPool) {
+        // Two manifestations sharing an ISBN — patching the second
+        // with that ISBN must wire `suspected_duplicate_work_id` on it.
+        // Auto-merge is skipped because the PATCH inserts a manual
+        // metadata draft on the current work (the orchestrator guards
+        // against merging works that already carry manual drafts).
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let marker_a = Uuid::new_v4().simple().to_string();
+        let marker_b = Uuid::new_v4().simple().to_string();
+        let (work_a, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker_a).await;
+        let (_work_b, m_b) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker_b).await;
+
+        let isbn = "9780000000017";
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+            isbn,
+            m_a,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed isbn_a");
+
+        let response = server
+            .patch(&format!("/api/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_13": isbn}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        // Rematch wired the suspected_duplicate_work_id pointer on m_b
+        // back to work_a. The flag firing is the proof the route
+        // correctly invoked rematch_on_isbn_change — without the route-
+        // level wiring, this column stays NULL.
+        let suspected: Option<Uuid> = sqlx::query_scalar!(
+            "SELECT suspected_duplicate_work_id FROM manifestations WHERE id = $1",
+            m_b,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch suspected");
+        assert_eq!(
+            suspected,
+            Some(work_a),
+            "ISBN PATCH did not trigger rematch — suspected_duplicate_work_id is {suspected:?}, expected Some({work_a})"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_null_clear_does_not_surface_as_pending_draft(pool: sqlx::PgPool) {
+        // Regression: PATCH-clear inserts an audit row with
+        // new_value='null'::jsonb. Without the filter in
+        // load_pending_versions, that row would surface in
+        // BookDetail.metadata_versions as a draft with "(null)" value
+        // and Accept/Reject buttons.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let initial = format!("seed prose {marker}");
+        let seed_v =
+            insert_version(&ing_pool, m_id, "description", serde_json::json!(&initial)).await;
+        sqlx::query!(
+            "UPDATE works SET description = $1, description_version_id = $2 WHERE id = $3",
+            initial,
+            seed_v,
+            work_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed description");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+
+        // Now GET the detail and confirm the audit row is absent.
+        let detail = server
+            .get(&format!("/api/books/{m_id}"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(detail.status_code(), StatusCode::OK);
+        let body: serde_json::Value = detail.json();
+        let versions = body
+            .get("metadata_versions")
+            .and_then(|v| v.as_array())
+            .expect("metadata_versions array present");
+        for v in versions {
+            assert_ne!(
+                v.get("new_value"),
+                Some(&serde_json::Value::Null),
+                "null-value audit row leaked into Versions tab: {v}"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reuses_conflicting_row_and_resets_status_to_pending(pool: sqlx::PgPool) {
+        // Operator rejects their own manual entry, then re-saves the
+        // same value. The conflict path must reset status back to
+        // 'pending' so apply_version's canonical-pointer write doesn't
+        // leave the row in 'rejected' state.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let value = format!("Manual title {marker}");
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // First save.
+        let r1 = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"title": value.clone()}}))
+            .await;
+        assert_eq!(r1.status_code(), StatusCode::NO_CONTENT);
+
+        // Mark that manual row rejected directly (simulates an operator
+        // rejecting their own manual entry via the per-row Reject button).
+        let v1: Uuid = sqlx::query_scalar!(
+            "SELECT title_version_id AS \"id!\" FROM works WHERE id = $1",
+            work_id
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch v1");
+        sqlx::query!(
+            "UPDATE metadata_versions SET status = 'rejected', resolved_at = now() WHERE id = $1",
+            v1,
+        )
+        .execute(&app_pool)
+        .await
+        .expect("mark rejected");
+
+        // Second save of the same value — should reset to pending.
+        let r2 = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": value}}))
+            .await;
+        assert_eq!(r2.status_code(), StatusCode::NO_CONTENT);
+
+        let status: String = sqlx::query_scalar!(
+            "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
+            v1,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch status");
+        assert_eq!(status, "pending", "conflict path must reset status");
     }
 }

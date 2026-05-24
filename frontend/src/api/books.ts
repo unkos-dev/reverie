@@ -252,7 +252,7 @@ export interface UpdateBookMetadataFields {
  * Throws an `ApiError` with `status === 422` when the body has no
  * populated fields, or with `status === 403` for child accounts.
  *
- * On success the server returns 200 with no body. Callers should
+ * On success the server returns 204 No Content. Callers should
  * invalidate the `["books", "detail", id]` query key so the Versions
  * tab + canonical fields refetch.
  */

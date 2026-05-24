@@ -6,7 +6,7 @@ import { ApiError } from "./errors";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
   if (typeof body !== "string") throw new Error("expected stringified JSON body");
-  return JSON.parse(body) as unknown;
+  return JSON.parse(body);
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {

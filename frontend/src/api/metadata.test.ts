@@ -10,7 +10,7 @@ import { acceptVersion, rejectVersion, revertField } from "./metadata";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
   if (typeof body !== "string") throw new Error("expected stringified JSON body");
-  return JSON.parse(body) as unknown;
+  return JSON.parse(body);
 }
 
 beforeEach(() => {

@@ -773,6 +773,12 @@ async fn load_pending_versions(
     manifestation_id: Uuid,
     canonical_ids: &[Uuid],
 ) -> Result<Vec<MetadataVersionRow>, AppError> {
+    // `new_value != 'null'::jsonb` excludes audit-trail rows recorded
+    // by the manual-clear path (`PATCH /api/books/{id}/metadata` with a
+    // `null` value). Those rows live in the journal for accountability
+    // but never become a draft an operator could accept — surfacing
+    // them here would render `(null)` proposals with Accept/Reject
+    // buttons in the Versions tab.
     let rows = sqlx::query!(
         "SELECT id, field_name, source, \
                 new_value AS \"new_value!\", \
@@ -782,6 +788,7 @@ async fn load_pending_versions(
          FROM metadata_versions \
          WHERE manifestation_id = $1 \
            AND status = 'pending'::metadata_review_status \
+           AND new_value != 'null'::jsonb \
            AND NOT (id = ANY($2::uuid[])) \
          ORDER BY last_seen_at DESC",
         manifestation_id,

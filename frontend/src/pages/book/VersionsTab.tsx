@@ -19,6 +19,16 @@ import {
   type BookDetail,
   type MetadataVersionRow,
 } from "@/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { queryKeys } from "@/lib/query/keys";
@@ -49,8 +59,15 @@ export function VersionsTab({ book }: VersionsTabProps): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
   const fieldsWithDrafts = Object.keys(grouped).sort();
+  // Editable fields are limited to those whose canonical value is
+  // present on `BookDetail`. `publisher` / `pub_date` live on
+  // `manifestations` but are not yet surfaced in the wire shape;
+  // including them here would let the operator clear a populated
+  // field without the AlertDialog confirm (the dialog gates on
+  // `canonical !== null`, which the missing-field case fakes as
+  // "unset"). Re-add once `BookDetail` carries those columns.
   const canonicalEditableFields = (
-    ["title", "description", "language", "publisher", "pub_date", "isbn_10", "isbn_13"] as const
+    ["title", "description", "language", "isbn_10", "isbn_13"] as const
   ).map((name) => ({
     name,
     label: FIELD_LABEL[name] ?? name,
@@ -109,6 +126,7 @@ interface FieldGroupProps {
 /** One field's section: current canonical row + pending alternatives. */
 function FieldGroup({ manifestationId, field, canonical, rows }: FieldGroupProps): ReactElement {
   const queryClient = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: queryKeys.books.detail(manifestationId),
@@ -120,7 +138,10 @@ function FieldGroup({ manifestationId, field, canonical, rows }: FieldGroupProps
       void invalidate();
       toast.success(`Cleared ${FIELD_LABEL[field] ?? field}`);
     },
-    onError: (err: unknown) => toast.error(formatError(err)),
+    onError: (err: unknown) => {
+      console.error("[VersionsTab.revertField] mutation failed", err);
+      toast.error(formatError(err));
+    },
   });
 
   return (
@@ -140,7 +161,7 @@ function FieldGroup({ manifestationId, field, canonical, rows }: FieldGroupProps
             size="sm"
             variant="ghost"
             onClick={() => {
-              revertMutation.mutate();
+              setConfirmOpen(true);
             }}
             disabled={revertMutation.isPending}
           >
@@ -154,6 +175,28 @@ function FieldGroup({ manifestationId, field, canonical, rows }: FieldGroupProps
           <PendingRow key={row.id} manifestationId={manifestationId} field={field} row={row} />
         ))}
       </dl>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear {FIELD_LABEL[field] ?? field}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The canonical value will be set to NULL and an audit row recorded. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                revertMutation.mutate();
+                setConfirmOpen(false);
+              }}
+            >
+              Clear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -195,7 +238,10 @@ function PendingRow({ manifestationId, field, row }: PendingRowProps): ReactElem
       void invalidate();
       toast.success(`Accepted ${row.source} draft for ${FIELD_LABEL[field] ?? field}`);
     },
-    onError: (err: unknown) => toast.error(formatError(err)),
+    onError: (err: unknown) => {
+      console.error("[VersionsTab.acceptVersion] mutation failed", err);
+      toast.error(formatError(err));
+    },
   });
   const rejectMutation = useMutation({
     mutationFn: () => rejectVersion(manifestationId, row.id),
@@ -203,7 +249,10 @@ function PendingRow({ manifestationId, field, row }: PendingRowProps): ReactElem
       void invalidate();
       toast.success(`Rejected ${row.source} draft`);
     },
-    onError: (err: unknown) => toast.error(formatError(err)),
+    onError: (err: unknown) => {
+      console.error("[VersionsTab.rejectVersion] mutation failed", err);
+      toast.error(formatError(err));
+    },
   });
 
   const value = renderValue(row.new_value);

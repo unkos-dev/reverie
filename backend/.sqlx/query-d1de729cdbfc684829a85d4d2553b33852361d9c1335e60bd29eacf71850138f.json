@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": ["Text", "Uuid"]
+    },
+    "nullable": []
+  },
+  "hash": "d1de729cdbfc684829a85d4d2553b33852361d9c1335e60bd29eacf71850138f"
+}

@@ -13,7 +13,8 @@
  * field with a non-empty input emits the string value.
  *
  * A confirmation `<AlertDialog>` interposes when the change would
- * clear an already-populated field (per plan §11c-task-6).
+ * clear an already-populated field, mirroring the per-row Clear
+ * affordance on [`VersionsTab`].
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
@@ -61,7 +62,9 @@ interface EditMetadataDialogProps {
   fields: readonly EditableField[];
 }
 
-type FieldState = Record<string, { value: string; touched: boolean }>;
+type FieldState = Partial<
+  Record<keyof UpdateBookMetadataFields, { value: string; touched: boolean }>
+>;
 
 const FIELDS_AS_TEXTAREA: ReadonlySet<string> = new Set(["description"]);
 
@@ -127,6 +130,7 @@ function EditMetadataForm({
       onDone();
     },
     onError: (err: unknown) => {
+      console.error("[EditMetadataDialog.updateBookMetadata] mutation failed", err);
       toast.error(formatError(err));
     },
   });
@@ -136,7 +140,7 @@ function EditMetadataForm({
     const clears: string[] = [];
     for (const field of fields) {
       const slot = state[field.name];
-      if (!slot.touched) continue;
+      if (!slot || !slot.touched) continue;
       const trimmed = slot.value.trim();
       if (trimmed.length === 0) {
         body[field.name] = null;
