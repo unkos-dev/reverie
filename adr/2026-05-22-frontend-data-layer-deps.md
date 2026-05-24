@@ -110,11 +110,14 @@ checklist gates the package landing.
 
 ### `@dnd-kit/sortable` (Sub-phase 11d, REQUIRED)
 
-Adopt `@dnd-kit/sortable@^8` (`@dnd-kit/core` is a peer
-transitively pulled in) under `dependencies`. Used by 11d's
-shelf-item reorder UI: drag rows to reorder, server-side `PATCH
-/api/shelves/{id}/items` with optimistic update plus rollback
-on RFC 9110 `If-Match` precondition failure (412).
+Adopt `@dnd-kit/sortable@^8` under `dependencies`, alongside
+`@dnd-kit/core@^6` (transitive but pinned directly so version
+bumps surface in `npm install`) and `@dnd-kit/utilities@^3`
+(CSS-transform helpers used by `ShelfDetailPage`'s
+`SortableItem`). Used by 11d's shelf-item reorder UI: drag
+rows to reorder, server-side `PUT /api/shelves/{id}/items`
+with optimistic update plus rollback on RFC 9110 `If-Match`
+precondition failure (412).
 
 Why dnd-kit and not react-dnd: dnd-kit is the actively
 maintained successor (react-dnd's last meaningful release was

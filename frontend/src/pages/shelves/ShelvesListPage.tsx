@@ -1,13 +1,10 @@
 /**
- * Production `/shelves` page (sub-phase 11d).
+ * Production `/shelves` page.
  *
  * Lists the caller's shelves with create / rename / delete. System
- * shelves render with disabled rename/delete affordances (the backend
- * 409s with `system-shelf-immutable` if the operator tries anyway).
- *
- * The sidebar integration into `/library` is a separate carry-over —
- * this page ships the CRUD surface so the rest of 11d can build on
- * it.
+ * shelves render with disabled rename/delete affordances; the backend
+ * rejects mutations on `is_system = TRUE` shelves with HTTP 409
+ * `system-shelf-immutable`.
  */
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -165,6 +162,11 @@ function ShelvesContent(): ReactElement {
         pending={createMutation.isPending}
       />
       <NameDialog
+        // `key` forces remount when the rename target changes — without
+        // it, `useState(initialName)` retains the previous shelf's
+        // name on the next open (React only runs the initializer once
+        // per mount).
+        key={renameTarget?.id ?? "none"}
         open={renameTarget !== null}
         title="Rename shelf"
         initialName={renameTarget?.name ?? ""}

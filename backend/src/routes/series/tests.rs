@@ -1,4 +1,4 @@
-//! Integration tests for `/api/series/{id}` (sub-phase 11d).
+//! Integration tests for `/api/series/{id}`.
 //!
 //! Existence gate, RLS isolation, child visibility, and the
 //! ordering invariant from the route's docstring.
@@ -133,6 +133,67 @@ async fn detail_404_when_no_manifestation_in_series_visible(pool: PgPool) {
         .add_header(auth(&basic).0, auth(&basic).1)
         .await;
     test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_child_sees_visible_works_with_gap_for_hidden_ones(pool: PgPool) {
+    // Series has two works; child has access only to work A's
+    // manifestation. The response must surface BOTH works (the work
+    // catalog is not user-scoped), but work B's `manifestations`
+    // array must be empty so the frontend can render a "missing" gap.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin_id, _) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (child_id, basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "kid-partial").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Partial', 'partial') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (w_a, m_a) = test_support::db::insert_work_and_manifestation(&ingestion_pool, "p-a").await;
+    let (w_b, _m_b) = test_support::db::insert_work_and_manifestation(&ingestion_pool, "p-b").await;
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) \
+         VALUES ($1, $2, 1.0::float8), ($1, $3, 2.0::float8)",
+        series_id,
+        w_a,
+        w_b,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Only m_a is on a shelf the child can see.
+    let shelf_id = test_support::db::create_shelf(&app_pool, admin_id, "Shared").await;
+    sqlx::query!(
+        "UPDATE shelves SET user_id = $1 WHERE id = $2",
+        child_id,
+        shelf_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    test_support::db::add_to_shelf(&app_pool, shelf_id, m_a).await;
+
+    let r = server
+        .get(&format!("/api/series/{series_id}"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    let body: serde_json::Value = r.json();
+    let works = body["works"].as_array().unwrap();
+    assert_eq!(works.len(), 2, "both works surface in catalog order");
+    assert_eq!(works[0]["id"].as_str().unwrap(), w_a.to_string());
+    assert_eq!(works[0]["manifestations"].as_array().unwrap().len(), 1);
+    assert_eq!(works[1]["id"].as_str().unwrap(), w_b.to_string());
+    assert_eq!(
+        works[1]["manifestations"].as_array().unwrap().len(),
+        0,
+        "hidden work surfaces with empty manifestations array (gap)",
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

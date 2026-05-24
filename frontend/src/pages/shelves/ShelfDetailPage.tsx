@@ -1,5 +1,5 @@
 /**
- * Production `/shelves/:id` page (sub-phase 11d).
+ * Production `/shelves/:id` page.
  *
  * Renders the shelf's items in stored order with a drag-to-reorder
  * affordance backed by `@dnd-kit/sortable`. Reorder uses an
@@ -87,7 +87,9 @@ function ShelfDetailContent(): ReactElement {
       } else {
         toast.error(err instanceof ApiError ? err.detail : "Reorder failed.");
       }
-      void qc.invalidateQueries({ queryKey });
+      // No invalidate here — `onSettled` handles the refetch on both
+      // success and failure paths. Doing both burns a duplicate
+      // round-trip and can flash stale → reverted → fresh.
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey });

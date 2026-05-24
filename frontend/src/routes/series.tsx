@@ -1,5 +1,5 @@
 /**
- * Route module for `/series/:id` (sub-phase 11d). Exports `loader`
+ * Route module for `/series/:id`. Exports `loader`
  * (prefetches the series detail into the shared `QueryClient`) and
  * `Component` (the page renderer).
  *

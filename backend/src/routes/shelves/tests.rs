@@ -1,4 +1,4 @@
-//! Integration tests for `/api/shelves*` (sub-phase 11d).
+//! Integration tests for `/api/shelves*`.
 
 use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use serde_json::json;
@@ -526,6 +526,159 @@ async fn reorder_rejects_partial_list(pool: PgPool) {
         .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
         .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
         .json(&json!({"items": [ids[0]]}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reorder_with_non_quoted_if_match_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "unquoted", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .put(&format!("/api/shelves/{shelf_id}/items"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .add_header(
+            header::IF_MATCH,
+            HeaderValue::from_static("2026-05-24T03:00:00Z"),
+        )
+        .json(&json!({"items": [ids[1], ids[0]]}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reorder_with_weak_etag_if_match_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "weak", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .put(&format!("/api/shelves/{shelf_id}/items"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .add_header(
+            header::IF_MATCH,
+            HeaderValue::from_static("W/\"2026-05-24T03:00:00Z\""),
+        )
+        .json(&json!({"items": [ids[1], ids[0]]}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reorder_with_malformed_timestamp_if_match_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "malformed", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .put(&format!("/api/shelves/{shelf_id}/items"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .add_header(header::IF_MATCH, HeaderValue::from_static("\"garbage\""))
+        .json(&json!({"items": [ids[1], ids[0]]}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reorder_rejects_foreign_manifestation_id(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "foreign", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let initial = server
+        .get(&format!("/api/shelves/{shelf_id}"))
+        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+        .await;
+    let etag = etag_value(initial.headers());
+    let foreign = Uuid::new_v4();
+    let r = server
+        .put(&format!("/api/shelves/{shelf_id}/items"))
+        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
+        .json(&json!({"items": [ids[0], foreign]}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_add_item_is_idempotent_no_double_position(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) = test_support::db::create_adult_and_basic_auth(&app_pool, "dup-add").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Stuff").await;
+    let (_w, m_id) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "dup-add").await;
+    let other = test_support::db::create_shelf(&app_pool, a_id, "Visible").await;
+    test_support::db::add_to_shelf(&app_pool, other, m_id).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    for _ in 0..2 {
+        let r = server
+            .post(&format!("/api/shelves/{shelf_id}/items"))
+            .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+            .json(&json!({"manifestation_id": m_id}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NO_CONTENT);
+    }
+    // ON CONFLICT DO NOTHING — exactly one row.
+    let after = server
+        .get(&format!("/api/shelves/{shelf_id}"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    let body: serde_json::Value = after.json();
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn remove_shelf_item_404_when_item_not_on_shelf(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "rm-phantom").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Empty").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let phantom = Uuid::new_v4();
+    let r = server
+        .delete(&format!("/api/shelves/{shelf_id}/items/{phantom}"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn child_cannot_rename_shelf(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (c_id, c_basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "kid-rename").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, c_id, "Kid's").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/shelves/{shelf_id}"))
+        .add_header(auth(&c_basic).0, auth(&c_basic).1)
+        .json(&json!({"name": "New"}))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn rename_shelf_rejects_empty_name(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "ren-empty").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Old").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/shelves/{shelf_id}"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .json(&json!({"name": "   "}))
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
 }

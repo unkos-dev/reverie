@@ -335,13 +335,15 @@ function ActiveFilterChips({
   // `useQuery` with `enabled: false` would block the first render; we
   // unconditionally subscribe to the cache and let the picker mutation
   // populate it on first use.
-  const { data: shelves } = useQuery<Shelf[]>({
-    queryKey: ["shelves", "list"] as const,
+  const { data: shelves, isError: shelvesError } = useQuery<Shelf[]>({
+    queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
     staleTime: 60_000,
   });
-  const shelfNameFor = (id: string): string =>
-    shelves?.find((s) => s.id === id)?.name ?? shortId(id);
+  const shelfNameFor = (id: string): string => {
+    if (shelvesError) return "(unknown)";
+    return shelves?.find((s) => s.id === id)?.name ?? shortId(id);
+  };
 
   const filters: ActiveChip[] = [];
   for (const key of ["author", "series", "shelf"] as const) {
@@ -427,8 +429,12 @@ function ShelfPickerButton({
   setSearchParams,
 }: ShelfPickerButtonProps): ReactElement {
   const [open, setOpen] = useState(false);
-  const { data: shelves, isLoading } = useQuery<Shelf[]>({
-    queryKey: ["shelves", "list"] as const,
+  const {
+    data: shelves,
+    isLoading,
+    isError,
+  } = useQuery<Shelf[]>({
+    queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
     staleTime: 60_000,
   });
@@ -457,7 +463,13 @@ function ShelfPickerButton({
         <Command>
           <CommandInput placeholder="Filter by shelf…" />
           <CommandList>
-            <CommandEmpty>{isLoading ? "Loading shelves…" : "No shelves yet."}</CommandEmpty>
+            <CommandEmpty>
+              {isLoading
+                ? "Loading shelves…"
+                : isError
+                  ? "Could not load shelves."
+                  : "No shelves yet."}
+            </CommandEmpty>
             <CommandGroup heading="Shelves">
               {(shelves ?? []).map((shelf) => (
                 <CommandItem

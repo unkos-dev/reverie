@@ -1,4 +1,4 @@
-//! Response DTOs for `/api/series/{id}` (sub-phase 11d).
+//! Response DTOs for `/api/series/{id}`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,

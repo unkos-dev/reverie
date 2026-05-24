@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 /**
- * Route module for `/shelves/:id` (sub-phase 11d).
+ * Route module for `/shelves/:id`.
  */
 import type { LoaderFunctionArgs } from "react-router";
 

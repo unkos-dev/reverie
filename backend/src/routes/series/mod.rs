@@ -1,4 +1,4 @@
-//! `/api/series/{id}` JSON route (sub-phase 11d).
+//! `/api/series/{id}` JSON route.
 //!
 //! Returns the series identity plus an ordered list of its works,
 //! each with the manifestations the caller can see. Mirrors the

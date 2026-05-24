@@ -1,4 +1,4 @@
-//! `/api/shelves*` CRUD JSON routes (sub-phase 11d).
+//! `/api/shelves*` CRUD JSON routes.
 //!
 //! Shelves are user-scoped curation buckets. The shelves and
 //! shelf_items tables ship without RLS — the runtime role
@@ -6,6 +6,15 @@
 //! handler boundary via explicit `WHERE user_id = current_user`
 //! predicates. Mismatched ownership resolves to `AppError::NotFound`
 //! so existence is not leaked across users.
+//!
+//! THREAT: Every mutating handler enforces shelf ownership in the SQL
+//! `WHERE user_id = $current_user` predicate before any DML. The DB
+//! layer carries no RLS on `shelves` / `shelf_items`, so removing
+//! that predicate would silently expose every user's shelves to every
+//! authenticated caller. The `add_shelf_item` handler additionally
+//! runs an RLS-scoped probe on the target manifestation to prevent
+//! shelf-existence probing via random UUIDs (relevant for children,
+//! whose manifestation visibility is shelf-gated).
 //!
 //! # ETag / If-Match contract
 //!
@@ -38,7 +47,7 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/shelves*` router (sub-phase 11d).
+/// Build the `/api/shelves*` router.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/shelves", get(list_shelves).post(create_shelf))
@@ -84,10 +93,21 @@ fn parse_if_match(headers: &HeaderMap) -> Result<Option<OffsetDateTime>, AppErro
         .to_str()
         .map_err(|_| AppError::Validation("If-Match header must be ASCII".into()))?;
     let trimmed = value.trim();
-    let stripped = trimmed
-        .strip_prefix("W/")
-        .unwrap_or(trimmed)
-        .trim_matches('"');
+    // RFC 9110 §13.1.2: If-Match requires strong comparison. Weak
+    // validators (`W/"..."`) are semantically wrong for optimistic
+    // concurrency and reject explicitly rather than silently being
+    // promoted to strong.
+    if trimmed.starts_with("W/") {
+        return Err(AppError::Validation(
+            "weak entity-tags (W/\"...\") not accepted for If-Match".into(),
+        ));
+    }
+    // Strong tag MUST be wrapped in double quotes per RFC 9110 §8.8.3.
+    let Some(stripped) = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
+        return Err(AppError::Validation(
+            "If-Match value must be a quoted entity-tag".into(),
+        ));
+    };
     let ts = OffsetDateTime::parse(stripped, &Rfc3339).map_err(|e| {
         AppError::Validation(format!(
             "If-Match value is not a valid RFC3339 entity-tag: {e}"
@@ -399,6 +419,8 @@ struct AddItemRequest {
 /// `max(position) + 1`. Bumps the shelf's `updated_at` (`ETag`).
 ///
 /// # Errors
+/// - [`AppError::Validation`] when the request body is missing,
+///   malformed, or lacks the `manifestation_id` field.
 /// - [`AppError::NotFound`] when the shelf is missing / not owned, OR
 ///   when the manifestation is not visible to the caller (verified
 ///   via an RLS-scoped existence probe to prevent shelf-existence
@@ -489,7 +511,10 @@ async fn add_shelf_item(
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when the shelf is missing / not owned by
-///   the caller.
+///   the caller, OR when the item is not on the shelf (the second
+///   case prevents silent `ETag` drift from a no-op delete: bumping
+///   `updated_at` on zero `rows_affected` would invalidate a
+///   correctly-held client `If-Match` for the next reorder).
 /// - [`AppError::Internal`] on database errors.
 async fn remove_shelf_item(
     current_user: CurrentUser,
@@ -512,7 +537,7 @@ async fn remove_shelf_item(
     if owned.is_none() {
         return Err(AppError::NotFound);
     }
-    sqlx::query!(
+    let deleted = sqlx::query!(
         "DELETE FROM shelf_items WHERE shelf_id = $1 AND manifestation_id = $2",
         shelf_id,
         manifestation_id,
@@ -520,6 +545,9 @@ async fn remove_shelf_item(
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
+    if deleted.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
     let updated_at: OffsetDateTime = sqlx::query_scalar!(
         r#"UPDATE shelves SET updated_at = now() WHERE id = $1
            RETURNING updated_at AS "ts!""#,
@@ -612,20 +640,26 @@ async fn reorder_shelf_items(
         }
     }
 
-    for (idx, manifestation_id) in req.items.iter().enumerate() {
-        let position = i32::try_from(idx)
-            .map_err(|e| AppError::Validation(format!("position overflow: {e}")))?;
-        sqlx::query!(
-            "UPDATE shelf_items SET position = $1 \
-             WHERE shelf_id = $2 AND manifestation_id = $3",
-            position,
-            id,
-            manifestation_id,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    }
+    // Bulk-update positions via UNNEST in a single round-trip — N
+    // sequential UPDATE statements would make the lock window scale
+    // with shelf size.
+    let positions: Vec<i32> = (0..req.items.len())
+        .map(|i| {
+            i32::try_from(i).map_err(|e| AppError::Validation(format!("position overflow: {e}")))
+        })
+        .collect::<Result<_, _>>()?;
+    sqlx::query!(
+        "UPDATE shelf_items AS si \
+            SET position = updates.pos \
+           FROM unnest($1::int4[], $2::uuid[]) AS updates(pos, mid) \
+          WHERE si.shelf_id = $3 AND si.manifestation_id = updates.mid",
+        &positions,
+        &req.items,
+        id,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
 
     let updated_at: OffsetDateTime = sqlx::query_scalar!(
         r#"UPDATE shelves SET updated_at = now() WHERE id = $1

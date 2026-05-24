@@ -1,5 +1,5 @@
 /**
- * Production `/series/:id` page (sub-phase 11d).
+ * Production `/series/:id` page.
  *
  * Lists the works in a series in ordered position, surfacing a
  * completeness indicator (`own / total`) and a "gap" badge on works

@@ -1,5 +1,5 @@
 /**
- * Client for the `/api/shelves*` CRUD surface (sub-phase 11d).
+ * Client for the `/api/shelves*` CRUD surface.
  *
  * Mirrors the response DTOs in `backend/src/models/shelf.rs`.
  *

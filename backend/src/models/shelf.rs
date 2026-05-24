@@ -1,4 +1,4 @@
-//! Response DTOs for `/api/shelves*` (sub-phase 11d).
+//! Response DTOs for `/api/shelves*`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
@@ -36,9 +36,9 @@ pub struct Shelf {
     /// `shelves.updated_at`. Doubles as the `ETag` value the client
     /// echoes on `If-Match` for the reorder endpoint.
     pub updated_at: OffsetDateTime,
-    /// Count of `shelf_items` rows on this shelf. Cheap to compute via
-    /// a `LEFT JOIN LATERAL (SELECT COUNT(*) …)` and surfaces in the
-    /// sidebar without a follow-up request per shelf.
+    /// Count of `shelf_items` rows on this shelf. Computed inline via
+    /// a correlated scalar subquery on the list endpoint and surfaces
+    /// in the sidebar without a follow-up request per shelf.
     pub item_count: i64,
 }
 

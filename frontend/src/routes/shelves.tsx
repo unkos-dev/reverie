@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 /**
- * Route module for `/shelves` (sub-phase 11d).
+ * Route module for `/shelves`.
  */
 import { listShelves } from "@/api";
 import { queryClient } from "@/lib/query/client";

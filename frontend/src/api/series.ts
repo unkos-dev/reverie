@@ -1,5 +1,5 @@
 /**
- * Read-only client for `/api/series/{id}` (sub-phase 11d).
+ * Read-only client for `/api/series/{id}`.
  *
  * Mirrors the response DTO in `backend/src/models/series.rs`. Snake_case
  * field names match the wire shape; the Zod schema is the boundary
