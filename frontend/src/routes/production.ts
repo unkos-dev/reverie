@@ -58,3 +58,12 @@ export const shelfDetailRoute: RouteObject = {
     return { loader: mod.loader, Component: mod.Component };
   },
 };
+
+/** `/admin/users` — admin-only user management. */
+export const adminUsersRoute: RouteObject = {
+  path: "admin/users",
+  lazy: async () => {
+    const mod = await import("./admin");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};

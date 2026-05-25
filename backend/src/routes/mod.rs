@@ -31,3 +31,5 @@ pub mod shelves;
 pub mod spa;
 /// Per-user device-token issue / list / revoke endpoints.
 pub mod tokens;
+/// Admin-only user management (`/api/users*`).
+pub mod users;
