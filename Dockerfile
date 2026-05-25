@@ -40,7 +40,7 @@ RUN cargo build --release
 # but package-lock.json is unchanged — buildkit reuses the mount within a single
 # build. GHA runners are ephemeral so the mount does not persist across runs;
 # cross-run npm reuse is provided by the gha layer cache instead.
-FROM node:24.15.0-slim AS frontend-builder
+FROM node:24.16.0-slim AS frontend-builder
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci

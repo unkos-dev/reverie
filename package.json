@@ -3,7 +3,7 @@
   "name": "reverie-dev",
   "description": "Development tooling for Reverie",
   "engines": {
-    "node": ">=24.15.0"
+    "node": ">=24.16.0"
   },
   "scripts": {
     "prepare": "husky"
