@@ -1,9 +1,16 @@
 //! `/api/users*` admin-only user management routes.
 //!
 //! All endpoints require `role = admin`; non-admin callers receive
-//! `AppError::Forbidden` (403). Mutating endpoints bump
-//! `users.session_version` for the target user in the same transaction,
-//! invalidating their active sessions on the next request.
+//! `AppError::Forbidden` (403).
+//!
+//! Session invalidation policy: `users.session_version` is bumped in the same
+//! transaction for mutations that affect access-control or identity matching:
+//! - `PUT …/role` — role governs RLS visibility and admin gates.
+//! - `PUT …/child-status` — child flag controls content-visibility rules.
+//! - `PATCH …` email field — email is used for OIDC provider matching; a
+//!   stale email in an active session would bind the session to the wrong
+//!   identity on next OIDC login.
+//! `display_name` changes do not bump session_version (cosmetic only).
 //!
 //! # Last-admin protection (TOCTOU-safe)
 //!
@@ -22,6 +29,8 @@ use axum::routing::{get, patch, put};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use email_address::EmailAddress;
 
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
@@ -324,11 +333,16 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
 
 /// `PATCH /api/users/{id}` — update `display_name` / `email` (admin only).
 ///
+/// Bumps `session_version` when `email` is changed or cleared (OIDC identity
+/// matching depends on email; see module-level session-invalidation policy).
+/// `display_name` changes do not bump `session_version`.
+///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::NotFound`] when the target user does not exist.
-/// - [`AppError::Validation`] when `display_name` is null or empty, or
-///   when `email` is already in use by another user.
+/// - [`AppError::Validation`] when `display_name` is null or empty, when
+///   `email` is not a valid RFC 5322 address, or when `email` is already
+///   in use by another user.
 /// - [`AppError::Internal`] on database errors.
 async fn update_user(
     current_user: CurrentUser,
@@ -385,9 +399,10 @@ async fn update_user(
     if let Some(ref email_opt) = req.email {
         match email_opt {
             None => {
-                // Clear email.
+                // Clear email. Bumps session_version — see module-level
+                // session-invalidation policy (OIDC matching depends on email).
                 sqlx::query!(
-                    "UPDATE users SET email = NULL, updated_at = now() WHERE id = $1",
+                    "UPDATE users SET email = NULL, session_version = session_version + 1, updated_at = now() WHERE id = $1",
                     id,
                 )
                 .execute(&mut *tx)
@@ -398,6 +413,9 @@ async fn update_user(
                 let trimmed = email.trim();
                 if trimmed.is_empty() {
                     return Err(AppError::Validation("email must not be empty".into()));
+                }
+                if !EmailAddress::is_valid(trimmed) {
+                    return Err(AppError::Validation("email must be a valid address".into()));
                 }
                 // Check unique constraint proactively for a clear error message.
                 let conflict = sqlx::query_scalar!(
@@ -412,7 +430,7 @@ async fn update_user(
                     return Err(AppError::Validation("email already in use".into()));
                 }
                 sqlx::query!(
-                    "UPDATE users SET email = $1, updated_at = now() WHERE id = $2",
+                    "UPDATE users SET email = $1, session_version = session_version + 1, updated_at = now() WHERE id = $2",
                     trimmed,
                     id,
                 )

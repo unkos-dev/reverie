@@ -14,7 +14,7 @@ type Role = (typeof ROLE_VALUES)[number];
 const UserSchema = z.object({
   id: z.uuid(),
   display_name: z.string(),
-  email: z.string().nullable(),
+  email: z.string().email().nullable(),
   role: z.enum(ROLE_VALUES),
   is_child: z.boolean(),
   created_at: z.string(),

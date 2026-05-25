@@ -2937,6 +2937,7 @@ dependencies = [
  "base64ct",
  "chrono",
  "dotenvy",
+ "email_address",
  "encoding_rs",
  "futures",
  "governor",

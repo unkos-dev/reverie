@@ -51,6 +51,10 @@ function UsersPage(): ReactElement {
     mutationFn: ({ id, role }: { id: string; role: Role }) => updateUserRole(id, role),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      // Invalidate the caller's own identity — staleTime: Infinity means it
+      // never auto-refreshes, so a self-demotion would leave me.role='admin'
+      // cached indefinitely without this explicit invalidation.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
     },
     onError: (err: Error) => {
       const detail = err instanceof ApiError ? err.detail : err.message;
@@ -63,6 +67,9 @@ function UsersPage(): ReactElement {
       updateUserChildStatus(id, isChild),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      // Same reasoning as roleMutation — invalidate me so self-mutations
+      // trigger a re-fetch and the Navigate guard evaluates fresh identity.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
     },
     onError: (err: Error) => {
       const detail = err instanceof ApiError ? err.detail : err.message;

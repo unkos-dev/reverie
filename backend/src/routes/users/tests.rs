@@ -422,6 +422,37 @@ async fn patch_nonexistent_user_returns_404(pool: PgPool) {
     test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }
 
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_user_invalid_email_format_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (adult_id, _) = test_support::db::create_adult_and_basic_auth(&app_pool, "bad-email").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    for bad in ["notanemail", "a@", "@domain.com", "a@.com", ""] {
+        if bad.is_empty() {
+            // Empty string is a separate validation path tested elsewhere.
+            continue;
+        }
+        let r = server
+            .patch(&format!("/api/users/{adult_id}"))
+            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .json(&json!({"email": bad}))
+            .await;
+        let problem = test_support::assert_problem(
+            &r,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert!(
+            problem["detail"].as_str().unwrap().contains("valid"),
+            "expected 'valid' in detail for input {bad:?}, got: {:?}",
+            problem["detail"]
+        );
+    }
+}
+
 // ---------- SECURITY: concurrent last-admin demotion ----------
 
 #[sqlx::test(migrations = "./migrations")]
