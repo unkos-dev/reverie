@@ -5,9 +5,11 @@
  *
  * Response handling:
  * - 200 OK — parsed and returned as `AuthMe`.
- * - 401 / 403 — unauthenticated/forbidden; returns `null` (normal state).
+ * - 401 / 403 — unauthenticated/forbidden; `data` is `undefined` (normal
+ *   "logged out" state — callers check `data === undefined`).
  * - Any other non-2xx — throws so React Query surfaces the error and the
- *   caller can distinguish an operational failure from "not logged in".
+ *   caller can distinguish an operational failure from "not logged in"
+ *   via `isError`.
  */
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -28,8 +30,8 @@ const AuthMeSchema = z.object({
 
 type AuthMe = z.infer<typeof AuthMeSchema>;
 
-function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean } {
-  const { data, isLoading } = useQuery({
+function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean; isError: boolean } {
+  const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.auth.me(),
     queryFn: async ({ signal }) => {
       const resp = await fetch("/auth/me", {
@@ -49,7 +51,7 @@ function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean } {
     staleTime: Infinity,
     retry: false,
   });
-  return { data: data ?? undefined, isLoading };
+  return { data: data ?? undefined, isLoading, isError };
 }
 
 export { useAuthMe };

@@ -70,7 +70,7 @@ describe("useAuthMe", () => {
     expect(result.current.data).toBeUndefined();
   });
 
-  test("throws on 500 (server error)", async () => {
+  test("throws on 500 (server error) and exposes isError", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(null, { status: 500, statusText: "Internal Server Error" }),
     );
@@ -80,7 +80,34 @@ describe("useAuthMe", () => {
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
-    // Query enters error state; data is undefined
     expect(result.current.data).toBeUndefined();
+    expect(result.current.isError).toBe(true);
+  });
+
+  test("isError is false on successful fetch", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(STUB_ME), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.isError).toBe(false);
+  });
+
+  test("isError is false on 401 (not an operational failure)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
+
+    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.isError).toBe(false);
   });
 });

@@ -1,5 +1,9 @@
 //! `/api/users*` admin-only user management routes.
 //!
+//! THREAT: Privilege escalation and horizontal privilege abuse. All mutations
+//! are admin-gated via `require_admin()`; `session_version` bumps ensure role
+//! changes take effect on active sessions immediately.
+//!
 //! All endpoints require `role = admin`; non-admin callers receive
 //! `AppError::Forbidden` (403).
 //!
@@ -110,9 +114,10 @@ struct UpdateRoleRequest {
 /// - [`AppError::NotFound`] when the target user does not exist.
 /// - [`AppError::Validation`] with detail "would leave zero admins"
 ///   when the demotion would remove the last admin.
-/// - [`AppError::Validation`] with detail about `chk_child_role_sync`
-///   when setting role to non-child on an `is_child = true` user, or
-///   role to child on an `is_child = false` user.
+/// - [`AppError::Validation`] with message "cannot set role to child without
+///   enabling child status first" when `role = child` on an `is_child = false`
+///   user, or "cannot change role from child without disabling child status
+///   first" when setting a non-child role on an `is_child = true` user.
 /// - [`AppError::Internal`] on database errors.
 async fn update_role(
     current_user: CurrentUser,
@@ -206,7 +211,9 @@ struct UpdateChildStatusRequest {
 ///
 /// When `is_child` is set to `true`, `role` is simultaneously set to
 /// `'child'` in the same transaction to satisfy `chk_child_role_sync`.
-/// When `is_child` is set to `false`, `role` is set to `'adult'`.
+/// When `is_child` is set to `false`, `role` is reverted to `'adult'` only
+/// if the current role is `'child'`; other roles (e.g. `'admin'`) are left
+/// unchanged to prevent privilege escalation through the child-status toggle.
 ///
 /// Bumps `session_version` — child/adult visibility rules differ under
 /// RLS, so existing sessions must re-evaluate.
@@ -395,7 +402,9 @@ async fn update_user(
         .map_err(|e| AppError::Internal(e.into()))?;
     }
 
-    // Apply email if present.
+    // THREAT: email is the OIDC provider-matching key. Updating or clearing it
+    // without bumping session_version would bind active sessions to the old
+    // identity on next OIDC login.
     if let Some(ref email_opt) = req.email {
         match email_opt {
             None => {

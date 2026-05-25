@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function UsersPage(): ReactElement {
-  const { data: me, isLoading: meLoading } = useAuthMe();
+  const { data: me, isLoading: meLoading, isError: meError } = useAuthMe();
   const queryClient = useQueryClient();
 
   const {
@@ -95,6 +95,16 @@ function UsersPage(): ReactElement {
     return (
       <div className="mx-auto max-w-4xl p-6">
         <Skeleton className="h-8 w-48" />
+      </div>
+    );
+  }
+
+  if (meError) {
+    return (
+      <div className="mx-auto max-w-4xl p-6">
+        <p className="text-destructive">
+          Could not verify your identity. Please refresh the page or try again later.
+        </p>
       </div>
     );
   }

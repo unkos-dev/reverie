@@ -607,3 +607,149 @@ async fn patch_user_whitespace_email_returns_422(pool: PgPool) {
         problem["detail"],
     );
 }
+
+// ---------- child/role sync: mirror branch ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (child_id, _) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "role-sync-mirror").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .put(&format!("/api/users/{child_id}/role"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"role": "adult"}))
+        .await;
+    let problem =
+        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        problem["detail"].as_str().unwrap().contains("child status"),
+        "expected child-role-sync validation, got: {}",
+        problem["detail"],
+    );
+}
+
+// ---------- PATCH session_version bump policy ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_email_bumps_session_version(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (adult_id, _) = test_support::db::create_adult_and_basic_auth(&app_pool, "sv-email").await;
+
+    let sv_before: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        adult_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/users/{adult_id}"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"email": "sv-test@example.com"}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    let sv_after: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        adult_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        sv_after,
+        sv_before + 1,
+        "session_version should bump on email change"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_email_null_bumps_session_version(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (adult_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "sv-null-email").await;
+    sqlx::query!(
+        "UPDATE users SET email = 'old@example.com' WHERE id = $1",
+        adult_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let sv_before: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        adult_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/users/{adult_id}"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"email": null}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    let sv_after: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        adult_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        sv_after,
+        sv_before + 1,
+        "session_version should bump on email clear"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_display_name_only_does_not_bump_session_version(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (adult_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "sv-name-only").await;
+
+    let sv_before: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        adult_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/users/{adult_id}"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"display_name": "New Name Only"}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    let sv_after: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        adult_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        sv_after, sv_before,
+        "session_version should NOT bump on display_name-only change"
+    );
+}
