@@ -1,7 +1,6 @@
 //! Integration tests for `/api/users*` admin endpoints.
 
 use axum::http::{HeaderName, HeaderValue, StatusCode};
-use base64ct::Encoding as _;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -436,7 +435,8 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
         .execute(&app_pool)
         .await
         .unwrap();
-    // Third user to get a separate admin Basic auth credential.
+    // Third admin so we can demote one and still have two left for
+    // the real race test.
     let (admin3_id, _) =
         test_support::db::create_adult_and_basic_auth(&app_pool, "admin3-credential").await;
     sqlx::query("UPDATE users SET role = 'admin'::user_role WHERE id = $1")
@@ -444,16 +444,6 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
         .execute(&app_pool)
         .await
         .unwrap();
-    // We need admin3's basic auth to demote admin2, because admin1
-    // might get demoted first.
-    let (admin3_plaintext, admin3_hash) = crate::auth::token::generate_device_token();
-    crate::models::device_token::create(&app_pool, admin3_id, "admin3-test", &admin3_hash)
-        .await
-        .unwrap();
-    let admin3_basic = format!(
-        "Basic {}",
-        base64ct::Base64::encode_string(format!("{}:{}", admin3_id, admin3_plaintext).as_bytes())
-    );
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
