@@ -35,9 +35,21 @@
       }
     ],
     "parameters": {
-      "Left": ["Text", "Int8", "Text", "Float4"]
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Float4"
+      ]
     },
-    "nullable": [false, false, false, null, null, null]
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
   },
   "hash": "131335838b6af5a13df190e998c632cf4badcac901c84e4b0f955f15770f8c6c"
 }

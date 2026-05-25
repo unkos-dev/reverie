@@ -7,9 +7,11 @@
 //!
 //! # Last-admin protection (TOCTOU-safe)
 //!
-//! `PUT /api/users/{id}/role` — before any demotion, acquires
-//! `SELECT … FOR UPDATE` on admin rows, then recounts. Under
-//! READ COMMITTED two concurrent demotions serialise on the row lock;
+//! `PUT /api/users/{id}/role` and `PUT /api/users/{id}/child-status` —
+//! acquire `SELECT … FOR UPDATE` on all admin rows (`ORDER BY id`) first,
+//! then lock the target row. Consistent lock order (admin rows always
+//! before target) prevents deadlock when two concurrent demotions each
+//! hold a different admin row and wait for the other. Under READ COMMITTED
 //! the second transaction sees the first's committed state and rejects
 //! with 422 "would leave zero admins".
 
@@ -118,7 +120,17 @@ async fn update_role(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    // Verify target exists.
+    // Lock all admin rows first (ORDER BY id for consistent acquisition order),
+    // then lock the target. This order prevents deadlock when two concurrent
+    // demotions each try to lock a different admin row and then all admin rows —
+    // both transactions acquire admin locks in the same id sequence, so one
+    // blocks and waits rather than forming a cycle.
+    let admin_ids: Vec<Uuid> =
+        sqlx::query_scalar!("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
     let target = sqlx::query!(
         r#"SELECT role AS "role: Role", is_child FROM users WHERE id = $1 FOR UPDATE"#,
         id,
@@ -128,18 +140,9 @@ async fn update_role(
     .map_err(|e| AppError::Internal(e.into()))?
     .ok_or(AppError::NotFound)?;
 
-    // Last-admin protection: lock all admin rows then count the locks.
-    // FOR UPDATE can't combine with aggregate functions, so we lock
-    // rows via a subquery and count separately.
-    if target.role == Role::Admin && req.role != Role::Admin {
-        let admin_ids: Vec<Uuid> =
-            sqlx::query_scalar!("SELECT id FROM users WHERE role = 'admin' FOR UPDATE",)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-        if admin_ids.len() <= 1 {
-            return Err(AppError::Validation("would leave zero admins".into()));
-        }
+    // Last-admin protection: recount using the locked snapshot.
+    if target.role == Role::Admin && req.role != Role::Admin && admin_ids.len() <= 1 {
+        return Err(AppError::Validation("would leave zero admins".into()));
     }
 
     // Check child/role sync constraint: setting role='child' on
@@ -220,6 +223,14 @@ async fn update_child_status(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
+    // Lock all admin rows first (ORDER BY id) then lock the target —
+    // same acquisition order as update_role to prevent deadlock.
+    let admin_ids: Vec<Uuid> =
+        sqlx::query_scalar!("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
     let target = sqlx::query!(
         r#"SELECT role AS "role: Role" FROM users WHERE id = $1 FOR UPDATE"#,
         id,
@@ -230,15 +241,8 @@ async fn update_child_status(
     .ok_or(AppError::NotFound)?;
 
     // Toggling child ON for an admin = demotion to child. Last-admin check.
-    if req.is_child && target.role == Role::Admin {
-        let admin_ids: Vec<Uuid> =
-            sqlx::query_scalar!("SELECT id FROM users WHERE role = 'admin' FOR UPDATE",)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-        if admin_ids.len() <= 1 {
-            return Err(AppError::Validation("would leave zero admins".into()));
-        }
+    if req.is_child && target.role == Role::Admin && admin_ids.len() <= 1 {
+        return Err(AppError::Validation("would leave zero admins".into()));
     }
 
     let new_role = if req.is_child {
@@ -302,6 +306,20 @@ where
     D: serde::Deserializer<'de>,
 {
     Ok(Some(Option::<String>::deserialize(deserializer)?))
+}
+
+/// Converts a sqlx error: unique-constraint violation → [`AppError::Validation`]
+/// with the given message; everything else → [`AppError::Internal`].
+///
+/// Used by `update_user` to translate a DB-level unique violation on the
+/// email column into a 422 even when the race slips past the proactive SELECT.
+fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
+    if let sqlx::Error::Database(ref db_err) = e
+        && db_err.is_unique_violation()
+    {
+        return AppError::Validation(msg.into());
+    }
+    AppError::Internal(e.into())
 }
 
 /// `PATCH /api/users/{id}` — update `display_name` / `email` (admin only).
@@ -400,7 +418,9 @@ async fn update_user(
                 )
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| AppError::Internal(e.into()))?;
+                // Proactive SELECT covers the common case; translate any
+                // race-escaped unique violation to 422 rather than 500.
+                .map_err(|e| unique_violation_or_internal(e, "email already in use"))?;
             }
         }
     }

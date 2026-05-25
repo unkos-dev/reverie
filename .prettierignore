@@ -3,3 +3,4 @@ node_modules/
 dist/
 docs/.astro/
 CHANGELOG.md
+backend/.sqlx/

@@ -25,7 +25,11 @@
           "Custom": {
             "name": "user_role",
             "kind": {
-              "Enum": ["admin", "adult", "child"]
+              "Enum": [
+                "admin",
+                "adult",
+                "child"
+              ]
             }
           }
         }
@@ -47,9 +51,21 @@
       }
     ],
     "parameters": {
-      "Left": ["Bool", "Text", "Uuid"]
+      "Left": [
+        "Bool",
+        "Text",
+        "Uuid"
+      ]
     },
-    "nullable": [false, false, true, false, false, false, false]
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
   },
   "hash": "60dee79abadd599d5aec4930c4958cd7bdfd8e5b7d9ea104c36aacc2d3d0a2e2"
 }

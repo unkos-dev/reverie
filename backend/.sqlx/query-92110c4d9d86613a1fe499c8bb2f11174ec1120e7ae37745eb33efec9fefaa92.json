@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE users SET email = 'Alice@Example.com' WHERE id = $1",
+  "query": "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "7fbad2c167acde9d6c0247a0b5b20590fb3009c7821ee0b38b955f274424fd58"
+  "hash": "92110c4d9d86613a1fe499c8bb2f11174ec1120e7ae37745eb33efec9fefaa92"
 }

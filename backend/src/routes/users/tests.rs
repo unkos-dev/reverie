@@ -114,11 +114,13 @@ async fn demote_admin_to_adult_with_multiple_admins(pool: PgPool) {
     // Create a second admin.
     let (admin2_id, _) =
         test_support::db::create_adult_and_basic_auth(&app_pool, "admin2-demote").await;
-    sqlx::query("UPDATE users SET role = 'admin'::user_role WHERE id = $1")
-        .bind(admin2_id)
-        .execute(&app_pool)
-        .await
-        .unwrap();
+    sqlx::query!(
+        "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
+        admin2_id
+    )
+    .execute(&app_pool)
+    .await
+    .unwrap();
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
@@ -430,20 +432,24 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
     // Second admin.
     let (admin2_id, _) =
         test_support::db::create_adult_and_basic_auth(&app_pool, "admin2-concurrent").await;
-    sqlx::query("UPDATE users SET role = 'admin'::user_role WHERE id = $1")
-        .bind(admin2_id)
-        .execute(&app_pool)
-        .await
-        .unwrap();
+    sqlx::query!(
+        "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
+        admin2_id
+    )
+    .execute(&app_pool)
+    .await
+    .unwrap();
     // Third admin so we can demote one and still have two left for
     // the real race test.
     let (admin3_id, _) =
         test_support::db::create_adult_and_basic_auth(&app_pool, "admin3-credential").await;
-    sqlx::query("UPDATE users SET role = 'admin'::user_role WHERE id = $1")
-        .bind(admin3_id)
-        .execute(&app_pool)
-        .await
-        .unwrap();
+    sqlx::query!(
+        "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
+        admin3_id
+    )
+    .execute(&app_pool)
+    .await
+    .unwrap();
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 

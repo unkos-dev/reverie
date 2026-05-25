@@ -114,7 +114,11 @@ function UsersPage(): ReactElement {
         </p>
       )}
 
-      {users && (
+      {users && users.length === 0 && (
+        <p className="py-8 text-center text-muted-foreground">No users found.</p>
+      )}
+
+      {users && users.length > 0 && (
         <Table>
           <TableHeader>
             <TableRow>
@@ -148,6 +152,10 @@ interface UserRowProps {
   onChildToggle: (userId: string, isChild: boolean) => void;
 }
 
+function isRole(v: string): v is Role {
+  return v === "admin" || v === "adult" || v === "child";
+}
+
 function UserRow({ user, isSelf, onRoleChange, onChildToggle }: UserRowProps): ReactElement {
   return (
     <TableRow>
@@ -164,7 +172,7 @@ function UserRow({ user, isSelf, onRoleChange, onChildToggle }: UserRowProps): R
         <Select
           value={user.role}
           onValueChange={(v) => {
-            onRoleChange(user.id, v as Role);
+            if (isRole(v)) onRoleChange(user.id, v);
           }}
         >
           <SelectTrigger className="w-28">

@@ -9,7 +9,13 @@
           "Custom": {
             "name": "enrichment_status",
             "kind": {
-              "Enum": ["pending", "in_progress", "complete", "failed", "skipped"]
+              "Enum": [
+                "pending",
+                "in_progress",
+                "complete",
+                "failed",
+                "skipped"
+              ]
             }
           }
         },

@@ -10,9 +10,19 @@
       }
     ],
     "parameters": {
-      "Left": ["Uuid", "Text", "Text", "Jsonb", "Bytea", "Text", "Float4"]
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bytea",
+        "Text",
+        "Float4"
+      ]
     },
-    "nullable": [false]
+    "nullable": [
+      false
+    ]
   },
   "hash": "28e5b4cb75fe96942b3daceb4d9400f1d439957b66ea1437ec8726574c7e778b"
 }

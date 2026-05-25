@@ -10,16 +10,24 @@
           "Custom": {
             "name": "user_role",
             "kind": {
-              "Enum": ["admin", "adult", "child"]
+              "Enum": [
+                "admin",
+                "adult",
+                "child"
+              ]
             }
           }
         }
       }
     ],
     "parameters": {
-      "Left": ["Uuid"]
+      "Left": [
+        "Uuid"
+      ]
     },
-    "nullable": [false]
+    "nullable": [
+      false
+    ]
   },
   "hash": "b1d68a6458a990965d68e2759ac3a827f41fe6cd1b7cd37bc1747bdbe775e2be"
 }
