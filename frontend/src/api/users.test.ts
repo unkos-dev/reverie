@@ -65,6 +65,21 @@ describe("updateUserRole", () => {
     expect(call[0]).toBe(`/api/users/${STUB_USER.id}/role`);
     expect(call[1]?.method).toBe("PUT");
   });
+
+  test("throws on non-2xx", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        { type: "https://reverie.example/probs/forbidden", status: 403, title: "Forbidden" },
+        { status: 403, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(updateUserRole(STUB_USER.id, "adult")).rejects.toThrow();
+  });
+
+  test("throws on schema mismatch", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ id: "bad" }));
+    await expect(updateUserRole(STUB_USER.id, "adult")).rejects.toThrow();
+  });
 });
 
 describe("updateUserChildStatus", () => {
@@ -74,6 +89,21 @@ describe("updateUserChildStatus", () => {
     const result = await updateUserChildStatus(STUB_USER.id, true);
     expect(result.is_child).toBe(true);
     expect(result.role).toBe("child");
+  });
+
+  test("throws on non-2xx", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        { type: "https://reverie.example/probs/forbidden", status: 403, title: "Forbidden" },
+        { status: 403, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(updateUserChildStatus(STUB_USER.id, true)).rejects.toThrow();
+  });
+
+  test("throws on schema mismatch", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ id: "bad" }));
+    await expect(updateUserChildStatus(STUB_USER.id, true)).rejects.toThrow();
   });
 });
 
@@ -86,5 +116,25 @@ describe("updateUser", () => {
     const call = vi.mocked(fetch).mock.calls[0];
     expect(call[0]).toBe(`/api/users/${STUB_USER.id}`);
     expect(call[1]?.method).toBe("PATCH");
+  });
+
+  test("throws on non-2xx", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        {
+          type: "https://reverie.example/probs/validation",
+          status: 422,
+          title: "Validation Error",
+          detail: "email already in use",
+        },
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(updateUser(STUB_USER.id, { email: "taken@example.com" })).rejects.toThrow();
+  });
+
+  test("throws on schema mismatch", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ id: "bad" }));
+    await expect(updateUser(STUB_USER.id, { display_name: "Bob" })).rejects.toThrow();
   });
 });

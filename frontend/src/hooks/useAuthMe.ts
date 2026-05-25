@@ -2,7 +2,12 @@
  * Hook for the authenticated user's identity from `/auth/me`.
  *
  * Fetches once (staleTime: Infinity) and caches under `["auth", "me"]`.
- * Returns the parsed response or null while loading / on error.
+ *
+ * Response handling:
+ * - 200 OK — parsed and returned as `AuthMe`.
+ * - 401 / 403 — unauthenticated/forbidden; returns `null` (normal state).
+ * - Any other non-2xx — throws so React Query surfaces the error and the
+ *   caller can distinguish an operational failure from "not logged in".
  */
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -31,7 +36,13 @@ function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean } {
         credentials: "same-origin",
         signal,
       });
-      if (!resp.ok) return null;
+      if (resp.status === 401 || resp.status === 403) {
+        // Not authenticated — callers treat undefined data as "logged out".
+        return null;
+      }
+      if (!resp.ok) {
+        throw new Error(`/auth/me failed: ${String(resp.status)} ${resp.statusText}`);
+      }
       const raw: unknown = await resp.json();
       return AuthMeSchema.parse(raw);
     },

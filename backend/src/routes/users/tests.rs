@@ -496,3 +496,83 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
         "would leave zero admins"
     );
 }
+
+// ---------- 403 guards: child-status PUT and PATCH ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn non_admin_put_child_status_returns_403(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "no-child-toggle").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .put(&format!("/api/users/{adult_id}/child-status"))
+        .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
+        .json(&json!({"is_child": true}))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn non_admin_patch_user_returns_403(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "no-patch").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/users/{adult_id}"))
+        .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
+        .json(&json!({"display_name": "Hacker"}))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+// ---------- PATCH whitespace validation ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_user_whitespace_display_name_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (adult_id, _) = test_support::db::create_adult_and_basic_auth(&app_pool, "ws-name").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/users/{adult_id}"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"display_name": "   "}))
+        .await;
+    let problem =
+        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        problem["detail"].as_str().unwrap().contains("display_name"),
+        "expected display_name in error, got: {}",
+        problem["detail"],
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn patch_user_whitespace_email_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (adult_id, _) = test_support::db::create_adult_and_basic_auth(&app_pool, "ws-email").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .patch(&format!("/api/users/{adult_id}"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"email": "   "}))
+        .await;
+    let problem =
+        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        problem["detail"].as_str().unwrap().contains("email"),
+        "expected email in error, got: {}",
+        problem["detail"],
+    );
+}
