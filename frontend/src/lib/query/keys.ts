@@ -53,4 +53,14 @@ export const queryKeys = {
     /** Single shelf detail (with items). */
     detail: (id: string) => ["shelves", "detail", id] as const,
   },
+  users: {
+    /** Root namespace; invalidate to refetch every users-* slot. */
+    all: ["users"] as const,
+    /** `GET /api/users` list (admin only). */
+    list: () => ["users", "list"] as const,
+  },
+  auth: {
+    /** `/auth/me` — current authenticated user identity. */
+    me: () => ["auth", "me"] as const,
+  },
 };

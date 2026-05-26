@@ -46,3 +46,5 @@ export {
   reorderShelfItems,
 } from "./shelves";
 export type { Shelf, ShelfItem, ShelfWithItems } from "./shelves";
+export { listUsers, updateUserRole, updateUserChildStatus, updateUser } from "./users";
+export type { User, Role as UserRole, UpdateUserFields } from "./users";

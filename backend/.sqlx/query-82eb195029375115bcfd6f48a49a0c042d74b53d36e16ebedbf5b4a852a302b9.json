@@ -16,7 +16,14 @@
           "Custom": {
             "name": "manifestation_format",
             "kind": {
-              "Enum": ["epub", "pdf", "mobi", "azw3", "cbz", "cbr"]
+              "Enum": [
+                "epub",
+                "pdf",
+                "mobi",
+                "azw3",
+                "cbz",
+                "cbr"
+              ]
             }
           }
         },
@@ -27,7 +34,13 @@
           "Custom": {
             "name": "ingestion_status",
             "kind": {
-              "Enum": ["pending", "processing", "complete", "failed", "skipped"]
+              "Enum": [
+                "pending",
+                "processing",
+                "complete",
+                "failed",
+                "skipped"
+              ]
             }
           }
         },
@@ -35,7 +48,9 @@
         "Jsonb"
       ]
     },
-    "nullable": [false]
+    "nullable": [
+      false
+    ]
   },
   "hash": "82eb195029375115bcfd6f48a49a0c042d74b53d36e16ebedbf5b4a852a302b9"
 }

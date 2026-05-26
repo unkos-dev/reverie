@@ -9,7 +9,11 @@
           "Custom": {
             "name": "theme_preference",
             "kind": {
-              "Enum": ["system", "light", "dark"]
+              "Enum": [
+                "system",
+                "light",
+                "dark"
+              ]
             }
           }
         },

@@ -116,6 +116,7 @@ where
         .merge(routes::library::router())
         .merge(routes::series::router())
         .merge(routes::shelves::router())
+        .merge(routes::users::router())
         // /api/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
         // with a session cookie regardless of OPDS availability).
         .merge(routes::opds::covers_router());
