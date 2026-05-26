@@ -318,6 +318,7 @@ mod tests {
             config,
             oidc_client: test_support::test_oidc_client(),
             settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
         let auth_backend = AuthBackend {
             pool: state.pool.clone(),

@@ -7,6 +7,23 @@ fn server(app_pool: &PgPool, ingestion_pool: &PgPool) -> axum_test::TestServer {
     test_support::db::server_with_real_pools(app_pool, ingestion_pool)
 }
 
+#[tokio::test]
+async fn get_settings_unauthenticated_returns_401() {
+    let server = test_support::test_server();
+    let r = server.get("/api/settings").await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn put_settings_unauthenticated_returns_401() {
+    let server = test_support::test_server();
+    let r = server
+        .put("/api/settings")
+        .json(&serde_json::json!({"enrichment_concurrency": 5}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn get_settings_as_admin_returns_200(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -297,4 +314,41 @@ async fn put_settings_valid_url_persists(pool: PgPool) {
         .await;
     let body: serde_json::Value = r2.json();
     assert_eq!(body["openlibrary_base_url"], "https://custom.example.com");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_unknown_field_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server
+        .put("/api/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"enrichment_concurency": 5}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_zero_cover_max_bytes_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server
+        .put("/api/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"cover_max_bytes": 0}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let body: serde_json::Value = r.json();
+    let detail = body["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("positive"),
+        "expected 'positive' in detail, got {detail}"
+    );
 }

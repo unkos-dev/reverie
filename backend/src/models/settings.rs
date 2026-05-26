@@ -6,11 +6,14 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::config::CleanupMode;
+use crate::models::manifestation_format::ManifestationFormat;
+
 /// Runtime-tunable settings loaded from the `settings` table.
 ///
 /// Fields map 1:1 to the singleton row columns. The struct is held in
 /// `AppState` behind an `Arc<RwLock<Settings>>` and refreshed via
-/// LISTEN/NOTIFY + periodic fallback poll.
+/// LISTEN/NOTIFY + 60-second fallback poll.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Settings {
     /// Whether the enrichment pipeline is active.
@@ -57,26 +60,52 @@ pub struct Settings {
     /// Hardcover `GraphQL` API base URL.
     pub hardcover_base_url: String,
 
-    /// Last mutation timestamp.
+    /// DB-assigned (`now()` on every UPDATE); not operator-settable.
     pub updated_at: OffsetDateTime,
 }
 
-/// Fields that require a process restart to take effect.
-const RESTART_REQUIRED_FIELDS: &[&str] = &[
-    "port",
-    "database_url",
-    "oidc_issuer_url",
-    "oidc_client_id",
-    "oidc_client_secret",
-    "oidc_redirect_uri",
-    "library_path",
-];
+impl Settings {
+    /// Parse `cleanup_mode` text column into the typed enum.
+    ///
+    /// DB CHECK constraint guarantees valid values; panicking on
+    /// mismatch is correct (schema-vs-code drift = programming error).
+    pub fn cleanup_mode(&self) -> CleanupMode {
+        match self.cleanup_mode.as_str() {
+            "all" => CleanupMode::All,
+            "ingested" => CleanupMode::Ingested,
+            "none" => CleanupMode::None,
+            other => unreachable!("DB CHECK constraint violated: cleanup_mode = {other:?}"),
+        }
+    }
+
+    /// Parse `format_priority` text[] column into typed enums.
+    ///
+    /// DB values were validated on write; panicking on mismatch is
+    /// correct (schema-vs-code drift = programming error).
+    pub fn format_priority(&self) -> Vec<ManifestationFormat> {
+        self.format_priority
+            .iter()
+            .map(|s| {
+                s.parse::<ManifestationFormat>()
+                    .unwrap_or_else(|_| unreachable!("DB validated format_priority element: {s:?}"))
+            })
+            .collect()
+    }
+}
+
+// Fields that require a process restart to take effect (env-only:
+// port, database_url, OIDC, library_path). Currently empty because
+// no restart-required fields are in the settings table yet.
 
 /// Partial update request for `PUT /api/settings`.
 ///
 /// All fields optional — absent fields are left unchanged (JSON Merge
-/// Patch semantics per RFC 7396).
+/// Patch semantics per RFC 7396). `CleanupMode` and
+/// `ManifestationFormat` are validated at deserialization time by serde;
+/// collection invariants (non-empty, no duplicates) are checked by
+/// [`validate_update`].
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateSettings {
     /// Whether the enrichment pipeline is active.
     pub enrichment_enabled: Option<bool>,
@@ -111,9 +140,9 @@ pub struct UpdateSettings {
     pub opds_page_size: Option<i32>,
 
     /// Ranked format preference for ingestion.
-    pub format_priority: Option<Vec<String>>,
-    /// Post-ingestion cleanup mode (`all`, `ingested`, or `none`).
-    pub cleanup_mode: Option<String>,
+    pub format_priority: Option<Vec<ManifestationFormat>>,
+    /// Post-ingestion cleanup mode.
+    pub cleanup_mode: Option<CleanupMode>,
 
     /// `OpenLibrary` API base URL.
     pub openlibrary_base_url: Option<String>,
@@ -150,7 +179,8 @@ impl UpdateSettings {
 
 fn validate_url_field(value: Option<&String>, field_name: &str) -> Result<(), String> {
     if let Some(v) = value {
-        let parsed = url::Url::parse(v).map_err(|_| format!("{field_name} must be a valid URL"))?;
+        let parsed =
+            url::Url::parse(v).map_err(|e| format!("{field_name} must be a valid URL: {e}"))?;
         if !["http", "https"].contains(&parsed.scheme()) {
             return Err(format!("{field_name} must use http or https scheme"));
         }
@@ -159,6 +189,10 @@ fn validate_url_field(value: Option<&String>, field_name: &str) -> Result<(), St
 }
 
 /// Validate an [`UpdateSettings`] payload.
+///
+/// Serde validates enum membership (`CleanupMode`, `ManifestationFormat`)
+/// at deserialization time. This function validates range constraints and
+/// collection invariants (non-empty, no duplicates).
 ///
 /// Returns `Err(message)` on first validation failure.
 ///
@@ -184,23 +218,12 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
         if fp.is_empty() {
             return Err("format_priority must not be empty".into());
         }
-        let valid = ["epub", "pdf", "mobi", "azw3", "cbz", "cbr"];
         let mut seen = std::collections::HashSet::new();
         for f in fp {
-            if !valid.contains(&f.as_str()) {
-                return Err(format!("format_priority contains unknown format: {f}"));
-            }
-            if !seen.insert(f.as_str()) {
+            if !seen.insert(f) {
                 return Err(format!("format_priority contains duplicate format: {f}"));
             }
         }
-    }
-    if let Some(ref cm) = req.cleanup_mode
-        && !["all", "ingested", "none"].contains(&cm.as_str())
-    {
-        return Err(format!(
-            "cleanup_mode must be one of: all, ingested, none (got: {cm})"
-        ));
     }
     if let Some(v) = req.enrichment_poll_idle_secs
         && v < 1
@@ -248,21 +271,24 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
     Ok(())
 }
 
-/// Check whether any field name in an update maps to a restart-required field.
+/// Forward-compatibility stub: returns whether any field in the update
+/// would require a process restart.
 ///
-/// This is used for non-persisted fields (port, `database_url`, etc.) that the
-/// frontend might attempt to PUT. Currently the settings table doesn't include
-/// restart-required fields, so this always returns false — but the API response
-/// includes the flag for forward-compatibility when restart-required fields are
-/// eventually added to the table.
+/// Currently always returns `false` because the `settings` table contains
+/// only hot-reloadable fields. Restart-required fields (`port`, `database_url`,
+/// OIDC, `library_path`) are env-only (`Config`) and cannot be PUT. The API
+/// response includes `restart_required` so the frontend can surface a badge
+/// when restart-required fields are eventually promoted to the table.
 pub const fn has_restart_required_field(_req: &UpdateSettings) -> bool {
-    // Currently the settings table contains only hot-reloadable fields.
-    // Restart-required fields (port, database_url, OIDC, library_path) live
-    // in env-only Config and are not in the settings table.
     false
 }
 
 /// List of restart-required field names (for frontend display).
+///
+/// Returns an empty slice until restart-required fields are actually
+/// added to the settings table. The env-only fields that would require
+/// restart (`port`, `database_url`, OIDC, `library_path`) are not in the
+/// PUT schema and cannot be set through this API.
 pub const fn restart_required_fields() -> &'static [&'static str] {
-    RESTART_REQUIRED_FIELDS
+    &[]
 }

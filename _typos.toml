@@ -2,6 +2,9 @@
 # Domain vocabulary (FRBR cataloguing model)
 frbr = "frbr"
 
+# Intentional typo in settings test (deny_unknown_fields coverage)
+concurency = "concurency"
+
 # Color spaces / design tokens
 oklch = "oklch"
 

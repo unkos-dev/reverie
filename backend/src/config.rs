@@ -281,14 +281,35 @@ pub struct SecurityConfig {
 
 /// Post-ingestion cleanup behaviour selector for the watcher's
 /// "after a successful batch" hook.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Wire format (JSON, DB `text` column): lowercase string —
+/// `"all"` | `"ingested"` | `"none"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CleanupMode {
-    /// Delete all files in the ingestion directory after a successful batch
+    /// Delete all files in the ingestion directory after a successful batch.
     All,
-    /// Delete only files that were actually ingested (selected by format priority)
+    /// Delete only files that were actually ingested (selected by format priority).
     Ingested,
-    /// Never delete source files — user handles cleanup manually
+    /// Never delete source files — user handles cleanup manually.
     None,
+}
+
+impl CleanupMode {
+    /// Lowercase wire string matching the `#[serde(rename_all)]` mapping.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Ingested => "ingested",
+            Self::None => "none",
+        }
+    }
+}
+
+impl std::fmt::Display for CleanupMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Configuration-load failure mode. Surfaces missing required vars and

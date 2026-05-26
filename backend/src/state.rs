@@ -15,6 +15,8 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
+use time::OffsetDateTime;
+
 use crate::auth::oidc::OidcClient;
 use crate::config::Config;
 use crate::models::settings::Settings;
@@ -45,4 +47,10 @@ pub struct AppState {
     /// Refreshed via LISTEN/NOTIFY + 60s fallback poll. Handlers read
     /// via `state.settings.read().await`.
     pub settings: Arc<RwLock<Settings>>,
+    /// Timestamp of last successful background reload of the settings
+    /// cache. `None` until the first LISTEN/NOTIFY refresh completes;
+    /// the initial `load()` at startup does not count. Exposed in
+    /// `GET /api/settings` so operators can verify the live-reload
+    /// mechanism is healthy.
+    pub last_settings_reload: Arc<RwLock<Option<OffsetDateTime>>>,
 }

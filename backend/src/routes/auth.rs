@@ -541,6 +541,7 @@ mod tests {
             config: test_support::test_config(),
             oidc_client,
             settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),
@@ -730,6 +731,7 @@ mod tests {
             config: test_support::test_config(),
             oidc_client,
             settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),
