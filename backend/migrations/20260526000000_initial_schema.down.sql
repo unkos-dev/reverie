@@ -47,7 +47,10 @@ DROP TABLE IF EXISTS public.works CASCADE;
 DROP TABLE IF EXISTS public.users CASCADE;
 
 -- 4. Schemas
-REVOKE USAGE ON SCHEMA tower_sessions FROM reverie_app, reverie_readonly;
+DO $$ BEGIN
+    REVOKE USAGE ON SCHEMA tower_sessions FROM reverie_app, reverie_readonly;
+EXCEPTION WHEN undefined_object THEN NULL;
+END $$;
 DROP SCHEMA IF EXISTS tower_sessions;
 
 -- 5. Enum types
@@ -69,4 +72,7 @@ DROP EXTENSION IF EXISTS "pgcrypto";
 DROP EXTENSION IF EXISTS "pg_trgm";
 
 -- 7. Revoke schema-level grants
-REVOKE USAGE ON SCHEMA public FROM reverie_app, reverie_ingestion, reverie_readonly;
+DO $$ BEGIN
+    REVOKE USAGE ON SCHEMA public FROM reverie_app, reverie_ingestion, reverie_readonly;
+EXCEPTION WHEN undefined_object THEN NULL;
+END $$;

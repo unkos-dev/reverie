@@ -153,7 +153,7 @@ This ADR covers **system/admin settings** only. Per-user settings (reading prefe
 
 ### Migration (illustrative)
 
-The canonical schema is `backend/migrations/20260526015539_settings.up.sql`;
+The canonical schema is in `backend/migrations/20260526000000_initial_schema.up.sql` (settings table section);
 this snippet is a design-time sketch and may diverge in defaults or constraints.
 
 ```sql

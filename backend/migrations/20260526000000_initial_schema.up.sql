@@ -139,7 +139,7 @@ END;
 $$;
 
 --------------------------------------------------------------------------------
--- 5. Tables (FK-dependency order)
+-- 5. Tables (definition order; FKs added separately in section 9)
 --------------------------------------------------------------------------------
 
 CREATE TABLE public.users (
@@ -228,8 +228,8 @@ CREATE TABLE public.manifestations (
     current_file_hash text NOT NULL
 );
 
-COMMENT ON TABLE public.manifestations IS 'RLS enabled. reverie_app handlers must SET LOCAL app.current_user_id in a transaction. The writeback worker connects via a dedicated pool that sets app.system_context = ''writeback'' (session-scoped via after_connect). reverie_ingestion has unconditional access. reverie (owner) bypasses RLS.';
-COMMENT ON COLUMN public.manifestations.ingestion_file_hash IS 'SHA-256 of file at ingestion time. Immutable after initial insert — audit trail.';
+COMMENT ON TABLE public.manifestations IS 'RLS enabled. reverie_app and reverie_readonly must call set_config(''app.current_user_id'', ..., true) (transaction-local) before queries — see db::acquire_with_rls. The writeback worker connects via a dedicated pool that sets app.system_context = ''writeback'' (session-scoped via after_connect). reverie_ingestion has unconditional access. reverie (owner) bypasses RLS.';
+COMMENT ON COLUMN public.manifestations.ingestion_file_hash IS 'SHA-256 of file at ingestion time. App-layer invariant: never updated after initial insert — audit trail. No schema constraint enforces this; see services::writeback::orchestrator.';
 COMMENT ON COLUMN public.manifestations.current_file_hash IS 'SHA-256 of file as of last successful writeback. Equals ingestion_file_hash until first writeback. Step 11 health surfaces divergence from on-disk hash.';
 
 CREATE TABLE public.metadata_versions (
@@ -380,7 +380,7 @@ CREATE TABLE public.reading_state (
     CONSTRAINT reading_state_progress_pct_range CHECK (((progress_pct IS NULL) OR ((progress_pct >= (0)::double precision) AND (progress_pct <= (100)::double precision))))
 );
 
-COMMENT ON TABLE public.reading_state IS 'RLS enabled. reverie_app and reverie_readonly must SET LOCAL app.current_user_id in a transaction. Each user sees only rows where user_id matches the GUC. reverie (owner) bypasses RLS.';
+COMMENT ON TABLE public.reading_state IS 'RLS enabled. reverie_app and reverie_readonly must call set_config(''app.current_user_id'', ..., true) (transaction-local) before queries — see db::acquire_with_rls. Each user sees only rows where user_id matches the GUC. reverie (owner) bypasses RLS.';
 
 CREATE TABLE public.writeback_jobs (
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -397,7 +397,7 @@ CREATE TABLE public.writeback_jobs (
 
 COMMENT ON TABLE public.writeback_jobs IS 'Queue of pending/in-flight OPF writeback operations. One row per canonical pointer move. Drained by services::writeback::queue.';
 COMMENT ON COLUMN public.writeback_jobs.reason IS '''metadata'' for text/field pointer moves; ''cover'' when a new cover sidecar needs embedding.';
-COMMENT ON COLUMN public.writeback_jobs.status IS 'pending → in_progress → (complete | failed | skipped). ''skipped'' is terminal; see enum comment.';
+COMMENT ON COLUMN public.writeback_jobs.status IS 'pending → in_progress → (complete | failed | skipped). ''skipped'' is terminal — means max retries exhausted or non-retryable error.';
 
 CREATE TABLE public.settings (
     id boolean DEFAULT true NOT NULL,
