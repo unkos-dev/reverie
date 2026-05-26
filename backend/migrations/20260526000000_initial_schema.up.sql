@@ -120,15 +120,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.set_shelves_updated_at() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$;
-
 CREATE FUNCTION public.set_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -152,7 +143,7 @@ $$;
 --------------------------------------------------------------------------------
 
 CREATE TABLE public.users (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     oidc_subject text NOT NULL,
     display_name text NOT NULL,
     email text,
@@ -166,7 +157,7 @@ CREATE TABLE public.users (
 );
 
 CREATE TABLE public.works (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     title text NOT NULL,
     sort_title text NOT NULL,
     description text,
@@ -180,14 +171,14 @@ CREATE TABLE public.works (
 );
 
 CREATE TABLE public.authors (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     name text NOT NULL,
     sort_name text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.series (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     name text NOT NULL,
     sort_name text NOT NULL,
     parent_id uuid,
@@ -205,7 +196,7 @@ CREATE TABLE public.metadata_sources (
 );
 
 CREATE TABLE public.manifestations (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     work_id uuid NOT NULL,
     isbn_10 text,
     isbn_13 text,
@@ -242,7 +233,7 @@ COMMENT ON COLUMN public.manifestations.ingestion_file_hash IS 'SHA-256 of file 
 COMMENT ON COLUMN public.manifestations.current_file_hash IS 'SHA-256 of file as of last successful writeback. Equals ingestion_file_hash until first writeback. Step 11 health surfaces divergence from on-disk hash.';
 
 CREATE TABLE public.metadata_versions (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     manifestation_id uuid NOT NULL,
     source text NOT NULL,
     field_name text NOT NULL,
@@ -283,7 +274,7 @@ CREATE TABLE public.omnibus_contents (
 );
 
 CREATE TABLE public.tags (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     name text NOT NULL,
     tag_type public.tag_type NOT NULL
 );
@@ -303,7 +294,7 @@ CREATE TABLE public.field_locks (
 );
 
 CREATE TABLE public.shelves (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     user_id uuid NOT NULL,
     name text NOT NULL,
     is_system boolean DEFAULT false NOT NULL,
@@ -319,7 +310,7 @@ CREATE TABLE public.shelf_items (
 );
 
 CREATE TABLE public.device_tokens (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     user_id uuid NOT NULL,
     name text NOT NULL,
     token_hash text NOT NULL,
@@ -329,7 +320,7 @@ CREATE TABLE public.device_tokens (
 );
 
 CREATE TABLE public.api_cache (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     source text NOT NULL,
     lookup_key text NOT NULL,
     response jsonb NOT NULL,
@@ -340,7 +331,7 @@ CREATE TABLE public.api_cache (
 );
 
 CREATE TABLE public.ingestion_jobs (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     batch_id uuid NOT NULL,
     source_path text NOT NULL,
     status public.job_status DEFAULT 'queued'::public.job_status NOT NULL,
@@ -351,7 +342,7 @@ CREATE TABLE public.ingestion_jobs (
 );
 
 CREATE TABLE public.webhooks (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     user_id uuid NOT NULL,
     url text NOT NULL,
     events jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -361,7 +352,7 @@ CREATE TABLE public.webhooks (
 );
 
 CREATE TABLE public.webhook_deliveries (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     webhook_id uuid NOT NULL,
     event_type text NOT NULL,
     payload jsonb NOT NULL,
@@ -370,7 +361,7 @@ CREATE TABLE public.webhook_deliveries (
 );
 
 CREATE TABLE public.reading_sessions (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     user_id uuid NOT NULL,
     manifestation_id uuid NOT NULL,
     started_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -392,7 +383,7 @@ CREATE TABLE public.reading_state (
 COMMENT ON TABLE public.reading_state IS 'RLS enabled. reverie_app and reverie_readonly must SET LOCAL app.current_user_id in a transaction. Each user sees only rows where user_id matches the GUC. reverie (owner) bypasses RLS.';
 
 CREATE TABLE public.writeback_jobs (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
     manifestation_id uuid NOT NULL,
     reason text NOT NULL,
     status public.writeback_status DEFAULT 'pending'::public.writeback_status NOT NULL,
@@ -434,6 +425,14 @@ CREATE TABLE public.settings (
     CONSTRAINT settings_enrichment_concurrency_check CHECK (((enrichment_concurrency >= 1) AND (enrichment_concurrency <= 10))),
     CONSTRAINT settings_opds_page_size_check CHECK (((opds_page_size >= 1) AND (opds_page_size <= 500))),
     CONSTRAINT settings_writeback_concurrency_check CHECK (((writeback_concurrency >= 1) AND (writeback_concurrency <= 10))),
+    CONSTRAINT settings_enrichment_poll_idle_secs_check CHECK ((enrichment_poll_idle_secs >= 1)),
+    CONSTRAINT settings_enrichment_fetch_budget_secs_check CHECK ((enrichment_fetch_budget_secs >= 1)),
+    CONSTRAINT settings_cover_max_bytes_check CHECK ((cover_max_bytes >= 1)),
+    CONSTRAINT settings_cover_download_timeout_secs_check CHECK ((cover_download_timeout_secs >= 1)),
+    CONSTRAINT settings_cover_min_long_edge_px_check CHECK ((cover_min_long_edge_px >= 1)),
+    CONSTRAINT settings_cover_redirect_limit_check CHECK ((cover_redirect_limit >= 0)),
+    CONSTRAINT settings_writeback_poll_idle_secs_check CHECK ((writeback_poll_idle_secs >= 1)),
+    CONSTRAINT settings_writeback_max_attempts_check CHECK ((writeback_max_attempts >= 1)),
     CONSTRAINT singleton CHECK ((id = true))
 );
 
@@ -568,8 +567,6 @@ CREATE INDEX idx_manifestations_isbn_13 ON public.manifestations USING btree (is
 
 CREATE INDEX idx_manifestations_work_id ON public.manifestations USING btree (work_id);
 
-CREATE INDEX idx_metadata_versions_manifestation_id ON public.metadata_versions USING btree (manifestation_id);
-
 CREATE INDEX idx_metadata_versions_resolved_by ON public.metadata_versions USING btree (resolved_by) WHERE (resolved_by IS NOT NULL);
 
 CREATE INDEX idx_mv_last_seen ON public.metadata_versions USING btree (last_seen_at);
@@ -620,13 +617,41 @@ CREATE INDEX idx_writeback_jobs_queue ON public.writeback_jobs USING btree (last
 
 CREATE INDEX session_expiry_date_idx ON tower_sessions.session USING btree (expiry_date);
 
+CREATE INDEX idx_manifestations_cover_source ON public.manifestations USING btree (cover_source) WHERE (cover_source IS NOT NULL);
+
+CREATE INDEX idx_manifestations_suspected_duplicate_work_id ON public.manifestations USING btree (suspected_duplicate_work_id) WHERE (suspected_duplicate_work_id IS NOT NULL);
+
+CREATE INDEX idx_manifestations_cover_version_id ON public.manifestations USING btree (cover_version_id) WHERE (cover_version_id IS NOT NULL);
+
+CREATE INDEX idx_manifestations_isbn_10_version_id ON public.manifestations USING btree (isbn_10_version_id) WHERE (isbn_10_version_id IS NOT NULL);
+
+CREATE INDEX idx_manifestations_isbn_13_version_id ON public.manifestations USING btree (isbn_13_version_id) WHERE (isbn_13_version_id IS NOT NULL);
+
+CREATE INDEX idx_manifestations_pub_date_version_id ON public.manifestations USING btree (pub_date_version_id) WHERE (pub_date_version_id IS NOT NULL);
+
+CREATE INDEX idx_manifestations_publisher_version_id ON public.manifestations USING btree (publisher_version_id) WHERE (publisher_version_id IS NOT NULL);
+
+CREATE INDEX idx_manifestation_tags_source_version_id ON public.manifestation_tags USING btree (source_version_id) WHERE (source_version_id IS NOT NULL);
+
+CREATE INDEX idx_work_authors_source_version_id ON public.work_authors USING btree (source_version_id) WHERE (source_version_id IS NOT NULL);
+
+CREATE INDEX idx_works_title_version_id ON public.works USING btree (title_version_id) WHERE (title_version_id IS NOT NULL);
+
+CREATE INDEX idx_works_description_version_id ON public.works USING btree (description_version_id) WHERE (description_version_id IS NOT NULL);
+
+CREATE INDEX idx_works_language_version_id ON public.works USING btree (language_version_id) WHERE (language_version_id IS NOT NULL);
+
+CREATE INDEX idx_metadata_versions_source ON public.metadata_versions USING btree (source);
+
+CREATE INDEX idx_field_locks_locked_by ON public.field_locks USING btree (locked_by) WHERE (locked_by IS NOT NULL);
+
 --------------------------------------------------------------------------------
 -- 8. Triggers
 --------------------------------------------------------------------------------
 
 CREATE TRIGGER settings_changed_trigger AFTER UPDATE ON public.settings FOR EACH ROW EXECUTE FUNCTION public.notify_settings_changed();
 
-CREATE TRIGGER shelves_set_updated_at BEFORE UPDATE ON public.shelves FOR EACH ROW EXECUTE FUNCTION public.set_shelves_updated_at();
+CREATE TRIGGER shelves_set_updated_at BEFORE UPDATE ON public.shelves FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE TRIGGER trg_manifestations_updated_at BEFORE UPDATE ON public.manifestations FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
@@ -764,34 +789,52 @@ ALTER TABLE public.manifestations ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY manifestations_delete ON public.manifestations FOR DELETE TO reverie_app USING ((EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = (current_setting('app.current_user_id'::text, true))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role]))))));
+  WHERE ((users.id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role]))))));
 
 CREATE POLICY manifestations_ingestion_full_access ON public.manifestations TO reverie_ingestion USING (true) WITH CHECK (true);
 
-CREATE POLICY manifestations_insert ON public.manifestations FOR INSERT TO reverie_app WITH CHECK (true);
+CREATE POLICY manifestations_insert ON public.manifestations FOR INSERT TO reverie_app WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.users
+  WHERE ((users.id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role]))))));
 
 CREATE POLICY manifestations_select_adult ON public.manifestations FOR SELECT TO reverie_app, reverie_readonly USING ((EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = (current_setting('app.current_user_id'::text, true))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role]))))));
+  WHERE ((users.id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role]))))));
 
 CREATE POLICY manifestations_select_child ON public.manifestations FOR SELECT TO reverie_app, reverie_readonly USING (((EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = (current_setting('app.current_user_id'::text, true))::uuid) AND (users.role = 'child'::public.user_role)))) AND (EXISTS ( SELECT 1
+  WHERE ((users.id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid) AND (users.role = 'child'::public.user_role)))) AND (EXISTS ( SELECT 1
    FROM (public.shelf_items si
      JOIN public.shelves s ON ((s.id = si.shelf_id)))
-  WHERE ((si.manifestation_id = manifestations.id) AND (s.user_id = (current_setting('app.current_user_id'::text, true))::uuid))))));
+  WHERE ((si.manifestation_id = manifestations.id) AND (s.user_id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid))))));
 
-CREATE POLICY manifestations_select_system ON public.manifestations FOR SELECT TO reverie_app USING ((current_setting('app.system_context'::text, true) = 'writeback'::text));
+CREATE POLICY manifestations_select_system ON public.manifestations FOR SELECT TO reverie_app USING (((SELECT current_setting('app.system_context'::text, true)) = 'writeback'::text));
 
 CREATE POLICY manifestations_update ON public.manifestations FOR UPDATE TO reverie_app USING ((EXISTS ( SELECT 1
    FROM public.users
-  WHERE ((users.id = (current_setting('app.current_user_id'::text, true))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role])))))) WITH CHECK (true);
+  WHERE ((users.id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid) AND (users.role = ANY (ARRAY['admin'::public.user_role, 'adult'::public.user_role])))))) WITH CHECK (true);
 
-CREATE POLICY manifestations_update_system ON public.manifestations FOR UPDATE TO reverie_app USING ((current_setting('app.system_context'::text, true) = 'writeback'::text)) WITH CHECK (true);
+CREATE POLICY manifestations_update_system ON public.manifestations FOR UPDATE TO reverie_app USING (((SELECT current_setting('app.system_context'::text, true)) = 'writeback'::text)) WITH CHECK (true);
 
 ALTER TABLE public.reading_state ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY reading_state_owner ON public.reading_state TO reverie_app, reverie_readonly USING ((user_id = (current_setting('app.current_user_id'::text, true))::uuid)) WITH CHECK ((user_id = (current_setting('app.current_user_id'::text, true))::uuid));
+CREATE POLICY reading_state_owner ON public.reading_state TO reverie_app, reverie_readonly USING ((user_id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid)) WITH CHECK ((user_id = ((SELECT current_setting('app.current_user_id'::text, true)))::uuid));
+
+ALTER TABLE public.reading_sessions ENABLE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.reading_sessions IS 'RLS enabled (default deny). No handlers implemented yet. Define policies before implementing handlers.';
+
+ALTER TABLE public.webhooks ENABLE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.webhooks IS 'RLS enabled (default deny). No handlers implemented yet. Define policies before implementing handlers.';
+
+ALTER TABLE public.webhook_deliveries ENABLE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.webhook_deliveries IS 'RLS enabled (default deny). No handlers implemented yet. Access scoped through webhooks ownership. Define policies before implementing handlers.';
+
+COMMENT ON TABLE public.shelves IS 'No RLS. Ownership enforced at application layer — all queries scope by user_id. See routes/shelves/ THREAT annotation.';
+
+COMMENT ON TABLE public.device_tokens IS 'No RLS. Ownership enforced at application layer — all queries scope by user_id.';
 
 --------------------------------------------------------------------------------
 -- 11. Grants
@@ -829,7 +872,7 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.manifestations TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.manifestations TO reverie_ingestion;
 GRANT SELECT ON TABLE public.manifestations TO reverie_readonly;
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.metadata_sources TO reverie_app;
+GRANT SELECT ON TABLE public.metadata_sources TO reverie_app;
 GRANT SELECT ON TABLE public.metadata_sources TO reverie_ingestion;
 GRANT SELECT ON TABLE public.metadata_sources TO reverie_readonly;
 

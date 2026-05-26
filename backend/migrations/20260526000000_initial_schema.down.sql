@@ -12,7 +12,6 @@ DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
 
 -- 2. Functions
 DROP FUNCTION IF EXISTS notify_settings_changed();
-DROP FUNCTION IF EXISTS set_shelves_updated_at();
 DROP FUNCTION IF EXISTS works_search_vector_update();
 DROP FUNCTION IF EXISTS set_updated_at();
 
@@ -44,6 +43,7 @@ DROP TABLE IF EXISTS works;
 DROP TABLE IF EXISTS users;
 
 -- 4. Schemas
+REVOKE USAGE ON SCHEMA tower_sessions FROM reverie_app, reverie_readonly;
 DROP SCHEMA IF EXISTS tower_sessions;
 
 -- 5. Enum types
