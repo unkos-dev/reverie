@@ -18,7 +18,7 @@ Self-hosted applications in the same category (Gitea, Immich, Kavita, Paperless-
 
 How should Reverie apply database migrations at startup, and what transaction semantics should protect the operator from partial-migration failures?
 
-Related: [persisted settings ADR](2026-05-26-persisted-settings.md) (assumes "migrations auto-run on startup" in its consequences), [tower-sessions ADR](2026-05-08-tower-sessions-sqlx-store.md) (schema-owner migration pattern).
+Related: [persisted settings ADR](2026-05-26-persisted-settings.md) (assumes "migrations auto-run on startup" in its consequences), [tower-sessions ADR](2026-05-08-tower-sessions-sqlx-store.md) (precedent for embedding third-party schemas in the sqlx migration pipeline).
 
 ## Decision Drivers
 
@@ -91,7 +91,7 @@ This follows the existing `DATABASE_URL` / `DATABASE_URL_INGESTION` pattern and 
 
 ### Concurrency safety
 
-Multiple containers starting simultaneously (e.g., Docker restart race) are serialised by a PostgreSQL advisory lock (matching sqlx's internal lock ID for interop). The runner uses `pg_try_advisory_lock` in a bounded retry loop (not `pg_advisory_lock`, which blocks indefinitely) with a total budget of ~30s (e.g., 10 attempts at 3s intervals), matching the `lock_timeout` default and Docker's default `start_period`. If the lock is not acquired within the retry budget, startup fails with a clear error rather than hanging. This matches sqlx's own acquisition strategy.
+Multiple containers starting simultaneously (e.g., Docker restart race) are serialised by a PostgreSQL advisory lock (matching sqlx's internal lock ID for interop). The runner uses `pg_try_advisory_lock` in a bounded retry loop (not `pg_advisory_lock`, which blocks indefinitely) with a total budget of ~30s (e.g., 10 attempts at 3s intervals), matching the `lock_timeout` default. If the lock is not acquired within the retry budget, startup fails with a clear error rather than hanging. This matches sqlx's own acquisition strategy.
 
 ### Lock timeout
 
@@ -152,7 +152,7 @@ Future: [UNK-299](https://linear.app/unkos/issue/UNK-299) tracks potential extra
 
 ### Patterns to follow
 
-- `sqlx::migrate!()` macro for compile-time migration embedding (already used by `#[sqlx::test]`)
+- Compile-time migration embedding via `sqlx::migrate!()` macro (the same mechanism used internally by `#[sqlx::test(migrations = "./migrations")]` across the test suite) — the production runner accesses the embedded `Migrator` directly via this macro
 - Advisory lock acquisition matching sqlx's internal lock ID for interop
 - `_sqlx_migrations` table schema matching sqlx's format (version, description, installed_on, success, checksum, execution_time)
 - Ephemeral pool pattern: `PgPoolOptions::new().max_connections(1).connect(url)` → use → drop
@@ -177,11 +177,11 @@ No other new env vars. `lock_timeout` is hardcoded at 30s (interim, pending [UNK
 
 ### Migration steps
 
-This ADR ships after migration rollup PR #333 merges. The rollup consolidates 27 migrations into one initial schema. Staging's `_sqlx_migrations` table must be reset to match the consolidated migration as part of the rollup — otherwise schema-ahead detection would false-positive on the 27 historical rows unknown to the new binary.
+Migration rollup PR #333 (merged 2026-05-26) consolidated 27 migrations into `20260526000000_initial_schema`. Staging's `_sqlx_migrations` table was reset as part of that rollup — otherwise schema-ahead detection would false-positive on the 27 historical rows unknown to the new binary.
 
 Deployment sequence:
 
-1. PR #333 (migration rollup) merges — includes `_sqlx_migrations` reset guidance for staging
+1. ~~PR #333 (migration rollup) merges~~ — done (merged 2026-05-26)
 2. This ADR's implementation PR merges
 3. Staging adds `DATABASE_URL_MIGRATION` to its compose env
 4. Next image pull auto-migrates — no manual `sqlx migrate run` ever again
@@ -255,7 +255,7 @@ Deployment sequence:
 
 **PostgreSQL extension privileges**: migrations `CREATE EXTENSION pg_trgm`. In the bundled-postgres scenario, `POSTGRES_USER=reverie` makes `reverie` the cluster superuser — works. For any future "bring your own Postgres" path (RDS, Supabase, Crunchy), trusted extensions need DB-owner; non-trusted need SUPERUSER. Not in scope today; noted for future operator documentation.
 
-**`start_period` consideration**: while migrations run, the container is "starting." Pre-v1.0 schema evolution is freely mutable; a future data-backfill migration could exceed Docker's default `start_period` (30s). Migrations that include data backfill should note the expected duration and recommend bumping `start_period` in the release notes.
+**`start_period` consideration**: while migrations run, the container is "starting." Docker's default HEALTHCHECK `start_period` is 0s — health check failures begin counting from container start. Operators using HEALTHCHECK must set `start_period` explicitly to cover migration duration. Pre-v1.0 schema evolution is freely mutable; a future data-backfill migration could easily exceed a typical `start_period` value. Migrations that include data backfill should document the expected duration and recommend an appropriate `start_period` in the release notes.
 
 **Revisit conditions:**
 
