@@ -1,0 +1,134 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            format_priority,\n            cleanup_mode,\n            openlibrary_base_url,\n            googlebooks_base_url,\n            hardcover_base_url,\n            updated_at\n        FROM settings\n        WHERE id = true",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enrichment_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "enrichment_concurrency",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "enrichment_poll_idle_secs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "enrichment_fetch_budget_secs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "cover_max_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "cover_download_timeout_secs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "cover_min_long_edge_px",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "cover_redirect_limit",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "writeback_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "writeback_concurrency",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "writeback_poll_idle_secs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "writeback_max_attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "opds_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "opds_page_size",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "format_priority",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 15,
+        "name": "cleanup_mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "openlibrary_base_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "googlebooks_base_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "hardcover_base_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5545e937a4a5bc688a458491515cb686499059db9f10a1afb1d7a2313476e4cb"
+}

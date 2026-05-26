@@ -110,12 +110,46 @@ pub fn test_oidc_client() -> OidcClient {
     .set_redirect_uri(RedirectUrl::new("http://localhost:3000/auth/callback".into()).unwrap())
 }
 
+pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>> {
+    use crate::models::settings::Settings;
+    std::sync::Arc::new(tokio::sync::RwLock::new(Settings {
+        enrichment_enabled: true,
+        enrichment_concurrency: 2,
+        enrichment_poll_idle_secs: 30,
+        enrichment_fetch_budget_secs: 15,
+        cover_max_bytes: 10_485_760,
+        cover_download_timeout_secs: 30,
+        cover_min_long_edge_px: 1000,
+        cover_redirect_limit: 3,
+        writeback_enabled: true,
+        writeback_concurrency: 2,
+        writeback_poll_idle_secs: 5,
+        writeback_max_attempts: 3,
+        opds_enabled: true,
+        opds_page_size: 50,
+        format_priority: vec![
+            "epub".into(),
+            "pdf".into(),
+            "mobi".into(),
+            "azw3".into(),
+            "cbz".into(),
+            "cbr".into(),
+        ],
+        cleanup_mode: "all".into(),
+        openlibrary_base_url: "https://openlibrary.org".into(),
+        googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
+        hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
+        updated_at: time::OffsetDateTime::now_utc(),
+    }))
+}
+
 pub fn test_state() -> AppState {
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         config: test_config(),
         oidc_client: test_oidc_client(),
+        settings: test_settings(),
     }
 }
 
@@ -349,6 +383,7 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config: super::test_config(),
             oidc_client: super::test_oidc_client(),
+            settings: super::test_settings(),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),
@@ -386,6 +421,7 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config,
             oidc_client: super::test_oidc_client(),
+            settings: super::test_settings(),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),

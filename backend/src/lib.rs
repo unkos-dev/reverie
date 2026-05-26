@@ -117,6 +117,7 @@ where
         .merge(routes::series::router())
         .merge(routes::shelves::router())
         .merge(routes::users::router())
+        .merge(routes::settings::router())
         // /api/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
         // with a session cookie regardless of OPDS availability).
         .merge(routes::opds::covers_router());
@@ -282,17 +283,31 @@ pub async fn run() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect ingestion pool: {e}"))?;
 
+    let initial_settings = services::settings::load(&pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to load settings from database: {e}"))?;
+    let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
+
     let auth_backend = AuthBackend { pool: pool.clone() };
     let state = AppState {
         pool,
         ingestion_pool,
         config: config.clone(),
         oidc_client,
+        settings,
     };
     let app = build_router(state.clone(), auth_backend);
 
     // Spawn ingestion watcher with a cancellation token for graceful shutdown
     let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    // Settings LISTEN/NOTIFY listener (refreshes Arc<RwLock<Settings>>)
+    let settings_token = cancel_token.clone();
+    let settings_pool = state.pool.clone();
+    let settings_handle = state.settings.clone();
+    tokio::spawn(async move {
+        services::settings::spawn_listener(settings_pool, settings_handle, settings_token).await;
+    });
     let watcher_token = cancel_token.clone();
     let watcher_config = config.clone();
     let watcher_pool = state.ingestion_pool.clone();

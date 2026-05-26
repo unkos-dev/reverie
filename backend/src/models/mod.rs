@@ -22,6 +22,8 @@ pub mod reading_state;
 pub mod role;
 /// Response DTOs for the series API (`/api/series/{id}`).
 pub mod series;
+/// Persisted operator-tunable settings (single-row `settings` table).
+pub mod settings;
 /// Response DTOs for the shelves CRUD API (`/api/shelves*`).
 pub mod shelf;
 /// Closed value set for the `theme_preference` Postgres `ENUM`.

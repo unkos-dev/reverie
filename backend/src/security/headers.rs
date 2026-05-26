@@ -317,6 +317,7 @@ mod tests {
             ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             config,
             oidc_client: test_support::test_oidc_client(),
+            settings: test_support::test_settings(),
         };
         let auth_backend = AuthBackend {
             pool: state.pool.clone(),

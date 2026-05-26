@@ -25,6 +25,8 @@ pub mod metadata;
 pub mod opds;
 /// Series JSON API (`/api/series/{id}`).
 pub mod series;
+/// Admin-only persisted settings (`/api/settings`).
+pub mod settings;
 /// Shelves CRUD JSON API (`/api/shelves*`).
 pub mod shelves;
 /// Single-page-app asset-serving router (`/assets/*` mount).

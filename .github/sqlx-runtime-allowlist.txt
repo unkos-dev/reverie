@@ -44,4 +44,7 @@ backend/src/test_support.rs:
 # (3) services/writeback/queue.rs:~1020 RLS impostor test — exact SQL string match
 # (not file-anchored because queue.rs is mostly macro-based business logic; a
 # blanket would over-allow future runtime drift in the file).
+# (2) services/settings.rs file-blanket — dynamic UPDATE SET built from runtime-variable partial update fields (QueryBuilder)
+backend/src/services/settings.rs:
+
 SELECT set_config('app.current_user_id', $1, true)

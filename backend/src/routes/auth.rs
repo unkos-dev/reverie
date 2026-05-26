@@ -540,6 +540,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            settings: test_support::test_settings(),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),
@@ -728,6 +729,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            settings: test_support::test_settings(),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),

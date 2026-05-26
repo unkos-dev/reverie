@@ -165,6 +165,7 @@ mod tests {
             ingestion_pool: pool.clone(),
             config: test_support::test_config(),
             oidc_client: test_support::test_oidc_client(),
+            settings: test_support::test_settings(),
         };
         let auth_backend = crate::auth::backend::AuthBackend { pool: pool.clone() };
         let app = crate::build_router(state, auth_backend);

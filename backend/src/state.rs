@@ -10,10 +10,14 @@
 //! `with_state`, the auth/session layers, the ingestion watcher, the
 //! enrichment queue, and (read-only) the writeback worker.
 
+use std::sync::Arc;
+
 use sqlx::PgPool;
+use tokio::sync::RwLock;
 
 use crate::auth::oidc::OidcClient;
 use crate::config::Config;
+use crate::models::settings::Settings;
 
 /// Cloneable handle to every dependency a request handler or background
 /// task needs. Constructed once at startup; threaded through Axum via
@@ -37,4 +41,8 @@ pub struct AppState {
     /// in [`crate::auth::oidc::init_oidc_client`]; clones are cheap
     /// (the underlying `openidconnect::Client` derives `Clone`).
     pub oidc_client: OidcClient,
+    /// Operator-tunable settings loaded from the `settings` table.
+    /// Refreshed via LISTEN/NOTIFY + 60s fallback poll. Handlers read
+    /// via `state.settings.read().await`.
+    pub settings: Arc<RwLock<Settings>>,
 }
