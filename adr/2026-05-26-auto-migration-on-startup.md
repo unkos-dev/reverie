@@ -12,7 +12,7 @@ informed: []
 
 Reverie's database migrations are manual-only. Operators must run `sqlx migrate run` against the schema-owner DSN before (re)starting the application. Nothing in the startup path enforces or automates this.
 
-On 2026-05-26, the staging instance (`reverie-dev.unkos.net`) entered a restart loop after the `:main` image was rebuilt with code from PR #330 (persisted settings, 11f). The new image expected a `settings` table that the 8-day-old staging database did not have. The container logged `relation "settings" does not exist` on every restart attempt and never reached a healthy state.
+On 2026-05-26, the staging instance entered a restart loop after the `:main` image was rebuilt with code from PR #330 (persisted settings, 11f). The new image expected a `settings` table that the 8-day-old staging database did not have. The container logged `relation "settings" does not exist` on every restart attempt and never reached a healthy state.
 
 Self-hosted applications in the same category (Gitea, Immich, Kavita, Paperless-ngx, Jellyfin) auto-migrate on startup. Their users pull a new image, restart the container, and the schema updates transparently. Reverie's manual-migration requirement is a deviation from this convention that creates operator friction and outage risk.
 
@@ -81,6 +81,8 @@ On startup, the runner compares the binary's embedded migration list against the
 
 This prevents the confusing failure mode where a stale image hits tables/columns it doesn't understand and throws cryptic SQL errors.
 
+**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-256 hash. A mismatch indicates the migration file was modified after application — startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
+
 ### Connection architecture
 
 A new required environment variable `DATABASE_URL_MIGRATION` provides the schema-owner DSN. The runner opens an ephemeral connection pool (max 1 connection), runs migrations, then drops the pool before runtime pools are initialised. The schema-owner connection never exists during request serving.
@@ -89,7 +91,7 @@ This follows the existing `DATABASE_URL` / `DATABASE_URL_INGESTION` pattern and 
 
 ### Concurrency safety
 
-Multiple containers starting simultaneously (e.g., Docker restart race) are serialised by a PostgreSQL advisory lock (matching sqlx's internal lock ID for interop). The runner uses `pg_try_advisory_lock` in a bounded retry loop (not `pg_advisory_lock`, which blocks indefinitely). If the lock is not acquired within the retry budget, startup fails with a clear error rather than hanging. This matches sqlx's own acquisition strategy.
+Multiple containers starting simultaneously (e.g., Docker restart race) are serialised by a PostgreSQL advisory lock (matching sqlx's internal lock ID for interop). The runner uses `pg_try_advisory_lock` in a bounded retry loop (not `pg_advisory_lock`, which blocks indefinitely) with a total budget of ~30s (e.g., 10 attempts at 3s intervals), matching the `lock_timeout` default and Docker's default `start_period`. If the lock is not acquired within the retry budget, startup fails with a clear error rather than hanging. This matches sqlx's own acquisition strategy.
 
 ### Lock timeout
 
@@ -193,6 +195,7 @@ Deployment sequence:
 - [ ] Up-to-date database: startup logs `database schema is up to date` at DEBUG, app serves requests
 - [ ] Migration failure (e.g., invalid SQL injected into a test migration): startup fails with ERROR, database has no partial state (all-or-nothing rollback verified by inspecting `_sqlx_migrations` row count)
 - [ ] Schema-ahead detection: insert a fake future row into `_sqlx_migrations`, verify startup refuses with clear error message
+- [ ] Checksum mismatch: modify an already-applied migration file, verify startup refuses with clear error identifying the mismatched migration version
 - [ ] `DATABASE_URL_MIGRATION` unset: startup fails with `missing required environment variable: DATABASE_URL_MIGRATION`
 - [ ] `DATABASE_URL_MIGRATION` invalid credentials: startup fails with clear authentication error (not generic connection failure)
 - [ ] `lock_timeout` effective: verify migration connection has `lock_timeout = '30s'` via `SHOW lock_timeout` in test
