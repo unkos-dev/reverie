@@ -122,6 +122,12 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Malformed UUID in filter query params returns non-RFC 7807 error](2026-05-26-malformed-uuid-filter-non-rfc7807.md) — adopted from 11b; framework default rejection instead of AppError; lifts on `From<QueryRejection>` impl
+- [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
+- [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
+- [`title` null-clear via PATCH returns 422 but path is untested](2026-05-26-title-null-clear-untested.md) — adopted from 11c; DB constraint is backstop but error shape unverified; lifts on test PR
+- [ISBN not validated on metadata PATCH](2026-05-26-isbn-patch-no-checksum.md) — adopted from 11c; no checksum/length check; lifts on validation PR
+- [`load_pending_versions` query has no row limit](2026-05-26-load-pending-versions-unbounded.md) — adopted from 11c; unbounded result set; lifts on LIMIT or pagination PR
 - [`validation_status` ships as raw String, not a typed enum](2026-05-23-validation-status-untyped.md) — adopted because DB enum and frontend contract vocabularies disagree; lifts on UNK-276 reconciliation PR
 - [tower-sessions pinned to 0.14 (axum-login peer pin)](2026-05-21-tower-sessions-0-14-pin.md) — adopted because axum-login 0.18.0 peer-pins tower-sessions 0.14; lifts on axum-login release > 0.18.0 (UNK-101)
 - [Staging compose has no automated CI smoke test](2026-05-08-staging-compose-no-ci-smoke.md) — adopted because CI smoke for `compose.staging.yml` is real eng work; lifts on UNK-185
