@@ -37,3 +37,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Frontend data-layer dependencies for Step 11](2026-05-22-frontend-data-layer-deps.md) (accepted, 2026-05-22)
 - [Backend auxiliary crates for Step 11](2026-05-22-backend-aux-crates.md) (accepted, 2026-05-22)
 - [Persist operator-tunable settings to database with live reload](2026-05-26-persisted-settings.md) (accepted, 2026-05-26)
+- [Auto-migrate database on startup with all-or-nothing batch transactions](2026-05-26-auto-migration-on-startup.md) (proposed, 2026-05-26)
