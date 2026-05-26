@@ -1,64 +1,68 @@
 -- Reverse of 20260526000000_initial_schema.up.sql
 -- Drops everything created by the consolidated schema.
+-- CASCADE on all DROP TABLE: manifestations ↔ metadata_versions is a circular
+-- FK pair, and RLS policies create cross-table dependencies (e.g.
+-- manifestations_select_child references shelf_items). No sequential ordering
+-- can unwind these without CASCADE.
 
 -- 1. Triggers (before dropping functions they reference)
-DROP TRIGGER IF EXISTS settings_changed_trigger ON settings;
-DROP TRIGGER IF EXISTS shelves_set_updated_at ON shelves;
-DROP TRIGGER IF EXISTS trg_reading_state_updated_at ON reading_state;
-DROP TRIGGER IF EXISTS trg_works_search_vector ON works;
-DROP TRIGGER IF EXISTS trg_manifestations_updated_at ON manifestations;
-DROP TRIGGER IF EXISTS trg_works_updated_at ON works;
-DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
+DROP TRIGGER IF EXISTS settings_changed_trigger ON public.settings;
+DROP TRIGGER IF EXISTS shelves_set_updated_at ON public.shelves;
+DROP TRIGGER IF EXISTS trg_reading_state_updated_at ON public.reading_state;
+DROP TRIGGER IF EXISTS trg_works_search_vector ON public.works;
+DROP TRIGGER IF EXISTS trg_manifestations_updated_at ON public.manifestations;
+DROP TRIGGER IF EXISTS trg_works_updated_at ON public.works;
+DROP TRIGGER IF EXISTS trg_users_updated_at ON public.users;
 
 -- 2. Functions
-DROP FUNCTION IF EXISTS notify_settings_changed();
-DROP FUNCTION IF EXISTS works_search_vector_update();
-DROP FUNCTION IF EXISTS set_updated_at();
+DROP FUNCTION IF EXISTS public.notify_settings_changed();
+DROP FUNCTION IF EXISTS public.works_search_vector_update();
+DROP FUNCTION IF EXISTS public.set_updated_at();
 
--- 3. Tables (FK-reverse order)
-DROP TABLE IF EXISTS settings;
-DROP TABLE IF EXISTS tower_sessions.session;
-DROP TABLE IF EXISTS writeback_jobs;
-DROP TABLE IF EXISTS reading_state;
-DROP TABLE IF EXISTS reading_sessions;
-DROP TABLE IF EXISTS webhook_deliveries;
-DROP TABLE IF EXISTS webhooks;
-DROP TABLE IF EXISTS ingestion_jobs;
-DROP TABLE IF EXISTS api_cache;
-DROP TABLE IF EXISTS device_tokens;
-DROP TABLE IF EXISTS shelf_items;
-DROP TABLE IF EXISTS shelves;
-DROP TABLE IF EXISTS field_locks;
-DROP TABLE IF EXISTS manifestation_tags;
-DROP TABLE IF EXISTS tags;
-DROP TABLE IF EXISTS metadata_versions;
-DROP TABLE IF EXISTS metadata_sources;
-DROP TABLE IF EXISTS omnibus_contents;
-DROP TABLE IF EXISTS series_works;
-DROP TABLE IF EXISTS series;
-DROP TABLE IF EXISTS manifestations;
-DROP TABLE IF EXISTS work_authors;
-DROP TABLE IF EXISTS authors;
-DROP TABLE IF EXISTS works;
-DROP TABLE IF EXISTS users;
+-- 3. Tables (CASCADE required for circular FKs and RLS cross-refs)
+DROP TABLE IF EXISTS public.settings CASCADE;
+DROP TABLE IF EXISTS tower_sessions.session CASCADE;
+DROP TABLE IF EXISTS public.writeback_jobs CASCADE;
+DROP TABLE IF EXISTS public.reading_state CASCADE;
+DROP TABLE IF EXISTS public.reading_sessions CASCADE;
+DROP TABLE IF EXISTS public.webhook_deliveries CASCADE;
+DROP TABLE IF EXISTS public.webhooks CASCADE;
+DROP TABLE IF EXISTS public.ingestion_jobs CASCADE;
+DROP TABLE IF EXISTS public.api_cache CASCADE;
+DROP TABLE IF EXISTS public.device_tokens CASCADE;
+DROP TABLE IF EXISTS public.shelf_items CASCADE;
+DROP TABLE IF EXISTS public.shelves CASCADE;
+DROP TABLE IF EXISTS public.field_locks CASCADE;
+DROP TABLE IF EXISTS public.manifestation_tags CASCADE;
+DROP TABLE IF EXISTS public.tags CASCADE;
+DROP TABLE IF EXISTS public.omnibus_contents CASCADE;
+DROP TABLE IF EXISTS public.series_works CASCADE;
+DROP TABLE IF EXISTS public.work_authors CASCADE;
+DROP TABLE IF EXISTS public.metadata_versions CASCADE;
+DROP TABLE IF EXISTS public.manifestations CASCADE;
+DROP TABLE IF EXISTS public.series CASCADE;
+DROP TABLE IF EXISTS public.metadata_sources CASCADE;
+DROP TABLE IF EXISTS public.authors CASCADE;
+DROP TABLE IF EXISTS public.works CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
 
 -- 4. Schemas
 REVOKE USAGE ON SCHEMA tower_sessions FROM reverie_app, reverie_readonly;
 DROP SCHEMA IF EXISTS tower_sessions;
 
 -- 5. Enum types
-DROP TYPE IF EXISTS theme_preference;
-DROP TYPE IF EXISTS writeback_status;
-DROP TYPE IF EXISTS api_cache_kind;
-DROP TYPE IF EXISTS enrichment_status;
-DROP TYPE IF EXISTS job_status;
-DROP TYPE IF EXISTS tag_type;
-DROP TYPE IF EXISTS metadata_review_status;
-DROP TYPE IF EXISTS ingestion_status;
-DROP TYPE IF EXISTS validation_status;
-DROP TYPE IF EXISTS manifestation_format;
-DROP TYPE IF EXISTS author_role;
-DROP TYPE IF EXISTS user_role;
+DROP TYPE IF EXISTS public.theme_preference;
+DROP TYPE IF EXISTS public.writeback_status;
+DROP TYPE IF EXISTS public.api_cache_kind;
+DROP TYPE IF EXISTS public.enrichment_status;
+DROP TYPE IF EXISTS public.job_status;
+DROP TYPE IF EXISTS public.tag_type;
+DROP TYPE IF EXISTS public.metadata_review_status;
+DROP TYPE IF EXISTS public.ingestion_status;
+DROP TYPE IF EXISTS public.validation_status;
+DROP TYPE IF EXISTS public.manifestation_format;
+DROP TYPE IF EXISTS public.author_role;
+DROP TYPE IF EXISTS public.user_role;
 
 -- 6. Extensions
 DROP EXTENSION IF EXISTS "pgcrypto";
