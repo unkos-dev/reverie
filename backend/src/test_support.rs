@@ -150,6 +150,7 @@ pub fn test_state() -> AppState {
         config: test_config(),
         oidc_client: test_oidc_client(),
         settings: test_settings(),
+        last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     }
 }
 
@@ -384,6 +385,7 @@ pub mod db {
             config: super::test_config(),
             oidc_client: super::test_oidc_client(),
             settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),
@@ -422,6 +424,7 @@ pub mod db {
             config,
             oidc_client: super::test_oidc_client(),
             settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
         let auth_backend = AuthBackend {
             pool: app_pool.clone(),

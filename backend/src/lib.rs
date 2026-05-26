@@ -287,6 +287,7 @@ pub async fn run() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("failed to load settings from database: {e}"))?;
     let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
+    let last_settings_reload = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 
     let auth_backend = AuthBackend { pool: pool.clone() };
     let state = AppState {
@@ -295,6 +296,7 @@ pub async fn run() -> anyhow::Result<()> {
         config: config.clone(),
         oidc_client,
         settings,
+        last_settings_reload,
     };
     let app = build_router(state.clone(), auth_backend);
 
@@ -305,8 +307,15 @@ pub async fn run() -> anyhow::Result<()> {
     let settings_token = cancel_token.clone();
     let settings_pool = state.pool.clone();
     let settings_handle = state.settings.clone();
+    let settings_reload = state.last_settings_reload.clone();
     tokio::spawn(async move {
-        services::settings::spawn_listener(settings_pool, settings_handle, settings_token).await;
+        services::settings::spawn_listener(
+            settings_pool,
+            settings_handle,
+            settings_reload,
+            settings_token,
+        )
+        .await;
     });
     let watcher_token = cancel_token.clone();
     let watcher_config = config.clone();

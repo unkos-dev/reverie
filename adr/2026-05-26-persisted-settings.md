@@ -113,15 +113,19 @@ This ADR covers **system/admin settings** only. Per-user settings (reading prefe
 
 ### Affected paths
 
-- `backend/migrations/{ts}_settings.up.sql` — CREATE TABLE + trigger + seed function
+- `backend/migrations/{ts}_settings.up.sql` — CREATE TABLE + trigger
 - `backend/migrations/{ts}_settings.down.sql` — DROP
 - `backend/src/models/settings.rs` — CREATE: `Settings` struct, `FromRow`, field classification marker
-- `backend/src/services/settings.rs` — CREATE: load, save, seed, reload listener, validate
-- `backend/src/routes/settings.rs` — CREATE: `GET /api/settings` (admin), `PUT /api/settings` (admin)
+- `backend/src/services/settings.rs` — CREATE: load, save, reload listener, validate
+- `backend/src/routes/settings/` — CREATE: `mod.rs` (router), `tests.rs` (integration tests)
 - `backend/src/routes/mod.rs` — UPDATE: add `pub mod settings;`
 - `backend/src/lib.rs` — UPDATE: `.merge(routes::settings::router())` + spawn listener task
 - `backend/src/state.rs` — UPDATE: add `pub settings: Arc<RwLock<Settings>>` field
-- `backend/src/config.rs` — UPDATE: add `impl Settings { fn from_config(config: &Config) -> Self }` seed helper
+
+#### Deferred (follow-up PRs)
+
+- `backend/src/config.rs` — seed helper (`fn from_config`) deferred to UNK-294
+- `backend/src/services/settings.rs` — `seed` function deferred to UNK-294
 - `frontend/src/api/settings.ts` — CREATE: `getSettings()`, `putSettings()`
 - `frontend/src/pages/settings/SettingsPage.tsx` — CREATE: form with provenance badges
 - `frontend/src/routes/settings.tsx` — CREATE: route + loader
@@ -147,7 +151,10 @@ This ADR covers **system/admin settings** only. Per-user settings (reading prefe
 - Do NOT cache settings in multiple places — single `Arc<RwLock<Settings>>` is the one source of truth for the running process
 - Do NOT add LISTEN/NOTIFY to the ingestion pool — use the primary `reverie_app` pool; the listener doesn't need ingestion-role privileges
 
-### Migration
+### Migration (illustrative)
+
+The canonical schema is `backend/migrations/20260526015539_settings.up.sql`;
+this snippet is a design-time sketch and may diverge in defaults or constraints.
 
 ```sql
 -- up
@@ -218,12 +225,12 @@ GRANT SELECT ON settings TO reverie_readonly;
 - [ ] Non-admin `GET /api/settings` returns 403 (problem-type: `forbidden`)
 - [ ] Non-admin `PUT /api/settings` returns 403
 - [ ] PUT with invalid value (e.g. `enrichment_concurrency: -1`) returns 422 with field diagnostic
-- [ ] PUT of restart-required field returns `restart_required: true` in response
+- [ ] PUT of restart-required field returns `restart_required: true` in response (deferred — no restart-required fields in table yet)
 - [ ] After PUT, subsequent GET reflects new value (proves NOTIFY → RwLock update path works)
 - [ ] LISTEN/NOTIFY propagation tested: direct `UPDATE settings SET ...` via psql triggers cache refresh
 - [ ] 60s fallback poll tested: settings change detected even when NOTIFY lost (simulate by dropping listener connection)
-- [ ] Frontend settings page renders with correct values and provenance badges
-- [ ] Frontend "restart required" badge appears when restart-required field differs from running value
+- [ ] Frontend settings page renders with correct values and provenance badges (deferred — frontend not yet shipped)
+- [ ] Frontend "restart required" badge appears when restart-required field differs from running value (deferred — frontend not yet shipped)
 - [ ] Migration round-trips: `sqlx migrate revert` then `sqlx migrate run` clean
 - [ ] No regression in existing test suites (auth, ingestion, enrichment, writeback, OPDS, covers)
 

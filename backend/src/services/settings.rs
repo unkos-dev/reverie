@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use sqlx::PgPool;
+use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
 use crate::models::settings::{Settings, UpdateSettings};
@@ -52,11 +53,20 @@ pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
 /// The UPDATE fires the `settings_changed_trigger` which issues
 /// `pg_notify('settings_changed', '')`.
 ///
+/// # Co-maintenance note
+///
+/// The RETURNING column list must match `Settings` field order exactly.
+/// `build_query_as::<Settings>()` will fail at test time if columns
+/// diverge (sqlx offline check catches it too). When adding a column
+/// to `Settings`, update the RETURNING clause here AND the SELECT in
+/// [`load`].
+///
 /// # Errors
 /// Returns `sqlx::Error` on connection or query failure.
 pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx::Error> {
     use sqlx::{Postgres, QueryBuilder};
 
+    debug_assert!(!req.is_empty(), "save() called with empty UpdateSettings");
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE settings SET ");
     let mut separated = qb.separated(", ");
 
@@ -117,12 +127,13 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
         separated.push_bind_unseparated(v);
     }
     if let Some(ref v) = req.format_priority {
+        let strings: Vec<String> = v.iter().map(ToString::to_string).collect();
         separated.push("format_priority = ");
-        separated.push_bind_unseparated(v.as_slice());
+        separated.push_bind_unseparated(strings);
     }
     if let Some(ref v) = req.cleanup_mode {
         separated.push("cleanup_mode = ");
-        separated.push_bind_unseparated(v.as_str());
+        separated.push_bind_unseparated(v.as_str().to_owned());
     }
     if let Some(ref v) = req.openlibrary_base_url {
         separated.push("openlibrary_base_url = ");
@@ -150,17 +161,19 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
 /// 60 seconds as fallback), re-loads settings from DB and updates the
 /// shared `RwLock`.
 ///
+/// Automatically reconnects on connection failure with a 5-second backoff.
 /// Runs until the `CancellationToken` is cancelled (graceful shutdown).
 pub async fn spawn_listener(
     pool: PgPool,
     settings: Arc<RwLock<Settings>>,
+    last_reload: Arc<RwLock<Option<OffsetDateTime>>>,
     cancel: tokio_util::sync::CancellationToken,
 ) {
     loop {
         if cancel.is_cancelled() {
             return;
         }
-        if let Err(e) = listen_loop(&pool, &settings, &cancel).await {
+        if let Err(e) = listen_loop(&pool, &settings, &last_reload, &cancel).await {
             tracing::warn!(error = %e, "settings listener disconnected, reconnecting in 5s");
             tokio::select! {
                 biased;
@@ -174,10 +187,16 @@ pub async fn spawn_listener(
 async fn listen_loop(
     pool: &PgPool,
     settings: &Arc<RwLock<Settings>>,
+    last_reload: &Arc<RwLock<Option<OffsetDateTime>>>,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<(), sqlx::Error> {
     let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
     listener.listen("settings_changed").await?;
+    tracing::info!("settings listener connected");
+
+    let mut poll_interval = tokio::time::interval(std::time::Duration::from_mins(1));
+    poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    poll_interval.tick().await;
 
     loop {
         tokio::select! {
@@ -186,26 +205,41 @@ async fn listen_loop(
             notification = listener.recv() => {
                 match notification {
                     Ok(_) => {
-                        refresh(pool, settings).await;
+                        refresh(pool, settings, last_reload).await;
                     }
                     Err(e) => return Err(e),
                 }
             }
-            () = tokio::time::sleep(std::time::Duration::from_mins(1)) => {
-                refresh(pool, settings).await;
+            _ = poll_interval.tick() => {
+                refresh(pool, settings, last_reload).await;
             }
         }
     }
 }
 
-async fn refresh(pool: &PgPool, settings: &Arc<RwLock<Settings>>) {
+async fn refresh(
+    pool: &PgPool,
+    settings: &Arc<RwLock<Settings>>,
+    last_reload: &Arc<RwLock<Option<OffsetDateTime>>>,
+) {
     match load(pool).await {
         Ok(new_settings) => {
             let mut guard = settings.write().await;
             *guard = new_settings;
+            drop(guard);
+            let mut ts = last_reload.write().await;
+            *ts = Some(OffsetDateTime::now_utc());
         }
         Err(e) => {
-            tracing::error!(error = %e, "failed to reload settings from database");
+            let last = *last_reload.read().await;
+            let cache_age_secs = last.map_or(-1, |ts| {
+                OffsetDateTime::now_utc().unix_timestamp() - ts.unix_timestamp()
+            });
+            tracing::error!(
+                error = %e,
+                cache_age_secs,
+                "failed to reload settings; serving stale cache"
+            );
         }
     }
 }
