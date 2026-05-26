@@ -65,7 +65,9 @@ This is the critical operator-experience decision. With per-migration transactio
 
 PostgreSQL supports transactional DDL (`CREATE TABLE`, `ALTER TABLE`, `DROP` all roll back cleanly), making this possible. MySQL cannot do this.
 
-Migrations marked with `-- no-transaction` (required for `CREATE INDEX CONCURRENTLY` and some `ALTER TYPE ... ADD VALUE` operations) run outside the batch individually, after the batch commits. These are rare and flagged at review time.
+Migrations marked with `-- no-transaction` (required for `CREATE INDEX CONCURRENTLY` and some `ALTER TYPE ... ADD VALUE` operations) run outside the batch individually, after the batch commits.
+
+**Ordering invariant**: no-transaction migrations must never appear in the version-sorted sequence before a transactional migration that depends on their schema change. The batch runner executes all transactional migrations first (in version order within the batch), then runs no-transaction migrations in version order afterward. This means interleaved sequences like `[M1(tx), M2(no-tx), M3(tx)]` are only safe when M3 does not depend on M2. This invariant is enforced at review time — any PR adding a `-- no-transaction` migration must verify that no later transactional migration in the same release depends on it. No-transaction migrations are rare (enum value additions, concurrent indexes) and this constraint has not been a practical limitation in comparable projects.
 
 Per-migration transactions (sqlx default) rejected: partial-state failure mode is unacceptable for self-hosted operators without DB expertise.
 
@@ -87,11 +89,11 @@ This follows the existing `DATABASE_URL` / `DATABASE_URL_INGESTION` pattern and 
 
 ### Concurrency safety
 
-sqlx's migrator acquires a PostgreSQL advisory lock before running migrations. The custom runner replicates this. Multiple containers starting simultaneously (e.g., Docker restart race) are serialised by the advisory lock — only one runs migrations, others wait, then proceed.
+Multiple containers starting simultaneously (e.g., Docker restart race) are serialised by a PostgreSQL advisory lock (matching sqlx's internal lock ID for interop). The runner uses `pg_try_advisory_lock` in a bounded retry loop (not `pg_advisory_lock`, which blocks indefinitely). If the lock is not acquired within the retry budget, startup fails with a clear error rather than hanging. This matches sqlx's own acquisition strategy.
 
 ### Lock timeout
 
-The ephemeral migration connection sets `lock_timeout=30s` to prevent a migration blocked on a lock from hanging startup indefinitely. This is an interim hardcoded default pending a project-wide database lock and timeout strategy ([UNK-296](https://linear.app/unkos/issue/UNK-296)).
+The ephemeral migration connection sets `lock_timeout=30s` to prevent DDL statements (e.g., `ALTER TABLE` waiting on a concurrent transaction's row lock) from hanging indefinitely. Note: `lock_timeout` applies to heavyweight PostgreSQL locks (table, row, extension), not advisory locks — advisory lock acquisition is bounded by the retry loop described above. These are two distinct protection layers. `lock_timeout` is an interim hardcoded default pending a project-wide database lock and timeout strategy ([UNK-296](https://linear.app/unkos/issue/UNK-296)).
 
 ### Logging
 
@@ -103,9 +105,13 @@ Logging levels follow the project-wide conventions being formalised under [UNK-2
 | Migrations applied           | INFO  | `applied {n} pending migrations ({elapsed}ms)`                               |
 | Individual migration applied | DEBUG | `applied migration {version} ({name})`                                       |
 | Schema ahead of binary       | ERROR | `database schema is newer than this application version` + recovery guidance |
-| Migration failure            | ERROR | `migration failed: {error}` + recovery guidance                              |
+| Batch migration failure      | ERROR | `migration batch failed: {error}` + batch recovery guidance                  |
+| No-tx migration failure      | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery       |
 
-Recovery guidance in ERROR messages: `pin the previous image tag to restore service, then fix forward with a new release`.
+Recovery guidance in ERROR messages distinguishes two failure modes:
+
+- **Batch failure**: `pin the previous image tag to restore service — database is untouched, then fix forward with a new release`
+- **No-transaction failure**: `transactional migrations already committed — pinning the old image alone does not restore the database; manually revert the failed no-transaction migration, then fix forward`
 
 ### Consequences
 
@@ -115,7 +121,7 @@ Recovery guidance in ERROR messages: `pin the previous image tag to restore serv
 - Good, because ephemeral migration connection maintains the RLS security boundary — schema-owner privileges never exist during request serving
 - Good, because advisory lock makes concurrent container starts safe by default
 - Bad, because custom migration runner (~60–80 lines) couples to sqlx's `_sqlx_migrations` table schema — must be verified on sqlx version bumps
-- Bad, because `-- no-transaction` migrations (enum ADD VALUE, CONCURRENTLY indexes) run outside the batch and cannot be rolled back atomically with the rest
+- Bad, because `-- no-transaction` migrations (enum ADD VALUE, CONCURRENTLY indexes) run outside the batch and cannot be rolled back atomically with the rest — a failed no-tx migration leaves transactional migrations committed, requiring manual intervention (distinct recovery guidance emitted at ERROR level)
 - Neutral, because adds one required env var (`DATABASE_URL_MIGRATION`) — consistent with existing multi-DSN pattern
 
 ### Semver and release-notes implications
@@ -156,6 +162,7 @@ Future: [UNK-299](https://linear.app/unkos/issue/UNK-299) tracks potential extra
 - Do NOT keep the migration pool alive after migrations complete — drop it before runtime pool init
 - Do NOT add an opt-out env var — always-on is the deliberate design
 - Do NOT log migration SQL content — may contain sensitive DDL comments or role names
+- Do NOT log connection strings, passwords, or any portion of `DATABASE_URL_MIGRATION` — schema-owner credentials are high-privilege secrets
 - Do NOT fall back to `DATABASE_URL` when `DATABASE_URL_MIGRATION` is unset — the 4-role architecture has no single-role scenario
 
 ### Configuration
@@ -187,10 +194,12 @@ Deployment sequence:
 - [ ] Migration failure (e.g., invalid SQL injected into a test migration): startup fails with ERROR, database has no partial state (all-or-nothing rollback verified by inspecting `_sqlx_migrations` row count)
 - [ ] Schema-ahead detection: insert a fake future row into `_sqlx_migrations`, verify startup refuses with clear error message
 - [ ] `DATABASE_URL_MIGRATION` unset: startup fails with `missing required environment variable: DATABASE_URL_MIGRATION`
+- [ ] `DATABASE_URL_MIGRATION` invalid credentials: startup fails with clear authentication error (not generic connection failure)
 - [ ] `lock_timeout` effective: verify migration connection has `lock_timeout = '30s'` via `SHOW lock_timeout` in test
 - [ ] Concurrent starts: two processes starting simultaneously — advisory lock serialises, both succeed, no duplicate migration rows
 - [ ] Ephemeral pool: migration pool is dropped before runtime pools are created (verify by connection count or pool lifecycle logging at DEBUG)
 - [ ] `-- no-transaction` migration: a migration with the marker runs outside the batch, after the batch commits
+- [ ] `-- no-transaction` migration failure: startup fails with ERROR distinguishing this from batch failure — message indicates transactional migrations already committed and "pin old image" alone does not restore the database; operator must manually revert the partial no-tx change
 
 ## Pros and Cons of the Options
 
