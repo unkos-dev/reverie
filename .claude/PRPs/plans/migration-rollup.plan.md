@@ -2,7 +2,7 @@
 
 ## Summary
 
-Consolidate 21 incremental migration pairs (42 files, ~1187 lines of up-SQL) into a single initial migration that creates the current schema from scratch. Generated mechanically via `pg_dump` against a database with all existing migrations applied, not hand-written. Verified by schema-diff, sqlx cache round-trip, and full test suite.
+Consolidate 27 incremental migration pairs (54 files, ~1187 lines of up-SQL) into a single initial migration that creates the current schema from scratch. Generated mechanically via `pg_dump` against a database with all existing migrations applied, not hand-written. Verified by schema-diff, sqlx cache round-trip, and full test suite.
 
 ## User Story
 
@@ -12,7 +12,7 @@ So that the migration history reflects intentional schema design rather than 6 w
 
 ## Problem Statement
 
-21 migrations accumulated during steps 1–11 of the MVP build. Intermediate states (enum rebuilds, column renames, constraint additions) add cognitive load and are no longer meaningful. Pre-v1.0, no deployed databases exist that need incremental upgrade paths.
+27 migrations accumulated during steps 1–11 of the MVP build. Intermediate states (enum rebuilds, column renames, constraint additions) add cognitive load and are no longer meaningful. Pre-v1.0, no deployed databases exist that need incremental upgrade paths.
 
 ## Solution Statement
 
@@ -26,7 +26,7 @@ Replace all migration files with one timestamped `initial_schema` migration pair
 | Complexity       | MEDIUM                                |
 | Systems Affected | backend/migrations, backend/.sqlx, CI |
 | Dependencies     | sqlx-cli 0.8.6, pg_dump (postgres 18) |
-| Estimated Tasks  | 8                                     |
+| Estimated Tasks  | 9                                     |
 | Prerequisite     | 11f PR merged to main                 |
 
 ---
@@ -39,9 +39,9 @@ Replace all migration files with one timestamped `initial_schema` migration pair
 backend/migrations/
 ├── 20260412150001_extensions_enums_and_roles.{up,down}.sql
 ├── 20260412150002_core_tables.{up,down}.sql
-├── ... (19 more pairs, 42 files total)
+├── ... (25 more pairs, 54 files total)
 ├── 20260526015539_settings.{up,down}.sql
-└── _sqlx_migrations table: 21 rows tracking incremental history
+└── _sqlx_migrations table: 27 rows tracking incremental history
 ```
 
 ### After State
@@ -57,9 +57,9 @@ backend/migrations/
 
 | Location              | Before                                   | After                                  | User Impact                             |
 | --------------------- | ---------------------------------------- | -------------------------------------- | --------------------------------------- |
-| `backend/migrations/` | 42 files, 21 pairs                       | 2 files, 1 pair                        | Easier to understand schema at a glance |
-| Dev DB setup          | `sqlx migrate run` applies 21 migrations | `sqlx migrate run` applies 1 migration | Faster fresh setup                      |
-| `_sqlx_migrations`    | 21 rows                                  | 1 row                                  | Clean history                           |
+| `backend/migrations/` | 54 files, 27 pairs                       | 2 files, 1 pair                        | Easier to understand schema at a glance |
+| Dev DB setup          | `sqlx migrate run` applies 27 migrations | `sqlx migrate run` applies 1 migration | Faster fresh setup                      |
+| `_sqlx_migrations`    | 27 rows                                  | 1 row                                  | Clean history                           |
 
 ---
 
@@ -86,7 +86,7 @@ backend/migrations/
 
 **APPROACH_CHOSEN**: Single consolidated migration in `backend/migrations/`
 
-**RATIONALE**: 245 test functions reference `#[sqlx::test(migrations = "./migrations")]`. Changing to a `schema.sql` or alternative path would require touching 245 test attribute annotations across the entire backend for zero functional benefit.
+**RATIONALE**: 247 test functions reference `#[sqlx::test(migrations = "./migrations")]`. Changing to a `schema.sql` or alternative path would require touching 247 test attribute annotations across the entire backend for zero functional benefit.
 
 **ALTERNATIVES_REJECTED:**
 
@@ -100,7 +100,7 @@ backend/migrations/
 - **No changes to `docker/init-roles.sql`** — role creation is not a migration concern
 - **No changes to `.github/workflows/ci.yml`** — CI steps work unchanged (same directory, same commands)
 - **No changes to test code** — `#[sqlx::test(migrations = "./migrations")]` path unchanged
-- **No schema changes** — consolidated migration must produce byte-identical schema to running all 21
+- **No schema changes** — consolidated migration must produce byte-identical schema to running all 27
 - **No down-migration testing infrastructure** — existing pattern ships both directions but tests only exercise up
 
 ---
@@ -109,7 +109,7 @@ backend/migrations/
 
 ### Task 1: Capture reference schema dump
 
-**ACTION**: Dump the current schema from a fresh database with all 21 migrations applied. This becomes the ground truth.
+**ACTION**: Dump the current schema from a fresh database with all 27 migrations applied. This becomes the ground truth.
 
 **IMPLEMENT**:
 
@@ -127,7 +127,7 @@ docker exec reverie-postgres psql -U reverie -d reverie_rollup_ref -c "
 " 2>/dev/null || true
 # Roles may already exist from dev DB — ignore "already exists" errors
 
-# Apply all 21 migrations
+# Apply all 27 migrations
 DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_rollup_ref sqlx migrate run --source backend/migrations
 
 # Capture reference DDL (schema-only, no owner annotations)
@@ -158,9 +158,9 @@ docker exec reverie-postgres pg_dump -U reverie --data-only --table=metadata_sou
    - Remove `SET` statements that pg_dump prepends (`SET statement_timeout`, `SET lock_timeout`, etc.)
    - Remove `SELECT pg_catalog.set_config('search_path', ...)` lines
    - Keep `CREATE EXTENSION`, `CREATE TYPE`, `CREATE TABLE`, `CREATE INDEX`, `CREATE FUNCTION`, `CREATE TRIGGER`, `ALTER TABLE` (constraints, RLS), `CREATE POLICY`, `CREATE SCHEMA` statements
-3. Add grant statements — `pg_dump --no-owner` strips these, so extract from `ref_schema_with_grants.sql` or reconstruct from migration source:
+3. Add grant statements — Task 1's first dump uses `--no-privileges` which strips grants. Extract from `ref_schema_with_grants.sql` (Task 1's second dump, which omits `--no-privileges`). Cross-reference against the grant matrix (Tables + Grant Matrix section) for completeness:
    - `GRANT USAGE ON SCHEMA public TO reverie_app, reverie_ingestion, reverie_readonly`
-   - Per-table GRANTs (catalog from agent analysis)
+   - Per-table GRANTs (per grant matrix below)
    - `tower_sessions` schema grants
 4. Add seed data at the end:
    - `metadata_sources` INSERT rows (6 rows: opf, manual, openlibrary, googlebooks, hardcover, ai)
@@ -222,7 +222,7 @@ INSERT INTO metadata_sources (...) VALUES ...;
 INSERT INTO settings DEFAULT VALUES;
 ```
 
-**MIRROR**: pg_dump output provides the canonical DDL; grants reconstructed from migration source files.
+**MIRROR**: pg_dump output provides the canonical DDL; grants extracted from `ref_schema_with_grants.sql` (Task 1 second dump), cross-referenced against grant matrix.
 
 **VALIDATE**: File is valid SQL: `docker exec reverie-postgres psql -U reverie -d postgres -c "SELECT 1"` (connectivity check)
 
@@ -315,7 +315,7 @@ REVOKE USAGE ON SCHEMA public FROM reverie_app, reverie_ingestion, reverie_reado
 
 ### Task 4: Delete all existing migration files
 
-**ACTION**: Remove all 42 files from `backend/migrations/`.
+**ACTION**: Remove all 54 files from `backend/migrations/`.
 
 **IMPLEMENT**:
 
@@ -386,7 +386,7 @@ diff /tmp/ref_normalized.sql /tmp/new_normalized.sql
 
 **VALIDATE**: `diff` output is empty (schemas identical). If not empty, fix the consolidated migration and re-run.
 
-**GOTCHA**: `_sqlx_migrations` table will differ (21 rows vs 1 row) — exclude from comparison. pg_dump's `--schema-only` does not include `_sqlx_migrations` data, but it may include the table definition. Filter it: `grep -v '_sqlx_migrations'` from both dumps if needed.
+**GOTCHA**: `_sqlx_migrations` table will differ (27 rows vs 1 row) — exclude from comparison. pg_dump's `--schema-only` does not include `_sqlx_migrations` data, but it may include the table definition. Filter it: `grep -v '_sqlx_migrations'` from both dumps if needed.
 
 Also verify seed data:
 
@@ -401,7 +401,19 @@ docker exec reverie-postgres psql -U reverie -d reverie_rollup_test -c "SELECT c
 
 ---
 
-### Task 6: Refresh dev database and regenerate sqlx cache
+### Task 6: Schema review via database-reviewer agent
+
+**ACTION**: Run `database-reviewer` agent against the consolidated migration for expert schema review before committing to dev database.
+
+**IMPLEMENT**: Invoke `database-reviewer` agent on `backend/migrations/20260526000000_initial_schema.up.sql` with context: "Review this consolidated initial schema migration for: dropped constraints, index gaps, enum ordering, RLS policy correctness, grant completeness, and FK dependency ordering."
+
+**VALIDATE**: All reviewer findings addressed or explicitly accepted.
+
+**GOTCHA**: Run AFTER schema diff passes (Task 5) — reviewing a broken migration wastes a pass.
+
+---
+
+### Task 7: Refresh dev database and regenerate sqlx cache
 
 **ACTION**: Drop/recreate dev database and regenerate `backend/.sqlx/` cache.
 
@@ -432,7 +444,7 @@ DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo sqlx pr
 
 ---
 
-### Task 7: Run full test suite
+### Task 8: Run full test suite
 
 **ACTION**: Execute complete test suite to verify no regressions.
 
@@ -447,7 +459,7 @@ cargo fmt --check
 # Lint
 cargo clippy -- -D warnings
 
-# Full test suite (245 DB-backed tests + unit tests)
+# Full test suite (247 DB-backed tests + unit tests)
 DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo nextest run --workspace
 ```
 
@@ -457,7 +469,7 @@ DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo nextest
 
 ---
 
-### Task 8: Clean up verification databases
+### Task 9: Clean up verification databases
 
 **ACTION**: Remove temporary databases created during verification.
 
@@ -549,7 +561,7 @@ CREATE TRIGGER trg_<table>_updated_at BEFORE UPDATE ON <table> FOR EACH ROW EXEC
 | sqlx cache  | `cargo sqlx prepare --check -- --tests`    | Query/type mismatches vs live schema          |
 | Format      | `cargo fmt --check`                        | N/A (no Rust changes, but run anyway)         |
 | Lint        | `cargo clippy -- -D warnings`              | N/A (no Rust changes, but run anyway)         |
-| Test suite  | `cargo nextest run --workspace`            | 245 DB-backed tests exercise full schema      |
+| Test suite  | `cargo nextest run --workspace`            | 247 DB-backed tests exercise full schema      |
 
 ### Edge Cases Checklist
 
@@ -612,14 +624,14 @@ cd backend && cargo fmt --check && cargo clippy -- -D warnings
 cd backend && DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo nextest run --workspace
 ```
 
-**EXPECT**: All 245+ tests pass
+**EXPECT**: All 247+ tests pass
 
 ---
 
 ## Acceptance Criteria
 
 - [ ] `backend/migrations/` contains exactly 2 files: `20260526000000_initial_schema.{up,down}.sql`
-- [ ] Schema diff between reference (21 migrations) and consolidated (1 migration) is empty
+- [ ] Schema diff between reference (27 migrations) and consolidated (1 migration) is empty
 - [ ] `cargo sqlx prepare --check -- --tests` passes
 - [ ] Full test suite passes with zero failures
 - [ ] No Rust source files changed (this is a migrations-only chore)
@@ -635,22 +647,22 @@ cd backend && DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev
 - [ ] Task 3: Down migration written
 - [ ] Task 4: Old migration files deleted
 - [ ] Task 5: Schema diff passes (acid test)
-- [ ] Task 6: Dev database refreshed, sqlx cache regenerated
-- [ ] Task 7: Full test suite passes
-- [ ] Task 8: Temporary databases cleaned up
-- [ ] database-reviewer agent run on consolidated migration (per memory: migration rollup is its sweet spot)
+- [ ] Task 6: database-reviewer agent schema review passed
+- [ ] Task 7: Dev database refreshed, sqlx cache regenerated
+- [ ] Task 8: Full test suite passes
+- [ ] Task 9: Temporary databases cleaned up
 
 ---
 
 ## Risks and Mitigations
 
-| Risk                                                      | Likelihood | Impact | Mitigation                                                                                                         |
-| --------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
-| `pg_dump` column order differs from original CREATE TABLE | LOW        | MED    | Compare column order explicitly; `pg_dump` preserves creation order in practice                                    |
-| Grant statements missing from consolidated migration      | MED        | HIGH   | Cross-reference against full grant catalog from agent analysis; verify with `pg_dump --no-owner` (includes grants) |
-| Seed data incomplete                                      | LOW        | HIGH   | Explicit psql queries to verify row counts and content                                                             |
-| `.sqlx/` cache hash changes break CI                      | LOW        | LOW    | Cache is regenerated in Task 6; CI checks freshness, not content                                                   |
-| Dev contributors pulling PR have stale local DB           | MED        | LOW    | PR description includes dev database reset instructions                                                            |
+| Risk                                                      | Likelihood | Impact | Mitigation                                                                                                 |
+| --------------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------------------------- |
+| `pg_dump` column order differs from original CREATE TABLE | LOW        | MED    | Compare column order explicitly; `pg_dump` preserves creation order in practice                            |
+| Grant statements missing from consolidated migration      | MED        | HIGH   | Extract from `ref_schema_with_grants.sql` (Task 1 second dump); cross-reference against grant matrix below |
+| Seed data incomplete                                      | LOW        | HIGH   | Explicit psql queries to verify row counts and content                                                     |
+| `.sqlx/` cache hash changes break CI                      | LOW        | LOW    | Cache is regenerated in Task 7; CI checks freshness, not content                                           |
+| Dev contributors pulling PR have stale local DB           | MED        | LOW    | PR description includes dev database reset instructions                                                    |
 
 ---
 
