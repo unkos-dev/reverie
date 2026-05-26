@@ -14,8 +14,8 @@ Port 5433 (5432 taken by host's shared-postgres).
 | `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev` | Background pipeline. Scoped RLS.                      |
 | `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5433/reverie_dev`   | Debug/reporting. SELECT only.                         |
 
-`tower_sessions` schema (created by migration
-`20260507000001_tower_sessions_postgres_store`) RLS-exempt — session
+`tower_sessions` schema (created by the consolidated
+`20260526000000_initial_schema` migration) RLS-exempt — session
 rows not user-scoped like application data. Session id
 (cryptographically random `tower_sessions::session::Id`) bootstraps
 user resolution, so RLS-gating lookup is chicken-and-egg. Access

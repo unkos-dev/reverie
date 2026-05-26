@@ -1,2 +1,0 @@
-ALTER TABLE metadata_versions DROP CONSTRAINT IF EXISTS metadata_versions_manifestation_source_field_unique;
-ALTER TABLE manifestations DROP CONSTRAINT IF EXISTS manifestations_file_hash_unique;
