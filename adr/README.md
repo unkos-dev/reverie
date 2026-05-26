@@ -36,3 +36,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [JSON API conventions for Reverie's browser-facing REST surface](2026-05-22-json-api-conventions.md) (accepted, 2026-05-22)
 - [Frontend data-layer dependencies for Step 11](2026-05-22-frontend-data-layer-deps.md) (accepted, 2026-05-22)
 - [Backend auxiliary crates for Step 11](2026-05-22-backend-aux-crates.md) (accepted, 2026-05-22)
+- [Persist operator-tunable settings to database with live reload](2026-05-26-persisted-settings.md) (accepted, 2026-05-26)

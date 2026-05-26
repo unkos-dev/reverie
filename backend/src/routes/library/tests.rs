@@ -37,6 +37,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
         ingestion_pool: ingestion_pool.clone(),
         config,
         oidc_client: test_support::test_oidc_client(),
+        settings: test_support::test_settings(),
     };
     let auth_backend = AuthBackend {
         pool: app_pool.clone(),

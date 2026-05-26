@@ -22,6 +22,8 @@ pub mod ingestion;
 /// Metadata extraction, drafting, sanitisation, ISBN normalisation,
 /// and the value-vs-canonical inversion helpers.
 pub mod metadata;
+/// Persisted settings load, save, validation, and LISTEN/NOTIFY reload.
+pub mod settings;
 /// Writeback worker: queue + orchestrator + per-aspect mutators
 /// (OPF rewrite, cover embed, path rename) flushing canonical
 /// metadata back into source manifestation files.
