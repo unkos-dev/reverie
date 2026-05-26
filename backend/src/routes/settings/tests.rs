@@ -43,6 +43,15 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     assert!(body["format_priority"].is_array());
     assert!(body["restart_required_fields"].is_array());
     assert!(!body["updated_at"].is_null(), "updated_at must be present");
+    assert!(
+        body.get("last_successful_reload_at").is_some(),
+        "last_successful_reload_at must be present in response"
+    );
+    assert!(
+        body["last_successful_reload_at"].is_null()
+            || body["last_successful_reload_at"].is_string(),
+        "last_successful_reload_at must be null or RFC 3339 string"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

@@ -231,13 +231,13 @@ async fn refresh(
             *ts = Some(OffsetDateTime::now_utc());
         }
         Err(e) => {
-            let cache_age = {
-                let guard = settings.read().await;
-                OffsetDateTime::now_utc().unix_timestamp() - guard.updated_at.unix_timestamp()
-            };
+            let last = *last_reload.read().await;
+            let cache_age_secs = last.map_or(-1, |ts| {
+                OffsetDateTime::now_utc().unix_timestamp() - ts.unix_timestamp()
+            });
             tracing::error!(
                 error = %e,
-                cache_age_secs = cache_age,
+                cache_age_secs,
                 "failed to reload settings; serving stale cache"
             );
         }

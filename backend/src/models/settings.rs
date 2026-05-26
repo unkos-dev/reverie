@@ -69,6 +69,9 @@ impl Settings {
     ///
     /// DB CHECK constraint guarantees valid values; panicking on
     /// mismatch is correct (schema-vs-code drift = programming error).
+    ///
+    /// # Panics
+    /// Panics if the stored value is outside `"all" | "ingested" | "none"`.
     pub fn cleanup_mode(&self) -> CleanupMode {
         match self.cleanup_mode.as_str() {
             "all" => CleanupMode::All,
@@ -82,6 +85,9 @@ impl Settings {
     ///
     /// DB values were validated on write; panicking on mismatch is
     /// correct (schema-vs-code drift = programming error).
+    ///
+    /// # Panics
+    /// Panics if any stored element is not a known [`ManifestationFormat`] wire value.
     pub fn format_priority(&self) -> Vec<ManifestationFormat> {
         self.format_priority
             .iter()
