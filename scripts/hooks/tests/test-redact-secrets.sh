@@ -7,6 +7,7 @@ FAIL=0
 
 run_test() {
   local name="$1" input_stdout="$2" input_stderr="$3" expected_pattern="$4" expect_redaction="$5" check_field="$6"
+  local secret_absent="${7:-}"
 
   local payload
   payload=$(jq -n \
@@ -31,8 +32,14 @@ run_test() {
     local actual
     actual=$(printf '%s' "$output" | jq -r ".hookSpecificOutput.updatedToolOutput.${check_field}" 2>/dev/null || true)
     if printf '%s' "$actual" | rg -q "$expected_pattern" 2>/dev/null; then
-      printf 'PASS: %s\n' "$name"
-      PASS=$(( PASS + 1 ))
+      # Also verify the original secret value is absent from redacted output
+      if [[ -n "$secret_absent" ]] && printf '%s' "$actual" | rg -qF "$secret_absent" 2>/dev/null; then
+        printf 'FAIL: %s — secret value "%s" still present after redaction\n' "$name" "$secret_absent"
+        FAIL=$(( FAIL + 1 ))
+      else
+        printf 'PASS: %s\n' "$name"
+        PASS=$(( PASS + 1 ))
+      fi
     else
       printf 'FAIL: %s — expected pattern "%s" in %s, got: %s\n' "$name" "$expected_pattern" "$check_field" "$actual"
       FAIL=$(( FAIL + 1 ))
@@ -57,7 +64,8 @@ run_test \
   "" \
   'QBITTORRENT_PASSWORD=\[REDACTED\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "testvalue123"
 
 # Pattern 1b: KEY: "VALUE" (JSON/YAML colon form)
 run_test \
@@ -66,52 +74,78 @@ run_test \
   "" \
   'DB_SECRET=\[REDACTED\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "hunter2secretvalue"
 
-# Pattern 2: Bearer token
+# Pattern 2: URL-embedded credentials
 run_test \
-  "Pattern 2: Bearer token" \
+  "Pattern 2: URL credentials" \
+  'postgres://admin:hunter2secret@db.example.com:5432/reverie' \
+  "" \
+  '\[REDACTED:url-creds\]' \
+  "yes" \
+  "stdout" \
+  "hunter2secret"
+
+# Pattern 3: Bearer token
+run_test \
+  "Pattern 3: Bearer token" \
   'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc123456' \
   "" \
   'Bearer \[REDACTED\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 
-# Pattern 3: GitHub PAT
+# Pattern 4a: GitHub classic PAT
 run_test \
-  "Pattern 3: GitHub PAT" \
+  "Pattern 4a: GitHub classic PAT" \
   'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZab' \
   "" \
   '\[REDACTED:github-pat\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-# Pattern 4a: Context7 key
+# Pattern 4b: GitHub fine-grained PAT
 run_test \
-  "Pattern 4a: Context7 API key" \
+  "Pattern 4b: GitHub fine-grained PAT" \
+  'github_pat_11AABBBCCC_xxxxxxxxxxxxxxxxxxxx' \
+  "" \
+  '\[REDACTED:github-pat\]' \
+  "yes" \
+  "stdout" \
+  "github_pat_11AABBBCCC"
+
+# Pattern 5a: Context7 key
+run_test \
+  "Pattern 5a: Context7 API key" \
   'ctx7sk-abcdefghijklmnopqrstuvwx' \
   "" \
   '\[REDACTED:api-key\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "ctx7sk-abcdefghijklmnop"
 
-# Pattern 4b: Cloudflare token
+# Pattern 5b: Cloudflare token
 run_test \
-  "Pattern 4b: Cloudflare token" \
+  "Pattern 5b: Cloudflare token" \
   'cfat_sL3727gAbCdEfGhIjKlMnOpQr' \
   "" \
   '\[REDACTED:api-key\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "cfat_sL3727gAbCdEfGh"
 
-# Pattern 4c: CodeRabbit key (cr- + 50+ hex)
+# Pattern 5c: CodeRabbit key (cr- + 50+ hex)
 run_test \
-  "Pattern 4c: CodeRabbit API key" \
+  "Pattern 5c: CodeRabbit API key" \
   'cr-aabbccddeeff00112233445566778899aabbccddeeff00112233' \
   "" \
   '\[REDACTED:api-key\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "cr-aabbccddeeff0011223344"
 
 # False positive: git commit SHA
 run_test \
@@ -149,6 +183,15 @@ run_test \
   "no" \
   "stdout"
 
+# False positive: short URL password (under 8 chars, not matched)
+run_test \
+  "False positive: short URL password" \
+  'postgres://user:abc@localhost:5432/db' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
 # Partial redaction: mixed secret and non-secret lines
 run_test \
   "Partial redaction: mixed content" \
@@ -156,7 +199,8 @@ run_test \
   "" \
   'DB_PASSWORD=\[REDACTED\]' \
   "yes" \
-  "stdout"
+  "stdout" \
+  "supersecret123"
 
 # Stderr redaction
 run_test \
@@ -165,7 +209,8 @@ run_test \
   "POSTGRES_PASSWORD=hunter2secret" \
   'POSTGRES_PASSWORD=\[REDACTED\]' \
   "yes" \
-  "stderr"
+  "stderr" \
+  "hunter2secret"
 
 # Empty stdout + empty stderr = pass-through
 run_test \
@@ -192,6 +237,17 @@ if [[ "$PRESERVED_INTERRUPTED" == "true" && "$PRESERVED_BG_ID" == "bg-42" ]]; th
   PASS=$(( PASS + 1 ))
 else
   printf 'FAIL: field preservation — interrupted=%s (expected true), backgroundTaskId=%s (expected bg-42)\n' "$PRESERVED_INTERRUPTED" "$PRESERVED_BG_ID"
+  FAIL=$(( FAIL + 1 ))
+fi
+
+# Fail-closed test: malformed JSON input should produce blanked output, not pass-through
+printf '\n--- Fail-closed tests ---\n'
+MALFORMED_OUTPUT=$(printf 'this is not json at all' | bash "$HOOK" 2>/dev/null) || true
+if [[ -n "$MALFORMED_OUTPUT" ]] && printf '%s' "$MALFORMED_OUTPUT" | rg -q 'OUTPUT SUPPRESSED' 2>/dev/null; then
+  printf 'PASS: fail-closed on malformed JSON input\n'
+  PASS=$(( PASS + 1 ))
+else
+  printf 'FAIL: fail-closed — malformed JSON should produce blanked output, got: %s\n' "${MALFORMED_OUTPUT:-(empty/pass-through)}"
   FAIL=$(( FAIL + 1 ))
 fi
 
