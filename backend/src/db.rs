@@ -1,6 +1,6 @@
 //! Database pool factories and the RLS-context acquisition helper.
 //!
-//! Three connection-pool flavours feed the system:
+//! Connection-pool flavours:
 //!
 //! * [`init_pool`] — vanilla `PgPool` for the primary application
 //!   (`reverie_app`) and the ingestion pipeline (`reverie_ingestion`).
@@ -11,6 +11,9 @@
 //!   The `manifestations_*_system` RLS policies match only on this GUC,
 //!   so user-facing handlers (which never set it) cannot cross into the
 //!   system policies even by accident.
+//! * [`run_migrations`] — ephemeral single-connection pool used during
+//!   startup to apply pending migrations as schema owner. Dropped before
+//!   any runtime pool is created.
 //! * [`acquire_with_rls`] — user-scoped transaction wrapper that injects
 //!   `app.current_user_id` via `SET LOCAL`-equivalent
 //!   `set_config(..., true)`. Auto-resets on commit/rollback so a
@@ -130,10 +133,9 @@ pub struct MigrationReport {
 /// All failure modes for the migration runner.
 ///
 /// Variants carry enough context for operator-actionable error messages.
-/// `Connection`, `SessionSetup`, and `BatchFailed` wrap the underlying
-/// `sqlx::Error` as `#[source]` (not `#[from]`) because the runner
-/// converts different `sqlx::Error` sites into semantically distinct
-/// variants.
+/// Five variants wrap the underlying `sqlx::Error` as `#[source]` (not
+/// `#[from]`) because the runner converts different `sqlx::Error` sites
+/// into semantically distinct variants with different recovery guidance.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum MigrationError {
@@ -408,7 +410,15 @@ async fn run_locked(
                 sqlx::raw_sql(m.sql.as_ref())
                     .execute(&mut **conn)
                     .await
-                    .map_err(MigrationError::BatchFailed)?;
+                    .map_err(|e| {
+                        tracing::error!(
+                            version = m.version,
+                            name = %m.description,
+                            error = %e,
+                            "migration SQL failed"
+                        );
+                        MigrationError::BatchFailed(e)
+                    })?;
 
                 #[allow(clippy::cast_possible_truncation)]
                 let elapsed_nanos = migration_start.elapsed().as_nanos() as i64;

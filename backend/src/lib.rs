@@ -35,6 +35,7 @@ pub mod state;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+use anyhow::Context as _;
 use axum::Router;
 use axum_login::AuthManagerLayerBuilder;
 use tower_sessions::{Expiry, SessionManagerLayer};
@@ -273,7 +274,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     let migration_report = db::run_migrations(&config.migration_database_url)
         .await
-        .map_err(|e| anyhow::anyhow!("database migration failed: {e}"))?;
+        .context("database migration failed")?;
     if migration_report.applied > 0 {
         tracing::info!(
             count = migration_report.applied,

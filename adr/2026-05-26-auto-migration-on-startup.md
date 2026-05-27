@@ -81,7 +81,7 @@ On startup, the runner compares the binary's embedded migration list against the
 
 This prevents the confusing failure mode where a stale image hits tables/columns it doesn't understand and throws cryptic SQL errors.
 
-**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-256 hash. A mismatch indicates the migration file was modified after application — startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
+**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-384 hash. A mismatch indicates the migration file was modified after application — startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
 
 ### Connection architecture
 
