@@ -34,14 +34,16 @@ migrator — no change to test workflow.
 
 **`MigrationError` failure modes** (operator-facing, with recovery):
 
-| Variant            | Meaning                                   | Recovery                                       |
-| ------------------ | ----------------------------------------- | ---------------------------------------------- |
-| `Connection`       | Bad DSN, auth failure, unreachable host   | Fix `DATABASE_URL_MIGRATION`                   |
-| `BatchFailed`      | SQL error in transactional migration      | DB untouched — pin previous image              |
-| `NoTxFailed`       | `-- no-transaction` migration failed      | TX migrations committed — manual revert needed |
-| `SchemaAhead`      | DB has migrations unknown to binary       | Upgrade image or roll back DB                  |
-| `ChecksumMismatch` | Migration file modified after application | Restore original migration file                |
-| `LockTimeout`      | Advisory lock not acquired (30s budget)   | Another instance running migrations            |
+| Variant              | Meaning                                            | Recovery                                             |
+| -------------------- | -------------------------------------------------- | ---------------------------------------------------- |
+| `Connection`         | Bad DSN, auth failure, unreachable host            | Fix `DATABASE_URL_MIGRATION`                         |
+| `SessionSetup`       | Post-connect init failed (lock_timeout, lock acq)  | Check DB permissions and concurrent connections      |
+| `BatchFailed`        | SQL error in transactional migration               | DB untouched — pin previous image                    |
+| `NoTxFailed`         | `-- no-transaction` migration SQL failed           | TX migrations committed — fix failing SQL, re-deploy |
+| `NoTxTrackingFailed` | No-tx migration applied but tracking INSERT failed | Migration IS applied — manually insert tracking row  |
+| `SchemaAhead`        | DB has migrations unknown to binary                | Upgrade image or roll back DB                        |
+| `ChecksumMismatch`   | Migration file modified after application          | Restore original migration file                      |
+| `LockTimeout`        | Advisory lock not acquired (30s budget)            | Another instance running migrations                  |
 
 ### Upgrade note: postgres:18 mount path
 

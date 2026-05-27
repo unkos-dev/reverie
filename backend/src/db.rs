@@ -130,15 +130,23 @@ pub struct MigrationReport {
 /// All failure modes for the migration runner.
 ///
 /// Variants carry enough context for operator-actionable error messages.
-/// `Connection` and `BatchFailed` wrap the underlying `sqlx::Error` as
-/// `#[source]` (not `#[from]`) because the runner converts different
-/// `sqlx::Error` sites into semantically distinct variants.
+/// `Connection`, `SessionSetup`, and `BatchFailed` wrap the underlying
+/// `sqlx::Error` as `#[source]` (not `#[from]`) because the runner
+/// converts different `sqlx::Error` sites into semantically distinct
+/// variants.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum MigrationError {
     /// Ephemeral migration pool could not connect (bad DSN, auth failure,
     /// unreachable host).
     #[error("failed to connect to migration database: {0}")]
     Connection(#[source] sqlx::Error),
+
+    /// Post-connect session initialisation failed (`SET lock_timeout`,
+    /// `SELECT current_database`, or advisory-lock acquisition query).
+    /// The database is untouched — no migrations were attempted.
+    #[error("failed to initialize migration session: {0}")]
+    SessionSetup(#[source] sqlx::Error),
 
     /// A transactional migration failed inside the batch `BEGIN`/`COMMIT`.
     /// The entire batch has been rolled back — database is untouched.
@@ -148,13 +156,14 @@ pub enum MigrationError {
     )]
     BatchFailed(#[source] sqlx::Error),
 
-    /// A `-- no-transaction` migration failed after the batch committed.
-    /// Transactional migrations are already applied — operator must
-    /// manually revert the partial no-tx change.
+    /// A `-- no-transaction` migration's SQL failed after the batch
+    /// committed. The migration did NOT apply. Transactional migrations
+    /// are already committed — operator must fix the failing SQL and
+    /// re-deploy.
     #[error(
         "no-transaction migration failed: {version} ({name}) — transactional migrations \
          already committed; pinning the old image alone does not restore the database. \
-         Manually revert the failed no-transaction migration, then fix forward"
+         Fix the failing migration SQL, then re-deploy"
     )]
     NoTxFailed {
         /// Timestamp-prefix version of the failed migration.
@@ -162,6 +171,26 @@ pub enum MigrationError {
         /// Human-readable migration name (filename suffix).
         name: String,
         /// Underlying database error.
+        #[source]
+        source: sqlx::Error,
+    },
+
+    /// A `-- no-transaction` migration's SQL executed successfully but
+    /// the tracking INSERT into `_sqlx_migrations` failed. The migration
+    /// IS applied — do NOT revert it. The operator must manually insert
+    /// the tracking row or the next startup will re-attempt the migration
+    /// and likely fail on duplicate objects.
+    #[error(
+        "no-transaction migration {version} ({name}) applied successfully but tracking \
+         record failed to write: {source} — the migration IS applied; do NOT revert it. \
+         Manually insert the tracking row or the next startup will re-attempt and fail"
+    )]
+    NoTxTrackingFailed {
+        /// Timestamp-prefix version of the applied migration.
+        version: i64,
+        /// Human-readable migration name (filename suffix).
+        name: String,
+        /// Underlying database error from the tracking INSERT.
         #[source]
         source: sqlx::Error,
     },
@@ -220,9 +249,9 @@ pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError
         .await
         .map_err(MigrationError::Connection)?;
 
-    let report = run_migrations_inner(&pool).await?;
+    let result = run_migrations_inner(&pool).await;
     pool.close().await;
-    Ok(report)
+    result
 }
 
 /// Inner implementation operating on an already-connected pool.
@@ -240,27 +269,29 @@ async fn run_migrations_inner(pool: &PgPool) -> Result<MigrationReport, Migratio
     sqlx::query(LOCK_TIMEOUT_SQL)
         .execute(&mut *conn)
         .await
-        .map_err(MigrationError::Connection)?;
+        .map_err(MigrationError::SessionSetup)?;
 
     // Acquire advisory lock (bounded retry, not blocking pg_advisory_lock).
     let db_name: String = sqlx::query_scalar("SELECT current_database()::text")
         .fetch_one(&mut *conn)
         .await
-        .map_err(MigrationError::Connection)?;
+        .map_err(MigrationError::SessionSetup)?;
     let lock_id = generate_lock_id(&db_name);
 
     let mut locked = false;
-    for _ in 0..LOCK_RETRY_ATTEMPTS {
+    for attempt in 0..LOCK_RETRY_ATTEMPTS {
         let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
             .bind(lock_id)
             .fetch_one(&mut *conn)
             .await
-            .map_err(MigrationError::Connection)?;
+            .map_err(MigrationError::SessionSetup)?;
         if acquired {
             locked = true;
             break;
         }
-        tokio::time::sleep(LOCK_RETRY_INTERVAL).await;
+        if attempt + 1 < LOCK_RETRY_ATTEMPTS {
+            tokio::time::sleep(LOCK_RETRY_INTERVAL).await;
+        }
     }
     if !locked {
         return Err(MigrationError::LockTimeout {
@@ -445,7 +476,7 @@ async fn run_locked(
         .bind(elapsed_nanos)
         .execute(&mut **conn)
         .await
-        .map_err(|e| MigrationError::NoTxFailed {
+        .map_err(|e| MigrationError::NoTxTrackingFailed {
             version: m.version,
             name: m.description.to_string(),
             source: e,
@@ -488,22 +519,31 @@ mod tests {
     // --- Unit tests ---
 
     #[test]
-    fn generate_lock_id_matches_sqlx() {
-        let crc_val = {
-            const CRC_IEEE: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
-            CRC_IEEE.checksum(b"reverie_dev")
-        };
-        let expected = 0x3d32_ad9e_i64 * i64::from(crc_val);
-        assert_eq!(generate_lock_id("reverie_dev"), expected);
-        assert_ne!(expected, 0, "sanity: lock ID should be non-zero");
+    fn generate_lock_id_matches_known_value() {
+        // Independently computed: CRC_32_ISO_HDLC("reverie_dev") = 0x9937d124
+        // 0x3d32_ad9e * 0x9937_d124 = 0x24a0_a1a5_b5d0_6838 (i64)
+        let expected: i64 = 0x24a0_a1a5_b5d0_6838;
+        assert_eq!(
+            generate_lock_id("reverie_dev"),
+            expected,
+            "lock ID must match sqlx's CRC_32_ISO_HDLC * 0x3d32ad9e formula"
+        );
     }
 
     #[test]
-    fn checksum_matches_sha384() {
+    fn embedded_checksum_is_sha384_of_sql() {
         use sha2::{Digest, Sha384};
-        let sql = "CREATE TABLE foo (id INT);";
-        let expected = Sha384::digest(sql.as_bytes()).to_vec();
-        assert_eq!(expected.len(), 48, "SHA-384 should produce 48 bytes");
+        let migrator = sqlx::migrate!("./migrations");
+        let first_up = migrator
+            .iter()
+            .find(|m| m.migration_type.is_up_migration())
+            .expect("at least one up migration");
+        let computed = Sha384::digest(first_up.sql.as_bytes());
+        assert_eq!(
+            first_up.checksum.as_ref(),
+            computed.as_slice(),
+            "sqlx embedded checksum must equal SHA-384 of migration SQL"
+        );
     }
 
     #[test]
@@ -524,6 +564,28 @@ mod tests {
         let err = MigrationError::LockTimeout { attempts: 10 };
         let msg = err.to_string();
         assert!(msg.contains("10"), "should contain attempts: {msg}");
+    }
+
+    #[test]
+    fn no_tx_tracking_error_distinguishes_from_no_tx_failed() {
+        let failed = MigrationError::NoTxFailed {
+            version: 1,
+            name: "test".into(),
+            source: sqlx::Error::RowNotFound,
+        };
+        let tracking = MigrationError::NoTxTrackingFailed {
+            version: 1,
+            name: "test".into(),
+            source: sqlx::Error::RowNotFound,
+        };
+        assert!(
+            failed.to_string().contains("Fix the failing migration SQL"),
+            "NoTxFailed should advise fixing SQL: {failed}"
+        );
+        assert!(
+            tracking.to_string().contains("do NOT revert"),
+            "NoTxTrackingFailed should warn against reverting: {tracking}"
+        );
     }
 
     // --- Integration tests ---
@@ -591,11 +653,31 @@ mod tests {
             matches!(err, MigrationError::Connection(_)),
             "expected Connection error, got: {err}"
         );
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("bad:bad"),
+            "DSN credentials must not appear in error message: {msg}"
+        );
     }
 
     #[sqlx::test(migrations = false)]
-    async fn lock_timeout_constant_is_30s(pool: PgPool) {
-        assert_eq!(LOCK_TIMEOUT_SQL, "SET lock_timeout = '30s'");
+    async fn lock_timeout_applied_to_session(pool: PgPool) {
+        // Verify the SQL constant sets the expected session value when
+        // executed on a held connection (mirrors what run_migrations_inner
+        // does on its acquired connection).
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query(LOCK_TIMEOUT_SQL)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        let timeout: String = sqlx::query_scalar("SHOW lock_timeout")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(timeout, "30s");
+        drop(conn);
+
+        // Also confirm the full migration run succeeds.
         run_migrations_inner(&pool).await.unwrap();
     }
 
@@ -631,7 +713,12 @@ mod tests {
     }
 
     #[sqlx::test(migrations = false)]
-    async fn batch_failure_leaves_no_partial_state(pool: PgPool) {
+    async fn batch_failure_rolls_back_tracking_rows(pool: PgPool) {
+        // Apply all migrations, then wipe tracking rows. Schema objects
+        // still exist so the re-run's DDL collides → BatchFailed. The
+        // batch transaction guarantees that tracking inserts from the
+        // failed batch are also rolled back (Postgres transactional DDL
+        // rolls back the DDL changes in the same tx as well).
         run_migrations_inner(&pool).await.unwrap();
 
         sqlx::query("DELETE FROM _sqlx_migrations")
@@ -657,7 +744,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             row_count_after.0, 0,
-            "batch rollback should leave zero rows — all-or-nothing guarantee"
+            "batch rollback should leave zero tracking rows"
         );
     }
 

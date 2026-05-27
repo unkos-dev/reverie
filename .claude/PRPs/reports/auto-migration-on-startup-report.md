@@ -81,34 +81,49 @@ Added always-on database auto-migration to Reverie's startup sequence. A custom 
 
 ## Tests Written
 
-| Test                                    | Type        | Validates                                    |
-| --------------------------------------- | ----------- | -------------------------------------------- |
-| `from_env_missing_migration_url`        | Unit        | Config fails without DATABASE_URL_MIGRATION  |
-| `from_env_custom_migration_url`         | Unit        | Config parses custom migration URL           |
-| `generate_lock_id_matches_sqlx`         | Unit        | Lock ID formula matches sqlx-postgres v0.8.6 |
-| `checksum_matches_sha384`               | Unit        | SHA-384 produces 48-byte output              |
-| `migration_error_display`               | Unit        | Error message formatting matches ADR         |
-| `fresh_database_applies_all_migrations` | Integration | Happy path — all migrations applied          |
-| `up_to_date_database_is_noop`           | Integration | Idempotency — 0 applied on second run        |
-| `rerun_after_success_is_stable`         | Integration | Row count stable across runs                 |
-| `schema_ahead_detection`                | Integration | Refuses startup on unknown DB migrations     |
-| `checksum_mismatch_detected`            | Integration | Refuses startup on modified migration        |
-| `invalid_credentials_clear_error`       | Integration | Clear auth error (Connection variant)        |
-| `lock_timeout_constant_is_30s`          | Integration | Constant value + successful execution        |
-| `concurrent_starts_serialize`           | Integration | Advisory lock serializes, no duplicates      |
+| Test                                     | Type        | Validates                                             |
+| ---------------------------------------- | ----------- | ----------------------------------------------------- |
+| `from_env_missing_migration_url`         | Unit        | Config fails without DATABASE_URL_MIGRATION           |
+| `from_env_custom_migration_url`          | Unit        | Config parses custom migration URL                    |
+| `generate_lock_id_matches_known_value`   | Unit        | Lock ID formula matches hardcoded expected value      |
+| `embedded_checksum_is_sha384_of_sql`     | Unit        | sqlx embedded checksum == SHA-384 of migration SQL    |
+| `migration_error_display`                | Unit        | Error message formatting matches ADR                  |
+| `no_tx_tracking_error_distinguishes`     | Unit        | NoTxFailed vs NoTxTrackingFailed recovery guidance    |
+| `fresh_database_applies_all_migrations`  | Integration | Happy path — all migrations applied                   |
+| `up_to_date_database_is_noop`            | Integration | Idempotency — 0 applied on second run                 |
+| `rerun_after_success_is_stable`          | Integration | Row count stable across runs                          |
+| `schema_ahead_detection`                 | Integration | Refuses startup on unknown DB migrations              |
+| `checksum_mismatch_detected`             | Integration | Refuses startup on modified migration                 |
+| `invalid_credentials_clear_error`        | Integration | Connection variant + no credential leakage            |
+| `lock_timeout_applied_to_session`        | Integration | SET lock_timeout verified via SHOW on held connection |
+| `concurrent_starts_serialize`            | Integration | Advisory lock serializes, no duplicates               |
+| `batch_failure_rolls_back_tracking_rows` | Integration | Tracking rows rolled back on batch failure            |
 
 ---
 
 ## Known Gaps
 
-- `lock_timeout` observability: the SET runs on a private connection; test verifies constant value and successful execution but cannot `SHOW lock_timeout` externally
 - `-- no-transaction` migration tests deferred: no existing no-tx migrations to test against (documented in ADR verification checklist)
-- Batch failure atomicity test deferred: cannot inject bad SQL into embedded `Migrator` without constructing doc-hidden types; `rerun_after_success_is_stable` covers idempotency instead
+- Batch failure DDL rollback: test proves tracking rows are rolled back; Postgres transactional DDL guarantee covers schema-object rollback (testing Postgres, not our runner)
+
+---
+
+## Post-review fixes (Santa Method + Greptile)
+
+| Finding                                             | Fix                                            |
+| --------------------------------------------------- | ---------------------------------------------- |
+| `pool.close()` unreachable on error (T1)            | Capture result, close unconditionally          |
+| `NoTxFailed` conflates SQL + tracking failures (C1) | Split into `NoTxFailed` + `NoTxTrackingFailed` |
+| `Connection` misused for session-setup errors (B1)  | New `SessionSetup` variant                     |
+| Missing `#[non_exhaustive]` (B3)                    | Added to `MigrationError`                      |
+| 4 tautological tests (T2)                           | Replaced with meaningful assertions            |
+| No credential-leakage assertion (C2)                | Added to `invalid_credentials_clear_error`     |
+| Retry loop tail delay (C3)                          | Skip sleep after final attempt                 |
+| ADR "no new crates" drift (B2)                      | Updated to document `crc`                      |
+| ADR log table tense mismatch (B4)                   | Updated to match implementation                |
 
 ---
 
 ## Next Steps
 
-- [ ] Review implementation
-- [ ] Create PR
 - [ ] Merge when approved
