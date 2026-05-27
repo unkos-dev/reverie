@@ -77,6 +77,9 @@ pub struct Config {
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match
     /// the value registered with the issuer.
     pub oidc_redirect_uri: String,
+    /// Migration DSN (`DATABASE_URL_MIGRATION`, required). Schema-owner
+    /// credentials for the ephemeral migration pool. Bypasses RLS.
+    pub migration_database_url: String,
     /// Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`); falls back to
     /// `database_url` when unset. Connections run as
     /// `reverie_ingestion` against the `*_ingestion_full_access` RLS
@@ -394,6 +397,10 @@ impl Config {
         let oidc_redirect_uri = get("OIDC_REDIRECT_URI")
             .ok_or_else(|| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
 
+        let migration_database_url = get("DATABASE_URL_MIGRATION")
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()))?;
+
         let ingestion_database_url =
             get("DATABASE_URL_INGESTION").unwrap_or_else(|| database_url.clone());
 
@@ -471,6 +478,7 @@ impl Config {
             oidc_client_id,
             oidc_client_secret,
             oidc_redirect_uri,
+            migration_database_url,
             ingestion_database_url,
             format_priority,
             cleanup_mode,
@@ -777,6 +785,10 @@ mod tests {
 
     const BASE_VARS: &[(&str, &str)] = &[
         ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
+        (
+            "DATABASE_URL_MIGRATION",
+            "postgres://test@localhost/reverie_dev",
+        ),
         ("OIDC_ISSUER_URL", "https://auth.example.com"),
         ("OIDC_CLIENT_ID", "test"),
         ("OIDC_CLIENT_SECRET", "secret"),
@@ -824,6 +836,10 @@ mod tests {
         assert_eq!(config.library_path, "./library");
         assert_eq!(config.ingestion_path, "./ingestion");
         assert_eq!(config.quarantine_path, "./quarantine");
+        assert_eq!(
+            config.migration_database_url,
+            "postgres://test@localhost/reverie_dev"
+        );
         // Falls back to DATABASE_URL when DATABASE_URL_INGESTION is unset
         assert_eq!(
             config.ingestion_database_url,
@@ -932,6 +948,39 @@ mod tests {
         let vars = without_keys(&["DATABASE_URL"]);
         let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
         assert!(err.to_string().contains("DATABASE_URL"));
+    }
+
+    #[test]
+    fn from_env_missing_migration_url() {
+        let vars = without_keys(&["DATABASE_URL_MIGRATION"]);
+        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        assert!(
+            err.to_string().contains("DATABASE_URL_MIGRATION"),
+            "expected var name in error: {err}"
+        );
+    }
+
+    #[test]
+    fn from_env_empty_migration_url_rejected() {
+        let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "")]);
+        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        assert!(
+            err.to_string().contains("DATABASE_URL_MIGRATION"),
+            "expected var name in error: {err}"
+        );
+    }
+
+    #[test]
+    fn from_env_custom_migration_url() {
+        let vars = with_overrides(&[(
+            "DATABASE_URL_MIGRATION",
+            "postgres://schema_owner@localhost/reverie_dev",
+        )]);
+        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        assert_eq!(
+            config.migration_database_url,
+            "postgres://schema_owner@localhost/reverie_dev"
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-26
 decision-makers: junkovich
 consulted: []
@@ -81,7 +81,7 @@ On startup, the runner compares the binary's embedded migration list against the
 
 This prevents the confusing failure mode where a stale image hits tables/columns it doesn't understand and throws cryptic SQL errors.
 
-**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-256 hash. A mismatch indicates the migration file was modified after application — startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
+**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-384 hash. A mismatch indicates the migration file was modified after application — startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
 
 ### Connection architecture
 
@@ -101,19 +101,21 @@ The ephemeral migration connection sets `lock_timeout=30s` to prevent DDL statem
 
 Logging levels follow the project-wide conventions being formalised under [UNK-297](https://linear.app/unkos/issue/UNK-297). Interim levels:
 
-| Scenario                     | Level | Message                                                                      |
-| ---------------------------- | ----- | ---------------------------------------------------------------------------- |
-| No pending migrations        | DEBUG | `database schema is up to date`                                              |
-| Migrations applied           | INFO  | `applied {n} pending migrations ({elapsed}ms)`                               |
-| Individual migration applied | DEBUG | `applied migration {version} ({name})`                                       |
-| Schema ahead of binary       | ERROR | `database schema is newer than this application version` + recovery guidance |
-| Batch migration failure      | ERROR | `migration batch failed: {error}` + batch recovery guidance                  |
-| No-tx migration failure      | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery       |
+| Scenario                      | Level | Message                                                                                       |
+| ----------------------------- | ----- | --------------------------------------------------------------------------------------------- |
+| No pending migrations         | DEBUG | `database schema is up to date`                                                               |
+| Migrations applied            | INFO  | `applied {n} pending migrations ({elapsed}ms)`                                                |
+| Individual migration applying | DEBUG | `applying migration {version} ({name})`                                                       |
+| Schema ahead of binary        | ERROR | `database schema is newer than this application version` + recovery guidance                  |
+| Batch migration failure       | ERROR | `migration batch failed: {error}` + batch recovery guidance                                   |
+| No-tx migration SQL failure   | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery                        |
+| No-tx tracking INSERT failure | ERROR | `no-transaction migration {version} ({name}) applied successfully but tracking record failed` |
 
-Recovery guidance in ERROR messages distinguishes two failure modes:
+Recovery guidance in ERROR messages distinguishes three failure modes:
 
 - **Batch failure**: `pin the previous image tag to restore service — database is untouched, then fix forward with a new release`
-- **No-transaction failure**: `transactional migrations already committed — pinning the old image alone does not restore the database; manually revert the failed no-transaction migration, then fix forward`
+- **No-transaction SQL failure**: `transactional migrations already committed — fix the failing migration SQL, then re-deploy`
+- **No-transaction tracking failure**: `the migration IS applied; do NOT revert it — manually insert the tracking row or the next startup will re-attempt and fail`
 
 ### Consequences
 
@@ -146,7 +148,7 @@ Auto-update tools (Watchtower, Renovate) surface version changes. Changelogs (ge
 
 ### Dependencies
 
-No new crates. `sqlx` (already present) provides `Migrator`, `Migration`, and `PgPool`. The custom runner uses these types directly.
+`crc = "3"` added as a direct dependency — promoted from transitive (via sqlx) because the advisory lock ID computation requires `CRC_32_ISO_HDLC` to match sqlx's internal lock ID formula. `sqlx` (already present) provides `Migrator`, `Migration`, and `PgPool`.
 
 Future: [UNK-299](https://linear.app/unkos/issue/UNK-299) tracks potential extraction as a standalone crate once battle-tested.
 

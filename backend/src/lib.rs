@@ -35,6 +35,7 @@ pub mod state;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+use anyhow::Context as _;
 use axum::Router;
 use axum_login::AuthManagerLayerBuilder;
 use tower_sessions::{Expiry, SessionManagerLayer};
@@ -269,6 +270,19 @@ pub async fn run() -> anyhow::Result<()> {
             "REVERIE_OPERATOR_CONTACT unset — OpenLibrary requests will run at the 1 req/s anonymous tier. \
              Set REVERIE_OPERATOR_CONTACT=<email-or-url> to unlock the identified 3 req/s tier."
         );
+    }
+
+    let migration_report = db::run_migrations(&config.migration_database_url)
+        .await
+        .context("database migration failed")?;
+    if migration_report.applied > 0 {
+        tracing::info!(
+            count = migration_report.applied,
+            elapsed_ms = migration_report.elapsed_ms,
+            "applied pending migrations"
+        );
+    } else {
+        tracing::debug!("database schema is up to date");
     }
 
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
