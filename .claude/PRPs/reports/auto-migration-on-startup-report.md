@@ -1,6 +1,6 @@
 # Implementation Report
 
-**Plan**: `.claude/PRPs/plans/auto-migration-on-startup.plan.md`
+**Plan**: `.claude/PRPs/plans/completed/auto-migration-on-startup.plan.md`
 **Branch**: `feat/auto-migration-on-startup`
 **Date**: 2026-05-27
 **Status**: COMPLETE

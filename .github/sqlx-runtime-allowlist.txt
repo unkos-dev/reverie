@@ -29,7 +29,10 @@
 #   - `<SQL substring>` patterns scope the exemption to specific call
 #     shapes inside files that mix legitimate macros with carve-outs.
 
-# (3) db.rs file-blanket — RLS context GUC plumbing (set_config + current_setting verification helper)
+# (1, 2, 3) db.rs file-blanket — RLS context GUC plumbing (class 3: set_config +
+# current_setting), migration runner DDL (class 1: CREATE TABLE IF NOT EXISTS
+# _sqlx_migrations, BEGIN/COMMIT/ROLLBACK), and dynamic migration SQL (class 2:
+# sqlx::raw_sql for embedded migration content)
 backend/src/db.rs:
 
 # (1, 4) models/manifestation_format.rs file-blanket — enum-drift detection test (ALTER TYPE + ::manifestation_format probe)

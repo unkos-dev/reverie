@@ -30,7 +30,9 @@ pools are created. See `adr/2026-05-26-auto-migration-on-startup.md`.
 
 Dev: set `DATABASE_URL_MIGRATION=postgres://reverie:reverie@localhost:5433/reverie_dev`
 (same as schema owner). `#[sqlx::test]` still uses sqlx's built-in
-migrator — no change to test workflow.
+migrator for most tests. Exception: migration-runner tests that need a
+fresh database use `#[sqlx::test(migrations = false)]` to suppress
+sqlx's automatic migration pass.
 
 **`MigrationError` failure modes** (operator-facing, with recovery):
 

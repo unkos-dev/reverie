@@ -398,6 +398,7 @@ impl Config {
             .ok_or_else(|| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
 
         let migration_database_url = get("DATABASE_URL_MIGRATION")
+            .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()))?;
 
         let ingestion_database_url =
@@ -952,6 +953,16 @@ mod tests {
     #[test]
     fn from_env_missing_migration_url() {
         let vars = without_keys(&["DATABASE_URL_MIGRATION"]);
+        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        assert!(
+            err.to_string().contains("DATABASE_URL_MIGRATION"),
+            "expected var name in error: {err}"
+        );
+    }
+
+    #[test]
+    fn from_env_empty_migration_url_rejected() {
+        let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "")]);
         let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
         assert!(
             err.to_string().contains("DATABASE_URL_MIGRATION"),
