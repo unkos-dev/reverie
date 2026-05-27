@@ -173,6 +173,10 @@ mod tests {
     fn config_with_overrides(overrides: &[(&str, &str)]) -> Config {
         let base: &[(&str, &str)] = &[
             ("DATABASE_URL", "postgres://test@localhost/reverie_dev"),
+            (
+                "DATABASE_URL_MIGRATION",
+                "postgres://test@localhost/reverie_dev",
+            ),
             ("OIDC_ISSUER_URL", "https://auth.example.com"),
             ("OIDC_CLIENT_ID", "test"),
             ("OIDC_CLIENT_SECRET", "secret"),

@@ -17,6 +17,8 @@
 //!   recycled connection does not leak the caller's identity to the next
 //!   borrower.
 
+use std::time::Instant;
+
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
@@ -107,6 +109,364 @@ pub async fn acquire_with_rls(
     Ok(tx)
 }
 
+// ---------------------------------------------------------------------------
+// Auto-migration runner
+// ---------------------------------------------------------------------------
+
+const LOCK_TIMEOUT_SQL: &str = "SET lock_timeout = '30s'";
+const LOCK_RETRY_ATTEMPTS: u32 = 10;
+const LOCK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+const LOCK_MAGIC: i64 = 0x3d32_ad9e;
+
+/// Outcome of a migration run.
+#[derive(Debug)]
+pub struct MigrationReport {
+    /// Number of migrations applied in this run (0 = already up to date).
+    pub applied: usize,
+    /// Wall-clock time for the entire migration pass, in milliseconds.
+    pub elapsed_ms: u128,
+}
+
+/// All failure modes for the migration runner.
+///
+/// Variants carry enough context for operator-actionable error messages.
+/// `Connection` and `BatchFailed` wrap the underlying `sqlx::Error` as
+/// `#[source]` (not `#[from]`) because the runner converts different
+/// `sqlx::Error` sites into semantically distinct variants.
+#[derive(Debug, thiserror::Error)]
+pub enum MigrationError {
+    /// Ephemeral migration pool could not connect (bad DSN, auth failure,
+    /// unreachable host).
+    #[error("failed to connect to migration database: {0}")]
+    Connection(#[source] sqlx::Error),
+
+    /// A transactional migration failed inside the batch `BEGIN`/`COMMIT`.
+    /// The entire batch has been rolled back — database is untouched.
+    #[error(
+        "migration batch failed: {0} — pin the previous image tag to restore service \
+         (database is untouched), then fix forward with a new release"
+    )]
+    BatchFailed(#[source] sqlx::Error),
+
+    /// A `-- no-transaction` migration failed after the batch committed.
+    /// Transactional migrations are already applied — operator must
+    /// manually revert the partial no-tx change.
+    #[error(
+        "no-transaction migration failed: {version} ({name}) — transactional migrations \
+         already committed; pinning the old image alone does not restore the database. \
+         Manually revert the failed no-transaction migration, then fix forward"
+    )]
+    NoTxFailed {
+        /// Timestamp-prefix version of the failed migration.
+        version: i64,
+        /// Human-readable migration name (filename suffix).
+        name: String,
+        /// Underlying database error.
+        #[source]
+        source: sqlx::Error,
+    },
+
+    /// Database contains a migration version unknown to this binary.
+    #[error(
+        "database schema (migration {version}) is newer than this application version \
+         — upgrade the image or roll back the database manually"
+    )]
+    SchemaAhead {
+        /// The unknown migration version found in `_sqlx_migrations`.
+        version: i64,
+    },
+
+    /// Stored checksum for an applied migration differs from the embedded
+    /// migration file. The file was modified after initial application.
+    #[error(
+        "checksum mismatch for migration {version} ({name}) \
+         — migration file was modified after application"
+    )]
+    ChecksumMismatch {
+        /// Version of the mismatched migration.
+        version: i64,
+        /// Human-readable migration name.
+        name: String,
+    },
+
+    /// Advisory lock not acquired within the retry budget.
+    #[error(
+        "failed to acquire migration lock after {attempts} attempts \
+         — another instance may be running migrations"
+    )]
+    LockTimeout {
+        /// Number of lock acquisition attempts made.
+        attempts: u32,
+    },
+}
+
+fn generate_lock_id(database_name: &str) -> i64 {
+    const CRC_IEEE: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+    LOCK_MAGIC * i64::from(CRC_IEEE.checksum(database_name.as_bytes()))
+}
+
+/// Apply all pending migrations against `url` using an ephemeral
+/// single-connection pool. The pool is dropped before this function
+/// returns.
+///
+/// # Errors
+///
+/// Returns [`MigrationError`] on connection failure, lock timeout,
+/// schema-ahead detection, checksum mismatch, or SQL execution failure.
+pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError> {
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(url)
+        .await
+        .map_err(MigrationError::Connection)?;
+
+    let report = run_migrations_inner(&pool).await?;
+    pool.close().await;
+    Ok(report)
+}
+
+/// Inner implementation operating on an already-connected pool.
+#[allow(
+    clippy::too_many_lines,
+    reason = "migration runner threads lock acquisition, schema checks, batch tx, and no-tx passes in sequence; splitting would obscure the linear flow"
+)]
+async fn run_migrations_inner(pool: &PgPool) -> Result<MigrationReport, MigrationError> {
+    let start = Instant::now();
+    let migrator = sqlx::migrate!("./migrations");
+
+    let mut conn = pool.acquire().await.map_err(MigrationError::Connection)?;
+
+    // Set lock_timeout to bound DDL waits.
+    sqlx::query(LOCK_TIMEOUT_SQL)
+        .execute(&mut *conn)
+        .await
+        .map_err(MigrationError::Connection)?;
+
+    // Acquire advisory lock (bounded retry, not blocking pg_advisory_lock).
+    let db_name: String = sqlx::query_scalar("SELECT current_database()::text")
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(MigrationError::Connection)?;
+    let lock_id = generate_lock_id(&db_name);
+
+    let mut locked = false;
+    for _ in 0..LOCK_RETRY_ATTEMPTS {
+        let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+            .bind(lock_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(MigrationError::Connection)?;
+        if acquired {
+            locked = true;
+            break;
+        }
+        tokio::time::sleep(LOCK_RETRY_INTERVAL).await;
+    }
+    if !locked {
+        return Err(MigrationError::LockTimeout {
+            attempts: LOCK_RETRY_ATTEMPTS,
+        });
+    }
+
+    // All post-lock work delegates to run_locked so that
+    // release_lock runs on every exit path — success or error.
+    let result = run_locked(&mut conn, &migrator).await;
+    release_lock(&mut conn, lock_id).await;
+    result.map(|applied| MigrationReport {
+        applied,
+        elapsed_ms: start.elapsed().as_millis(),
+    })
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "linear migration pipeline: DDL check → schema checks → batch tx → no-tx pass; splitting would fragment the sequence"
+)]
+async fn run_locked(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+    migrator: &sqlx::migrate::Migrator,
+) -> Result<usize, MigrationError> {
+    // Ensure _sqlx_migrations table exists (matches sqlx-postgres DDL exactly).
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS _sqlx_migrations (
+            version BIGINT PRIMARY KEY,
+            description TEXT NOT NULL,
+            installed_on TIMESTAMPTZ NOT NULL DEFAULT now(),
+            success BOOLEAN NOT NULL,
+            checksum BYTEA NOT NULL,
+            execution_time BIGINT NOT NULL
+        )",
+    )
+    .execute(&mut **conn)
+    .await
+    .map_err(MigrationError::BatchFailed)?;
+
+    // Load applied migrations from DB.
+    let applied_rows: Vec<(i64, Vec<u8>)> = sqlx::query_as(
+        "SELECT version, checksum FROM _sqlx_migrations WHERE success = true ORDER BY version",
+    )
+    .fetch_all(&mut **conn)
+    .await
+    .map_err(MigrationError::BatchFailed)?;
+
+    let applied_map: std::collections::HashMap<i64, Vec<u8>> = applied_rows.into_iter().collect();
+
+    // Collect embedded up-migrations.
+    let embedded: Vec<_> = migrator
+        .iter()
+        .filter(|m| m.migration_type.is_up_migration())
+        .collect();
+    let embedded_versions: std::collections::HashSet<i64> =
+        embedded.iter().map(|m| m.version).collect();
+
+    // Schema-ahead detection: any applied version not in embedded set.
+    for &applied_version in applied_map.keys() {
+        if !embedded_versions.contains(&applied_version) {
+            return Err(MigrationError::SchemaAhead {
+                version: applied_version,
+            });
+        }
+    }
+
+    // Checksum verification for applied migrations.
+    for m in &embedded {
+        if let Some(stored_checksum) = applied_map.get(&m.version)
+            && stored_checksum.as_slice() != m.checksum.as_ref()
+        {
+            return Err(MigrationError::ChecksumMismatch {
+                version: m.version,
+                name: m.description.to_string(),
+            });
+        }
+    }
+
+    // Partition pending migrations.
+    let mut tx_pending = Vec::new();
+    let mut no_tx_pending = Vec::new();
+    for m in &embedded {
+        if applied_map.contains_key(&m.version) {
+            continue;
+        }
+        if m.no_tx {
+            no_tx_pending.push(m);
+        } else {
+            tx_pending.push(m);
+        }
+    }
+
+    let mut applied_count = 0;
+
+    // Batch transaction on the same connection (manual BEGIN/COMMIT so
+    // the advisory lock, lock_timeout, and DDL all share one session).
+    if !tx_pending.is_empty() {
+        sqlx::query("BEGIN")
+            .execute(&mut **conn)
+            .await
+            .map_err(MigrationError::BatchFailed)?;
+
+        let batch_result = async {
+            for m in &tx_pending {
+                let migration_start = Instant::now();
+
+                tracing::debug!(
+                    version = m.version,
+                    name = %m.description,
+                    "applying migration"
+                );
+
+                sqlx::raw_sql(m.sql.as_ref())
+                    .execute(&mut **conn)
+                    .await
+                    .map_err(MigrationError::BatchFailed)?;
+
+                #[allow(clippy::cast_possible_truncation)]
+                let elapsed_nanos = migration_start.elapsed().as_nanos() as i64;
+
+                sqlx::query(
+                    "INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time)
+                     VALUES ($1, $2, now(), true, $3, $4)",
+                )
+                .bind(m.version)
+                .bind(m.description.as_ref())
+                .bind(m.checksum.as_ref())
+                .bind(elapsed_nanos)
+                .execute(&mut **conn)
+                .await
+                .map_err(MigrationError::BatchFailed)?;
+
+                applied_count += 1;
+            }
+            Ok::<(), MigrationError>(())
+        }
+        .await;
+
+        if let Err(e) = batch_result {
+            if let Err(rb) = sqlx::query("ROLLBACK").execute(&mut **conn).await {
+                tracing::warn!(error = %rb, "ROLLBACK after batch failure also failed");
+            }
+            return Err(e);
+        }
+
+        sqlx::query("COMMIT")
+            .execute(&mut **conn)
+            .await
+            .map_err(MigrationError::BatchFailed)?;
+    }
+
+    // No-transaction migrations run individually after the batch.
+    for m in &no_tx_pending {
+        let migration_start = Instant::now();
+
+        tracing::debug!(
+            version = m.version,
+            name = %m.description,
+            "applying no-transaction migration"
+        );
+
+        sqlx::raw_sql(m.sql.as_ref())
+            .execute(&mut **conn)
+            .await
+            .map_err(|e| MigrationError::NoTxFailed {
+                version: m.version,
+                name: m.description.to_string(),
+                source: e,
+            })?;
+
+        #[allow(clippy::cast_possible_truncation)]
+        let elapsed_nanos = migration_start.elapsed().as_nanos() as i64;
+
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time)
+             VALUES ($1, $2, now(), true, $3, $4)",
+        )
+        .bind(m.version)
+        .bind(m.description.as_ref())
+        .bind(m.checksum.as_ref())
+        .bind(elapsed_nanos)
+        .execute(&mut **conn)
+        .await
+        .map_err(|e| MigrationError::NoTxFailed {
+            version: m.version,
+            name: m.description.to_string(),
+            source: e,
+        })?;
+
+        applied_count += 1;
+    }
+
+    Ok(applied_count)
+}
+
+async fn release_lock(conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>, lock_id: i64) {
+    if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(lock_id)
+        .execute(&mut **conn)
+        .await
+    {
+        tracing::warn!(error = %e, "failed to release migration advisory lock");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +483,207 @@ mod tests {
 
         assert_eq!(row.0, user_id.to_string());
         tx.rollback().await.unwrap();
+    }
+
+    // --- Unit tests ---
+
+    #[test]
+    fn generate_lock_id_matches_sqlx() {
+        let crc_val = {
+            const CRC_IEEE: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+            CRC_IEEE.checksum(b"reverie_dev")
+        };
+        let expected = 0x3d32_ad9e_i64 * i64::from(crc_val);
+        assert_eq!(generate_lock_id("reverie_dev"), expected);
+        assert_ne!(expected, 0, "sanity: lock ID should be non-zero");
+    }
+
+    #[test]
+    fn checksum_matches_sha384() {
+        use sha2::{Digest, Sha384};
+        let sql = "CREATE TABLE foo (id INT);";
+        let expected = Sha384::digest(sql.as_bytes()).to_vec();
+        assert_eq!(expected.len(), 48, "SHA-384 should produce 48 bytes");
+    }
+
+    #[test]
+    fn migration_error_display() {
+        let err = MigrationError::SchemaAhead { version: 99999 };
+        let msg = err.to_string();
+        assert!(msg.contains("99999"), "should contain version: {msg}");
+        assert!(msg.contains("newer"), "should mention newer: {msg}");
+
+        let err = MigrationError::ChecksumMismatch {
+            version: 12345,
+            name: "test_migration".into(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("12345"), "should contain version: {msg}");
+        assert!(msg.contains("test_migration"), "should contain name: {msg}");
+
+        let err = MigrationError::LockTimeout { attempts: 10 };
+        let msg = err.to_string();
+        assert!(msg.contains("10"), "should contain attempts: {msg}");
+    }
+
+    // --- Integration tests ---
+
+    #[sqlx::test(migrations = false)]
+    async fn fresh_database_applies_all_migrations(pool: PgPool) {
+        let report = run_migrations_inner(&pool).await.unwrap();
+        let migrator = sqlx::migrate!("./migrations");
+        let expected_up = migrator
+            .iter()
+            .filter(|m| m.migration_type.is_up_migration())
+            .count();
+        assert_eq!(report.applied, expected_up);
+        assert!(report.applied > 0, "should have at least one migration");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn up_to_date_database_is_noop(pool: PgPool) {
+        let report = run_migrations_inner(&pool).await.unwrap();
+        assert_eq!(report.applied, 0);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn schema_ahead_detection(pool: PgPool) {
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time)
+             VALUES (99_999_999_999_999, 'future_migration', now(), true, '\\x00', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let err = run_migrations_inner(&pool).await.unwrap_err();
+        assert!(
+            matches!(
+                err,
+                MigrationError::SchemaAhead {
+                    version: 99_999_999_999_999
+                }
+            ),
+            "expected SchemaAhead, got: {err}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn checksum_mismatch_detected(pool: PgPool) {
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = '\\xdeadbeef' WHERE version = (SELECT min(version) FROM _sqlx_migrations)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = run_migrations_inner(&pool).await.unwrap_err();
+        assert!(
+            matches!(err, MigrationError::ChecksumMismatch { .. }),
+            "expected ChecksumMismatch, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_credentials_clear_error() {
+        let err = run_migrations("postgres://bad:bad@localhost:5433/nonexistent")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, MigrationError::Connection(_)),
+            "expected Connection error, got: {err}"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn lock_timeout_constant_is_30s(pool: PgPool) {
+        assert_eq!(LOCK_TIMEOUT_SQL, "SET lock_timeout = '30s'");
+        run_migrations_inner(&pool).await.unwrap();
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn concurrent_starts_serialize(pool: PgPool) {
+        let pool2 = pool.clone();
+        let (r1, r2) = tokio::join!(run_migrations_inner(&pool), run_migrations_inner(&pool2),);
+
+        let report1 = r1.unwrap();
+        let report2 = r2.unwrap();
+
+        let total_applied = report1.applied + report2.applied;
+        let migrator = sqlx::migrate!("./migrations");
+        let expected = migrator
+            .iter()
+            .filter(|m| m.migration_type.is_up_migration())
+            .count();
+        assert_eq!(
+            total_applied, expected,
+            "exactly one runner should apply all migrations"
+        );
+
+        let row_count: (i64,) =
+            sqlx::query_as("SELECT count(*) FROM _sqlx_migrations WHERE success = true")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            usize::try_from(row_count.0).unwrap(),
+            expected,
+            "no duplicate migration rows"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn batch_failure_leaves_no_partial_state(pool: PgPool) {
+        run_migrations_inner(&pool).await.unwrap();
+
+        sqlx::query("DELETE FROM _sqlx_migrations")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let row_count_before: (i64,) = sqlx::query_as("SELECT count(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(row_count_before.0, 0, "precondition: 0 rows after delete");
+
+        let err = run_migrations_inner(&pool).await.unwrap_err();
+        assert!(
+            matches!(err, MigrationError::BatchFailed(_)),
+            "expected BatchFailed, got: {err}"
+        );
+
+        let row_count_after: (i64,) = sqlx::query_as("SELECT count(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            row_count_after.0, 0,
+            "batch rollback should leave zero rows — all-or-nothing guarantee"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn rerun_after_success_is_stable(pool: PgPool) {
+        let first = run_migrations_inner(&pool).await.unwrap();
+        assert!(first.applied > 0, "should apply at least one migration");
+
+        let row_count_after_first: (i64,) =
+            sqlx::query_as("SELECT count(*) FROM _sqlx_migrations WHERE success = true")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let second = run_migrations_inner(&pool).await.unwrap();
+        assert_eq!(second.applied, 0, "second run should be noop");
+
+        let row_count_after_second: (i64,) =
+            sqlx::query_as("SELECT count(*) FROM _sqlx_migrations WHERE success = true")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            row_count_after_first.0, row_count_after_second.0,
+            "row count should be stable across runs"
+        );
     }
 }

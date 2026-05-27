@@ -22,8 +22,26 @@ user resolution, so RLS-gating lookup is chicken-and-egg. Access
 controlled at role-grant boundary: `reverie_app` gets DML,
 `reverie_readonly` gets SELECT, `reverie_ingestion` gets nothing.
 
-Run migrations as schema owner:
-`DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev sqlx migrate run`
+Migrations auto-apply on startup via `db::run_migrations()`. The runner
+uses `DATABASE_URL_MIGRATION` (schema-owner DSN, required) to connect an
+ephemeral single-connection pool, applies all pending migrations in a
+batch transaction (all-or-nothing), then drops the pool before runtime
+pools are created. See `adr/2026-05-26-auto-migration-on-startup.md`.
+
+Dev: set `DATABASE_URL_MIGRATION=postgres://reverie:reverie@localhost:5433/reverie_dev`
+(same as schema owner). `#[sqlx::test]` still uses sqlx's built-in
+migrator — no change to test workflow.
+
+**`MigrationError` failure modes** (operator-facing, with recovery):
+
+| Variant            | Meaning                                   | Recovery                                       |
+| ------------------ | ----------------------------------------- | ---------------------------------------------- |
+| `Connection`       | Bad DSN, auth failure, unreachable host   | Fix `DATABASE_URL_MIGRATION`                   |
+| `BatchFailed`      | SQL error in transactional migration      | DB untouched — pin previous image              |
+| `NoTxFailed`       | `-- no-transaction` migration failed      | TX migrations committed — manual revert needed |
+| `SchemaAhead`      | DB has migrations unknown to binary       | Upgrade image or roll back DB                  |
+| `ChecksumMismatch` | Migration file modified after application | Restore original migration file                |
+| `LockTimeout`      | Advisory lock not acquired (30s budget)   | Another instance running migrations            |
 
 ### Upgrade note: postgres:18 mount path
 
@@ -36,7 +54,7 @@ dropped:
 docker compose down
 docker volume rm reverie_pgdata
 docker compose up -d
-DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev sqlx migrate run --source backend/migrations
+# Migrations auto-apply on next `cargo run` (no manual sqlx migrate needed)
 ```
 
 ### Coder workspace caveat

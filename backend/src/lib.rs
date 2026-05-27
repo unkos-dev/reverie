@@ -271,6 +271,19 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
+    let migration_report = db::run_migrations(&config.migration_database_url)
+        .await
+        .map_err(|e| anyhow::anyhow!("database migration failed: {e}"))?;
+    if migration_report.applied > 0 {
+        tracing::info!(
+            count = migration_report.applied,
+            elapsed_ms = migration_report.elapsed_ms,
+            "applied pending migrations"
+        );
+    } else {
+        tracing::debug!("database schema is up to date");
+    }
+
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;

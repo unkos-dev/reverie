@@ -402,6 +402,7 @@ mod tests {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            migration_database_url: String::new(),
             ingestion_database_url: String::new(),
             format_priority: vec![ManifestationFormat::Epub],
             cleanup_mode: CleanupMode::None,
