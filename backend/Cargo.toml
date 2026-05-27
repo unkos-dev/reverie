@@ -25,7 +25,7 @@ axum = "0.8.9"
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
 axum-login = "0.18"
 base64ct = { version = "1.8.3", features = ["std"] }
-crc = "3"
+crc = "3.4.0"
 dotenvy = "0.15.7"
 email_address = "0.2"
 encoding_rs = "0.8.35"
