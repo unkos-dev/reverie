@@ -27,7 +27,7 @@ axum-login = "0.18"
 base64ct = { version = "1.8.3", features = ["std"] }
 crc = "3.4.0"
 dotenvy = "0.15.7"
-email_address = "0.2"
+email_address = "0.2.9"
 encoding_rs = "0.8.35"
 futures = "0.3.32"
 governor = "0.10.4"
