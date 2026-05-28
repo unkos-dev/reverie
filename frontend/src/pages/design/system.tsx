@@ -87,7 +87,7 @@ export default function DesignSystemPage(): ReactElement {
       <div className="max-w-6xl mx-auto px-6">
         <Section
           title="Typography"
-          description="Display = Author Variable; Body = Satoshi Variable; Mono = JetBrains Mono (loaded but conditional, UNK-113)."
+          description="Display = Author Variable; Body = Satoshi Variable; Mono = JetBrains Mono (metadata surfaces)."
         >
           <Example label="Display">
             <p className="font-display text-3xl">A library worth keeping</p>

@@ -3,7 +3,7 @@
 Locked typography: **Author Variable** (display) + **Satoshi Variable**
 (body), both Indian Type Foundry, distributed via
 [Fontshare](https://www.fontshare.com). **JetBrains Mono** Regular
-(mono, conditional — UNK-113 reviews adoption post-0.1.0).
+(mono — metadata surfaces: ISBN, IDs, format codes).
 
 The variable woff2 files in `files/` are committed into this
 open-source repository. Integrity is verified by `SHA256SUMS` in the

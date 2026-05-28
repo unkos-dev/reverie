@@ -60,7 +60,7 @@
   --color-overlay: var(--overlay);
 
   /* Typography — Satoshi for body/chrome, Author for display, JetBrains
-     Mono is loaded but conditional (UNK-113 reviews adoption post-0.1.0). */
+     Mono for metadata surfaces (ISBN, IDs, format codes). */
   --font-display: "Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-body: "Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
