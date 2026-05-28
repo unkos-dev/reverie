@@ -142,11 +142,14 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn create_token_validates_name(pool: sqlx::PgPool) {
+    /// Provision a user + device token in the per-test database and return a
+    /// `TestServer` plus the `Basic` credential string authenticating as that
+    /// user. Centralises the auth/state/router wiring shared by the
+    /// create-token tests so a change to `AppState` or the auth flow lands in
+    /// one place.
+    async fn authenticated_test_server(pool: sqlx::PgPool) -> (axum_test::TestServer, String) {
         let pool = test_support::db::app_pool_for(&pool).await;
 
-        // Create a test user and device token for Basic auth
         let subject = format!("token-route-test-{}", uuid::Uuid::new_v4());
         let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
             &pool,
@@ -177,6 +180,13 @@ mod tests {
         let basic =
             base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
 
+        (server, basic)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_token_validates_name(pool: sqlx::PgPool) {
+        let (server, basic) = authenticated_test_server(pool).await;
+
         // Empty name
         let response = server
             .post("/api/tokens")
@@ -197,37 +207,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn create_token_trims_name(pool: sqlx::PgPool) {
-        let pool = test_support::db::app_pool_for(&pool).await;
-
-        let subject = format!("token-trim-test-{}", uuid::Uuid::new_v4());
-        let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
-            &pool,
-            &subject,
-            "Trim Test User",
-            None,
-        )
-        .await
-        .expect("create user");
-        let (plaintext, hash) = crate::auth::token::generate_device_token();
-        crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
-            .await
-            .expect("create token");
-
-        let state = crate::state::AppState {
-            pool: pool.clone(),
-            ingestion_pool: pool.clone(),
-            config: test_support::test_config(),
-            oidc_client: test_support::test_oidc_client(),
-            settings: test_support::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
-        };
-        let auth_backend = crate::auth::backend::AuthBackend { pool: pool.clone() };
-        let app = crate::build_router(state, auth_backend);
-        let server = axum_test::TestServer::new(app);
-
-        use base64ct::Encoding;
-        let basic =
-            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        let (server, basic) = authenticated_test_server(pool).await;
 
         // Whitespace-only rejects as empty-after-trim, not as a length pass.
         let response = server
@@ -245,6 +225,21 @@ mod tests {
             .json(&serde_json::json!({"name": " ".repeat(256)}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Raw byte count (258) exceeds 255 but the trimmed name (254) is valid:
+        // the old pre-trim length check rejected this, the fix accepts it. This
+        // is the case that distinguishes the length-half of the bug.
+        let padded = format!("  {}  ", "a".repeat(254));
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": padded}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+        assert_eq!(
+            response.json::<serde_json::Value>()["name"],
+            "a".repeat(254)
+        );
 
         // Surrounding whitespace is accepted and stripped before persistence.
         let response = server
