@@ -20,7 +20,7 @@
 #            Spec: docker/staging.env.bootstrap.example.
 #
 #   `.env.runtime` — injected only into the `reverie` service. Holds
-#            DATABASE_URL, INGESTION_DATABASE_URL, REVERIE_FRONTEND_DIST_PATH,
+#            DATABASE_URL, DATABASE_URL_INGESTION, REVERIE_FRONTEND_DIST_PATH,
 #            REVERIE_PORT, REVERIE_OPERATOR_CONTACT, REVERIE_LOG_LEVEL,
 #            OIDC config. Spec: docker/staging.env.runtime.example.
 #

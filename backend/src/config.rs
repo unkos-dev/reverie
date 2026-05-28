@@ -828,6 +828,65 @@ mod tests {
         move |k| map.get(k).map(|s| (*s).to_string())
     }
 
+    /// Every `KEY=` line in `docker/staging.env.runtime.example` should name a
+    /// variable read by `Config::from_source`. This is a best-effort textual
+    /// scan of `config.rs` call sites (`get("KEY")` and the
+    /// `parse_*(get, "KEY", …)` helper form), not a proof — it reliably catches
+    /// the common case of a renamed or typo'd key that appears nowhere in the
+    /// code, which is the UNK-250 failure mode.
+    ///
+    /// Guards against the operator-facing failure class in UNK-250: an example
+    /// var whose name diverges from the code either hard-fails startup with a
+    /// misleading `MissingVar` (loud) or is silently ignored while a fallback
+    /// takes over (silent — e.g. ingestion DSN falling back to the app role,
+    /// collapsing the documented role-separation threat model). The example
+    /// file is an intentional *subset* of all knobs, so the check is one-way:
+    /// example keys ⊆ names read by `from_source`, not the reverse.
+    #[test]
+    fn staging_runtime_example_keys_are_read_by_config() {
+        // Compile-time embed: a missing file fails the build rather than
+        // silently skipping the guard.
+        let config_src = include_str!("config.rs");
+        let example = include_str!("../../docker/staging.env.runtime.example");
+
+        // Direct reads are `get("KEY")`; the subsystem configs read through
+        // `parse_bool(get, "KEY", default)` / `parse_u32` / `parse_u64`, whose
+        // call sites spell `get, "KEY"`. Scan for both so a helper-read key in
+        // the example file is not mistaken for a divergence. Comment lines are
+        // skipped so quoted tokens in docs (including this test's own docstring)
+        // never leak into the allow-set and mask a real divergence.
+        let mut read_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for line in config_src.lines() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            for needle in ["get(\"", "get, \""] {
+                for (i, m) in line.match_indices(needle) {
+                    let rest = &line[i + m.len()..];
+                    if let Some(end) = rest.find('"') {
+                        read_names.insert(&rest[..end]);
+                    }
+                }
+            }
+        }
+
+        let mut violations: Vec<&str> = example
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .filter_map(|l| l.split_once('='))
+            .map(|(k, _)| k.trim())
+            .filter(|k| !read_names.contains(*k))
+            .collect();
+        violations.sort_unstable();
+
+        assert!(
+            violations.is_empty(),
+            "staging.env.runtime.example contains keys not read by config.rs: {violations:?}. \
+             Rename them to match the `get(\"...\")` call in config.rs, or drop them."
+        );
+    }
+
     #[test]
     fn from_env_with_defaults() {
         let config = Config::from_source(&env_for(BASE_VARS)).unwrap();
