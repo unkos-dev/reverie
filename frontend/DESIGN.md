@@ -200,7 +200,7 @@ A warm, considered palette of parchment, ink, cream, and gold. No greys. The dar
 
 **Display Font:** Author Variable (with system-ui, -apple-system, Segoe UI, sans-serif fallback).
 **Body Font:** Satoshi Variable (with system-ui, -apple-system, Segoe UI, sans-serif fallback).
-**Mono Font:** JetBrains Mono Regular (with ui-monospace, SFMono-Regular, Menlo fallback). Conditional adoption pending post-0.1.0 review (UNK-113).
+**Mono Font:** JetBrains Mono Regular (with ui-monospace, SFMono-Regular, Menlo fallback). Used for metadata surfaces (ISBN, IDs, format codes).
 
 All three are self-hosted variable woff2 files at `public/fonts/fontshare/files/` with `font-display: swap`. The Fontshare CDN is broken in Chromium under the production CSP (Opaque Response Blocking trips on cookie-bearing CSS responses); self-hosting bypasses that and matches `font-src 'self'`.
 

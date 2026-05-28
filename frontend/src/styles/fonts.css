@@ -7,8 +7,7 @@
  *
  * - Author Variable — display (Lockup, headings, hero copy).
  * - Satoshi Variable — body, chrome, UI labels.
- * - JetBrains Mono Regular — code/mono surfaces; usage conditional
- *   pending UNK-113 review post-0.1.0.
+ * - JetBrains Mono Regular — metadata surfaces (ISBN, IDs, format codes).
  *
  * font-display: swap so the system fallback paints first and the
  * webfont swaps in when ready, avoiding FOIT on slow connections.
