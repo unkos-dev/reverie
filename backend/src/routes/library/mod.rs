@@ -239,7 +239,7 @@ async fn list(
                 .encode()
                 .map_err(|e| {
                     tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
-                    AppError::Internal(anyhow::Error::new(e))
+                    AppError::Internal(e.into())
                 })?;
             Some(encoded)
         }

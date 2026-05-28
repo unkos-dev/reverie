@@ -351,7 +351,7 @@ pub(super) async fn emit_new(
         .encode()
         .map_err(|e| {
             tracing::warn!(error = %e, row_id = %last_id, "failed to encode OPDS pagination cursor");
-            AppError::Internal(anyhow::Error::new(e))
+            AppError::Internal(e.into())
         })?;
         fb.add_next_link(&format!("{self_path}?cursor={next_cursor}"));
     }
@@ -500,7 +500,7 @@ pub(super) async fn emit_author_books(
         .encode()
         .map_err(|e| {
             tracing::warn!(error = %e, %row_id, "failed to encode OPDS pagination cursor");
-            AppError::Internal(anyhow::Error::new(e))
+            AppError::Internal(e.into())
         })?;
         fb.add_next_link(&format!("{self_path}?cursor={next}"));
     }
