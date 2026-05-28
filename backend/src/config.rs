@@ -828,8 +828,12 @@ mod tests {
         move |k| map.get(k).map(|s| (*s).to_string())
     }
 
-    /// Every `KEY=` line in `docker/staging.env.runtime.example` must name a
-    /// variable that `Config::from_source` actually reads via `get("...")`.
+    /// Every `KEY=` line in `docker/staging.env.runtime.example` should name a
+    /// variable read by `Config::from_source`. This is a best-effort textual
+    /// scan of `config.rs` call sites (`get("KEY")` and the
+    /// `parse_*(get, "KEY", …)` helper form), not a proof — it reliably catches
+    /// the common case of a renamed or typo'd key that appears nowhere in the
+    /// code, which is the UNK-250 failure mode.
     ///
     /// Guards against the operator-facing failure class in UNK-250: an example
     /// var whose name diverges from the code either hard-fails startup with a
@@ -848,13 +852,20 @@ mod tests {
         // Direct reads are `get("KEY")`; the subsystem configs read through
         // `parse_bool(get, "KEY", default)` / `parse_u32` / `parse_u64`, whose
         // call sites spell `get, "KEY"`. Scan for both so a helper-read key in
-        // the example file is not mistaken for a divergence.
+        // the example file is not mistaken for a divergence. Comment lines are
+        // skipped so quoted tokens in docs (including this test's own docstring)
+        // never leak into the allow-set and mask a real divergence.
         let mut read_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for needle in ["get(\"", "get, \""] {
-            for (i, m) in config_src.match_indices(needle) {
-                let rest = &config_src[i + m.len()..];
-                if let Some(end) = rest.find('"') {
-                    read_names.insert(&rest[..end]);
+        for line in config_src.lines() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            for needle in ["get(\"", "get, \""] {
+                for (i, m) in line.match_indices(needle) {
+                    let rest = &line[i + m.len()..];
+                    if let Some(end) = rest.find('"') {
+                        read_names.insert(&rest[..end]);
+                    }
                 }
             }
         }
