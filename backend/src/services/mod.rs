@@ -22,6 +22,8 @@ pub mod ingestion;
 /// Metadata extraction, drafting, sanitisation, ISBN normalisation,
 /// and the value-vs-canonical inversion helpers.
 pub mod metadata;
+/// Periodic reaper deleting expired rows from `tower_sessions.session`.
+pub mod session_sweep;
 /// Persisted settings load, save, validation, and LISTEN/NOTIFY reload.
 pub mod settings;
 /// Writeback worker: queue + orchestrator + per-aspect mutators
