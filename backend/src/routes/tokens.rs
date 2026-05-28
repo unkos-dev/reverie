@@ -42,12 +42,13 @@ async fn create_token(
     State(state): State<AppState>,
     Json(body): Json<CreateTokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    if body.name.trim().is_empty() || body.name.len() > 255 {
+    let name = body.name.trim();
+    if name.is_empty() || name.len() > 255 {
         return Err(AppError::Validation("name must be 1-255 characters".into()));
     }
 
     let (plaintext, hash) = generate_device_token();
-    let dt = device_token::create_with_limit(&state.pool, current_user.user_id, &body.name, &hash)
+    let dt = device_token::create_with_limit(&state.pool, current_user.user_id, name, &hash)
         .await
         .map_err(|e| match e {
             device_token::CreateError::LimitExceeded => {
@@ -192,5 +193,66 @@ mod tests {
             .json(&serde_json::json!({"name": long_name}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_token_trims_name(pool: sqlx::PgPool) {
+        let pool = test_support::db::app_pool_for(&pool).await;
+
+        let subject = format!("token-trim-test-{}", uuid::Uuid::new_v4());
+        let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
+            &pool,
+            &subject,
+            "Trim Test User",
+            None,
+        )
+        .await
+        .expect("create user");
+        let (plaintext, hash) = crate::auth::token::generate_device_token();
+        crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
+            .await
+            .expect("create token");
+
+        let state = crate::state::AppState {
+            pool: pool.clone(),
+            ingestion_pool: pool.clone(),
+            config: test_support::test_config(),
+            oidc_client: test_support::test_oidc_client(),
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let auth_backend = crate::auth::backend::AuthBackend { pool: pool.clone() };
+        let app = crate::build_router(state, auth_backend);
+        let server = axum_test::TestServer::new(app);
+
+        use base64ct::Encoding;
+        let basic =
+            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+
+        // Whitespace-only rejects as empty-after-trim, not as a length pass.
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "   "}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // 256 spaces is empty after trim — must reject as empty, not run the
+        // pre-trim length branch.
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": " ".repeat(256)}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Surrounding whitespace is accepted and stripped before persistence.
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "   abc   "}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+        assert_eq!(response.json::<serde_json::Value>()["name"], "abc");
     }
 }
