@@ -43,7 +43,7 @@ async fn create_token(
     Json(body): Json<CreateTokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let name = body.name.trim();
-    if name.is_empty() || name.len() > 255 {
+    if name.is_empty() || name.chars().count() > 255 {
         return Err(AppError::Validation("name must be 1-255 characters".into()));
     }
 
@@ -203,6 +203,26 @@ mod tests {
             .json(&serde_json::json!({"name": long_name}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Exactly 255 characters is the accepted upper boundary — pins the
+        // `> 255` comparison against a `>= 255` off-by-one regression.
+        let max_name = "x".repeat(255);
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": max_name}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+
+        // The limit counts characters, not bytes: 255 multibyte chars (510
+        // bytes) is accepted, matching the "1-255 characters" message.
+        let multibyte = "é".repeat(255);
+        let response = server
+            .post("/api/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": multibyte}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
     }
 
     #[sqlx::test(migrations = "./migrations")]
