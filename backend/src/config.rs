@@ -845,13 +845,19 @@ mod tests {
         let config_src = include_str!("config.rs");
         let example = include_str!("../../docker/staging.env.runtime.example");
 
-        let read_names: std::collections::HashSet<&str> = config_src
-            .match_indices("get(\"")
-            .filter_map(|(i, m)| {
+        // Direct reads are `get("KEY")`; the subsystem configs read through
+        // `parse_bool(get, "KEY", default)` / `parse_u32` / `parse_u64`, whose
+        // call sites spell `get, "KEY"`. Scan for both so a helper-read key in
+        // the example file is not mistaken for a divergence.
+        let mut read_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for needle in ["get(\"", "get, \""] {
+            for (i, m) in config_src.match_indices(needle) {
                 let rest = &config_src[i + m.len()..];
-                rest.find('"').map(|end| &rest[..end])
-            })
-            .collect();
+                if let Some(end) = rest.find('"') {
+                    read_names.insert(&rest[..end]);
+                }
+            }
+        }
 
         let mut violations: Vec<&str> = example
             .lines()
