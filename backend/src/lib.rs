@@ -65,11 +65,10 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
     // `20260507000001_tower_sessions_postgres_store` migration; defaults
     // (`tower_sessions.session`) match `PostgresStore::new`'s built-ins so
     // no `with_schema_name`/`with_table_name` overrides are needed.
-    // Expired-session cleanup is a manual sweep (`ExpiredDeletion::delete_expired`)
-    // — not currently scheduled; rows accumulate until reaped manually.
-    // For a single-instance self-hosted deployment this is acceptable; if
-    // session growth becomes a footprint concern, wire a tokio-cron-style
-    // sweep in main.
+    // Expired-session cleanup runs as a scheduled sweep in `run` (see
+    // `services::session_sweep`), driving `ExpiredDeletion::delete_expired`
+    // hourly under the shared cancellation token. Embedders calling this
+    // function directly are responsible for their own reaping.
     let session_store = PostgresStore::new(state.pool.clone());
     build_router_with_session_store(state, auth_backend, session_store)
 }
@@ -352,6 +351,13 @@ pub async fn run() -> anyhow::Result<()> {
             tracing::error!(error = %e, "enrichment queue exited with error");
         }
     });
+
+    // Session expired-row sweep. Drives the PostgresStore's ExpiredDeletion
+    // trait hourly so `tower_sessions.session` stays bounded; shares the
+    // cancellation token so SIGTERM drains it like the other workers.
+    let sweep_token = cancel_token.clone();
+    let sweep_store = PostgresStore::new(state.pool.clone());
+    tokio::spawn(services::session_sweep::run_sweep(sweep_store, sweep_token));
 
     // Writeback worker runs on a dedicated reverie_app pool that sets
     // `app.system_context = 'writeback'` per-connection.  The
