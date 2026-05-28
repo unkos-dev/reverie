@@ -113,4 +113,18 @@ mod tests {
         .unwrap();
         assert_eq!(live_remaining, 1);
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_sweep_returns_promptly_on_cancel(pool: PgPool) {
+        let store = PostgresStore::new(pool);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_sweep(store, cancel.clone()));
+
+        cancel.cancel();
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("run_sweep must observe cancellation and return, not hang until the next tick")
+            .expect("run_sweep task must not panic");
+    }
 }
