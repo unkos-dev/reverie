@@ -106,7 +106,10 @@ pub enum CursorKey {
     },
 }
 
-/// Parse failures from [`CursorKey::parse_for`].
+/// Parse and encode failures for [`CursorKey`].
+///
+/// Parsing ([`CursorKey::parse_for`]) yields the input-shape variants;
+/// encoding ([`CursorKey::encode`]) yields [`Self::FormatTimestamp`].
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CursorError {
@@ -130,21 +133,29 @@ pub enum CursorError {
     /// (e.g. `?sort=title` with a recent-tagged cursor).
     #[error("cursor sort mismatch")]
     SortMismatch,
+    /// A `Recent` cursor's `created_at` had a year outside RFC 3339's
+    /// representable range (`-9999..=9999`) during encode.
+    #[error("timestamp not representable as RFC 3339")]
+    FormatTimestamp(#[from] time::error::Format),
 }
 
 impl CursorKey {
     /// Encode this cursor key as a base64url-unpadded string suitable
     /// for use in a `?cursor=` query parameter.
-    pub fn encode(&self) -> String {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CursorError::FormatTimestamp`] if a [`Self::Recent`]
+    /// cursor's `created_at` has a year outside RFC 3339's
+    /// `-9999..=9999` range. Rust-side `OffsetDateTime` caps years at
+    /// 9999, so this is unreachable for timestamps written through
+    /// Reverie; it can only trigger for a `TIMESTAMPTZ` mutated
+    /// out-of-band (raw `psql`, a migration) to a year > 9999. The
+    /// non-timestamp variants never fail.
+    pub fn encode(&self) -> Result<String, CursorError> {
         let payload = match self {
             Self::Recent { created_at, id } => {
-                #[allow(
-                    clippy::expect_used,
-                    reason = "OffsetDateTime sourced from Postgres always formats as RFC 3339; year-out-of-range is the only failure and cannot occur for DB-stored timestamps"
-                )]
-                let ts = created_at
-                    .format(&Rfc3339)
-                    .expect("OffsetDateTime always formats as Rfc3339");
+                let ts = created_at.format(&Rfc3339)?;
                 format!("r|{ts}|{}", id.as_hyphenated())
             }
             Self::Title {
@@ -183,7 +194,7 @@ impl CursorKey {
                 )
             }
         };
-        Base64UrlUnpadded::encode_string(payload.as_bytes())
+        Ok(Base64UrlUnpadded::encode_string(payload.as_bytes()))
     }
 
     /// Parse a base64url cursor and assert its tag matches `sort`.
@@ -280,7 +291,7 @@ mod tests {
         let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
         let id = Uuid::new_v4();
         let key = CursorKey::Recent { created_at: ts, id };
-        let encoded = key.encode();
+        let encoded = key.encode().expect("encode");
         let parsed = CursorKey::parse_for(&encoded, SortMode::Recent).expect("roundtrip");
         assert_eq!(parsed, key);
     }
@@ -292,7 +303,7 @@ mod tests {
             work_id: Uuid::new_v4(),
             manifestation_id: Uuid::new_v4(),
         };
-        let encoded = key.encode();
+        let encoded = key.encode().expect("encode");
         let parsed = CursorKey::parse_for(&encoded, SortMode::Title).expect("roundtrip");
         assert_eq!(parsed, key);
     }
@@ -304,7 +315,7 @@ mod tests {
             work_id: Uuid::new_v4(),
             manifestation_id: Uuid::new_v4(),
         };
-        let encoded = key.encode();
+        let encoded = key.encode().expect("encode");
         let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
         assert_eq!(parsed, key);
     }
@@ -316,7 +327,7 @@ mod tests {
             work_id: Uuid::new_v4(),
             manifestation_id: Uuid::new_v4(),
         };
-        let encoded = key.encode();
+        let encoded = key.encode().expect("encode");
         let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
         assert_eq!(parsed, key);
     }
@@ -332,7 +343,7 @@ mod tests {
             work_id: Uuid::new_v4(),
             manifestation_id: Uuid::new_v4(),
         };
-        let encoded = key.encode();
+        let encoded = key.encode().expect("encode");
         let parsed = CursorKey::parse_for(&encoded, SortMode::Author).expect("roundtrip");
         assert_eq!(parsed, key);
     }
@@ -341,7 +352,9 @@ mod tests {
     fn rejects_cross_sort_replay() {
         let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
         let id = Uuid::new_v4();
-        let recent = CursorKey::Recent { created_at: ts, id }.encode();
+        let recent = CursorKey::Recent { created_at: ts, id }
+            .encode()
+            .expect("encode");
         assert!(matches!(
             CursorKey::parse_for(&recent, SortMode::Title),
             Err(CursorError::SortMismatch)
@@ -351,7 +364,8 @@ mod tests {
             work_id: id,
             manifestation_id: id,
         }
-        .encode();
+        .encode()
+        .expect("encode");
         assert!(matches!(
             CursorKey::parse_for(&title, SortMode::Recent),
             Err(CursorError::SortMismatch)
