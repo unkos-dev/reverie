@@ -30,5 +30,7 @@ pub mod shelf;
 pub mod theme_preference;
 /// User accounts and OIDC-driven upsert/promotion flow.
 pub mod user;
+/// Closed value set for the `validation_status` Postgres `ENUM`.
+pub mod validation_status;
 /// Work matching, stub creation, and ISBN-driven rematch.
 pub mod work;

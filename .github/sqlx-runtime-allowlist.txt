@@ -41,6 +41,9 @@ backend/src/models/manifestation_format.rs:
 # (1, 4) models/user.rs file-blanket — user_role enum-drift detection test (ALTER TYPE + ::user_role cast probe + role-cast fixture)
 backend/src/models/user.rs:
 
+# (1, 4) models/validation_status.rs file-blanket — validation_status enum-drift detection test (ALTER TYPE + ::validation_status cast probe)
+backend/src/models/validation_status.rs:
+
 # (3, 4) test_support.rs file-blanket — set_config('app.system_context', ...) in after_connect callback (class 3) plus role-cast drift fixtures for admin/child/adult (class 4); test-only fixture module
 backend/src/test_support.rs:
 

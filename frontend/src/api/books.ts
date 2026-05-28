@@ -32,6 +32,10 @@ const EnrichmentStatusSchema = z.enum(["pending", "in_progress", "complete", "fa
 /** Enrichment lifecycle state. Matches `backend/src/models/enrichment_status.rs`. */
 export type EnrichmentStatus = z.infer<typeof EnrichmentStatusSchema>;
 
+const ValidationStatusSchema = z.enum(["pending", "clean", "repaired", "degraded"]);
+/** Validation lifecycle state. Matches `backend/src/models/validation_status.rs`. */
+export type ValidationStatus = z.infer<typeof ValidationStatusSchema>;
+
 const SeriesRefSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -52,10 +56,7 @@ const BookListItemSchema = z.object({
   isbn_13: z.string().nullable(),
   cover_url: z.string(),
   ingestion_status: IngestionStatusSchema,
-  // Raw DB string — reconciled enum lands in a follow-up; backend
-  // docstring on `BookListRow::validation_status` notes the
-  // pending|valid|repaired|degraded variants.
-  validation_status: z.string(),
+  validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
 });
 /**
@@ -133,7 +134,7 @@ const BookDetailSchema = z.object({
   cover_url: z.string(),
   tags: z.array(z.string()),
   ingestion_status: IngestionStatusSchema,
-  validation_status: z.string(),
+  validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
   metadata_version_summary: MetadataVersionSummarySchema,
   metadata_versions: z.array(MetadataVersionRowSchema),
@@ -152,7 +153,7 @@ const WorkManifestationSchema = z.object({
   isbn_10: z.string().nullable(),
   cover_url: z.string(),
   ingestion_status: IngestionStatusSchema,
-  validation_status: z.string(),
+  validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
   created_at: z.string(),
 });

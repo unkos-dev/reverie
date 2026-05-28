@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::ingestion_status::IngestionStatus;
+use crate::models::validation_status::ValidationStatus;
 
 /// Series membership for a manifestation. Embedded into both
 /// [`BookListRow`] and [`BookDetail`]; `None` when the work isn't on
@@ -68,11 +69,8 @@ pub struct BookListRow {
     pub cover_url: String,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,
-    /// Validation lifecycle state. Typed enum deferred — DB has
-    /// `pending|valid|repaired|degraded`, frontend uses
-    /// `clean|repaired|degraded|quarantined`. Reconciliation lives
-    /// in a follow-up; surface the raw DB string for now.
-    pub validation_status: String,
+    /// Validation lifecycle state.
+    pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
     /// `manifestations.created_at`; used as the recent-sort cursor
@@ -120,9 +118,8 @@ pub struct BookDetail {
     pub tags: Vec<String>,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,
-    /// Validation lifecycle state (raw DB string — see
-    /// [`BookListRow::validation_status`]).
-    pub validation_status: String,
+    /// Validation lifecycle state.
+    pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
     /// Metadata-version counts for the Versions tab.
@@ -278,9 +275,8 @@ pub struct WorkManifestation {
     pub cover_url: String,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,
-    /// Validation lifecycle state (raw DB string — see
-    /// [`BookListRow::validation_status`]).
-    pub validation_status: String,
+    /// Validation lifecycle state.
+    pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
     /// `manifestations.created_at`.

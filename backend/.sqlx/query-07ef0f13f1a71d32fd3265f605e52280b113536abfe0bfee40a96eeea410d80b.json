@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestations (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status) VALUES ($1, $2, 'epub'::manifestation_format, $3, 'testhash', 'testhash', 1000, 'complete'::ingestion_status, 'clean'::validation_status)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "07ef0f13f1a71d32fd3265f605e52280b113536abfe0bfee40a96eeea410d80b"
+}

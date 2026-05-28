@@ -473,7 +473,7 @@ mod tests {
                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status, enrichment_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status, \
+                     'complete'::ingestion_status, 'clean'::validation_status, \
                      'complete'::enrichment_status) \
              RETURNING id",
             work_id,

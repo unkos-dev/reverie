@@ -377,7 +377,7 @@ async fn process_file(
     };
 
     // Step 4.5: EPUB structural validation and auto-repair.
-    // Only applies to EPUB files; other formats pass through as 'valid'.
+    // Only applies to EPUB files; other formats pass through as 'clean'.
     let (validation_status_str, accessibility_metadata, opf_data): (
         &'static str,
         Option<serde_json::Value>,
@@ -424,7 +424,7 @@ async fn process_file(
                         quarantine_async(&source, &quarantine_path, &reason).await;
                         return ProcessResult::Failed(format!("EPUB quarantined: {reason}"));
                     }
-                    ValidationOutcome::Clean => ("valid", a11y, opf),
+                    ValidationOutcome::Clean => ("clean", a11y, opf),
                     ValidationOutcome::Repaired => ("repaired", a11y, opf),
                     ValidationOutcome::Degraded => ("degraded", a11y, opf),
                 }
@@ -436,7 +436,7 @@ async fn process_file(
             Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
-        ("valid", None, None)
+        ("clean", None, None)
     };
 
     // Step 5: Extract metadata and create work + manifestation
@@ -610,8 +610,10 @@ async fn commit_ingest(
 
     // 2. Insert manifestation with NULL canonical + NULL pointers.
     //    `format` and `ingestion_status` are bound as their typed Rust enums
-    //    (sqlx::Type impls). `validation_status` has no Rust counterpart and
-    //    is bound as text + cast in SQL (`($N::text)::validation_status`).
+    //    (sqlx::Type impls). `validation_status` is computed here as a
+    //    `&'static str` from `ValidationOutcome`, so it is bound as text + cast
+    //    in SQL (`($N::text)::validation_status`) rather than via the
+    //    `ValidationStatus` enum used on the read paths.
     let file_size = copy_result.file_size.cast_signed();
     let ingestion_status = IngestionStatus::Complete;
     let manifestation_id = sqlx::query_scalar!(
@@ -1037,8 +1039,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_processes_epub_end_to_end(pool: PgPool) {
-        // P1: exercise the EPUB validation path end-to-end, verifying that a valid
-        // EPUB gets validation_status='valid' in the manifestation row.
+        // P1: exercise the EPUB validation path end-to-end, verifying that a clean
+        // EPUB gets validation_status='clean' in the manifestation row.
         let pool = ingestion_pool_for(&pool).await;
         let ingestion = tempfile::tempdir().unwrap();
         let library = tempfile::tempdir().unwrap();
@@ -1060,16 +1062,23 @@ mod tests {
         let dest = library.path().join("Tolkien/The Hobbit.epub");
         assert!(dest.exists(), "expected file at {}", dest.display());
 
-        // validation_status must be 'valid' for a clean EPUB
+        // validation_status must be Clean for a clean EPUB. Decode via the
+        // typed enum (not ::text) so the assertion exercises the same
+        // ValidationStatus sqlx decode the read paths rely on.
+        use crate::models::validation_status::ValidationStatus;
         let dest_str = dest.to_str().unwrap();
         let status = sqlx::query_scalar!(
-            "SELECT validation_status::text AS \"validation_status!\" FROM manifestations WHERE file_path = $1",
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
             dest_str,
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(status, "valid", "expected validation_status=valid");
+        assert_eq!(
+            status,
+            ValidationStatus::Clean,
+            "expected validation_status=clean"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

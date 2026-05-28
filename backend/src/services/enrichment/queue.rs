@@ -376,7 +376,7 @@ mod tests {
                 file_size_bytes, ingestion_status, validation_status, \
                 enrichment_status, enrichment_attempt_count, enrichment_attempted_at) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status, \
+                     'complete'::ingestion_status, 'clean'::validation_status, \
                      $4, $5, \
                      CASE WHEN $6::bigint IS NULL THEN NULL \
                           ELSE now() - ($6 || ' seconds')::interval END) \

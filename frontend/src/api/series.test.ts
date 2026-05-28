@@ -40,7 +40,7 @@ describe("getSeries", () => {
               isbn_10: null,
               cover_url: "/api/books/.../cover/thumb",
               ingestion_status: "complete",
-              validation_status: "valid",
+              validation_status: "clean",
               enrichment_status: "complete",
               created_at: "2026-05-23T01:00:00Z",
             },

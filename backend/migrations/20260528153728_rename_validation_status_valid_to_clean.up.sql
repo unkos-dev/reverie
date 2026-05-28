@@ -1,0 +1,12 @@
+-- Rename validation_status enum value 'valid' -> 'clean' (UNK-276).
+--
+-- Reconciles the storage label with the domain ValidationOutcome enum
+-- (Clean/Repaired/Degraded), eliminating the Clean => "valid" translation
+-- seam in the ingestion orchestrator. The three stored outcomes
+-- (clean/repaired/degraded) are all valid, stored-and-served files; 'clean'
+-- names "no issues found" without implying the others are invalid.
+-- See adr/2026-05-28-validation-status-vocabulary.md.
+--
+-- RENAME VALUE is txn-safe on PG12+ and rewrites the label in place, so the
+-- 'pending' column default is untouched and no data backfill is required.
+ALTER TYPE public.validation_status RENAME VALUE 'valid' TO 'clean';

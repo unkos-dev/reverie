@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id          AS \"id!\",\n               isbn_10,\n               isbn_13,\n               created_at  AS \"created_at!\",\n               ingestion_status::text  AS \"ingestion_status!\",\n               validation_status       AS \"validation_status!: ValidationStatus\",\n               enrichment_status::text AS \"enrichment_status!\"\n          FROM manifestations\n         WHERE work_id = $1\n         ORDER BY created_at ASC, id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "isbn_10",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "isbn_13",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "ingestion_status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "validation_status!: ValidationStatus",
+        "type_info": {
+          "Custom": {
+            "name": "validation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "clean",
+                "repaired",
+                "degraded"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "enrichment_status!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "f69c9949415df1040e4300d573f4da3904eb81ae91bb30ada9728dff409f63b0"
+}

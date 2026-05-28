@@ -19,6 +19,7 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::library::WorkManifestation;
 use crate::models::series::{SeriesDetail, SeriesWork};
+use crate::models::validation_status::ValidationStatus;
 use crate::routes::library::{load_authors_for_works, parse_enrichment, parse_ingestion};
 use crate::state::AppState;
 
@@ -77,7 +78,7 @@ async fn detail(
                isbn_13,
                created_at  AS "created_at!",
                ingestion_status::text  AS "ingestion_status!",
-               validation_status::text AS "validation_status!",
+               validation_status       AS "validation_status!: ValidationStatus",
                enrichment_status::text AS "enrichment_status!"
           FROM manifestations
          WHERE work_id = ANY($1::uuid[])

@@ -92,7 +92,7 @@ async fn insert_book(ingestion_pool: &PgPool, marker: &str, title: &str) -> (Uui
             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                 'complete'::ingestion_status, 'valid'::validation_status) \
+                 'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
         file_path,
@@ -133,7 +133,10 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
         items[0]["cover_url"].as_str().unwrap(),
         format!("/api/books/{first_id}/cover/thumb"),
     );
-    assert!(items[0]["validation_status"].is_string());
+    // Value-assert (not just is_string): the list path is a runtime QueryBuilder
+    // that decodes validation_status via PgRow::get into the ValidationStatus
+    // enum — not macro-checked, so this is the only guard on that decode path.
+    assert_eq!(items[0]["validation_status"].as_str().unwrap(), "clean");
     assert!(items[0]["ingestion_status"].is_string());
     assert!(items[0]["enrichment_status"].is_string());
     // created_at must be elided per the wire-format invariant.
@@ -594,7 +597,7 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
                     (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                      file_size_bytes, ingestion_status, validation_status) \
                  VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                         'complete'::ingestion_status, 'valid'::validation_status)",
+                         'complete'::ingestion_status, 'clean'::validation_status)",
                 work_id,
                 file_path,
                 hash,
@@ -725,7 +728,7 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
     );
     assert!(body["ingestion_status"].is_string());
     assert!(body["enrichment_status"].is_string());
-    assert!(body["validation_status"].is_string());
+    assert_eq!(body["validation_status"].as_str().unwrap(), "clean");
     let summary = &body["metadata_version_summary"];
     assert_eq!(
         summary["pending"].as_u64().unwrap(),
@@ -880,7 +883,7 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status) \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
              RETURNING id",
             work_id,
             file_path,
@@ -1431,7 +1434,7 @@ async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status)",
+                     'complete'::ingestion_status, 'clean'::validation_status)",
             work_id,
             file_path,
             hash,
