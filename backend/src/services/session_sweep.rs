@@ -1,5 +1,12 @@
 //! Periodic reaper for expired `tower_sessions` rows.
 //!
+//! THREAT: this sweep is availability hardening, not access control. Expired
+//! rows are never authenticated against — `PostgresStore::load` already
+//! filters `WHERE expiry_date > now()`, so a stale row can never resurrect a
+//! session. The sweep exists solely to bound `tower_sessions.session` growth;
+//! a missed or failed sweep degrades to unbounded table size, never to
+//! session reuse.
+//!
 //! `PostgresStore` persists sessions to `tower_sessions.session` but never
 //! deletes expired rows on its own — without a scheduled sweep they
 //! accumulate until reaped manually. This worker drives the store's
