@@ -10,10 +10,12 @@
 //! `PostgresStore` persists sessions to `tower_sessions.session` but never
 //! deletes expired rows on its own — without a scheduled sweep they
 //! accumulate until reaped manually. This worker drives the store's
-//! [`ExpiredDeletion`] trait on a fixed cadence and drains cleanly when its
-//! [`CancellationToken`] fires, sharing the cooperative graceful-shutdown
-//! shape of the other background workers (ingestion, enrichment, writeback,
-//! settings listener) rather than the library's abort-based deletion task.
+//! [`ExpiredDeletion`](tower_sessions::session_store::ExpiredDeletion) trait
+//! on a fixed cadence and drains cleanly when its
+//! [`CancellationToken`](tokio_util::sync::CancellationToken) fires, sharing
+//! the cooperative graceful-shutdown shape of the other background workers
+//! (ingestion, enrichment, writeback, settings listener) rather than the
+//! library's abort-based deletion task.
 
 use tokio_util::sync::CancellationToken;
 use tower_sessions::session_store::{self, ExpiredDeletion};
@@ -40,7 +42,7 @@ pub async fn sweep_once(store: &PostgresStore) -> Result<(), session_store::Erro
     store.delete_expired().await
 }
 
-/// Runs [`sweep_once`] every [`SWEEP_INTERVAL`] until `cancel` is triggered.
+/// Runs [`sweep_once`] every `SWEEP_INTERVAL` until `cancel` is triggered.
 ///
 /// Sweep failures are logged at `warn` and swallowed: a transient database
 /// hiccup must not take the process down, and the next tick recovers. The
