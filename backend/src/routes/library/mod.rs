@@ -232,12 +232,18 @@ async fn list(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let next_cursor = if has_more {
-        page_rows
-            .last()
-            .map(|last| next_cursor_for_row(last, params.sort).encode())
-    } else {
-        None
+    let next_cursor = match page_rows.last() {
+        Some(last) if has_more => {
+            let row_id = last.get::<Uuid, _>("id");
+            let encoded = next_cursor_for_row(last, params.sort)
+                .encode()
+                .map_err(|e| {
+                    tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
+                    AppError::Internal(e.into())
+                })?;
+            Some(encoded)
+        }
+        _ => None,
     };
 
     let mut headers = HeaderMap::new();

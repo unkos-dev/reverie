@@ -327,7 +327,8 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
         created_at: time::OffsetDateTime::now_utc(),
         id: Uuid::new_v4(),
     }
-    .encode();
+    .encode()
+    .expect("encode");
 
     let response = server
         .get(&format!("/api/books?sort=title&cursor={recent}"))

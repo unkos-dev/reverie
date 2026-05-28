@@ -348,7 +348,11 @@ pub(super) async fn emit_new(
             created_at: last_created,
             id: last_id,
         }
-        .encode();
+        .encode()
+        .map_err(|e| {
+            tracing::warn!(error = %e, row_id = %last_id, "failed to encode OPDS pagination cursor");
+            AppError::Internal(e.into())
+        })?;
         fb.add_next_link(&format!("{self_path}?cursor={next_cursor}"));
     }
 
@@ -488,11 +492,16 @@ pub(super) async fn emit_author_books(
             reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
         )]
         let last = page_rows.last().expect("has_more implies non-empty");
+        let row_id: Uuid = last.get("id");
         let next = super::cursor::Cursor {
             created_at: last.get("created_at"),
-            id: last.get("id"),
+            id: row_id,
         }
-        .encode();
+        .encode()
+        .map_err(|e| {
+            tracing::warn!(error = %e, %row_id, "failed to encode OPDS pagination cursor");
+            AppError::Internal(e.into())
+        })?;
         fb.add_next_link(&format!("{self_path}?cursor={next}"));
     }
     Ok(fb.finish())
