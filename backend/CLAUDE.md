@@ -165,6 +165,14 @@ workaround.
 - **Linting:** `cargo clippy -- -D warnings` enforced by CI. Fix
   warnings, don't suppress with `#[allow(...)]` unless documented
   reason.
+- **Pre-push hook:** `.husky/pre-push` runs `cargo fmt --all -- --check`
+  then `cargo clippy --workspace --all-targets --locked -- -D warnings`
+  on every push, catching the fmt/clippy CI round-trip locally. Budget:
+  ~35s warm on Coder workspace baseline. `cargo test` is deliberately
+  excluded — 3–5 min wall-time plus shared dev-DB contention across
+  worktrees (CI remains the authoritative test gate). Frontend is not
+  mirrored: `pre-commit` lint-staged already runs frontend checks on
+  staged changes, so a frontend pre-push would duplicate that.
 - **Time:** use `time` crate, not `chrono`. Blueprint mentions chrono
   but scaffold predates that decision — don't reintroduce chrono in
   first-party code. Single documented exception:
