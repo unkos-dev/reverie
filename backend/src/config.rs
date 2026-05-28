@@ -828,6 +828,48 @@ mod tests {
         move |k| map.get(k).map(|s| (*s).to_string())
     }
 
+    /// Every `KEY=` line in `docker/staging.env.runtime.example` must name a
+    /// variable that `Config::from_source` actually reads via `get("...")`.
+    ///
+    /// Guards against the operator-facing failure class in UNK-250: an example
+    /// var whose name diverges from the code either hard-fails startup with a
+    /// misleading `MissingVar` (loud) or is silently ignored while a fallback
+    /// takes over (silent — e.g. ingestion DSN falling back to the app role,
+    /// collapsing the documented role-separation threat model). The example
+    /// file is an intentional *subset* of all knobs, so the check is one-way:
+    /// example keys ⊆ names read by `from_source`, not the reverse.
+    #[test]
+    fn staging_runtime_example_keys_are_read_by_config() {
+        // Compile-time embed: a missing file fails the build rather than
+        // silently skipping the guard.
+        let config_src = include_str!("config.rs");
+        let example = include_str!("../../docker/staging.env.runtime.example");
+
+        let read_names: std::collections::HashSet<&str> = config_src
+            .match_indices("get(\"")
+            .filter_map(|(i, m)| {
+                let rest = &config_src[i + m.len()..];
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .collect();
+
+        let mut violations: Vec<&str> = example
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .filter_map(|l| l.split_once('='))
+            .map(|(k, _)| k.trim())
+            .filter(|k| !read_names.contains(*k))
+            .collect();
+        violations.sort_unstable();
+
+        assert!(
+            violations.is_empty(),
+            "staging.env.runtime.example contains keys not read by config.rs: {violations:?}. \
+             Rename them to match the `get(\"...\")` call in config.rs, or drop them."
+        );
+    }
+
     #[test]
     fn from_env_with_defaults() {
         let config = Config::from_source(&env_for(BASE_VARS)).unwrap();
