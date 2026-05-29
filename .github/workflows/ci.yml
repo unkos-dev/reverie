@@ -175,7 +175,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Lint
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       # Phase 1 of the tiered comment policy rollout
       # (adr/2026-05-08-tiered-comment-policy.md). No missing-docs

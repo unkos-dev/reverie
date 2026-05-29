@@ -174,10 +174,10 @@ workaround.
   worktrees (CI remains the authoritative test gate). Frontend is not
   mirrored: `pre-commit` lint-staged already runs frontend checks on
   staged changes, so a frontend pre-push would duplicate that. The
-  hook's clippy is intentionally wider than CI's
-  `cargo clippy -- -D warnings` (`ci.yml`): `--all-targets` lints
-  test/bench/example code and `--locked` pins deps, so the hook blocks
-  locally what CI would currently miss.
+  hook's clippy invocation is identical to CI's (`ci.yml` Lint step):
+  both run `cargo clippy --workspace --all-targets --locked -- -D warnings`.
+  The hook exists to catch the fmt/clippy CI round-trip locally, not to
+  lint a wider surface — CI is the authoritative gate.
 - **Time:** use `time` crate, not `chrono`. Blueprint mentions chrono
   but scaffold predates that decision — don't reintroduce chrono in
   first-party code. Single documented exception:
