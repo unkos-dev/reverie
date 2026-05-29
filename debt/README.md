@@ -122,6 +122,7 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [GitHub Actions referenced by mutable tags, not commit SHAs](2026-05-30-github-actions-unpinned-sha.md) — adopted from PR #370 (Greptile); whole-workflow posture, not a typos-only fix; lifts on a repo-wide SHA-pin pass (Linear ticket pending free-tier cap)
 - [Malformed UUID in filter query params returns non-RFC 7807 error](2026-05-26-malformed-uuid-filter-non-rfc7807.md) — adopted from 11b; framework default rejection instead of AppError; lifts on `From<QueryRejection>` impl
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
