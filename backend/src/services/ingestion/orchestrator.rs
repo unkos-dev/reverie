@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 use crate::config::{CleanupMode, Config};
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::manifestation_format::ManifestationFormat;
+use crate::models::validation_status::ValidationStatus;
 use crate::models::{ingestion_job, work};
 use crate::services::epub::{self, ValidationOutcome};
 use crate::services::ingestion::{cleanup, copier, format_filter, path_template, quarantine};
@@ -378,8 +379,8 @@ async fn process_file(
 
     // Step 4.5: EPUB structural validation and auto-repair.
     // Only applies to EPUB files; other formats pass through as 'clean'.
-    let (validation_status_str, accessibility_metadata, opf_data): (
-        &'static str,
+    let (validation_status, accessibility_metadata, opf_data): (
+        ValidationStatus,
         Option<serde_json::Value>,
         Option<epub::opf_layer::OpfData>,
     ) = if ext == "epub" {
@@ -424,19 +425,19 @@ async fn process_file(
                         quarantine_async(&source, &quarantine_path, &reason).await;
                         return ProcessResult::Failed(format!("EPUB quarantined: {reason}"));
                     }
-                    ValidationOutcome::Clean => ("clean", a11y, opf),
-                    ValidationOutcome::Repaired => ("repaired", a11y, opf),
-                    ValidationOutcome::Degraded => ("degraded", a11y, opf),
+                    ValidationOutcome::Clean => (ValidationStatus::Clean, a11y, opf),
+                    ValidationOutcome::Repaired => (ValidationStatus::Repaired, a11y, opf),
+                    ValidationOutcome::Degraded => (ValidationStatus::Degraded, a11y, opf),
                 }
             }
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, "epub validation error; proceeding as degraded");
-                ("degraded", None, None)
+                (ValidationStatus::Degraded, None, None)
             }
             Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
-        ("clean", None, None)
+        (ValidationStatus::Clean, None, None)
     };
 
     // Step 5: Extract metadata and create work + manifestation
@@ -520,7 +521,7 @@ async fn process_file(
         &final_path_str,
         &copy_result,
         format,
-        validation_status_str,
+        validation_status,
         &accessibility_metadata,
     )
     .await;
@@ -589,7 +590,7 @@ async fn commit_ingest(
     final_path_str: &str,
     copy_result: &copier::CopyResult,
     format: ManifestationFormat,
-    validation_status_str: &str,
+    validation_status: ValidationStatus,
     accessibility_metadata: &Option<serde_json::Value>,
 ) -> Result<(Uuid, Uuid), sqlx::Error> {
     use crate::services::metadata::draft;
@@ -609,18 +610,17 @@ async fn commit_ingest(
     };
 
     // 2. Insert manifestation with NULL canonical + NULL pointers.
-    //    `format` and `ingestion_status` are bound as their typed Rust enums
-    //    (sqlx::Type impls). `validation_status` is computed here as a
-    //    `&'static str` from `ValidationOutcome`, so it is bound as text + cast
-    //    in SQL (`($N::text)::validation_status`) rather than via the
-    //    `ValidationStatus` enum used on the read paths.
+    //    `format`, `ingestion_status`, and `validation_status` are all bound as
+    //    their typed Rust enums (sqlx::Type impls), so the write boundary stays
+    //    symmetric with the read paths — a bad variant fails at the type system,
+    //    not as a runtime Postgres cast error.
     let file_size = copy_result.file_size.cast_signed();
     let ingestion_status = IngestionStatus::Complete;
     let manifestation_id = sqlx::query_scalar!(
         "INSERT INTO manifestations \
              (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
               file_size_bytes, ingestion_status, validation_status, accessibility_metadata) \
-         VALUES ($1, $2, $3, $4, $4, $5, $6, ($7::text)::validation_status, $8) \
+         VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8) \
          RETURNING id",
         work_id,
         format as ManifestationFormat,
@@ -628,7 +628,7 @@ async fn commit_ingest(
         &copy_result.sha256,
         file_size,
         ingestion_status as IngestionStatus,
-        validation_status_str,
+        validation_status as ValidationStatus,
         accessibility_metadata.as_ref(),
     )
     .fetch_one(&mut *tx)
@@ -845,6 +845,23 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 1, "expected 1 manifestation row");
+
+        // Non-EPUB formats skip structural validation and pass through as
+        // Clean — assert the value so the orchestrator's non-EPUB fallback
+        // stays covered.
+        use crate::models::validation_status::ValidationStatus;
+        let status = sqlx::query_scalar!(
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status,
+            ValidationStatus::Clean,
+            "expected validation_status=clean for non-EPUB"
+        );
     }
 
     /// Build a minimal valid EPUB ZIP in memory.

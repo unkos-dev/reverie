@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, accessibility_metadata) VALUES ($1, $2, $3, $4, $4, $5, $6, ($7::text)::validation_status, $8) RETURNING id",
+  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, accessibility_metadata) VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -44,7 +44,19 @@
             }
           }
         },
-        "Text",
+        {
+          "Custom": {
+            "name": "validation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "clean",
+                "repaired",
+                "degraded"
+              ]
+            }
+          }
+        },
         "Jsonb"
       ]
     },
@@ -52,5 +64,5 @@
       false
     ]
   },
-  "hash": "82eb195029375115bcfd6f48a49a0c042d74b53d36e16ebedbf5b4a852a302b9"
+  "hash": "8791fa5e3704a1460cb24ecb21059caf26f0b35b152bee7bff2ec946cb23973d"
 }
