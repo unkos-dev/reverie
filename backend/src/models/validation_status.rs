@@ -1,11 +1,19 @@
 //! `ValidationStatus` — closed value set for the Postgres `validation_status`
 //! ENUM applied to `manifestations.validation_status`.
 //!
-//! Defensive type-safety (UNK-276, closes the `sqlx::Type` enum series begun
-//! under UNK-107 / UNK-173): pre-migration this was the last DB enum decoded
-//! into Rust as a raw `String`, so an unknown DB variant flowed to the wire as
-//! an opaque string. `sqlx::Type` decode of an unknown variant now returns an
-//! error rather than coercing into a string.
+//! Defensive type-safety (UNK-276, continues the `sqlx::Type` enum series
+//! begun under UNK-107 / UNK-173): pre-migration this was the last DB enum
+//! exposed as a raw `String` field on the public API DTOs ([`BookListRow`],
+//! [`BookDetail`], [`WorkManifestation`]), so an unknown DB variant flowed to
+//! the wire as an opaque string. `sqlx::Type` decode of an unknown variant now
+//! returns an error rather than coercing into a string. (`ingestion_status`
+//! and `enrichment_status` carry typed `sqlx::Type` impls on write but are
+//! still `String`-decoded then re-parsed in the list read path — see
+//! `crate::routes::library`.)
+//!
+//! [`BookListRow`]: crate::models::library::BookListRow
+//! [`BookDetail`]: crate::models::library::BookDetail
+//! [`WorkManifestation`]: crate::models::library::WorkManifestation
 //!
 //! The value set reconciles three previously-divergent vocabularies onto the
 //! authoritative domain enum

@@ -222,7 +222,16 @@ async fn list(
             isbn_13: r.get("isbn_13"),
             cover_url: format!("/api/books/{m_id}/cover/thumb"),
             ingestion_status: parse_ingestion(&ingestion_raw)?,
-            validation_status: r.get("validation_status"),
+            // Fallible decode: this dynamic QueryBuilder path can't use a
+            // sqlx macro, and infallible `Row::get` panics on an unknown
+            // `validation_status` variant. `try_get` surfaces it as a clean
+            // 500 instead — matching the loud-but-handled boundary the
+            // typed enum promises (see models::validation_status).
+            validation_status: r.try_get("validation_status").map_err(|e| {
+                AppError::Internal(anyhow::anyhow!(
+                    "unknown validation_status value from DB: {e}"
+                ))
+            })?,
             enrichment_status: parse_enrichment(&enrichment_raw)?,
             created_at: r.get("created_at"),
         });
