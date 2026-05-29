@@ -2,32 +2,41 @@
 #
 # CodeRabbit configuration for unkos-dev/reverie.
 #
-# Trial framing: see adr/2026-05-07-coderabbit-parallel-trial.md.
-# Tally tracker: UNK-187 (sister to UNK-155 for Greptile).
+# Background: adr/2026-05-07-coderabbit-parallel-trial.md records the
+# evaluation that led to adopting CodeRabbit as a standing review bot.
 #
-# Profile picked `assertive` (not the published default `chill`) so the
-# trial baseline matches the verbose-by-design Greptile equivalent
-# documented in adr/2026-05-04-greptile-trial.md § "Trial configuration".
-# Easier to dial down at the gate with evidence than to start filtered
-# and miss patterns CodeRabbit only flags at the louder tier.
+# Profile is `chill`. CodeRabbit runs alongside the repo's own lint/CI
+# surface and multi-agent review, so its remit is net-new signal, not
+# volume.
 
-language: en-US
+language: en-AU
 tone_instructions: ""
 early_access: false
+enable_free_tier: true
 
 reviews:
-  profile: assertive
+  profile: chill
   request_changes_workflow: false
-  high_level_summary: true
-  # Disabled — adds nothing to the signal, just summary-block noise.
+  high_level_summary: false
   poem: false
+  in_progress_fortune: false
   review_status: true
-  collapse_walkthrough: false
+  review_details: true
+  commit_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagram: true
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: true
   suggested_reviewers: false
   suggested_labels: false
+  enable_prompt_for_ai_agents: false
   auto_review:
     enabled: true
     drafts: false
+    auto_incremental_review: false
   path_filters:
     - "!**/package-lock.json"
     - "!**/Cargo.lock"
@@ -76,11 +85,11 @@ reviews:
   abort_on_close: true
   finishing_touches:
     docstrings:
-      enabled: true
+      enabled: false
     unit_tests:
-      enabled: true
+      enabled: false
     simplify:
-      enabled: true
+      enabled: false
   tools:
     # CI duplicates — explicitly disabled. CI is the authoritative lint
     # surface (cargo clippy --deny warnings, eslint strictTypeChecked,
@@ -100,6 +109,17 @@ reviews:
       enabled: false
     stylelint:
       enabled: false
+    # Structural pattern matching — net-new signal. `essential_rules`
+    # turns on CodeRabbit's built-in anti-pattern set. Repo-specific
+    # convention rules (the `chrono`, `as`/`!`, raw-hex, and runtime
+    # `sqlx::query` bans from path_instructions above) are the high-value
+    # follow-up: authored under rule_dirs, they enforce those bans
+    # deterministically instead of relying on the model's judgement,
+    # which the `chill` profile makes less reliable.
+    ast-grep:
+      essential_rules: true
+      rule_dirs:
+        - ".coderabbit/ast-grep-rules"
     # Net-new signal vs CI — explicitly enabled. (Default is also true;
     # explicit declaration insulates the config from CodeRabbit default
     # changes.)
@@ -135,14 +155,15 @@ reviews:
       enabled: true
     osvScanner:
       enabled: true
-    # Markdown grammar and style — kept on for the trial. Markdown
-    # documentation surface (README, CONTRIBUTING, ADRs, docs/, debt/)
-    # is load-bearing for the open-source-self-hosting audience. Disable
-    # at the gate if the noise:signal ratio is bad.
+    # Markdown grammar and style. The markdown documentation surface
+    # (README, CONTRIBUTING, ADRs, docs/, debt/) is load-bearing for the
+    # open-source self-hosting audience, so grammar/style signal is worth
+    # keeping despite the occasional false positive.
     languagetool:
       enabled: true
 chat:
   auto_reply: true
+  art: false
 knowledge_base:
   opt_out: false
   learnings:
@@ -152,4 +173,5 @@ knowledge_base:
   jira:
     project_keys: []
   linear:
-    team_keys: []
+    usage: enabled
+    team_keys: [UNK]
