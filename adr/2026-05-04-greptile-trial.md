@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-04
 decision-makers: john
 ---
@@ -42,7 +42,7 @@ start tight and miss patterns.
 
 `greptile.json` at repo root:
 
-- `strictness: 1` — counter-intuitively, this is the *least*
+- `strictness: 1` — counter-intuitively, this is the _least_
   filtered setting in Greptile's schema (1 = Low strictness =
   Verbose; 3 = High strictness = Critical-only). Comments on
   everything Greptile flags. Trial purpose is signal calibration
@@ -101,56 +101,99 @@ running tally during the trial.
 
 Decision recorded as a follow-up ADR (`accepted` / `superseded`).
 
+## Decision Outcome (2026-05-29)
+
+**Adopt both.** At the parallel-trial gate the verdict — recorded in
+[`2026-05-07-coderabbit-parallel-trial.md`](2026-05-07-coderabbit-parallel-trial.md)
+and tallies UNK-155 / UNK-187 — is to keep both reviewers in steady
+state: Greptile label-gated (the PR #171 model — zero auto-quota,
+opt-in per PR via the `greptile-review` label), CodeRabbit auto on
+every non-draft PR.
+
+Greptile cleared the gate decisively: n=19 findings across 12 PRs,
+84% actionable. Three failure modes observed and dispositioned —
+lockfile rename hallucination (mitigated via the lockfile
+`ignorePatterns` amendment below); ADR-status convention misread
+(tracked, not recurred); stale-snapshot timing skew (process-side,
+not a Greptile defect). Its differentiator surface — governance /
+cross-document / cross-PR / public-API-surface consistency, which
+lint cannot express and which CodeRabbit's concrete-code-level
+surface does not cover — earns it a permanent (label-gated) seat
+alongside CodeRabbit. Cross-tool overlap with CodeRabbit was zero
+on PRs #180 and #188; the first observed overlap (PR #194,
+`# Errors` self-consistency) was a single finding among 14, so the
+complement holds.
+
+Status flips `proposed` → `accepted` per the in-place mechanism
+defined in the CodeRabbit parallel-trial ADR's gate section — no
+superseding ADR; both trial ADRs are the durable record.
+
+**Watch** (re-read when next touching AI-review config; no separate
+tracking ticket by design):
+
+- Convention-misread recurrence (UNK-155 row #9 class). If it
+  recurs, encode the ADR-status convention in `greptile.json`
+  `customRules` rather than relying on per-PR inference
+- Lockfile `ignorePatterns` sufficiency — confirm the carve-out
+  still suppresses the rename-hallucination class as the lockfile
+  format evolves
+- Cross-tool overlap-rate creep with CodeRabbit on docstring-heavy
+  PRs. If overlap dominates, the "adopt both" justification needs
+  re-examination
+- Per-author review-cap re-appearance on the Greptile dashboard
+  after the 2026-05-08 cap-lift (see Amendments). Recurrence ⇒ the
+  lift was scoped, escalate to support
+
 ## Consequences
 
-* Good — second reviewer on every PR. Single-maintainer projects
+- Good — second reviewer on every PR. Single-maintainer projects
   rely on lint + manual review; an AI reviewer adds a third pass
   that catches what either misses
-* Good — graph-based context (the Greptile differentiator) means
+- Good — graph-based context (the Greptile differentiator) means
   comments can reference cross-file patterns, not just the diff
   in isolation. Stronger than per-file static analysis
-* Good — pinned `customContext.files` align Greptile with project
+- Good — pinned `customContext.files` align Greptile with project
   conventions from day one. Reduces the cold-start noise common in
   AI reviewers that don't read the codebase's documented rules
-* Good — `strictness: 1` + all `commentTypes` produces maximum
+- Good — `strictness: 1` + all `commentTypes` produces maximum
   signal data for the trial verdict. Easier to dial up (raise the
   filter to 2 or 3) at the gate with evidence than to dial down
   from a quiet starting point and miss the patterns Greptile only
   flags at the verbose tier
-* Bad — auto-review on every PR means review noise during the
+- Bad — auto-review on every PR means review noise during the
   trial. Maintainer must triage every comment, even false
   positives, to populate the actionable-rate metric
-* Bad — third-party data exposure. Greptile reads PR diffs and
+- Bad — third-party data exposure. Greptile reads PR diffs and
   full repo context. Reverie is open-source so the surface is
   public, but the org-internal `.claude/`, `adr/`, and
   `docs/superpowers/specs/` paths are also read. Acceptable for
   this repo; not transferable to private repos without re-review
-* Bad — third-party SaaS dependency. If Greptile changes pricing,
+- Bad — third-party SaaS dependency. If Greptile changes pricing,
   policy, or API, the workflow regresses. Mitigated by trial
   framing — no automation depends on Greptile's existence
-* Neutral — `customContext` may inflate per-PR token spend on
+- Neutral — `customContext` may inflate per-PR token spend on
   Greptile's side. Visible in their billing dashboard (if relevant
   for the trial tier) but not on our infra
-* Neutral — Greptile's findings are advisory. Maintainer remains
+- Neutral — Greptile's findings are advisory. Maintainer remains
   the sole approver for merge
 
 ## Alternatives Considered
 
-* **No AI reviewer (status quo).** Rejected — the open question
+- **No AI reviewer (status quo).** Rejected — the open question
   ("does AI review add value here?") doesn't get answered without
   a trial. Lint + manual review is the baseline; the trial measures
   the marginal value of an AI layer on top
-* **CodeRabbit / Diamond / Codium / other AI reviewers.** Deferred
+- **CodeRabbit / Diamond / Codium / other AI reviewers.** Deferred
   — Greptile's graph-based codebase context is the most
   differentiated angle, and 4 weeks of one tool generates cleaner
   signal than 1 week of four. If the Greptile trial fails, the next
   ADR can pick up an alternative with a clean comparison baseline
-* **Self-hosted AI reviewer (Claude Code in CI, custom bot).**
+- **Self-hosted AI reviewer (Claude Code in CI, custom bot).**
   Rejected for now — trial framing values "does AI review work for
   this repo at all" over "which implementation is best." A
   managed service with one config file is the lowest-effort
   hypothesis test
-* **`strictness: 2` (balanced default) or `strictness: 3`
+- **`strictness: 2` (balanced default) or `strictness: 3`
   (critical-only) for trial.** Rejected — both pre-filter the
   output before the trial has measured what the unfiltered output
   looks like. `strictness: 1` exposes the full noise floor; the
@@ -158,10 +201,10 @@ Decision recorded as a follow-up ADR (`accepted` / `superseded`).
   the gate with evidence. Starting filtered and trying to
   reconstruct what was hidden is harder than starting verbose and
   pruning
-* **`commentTypes: ["logic"]` only.** Rejected — pre-filters out
+- **`commentTypes: ["logic"]` only.** Rejected — pre-filters out
   the data needed to evaluate Greptile's full output. Trial first,
   filter later
-* **Add `ignorePatterns` for `package-lock.json`, `Cargo.lock`,
+- **Add `ignorePatterns` for `package-lock.json`, `Cargo.lock`,
   `dist/`, `graphify-out/`, generated SQL.** Considered. Skipped
   in initial config because no per-PR cost data exists yet to
   justify the speedup. Add at the trial gate if review latency or
@@ -170,16 +213,16 @@ Decision recorded as a follow-up ADR (`accepted` / `superseded`).
   early in response to a different binding constraint than the one
   this bullet anticipated — see Amendments below. The remaining
   patterns (`dist/`, `graphify-out/`, generated SQL) stay deferred
-* **Branch filter to skip `release-please--*` and `dependabot/*`.**
+- **Branch filter to skip `release-please--*` and `dependabot/*`.**
   Rejected for the trial — silence on these branches is itself
   useful signal. If Greptile adds noise on dependency bumps, that's
   a config issue worth catching during the trial, not pre-empting
-* **Opt-in via `greptile-review` label instead of auto-on-every-PR.**
+- **Opt-in via `greptile-review` label instead of auto-on-every-PR.**
   Rejected — opt-in produces selection bias (only complex PRs get
   reviewed), undermining the actionable-rate metric. Auto-on-all
   exposes Greptile to the full PR mix and gives the trial verdict
   honest data
-* **Org-wide install instead of per-repo.** Rejected — Reverie is
+- **Org-wide install instead of per-repo.** Rejected — Reverie is
   the only repo in scope. Per-repo install matches the trial
   scope; org-wide install pre-commits to other repos before the
   verdict is in
@@ -233,15 +276,15 @@ Unchanged:
 Replayed against the same 10 reverie PRs from the 2026-05-07
 table:
 
-| Variant | Reviews | vs original (26) | vs label-gate (10) |
-|---|---|---|---|
-| Auto-on-PR-open, no push re-review (now) | 10 | -62% | 0 |
-| Auto-on-PR-open + `@greptileai` re-review (per PR) | 20 | -23% | +100% |
-| Original auto-on-every-push (rejected) | 26 | 0 | +160% |
+| Variant                                            | Reviews | vs original (26) | vs label-gate (10) |
+| -------------------------------------------------- | ------- | ---------------- | ------------------ |
+| Auto-on-PR-open, no push re-review (now)           | 10      | -62%             | 0                  |
+| Auto-on-PR-open + `@greptileai` re-review (per PR) | 20      | -23%             | +100%              |
+| Original auto-on-every-push (rejected)             | 26      | 0                | +160%              |
 
 Dropping the label gate alone does not change the conservative
 per-PR review count vs. the label-gate model — both are 10
-reviews / 10 PRs. What changes is *which* PRs Greptile sees: the
+reviews / 10 PRs. What changes is _which_ PRs Greptile sees: the
 label-gate model excluded the doc-only / chore class entirely
 (8/10 in the skip-doc-only variant); the new model includes them.
 On a lifted cap, including the doc-only class is the right call
@@ -251,24 +294,24 @@ which the label gate suppressed.
 
 #### What stays unchanged
 
-* Strictness, commentTypes, customContext, ignorePatterns, all
+- Strictness, commentTypes, customContext, ignorePatterns, all
   customRules — unchanged
-* Author exclusion for `renovate(bot)` and `dependabot[bot]` —
+- Author exclusion for `renovate(bot)` and `dependabot[bot]` —
   unchanged (separate per-bot quotas; never depleted maintainer
   quota)
-* Trial gate metric (≥30% actionable) and gate decision matrix —
+- Trial gate metric (≥30% actionable) and gate decision matrix —
   unchanged. The CodeRabbit parallel trial (2026-05-21 gate)
   is also unchanged
-* `triggerOnUpdates: false` — retained as a noise control, not a
+- `triggerOnUpdates: false` — retained as a noise control, not a
   quota control
 
 #### What to watch
 
-* Per-author review counter on the Greptile dashboard. If a
+- Per-author review counter on the Greptile dashboard. If a
   cap-style notice reappears post-lift, the cap-lift was
   scoped (e.g. one-time reset) rather than a permanent OSS
   entitlement — escalate back to support
-* Actionable-rate metric. Including doc-only PRs in the trial
+- Actionable-rate metric. Including doc-only PRs in the trial
   pool may dilute the rate if Greptile flags non-issues on them.
   Tally each doc-PR review explicitly against the gate metric
 
@@ -280,11 +323,11 @@ account's 50-review cap inside the first 4 days. Empirical
 quota-burn rate at the cap, computed from the per-PR review counts
 shown in the Greptile dashboard:
 
-| PR class | PRs | Reviews | Avg/PR |
-|---|---|---|---|
-| `feat/unk-167-sqlx-macros-*` series (push-iteration heavy) | 5 | 17 | 3.4 |
-| Other reverie PRs (#168, #170, #169, #166, #165) | 5 | 9 | 1.8 |
-| **All listed reverie PRs** | **10** | **26** | **2.6** |
+| PR class                                                   | PRs    | Reviews | Avg/PR  |
+| ---------------------------------------------------------- | ------ | ------- | ------- |
+| `feat/unk-167-sqlx-macros-*` series (push-iteration heavy) | 5      | 17      | 3.4     |
+| Other reverie PRs (#168, #170, #169, #166, #165)           | 5      | 9       | 1.8     |
+| **All listed reverie PRs**                                 | **10** | **26**  | **2.6** |
 
 50-review cap ÷ 2.6 avg ≈ ~19 PRs runway. Burned through in 9 PRs
 because the UNK-167 series clustered three to five reviews per PR.
@@ -315,9 +358,9 @@ maintainer's intent to internal-review first, then ask Greptile.
 }
 ```
 
-* `triggerOnUpdates: false` — pushes to an open PR do not trigger a
+- `triggerOnUpdates: false` — pushes to an open PR do not trigger a
   fresh review. Eliminates the per-push-burst burn.
-* `labels: ["greptile-review"]` — Greptile only reviews PRs that
+- `labels: ["greptile-review"]` — Greptile only reviews PRs that
   carry the `greptile-review` label. Doc-only / chore / config PRs
   that never get the label never burn a review.
 
@@ -348,11 +391,11 @@ Same 10 reverie PRs replayed under the label-gate model, conservative
 (no confidence-score update) and generous (confidence-score update
 on every PR) variants:
 
-| Variant | Reviews | vs old (26) |
-|---|---|---|
-| Conservative (label once, no `@greptileai` re-review) | 10 | -62% |
-| Generous (label once + `@greptileai` re-review on every PR) | 20 | -23% |
-| Skip-doc-only (label not applied to PR #169 doc archive, etc.) | 8 | -69% |
+| Variant                                                        | Reviews | vs old (26) |
+| -------------------------------------------------------------- | ------- | ----------- |
+| Conservative (label once, no `@greptileai` re-review)          | 10      | -62%        |
+| Generous (label once + `@greptileai` re-review on every PR)    | 20      | -23%        |
+| Skip-doc-only (label not applied to PR #169 doc archive, etc.) | 8       | -69%        |
 
 The label-not-applied case dominates the savings on PR classes that
 do not carry logic-level signal — exactly the class where the prior
@@ -360,28 +403,32 @@ do not carry logic-level signal — exactly the class where the prior
 
 #### Trade-offs accepted
 
-* **No automatic confidence-score update on fix commits.** The
+- **No automatic confidence-score update on fix commits.** The
   Greptile inline-comment "edit" behaviour described in the
   original Trigger Model section still happens, but only after
   `@greptileai` mention; without the mention, the original review
   remains visible at the pre-fix confidence. If the maintainer
   wants a closing "addressed/not-addressed" Greptile assessment on
   every PR, that is one mention per PR.
-* **Manual labelling is one extra click per PR** that does need
+- **Manual labelling is one extra click per PR** that does need
   Greptile review. Acceptable cost for ~62% quota reduction on
   conservative use and full skip on doc-only PRs.
-* **Drafts already skipped** by Greptile default. Combining with
+- **Drafts already skipped** by Greptile default. Combining with
   the label gate keeps the gate consistent: Greptile reviews when
-  *both* the PR is non-draft *and* the label is present.
+  _both_ the PR is non-draft _and_ the label is present.
+
+<!-- markdownlint-disable MD024 -- pre-existing duplicate amendment heading, unrelated to this status flip -->
 
 #### What stays unchanged
 
-* Strictness, commentTypes, customContext, ignorePatterns, all
+<!-- markdownlint-enable MD024 -->
+
+- Strictness, commentTypes, customContext, ignorePatterns, all
   customRules — unchanged.
-* Author exclusion for `renovate(bot)` and `dependabot[bot]` —
+- Author exclusion for `renovate(bot)` and `dependabot[bot]` —
   unchanged. Their per-bot review counters are separate from
   the maintainer's author quota.
-* Trial gate metric (≥30% actionable) and gate decision matrix —
+- Trial gate metric (≥30% actionable) and gate decision matrix —
   unchanged. The label gate adjusts the volume of Greptile
   invocations, not the per-finding signal-to-noise ratio.
 
@@ -408,12 +455,12 @@ The two ADRs (Greptile + CodeRabbit) close together at their
 respective gates. At the parallel-trial gate (2026-05-21), four
 outcomes are possible:
 
-* Adopt CodeRabbit, retire Greptile — this ADR superseded
-* Adopt both — both ADRs flip to accepted, two reviewers in
+- Adopt CodeRabbit, retire Greptile — this ADR superseded
+- Adopt both — both ADRs flip to accepted, two reviewers in
   steady state
-* Retire CodeRabbit, retain Greptile — CodeRabbit ADR rejected,
+- Retire CodeRabbit, retain Greptile — CodeRabbit ADR rejected,
   this ADR continues to its original 2026-06-01 gate
-* Retire both — both ADRs rejected
+- Retire both — both ADRs rejected
 
 `CONTRIBUTING.md` § "Third-party AI code review" was rewritten
 in the same PR that landed this parallel trial: product-agnostic
@@ -424,8 +471,8 @@ per-reviewer.
 ### 2026-05-04 — `ignorePatterns` added for lockfiles (PR #148)
 
 The initial config in this ADR deferred `ignorePatterns` to the
-trial gate, with the explicit trigger: *"Add at the trial gate if
-review latency or cost is the binding constraint."* That trigger
+trial gate, with the explicit trigger: _"Add at the trial gate if
+review latency or cost is the binding constraint."_ That trigger
 described a future quantitative ceiling — too slow or too expensive
 once data accumulated.
 
@@ -460,11 +507,11 @@ Trial tally tracking these findings: UNK-155 (rows #4 and #5).
 
 ## More Information
 
-* MADR 4.0: <https://adr.github.io/madr/>
-* Greptile docs: <https://docs.greptile.com>
-* `greptile.json` schema: <https://docs.greptile.com/code-review/configuration>
-* Related: [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md) — strict lint
+- MADR 4.0: <https://adr.github.io/madr/>
+- Greptile docs: <https://docs.greptile.com>
+- `greptile.json` schema: <https://docs.greptile.com/code-review/configuration>
+- Related: [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md) — strict lint
   landed first to compress style territory before this trial
-* Related: `CLAUDE.md` "Hard Rules" §5 (TDD), §6 (security
+- Related: `CLAUDE.md` "Hard Rules" §5 (TDD), §6 (security
   scrutiny), §7 (secret handling) — Greptile is configured to
   read these via `customContext.files`
