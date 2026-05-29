@@ -20,7 +20,7 @@ const WorkManifestationSchema = z.object({
   isbn_10: z.string().nullable(),
   cover_url: z.string(),
   ingestion_status: z.enum(["pending", "processing", "complete", "failed", "skipped"]),
-  validation_status: z.string(),
+  validation_status: z.enum(["pending", "clean", "repaired", "degraded"]),
   enrichment_status: z.enum(["pending", "in_progress", "complete", "failed", "skipped"]),
   created_at: z.string(),
 });
