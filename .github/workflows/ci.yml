@@ -348,9 +348,11 @@ jobs:
         with:
           tool: typos@1.46.2
 
-      # Scope each tool to git-tracked files so gitignored scratch (e.g.
-      # /plans/) is never linted. shellcheck and hadolint pick up .hadolint.yaml
-      # / shell dialect from the repo root; typos reads _typos.toml.
+      # shellcheck and hadolint are scoped to git-tracked files (git ls-files)
+      # so gitignored scratch (e.g. /plans/) is skipped, and they pick up
+      # .hadolint.yaml / shell dialect from the repo root. typos instead walks
+      # the tree honouring .gitignore + the _typos.toml excludes — equivalent
+      # in a clean CI checkout, where every file is tracked.
       - name: Shell lint (shellcheck)
         run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
 
