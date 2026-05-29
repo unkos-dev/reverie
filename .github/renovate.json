@@ -25,6 +25,11 @@
       "groupName": null
     },
     {
+      "description": "Pin Docker base image digests (UNK-254). Tags stay human-readable; the appended @sha256 digest gives tamper-evidence and reproducible buildkit cache behaviour. Scoped to Docker managers only — cargo/npm lockfiles already pin transitively. Upstream tag moves surface as reviewable digest-bump PRs instead of silent rebuilds.",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "pinDigests": true
+    },
+    {
       "description": "Auto-merge patch updates for GitHub Actions and Docker base images (low-risk regardless of version)",
       "matchManagers": ["github-actions", "dockerfile", "docker-compose"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
