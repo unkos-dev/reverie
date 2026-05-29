@@ -26,7 +26,7 @@ function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
     cover_url: "/api/books/abc-123/cover/thumb",
     tags: ["Russian classics"],
     ingestion_status: "complete",
-    validation_status: "valid",
+    validation_status: "clean",
     enrichment_status: "complete",
     metadata_version_summary: { pending: 0, accepted: 0 },
     metadata_versions: [],

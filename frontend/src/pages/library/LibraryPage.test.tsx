@@ -20,7 +20,7 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     isbn_13: "9780374528379",
     cover_url: "/api/books/11111111/cover/thumb",
     ingestion_status: "complete",
-    validation_status: "valid",
+    validation_status: "clean",
     enrichment_status: "complete",
     ...overrides,
   };

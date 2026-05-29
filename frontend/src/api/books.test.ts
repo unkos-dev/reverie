@@ -39,7 +39,7 @@ describe("listBooks", () => {
           isbn_13: "9781590171998",
           cover_url: "/api/books/.../cover/thumb",
           ingestion_status: "complete",
-          validation_status: "valid",
+          validation_status: "clean",
           enrichment_status: "complete",
         },
       ],
@@ -135,7 +135,7 @@ describe("getBook", () => {
         cover_url: "",
         tags: [],
         ingestion_status: "complete",
-        validation_status: "valid",
+        validation_status: "clean",
         enrichment_status: "complete",
         metadata_version_summary: { pending: 0, accepted: 0 },
         metadata_versions: [],
@@ -211,6 +211,29 @@ describe("response schema validation (zod boundary)", () => {
             isbn_13: null,
             cover_url: "",
             ingestion_status: "bogus_state",
+            validation_status: "clean",
+            enrichment_status: "complete",
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+    await expect(listBooks()).rejects.toThrow();
+  });
+
+  test("listBooks throws when validation_status is the pre-migration 'valid' value", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            id: "x",
+            work_id: "w",
+            title: "t",
+            authors: [],
+            series: null,
+            isbn_13: null,
+            cover_url: "",
+            ingestion_status: "complete",
             validation_status: "valid",
             enrichment_status: "complete",
           },
@@ -238,7 +261,7 @@ describe("response schema validation (zod boundary)", () => {
         cover_url: "",
         tags: [],
         ingestion_status: "complete",
-        validation_status: "valid",
+        validation_status: "clean",
         enrichment_status: "complete",
         metadata_version_summary: { pending: 0, accepted: 0 },
         metadata_versions: [],

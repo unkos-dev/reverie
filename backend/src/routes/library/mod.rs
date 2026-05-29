@@ -42,6 +42,7 @@ use crate::models::library::{
     BookDetail, BookListRow, MetadataVersionRow, MetadataVersionSummary, SeriesRef, WorkDetail,
     WorkManifestation,
 };
+use crate::models::validation_status::ValidationStatus;
 use crate::routes::cursor::{CursorKey, SortMode};
 use crate::state::AppState;
 
@@ -152,7 +153,7 @@ async fn list(
     let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
         "SELECT m.id, m.work_id, m.created_at, m.isbn_13, \
                 m.ingestion_status::text AS ingestion_status, \
-                m.validation_status::text AS validation_status, \
+                m.validation_status, \
                 m.enrichment_status::text AS enrichment_status, \
                 w.title, w.sort_title, \
                 series_one.series_id AS series_id, \
@@ -210,7 +211,6 @@ async fn list(
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
         let series = series_ref_from_row(r);
-        let validation_raw: String = r.get("validation_status");
         let ingestion_raw: String = r.get("ingestion_status");
         let enrichment_raw: String = r.get("enrichment_status");
         items.push(BookListRow {
@@ -222,7 +222,16 @@ async fn list(
             isbn_13: r.get("isbn_13"),
             cover_url: format!("/api/books/{m_id}/cover/thumb"),
             ingestion_status: parse_ingestion(&ingestion_raw)?,
-            validation_status: validation_raw,
+            // Fallible decode: this dynamic QueryBuilder path can't use a
+            // sqlx macro, and infallible `Row::get` panics on an unknown
+            // `validation_status` variant. `try_get` surfaces it as a clean
+            // 500 instead — matching the loud-but-handled boundary the
+            // typed enum promises (see models::validation_status).
+            validation_status: r.try_get("validation_status").map_err(|e| {
+                AppError::Internal(anyhow::anyhow!(
+                    "unknown validation_status value from DB: {e}"
+                ))
+            })?,
             enrichment_status: parse_enrichment(&enrichment_raw)?,
             created_at: r.get("created_at"),
         });
@@ -659,7 +668,7 @@ struct DetailRow {
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
     ingestion_status: String,
-    validation_status: String,
+    validation_status: ValidationStatus,
     enrichment_status: String,
     w_title_v: Option<Uuid>,
     w_desc_v: Option<Uuid>,
@@ -700,7 +709,7 @@ async fn fetch_detail_row(
                m.created_at           AS "created_at!",
                m.updated_at           AS "updated_at!",
                m.ingestion_status::text  AS "ingestion_status!",
-               m.validation_status::text AS "validation_status!",
+               m.validation_status       AS "validation_status!: ValidationStatus",
                m.enrichment_status::text AS "enrichment_status!",
                w.title_version_id        AS w_title_v,
                w.description_version_id  AS w_desc_v,
@@ -907,7 +916,7 @@ async fn work_detail(
                isbn_13,
                created_at  AS "created_at!",
                ingestion_status::text  AS "ingestion_status!",
-               validation_status::text AS "validation_status!",
+               validation_status       AS "validation_status!: ValidationStatus",
                enrichment_status::text AS "enrichment_status!"
           FROM manifestations
          WHERE work_id = $1

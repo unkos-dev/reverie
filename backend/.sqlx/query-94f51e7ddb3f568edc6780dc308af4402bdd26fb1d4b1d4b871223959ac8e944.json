@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status) VALUES ($1, 'epub'::manifestation_format, '/tmp/pending.epub', 'pending-hash', 'pending-hash', 1000, 'complete'::ingestion_status, 'pending'::validation_status)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94f51e7ddb3f568edc6780dc308af4402bdd26fb1d4b1d4b871223959ac8e944"
+}

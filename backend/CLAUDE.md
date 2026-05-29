@@ -101,9 +101,10 @@ workaround.
     seam `manifestations_*_system` policies match against). Not data
     access; macros can't validate GUC mutation against schema at
     prepare time.
-  - **Enum-drift test probes** — `models/manifestation_format.rs` and
-    `models/user.rs` use `ALTER TYPE ... ADD VALUE` + cast to detect
-    code-vs-schema enum drift at test time; both need runtime SQL.
+  - **Enum-drift test probes** — `models/manifestation_format.rs`,
+    `models/user.rs`, and `models/validation_status.rs` use
+    `ALTER TYPE ... ADD VALUE` + cast to detect code-vs-schema enum
+    drift at test time; all three need runtime SQL.
 
   Canonical carve-out registry: `.github/sqlx-runtime-allowlist.txt`.
   New entry needs reviewer justification in PR adding it.

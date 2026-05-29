@@ -128,7 +128,6 @@ translation pass when it joins.
 - [`title` null-clear via PATCH returns 422 but path is untested](2026-05-26-title-null-clear-untested.md) — adopted from 11c; DB constraint is backstop but error shape unverified; lifts on test PR
 - [ISBN not validated on metadata PATCH](2026-05-26-isbn-patch-no-checksum.md) — adopted from 11c; no checksum/length check; lifts on validation PR
 - [`load_pending_versions` query has no row limit](2026-05-26-load-pending-versions-unbounded.md) — adopted from 11c; unbounded result set; lifts on LIMIT or pagination PR
-- [`validation_status` ships as raw String, not a typed enum](2026-05-23-validation-status-untyped.md) — adopted because DB enum and frontend contract vocabularies disagree; lifts on UNK-276 reconciliation PR
 - [tower-sessions pinned to 0.14 (axum-login peer pin)](2026-05-21-tower-sessions-0-14-pin.md) — adopted because axum-login 0.18.0 peer-pins tower-sessions 0.14; lifts on axum-login release > 0.18.0 (UNK-101)
 - [Staging compose has no automated CI smoke test](2026-05-08-staging-compose-no-ci-smoke.md) — adopted because CI smoke for `compose.staging.yml` is real eng work; lifts on UNK-185
 - [MemoryStore for production sessions](2026-05-05-memory-store-sessions.md) — adopted because PostgresStore not wired at scaffold; lifts on UNK-163
@@ -142,3 +141,4 @@ translation pass when it joins.
 
 - [Runtime sqlx queries instead of compile-time macros](2026-05-05-runtime-sqlx-queries.md) — lifted 2026-05-06; superseded by PR series #157–#163
 - [ENV_LOCK + unsafe env mutation in config tests](2026-05-05-env-lock-config-tests.md) — lifted 2026-05-06; superseded by PR #168
+- [`validation_status` ships as raw String, not a typed enum](2026-05-23-validation-status-untyped.md) — lifted 2026-05-28; superseded by UNK-276 (typed `ValidationStatus` enum + `valid`→`clean` rename)

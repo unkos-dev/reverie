@@ -54,7 +54,7 @@ async fn insert_epub_manifestation(
             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, $4, \
-                 'complete'::ingestion_status, 'valid'::validation_status) \
+                 'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
         file_path,
@@ -459,7 +459,7 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ($1, 'epub'::manifestation_format, $2, 'outside-hash', 'outside-hash', 13, \
-                 'complete'::ingestion_status, 'valid'::validation_status) \
+                 'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
         outside_path,
@@ -591,7 +591,7 @@ async fn series_feed_renders_all_manifestations(pool: PgPool) {
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status, created_at) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status, $4) \
+                     'complete'::ingestion_status, 'clean'::validation_status, $4) \
              RETURNING id",
             work_id,
             file_path,
@@ -812,7 +812,7 @@ async fn exact_page_size_has_no_next_link(pool: PgPool) {
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status)",
+                     'complete'::ingestion_status, 'clean'::validation_status)",
             work_id,
             file_path,
             hash,

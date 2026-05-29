@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 use crate::config::{CleanupMode, Config};
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::manifestation_format::ManifestationFormat;
+use crate::models::validation_status::ValidationStatus;
 use crate::models::{ingestion_job, work};
 use crate::services::epub::{self, ValidationOutcome};
 use crate::services::ingestion::{cleanup, copier, format_filter, path_template, quarantine};
@@ -377,9 +378,9 @@ async fn process_file(
     };
 
     // Step 4.5: EPUB structural validation and auto-repair.
-    // Only applies to EPUB files; other formats pass through as 'valid'.
-    let (validation_status_str, accessibility_metadata, opf_data): (
-        &'static str,
+    // Only applies to EPUB files; other formats pass through as 'clean'.
+    let (validation_status, accessibility_metadata, opf_data): (
+        ValidationStatus,
         Option<serde_json::Value>,
         Option<epub::opf_layer::OpfData>,
     ) = if ext == "epub" {
@@ -424,19 +425,19 @@ async fn process_file(
                         quarantine_async(&source, &quarantine_path, &reason).await;
                         return ProcessResult::Failed(format!("EPUB quarantined: {reason}"));
                     }
-                    ValidationOutcome::Clean => ("valid", a11y, opf),
-                    ValidationOutcome::Repaired => ("repaired", a11y, opf),
-                    ValidationOutcome::Degraded => ("degraded", a11y, opf),
+                    ValidationOutcome::Clean => (ValidationStatus::Clean, a11y, opf),
+                    ValidationOutcome::Repaired => (ValidationStatus::Repaired, a11y, opf),
+                    ValidationOutcome::Degraded => (ValidationStatus::Degraded, a11y, opf),
                 }
             }
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, "epub validation error; proceeding as degraded");
-                ("degraded", None, None)
+                (ValidationStatus::Degraded, None, None)
             }
             Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
-        ("valid", None, None)
+        (ValidationStatus::Clean, None, None)
     };
 
     // Step 5: Extract metadata and create work + manifestation
@@ -520,7 +521,7 @@ async fn process_file(
         &final_path_str,
         &copy_result,
         format,
-        validation_status_str,
+        validation_status,
         &accessibility_metadata,
     )
     .await;
@@ -589,7 +590,7 @@ async fn commit_ingest(
     final_path_str: &str,
     copy_result: &copier::CopyResult,
     format: ManifestationFormat,
-    validation_status_str: &str,
+    validation_status: ValidationStatus,
     accessibility_metadata: &Option<serde_json::Value>,
 ) -> Result<(Uuid, Uuid), sqlx::Error> {
     use crate::services::metadata::draft;
@@ -609,16 +610,17 @@ async fn commit_ingest(
     };
 
     // 2. Insert manifestation with NULL canonical + NULL pointers.
-    //    `format` and `ingestion_status` are bound as their typed Rust enums
-    //    (sqlx::Type impls). `validation_status` has no Rust counterpart and
-    //    is bound as text + cast in SQL (`($N::text)::validation_status`).
+    //    `format`, `ingestion_status`, and `validation_status` are all bound as
+    //    their typed Rust enums (sqlx::Type impls), so the write boundary stays
+    //    symmetric with the read paths — a bad variant fails at the type system,
+    //    not as a runtime Postgres cast error.
     let file_size = copy_result.file_size.cast_signed();
     let ingestion_status = IngestionStatus::Complete;
     let manifestation_id = sqlx::query_scalar!(
         "INSERT INTO manifestations \
              (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
               file_size_bytes, ingestion_status, validation_status, accessibility_metadata) \
-         VALUES ($1, $2, $3, $4, $4, $5, $6, ($7::text)::validation_status, $8) \
+         VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8) \
          RETURNING id",
         work_id,
         format as ManifestationFormat,
@@ -626,7 +628,7 @@ async fn commit_ingest(
         &copy_result.sha256,
         file_size,
         ingestion_status as IngestionStatus,
-        validation_status_str,
+        validation_status as ValidationStatus,
         accessibility_metadata.as_ref(),
     )
     .fetch_one(&mut *tx)
@@ -843,6 +845,23 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 1, "expected 1 manifestation row");
+
+        // Non-EPUB formats skip structural validation and pass through as
+        // Clean — assert the value so the orchestrator's non-EPUB fallback
+        // stays covered.
+        use crate::models::validation_status::ValidationStatus;
+        let status = sqlx::query_scalar!(
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status,
+            ValidationStatus::Clean,
+            "expected validation_status=clean for non-EPUB"
+        );
     }
 
     /// Build a minimal valid EPUB ZIP in memory.
@@ -933,6 +952,85 @@ mod tests {
     <meta name="calibre:series_index" content="1"/>
   </metadata>
   <manifest/>
+  <spine/>
+</package>"#,
+        )
+        .unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    /// Build an EPUB the validator rates `Repaired`: a valid `.opf` at a safe
+    /// path but no `META-INF/container.xml`, so the container layer regenerates
+    /// it (a `Repaired`-severity fix) and repacks the file.
+    fn make_repaired_epub() -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", stored).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        // No META-INF/container.xml — the container layer scans for the .opf and
+        // regenerates the container as a Repaired fix.
+        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+        w.start_file("OEBPS/content.opf", default).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest/>
+  <spine/>
+</package>"#,
+        )
+        .unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    /// Build an EPUB the validator rates `Degraded`: a complete, valid container
+    /// whose OPF declares a cover image, but the cover file is absent from the
+    /// ZIP — the cover layer records a `MissingCover` (`Degraded`) issue with no
+    /// repairable issue present.
+    fn make_degraded_epub() -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", stored).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+
+        w.start_file("META-INF/container.xml", default.clone())
+            .unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .unwrap();
+
+        // Manifest declares cover.jpg but the entry is never written to the ZIP.
+        w.start_file("OEBPS/content.opf", default).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest>
+    <item id="cover-image" href="cover.jpg" media-type="image/jpeg"/>
+  </manifest>
   <spine/>
 </package>"#,
         )
@@ -1037,8 +1135,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_processes_epub_end_to_end(pool: PgPool) {
-        // P1: exercise the EPUB validation path end-to-end, verifying that a valid
-        // EPUB gets validation_status='valid' in the manifestation row.
+        // P1: exercise the EPUB validation path end-to-end, verifying that a clean
+        // EPUB gets validation_status='clean' in the manifestation row.
         let pool = ingestion_pool_for(&pool).await;
         let ingestion = tempfile::tempdir().unwrap();
         let library = tempfile::tempdir().unwrap();
@@ -1060,16 +1158,101 @@ mod tests {
         let dest = library.path().join("Tolkien/The Hobbit.epub");
         assert!(dest.exists(), "expected file at {}", dest.display());
 
-        // validation_status must be 'valid' for a clean EPUB
+        // validation_status must be Clean for a clean EPUB. Decode via the
+        // typed enum (not ::text) so the assertion exercises the same
+        // ValidationStatus sqlx decode the read paths rely on.
+        use crate::models::validation_status::ValidationStatus;
         let dest_str = dest.to_str().unwrap();
         let status = sqlx::query_scalar!(
-            "SELECT validation_status::text AS \"validation_status!\" FROM manifestations WHERE file_path = $1",
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
             dest_str,
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(status, "valid", "expected validation_status=valid");
+        assert_eq!(
+            status,
+            ValidationStatus::Clean,
+            "expected validation_status=clean"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_repaired_epub_stores_repaired_status(pool: PgPool) {
+        // Cover the ValidationOutcome::Repaired => ValidationStatus::Repaired
+        // orchestrator arm end-to-end: an EPUB missing container.xml is repaired
+        // in place and the manifestation row must record `repaired`.
+        use crate::models::validation_status::ValidationStatus;
+        let pool = ingestion_pool_for(&pool).await;
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+
+        let source = ingestion.path().join("Mended - Patchwork Quilt.epub");
+        std::fs::write(&source, make_repaired_epub()).unwrap();
+
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+        assert_eq!(result.failed, 0);
+
+        let dest = library.path().join("Mended/Patchwork Quilt.epub");
+        let dest_str = dest.to_str().unwrap();
+        let status = sqlx::query_scalar!(
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status,
+            ValidationStatus::Repaired,
+            "expected validation_status=repaired"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_degraded_epub_stores_degraded_status(pool: PgPool) {
+        // Cover the ValidationOutcome::Degraded => ValidationStatus::Degraded
+        // orchestrator arm end-to-end: an EPUB declaring a cover whose file is
+        // absent is degraded (not repaired) and still ingested.
+        use crate::models::validation_status::ValidationStatus;
+        let pool = ingestion_pool_for(&pool).await;
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+
+        let source = ingestion.path().join("Faded - Wilted Garden.epub");
+        std::fs::write(&source, make_degraded_epub()).unwrap();
+
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+        assert_eq!(result.failed, 0);
+
+        let dest = library.path().join("Faded/Wilted Garden.epub");
+        let dest_str = dest.to_str().unwrap();
+        let status = sqlx::query_scalar!(
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status,
+            ValidationStatus::Degraded,
+            "expected validation_status=degraded"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

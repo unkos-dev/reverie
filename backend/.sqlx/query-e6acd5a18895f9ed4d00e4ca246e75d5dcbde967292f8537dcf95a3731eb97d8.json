@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "validation_status!: ValidationStatus",
+        "type_info": {
+          "Custom": {
+            "name": "validation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "clean",
+                "repaired",
+                "degraded"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e6acd5a18895f9ed4d00e4ca246e75d5dcbde967292f8537dcf95a3731eb97d8"
+}

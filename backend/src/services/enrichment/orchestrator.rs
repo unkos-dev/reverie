@@ -1108,7 +1108,7 @@ mod tests {
                (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status) \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
              RETURNING id",
             work_id,
             isbn_13,

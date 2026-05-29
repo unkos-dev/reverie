@@ -92,7 +92,7 @@ async fn insert_book(ingestion_pool: &PgPool, marker: &str, title: &str) -> (Uui
             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                 'complete'::ingestion_status, 'valid'::validation_status) \
+                 'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
         file_path,
@@ -133,7 +133,10 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
         items[0]["cover_url"].as_str().unwrap(),
         format!("/api/books/{first_id}/cover/thumb"),
     );
-    assert!(items[0]["validation_status"].is_string());
+    // Value-assert (not just is_string): the list path is a runtime QueryBuilder
+    // that decodes validation_status via PgRow::get into the ValidationStatus
+    // enum — not macro-checked, so this is the only guard on that decode path.
+    assert_eq!(items[0]["validation_status"].as_str().unwrap(), "clean");
     assert!(items[0]["ingestion_status"].is_string());
     assert!(items[0]["enrichment_status"].is_string());
     // created_at must be elided per the wire-format invariant.
@@ -142,6 +145,46 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
         "created_at must be #[serde(skip)]'d, got {}",
         items[0]
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_decodes_pending_validation_status(pool: PgPool) {
+    // `pending` is the column default — a row ingested but not yet validated.
+    // Every other test seeds `clean`, so this is the only guard that the
+    // QueryBuilder PgRow::get decode handles the default variant too.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let work_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+        "Unvalidated Tome"
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert work");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         VALUES ($1, 'epub'::manifestation_format, '/tmp/pending.epub', 'pending-hash', \
+                 'pending-hash', 1000, 'complete'::ingestion_status, 'pending'::validation_status)",
+        work_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert pending manifestation");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/books")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["validation_status"].as_str().unwrap(), "pending");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -594,7 +637,7 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
                     (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                      file_size_bytes, ingestion_status, validation_status) \
                  VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                         'complete'::ingestion_status, 'valid'::validation_status)",
+                         'complete'::ingestion_status, 'clean'::validation_status)",
                 work_id,
                 file_path,
                 hash,
@@ -725,7 +768,7 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
     );
     assert!(body["ingestion_status"].is_string());
     assert!(body["enrichment_status"].is_string());
-    assert!(body["validation_status"].is_string());
+    assert_eq!(body["validation_status"].as_str().unwrap(), "clean");
     let summary = &body["metadata_version_summary"];
     assert_eq!(
         summary["pending"].as_u64().unwrap(),
@@ -880,7 +923,7 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status) \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
              RETURNING id",
             work_id,
             file_path,
@@ -1431,7 +1474,7 @@ async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
                 (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'valid'::validation_status)",
+                     'complete'::ingestion_status, 'clean'::validation_status)",
             work_id,
             file_path,
             hash,

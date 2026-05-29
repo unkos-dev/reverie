@@ -1,13 +1,13 @@
 ---
-status: active
+status: lifted
 severity: medium
 surfaces: [developer, end-user]
 adopted: 2026-05-23
 adopted-because: 11a-A.3 (PR #308) ships `BookListRow.validation_status` ahead of a Rust `ValidationStatus` enum because the DB enum (`pending|valid|repaired|degraded`) and the frontend API contract sketch (`clean|repaired|degraded|quarantined`) disagree, and reconciling the two vocabularies is a separate piece of work
 lift-when-class: internal-refactor
 lift-when: UNK-276 (reconcile validation_status vocabularies — pending) lands; the same PR introduces `models::validation_status::ValidationStatus`, retires the raw-string field, and updates the frontend interface to the chosen vocabulary
-lifted: ~
-superseded-by: ~
+lifted: 2026-05-28
+superseded-by: UNK-276
 ---
 
 # `validation_status` ships as raw `String`, not a typed enum
