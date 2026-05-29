@@ -294,6 +294,72 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
+  # Server-side lint gate for shell scripts, the Dockerfile, and spelling.
+  # lint-staged runs these locally pre-commit, but pre-commit is client-side:
+  # it is bypassable (`git commit --no-verify`) and never runs on PRs opened
+  # from forks. This job is the authoritative surface for contributor changes.
+  # Tool versions are pinned to match the workspace image so local pre-commit
+  # and CI evaluate against the same binaries.
+  #
+  # markdownlint and yamllint are intentionally absent: markdownlint lands in a
+  # dedicated PR (it needs a one-off baseline triage), and yamllint once the
+  # workspace image ships the binary.
+  repo-lint:
+    name: Repo lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Direct curl-tarball install pins the exact upstream release + SHA256,
+      # mirroring the actionlint install above. taiki-e/install-action carries
+      # neither shellcheck nor hadolint; both publish official release binaries.
+      - name: Install shellcheck v0.9.0
+        env:
+          SHELLCHECK_VERSION: "0.9.0"
+          SHELLCHECK_SHA256: "700324c6dd0ebea0117591c6cc9d7350d9c7c5c287acbad7630fa17b1d4d9e2f"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          tarball="shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${tarball}"
+          echo "${SHELLCHECK_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xJf "$tarball" --strip-components=1 -C "$HOME/.local/bin" \
+            "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          rm "$tarball"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install hadolint 2.14.0
+        env:
+          HADOLINT_VERSION: "2.14.0"
+          HADOLINT_SHA256: "6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/hadolint" \
+            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-x86_64"
+          echo "${HADOLINT_SHA256}  $HOME/.local/bin/hadolint" | sha256sum -c -
+          chmod +x "$HOME/.local/bin/hadolint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # typos ships official release binaries that install-action tracks; pin
+      # to the workspace-image version.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: typos@1.46.2
+
+      # Scope each tool to git-tracked files so gitignored scratch (e.g.
+      # /plans/) is never linted. shellcheck and hadolint pick up .hadolint.yaml
+      # / shell dialect from the repo root; typos reads _typos.toml.
+      - name: Shell lint (shellcheck)
+        run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
+
+      - name: Dockerfile lint (hadolint)
+        run: git ls-files -z '*Dockerfile*' | xargs -0 -r hadolint
+
+      - name: Spell check (typos)
+        run: typos
+
   frontend:
     name: Frontend
     needs: changes

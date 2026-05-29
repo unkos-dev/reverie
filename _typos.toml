@@ -1,3 +1,14 @@
+[default]
+extend-ignore-re = [
+  # Git short SHAs in backticks (e.g. `ba65bdf`) — hex digests trip the
+  # dictionary on their leading letters (`ba` -> `by`/`be`).
+  "`[0-9a-f]{7,40}`",
+  # Valid hyphenated forms the tokeniser mis-splits into non-words. Scoped to
+  # the exact phrase so the underlying dictionary stays active elsewhere.
+  "pre-empted",
+  "mis-aliasing",
+]
+
 [default.extend-words]
 # Domain vocabulary (FRBR cataloguing model)
 frbr = "frbr"

@@ -1,0 +1,13 @@
+# hadolint configuration — https://github.com/hadolint/hadolint
+#
+# Kept in lockstep with the `repo-lint` job in .github/workflows/ci.yml and
+# the `Dockerfile*` entry in lint-staged.config.js so local pre-commit and CI
+# evaluate the Dockerfile against the same ruleset.
+ignored:
+  # DL3008 "Pin versions in apt-get install". Pinning apt package versions
+  # against a Debian/Ubuntu base image is brittle: the distro archive garbage-
+  # collects superseded point versions, so a pinned line breaks the build the
+  # moment the base image's mirror drops that exact version. Reproducibility
+  # comes from the pinned base-image tag instead. Standard practice for moving
+  # base images.
+  - DL3008
