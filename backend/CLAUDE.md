@@ -163,9 +163,9 @@ workaround.
   operator surface (e.g. `DATABASE_URL` — URL-spec name, no namespace
   alternative) honoured directly without cascade.
 - **Formatting:** `cargo fmt` enforced by CI. Don't fight formatter.
-- **Linting:** `cargo clippy -- -D warnings` enforced by CI. Fix
-  warnings, don't suppress with `#[allow(...)]` unless documented
-  reason.
+- **Linting:** `cargo clippy --workspace --all-targets --locked -- -D warnings`
+  enforced by CI. Fix warnings, don't suppress with `#[allow(...)]`
+  unless documented reason.
 - **Pre-push hook:** `.husky/pre-push` runs `cargo fmt --all -- --check`
   then `cargo clippy --workspace --all-targets --locked -- -D warnings`
   on every push, catching the fmt/clippy CI round-trip locally. Budget:
