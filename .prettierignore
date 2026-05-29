@@ -4,3 +4,10 @@ dist/
 docs/.astro/
 CHANGELOG.md
 backend/.sqlx/
+
+# Archival agent artifacts — point-in-time planning/security/review output,
+# not product or published docs. Frozen as authored; not worth format churn.
+.claude/PRPs/plans/completed/
+.claude/PRPs/reports/
+.claude/PRPs/reviews/
+.claude/security/

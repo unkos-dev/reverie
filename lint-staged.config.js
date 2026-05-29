@@ -3,7 +3,7 @@
 // and CI never drift. See CONTRIBUTING.md for install instructions.
 module.exports = {
   "*.md": "markdownlint-cli2",
-  "*.{ts,tsx,js,jsx,json,yaml,yml,css,md}": "prettier --check",
+  "*.{ts,tsx,js,jsx,json,yaml,yml,css,md}": "prettier --write",
   ".github/workflows/**/*.{yml,yaml}": "actionlint -color",
   "*.sh": "shellcheck",
   "Dockerfile*": "hadolint",
