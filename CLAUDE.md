@@ -153,6 +153,7 @@ Long-form rationale for architectural decisions lives in `adr/` as MADR-shape fi
 - **Naming**: `YYYY-MM-DD-short-kebab-slug.md` — skill's default; no numeric prefixes.
 - **Invoke**: use `adr` skill (`Skill("adr")`).
 - **Proactive triggers**: write ADR before new crate or npm package, new cross-stack pattern (API conventions, error handling, data-access layer, auth model), or non-obvious choice between real alternatives. If you would write long "why" code comment — reasoning belongs in ADR.
+- **Decision record, not a plan**: ADRs follow canonical MADR 4.0 — see [`adr/CLAUDE.md`](adr/CLAUDE.md) + [`adr/TEMPLATE.md`](adr/TEMPLATE.md). No Implementation Plan / Verification / build task-lists in an ADR; those live in `prp-plan` output (`.claude/PRPs/plans/`). The `adr` skill's bundled "executable specification" framing is overridden here.
 
 ## Tracked technical debt
 
