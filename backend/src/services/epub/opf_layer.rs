@@ -111,14 +111,15 @@ pub fn validate(
     let mut subjects: Vec<String> = Vec::new();
 
     // Series metadata (calibre or EPUB 3).
-    // Note: EPUB 3 group-position matching assumes belongs-to-collection appears
-    // before group-position in the XML. If reversed, position won't be captured.
-    // This is acceptable for MVP (best-effort).
+    // EPUB 3 group-position is matched to its collection by `refines` target,
+    // independent of document order: positions are buffered into a map keyed
+    // by the refines target (`#<collection-id>`) as they are seen, then joined
+    // to the collection's id at the end of the pass (UNK-234).
     let mut calibre_series_name: Option<String> = None;
     let mut calibre_series_index: Option<f64> = None;
     let mut epub3_collection_name: Option<String> = None;
     let mut epub3_collection_id: Option<String> = None;
-    let mut epub3_collection_position: Option<f64> = None;
+    let mut group_positions: HashMap<String, f64> = HashMap::new();
 
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -182,11 +183,11 @@ pub fn validate(
                         continue;
                     }
                     if prop == "group-position" {
-                        if let Some(ref refines) = refines_attr
-                            && epub3_collection_id
-                                .as_ref()
-                                .is_some_and(|id| refines == &format!("#{id}"))
-                        {
+                        // Buffer the position keyed by its refines target,
+                        // regardless of whether the collection has been seen
+                        // yet — resolved against the collection id at end of
+                        // pass so element order doesn't matter (UNK-234).
+                        if let Some(refines) = refines_attr {
                             let text = content_attr.or_else(|| {
                                 reader
                                     .read_text(e.name())
@@ -195,7 +196,9 @@ pub fn validate(
                                     .map(|t| t.trim().to_string())
                                     .filter(|s| !s.is_empty())
                             });
-                            epub3_collection_position = text.and_then(|t| t.parse::<f64>().ok());
+                            if let Some(pos) = text.and_then(|t| t.parse::<f64>().ok()) {
+                                group_positions.insert(refines, pos);
+                            }
                         }
                         continue;
                     }
@@ -388,9 +391,11 @@ pub fn validate(
             position: calibre_series_index,
         })
         .or_else(|| {
-            epub3_collection_name.map(|name| SeriesMeta {
-                name,
-                position: epub3_collection_position,
+            epub3_collection_name.map(|name| {
+                let position = epub3_collection_id
+                    .as_ref()
+                    .and_then(|id| group_positions.get(&format!("#{id}")).copied());
+                SeriesMeta { name, position }
             })
         });
 
@@ -544,6 +549,29 @@ mod tests {
         let series = data.series_meta.unwrap();
         assert_eq!(series.name, "A Song of Ice and Fire");
         assert_eq!(series.position, Some(1.0));
+    }
+
+    #[test]
+    fn epub3_collection_series_reversed_order() {
+        // group-position appears BEFORE belongs-to-collection in document
+        // order — valid per EPUB3, emitted by some toolchains. Position must
+        // still be captured (UNK-234).
+        let opf = br##"<package>
+            <metadata>
+                <dc:title>A Clash of Kings</dc:title>
+                <meta refines="#c01" property="group-position">3</meta>
+                <meta property="belongs-to-collection" id="c01">A Song of Ice and Fire</meta>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let result = validate(&handle, Some("OEBPS/content.opf"), &mut issues);
+        let data = result.unwrap();
+        let series = data.series_meta.unwrap();
+        assert_eq!(series.name, "A Song of Ice and Fire");
+        assert_eq!(series.position, Some(3.0));
     }
 
     #[test]
