@@ -166,8 +166,8 @@ Scope caveats:
 - This clears **only** the reqwest-dual residue (UNK-93 leftover). It
   does **not** lift this chrono debt — chrono is forced by
   `CoreIdTokenClaims::new`'s signature, orthogonal to the HTTP client.
-- It is still Tier-2 auth-path code (`security/CLAUDE.md`,
-  `.claude/security/`) — needs security review, not a casual edit.
+- It is still Tier-2 auth-path code (`.claude/security/`) — needs
+  security review, not a casual edit.
 - Discretionary, not urgent: residue is `severity: low`. Good
   "knock out next time we're in `auth/`" candidate rather than
   standalone work.
