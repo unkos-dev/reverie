@@ -25,7 +25,7 @@
       "groupName": null
     },
     {
-      "description": "Pin Docker base image digests (UNK-254). Tags stay human-readable; the appended @sha256 digest gives tamper-evidence and reproducible buildkit cache behaviour. Scoped to Docker managers only — cargo/npm lockfiles already pin transitively. Upstream tag moves surface as reviewable digest-bump PRs instead of silent rebuilds.",
+      "description": "Pin Docker base image digests (UNK-254). Tags stay human-readable; the appended @sha256 digest gives tamper-evidence and reproducible buildkit cache behaviour. Scoped to Docker managers only — cargo/npm lockfiles already pin transitively. Digest bumps auto-merge via the auto-merge rule below: they stay libc-ABI-compatible within a Debian codename, and a sha256 bump cannot be meaningfully human-reviewed anyway (the reviewer cannot inspect layer contents from the digest). Note: minimumReleaseAge does NOT gate pin/digest update types (Renovate limitation), so digest bumps land within one schedule window with CI-green as the only check. Acceptable because all bases are Docker Official Images.",
       "matchManagers": ["dockerfile", "docker-compose"],
       "pinDigests": true
     },
