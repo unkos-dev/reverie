@@ -19,15 +19,17 @@
 //! authoritative domain enum
 //! [`ValidationOutcome`](crate::services::epub::ValidationOutcome): the stored
 //! label `clean` (renamed from `valid`) matches `ValidationOutcome::Clean`,
-//! making the ingestion orchestrator mapping an identity. `quarantined` is
+//! eliminating the name translation in the ingestion orchestrator (the mapping
+//! arm is now `Clean => Clean`, not `Clean => "valid"`). `quarantined` is
 //! deliberately absent — a quarantined file is deleted, so no manifestation
 //! row is ever written. See
 //! `adr/2026-05-28-validation-status-vocabulary.md`.
 //!
 //! Wire formats:
 //! - Postgres: `validation_status` ENUM type (see migration
-//!   `20260528153728_rename_validation_status_valid_to_clean.up.sql` and the
-//!   consolidated initial schema).
+//!   `20260528153728_rename_validation_status_valid_to_clean.up.sql`, which
+//!   renames the value first created in
+//!   `20260526000000_initial_schema.up.sql`).
 //! - JSON: lowercase string —
 //!   `"pending"` | `"clean"` | `"repaired"` | `"degraded"`.
 
@@ -38,6 +40,12 @@
 /// `degraded` are all stored-and-served outcomes on one quality tier — `clean`
 /// means *no issues found*, not *the only valid state*. Unknown DB variants
 /// fail decode loudly at the boundary instead of coercing into a string.
+///
+/// `#[non_exhaustive]` is deliberately absent: `reverie_api` is a single
+/// lib+bin crate with no foreign downstream matching on this enum, and the
+/// loud-decode-failure design *wants* the compile error when a
+/// [`ValidationOutcome`](crate::services::epub::ValidationOutcome) variant is
+/// added without a matching arm — `non_exhaustive` would suppress exactly that.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
 )]
@@ -59,6 +67,7 @@ impl ValidationStatus {
     /// `#[sqlx(rename_all)]` mappings — `Debug` yields the Rust variant name
     /// (`"Clean"`), which does not match the Postgres / JSON form. Use this for
     /// log lines and error messages so the three surfaces stay consistent.
+    #[allow(dead_code)] // No production consumer yet — anchors wire-format invariant for future read paths.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",

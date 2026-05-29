@@ -14,9 +14,11 @@ Renamed the Postgres `validation_status` enum value `valid` → `clean`
 (canonical set `pending | clean | repaired | degraded`), introduced a
 typed `ValidationStatus` `sqlx::Type` enum mirroring the
 `IngestionStatus`/`EnrichmentStatus` pattern, and retired the last
-raw-`String` DB-enum field across the API DTOs, the library/series
-routes, and the frontend Zod client. Closes the `sqlx::Type` enum
-migration series.
+raw-`String` DB-enum field on the API DTOs, across the library/series
+routes and the frontend `books.ts` Zod client. (The `series.ts` Zod
+schema still declares `validation_status: z.string()` — tightening it to
+`z.enum` is a tracked follow-up.) Closes the `sqlx::Type` enum migration
+series.
 
 ---
 
@@ -50,10 +52,12 @@ in backend/src`) conflicted with that. Converted the test
    `== ValidationStatus::Clean` — satisfies the gate and exercises the
    typed decode.
 
-4. **INSERT-bind comment corrected.** The orchestrator INSERT still binds
-   `validation_status` as `($N::text)::validation_status` (a computed
-   `&'static str`, per plan). Its comment claimed the field "has no Rust
-   counterpart" — now false. Updated the comment; left the bind as-is.
+4. **INSERT bind converted to the typed enum (went beyond plan).** The plan
+   kept the orchestrator INSERT binding `validation_status` as
+   `($N::text)::validation_status` (a computed `&'static str`). Shipped code
+   instead threads `ValidationStatus` end-to-end: the bind is now bare `$7`
+   passed as `validation_status as ValidationStatus`, so the write boundary is
+   type-checked symmetrically with the read paths. Comment updated to match.
 
 ---
 

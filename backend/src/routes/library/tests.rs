@@ -148,6 +148,46 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_decodes_pending_validation_status(pool: PgPool) {
+    // `pending` is the column default — a row ingested but not yet validated.
+    // Every other test seeds `clean`, so this is the only guard that the
+    // QueryBuilder PgRow::get decode handles the default variant too.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let work_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+        "Unvalidated Tome"
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert work");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         VALUES ($1, 'epub'::manifestation_format, '/tmp/pending.epub', 'pending-hash', \
+                 'pending-hash', 1000, 'complete'::ingestion_status, 'pending'::validation_status)",
+        work_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert pending manifestation");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/books")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["validation_status"].as_str().unwrap(), "pending");
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_endpoint_adult_sees_only_rls_visible(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

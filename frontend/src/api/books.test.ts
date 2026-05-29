@@ -221,6 +221,29 @@ describe("response schema validation (zod boundary)", () => {
     await expect(listBooks()).rejects.toThrow();
   });
 
+  test("listBooks throws when validation_status is the pre-migration 'valid' value", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            id: "x",
+            work_id: "w",
+            title: "t",
+            authors: [],
+            series: null,
+            isbn_13: null,
+            cover_url: "",
+            ingestion_status: "complete",
+            validation_status: "valid",
+            enrichment_status: "complete",
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+    await expect(listBooks()).rejects.toThrow();
+  });
+
   test("getBook throws when description type is wrong (schema drift)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({
