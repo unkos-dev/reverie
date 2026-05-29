@@ -90,6 +90,8 @@ Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` �
 
 8. **Verification stack rebuild-gated, not guard-gated.** Husky/lint-staged call `shellcheck`, `hadolint`, `gitleaks`, `typos` direct — no `command -v` fallback. Same for `agent-browser` (browser-QA). Missing binary = stale Coder workspace image → rebuild, never patch hooks/scripts/CI to skip. New verification tooling lands in homelab Dockerfile first, then wires into reverie. Soft fallbacks defeat gitleaks secret-scan guarantee — not acceptable for any stack binary.
 
+9. **Every PR body must close its Linear issue.** Include a `Closes UNK-XXX` line in the PR body for any PR with a tracking issue. Branch-name matching to Linear's generated `gitBranchName` is unreliable (our `feat/` prefix diverges from it), so the magic-word is the only dependable auto-close channel. PR without it = issue silently stuck in Backlog after merge.
+
 ---
 
 ## Comment Policy (Tiered)
