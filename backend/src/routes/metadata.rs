@@ -1328,6 +1328,64 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn patch_clear_title_with_null_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let title_before: String =
+            sqlx::query_scalar!("SELECT title FROM works WHERE id = $1", work_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch title before");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": serde_json::Value::Null}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "title is NOT NULL on works — clearing it must be rejected"
+        );
+        let body = response.text();
+        assert!(
+            body.contains("cannot clear title"),
+            "expected 'cannot clear title' detail, got: {body}"
+        );
+
+        // Rejection happens before commit — the canonical title is intact
+        // and the rolled-back tx leaves no manual audit row behind.
+        let title_after: String =
+            sqlx::query_scalar!("SELECT title FROM works WHERE id = $1", work_id)
+                .fetch_one(&app_pool)
+                .await
+                .expect("fetch title after");
+        assert_eq!(
+            title_after, title_before,
+            "title must be unchanged after a rejected clear"
+        );
+        let manual_title_rows: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" \
+             FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'title'",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch manual title row count");
+        assert_eq!(
+            manual_title_rows, 0,
+            "rejected clear must not persist an audit-trail row"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn patch_child_account_forbidden(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;

@@ -1,13 +1,13 @@
 ---
-status: active
+status: lifted
 severity: low
 surfaces: [developer]
 adopted: 2026-05-24
 adopted-because: "11c (PR #316) ships the merge-patch handler but does not test the path where title is explicitly set to null (should 422); edge case deferred from the slice"
 lift-when-class: internal-refactor
 lift-when: PR adds a test asserting that PATCH with `"title": null` returns 422 (title is a required field and cannot be cleared)
-lifted: ~
-superseded-by: ~
+lifted: 2026-05-30
+superseded-by: https://github.com/unkos-dev/reverie/pull/379
 ---
 
 # `title` null-clear via PATCH returns 422 but path is untested
