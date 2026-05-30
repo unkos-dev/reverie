@@ -97,8 +97,18 @@ comment, backed by the `github-actions` + `digest` auto-merge rule. New
 actions can no longer silently re-accrue this debt: the PR also adds the
 `helpers:pinGitHubActionDigests` preset to `.github/renovate.json`, so
 any future unpinned `uses:` ref triggers a Renovate pin PR (auto-merged
-via the `pin`-type rule). No Linear ticket was filed — the workspace was
-at its free-tier issue cap, so the PR is the record.
+via the `pin`-type rule).
+
+Digest bumps (a SHA-pinned tag re-pointed to new code) are handled by a
+publisher-trust split in the auto-merge rules: GitHub-owned actions
+(`actions/*`, `github/*`) auto-merge digest bumps on CI-green (platform
+trust, mirroring the Docker Official Images carve-out), while third-party
+action digest bumps fall through to a **manual review** — their source is
+human-reviewable and the publishers do not share GitHub's trust boundary,
+so a re-pointed tag is reviewed before it runs with the workflow token.
+
+No Linear ticket was filed — the workspace was at its free-tier issue
+cap, so the PR is the record.
 
 ## Related
 
