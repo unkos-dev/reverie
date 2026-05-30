@@ -122,7 +122,6 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
-- [GitHub Actions referenced by mutable tags, not commit SHAs](2026-05-30-github-actions-unpinned-sha.md) — adopted from PR #370 (Greptile); whole-workflow posture, not a typos-only fix; lifts on a repo-wide SHA-pin pass (Linear ticket pending free-tier cap)
 - [Malformed UUID in filter query params returns non-RFC 7807 error](2026-05-26-malformed-uuid-filter-non-rfc7807.md) — adopted from 11b; framework default rejection instead of AppError; lifts on `From<QueryRejection>` impl
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
@@ -140,6 +139,7 @@ translation pass when it joins.
 
 <!-- empty at first land; entries move here on lift, never deleted -->
 
+- [GitHub Actions referenced by mutable tags, not commit SHAs](2026-05-30-github-actions-unpinned-sha.md) — lifted 2026-05-30; superseded by PR #378 (repo-wide SHA-pin pass; Renovate keeps pins current via `# vX.Y.Z` comment)
 - [Runtime sqlx queries instead of compile-time macros](2026-05-05-runtime-sqlx-queries.md) — lifted 2026-05-06; superseded by PR series #157–#163
 - [ENV_LOCK + unsafe env mutation in config tests](2026-05-05-env-lock-config-tests.md) — lifted 2026-05-06; superseded by PR #168
 - [`validation_status` ships as raw String, not a typed enum](2026-05-23-validation-status-untyped.md) — lifted 2026-05-28; superseded by UNK-276 (typed `ValidationStatus` enum + `valid`→`clean` rename)

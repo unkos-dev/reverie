@@ -1,13 +1,13 @@
 ---
-status: active
+status: lifted
 severity: low
 surfaces: [ci, security]
 adopted: 2026-05-30
 adopted-because: PR #370 (Greptile flagged the `typos` install-action step as lacking a SHA pin); deferred because it is a whole-workflow posture, not a one-step fix
 lift-when-class: internal-refactor
 lift-when: all third-party GitHub Actions across every workflow pinned to full commit SHAs (Linear ticket pending — workspace currently at the free-tier issue cap)
-lifted: ~
-superseded-by: ~
+lifted: 2026-05-30
+superseded-by: https://github.com/unkos-dev/reverie/pull/378
 ---
 
 # GitHub Actions referenced by mutable tags, not commit SHAs
@@ -84,8 +84,23 @@ When that lands:
 1. Flip this entry to `status: lifted`, set `lifted`, set `superseded-by`.
 2. Move it from "Active" to "Lifted" in `debt/README.md`.
 
+## Resolution
+
+Lifted by PR #378 (2026-05-30). Every third-party action in all seven
+workflows is now pinned to a full commit SHA with a trailing `# vX.Y.Z`
+comment. `dtolnay/rust-toolchain` gained an explicit `toolchain: stable`
+input because SHA-pinning loses the ref-name channel inference.
+
+Lift condition #2 (pins stay current) is satisfied without a config
+change: Renovate's default behaviour bumps SHA-pinned actions by reading
+the `# vX.Y.Z` comment, and the existing `github-actions` + `digest`
+auto-merge rule in `.github/renovate.json` already covers them. No Linear
+ticket was filed — the workspace was at its free-tier issue cap, so the
+PR is the record.
+
 ## Related
 
+- PR #378 — the lift (repo-wide SHA-pin pass).
 - PR #370 — surfaced the finding (added `repo-lint`; left action pinning
   out of scope).
 - A Linear tracking ticket for the repo-wide pass is pending: the Unkos
