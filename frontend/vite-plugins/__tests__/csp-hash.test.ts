@@ -85,7 +85,10 @@ describe("cspHashPlugin", () => {
 
     getHandler(plugin)(VALID_HTML);
     const sidecarPath = join(root, "dist", "csp-hashes.json");
-    const sidecar = JSON.parse(readFileSync(sidecarPath, "utf8")) as unknown as Record<string, string[]>;
+    const sidecar = JSON.parse(readFileSync(sidecarPath, "utf8")) as unknown as Record<
+      string,
+      string[]
+    >;
     expect(sidecar).toEqual({ "script-src-hashes": [expected] });
   });
 
@@ -97,9 +100,7 @@ describe("cspHashPlugin", () => {
       // @ts-expect-error — see note above.
       void configResolved(fakeResolvedConfig(root, "serve"));
     }
-    expect(() => getHandler(plugin)("<!doctype html><head></head>")).toThrow(
-      /found 0/,
-    );
+    expect(() => getHandler(plugin)("<!doctype html><head></head>")).toThrow(/found 0/);
   });
 
   it("throws when marker appears twice", () => {
@@ -110,8 +111,7 @@ describe("cspHashPlugin", () => {
       // @ts-expect-error — see note above.
       void configResolved(fakeResolvedConfig(root, "serve"));
     }
-    const doubled =
-      `<!doctype html><head><!-- reverie:fouc-hash --><!-- reverie:fouc-hash --></head>`;
+    const doubled = `<!doctype html><head><!-- reverie:fouc-hash --><!-- reverie:fouc-hash --></head>`;
     expect(() => getHandler(plugin)(doubled)).toThrow(/found 2/);
   });
 

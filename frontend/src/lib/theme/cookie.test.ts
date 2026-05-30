@@ -1,14 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import {
-  THEME_COOKIE_NAME,
-  readThemeCookie,
-  writeThemeCookie,
-} from "./cookie";
+import { THEME_COOKIE_NAME, readThemeCookie, writeThemeCookie } from "./cookie";
 
-const cookieDescriptor = Object.getOwnPropertyDescriptor(
-  Document.prototype,
-  "cookie",
-);
+const cookieDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, "cookie");
 
 afterEach(() => {
   if (cookieDescriptor) {

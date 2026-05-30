@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  DEFAULT_LOOPBACK_HOSTS,
-  parseAllowedHosts,
-} from "../allowed-hosts";
+import { DEFAULT_LOOPBACK_HOSTS, parseAllowedHosts } from "../allowed-hosts";
 
 describe("parseAllowedHosts", () => {
   it("returns loopback defaults when env var is undefined", () => {
@@ -19,9 +16,7 @@ describe("parseAllowedHosts", () => {
   });
 
   it("parses a single host", () => {
-    expect(parseAllowedHosts("dev.example.com")).toEqual([
-      "dev.example.com",
-    ]);
+    expect(parseAllowedHosts("dev.example.com")).toEqual(["dev.example.com"]);
   });
 
   it("parses a comma-separated list", () => {
@@ -41,10 +36,7 @@ describe("parseAllowedHosts", () => {
   });
 
   it("drops empty entries from doubled or trailing commas", () => {
-    expect(parseAllowedHosts("a.example,,b.example,")).toEqual([
-      "a.example",
-      "b.example",
-    ]);
+    expect(parseAllowedHosts("a.example,,b.example,")).toEqual(["a.example", "b.example"]);
   });
 
   it("does not merge user list with loopback defaults", () => {
@@ -58,10 +50,6 @@ describe("parseAllowedHosts", () => {
     // The IPv6 literal is bracket-enclosed so it would match Vite's
     // bracket-stripped Host comparison if Vite's hardcoded ipv6 short-circuit
     // is ever removed. See the comment in allowed-hosts.ts for details.
-    expect(DEFAULT_LOOPBACK_HOSTS).toEqual([
-      "localhost",
-      "127.0.0.1",
-      "[::1]",
-    ]);
+    expect(DEFAULT_LOOPBACK_HOSTS).toEqual(["localhost", "127.0.0.1", "[::1]"]);
   });
 });
