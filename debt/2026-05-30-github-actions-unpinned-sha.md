@@ -1,13 +1,13 @@
 ---
-status: active
+status: lifted
 severity: low
 surfaces: [ci, security]
 adopted: 2026-05-30
 adopted-because: PR #370 (Greptile flagged the `typos` install-action step as lacking a SHA pin); deferred because it is a whole-workflow posture, not a one-step fix
 lift-when-class: internal-refactor
 lift-when: all third-party GitHub Actions across every workflow pinned to full commit SHAs (Linear ticket pending — workspace currently at the free-tier issue cap)
-lifted: ~
-superseded-by: ~
+lifted: 2026-05-30
+superseded-by: https://github.com/unkos-dev/reverie/pull/378
 ---
 
 # GitHub Actions referenced by mutable tags, not commit SHAs
@@ -84,8 +84,35 @@ When that lands:
 1. Flip this entry to `status: lifted`, set `lifted`, set `superseded-by`.
 2. Move it from "Active" to "Lifted" in `debt/README.md`.
 
+## Resolution
+
+Lifted by PR #378 (2026-05-30). Every third-party action in all seven
+workflows is now pinned to a full commit SHA with a trailing `# vX.Y.Z`
+comment. `dtolnay/rust-toolchain` gained an explicit `toolchain: stable`
+input because SHA-pinning loses the ref-name channel inference.
+
+Lift condition #2 (pins stay current) is satisfied two ways. Existing
+pins are bumped by Renovate's default behaviour reading the `# vX.Y.Z`
+comment, backed by the `github-actions` + `digest` auto-merge rule. New
+actions can no longer silently re-accrue this debt: the PR also adds the
+`helpers:pinGitHubActionDigests` preset to `.github/renovate.json`, so
+any future unpinned `uses:` ref triggers a Renovate pin PR (auto-merged
+via the `pin`-type rule).
+
+Digest bumps (a SHA-pinned tag re-pointed to new code) are handled by a
+publisher-trust split in the auto-merge rules: GitHub-owned actions
+(`actions/*`, `github/*`) auto-merge digest bumps on CI-green (platform
+trust, mirroring the Docker Official Images carve-out), while third-party
+action digest bumps fall through to a **manual review** — their source is
+human-reviewable and the publishers do not share GitHub's trust boundary,
+so a re-pointed tag is reviewed before it runs with the workflow token.
+
+No Linear ticket was filed — the workspace was at its free-tier issue
+cap, so the PR is the record.
+
 ## Related
 
+- PR #378 — the lift (repo-wide SHA-pin pass).
 - PR #370 — surfaced the finding (added `repo-lint`; left action pinning
   out of scope).
 - A Linear tracking ticket for the repo-wide pass is pending: the Unkos

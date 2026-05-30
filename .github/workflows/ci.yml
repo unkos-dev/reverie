@@ -26,8 +26,8 @@ jobs:
       staging: ${{ steps.filter.outputs.staging }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: filter
         with:
           # On merge_group events, paths-filter's default base (HEAD~1)
@@ -113,7 +113,7 @@ jobs:
       # of the cache key); subsequent runs see the speedup.
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Create database roles
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
@@ -126,11 +126,15 @@ jobs:
       - name: Install mold linker
         run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends mold
 
-      - uses: dtolnay/rust-toolchain@stable
+      # SHA-pinned: dtolnay/rust-toolchain reads the toolchain from the
+      # git ref name (`@stable`), so pinning to a SHA requires naming the
+      # channel explicitly via `toolchain:`.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
+          toolchain: stable
           components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: backend
 
@@ -150,7 +154,7 @@ jobs:
       # suffix so a stale binary isn't restored.
       - name: Cache sqlx-cli binary
         id: cache-sqlx-cli
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             ~/.cargo/bin/sqlx
@@ -164,7 +168,7 @@ jobs:
       # cargo-nextest replaces the default `cargo test` runner for the
       # Test step below. install-action ships a prebuilt binary for
       # cargo-nextest, so this is a ~5s download.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
         with:
           tool: cargo-nextest@0.9
 
@@ -241,7 +245,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - run: cargo install cargo-audit --locked
       - name: Audit dependencies
         # Suppressed advisories — each must have a justification:
@@ -269,7 +273,7 @@ jobs:
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       # Direct curl-tarball install pins the exact upstream release.
       # taiki-e/install-action's manifest doesn't track actionlint@1.7.12,
@@ -308,7 +312,7 @@ jobs:
     name: Repo lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       # Direct curl-tarball install pins the exact upstream release + SHA256,
       # mirroring the actionlint install above. taiki-e/install-action carries
@@ -344,7 +348,7 @@ jobs:
 
       # typos ships official release binaries that install-action tracks; pin
       # to the workspace-image version.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
         with:
           tool: typos@1.46.2
 
@@ -367,7 +371,7 @@ jobs:
       # committed root lockfile keeps the CI version in lockstep with the
       # markdownlint-cli2 that lint-staged runs locally — the consistency the
       # dedicated PR was split out to guarantee.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24.16.0
           cache: npm
@@ -402,9 +406,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24.16.0
           cache: npm
@@ -448,7 +452,7 @@ jobs:
     if: needs.changes.outputs.staging == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       # Build .env from the committed example to also catch regressions where
       # a required key is renamed in compose.staging.yml but not in the

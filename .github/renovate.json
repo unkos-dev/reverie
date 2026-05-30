@@ -4,7 +4,8 @@
     "config:recommended",
     ":dependencyDashboard",
     ":semanticCommits",
-    ":prHourlyLimitNone"
+    ":prHourlyLimitNone",
+    "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Australia/Perth",
   "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
@@ -30,9 +31,26 @@
       "pinDigests": true
     },
     {
-      "description": "Auto-merge patch updates for GitHub Actions and Docker base images (low-risk regardless of version)",
-      "matchManagers": ["github-actions", "dockerfile", "docker-compose"],
+      "description": "Auto-merge patch/pin/digest for Docker base images. Digest bumps cannot be meaningfully human-reviewed (the reviewer cannot inspect layer contents from a sha256) and all bases are Docker Official Images — see the pinDigests rule above for the full justification.",
+      "matchManagers": ["dockerfile", "docker-compose"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "GitHub-owned actions (actions/*, github/*): auto-merge patch/pin/digest. Platform-trust tier — these share GitHub's own compromise boundary (if github.com itself is subverted, SHA-pinning does not save us), so a digest bump tracking first-party tag movement is auto-merged on CI-green, mirroring the Docker Official Images carve-out. Major/minor version bumps are absent here, so v6 -> v7 still requires manual review.",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["actions/**", "github/**"],
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "Third-party actions (dtolnay, dorny, Swatinem, taiki-e, docker/*, googleapis, …): auto-merge `pin` (tag -> its current SHA, no code change) and `patch` only. `digest` updates — a SHA-pinned tag re-pointed to new code — are deliberately NOT auto-merged and fall through to a manual PR. Unlike a Docker sha256, action source is human-reviewable, and these publishers do not share GitHub's trust boundary, so a digest bump is reviewed before it runs with the workflow GITHUB_TOKEN. This is the standing enforcement of debt/2026-05-30-github-actions-unpinned-sha.md.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "pin"],
       "automerge": true,
       "automergeType": "pr",
       "platformAutomerge": true
