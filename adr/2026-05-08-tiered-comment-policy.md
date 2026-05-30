@@ -24,14 +24,14 @@ inspecting deployments before installing. None of those readers
 share conversation history with the maintainer. Their cold-read
 needs are explicit:
 
-* External contributors orienting cold need to know what each
-  module is *for* before they can change it safely. Self-evident
+- External contributors orienting cold need to know what each
+  module is _for_ before they can change it safely. Self-evident
   naming carries less weight when the reader has zero project
   context.
-* Security auditors look up security-critical code without project
+- Security auditors look up security-critical code without project
   context. They need explicit threat-model statements at the
   boundary, not implicit ones reconstructed from naming.
-* `cargo doc` consumers (a class that includes some auditors and
+- `cargo doc` consumers (a class that includes some auditors and
   contributors) read the rendered library reference. Empty
   docstrings on `pub` items render as a lazy library shape — a
   trust signal in the wrong direction.
@@ -78,33 +78,33 @@ purpose, invariants, and load-bearing constraints.
 
 Required content:
 
-* **Purpose** in one sentence. What this is for.
-* **Invariants**. What must hold true for callers; what this
+- **Purpose** in one sentence. What this is for.
+- **Invariants**. What must hold true for callers; what this
   function guarantees.
-* **Non-obvious WHY** where applicable. The constraint, decision,
+- **Non-obvious WHY** where applicable. The constraint, decision,
   or threat-model context that motivated the shape.
-* **`# Errors`** section for `pub fn` returning `Result<…>` —
+- **`# Errors`** section for `pub fn` returning `Result<…>` —
   enumerate variants and trigger conditions
   (`clippy::missing_errors_doc` enforces this for any pub fn
   returning Result; already active per the strict-lint policy
   ADR).
-* **`# Panics`** section for any `pub fn` that may panic
+- **`# Panics`** section for any `pub fn` that may panic
   (`clippy::missing_panics_doc`).
-* **`# Safety`** section for `pub unsafe fn`
+- **`# Safety`** section for `pub unsafe fn`
   (`clippy::missing_safety_doc`); aligns with the project
   `// SAFETY:` rule in `backend/CLAUDE.md`.
 
 Anti-patterns:
 
-* **Pure signature restatement.** "Returns the user by id" on
+- **Pure signature restatement.** "Returns the user by id" on
   `pub fn user_by_id(id: UserId) -> Option<User>` adds zero
   value. Prefer no docstring to a signature-restating one.
-* **Clipping or replacing existing leading comments.** If a
+- **Clipping or replacing existing leading comments.** If a
   function or block already carries a leading WHY-comment block,
-  the new docstring is placed *above* the existing block, not in
+  the new docstring is placed _above_ the existing block, not in
   it, not below it, not in place of part of it. Existing comments
   preserved verbatim.
-* **Generic boilerplate.** "@param x The x parameter" / "/// Constructor"
+- **Generic boilerplate.** "@param x The x parameter" / "/// Constructor"
   is noise.
 
 ### Tier 2 — Security-critical code
@@ -117,15 +117,15 @@ standard Tier 1 docstring.
 
 Patterns:
 
-* **`// THREAT:`** comments inline within function bodies for
+- **`// THREAT:`** comments inline within function bodies for
   non-obvious mitigations. Format: state the attack vector being
   closed, the pre-existing protection (if any), and the additional
   invariant this code adds.
-* **One-line threat statement near the top of Tier 1 docstrings**
+- **One-line threat statement near the top of Tier 1 docstrings**
   on security boundary functions. Example: "Constant-time
   comparison; non-constant-time would expose token prefix via
   timing side-channel."
-* **Reference relevant ADRs** by relative path
+- **Reference relevant ADRs** by relative path
   (`adr/2026-05-08-tower-sessions-sqlx-store.md` etc.) when the
   decision providing context lives in an ADR.
 
@@ -140,7 +140,7 @@ would surprise a future reader.
 ### Tier 4 — Tests and test support
 
 `#[test]` / `#[sqlx::test]` / Vitest / Playwright test functions
-do not carry docstrings. The test name *is* the spec; a docstring
+do not carry docstrings. The test name _is_ the spec; a docstring
 that restates it is noise.
 
 `test_support/` modules carry `//!` module-top docs where the
@@ -156,8 +156,8 @@ Phased rollout — UNK-190 tracks the phases:
    etc.) only fire on items reachable from outside the crate. The
    current shape is a bin-only crate — every `pub fn` inside
    modules is crate-private to the lint, and the lint is silent.
-   Verified empirically: `cargo rustc --bin reverie-api -- -W
-   missing_docs` returns 2 warnings (both at `main.rs` root);
+   Verified empirically: `cargo rustc --bin reverie-api -- -W missing_docs`
+   returns 2 warnings (both at `main.rs` root);
    `cargo clippy -- -W clippy::missing_errors_doc` returns 0.
    Without this prerequisite the entire enforcement floor in
    Phases 2–4 is decorative.
@@ -207,23 +207,23 @@ maintainer before landing.
 
 ## Consequences
 
-* Good — security audience served. Explicit threat-model
+- Good — security audience served. Explicit threat-model
   annotations on Tier 2 code mean an auditor can read the
   security boundary without reconstructing intent from naming
-  + git archaeology.
-* Good — `cargo doc` rendered library reference becomes a real
+  - git archaeology.
+- Good — `cargo doc` rendered library reference becomes a real
   doc surface. Project trust signal shifts in the right
   direction for self-hosters evaluating the codebase.
-* Good — Tier 3 carve-out preserves the agent-friendly
+- Good — Tier 3 carve-out preserves the agent-friendly
   internals workflow. Refactoring private code does not require
   rewriting docstrings; comments rot is contained to where the
   policy explicitly demands them.
-* Good — phased rollout means no single mega-PR. Each module
+- Good — phased rollout means no single mega-PR. Each module
   graduates independently; review burden distributed.
-* Bad — initial backfill is a real cost. ~342 backend `pub`
+- Bad — initial backfill is a real cost. ~342 backend `pub`
   items + frontend equivalent. Even with subagent dispatch,
   authoring quality docstrings is non-trivial work.
-* Bad — Phase 0 (`lib.rs` split) is structural change, not just
+- Bad — Phase 0 (`lib.rs` split) is structural change, not just
   attribute placement. Every internal call site referencing
   `crate::*` from tests or `main.rs` is touched. Carries its own
   review burden before any docstring authoring begins. The
@@ -231,11 +231,11 @@ maintainer before landing.
   binary — was rejected because it makes the entire enforcement
   layering decorative, defeating the ratchet that the OSS
   audience case justifies.
-* Bad — comment rot is now possible on Tier 1/2 surfaces. A
+- Bad — comment rot is now possible on Tier 1/2 surfaces. A
   function whose semantics drift from its docstring is worse
   than a function with no docstring. Review discipline must
   catch docstring drift in PRs touching documented code.
-* Neutral — CR's docstring auto-generation gets demoted from
+- Neutral — CR's docstring auto-generation gets demoted from
   "first-pass content generator" to "ad-hoc tool with policy
   guard-rails". The CR parallel trial gate (2026-05-21)
   evaluates the reviewer feature; the docstring feature is
@@ -243,28 +243,28 @@ maintainer before landing.
 
 ## Alternatives Considered
 
-* **Status quo (global "default to no comments" applies in
+- **Status quo (global "default to no comments" applies in
   full).** Rejected — loses the benefits of explicit
   documentation on the surfaces where the OSS audience needs it
   most. The global rule was tuned for a different audience.
-* **Inverse status quo (require docstrings on every item,
+- **Inverse status quo (require docstrings on every item,
   public and private).** Rejected — wave of low-signal
   signature-restating comments on internals where the original
   rule was correct. Comment rot risk dominates.
-* **Document only `pub` items, drop the security tier.**
+- **Document only `pub` items, drop the security tier.**
   Rejected — security-critical code has a higher documentation
   bar than other public API. A `pub fn require_admin` whose
   threat model is "string-comparison drift on enum rename"
   needs that drift surfaced in the docstring; a generic Tier 1
   rule misses it. The Tier 2 carve-out makes the security
   ratchet explicit.
-* **Skip the CLAUDE.md amendment; encode policy only in clippy
+- **Skip the CLAUDE.md amendment; encode policy only in clippy
   lints + eslint config.** Rejected — agents read CLAUDE.md
   before they read lint configs. The actionable rule needs to
   be in CLAUDE.md so future agents author docstrings under the
-  policy *before* CI flags the gap. Lint config is the
+  policy _before_ CI flags the gap. Lint config is the
   enforcement floor; CLAUDE.md is the prescriptive intent.
-* **Lean on CodeRabbit `finishing_touches.docstrings` for the
+- **Lean on CodeRabbit `finishing_touches.docstrings` for the
   initial backfill.** Rejected on quality grounds. PR #178
   evidence: CR clipped an existing WHY-comment mid-sentence.
   Configurable `path_instructions` could constrain output, but
@@ -272,7 +272,7 @@ maintainer before landing.
   the CR parallel-trial window. Subagent dispatch under
   maintainer review is the cleaner shape for the initial
   backfill.
-* **Single mega-PR documenting every backend pub item.**
+- **Single mega-PR documenting every backend pub item.**
   Rejected — review burden too high; one bad-quality file
   blocks the entire batch. Per-module PRs distribute the review
   cost and let the maintainer reject one module's docs without
@@ -280,20 +280,20 @@ maintainer before landing.
 
 ## More Information
 
-* Global cross-project rule:
+- Global cross-project rule:
   `~/.claude/CLAUDE.md` § "Comments" — the rule this ADR amends
   for the OSS-product context
-* `adr/2026-05-03-strict-lint-policy.md` — the strict-lint
+- `adr/2026-05-03-strict-lint-policy.md` — the strict-lint
   policy whose pedantic clippy lints (`missing_errors_doc`,
   `missing_panics_doc`, `missing_safety_doc`) are the partial
   enforcement floor for this policy
-* `backend/CLAUDE.md` § "Rust Code Rules" — `// SAFETY:`
+- `backend/CLAUDE.md` § "Rust Code Rules" — `// SAFETY:`
   convention referenced by Tier 2
-* CR docstring evidence: PR #178 commit `034e837`,
+- CR docstring evidence: PR #178 commit `034e837`,
   `frontend/vite-plugins/hmr-config.ts` (clipped WHY-comment
   pattern that motivated demoting CR from primary backfill
   mechanism)
-* UNK-155 row #17 (Greptile dependency-governance catch on PR
+- UNK-155 row #17 (Greptile dependency-governance catch on PR
   #180) — adjacent observation that documentation visible at
   the call site matters more than documentation in PR review
   history

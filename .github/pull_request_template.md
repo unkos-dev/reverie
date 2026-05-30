@@ -1,3 +1,5 @@
+<!-- markdownlint-disable-file MD041 -- PR template is a fragment, not a standalone document; top-level h1 is not wanted here. -->
+
 ## Summary
 
 <!-- 1-3 bullet points describing what this PR does. Keep it tight. -->

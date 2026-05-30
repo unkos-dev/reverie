@@ -29,22 +29,22 @@ in `frontend/src/styles/themes/index.css`. Token names are namespace
 `--color-*` so `bg-canvas`, `text-fg`, `border-border-strong`, etc. all
 resolve to brand variables.
 
-| Token | Light | Dark | Purpose |
-|---|---|---|---|
-| `--color-canvas` | `#E8DCC2` (Parchment) | `#14120E` | Page canvas |
-| `--color-canvas-2` | `#DFD2B4` | `#1A1812` | Slightly recessed canvas |
-| `--color-surface` | `#F0E6CF` | `#221F18` | Card / panel surface |
-| `--color-surface-2` | `#E5D8BC` | `#2A261D` | Hover / elevated surface |
-| `--color-border` | `#C7B894` | `#2E2A22` | Default border |
-| `--color-border-strong` | `#B0A07C` | `#3A3528` | Hover / focus border |
-| `--color-fg` | `#0E0D0A` (Ink) | `#E8E0D0` (Cream) | Primary text |
-| `--color-fg-muted` | `#5A5244` | `#A8A090` | Secondary text |
-| `--color-fg-faint` | `#8A8170` | `#6E6858` | Tertiary text |
-| `--color-accent` | `#8E6F38` | `#C9A961` (Gold) | Accent / focus / CTA — primary affordances only, never hover |
-| `--color-accent-soft` | `#DCC890` | `#4A3C24` | Selected backgrounds (pair with `text-fg`, not `text-fg-on-accent`) |
-| `--color-accent-strong` | `#6E5424` | `#D4B070` | Pressed accent |
-| `--color-fg-on-accent` | `#E8DCC2` | `#0E0D0A` | Text on saturated `bg-accent` only — fails AA on `bg-accent-soft` |
-| `--color-hover` | `#E5D8BC` (= surface-2) | `#2A261D` (= surface-2) | shadcn-primitive hover/focus lift; decoupled from gold |
+| Token                   | Light                   | Dark                    | Purpose                                                             |
+| ----------------------- | ----------------------- | ----------------------- | ------------------------------------------------------------------- |
+| `--color-canvas`        | `#E8DCC2` (Parchment)   | `#14120E`               | Page canvas                                                         |
+| `--color-canvas-2`      | `#DFD2B4`               | `#1A1812`               | Slightly recessed canvas                                            |
+| `--color-surface`       | `#F0E6CF`               | `#221F18`               | Card / panel surface                                                |
+| `--color-surface-2`     | `#E5D8BC`               | `#2A261D`               | Hover / elevated surface                                            |
+| `--color-border`        | `#C7B894`               | `#2E2A22`               | Default border                                                      |
+| `--color-border-strong` | `#B0A07C`               | `#3A3528`               | Hover / focus border                                                |
+| `--color-fg`            | `#0E0D0A` (Ink)         | `#E8E0D0` (Cream)       | Primary text                                                        |
+| `--color-fg-muted`      | `#5A5244`               | `#A8A090`               | Secondary text                                                      |
+| `--color-fg-faint`      | `#8A8170`               | `#6E6858`               | Tertiary text                                                       |
+| `--color-accent`        | `#8E6F38`               | `#C9A961` (Gold)        | Accent / focus / CTA — primary affordances only, never hover        |
+| `--color-accent-soft`   | `#DCC890`               | `#4A3C24`               | Selected backgrounds (pair with `text-fg`, not `text-fg-on-accent`) |
+| `--color-accent-strong` | `#6E5424`               | `#D4B070`               | Pressed accent                                                      |
+| `--color-fg-on-accent`  | `#E8DCC2`               | `#0E0D0A`               | Text on saturated `bg-accent` only — fails AA on `bg-accent-soft`   |
+| `--color-hover`         | `#E5D8BC` (= surface-2) | `#2A261D` (= surface-2) | shadcn-primitive hover/focus lift; decoupled from gold              |
 
 **No state-color tokens.** `--color-success`, `--color-warning`,
 `--color-danger`, `--color-info`, and `--color-neutral` are deliberately
@@ -57,8 +57,8 @@ contrast against `#E8DCC2`. It does **not** pass 1.4.3 normal-text
 axe-core surfaces this as a violation on any Light surface where
 `bg-accent` carries normal body text; the design-system axe gate
 tolerates these documented violations on the `lg`-size button + badge
-surfaces in the [`/design/system`](#) gallery, but introducing
-`bg-accent` on *new* normal-size Light surfaces is a brand violation,
+surfaces in the `/design/system` gallery, but introducing
+`bg-accent` on _new_ normal-size Light surfaces is a brand violation,
 not an axe-noise issue.
 
 `--color-hover` decouples shadcn primitives' hover/focus treatment from
@@ -69,15 +69,15 @@ primary actions, focus rings, and recovery actions.
 
 ## Typography
 
-| Role | Family | Weight |
-|---|---|---|
-| Wordmark / Lockup | Satoshi Variable | 700 |
-| Display headings | Author Variable | 600–700 |
-| Section headings | Author Variable | 500–600 |
-| Tagline | Author Variable Italic | 400 |
-| Body | Satoshi Variable | 400 |
-| Italic accent | Satoshi Variable Italic | 400 |
-| Mono (conditional) | JetBrains Mono | 400 |
+| Role               | Family                  | Weight  |
+| ------------------ | ----------------------- | ------- |
+| Wordmark / Lockup  | Satoshi Variable        | 700     |
+| Display headings   | Author Variable         | 600–700 |
+| Section headings   | Author Variable         | 500–600 |
+| Tagline            | Author Variable Italic  | 400     |
+| Body               | Satoshi Variable        | 400     |
+| Italic accent      | Satoshi Variable Italic | 400     |
+| Mono (conditional) | JetBrains Mono          | 400     |
 
 Variable woff2 are self-hosted at
 `frontend/public/fonts/fontshare/files/`. See
@@ -92,14 +92,14 @@ the scale is conventional and the cost-of-renaming is high.
 
 ## Motion
 
-| Token | Value | Use |
-|---|---|---|
-| `--duration-fast` | 180ms | Micro-interactions (cursor changes) |
-| `--duration-base` | 240ms | Default interaction motion |
-| `--duration-slow` | 320ms | Page-level transitions |
-| `--duration-theme` | 300ms | Light ↔ Dark crossfade |
-| `--ease-standard` | `cubic-bezier(0.22, 0.61, 0.36, 1)` | Default easing |
-| `--ease-emphasised` | `cubic-bezier(0.16, 0.78, 0.30, 1)` | Accent-bearing motion |
+| Token               | Value                               | Use                                 |
+| ------------------- | ----------------------------------- | ----------------------------------- |
+| `--duration-fast`   | 180ms                               | Micro-interactions (cursor changes) |
+| `--duration-base`   | 240ms                               | Default interaction motion          |
+| `--duration-slow`   | 320ms                               | Page-level transitions              |
+| `--duration-theme`  | 300ms                               | Light ↔ Dark crossfade              |
+| `--ease-standard`   | `cubic-bezier(0.22, 0.61, 0.36, 1)` | Default easing                      |
+| `--ease-emphasised` | `cubic-bezier(0.16, 0.78, 0.30, 1)` | Accent-bearing motion               |
 
 The `loading-pulse` keyframe (`opacity: 1 ↔ 0.85`, ~1.6s) carries the
 loading-state expression — no `--color-loading` token; the loading
@@ -111,19 +111,19 @@ ambient pulses.
 State communicates through typography weight, surface opacity, motion,
 and the gold accent — never a state-coded hue. The canonical mapping:
 
-| State | Expression |
-|---|---|
-| Default / idle | `text-fg`, `bg-surface` (or unchanged) |
-| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong` |
-| Hover (in-list item) | `bg-hover` (= `bg-surface-2`) |
-| Active / pressed | `bg-accent` or `bg-accent-strong` |
-| Selected | `bg-accent-soft` background + `text-fg` |
-| Disabled | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only — opacity-50 × fg-faint drops below AA) |
-| Loading | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region |
-| Error | `text-fg font-semibold` + gold recovery action |
-| Success (explicit) | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s |
-| Link | underline + `text-accent` on hover; no permanent colour difference |
-| Focus (keyboard) | 2px gold outline + 2px offset (`focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`) |
+| State                | Expression                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                       |
+| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                |
+| Hover (in-list item) | `bg-hover` (= `bg-surface-2`)                                                                                |
+| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                            |
+| Selected             | `bg-accent-soft` background + `text-fg`                                                                      |
+| Disabled             | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only — opacity-50 × fg-faint drops below AA)   |
+| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                               |
+| Error                | `text-fg font-semibold` + gold recovery action                                                               |
+| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                             |
+| Link                 | underline + `text-accent` on hover; no permanent colour difference                                           |
+| Focus (keyboard)     | 2px gold outline + 2px offset (`focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`) |
 
 Charts and code blocks are scoped exceptions — when they ship, the
 deviation is documented here and constrained to the surface that
@@ -192,7 +192,7 @@ The cookie carries no PII — only the literal string `system`, `light`,
 or `dark`. It is not `HttpOnly` because the FOUC script runs before any
 module loader and must read it synchronously to avoid a flicker.
 
-**Contrast rule:** any future *session-state* cookie MUST be
+**Contrast rule:** any future _session-state_ cookie MUST be
 `HttpOnly` and MUST clear on logout. `reverie_theme` is the explicit
 counterexample; the contrast is documented at the backend module
 header (`backend/src/auth/theme_cookie.rs`) and cross-referenced from
@@ -206,7 +206,7 @@ canonical render. Slot proportions and lockup spacing follow
 
 ```tsx
 import { Lockup } from "@/components/Lockup";
-<Lockup size={28} theme="dark" />
+<Lockup size={28} theme="dark" />;
 ```
 
 The Lockup intentionally inlines `#C9A961` / `#0E0D0A` / `#E8E0D0` as

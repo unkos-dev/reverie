@@ -40,19 +40,19 @@ State communicates through **typography weight, surface opacity, motion,
 and the gold accent** — never a state-coded hue. This is a load-bearing
 brand invariant:
 
-| State | Expression |
-|---|---|
-| Default / idle | `text-fg`, `bg-surface` (or unchanged) |
-| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong` |
+| State                | Expression                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                       |
+| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                |
 | Hover (in-list item) | `bg-hover` (= `bg-surface-2`); brand gold is reserved for primary affordances and is never a hover treatment |
-| Active / pressed | `bg-accent` or `bg-accent-strong` |
-| Selected | `bg-accent-soft` background + `text-fg` |
-| Disabled | `opacity-50` + `text-fg-muted` |
-| Loading | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region |
-| Error | `text-fg font-semibold` + gold recovery action |
-| Success (explicit) | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s |
-| Link | underline + `text-accent` on hover; no permanent colour difference |
-| Focus (keyboard) | 2px gold outline + 2px offset (`focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`) |
+| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                            |
+| Selected             | `bg-accent-soft` background + `text-fg`                                                                      |
+| Disabled             | `opacity-50` + `text-fg-muted`                                                                               |
+| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                               |
+| Error                | `text-fg font-semibold` + gold recovery action                                                               |
+| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                             |
+| Link                 | underline + `text-accent` on hover; no permanent colour difference                                           |
+| Focus (keyboard)     | 2px gold outline + 2px offset (`focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`) |
 
 The canonical token set deliberately does **not** include
 `--color-success`, `--color-warning`, `--color-danger`, `--color-info`,
@@ -87,7 +87,7 @@ recovery actions" is the brand's mitigation; the
 [`/design/system`](/design/visual-identity/) gallery may surface a
 small number of axe violations on the documented `lg`-size button +
 badge surfaces, and the design-system axe gate tolerates those.
-Introducing `bg-accent` on *new* normal-size Light surfaces is a brand
+Introducing `bg-accent` on _new_ normal-size Light surfaces is a brand
 violation, not an axe-noise issue, and reviewers should reject it.
 
 ## Motion

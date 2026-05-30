@@ -17,17 +17,17 @@ update it there first, then sync the affected ship files into this directory.
 
 ## What's here
 
-| Path                                | Purpose                                        |
-| ----------------------------------- | ---------------------------------------------- |
-| `glyph/slot.svg`                    | Canonical mark — used in app chrome.           |
-| `glyph/slot-favicon.svg`            | Thicker-slot variant for sub-24px raster.      |
-| `lockup/lockup-on-dark.svg`         | Static lockup asset (e.g. share cards, README). The runtime lockup is rendered by `frontend/src/components/Lockup.tsx`. |
-| `lockup/lockup-on-light.svg`        | Static lockup asset (light variant). See `Lockup.tsx` note above. |
-| `raster/favicon-16.png`             | Browser-tab favicon, legacy fallback.          |
-| `raster/favicon-32.png`             | Browser-tab favicon, high-DPI.                 |
-| `raster/favicon-48.png`             | Windows shortcut icon.                         |
-| `raster/apple-touch-icon-180.png`   | iOS home-screen icon (framed).                 |
-| `raster/og-card-1200x630.png`       | Open Graph / Twitter share image.              |
+| Path                              | Purpose                                                                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `glyph/slot.svg`                  | Canonical mark — used in app chrome.                                                                                    |
+| `glyph/slot-favicon.svg`          | Thicker-slot variant for sub-24px raster.                                                                               |
+| `lockup/lockup-on-dark.svg`       | Static lockup asset (e.g. share cards, README). The runtime lockup is rendered by `frontend/src/components/Lockup.tsx`. |
+| `lockup/lockup-on-light.svg`      | Static lockup asset (light variant). See `Lockup.tsx` note above.                                                       |
+| `raster/favicon-16.png`           | Browser-tab favicon, legacy fallback.                                                                                   |
+| `raster/favicon-32.png`           | Browser-tab favicon, high-DPI.                                                                                          |
+| `raster/favicon-48.png`           | Windows shortcut icon.                                                                                                  |
+| `raster/apple-touch-icon-180.png` | iOS home-screen icon (framed).                                                                                          |
+| `raster/og-card-1200x630.png`     | Open Graph / Twitter share image.                                                                                       |
 
 Reference variants (mono, framed, high-res masters, construction diagrams)
 are deliberately excluded from this directory — they're not served at

@@ -299,6 +299,7 @@ sdl.action.search({ query: "risk analyze", includeSchemas: true, limit: 5 })
 ## 13. Feedback loop (`sdl.agent.feedback`)
 
 After completing a task, call `sdl.agent.feedback` with:
+
 - `versionId` (from `sdl.repo.status`), `sliceHandle` (from `sdl.slice.build`).
 - `usefulSymbols` (required, min 1), `missingSymbols` (optional).
 - `taskType` (`"debug"` | `"review"` | `"implement"` | `"explain"`), `taskText`, `taskTags`.

@@ -97,69 +97,69 @@ Both stacks already gate `cargo clippy -- -D warnings` and
 
 ## Consequences
 
-* Good — `backend/CLAUDE.md` and `frontend/CLAUDE.md` rules become
+- Good — `backend/CLAUDE.md` and `frontend/CLAUDE.md` rules become
   CI-gated rather than review-gated. Single source of truth for hard
   rules: lint config matches CLAUDE.md.
-* Good — surfaces real bugs hidden behind unenforced rules: 3
+- Good — surfaces real bugs hidden behind unenforced rules: 3
   `unwrap()` calls in `backend/src/main.rs` violate the existing rule
   but slipped past review.
-* Good — fast local feedback. `cargo clippy` at the dev's terminal
+- Good — fast local feedback. `cargo clippy` at the dev's terminal
   catches violations before push, before CI, before reviewer time.
-* Good — less style territory for Greptile to claim during the trial.
+- Good — less style territory for Greptile to claim during the trial.
   Cleaner Greptile signal-to-noise.
-* Bad — one-time cleanup cost: ~150 backend warnings (~50–60 manual
+- Bad — one-time cleanup cost: ~150 backend warnings (~50–60 manual
   after auto-fixes), ~50–100 frontend warnings.
-* Bad — pedantic and nursery may fire on legitimate patterns; future
+- Bad — pedantic and nursery may fire on legitimate patterns; future
   PRs may need targeted per-line `#[allow(clippy::specific_lint)]`
   with a justification comment. Acceptable cost.
-* Bad — CI clippy step ~10% slower with pedantic + nursery enabled.
-* Neutral — the 4 noisy-pedantic allow-listed lints could be revisited
+- Bad — CI clippy step ~10% slower with pedantic + nursery enabled.
+- Neutral — the 4 noisy-pedantic allow-listed lints could be revisited
   if Reverie ever publishes a library crate to crates.io. Those lints
   exist for library API hygiene and are appropriate there.
 
 ## Alternatives Considered
 
-* **Status quo (review-only enforcement).** Rejected — reviewer drift,
+- **Status quo (review-only enforcement).** Rejected — reviewer drift,
   missed violations (already evidenced by main.rs unwraps), no fast
   local feedback. CLAUDE.md as a source of truth is undermined when
   rules aren't machine-checked.
-* **Pedantic + nursery as `deny` instead of `warn`.** Rejected — too
+- **Pedantic + nursery as `deny` instead of `warn`.** Rejected — too
   aggressive for an evolving codebase. `warn` + CI's `-D warnings`
   achieves equivalent gating while letting devs see warnings during
   development without blocking incremental progress.
-* **Restriction group blanket-enable.** Rejected — restriction is an
+- **Restriction group blanket-enable.** Rejected — restriction is an
   opt-in menu of ~80 lints with mutually-exclusive goals (e.g.,
   `shadow_unrelated` vs `shadow_reuse`). Not a coherent group.
   Individual restriction lints (`unwrap_used`, `expect_used`, etc.)
   are picked deliberately above.
-* **Per-file `#[allow]` for the 4 noisy lints instead of crate-level
+- **Per-file `#[allow]` for the 4 noisy lints instead of crate-level
   allow-list.** Rejected — scatters rationale across the codebase.
   Crate-level allow keeps the policy in one place where it can be
   audited and revisited.
-* **Adopt all clippy lints including `missing_errors_doc` /
+- **Adopt all clippy lints including `missing_errors_doc` /
   `missing_panics_doc`.** Rejected — generates ~80 boilerplate doc
   blocks ("Returns an error if the underlying database operation
   fails") that don't add reader value when error variants are already
   typed via `thiserror`. Cost-benefit fails for an application crate.
-* **Same lint set on frontend without `eslint-plugin-react`.**
+- **Same lint set on frontend without `eslint-plugin-react`.**
   Rejected — `frontend/CLAUDE.md` rules for stable list keys and ban
   on array-index keys require `react/no-array-index-key` from
   `eslint-plugin-react`. The cost of one more dev-dep is trivial.
-* **Two separate ADRs (one per stack).** Rejected — the policy is
+- **Two separate ADRs (one per stack).** Rejected — the policy is
   cross-stack ("both stacks adopt the strictest practical lint tier
   with project-rule overlays"). Splitting would duplicate rationale
   and risk drift between the two ADRs.
 
 ## More Information
 
-* MADR 4.0: <https://adr.github.io/madr/>
-* Clippy lint groups documentation:
+- MADR 4.0: <https://adr.github.io/madr/>
+- Clippy lint groups documentation:
   <https://rust-lang.github.io/rust-clippy/master/>
-* typescript-eslint configs:
+- typescript-eslint configs:
   <https://typescript-eslint.io/users/configs>
-* Tokio Cargo.toml (precedent for application-crate lint allow-list):
+- Tokio Cargo.toml (precedent for application-crate lint allow-list):
   <https://github.com/tokio-rs/tokio/blob/master/tokio/Cargo.toml>
-* Related: `backend/CLAUDE.md` "Conventions" + "Rust Code Rules"
-* Related: `frontend/CLAUDE.md` "TypeScript" + "Hooks" sections
-* Future ADR planned: Greptile AI code review trial (separate decision
+- Related: `backend/CLAUDE.md` "Conventions" + "Rust Code Rules"
+- Related: `frontend/CLAUDE.md` "TypeScript" + "Hooks" sections
+- Future ADR planned: Greptile AI code review trial (separate decision
   with its own context, consequences, and revisit gate)

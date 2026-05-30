@@ -7,12 +7,12 @@ document is for operators: it explains what ships, why, and how to tune it.
 
 Every response carries four unconditional headers:
 
-| Header                    | Value                                       | Purpose                                     |
-| ------------------------- | ------------------------------------------- | ------------------------------------------- |
-| `X-Content-Type-Options`  | `nosniff`                                   | Disables MIME sniffing                      |
-| `Referrer-Policy`         | `no-referrer`                               | Omits `Referer` on outgoing navigations     |
-| `Permissions-Policy`      | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=(), magnetometer=(), accelerometer=(), gyroscope=()` | Denies every high-risk browser capability |
-| `X-Frame-Options`         | `DENY`                                      | Legacy clickjacking defence (CSP covers this too) |
+| Header                   | Value                                                                                                                    | Purpose                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| `X-Content-Type-Options` | `nosniff`                                                                                                                | Disables MIME sniffing                            |
+| `Referrer-Policy`        | `no-referrer`                                                                                                            | Omits `Referer` on outgoing navigations           |
+| `Permissions-Policy`     | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=(), magnetometer=(), accelerometer=(), gyroscope=()` | Denies every high-risk browser capability         |
+| `X-Frame-Options`        | `DENY`                                                                                                                   | Legacy clickjacking defence (CSP covers this too) |
 
 A `Content-Security-Policy` differentiated by route class:
 
@@ -86,14 +86,14 @@ absolute `http(s)://` URL.
 
 ## Dev mode vs production
 
-| Surface           | Dev (Vite dev server)                              | Production (Docker container)                              |
-| ----------------- | -------------------------------------------------- | ---------------------------------------------------------- |
-| HTML CSP          | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket    | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'`    |
-| API CSP           | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` |
-| HSTS              | Off                                                | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
-| `font-src` policy | `'self'` (matches prod)                            | `'self'` (declared in `csp.rs::build_html_csp`)            |
-| `connect-src` policy | `'self'` plus Vite HMR WebSocket                | `'self'` (declared in `csp.rs::build_html_csp`)            |
-| index.html source | Vite dev server, transformed with plugin markers   | Pre-built `dist/index.html` served by the backend          |
+| Surface              | Dev (Vite dev server)                                                                              | Production (Docker container)                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| HTML CSP             | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket                                                    | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'`        |
+| API CSP              | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`  |
+| HSTS                 | Off                                                                                                | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
+| `font-src` policy    | `'self'` (matches prod)                                                                            | `'self'` (declared in `csp.rs::build_html_csp`)                |
+| `connect-src` policy | `'self'` plus Vite HMR WebSocket                                                                   | `'self'` (declared in `csp.rs::build_html_csp`)                |
+| index.html source    | Vite dev server, transformed with plugin markers                                                   | Pre-built `dist/index.html` served by the backend              |
 
 **Dev relaxations do not ship to prod.** `'unsafe-inline' 'unsafe-eval'` in
 dev are declared in `frontend/vite.config.ts` `server.headers` and apply
@@ -122,16 +122,16 @@ clause-02 acceptance is documented in
 
 Reverie sets two cookies on authenticated browsers:
 
-| Name            | HttpOnly | Max-Age     | Path | SameSite | Purpose                                    | Lifecycle                                          |
-| --------------- | -------- | ----------- | ---- | -------- | ------------------------------------------ | -------------------------------------------------- |
-| `id`            | **Yes**  | Session     | `/`  | `Lax`    | tower-sessions session cookie (auth state) | Cleared on logout; short-lived                     |
-| `reverie_theme` | **No**   | 365 days    | `/`  | `Lax`    | Dark/Light/System preference for FOUC      | Survives logout by design (device state, not PII)  |
+| Name            | HttpOnly | Max-Age  | Path | SameSite | Purpose                                    | Lifecycle                                         |
+| --------------- | -------- | -------- | ---- | -------- | ------------------------------------------ | ------------------------------------------------- |
+| `id`            | **Yes**  | Session  | `/`  | `Lax`    | tower-sessions session cookie (auth state) | Cleared on logout; short-lived                    |
+| `reverie_theme` | **No**   | 365 days | `/`  | `Lax`    | Dark/Light/System preference for FOUC      | Survives logout by design (device state, not PII) |
 
 `reverie_theme` is intentionally not `HttpOnly` because JavaScript must
 read it synchronously before React hydrates to avoid a theme flicker. It
 carries no PII — only the literal string `system`, `light`, or `dark`.
 See `docs/design/visual-identity.md` § Theme Cookie Lifecycle for the
-full rationale and the contrast rule: any future *session-state* cookie
+full rationale and the contrast rule: any future _session-state_ cookie
 MUST be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the
 explicit counterexample.
 
@@ -152,7 +152,7 @@ a follow-up to apply the same treatment.
 
 The HTML CSP allows inline styles:
 
-```
+```text
 style-src 'self' 'unsafe-inline'
 ```
 
@@ -195,8 +195,7 @@ If either returns less than A, check:
 1. Open the application.
 2. Open DevTools → Console.
 3. Navigate between routes.
-4. Watch for `Refused to execute inline script because it violates the
-   following Content Security Policy directive` — if you see one, a
+4. Watch for `Refused to execute inline script because it violates the following Content Security Policy directive` — if you see one, a
    legitimate inline script landed in a PR without a hash. File an issue.
 
 ## Further reading

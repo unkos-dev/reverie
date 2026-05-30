@@ -362,6 +362,28 @@ jobs:
       - name: Spell check (typos)
         run: typos
 
+      # markdownlint-cli2 is npm-only (no standalone release binary), so unlike
+      # shellcheck/hadolint/typos it needs Node + an install. `npm ci` off the
+      # committed root lockfile keeps the CI version in lockstep with the
+      # markdownlint-cli2 that lint-staged runs locally — the consistency the
+      # dedicated PR was split out to guarantee.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.16.0
+          cache: npm
+
+      - name: Install markdownlint-cli2
+        run: npm ci
+
+      # Tracked public markdown only. Archival .claude/ docs are excluded at the
+      # config level (.markdownlint-cli2.jsonc `ignores`) so lint-staged and CI
+      # stay consistent; the pathspec exclude keeps the two in lockstep here,
+      # since `git ls-files` does not read that config. xargs -r skips the run
+      # on an empty set; a lint failure propagates a non-zero exit and fails the
+      # job.
+      - name: Markdown lint (markdownlint-cli2)
+        run: git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r npx --no-install markdownlint-cli2
+
   frontend:
     name: Frontend
     needs: changes

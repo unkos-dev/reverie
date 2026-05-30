@@ -9,12 +9,12 @@ A high-performance, self-hosted ebook library manager.
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Rust + Axum |
+| Layer    | Technology                |
+| -------- | ------------------------- |
+| Backend  | Rust + Axum               |
 | Frontend | React + Vite + TypeScript |
-| Styling | Tailwind CSS + shadcn/ui |
-| Database | PostgreSQL |
+| Styling  | Tailwind CSS + shadcn/ui  |
+| Database | PostgreSQL                |
 
 ## Development
 
