@@ -91,12 +91,14 @@ workflows is now pinned to a full commit SHA with a trailing `# vX.Y.Z`
 comment. `dtolnay/rust-toolchain` gained an explicit `toolchain: stable`
 input because SHA-pinning loses the ref-name channel inference.
 
-Lift condition #2 (pins stay current) is satisfied without a config
-change: Renovate's default behaviour bumps SHA-pinned actions by reading
-the `# vX.Y.Z` comment, and the existing `github-actions` + `digest`
-auto-merge rule in `.github/renovate.json` already covers them. No Linear
-ticket was filed — the workspace was at its free-tier issue cap, so the
-PR is the record.
+Lift condition #2 (pins stay current) is satisfied two ways. Existing
+pins are bumped by Renovate's default behaviour reading the `# vX.Y.Z`
+comment, backed by the `github-actions` + `digest` auto-merge rule. New
+actions can no longer silently re-accrue this debt: the PR also adds the
+`helpers:pinGitHubActionDigests` preset to `.github/renovate.json`, so
+any future unpinned `uses:` ref triggers a Renovate pin PR (auto-merged
+via the `pin`-type rule). No Linear ticket was filed — the workspace was
+at its free-tier issue cap, so the PR is the record.
 
 ## Related
 

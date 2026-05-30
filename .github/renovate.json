@@ -4,7 +4,8 @@
     "config:recommended",
     ":dependencyDashboard",
     ":semanticCommits",
-    ":prHourlyLimitNone"
+    ":prHourlyLimitNone",
+    "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Australia/Perth",
   "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
