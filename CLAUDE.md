@@ -125,6 +125,14 @@ Tracked in Linear: **Unkos** team, **Reverie** project.
 - Include issue IDs in commit messages where relevant
 - When work deferred or blocked, create Linear issue
 
+**Linear tracks the backlog; GitHub records completed work.** Never create an
+issue for work you're completing this session just to close it — the PR is the
+record, and create-then-close is pure duplication. Create issues only for
+genuinely deferred/parked future work (the trigger above). A branch/PR does
+**not** require a UNK issue — use a descriptive branch name with the standard
+type prefix (`docs/linear-hygiene-note`) when none exists.
+Don't mint an issue just to name a branch.
+
 ---
 
 ## Planning Artifact Locations
