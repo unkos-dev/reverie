@@ -1,13 +1,13 @@
 ---
-status: active
+status: lifted
 severity: low
 surfaces: [developer, end-user]
 adopted: 2026-05-23
 adopted-because: "11b (PR #314) ships filter query params parsed by axum_extra::extract::Query; malformed UUIDs trigger framework default rejection (400 plain text) instead of RFC 7807 error shape"
 lift-when-class: internal-refactor
 lift-when: PR implements From<QueryRejection> for AppError so malformed filter UUIDs return 400 with RFC 7807 body; same PR adds tests for ?author=garbage, ?series=garbage, ?shelf=garbage
-lifted: ~
-superseded-by: ~
+lifted: 2026-05-30
+superseded-by: https://github.com/unkos-dev/reverie/pull/380
 ---
 
 # Malformed UUID in filter query params returns non-RFC 7807 error

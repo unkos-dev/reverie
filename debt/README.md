@@ -122,7 +122,6 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
-- [Malformed UUID in filter query params returns non-RFC 7807 error](2026-05-26-malformed-uuid-filter-non-rfc7807.md) — adopted from 11b; framework default rejection instead of AppError; lifts on `From<QueryRejection>` impl
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
 - [ISBN not validated on metadata PATCH](2026-05-26-isbn-patch-no-checksum.md) — adopted from 11c; no checksum/length check; lifts on validation PR
@@ -138,6 +137,7 @@ translation pass when it joins.
 
 <!-- empty at first land; entries move here on lift, never deleted -->
 
+- [Malformed UUID in filter query params returns non-RFC 7807 error](2026-05-26-malformed-uuid-filter-non-rfc7807.md) — lifted 2026-05-30; superseded by PR #380 (`From<QueryRejection> for AppError` + `MalformedQuery` 400 problem type, `malformed-query` slug; tests for `?author`/`?series`/`?shelf=garbage`)
 - [`title` null-clear via PATCH returns 422 but path is untested](2026-05-26-title-null-clear-untested.md) — lifted 2026-05-30; superseded by PR #379 (test asserting 422 + RFC 7807 body on `{"title": null}`; handler already validated via `clear_field`, error shape confirmed RFC 7807, not raw sqlx)
 - [GitHub Actions referenced by mutable tags, not commit SHAs](2026-05-30-github-actions-unpinned-sha.md) — lifted 2026-05-30; superseded by PR #378 (repo-wide SHA-pin pass; Renovate keeps pins current via `# vX.Y.Z` comment)
 - [Runtime sqlx queries instead of compile-time macros](2026-05-05-runtime-sqlx-queries.md) — lifted 2026-05-06; superseded by PR series #157–#163

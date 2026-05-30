@@ -1171,6 +1171,65 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_filter_malformed_author_uuid_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/books?author=garbage")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    let body = test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+    let detail = body["detail"].as_str().expect("detail string");
+    assert!(
+        detail.contains("malformed query parameter"),
+        "got detail: {detail}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_malformed_series_uuid_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/books?series=garbage")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/books?shelf=garbage")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_filter_too_many_tags_returns_422(pool: PgPool) {
     // Cap is MAX_TAG_FILTERS=20; 21 tag params must surface as a
     // validation problem rather than executing a pathologically large
