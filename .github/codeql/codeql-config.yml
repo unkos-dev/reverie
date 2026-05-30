@@ -6,7 +6,7 @@ name: Reverie CodeQL config
 paths-ignore:
   - plans
   - docs/.astro
-  - '**/node_modules'
-  - '**/target'
-  - '**/dist'
-  - '**/.next'
+  - "**/node_modules"
+  - "**/target"
+  - "**/dist"
+  - "**/.next"

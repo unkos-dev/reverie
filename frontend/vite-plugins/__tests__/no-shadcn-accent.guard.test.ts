@@ -23,24 +23,30 @@ describe("shadcn primitives must not use brand bg-accent for hover/focus", () =>
     .filter((f: string) => f.endsWith(".tsx"))
     .map((f: string) => join(UI_DIR, f));
 
-  it.each(files.map((f: string) => [f]))("%s does not use bg-accent or text-accent-foreground", (file: string) => {
-    const src = readFileSync(file, "utf8");
-    // Match Tailwind classnames literally; we want any occurrence inside
-    // className strings to fail. The patterns are deliberately broad — any
-    // future shadcn primitive that ships with these utilities must be
-    // rewritten to bg-hover/text-fg before landing.
-    const forbidden = [
-      /(?<![\w-])bg-accent(?![\w-])/,
-      /(?<![\w-])text-accent-foreground(?![\w-])/,
-      /focus:bg-accent(?![\w-])/,
-      /focus:text-accent-foreground(?![\w-])/,
-      /data-open:bg-accent(?![\w-])/,
-      /data-open:text-accent-foreground(?![\w-])/,
-    ];
-    for (const pat of forbidden) {
-      expect(src, `${file} matched ${String(pat)} — rewrite to bg-hover/text-fg per UNK-114 issue 4`).not.toMatch(pat);
-    }
-  });
+  it.each(files.map((f: string) => [f]))(
+    "%s does not use bg-accent or text-accent-foreground",
+    (file: string) => {
+      const src = readFileSync(file, "utf8");
+      // Match Tailwind classnames literally; we want any occurrence inside
+      // className strings to fail. The patterns are deliberately broad — any
+      // future shadcn primitive that ships with these utilities must be
+      // rewritten to bg-hover/text-fg before landing.
+      const forbidden = [
+        /(?<![\w-])bg-accent(?![\w-])/,
+        /(?<![\w-])text-accent-foreground(?![\w-])/,
+        /focus:bg-accent(?![\w-])/,
+        /focus:text-accent-foreground(?![\w-])/,
+        /data-open:bg-accent(?![\w-])/,
+        /data-open:text-accent-foreground(?![\w-])/,
+      ];
+      for (const pat of forbidden) {
+        expect(
+          src,
+          `${file} matched ${String(pat)} — rewrite to bg-hover/text-fg per UNK-114 issue 4`,
+        ).not.toMatch(pat);
+      }
+    },
+  );
 
   it("scans at least one file (catches a misconfigured glob)", () => {
     expect(files.length).toBeGreaterThan(10);

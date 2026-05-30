@@ -384,6 +384,15 @@ jobs:
       - name: Markdown lint (markdownlint-cli2)
         run: git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r npx --no-install markdownlint-cli2
 
+      # Authoritative formatting gate. lint-staged runs `prettier --write` on
+      # staged files locally, but pre-commit is bypassable (`--no-verify`) and
+      # never runs on fork PRs; this `--check` over the whole tree is the
+      # surface that actually fails the build. `.prettierignore` scopes it
+      # (vendored shadcn/ui, archival .claude docs, build output). Uses the
+      # prettier installed by the `npm ci` above, in lockstep with local.
+      - name: Format check (prettier)
+        run: npx --no-install prettier --check .
+
   frontend:
     name: Frontend
     needs: changes
