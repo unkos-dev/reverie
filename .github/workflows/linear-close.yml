@@ -1,0 +1,141 @@
+# Auto-close the Linear issue tracked by a merged PR.
+#
+# WHY: hard-rule-9 (CLAUDE.md) closes issues via a `Closes UNK-XXX` magic-word
+# in the PR body, but that depends on the author remembering the line. This
+# workflow removes that dependence for internal PRs by regex-extracting the
+# UNK-N identifier from the branch name (our `feat/unk-42-...` convention
+# always carries it) and transitioning the issue to Done directly via the
+# Linear GraphQL API. The two paths are complementary and idempotent:
+#   - internal PRs  -> this workflow (no magic-word discipline needed)
+#   - fork PRs      -> Linear's native GitHub integration + `Closes UNK-XXX`
+#                      (fork PRs receive no repo secrets, so this workflow
+#                      deliberately no-ops on them — see the same-repo guard)
+#
+# THREAT: reverie is a public repo. Branch name and PR title are
+# attacker-controlled. Two mitigations are load-bearing and MUST be preserved:
+#   1. Trigger is `pull_request` (NEVER `pull_request_target`). GitHub withholds
+#      repo secrets from fork-originated `pull_request` runs, so a malicious
+#      fork PR cannot obtain LINEAR_API_KEY. `pull_request_target` would expose
+#      it and is a classic public-repo compromise vector.
+#   2. Untrusted inputs (head_ref, PR title) reach the shell ONLY via `env:`
+#      mapping, never via `${{ }}` interpolation inside `run:` bodies, and are
+#      immediately constrained to `UNK-\d+` by a regex. Inlining `${{ }}` into a
+#      run script would be a remote code execution hole.
+name: Linear Issue Auto-Close
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  close-linear-issue:
+    # Only merged, same-repo PRs. The same-repo guard makes the fork-skip
+    # explicit (documents intent for OSS auditors) and is belt-and-suspenders
+    # to GitHub's secret-withholding on fork `pull_request` runs.
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Backstop to the per-curl --max-time below: a Linear outage can never
+    # hold a runner toward the 6h default job timeout.
+    timeout-minutes: 5
+    steps:
+      - name: Extract Linear issue ID from branch name or PR title
+        id: extract
+        env:
+          BRANCH: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          ISSUE_ID=$(echo "$BRANCH" | grep -oiE 'unk-[0-9]+' | head -1 | tr '[:lower:]' '[:upper:]')
+          if [ -z "$ISSUE_ID" ]; then
+            ISSUE_ID=$(echo "$PR_TITLE" | grep -oiE 'unk-[0-9]+' | head -1 | tr '[:lower:]' '[:upper:]')
+          fi
+          if [ -z "$ISSUE_ID" ]; then
+            echo "No UNK-N identifier found in branch or title — skipping."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found issue: $ISSUE_ID"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "issue_id=$ISSUE_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Close Linear issue
+        if: steps.extract.outputs.found == 'true'
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          ISSUE_ID: ${{ steps.extract.outputs.issue_id }}
+          # Unkos team UUID. Opaque internal ID, inert without the API key —
+          # safe to keep in a public workflow file.
+          TEAM_ID: dc9c8fa4-fc43-484e-99dd-cbe1f50cbaa4
+        run: |
+          set -euo pipefail
+
+          if [ -z "$LINEAR_API_KEY" ]; then
+            echo "::warning::LINEAR_API_KEY secret not set — cannot auto-close $ISSUE_ID."
+            exit 0
+          fi
+
+          if ! ISSUE_RESP=$(curl -sf --max-time 30 --connect-timeout 10 -X POST "https://api.linear.app/graphql" \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"{ issue(id: \\\"$ISSUE_ID\\\") { id state { id name } } }\"}"); then
+            # Non-2xx (e.g. 401 invalid key) or timeout. `curl -sf` under set -e
+            # would otherwise exit 22 with no annotation — surface it instead.
+            echo "::error::Linear API request failed (issue lookup) for $ISSUE_ID"
+            exit 1
+          fi
+
+          ISSUE_UUID=$(echo "$ISSUE_RESP" | jq -r '.data.issue.id // empty')
+          CURRENT_STATE=$(echo "$ISSUE_RESP" | jq -r '.data.issue.state.name // empty')
+
+          if [ -z "$ISSUE_UUID" ]; then
+            echo "::warning::Issue $ISSUE_ID not found in Linear — skipping."
+            exit 0
+          fi
+
+          echo "Issue $ISSUE_ID ($ISSUE_UUID) is currently: $CURRENT_STATE"
+
+          if [ "$CURRENT_STATE" = "Done" ] || [ "$CURRENT_STATE" = "Cancelled" ]; then
+            echo "Issue already in terminal state — nothing to do."
+            exit 0
+          fi
+
+          if ! STATES_RESP=$(curl -sf --max-time 30 --connect-timeout 10 -X POST "https://api.linear.app/graphql" \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"{ workflowStates(filter: { team: { id: { eq: \\\"$TEAM_ID\\\" } }, type: { eq: \\\"completed\\\" } }) { nodes { id name } } }\"}"); then
+            echo "::error::Linear API request failed (workflow-states lookup) for $ISSUE_ID"
+            exit 1
+          fi
+
+          DONE_STATE_ID=$(echo "$STATES_RESP" | jq -r '.data.workflowStates.nodes[] | select(.name == "Done") | .id' | head -1)
+
+          if [ -z "$DONE_STATE_ID" ]; then
+            echo "::warning::Could not resolve Done state ID for Unkos team — skipping $ISSUE_ID."
+            exit 0
+          fi
+
+          echo "Transitioning $ISSUE_ID to Done (state: $DONE_STATE_ID)"
+
+          if ! UPDATE_RESP=$(curl -sf --max-time 30 --connect-timeout 10 -X POST "https://api.linear.app/graphql" \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"mutation { issueUpdate(id: \\\"$ISSUE_UUID\\\", input: { stateId: \\\"$DONE_STATE_ID\\\" }) { success issue { identifier state { name } } } }\"}"); then
+            echo "::error::Linear API request failed (issueUpdate mutation) for $ISSUE_ID"
+            exit 1
+          fi
+
+          SUCCESS=$(echo "$UPDATE_RESP" | jq -r '.data.issueUpdate.success // false')
+          NEW_STATE=$(echo "$UPDATE_RESP" | jq -r '.data.issueUpdate.issue.state.name // "unknown"')
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "Issue $ISSUE_ID is now: $NEW_STATE"
+          else
+            # Real failure (not a benign skip): surface as a red error so a
+            # silently-stuck-in-Backlog issue is visible, not swallowed.
+            echo "::error::Linear mutation failed for $ISSUE_ID: $UPDATE_RESP"
+            exit 1
+          fi
