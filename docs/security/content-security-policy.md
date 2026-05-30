@@ -195,8 +195,7 @@ If either returns less than A, check:
 1. Open the application.
 2. Open DevTools → Console.
 3. Navigate between routes.
-4. Watch for `Refused to execute inline script because it violates the
-following Content Security Policy directive` — if you see one, a
+4. Watch for `Refused to execute inline script because it violates the following Content Security Policy directive` — if you see one, a
    legitimate inline script landed in a PR without a hash. File an issue.
 
 ## Further reading

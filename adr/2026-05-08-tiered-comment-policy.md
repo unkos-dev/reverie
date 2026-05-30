@@ -156,8 +156,8 @@ Phased rollout — UNK-190 tracks the phases:
    etc.) only fire on items reachable from outside the crate. The
    current shape is a bin-only crate — every `pub fn` inside
    modules is crate-private to the lint, and the lint is silent.
-   Verified empirically: `cargo rustc --bin reverie-api -- -W
-missing_docs` returns 2 warnings (both at `main.rs` root);
+   Verified empirically: `cargo rustc --bin reverie-api -- -W missing_docs`
+   returns 2 warnings (both at `main.rs` root);
    `cargo clippy -- -W clippy::missing_errors_doc` returns 0.
    Without this prerequisite the entire enforcement floor in
    Phases 2–4 is decorative.

@@ -125,11 +125,10 @@ range, and are not part of this decision's scope.
 
 ## Alternatives Considered
 
-- \*\*Drop `eslint-plugin-react` entirely; rely on `typescript-eslint`
-  - `eslint-plugin-react-hooks` only.\*\* Rejected — loses both
-    load-bearing rules. `typescript-eslint` does not catch missing
-    `key` props or array-index-as-key; `eslint-plugin-react-hooks`
-    scope is limited to hook-rule violations
+- **Drop `eslint-plugin-react` entirely; rely on `typescript-eslint` and `eslint-plugin-react-hooks` only.** Rejected — loses both
+  load-bearing rules. `typescript-eslint` does not catch missing
+  `key` props or array-index-as-key; `eslint-plugin-react-hooks`
+  scope is limited to hook-rule violations
 - **Fork `eslint-plugin-react`.** Rejected — indefinite maintenance
   burden on a single-maintainer project. The whole point of
   external lint plugins is offloading rule-authoring to the
@@ -239,10 +238,8 @@ Walk through these after the migration PR lands:
 - [ ] Renovate raises eslint v10 + @eslint/js v10 PRs on next
       poll (proves the pin removal is honoured by Renovate) —
       pending next Renovate poll cycle post-merge
-- [x] Manual sanity test: introduce a deliberate `<ul>{items.map(i =>
-
-<li>{i}</li>)}</ul>` (no `key`), confirm
-  `@eslint-react/no-missing-key` flags it, revert
+- [x] Manual sanity test: introduce a deliberate `<ul>{items.map(i => <li>{i}</li>)}</ul>` (no `key`), confirm
+      `@eslint-react/no-missing-key` flags it, revert
 - [x] Manual sanity test: introduce
       `items.map((i, idx) => <li key={idx}>{i}</li>)`, confirm
       `@eslint-react/no-array-index-key` flags it, revert
@@ -250,8 +247,7 @@ Walk through these after the migration PR lands:
       block still works)
 - [x] `src/components/ui/**` files still lint-clean (shadcn carve-out
       still works)
-- [x] `rg "react/jsx-key|react/no-array-index-key|eslint-plugin-react"
-frontend/` returns zero matches outside this ADR (verified with
+- [x] `rg "react/jsx-key|react/no-array-index-key|eslint-plugin-react" frontend/` returns zero matches outside this ADR (verified with
       word-boundary regex `rg -P "(?<!-)react/(jsx-key|no-array-index-key)|eslint-plugin-react(?!-)"`
       to exclude substring false positives from the new
       `@eslint-react/...` rule names and the unrelated
