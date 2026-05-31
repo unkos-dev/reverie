@@ -55,8 +55,10 @@ pub fn cleanup_batch(
             continue;
         }
         // Defence in depth: never prune a directory outside the ingestion
-        // tree, even if a caller passes a stray path. Bounds upward removal
-        // to descendants of the root regardless of caller correctness.
+        // tree, even if a caller passes a stray path. Bounds removal to
+        // descendants of the root — blocking both ancestor (upward) and
+        // sibling (lateral) paths — regardless of caller correctness.
+        // THREAT: arbitrary directory deletion if a path escapes the ingestion root.
         if !canonical_dir.starts_with(&canonical_root) {
             tracing::warn!(path = %dir.display(), "skipping directory outside ingestion root during cleanup");
             continue;
@@ -130,6 +132,25 @@ mod tests {
         assert_eq!(result.removed_files, 0);
         assert_eq!(result.removed_dirs, 0);
         assert!(outside.path().exists());
+    }
+
+    #[test]
+    fn cleanup_skips_sibling_with_shared_name_prefix() {
+        // A sibling directory whose name textually extends the root's
+        // (`ingest` vs `ingest-evil`) shares a string prefix but is NOT a
+        // descendant. Locks the component-wise `starts_with` semantics against
+        // a future refactor to a naive string comparison.
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("ingest");
+        let evil = base.path().join("ingest-evil");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&evil).unwrap();
+
+        let stray = evil.join("book.epub");
+        let result = cleanup_batch(std::slice::from_ref(&stray), &root).unwrap();
+
+        assert_eq!(result.removed_dirs, 0);
+        assert!(evil.exists());
     }
 
     #[test]
