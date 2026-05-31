@@ -792,6 +792,18 @@ async fn load_manifestation_tags(
     .map_err(|e| AppError::Internal(e.into()))
 }
 
+/// Upper bound on pending versions loaded for one manifestation's
+/// Versions tab. Normal operation is single digits, but a bulk
+/// enrichment run or repeated manual edits can accumulate hundreds of
+/// pending rows for one book; the cap bounds the result set (and the
+/// derived `pending` count) so a single book accumulating many pending
+/// rows can't degrade the request into an unbounded scan. Access is
+/// authenticated and RLS-scoped to one manifestation, so this guards
+/// resource exhaustion, not an arbitrary-input denial-of-service
+/// vector. `last_seen_at DESC` ordering means the freshest drafts
+/// survive the cut.
+const MAX_PENDING_VERSIONS: i64 = 200;
+
 /// Load every `metadata_versions` row with `status = 'pending'` for the
 /// given manifestation, excluding any row that is already the canonical
 /// pointer for some field. Ordered `last_seen_at DESC` so the freshest
@@ -803,15 +815,6 @@ async fn load_manifestation_tags(
 /// a promoted row keeps `status = 'pending'`. Without the exclusion
 /// filter the Versions tab would surface accepted versions as if they
 /// were still draft.
-/// Upper bound on pending versions loaded for one manifestation's
-/// Versions tab. Normal operation is single digits, but a bulk
-/// enrichment run or repeated manual edits can accumulate hundreds of
-/// pending rows for one book; the cap keeps the result set (and the
-/// derived `pending` count) bounded so an exposed instance can't be
-/// pushed into an unbounded query. `last_seen_at DESC` ordering means
-/// the freshest drafts survive the cut.
-const MAX_PENDING_VERSIONS: i64 = 200;
-
 async fn load_pending_versions(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_id: Uuid,

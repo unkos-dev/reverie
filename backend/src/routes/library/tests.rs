@@ -854,12 +854,34 @@ async fn detail_endpoint_caps_pending_versions_at_200(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
     let body: serde_json::Value = response.json();
+    let cap = u64::try_from(super::MAX_PENDING_VERSIONS).unwrap();
     assert_eq!(
         body["metadata_version_summary"]["pending"]
             .as_u64()
             .unwrap(),
-        200,
-        "pending versions must be capped at 200 to bound the result set, got {body}",
+        cap,
+        "pending versions must be capped at {cap} to bound the result set, got {body}",
+    );
+
+    // Ordering contract: `last_seen_at DESC LIMIT` keeps the freshest
+    // `cap` drafts. Seed n=1 is the freshest (now()-1s), n=250 the
+    // stalest (now()-250s), so drafts 1..=200 survive and 201..=250 are
+    // dropped. Without this, deleting `ORDER BY last_seen_at DESC` from
+    // the query leaves the count at 200 and the test green — the cut
+    // direction would be untested.
+    let versions = body["metadata_versions"].as_array().unwrap();
+    assert_eq!(versions.len(), usize::try_from(cap).unwrap());
+    let drafts: Vec<&str> = versions
+        .iter()
+        .filter_map(|v| v["new_value"].as_str())
+        .collect();
+    assert!(
+        drafts.contains(&"draft 1"),
+        "freshest draft (n=1) must survive the cut, got {drafts:?}",
+    );
+    assert!(
+        !drafts.contains(&"draft 250"),
+        "stalest draft (n=250) must be dropped by the cut, got {drafts:?}",
     );
 }
 
