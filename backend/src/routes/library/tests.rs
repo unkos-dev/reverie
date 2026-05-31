@@ -818,6 +818,52 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_caps_pending_versions_at_200(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id =
+        insert_book_with_author(&ingestion_pool, "capped", "Crowded Tome", "Doe, Jane").await;
+
+    // Seed 250 distinct pending versions for one manifestation — the
+    // bulk-enrichment / repeated-edit scenario that produces an
+    // unbounded result set (debt/2026-05-26-load-pending-versions-unbounded).
+    // Distinct value_hash satisfies metadata_versions_mfs_hash_unique;
+    // descending last_seen_at makes the freshest rows deterministic.
+    sqlx::query!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, match_type, \
+             status, confidence_score, last_seen_at) \
+         SELECT $1, 'opf', 'description', \
+                to_jsonb('draft ' || g.n), \
+                decode(lpad(to_hex(g.n), 8, '0'), 'hex'), \
+                'title', 'pending'::metadata_review_status, 0.5, \
+                now() - (g.n || ' seconds')::interval \
+         FROM generate_series(1, 250) AS g(n)",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed 250 pending versions");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(
+        body["metadata_version_summary"]["pending"]
+            .as_u64()
+            .unwrap(),
+        200,
+        "pending versions must be capped at 200 to bound the result set, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_endpoint_surfaces_publisher_and_pub_date(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

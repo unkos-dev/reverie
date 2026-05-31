@@ -803,6 +803,15 @@ async fn load_manifestation_tags(
 /// a promoted row keeps `status = 'pending'`. Without the exclusion
 /// filter the Versions tab would surface accepted versions as if they
 /// were still draft.
+/// Upper bound on pending versions loaded for one manifestation's
+/// Versions tab. Normal operation is single digits, but a bulk
+/// enrichment run or repeated manual edits can accumulate hundreds of
+/// pending rows for one book; the cap keeps the result set (and the
+/// derived `pending` count) bounded so an exposed instance can't be
+/// pushed into an unbounded query. `last_seen_at DESC` ordering means
+/// the freshest drafts survive the cut.
+const MAX_PENDING_VERSIONS: i64 = 200;
+
 async fn load_pending_versions(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -825,9 +834,11 @@ async fn load_pending_versions(
            AND status = 'pending'::metadata_review_status \
            AND new_value != 'null'::jsonb \
            AND NOT (id = ANY($2::uuid[])) \
-         ORDER BY last_seen_at DESC",
+         ORDER BY last_seen_at DESC \
+         LIMIT $3",
         manifestation_id,
         canonical_ids,
+        MAX_PENDING_VERSIONS,
     )
     .fetch_all(&mut **tx)
     .await
