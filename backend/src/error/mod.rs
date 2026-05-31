@@ -112,6 +112,22 @@ pub enum AppError {
     /// HTTP 409 Conflict.
     #[error("system shelf cannot be modified")]
     SystemShelfImmutable,
+    /// A query-string parameter failed to deserialize at the extractor
+    /// boundary (e.g. a malformed UUID in `?author=` / `?series=` /
+    /// `?shelf=`, or an unknown `?sort=` variant). RFC 7807 `type`
+    /// [`problems::MALFORMED_QUERY`]. HTTP 400 Bad Request. Distinct
+    /// from [`Self::Validation`] (422): this is a syntactic decode
+    /// failure, not a business-rule rejection. The inner string is
+    /// emitted verbatim as the `detail` field (the `#[error]` Display
+    /// is not used on the wire). The sole production constructor is the
+    /// [`From`] impl for [`axum_extra::extract::QueryRejection`], which
+    /// synthesises the string from the rejection's `Display` — the
+    /// caller's own query bytes plus the failing field name, never
+    /// server-side state. A future caller constructing this variant
+    /// directly must likewise keep the string free of sensitive
+    /// context.
+    #[error("{0}")]
+    MalformedQuery(String),
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 7807 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
@@ -194,6 +210,12 @@ impl IntoResponse for AppError {
                 "Conflict",
                 "System shelves cannot be renamed or deleted.".to_owned(),
             ),
+            Self::MalformedQuery(msg) => (
+                StatusCode::BAD_REQUEST,
+                problems::MALFORMED_QUERY,
+                "Bad Request",
+                msg,
+            ),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");
                 (
@@ -223,6 +245,17 @@ impl IntoResponse for AppError {
             HeaderValue::from_static("application/problem+json"),
         );
         response
+    }
+}
+
+/// Route the `axum_extra::extract::Query` rejection through the RFC
+/// 7807 envelope (HTTP 400) instead of the framework default (a
+/// non-RFC-7807 JSON 400 of the form `{"error": "..."}`). Handlers opt
+/// in by extracting `Result<Query<T>, QueryRejection>` and
+/// `?`-propagating the error.
+impl From<axum_extra::extract::QueryRejection> for AppError {
+    fn from(rejection: axum_extra::extract::QueryRejection) -> Self {
+        Self::MalformedQuery(format!("malformed query parameter: {rejection}"))
     }
 }
 
@@ -302,6 +335,20 @@ mod tests {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_problem_shape(&json, problems::VALIDATION, 422, "Unprocessable Entity");
         assert_eq!(json["detail"].as_str().unwrap(), "bad input");
+    }
+
+    #[tokio::test]
+    async fn malformed_query_returns_400_with_message_in_detail() {
+        let (status, _, json) = parse_problem(AppError::MalformedQuery(
+            "malformed query parameter: x".into(),
+        ))
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_problem_shape(&json, problems::MALFORMED_QUERY, 400, "Bad Request");
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "malformed query parameter: x"
+        );
     }
 
     #[tokio::test]

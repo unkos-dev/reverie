@@ -27,7 +27,7 @@ use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum_extra::extract::Query;
+use axum_extra::extract::{Query, QueryRejection};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
@@ -116,6 +116,10 @@ struct BookListResponse {
 /// via an opaque cursor and ordered per the requested sort axis.
 ///
 /// # Errors
+/// - [`AppError::MalformedQuery`] when a filter param fails to
+///   deserialize (e.g. a malformed UUID in `?author=`/`?series=`/
+///   `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the
+///   `From<QueryRejection>` impl.
 /// - [`AppError::Validation`] when the cursor is malformed, the sort
 ///   tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.
 /// - [`AppError::Internal`] on database errors.
@@ -126,9 +130,10 @@ struct BookListResponse {
 async fn list(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Query(params): Query<ListParams>,
+    params: Result<Query<ListParams>, QueryRejection>,
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
+    let Query(params) = params?;
     let page_size = i64::from(state.config.opds.page_size);
 
     if params.tag.len() > MAX_TAG_FILTERS {

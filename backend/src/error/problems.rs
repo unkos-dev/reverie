@@ -55,6 +55,13 @@ pub const IF_MATCH_MISMATCH: &str = "if-match-mismatch";
 /// renamed or deleted. HTTP 409 Conflict.
 pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
 
+/// A query-string parameter failed to deserialize (e.g. a malformed
+/// UUID in `?author=`, `?series=`, `?shelf=`). Distinct from
+/// [`VALIDATION`] (422, business-rule/value rejection): this is a
+/// syntactic decode failure at the extractor boundary, so it maps to
+/// HTTP 400 Bad Request.
+pub const MALFORMED_QUERY: &str = "malformed-query";
+
 /// Generic internal error (anything wrapped in
 /// [`crate::error::AppError::Internal`]). `detail` is a fixed
 /// non-leaking string; the inner cause is `tracing::error!`-logged
