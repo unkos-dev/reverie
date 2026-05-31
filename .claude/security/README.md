@@ -147,6 +147,10 @@ function without parsing them.
   paths
 - Extracted content stored outside web root
 - EPUB parser runs on the ingestion pool with scoped RLS
+- Cleanup deletion bounded to the ingestion root: `cleanup_batch` rejects any
+  caller-supplied path whose canonicalised parent (files) or canonicalised self
+  (directories) resolves outside the ingestion tree — directory pruning landed
+  in PR #387 (UNK-235), file deletion in PR #388 (UNK-325)
 
 Any of these currently missing is a security bug. Verification tracked
 separately — see the conflict-check comment on PR #40.

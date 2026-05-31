@@ -20,6 +20,12 @@ pub struct CleanupResult {
 /// `ingestion_root` bounds both file deletion and directory removal: only paths
 /// resolving inside the ingestion tree are touched, and the root itself is never
 /// deleted. Missing files are treated as success (handles TOCTOU races).
+///
+/// # Errors
+///
+/// Returns `Err` if a file deletion fails for any reason other than the file
+/// already being absent (`ErrorKind::NotFound`). Directory removal and
+/// canonicalisation failures are logged and skipped, not propagated.
 pub fn cleanup_batch(
     paths: &[PathBuf],
     ingestion_root: &Path,
@@ -27,9 +33,11 @@ pub fn cleanup_batch(
     // Resolve the ingestion root once; both the file-deletion and
     // directory-pruning loops bound their writes to descendants of it.
     let canonical_root = ingestion_root.canonicalize().unwrap_or_else(|e| {
-        // THREAT: a non-canonical root weakens every containment check below
-        // (a `..`-bearing path could pass `starts_with`). Surface the degraded
-        // mode so an operator can audit, rather than failing silently.
+        // THREAT: a non-canonical root is an abnormal condition. Containment
+        // checks below compare a fully-canonicalised left operand against this
+        // root, so an unresolved root fails closed (over-skips legitimate
+        // in-tree paths) rather than admitting out-of-tree ones — but the
+        // degraded mode is surfaced here so an operator can audit and fix it.
         tracing::warn!(
             path = %ingestion_root.display(),
             error = %e,
@@ -45,11 +53,20 @@ pub fn cleanup_batch(
         // NotFound-is-success contract — a file is in-tree iff its parent is, and
         // the parent still exists when the file has already been removed.
         // THREAT: arbitrary file deletion if a caller passes an out-of-tree path.
-        let parent_in_root = path
-            .parent()
-            .and_then(|parent| parent.canonicalize().ok())
-            .is_some_and(|parent| parent.starts_with(&canonical_root));
-        if !parent_in_root {
+        // Each failure mode warns distinctly so an operator can tell a genuine
+        // out-of-tree path from a transient canonicalisation fault.
+        let Some(parent) = path.parent() else {
+            tracing::warn!(path = %path.display(), "skipping file with no parent component during cleanup");
+            continue;
+        };
+        let canonical_parent = match parent.canonicalize() {
+            Ok(canonical_parent) => canonical_parent,
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "skipping file whose parent failed to canonicalize during cleanup");
+                continue;
+            }
+        };
+        if !canonical_parent.starts_with(&canonical_root) {
             tracing::warn!(path = %path.display(), "skipping file outside ingestion root during cleanup");
             continue;
         }
@@ -74,11 +91,14 @@ pub fn cleanup_batch(
 
     let mut removed_dirs = 0;
     for dir in &dirs {
-        let Ok(canonical_dir) = dir.canonicalize() else {
-            // Cannot confirm containment without a canonical path; skipping is
-            // strictly safer than pruning an unverified directory.
-            tracing::warn!(path = %dir.display(), "skipping directory that failed to canonicalize during cleanup");
-            continue;
+        let canonical_dir = match dir.canonicalize() {
+            Ok(canonical_dir) => canonical_dir,
+            Err(e) => {
+                // Cannot confirm containment without a canonical path; skipping is
+                // strictly safer than pruning an unverified directory.
+                tracing::warn!(path = %dir.display(), error = %e, "skipping directory that failed to canonicalize during cleanup");
+                continue;
+            }
         };
         if canonical_dir == canonical_root {
             continue;
@@ -195,7 +215,12 @@ mod tests {
         let result = cleanup_batch(std::slice::from_ref(&stray), root.path()).unwrap();
 
         assert_eq!(result.removed_files, 0);
+        assert_eq!(result.removed_dirs, 0);
         assert!(stray.exists(), "file outside ingestion root must survive");
+        assert!(
+            outside.path().exists(),
+            "directory outside ingestion root must survive"
+        );
     }
 
     #[test]
@@ -215,6 +240,48 @@ mod tests {
         assert_eq!(result.removed_files, 1);
         assert!(!inside.exists());
         assert!(stray.exists(), "file outside ingestion root must survive");
+    }
+
+    #[test]
+    fn cleanup_skips_real_file_in_sibling_prefix_directory() {
+        // A real file in a sibling whose name extends the root's (`ingest-evil`
+        // vs `ingest`) must survive. Locks the file guard to component-wise
+        // matching — the same property the dir guard's sibling-prefix test locks.
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("ingest");
+        let evil = base.path().join("ingest-evil");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&evil).unwrap();
+
+        let stray = evil.join("book.epub");
+        std::fs::write(&stray, b"keep me").unwrap();
+
+        let result = cleanup_batch(std::slice::from_ref(&stray), &root).unwrap();
+
+        assert_eq!(result.removed_files, 0);
+        assert!(stray.exists(), "file in sibling-prefix dir must survive");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_skips_file_whose_parent_symlinks_outside_root() {
+        // A symlinked directory inside the root resolving outside it must not let
+        // a file escape the bound. This is the exact scenario the parent
+        // canonicalisation exists for: a naive `starts_with` on the raw path
+        // would see `root/link/...` as in-tree and delete the external target.
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("real.epub");
+        std::fs::write(&target, b"do not delete").unwrap();
+
+        let link_dir = root.path().join("link");
+        std::os::unix::fs::symlink(outside.path(), &link_dir).unwrap();
+
+        let path_via_link = link_dir.join("real.epub");
+        let result = cleanup_batch(std::slice::from_ref(&path_via_link), root.path()).unwrap();
+
+        assert_eq!(result.removed_files, 0);
+        assert!(target.exists(), "real file behind symlink must survive");
     }
 
     #[test]
