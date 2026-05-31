@@ -17,15 +17,42 @@ pub struct CleanupResult {
 
 /// Delete source files after a successful batch, then prune empty parent directories.
 ///
-/// `ingestion_root` bounds directory removal — the root itself is never deleted.
-/// Missing files are treated as success (handles TOCTOU races).
+/// `ingestion_root` bounds both file deletion and directory removal: only paths
+/// resolving inside the ingestion tree are touched, and the root itself is never
+/// deleted. Missing files are treated as success (handles TOCTOU races).
 pub fn cleanup_batch(
     paths: &[PathBuf],
     ingestion_root: &Path,
 ) -> Result<CleanupResult, std::io::Error> {
-    let mut removed_files = 0;
+    // Resolve the ingestion root once; both the file-deletion and
+    // directory-pruning loops bound their writes to descendants of it.
+    let canonical_root = ingestion_root.canonicalize().unwrap_or_else(|e| {
+        // THREAT: a non-canonical root weakens every containment check below
+        // (a `..`-bearing path could pass `starts_with`). Surface the degraded
+        // mode so an operator can audit, rather than failing silently.
+        tracing::warn!(
+            path = %ingestion_root.display(),
+            error = %e,
+            "failed to canonicalize ingestion root; cleanup containment guard may be weakened"
+        );
+        ingestion_root.to_path_buf()
+    });
 
+    let mut removed_files = 0;
     for path in paths {
+        // Defence in depth: only delete files whose parent resolves inside the
+        // ingestion tree. Canonicalising the parent (not the file) preserves the
+        // NotFound-is-success contract — a file is in-tree iff its parent is, and
+        // the parent still exists when the file has already been removed.
+        // THREAT: arbitrary file deletion if a caller passes an out-of-tree path.
+        let parent_in_root = path
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .is_some_and(|parent| parent.starts_with(&canonical_root));
+        if !parent_in_root {
+            tracing::warn!(path = %path.display(), "skipping file outside ingestion root during cleanup");
+            continue;
+        }
         match std::fs::remove_file(path) {
             Ok(()) => removed_files += 1,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -36,9 +63,6 @@ pub fn cleanup_batch(
     }
 
     // Collect unique parent directories, ordered deepest-first for bottom-up removal
-    let canonical_root = ingestion_root
-        .canonicalize()
-        .unwrap_or_else(|_| ingestion_root.to_path_buf());
     let mut dirs: Vec<PathBuf> = paths
         .iter()
         .filter_map(|p| p.parent().map(std::path::Path::to_path_buf))
@@ -50,7 +74,12 @@ pub fn cleanup_batch(
 
     let mut removed_dirs = 0;
     for dir in &dirs {
-        let canonical_dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        let Ok(canonical_dir) = dir.canonicalize() else {
+            // Cannot confirm containment without a canonical path; skipping is
+            // strictly safer than pruning an unverified directory.
+            tracing::warn!(path = %dir.display(), "skipping directory that failed to canonicalize during cleanup");
+            continue;
+        };
         if canonical_dir == canonical_root {
             continue;
         }
@@ -151,6 +180,41 @@ mod tests {
 
         assert_eq!(result.removed_dirs, 0);
         assert!(evil.exists());
+    }
+
+    #[test]
+    fn cleanup_skips_existing_file_outside_ingestion_root() {
+        // A real file living outside the ingestion root must never be deleted,
+        // even when a caller passes its path. Unlike the NotFound case, this
+        // file exists on disk, so only a containment guard prevents removal.
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let stray = outside.path().join("evil.epub");
+        std::fs::write(&stray, b"keep me").unwrap();
+
+        let result = cleanup_batch(std::slice::from_ref(&stray), root.path()).unwrap();
+
+        assert_eq!(result.removed_files, 0);
+        assert!(stray.exists(), "file outside ingestion root must survive");
+    }
+
+    #[test]
+    fn cleanup_deletes_in_root_file_and_spares_outside_file_in_same_batch() {
+        // Per-path guard, not batch-global: an in-root file is removed while an
+        // out-of-root file in the same call is left untouched.
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        let inside = root.path().join("book.epub");
+        let stray = outside.path().join("evil.epub");
+        std::fs::write(&inside, b"1").unwrap();
+        std::fs::write(&stray, b"2").unwrap();
+
+        let result = cleanup_batch(&[inside.clone(), stray.clone()], root.path()).unwrap();
+
+        assert_eq!(result.removed_files, 1);
+        assert!(!inside.exists());
+        assert!(stray.exists(), "file outside ingestion root must survive");
     }
 
     #[test]
