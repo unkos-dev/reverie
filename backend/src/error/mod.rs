@@ -114,13 +114,19 @@ pub enum AppError {
     SystemShelfImmutable,
     /// A query-string parameter failed to deserialize at the extractor
     /// boundary (e.g. a malformed UUID in `?author=` / `?series=` /
-    /// `?shelf=`). RFC 7807 `type` [`problems::MALFORMED_QUERY`]. HTTP
-    /// 400 Bad Request. Distinct from [`Self::Validation`] (422): this
-    /// is a syntactic decode failure, not a business-rule rejection.
-    /// Constructed from [`axum_extra::extract::QueryRejection`] via
-    /// `From`. The inner string is emitted as the `detail` field, so
-    /// callers should keep it free of sensitive context.
-    #[error("malformed query: {0}")]
+    /// `?shelf=`, or an unknown `?sort=` variant). RFC 7807 `type`
+    /// [`problems::MALFORMED_QUERY`]. HTTP 400 Bad Request. Distinct
+    /// from [`Self::Validation`] (422): this is a syntactic decode
+    /// failure, not a business-rule rejection. The inner string is
+    /// emitted verbatim as the `detail` field (the `#[error]` Display
+    /// is not used on the wire). The sole production constructor is the
+    /// [`From`] impl for [`axum_extra::extract::QueryRejection`], which
+    /// synthesises the string from the rejection's `Display` — the
+    /// caller's own query bytes plus the failing field name, never
+    /// server-side state. A future caller constructing this variant
+    /// directly must likewise keep the string free of sensitive
+    /// context.
+    #[error("{0}")]
     MalformedQuery(String),
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 7807 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
@@ -243,9 +249,10 @@ impl IntoResponse for AppError {
 }
 
 /// Route the `axum_extra::extract::Query` rejection through the RFC
-/// 7807 envelope (HTTP 400) instead of the framework default
-/// (plain-text 400). Handlers opt in by extracting
-/// `Result<Query<T>, QueryRejection>` and `?`-propagating the error.
+/// 7807 envelope (HTTP 400) instead of the framework default (a
+/// non-RFC-7807 JSON 400 of the form `{"error": "..."}`). Handlers opt
+/// in by extracting `Result<Query<T>, QueryRejection>` and
+/// `?`-propagating the error.
 impl From<axum_extra::extract::QueryRejection> for AppError {
     fn from(rejection: axum_extra::extract::QueryRejection) -> Self {
         Self::MalformedQuery(format!("malformed query parameter: {rejection}"))

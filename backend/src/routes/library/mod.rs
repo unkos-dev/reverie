@@ -118,7 +118,8 @@ struct BookListResponse {
 /// # Errors
 /// - [`AppError::MalformedQuery`] when a filter param fails to
 ///   deserialize (e.g. a malformed UUID in `?author=`/`?series=`/
-///   `?shelf=`) — HTTP 400 via the `From<QueryRejection>` impl.
+///   `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the
+///   `From<QueryRejection>` impl.
 /// - [`AppError::Validation`] when the cursor is malformed, the sort
 ///   tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.
 /// - [`AppError::Internal`] on database errors.

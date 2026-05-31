@@ -1204,10 +1204,15 @@ async fn list_filter_malformed_series_uuid_returns_400(pool: PgPool) {
         .get("/api/books?series=garbage")
         .add_header(AUTHORIZATION, basic)
         .await;
-    test_support::assert_problem(
+    let body = test_support::assert_problem(
         &response,
         problems::MALFORMED_QUERY,
         StatusCode::BAD_REQUEST,
+    );
+    let detail = body["detail"].as_str().expect("detail string");
+    assert!(
+        detail.contains("malformed query parameter"),
+        "got detail: {detail}"
     );
 }
 
@@ -1222,10 +1227,42 @@ async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
         .get("/api/books?shelf=garbage")
         .add_header(AUTHORIZATION, basic)
         .await;
-    test_support::assert_problem(
+    let body = test_support::assert_problem(
         &response,
         problems::MALFORMED_QUERY,
         StatusCode::BAD_REQUEST,
+    );
+    let detail = body["detail"].as_str().expect("detail string");
+    assert!(
+        detail.contains("malformed query parameter"),
+        "got detail: {detail}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
+    // `?sort=` decodes into the `SortMode` enum, a structurally
+    // distinct decode path from the `Option<Uuid>` filter params: an
+    // unknown variant must still surface as RFC 7807 400, not a silent
+    // default-sort fallthrough.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/books?sort=garbage")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    let body = test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+    let detail = body["detail"].as_str().expect("detail string");
+    assert!(
+        detail.contains("malformed query parameter"),
+        "got detail: {detail}"
     );
 }
 
