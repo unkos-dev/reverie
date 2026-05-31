@@ -7,6 +7,7 @@
 //! `User::from` compute it once at row-load time.
 
 use axum_login::AuthUser;
+use email_address::EmailAddress;
 use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -148,6 +149,18 @@ pub async fn find_by_oidc_subject(
 /// Runs upsert + promotion in a single transaction to prevent race conditions where
 /// concurrent first logins result in no admin.
 ///
+/// THREAT: `email` backs the case-insensitive unique index `idx_users_email_lower`
+/// and is a provider-matching key. The OIDC JWT is signature-verified, but the
+/// `email` *string* is not format-checked upstream, so a misconfigured or
+/// non-standard `IdP` could release a malformed value. This is the same column the
+/// admin `PATCH /api/users/{id}` path guards with [`EmailAddress::is_valid`]; the
+/// claim is validated here so both write paths uphold the RFC-5322 invariant
+/// (UNK-309). Per OIDC Core §5.7 the `email` claim is optional and non-identifying
+/// (identity rides on `sub`/`oidc_subject`), so an invalid claim degrades to `NULL`
+/// rather than failing authentication — login never depends on an optional claim's
+/// format. The rejected value is logged by shape only (length), never verbatim
+/// (Hard Rule 7).
+///
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from any step of the transaction (advisory
@@ -159,6 +172,21 @@ pub async fn upsert_from_oidc_and_maybe_promote(
     display_name: &str,
     email: Option<&str>,
 ) -> Result<User, sqlx::Error> {
+    // Validate the OIDC email claim before persisting (UNK-309). Trim first so a
+    // whitespace-only claim reads as absence; degrade a non-empty-but-invalid
+    // value to NULL with a shape-only warning.
+    let email = match email.map(str::trim).filter(|e| !e.is_empty()) {
+        Some(e) if EmailAddress::is_valid(e) => Some(e),
+        Some(e) => {
+            tracing::warn!(
+                rejected_email_len = e.len(),
+                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub (UNK-309)"
+            );
+            None
+        }
+        None => None,
+    };
+
     let mut tx = pool.begin().await?;
 
     // Serialize concurrent first-user promotion attempts. Without this lock,
@@ -248,6 +276,47 @@ mod tests {
             .expect("find by subject")
             .unwrap();
         assert_eq!(found.id, user.id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_drops_malformed_oidc_email_to_none(pool: PgPool) {
+        // UNK-309: the OIDC email claim is signature-verified but not
+        // format-checked upstream. A non-standard IdP releasing a malformed
+        // value must not land it in `users.email` (the RFC-5322 invariant the
+        // admin PATCH path already enforces). Per OIDC Core §5.7 email is an
+        // optional, non-identifying claim, so we degrade to NULL rather than
+        // failing login — identity still resolves via `sub`.
+        let subject = format!("malformed-email-{}", Uuid::new_v4());
+        let user =
+            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Mallory", Some("not-an-email"))
+                .await
+                .expect("upsert");
+        assert_eq!(
+            user.email, None,
+            "malformed email claim must persist as NULL"
+        );
+        assert_eq!(user.oidc_subject, subject, "identity still keyed on sub");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_treats_empty_oidc_email_as_none(pool: PgPool) {
+        // Empty / whitespace-only claim is absence, not a value — store NULL.
+        let subject = format!("empty-email-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Eve", Some("   "))
+            .await
+            .expect("upsert");
+        assert_eq!(user.email, None, "empty email claim must persist as NULL");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_persists_valid_oidc_email_trimmed(pool: PgPool) {
+        // Valid claim with surrounding whitespace: trimmed and persisted.
+        let subject = format!("valid-email-{}", Uuid::new_v4());
+        let user =
+            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Val", Some("  val@example.com "))
+                .await
+                .expect("upsert");
+        assert_eq!(user.email.as_deref(), Some("val@example.com"));
     }
 
     /// Loud-failure regression for UNK-108. Simulates the failure mode
