@@ -19,15 +19,17 @@ on:
 permissions:
   contents: read
 
-# Scope concurrency per ref so a pull-request build cannot cancel an
-# in-flight main/tag deploy (and vice versa). main keeps a single
-# serialized group; each PR gets its own.
+# Isolate pull-request builds into their own per-PR group so they never
+# cancel an in-flight deploy, while keeping every real deploy event
+# (main, tags, manual) in one shared `pages` group so concurrent Pages
+# deployments stay serialized.
 concurrency:
-  group: pages-${{ github.ref }}
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
   cancel-in-progress: true
 
 jobs:
   build:
+    name: Build docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
