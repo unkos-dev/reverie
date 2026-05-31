@@ -818,6 +818,74 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_caps_pending_versions_at_200(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id =
+        insert_book_with_author(&ingestion_pool, "capped", "Crowded Tome", "Doe, Jane").await;
+
+    // Seed 250 distinct pending versions for one manifestation — the
+    // bulk-enrichment / repeated-edit scenario that produces an
+    // unbounded result set (debt/2026-05-26-load-pending-versions-unbounded).
+    // Distinct value_hash satisfies metadata_versions_mfs_hash_unique;
+    // descending last_seen_at makes the freshest rows deterministic.
+    sqlx::query!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, match_type, \
+             status, confidence_score, last_seen_at) \
+         SELECT $1, 'opf', 'description', \
+                to_jsonb('draft ' || g.n), \
+                decode(lpad(to_hex(g.n), 8, '0'), 'hex'), \
+                'title', 'pending'::metadata_review_status, 0.5, \
+                now() - (g.n || ' seconds')::interval \
+         FROM generate_series(1, 250) AS g(n)",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed 250 pending versions");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let cap = u64::try_from(super::MAX_PENDING_VERSIONS).unwrap();
+    assert_eq!(
+        body["metadata_version_summary"]["pending"]
+            .as_u64()
+            .unwrap(),
+        cap,
+        "pending versions must be capped at {cap} to bound the result set, got {body}",
+    );
+
+    // Ordering contract: `last_seen_at DESC LIMIT` keeps the freshest
+    // `cap` drafts. Seed n=1 is the freshest (now()-1s), n=250 the
+    // stalest (now()-250s), so drafts 1..=200 survive and 201..=250 are
+    // dropped. Without this, deleting `ORDER BY last_seen_at DESC` from
+    // the query leaves the count at 200 and the test green — the cut
+    // direction would be untested.
+    let versions = body["metadata_versions"].as_array().unwrap();
+    assert_eq!(versions.len(), usize::try_from(cap).unwrap());
+    let drafts: Vec<&str> = versions
+        .iter()
+        .filter_map(|v| v["new_value"].as_str())
+        .collect();
+    assert!(
+        drafts.contains(&"draft 1"),
+        "freshest draft (n=1) must survive the cut, got {drafts:?}",
+    );
+    assert!(
+        !drafts.contains(&"draft 250"),
+        "stalest draft (n=250) must be dropped by the cut, got {drafts:?}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_endpoint_surfaces_publisher_and_pub_date(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

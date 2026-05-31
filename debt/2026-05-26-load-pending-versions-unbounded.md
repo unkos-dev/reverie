@@ -1,12 +1,13 @@
 ---
-status: active
+status: lifted
 severity: medium
 surfaces: [developer, server-operator]
 adopted: 2026-05-24
 adopted-because: "11c (PR #316) ships load_pending_versions without a LIMIT clause; scoping the slice to metadata edit flow took priority over pagination of a rarely-large result set"
 lift-when-class: internal-refactor
-lift-when: PR adds `LIMIT 200` (or cursor pagination) to load_pending_versions query in backend/src/routes/metadata.rs; same PR adds a test asserting the cap
-lifted: ~
+lift-when: PR adds `LIMIT 200` (or cursor pagination) to load_pending_versions query in backend/src/routes/library/mod.rs; same PR adds a test asserting the cap
+lifted: 2026-05-31
+lifted-because: "load_pending_versions in backend/src/routes/library/mod.rs now binds `LIMIT $3` to the `MAX_PENDING_VERSIONS = 200` const; `detail_endpoint_caps_pending_versions_at_200` seeds 250 pending rows and asserts the bounded count of 200"
 superseded-by: ~
 ---
 

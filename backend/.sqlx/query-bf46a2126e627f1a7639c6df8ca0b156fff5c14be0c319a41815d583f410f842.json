@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, status, confidence_score, last_seen_at) SELECT $1, 'opf', 'description', to_jsonb('draft ' || g.n), decode(lpad(to_hex(g.n), 8, '0'), 'hex'), 'title', 'pending'::metadata_review_status, 0.5, now() - (g.n || ' seconds')::interval FROM generate_series(1, 250) AS g(n)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf46a2126e627f1a7639c6df8ca0b156fff5c14be0c319a41815d583f410f842"
+}
