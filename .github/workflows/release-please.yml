@@ -5,13 +5,20 @@ on:
     branches:
       - main
 
+# Least privilege at the top; the single job widens to exactly the
+# writes release-please needs (create tags/releases + manage the
+# release PR), keeping write tokens off the workflow-wide scope.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      # Create release commits, tags, and GitHub Releases.
+      contents: write
+      # Open and update the standing release PR.
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
