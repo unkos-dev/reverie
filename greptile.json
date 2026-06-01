@@ -2,6 +2,12 @@
   "strictness": 1,
   "commentTypes": ["logic", "syntax", "style", "info"],
   "triggerOnUpdates": true,
+  "summarySection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": true
+  },
+  "updateExistingSummaryComment": true,
   "ignorePatterns": ["**/package-lock.json", "**/Cargo.lock"],
   "customContext": {
     "files": [
