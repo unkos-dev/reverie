@@ -88,6 +88,14 @@ export default defineConfig({
     },
   },
   test: {
+    // Coverage is configured at the root (not per-project) so a single
+    // report aggregates both the vite-plugins and frontend projects. The
+    // LCOV reporter writes coverage/lcov.info, which CI uploads to Codecov.
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      include: ["src/**", "vite-plugins/**"],
+    },
     projects: [
       {
         extends: true,
