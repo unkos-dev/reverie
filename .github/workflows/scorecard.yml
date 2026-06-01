@@ -30,6 +30,11 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     permissions:
+      # Read repo contents for checkout. A public repo would clone fine
+      # even at `contents: none` (OSSF's template omits this for public
+      # repos), but stating it explicitly matches codeql.yml's job-level
+      # block and keeps the workflow correct if the repo ever goes private.
+      contents: read
       # Upload the SARIF result into the code-scanning dashboard.
       security-events: write
       # Mint the OIDC token Scorecard uses to publish results to the
