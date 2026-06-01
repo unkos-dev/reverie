@@ -4,8 +4,7 @@
   "triggerOnUpdates": true,
   "summarySection": {
     "included": true,
-    "collapsible": false,
-    "defaultOpen": true
+    "collapsible": false
   },
   "updateExistingSummaryComment": true,
   "ignorePatterns": ["**/package-lock.json", "**/Cargo.lock"],
