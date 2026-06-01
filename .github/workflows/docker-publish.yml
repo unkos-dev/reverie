@@ -241,6 +241,11 @@ jobs:
           # beneath it, so one signature secures the whole multi-arch set.
           digest=$(docker buildx imagetools inspect "${IMAGE_REF}:${VERSION}" \
             --format '{{ .Manifest.Digest }}')
+          # set -e aborts if inspect itself fails, but an empty-yet-exit-0
+          # result would slip through and produce a malformed `…@` ref that
+          # cosign rejects with an opaque error. Fail loud and attributable
+          # instead — this is the signing step, clarity matters.
+          [[ -n "$digest" ]] || { echo "::error::Failed to capture manifest digest for ${IMAGE_REF}:${VERSION}"; exit 1; }
           echo "Signing ${IMAGE_REF}@${digest}"
           cosign sign --yes "${IMAGE_REF}@${digest}"
 
