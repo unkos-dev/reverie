@@ -636,7 +636,10 @@ async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
 // ---------- PATCH session_version bump policy ----------
 
 #[sqlx::test(migrations = "./migrations")]
-async fn patch_email_bumps_session_version(pool: PgPool) {
+async fn patch_email_does_not_bump_session_version(pool: PgPool) {
+    // Email gates nothing in the authz model — login identity is the OIDC `sub`,
+    // RLS keys on user id/role/is_child, and the session auth hash is
+    // session_version only. Changing email must NOT force a logout-everywhere.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -666,14 +669,14 @@ async fn patch_email_bumps_session_version(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(
-        sv_after,
-        sv_before + 1,
-        "session_version should bump on email change"
+        sv_after, sv_before,
+        "session_version should NOT bump on email change"
     );
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn patch_email_null_bumps_session_version(pool: PgPool) {
+async fn patch_email_null_does_not_bump_session_version(pool: PgPool) {
+    // Clearing email is the same non-security-gating mutation as setting it.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -711,9 +714,8 @@ async fn patch_email_null_bumps_session_version(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(
-        sv_after,
-        sv_before + 1,
-        "session_version should bump on email clear"
+        sv_after, sv_before,
+        "session_version should NOT bump on email clear"
     );
 }
 

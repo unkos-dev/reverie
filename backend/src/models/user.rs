@@ -145,15 +145,22 @@ pub async fn find_by_oidc_subject(
     .map(|opt| opt.map(User::from))
 }
 
-/// Whether `e` is a bare RFC-5322 *addr-spec* (`local@domain`).
+/// Whether `e` parses as an RFC-5322 *addr-spec* with display-name and
+/// domain-literal forms disallowed.
 ///
-/// THREAT: [`EmailAddress::is_valid`] uses [`Options::default`], which accepts
-/// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and would
-/// store those bracket/angle/space-bearing strings raw in `users.email`. Every write
-/// path to that column (OIDC upsert + admin `PATCH /api/users/{id}`) routes through
-/// this helper so the column only ever holds an addr-spec — the shape downstream
-/// consumers (display, notification, provider matching) can treat as an address
-/// without re-parsing (UNK-309).
+/// THREAT: [`EmailAddress::is_valid`] uses [`Options::default`], which sets both
+/// `allow_display_text` and `allow_domain_literal` to `true` — it accepts
+/// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and
+/// would store those angle/bracket-bearing strings raw in `users.email`. This
+/// helper disables both options, so every write path to that column (OIDC upsert
+/// + admin `PATCH /api/users/{id}`) rejects those two shapes (UNK-309).
+///
+/// This is *not* full normalisation. A quoted local-part
+/// (`"john doe"@example.com`) is a valid addr-spec and is still accepted, so the
+/// stored value may contain quotes and spaces inside the quoted segment. CR/LF
+/// can never appear (qtext/wsp exclude control bytes), so the value is safe to
+/// log and store, but downstream consumers must treat it as an opaque address —
+/// not assume a bare `local@domain` free of quoting.
 pub(crate) fn is_addr_spec(e: &str) -> bool {
     EmailAddress::parse_with_options(
         e,
