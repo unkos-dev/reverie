@@ -34,11 +34,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use email_address::EmailAddress;
-
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
 use crate::models::role::Role;
+use crate::models::user::is_addr_spec;
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -423,7 +422,7 @@ async fn update_user(
                 if trimmed.is_empty() {
                     return Err(AppError::Validation("email must not be empty".into()));
                 }
-                if !EmailAddress::is_valid(trimmed) {
+                if !is_addr_spec(trimmed) {
                     return Err(AppError::Validation("email must be a valid address".into()));
                 }
                 // Check unique constraint proactively for a clear error message.
