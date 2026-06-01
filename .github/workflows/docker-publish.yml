@@ -31,9 +31,11 @@ on:
   # workflow changes that wouldn't otherwise fire on a non-main push.
   workflow_dispatch:
 
+# Least privilege at the top; the `build` and `merge` jobs widen to
+# `packages: write` themselves to push to GHCR. `prepare-matrix` and
+# `deploy-staging` need no write token, so it stays off the workflow scope.
 permissions:
   contents: read
-  packages: write
 
 # Serialize per-ref runs but do not cancel in-flight builds. The
 # `deploy-staging` job runs in this same workflow on `main` push; a
@@ -71,6 +73,10 @@ jobs:
   build:
     needs: prepare-matrix
     runs-on: ${{ matrix.runner }}
+    # Push the per-arch image by digest to GHCR.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.matrix) }}
