@@ -7,6 +7,7 @@
 //! `User::from` compute it once at row-load time.
 
 use axum_login::AuthUser;
+use email_address::{EmailAddress, Options};
 use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -144,9 +145,53 @@ pub async fn find_by_oidc_subject(
     .map(|opt| opt.map(User::from))
 }
 
+/// Whether `e` parses as an RFC-5322 *addr-spec* with display-name and
+/// domain-literal forms disallowed.
+///
+/// THREAT: [`EmailAddress::is_valid`] uses [`Options::default`], which sets both
+/// `allow_display_text` and `allow_domain_literal` to `true` — it accepts
+/// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and
+/// would store those angle/bracket-bearing strings raw in `users.email`. This
+/// helper disables both options, so every write path to that column (OIDC upsert
+/// + admin `PATCH /api/users/{id}`) rejects those two shapes (UNK-309).
+///
+/// This is *not* full normalisation. A quoted local-part
+/// (`"john doe"@example.com`) is a valid addr-spec and is still accepted, so the
+/// stored value may contain quotes and spaces inside the quoted segment. CR/LF
+/// can never appear (qtext/wsp exclude control bytes), so the value is safe to
+/// log and store, but downstream consumers must treat it as an opaque address —
+/// not assume a bare `local@domain` free of quoting.
+pub(crate) fn is_addr_spec(e: &str) -> bool {
+    EmailAddress::parse_with_options(
+        e,
+        Options::default()
+            .without_display_text()
+            .without_domain_literal(),
+    )
+    .is_ok()
+}
+
 /// Insert or update a user from OIDC claims, then auto-promote to admin if first user.
 /// Runs upsert + promotion in a single transaction to prevent race conditions where
 /// concurrent first logins result in no admin.
+///
+/// THREAT: `email` carries a case-insensitive uniqueness constraint
+/// (`idx_users_email_lower`); login identity itself rides on `sub`/`oidc_subject`
+/// (this upsert keys on `ON CONFLICT (oidc_subject)`), not on `email`. The OIDC JWT
+/// is signature-verified, but the `email` *string* is not format-checked upstream,
+/// so a misconfigured or non-standard `IdP` could release a malformed value that
+/// violates the column invariant. Both write paths to this column (here and the
+/// admin `PATCH /api/users/{id}` path) guard with [`is_addr_spec`], so both uphold
+/// the RFC-5322 addr-spec invariant (UNK-309). Per
+/// OIDC Core §5.7 the `email` claim is optional and non-identifying, so an invalid
+/// claim degrades to `NULL` rather than failing authentication — login never depends
+/// on an optional claim's format. On a returning user the
+/// `ON CONFLICT … DO UPDATE SET email = EXCLUDED.email` clause overwrites a
+/// previously-stored valid email with `NULL` when the `IdP` later emits a malformed
+/// claim (Option B: never persist a junk value in the column); identity is preserved
+/// because the conflict key is `oidc_subject`. The rejected value is logged by shape
+/// only (length), never verbatim (Hard Rule 7); the `had_prior_email` log field lets
+/// operators distinguish that overwrite from a first-login with a malformed claim.
 ///
 /// # Errors
 ///
@@ -159,6 +204,45 @@ pub async fn upsert_from_oidc_and_maybe_promote(
     display_name: &str,
     email: Option<&str>,
 ) -> Result<User, sqlx::Error> {
+    // Validate the OIDC email claim before persisting (UNK-309). Trim first so a
+    // whitespace-only claim reads as absence; degrade a non-empty-but-invalid
+    // value to NULL with a shape-only warning.
+    let email = match email.map(str::trim) {
+        Some("") => {
+            // Claim present but whitespace-only: absence, not a value. (A truly
+            // absent claim — `None` — is the normal optional-claim path per OIDC
+            // Core §5.7 and is not logged, to avoid per-login debug noise for IdPs
+            // that omit `email`.)
+            tracing::debug!(
+                oidc_subject = %subject,
+                "OIDC email claim is whitespace-only; persisting NULL"
+            );
+            None
+        }
+        Some(e) if is_addr_spec(e) => Some(e),
+        Some(e) => {
+            // Non-empty but not a valid addr-spec: degrade to NULL. On a returning
+            // user the ON CONFLICT path overwrites a previously-stored valid email,
+            // so surface `had_prior_email` to distinguish an IdP misconfiguration
+            // wiping a known-good value from a first-login carrying junk.
+            let had_prior_email = sqlx::query_scalar!(
+                "SELECT email IS NOT NULL AS \"had_email!\" FROM users WHERE oidc_subject = $1",
+                subject,
+            )
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false);
+            tracing::warn!(
+                oidc_subject = %subject,
+                rejected_email_len = e.len(),
+                had_prior_email,
+                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub (UNK-309)"
+            );
+            None
+        }
+        None => None,
+    };
+
     let mut tx = pool.begin().await?;
 
     // Serialize concurrent first-user promotion attempts. Without this lock,
@@ -215,6 +299,19 @@ pub async fn upsert_from_oidc_and_maybe_promote(
 mod tests {
     use super::*;
 
+    #[test]
+    fn is_addr_spec_accepts_plain_address_rejects_display_and_literal_forms() {
+        // Bare addr-spec passes.
+        assert!(is_addr_spec("user@example.com"));
+        // UNK-309: the default `EmailAddress::is_valid` would accept these
+        // display-name and domain-literal forms and store the bracket/angle/
+        // space-bearing string raw. `is_addr_spec` rejects them so the column
+        // only ever holds a plain `local@domain`.
+        assert!(!is_addr_spec("Bob <bob@example.com>"));
+        assert!(!is_addr_spec("bob@[127.0.0.1]"));
+        assert!(!is_addr_spec("not-an-email"));
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_creates_and_updates_user(pool: PgPool) {
         let subject = format!("test-subject-{}", Uuid::new_v4());
@@ -248,6 +345,74 @@ mod tests {
             .expect("find by subject")
             .unwrap();
         assert_eq!(found.id, user.id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_drops_malformed_oidc_email_to_none(pool: PgPool) {
+        // UNK-309: the OIDC email claim is signature-verified but not
+        // format-checked upstream. A non-standard IdP releasing a malformed
+        // value must not land it in `users.email` (the RFC-5322 invariant the
+        // admin PATCH path already enforces). Per OIDC Core §5.7 email is an
+        // optional, non-identifying claim, so we degrade to NULL rather than
+        // failing login — identity still resolves via `sub`.
+        let subject = format!("malformed-email-{}", Uuid::new_v4());
+        let user =
+            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Mallory", Some("not-an-email"))
+                .await
+                .expect("upsert");
+        assert_eq!(
+            user.email, None,
+            "malformed email claim must persist as NULL"
+        );
+        assert_eq!(user.oidc_subject, subject, "identity still keyed on sub");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_treats_empty_oidc_email_as_none(pool: PgPool) {
+        // Empty / whitespace-only claim is absence, not a value — store NULL.
+        let subject = format!("empty-email-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Eve", Some("   "))
+            .await
+            .expect("upsert");
+        assert_eq!(user.email, None, "empty email claim must persist as NULL");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_persists_valid_oidc_email_trimmed(pool: PgPool) {
+        // Valid claim with surrounding whitespace: trimmed and persisted.
+        let subject = format!("valid-email-{}", Uuid::new_v4());
+        let user =
+            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Val", Some("  val@example.com "))
+                .await
+                .expect("upsert");
+        assert_eq!(user.email.as_deref(), Some("val@example.com"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_overwrites_valid_email_to_none_when_claim_becomes_malformed(pool: PgPool) {
+        // UNK-309 conflict-path consequence: the upsert is
+        // `ON CONFLICT (oidc_subject) DO UPDATE SET email = EXCLUDED.email`, so a
+        // returning user whose IdP later emits a malformed claim has their
+        // previously-stored valid email overwritten to NULL. Consistent with
+        // Option-B (never persist junk in the column); identity is preserved
+        // because matching keys on `sub`, not `email`.
+        let subject = format!("email-overwrite-{}", Uuid::new_v4());
+        let first =
+            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Bob", Some("bob@example.com"))
+                .await
+                .expect("first upsert");
+        assert_eq!(first.email.as_deref(), Some("bob@example.com"));
+
+        let second =
+            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Bob", Some("not-an-email"))
+                .await
+                .expect("second upsert");
+        assert_eq!(
+            second.email, None,
+            "malformed claim on re-login must overwrite the previously valid email to NULL"
+        );
+        assert_eq!(second.id, first.id, "same row updated, not a new insert");
+        assert_eq!(second.oidc_subject, subject, "identity preserved on sub");
     }
 
     /// Loud-failure regression for UNK-108. Simulates the failure mode

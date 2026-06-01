@@ -8,13 +8,13 @@
 //! `AppError::Forbidden` (403).
 //!
 //! Session invalidation policy: `users.session_version` is bumped in the same
-//! transaction for mutations that affect access-control or identity matching:
+//! transaction only for mutations that change access-control state:
 //! - `PUT …/role` — role governs RLS visibility and admin gates.
 //! - `PUT …/child-status` — child flag controls content-visibility rules.
-//! - `PATCH …` email field — email is used for OIDC provider matching; a
-//!   stale email in an active session would bind the session to the wrong
-//!   identity on next OIDC login.
-//! `display_name` changes do not bump session_version (cosmetic only).
+//! `PATCH …` `email` and `display_name` do not bump session_version: neither
+//! gates access. Login identity is the OIDC `sub`, RLS keys on user
+//! id/role/`is_child`, and the session auth hash is `session_version` only — so
+//! a stale email or name in an active session has no security consequence.
 //!
 //! # Last-admin protection (TOCTOU-safe)
 //!
@@ -34,11 +34,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use email_address::EmailAddress;
-
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
 use crate::models::role::Role;
+use crate::models::user::is_addr_spec;
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -338,18 +337,44 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
     AppError::Internal(e.into())
 }
 
+/// Validate an admin-supplied `email` for `PATCH /api/users/{id}`.
+///
+/// Returns the trimmed addr-spec on success. Rejects an empty/whitespace-only
+/// value and any non-addr-spec form (display-name, domain-literal — see
+/// [`is_addr_spec`]) with [`AppError::Validation`] (422).
+///
+/// THREAT: an admin submitting a malformed value is surfaced server-side for
+/// security observability. The rejection is logged by shape (length) only —
+/// never the value verbatim (Hard Rule 7).
+fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Result<&str, AppError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation("email must not be empty".into()));
+    }
+    if !is_addr_spec(trimmed) {
+        tracing::warn!(
+            admin_id = %admin_id,
+            target_user_id = %target_user_id,
+            rejected_email_len = trimmed.len(),
+            "admin PATCH rejected malformed email value (UNK-309)"
+        );
+        return Err(AppError::Validation("email must be a valid address".into()));
+    }
+    Ok(trimmed)
+}
+
 /// `PATCH /api/users/{id}` — update `display_name` / `email` (admin only).
 ///
-/// Bumps `session_version` when `email` is changed or cleared (OIDC identity
-/// matching depends on email; see module-level session-invalidation policy).
-/// `display_name` changes do not bump `session_version`.
+/// Does not bump `session_version`: neither `email` nor `display_name` gates
+/// access (login identity is the OIDC `sub`, not email; see module-level
+/// session-invalidation policy).
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::NotFound`] when the target user does not exist.
 /// - [`AppError::Validation`] when `display_name` is null or empty, when
-///   `email` is not a valid RFC 5322 address, or when `email` is already
-///   in use by another user.
+///   `email` is not a valid RFC 5322 addr-spec (display-name and domain-literal
+///   forms are rejected), or when `email` is already in use by another user.
 /// - [`AppError::Internal`] on database errors.
 async fn update_user(
     current_user: CurrentUser,
@@ -402,16 +427,18 @@ async fn update_user(
         .map_err(|e| AppError::Internal(e.into()))?;
     }
 
-    // THREAT: email is the OIDC provider-matching key. Updating or clearing it
-    // without bumping session_version would bind active sessions to the old
-    // identity on next OIDC login.
+    // Email is not an access-control input: login identity is the OIDC `sub`
+    // (the upsert keys on `oidc_subject`, not email), RLS keys on user
+    // id/role/`is_child`, and the session auth hash is `session_version` only.
+    // So changing or clearing email does not bump `session_version` — no active
+    // session needs invalidating. The uniqueness constraint is still enforced
+    // below for the set case.
     if let Some(ref email_opt) = req.email {
         match email_opt {
             None => {
-                // Clear email. Bumps session_version — see module-level
-                // session-invalidation policy (OIDC matching depends on email).
+                // Clear email — no session_version bump (email gates nothing).
                 sqlx::query!(
-                    "UPDATE users SET email = NULL, session_version = session_version + 1, updated_at = now() WHERE id = $1",
+                    "UPDATE users SET email = NULL, updated_at = now() WHERE id = $1",
                     id,
                 )
                 .execute(&mut *tx)
@@ -419,13 +446,7 @@ async fn update_user(
                 .map_err(|e| AppError::Internal(e.into()))?;
             }
             Some(email) => {
-                let trimmed = email.trim();
-                if trimmed.is_empty() {
-                    return Err(AppError::Validation("email must not be empty".into()));
-                }
-                if !EmailAddress::is_valid(trimmed) {
-                    return Err(AppError::Validation("email must be a valid address".into()));
-                }
+                let trimmed = validate_patch_email(email, current_user.user_id, id)?;
                 // Check unique constraint proactively for a clear error message.
                 let conflict = sqlx::query_scalar!(
                     "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2",
@@ -439,7 +460,7 @@ async fn update_user(
                     return Err(AppError::Validation("email already in use".into()));
                 }
                 sqlx::query!(
-                    "UPDATE users SET email = $1, session_version = session_version + 1, updated_at = now() WHERE id = $2",
+                    "UPDATE users SET email = $1, updated_at = now() WHERE id = $2",
                     trimmed,
                     id,
                 )

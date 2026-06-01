@@ -35,3 +35,43 @@ Write an operator-facing Starlight page covering these states (and how
 quarantine differs) when the library/validation UI surface that exposes
 them lands. The dev-facing reference in
 [`docs/schema.md`](./schema.md) is already corrected.
+
+### OIDC `email` claim: addr-spec validation and degrade-to-NULL
+
+**Source:** `backend/src/models/user.rs`
+(`is_addr_spec`, `upsert_from_oidc_and_maybe_promote`) — UNK-309
+
+The OIDC `email` claim is signature-verified but not format-checked
+upstream. Reverie validates it against RFC 5322 _addr-spec_ rules before
+persisting. Two operator-visible behaviours:
+
+- **Invalid format degrades to NULL, not a login failure.** A malformed
+  claim (display-name form `Alice <alice@example.com>`, domain-literal
+  `alice@[127.0.0.1]`, or a non-email string) is discarded and
+  `users.email` stored as `NULL`. Login still succeeds — identity is the
+  OIDC `sub`, not the email claim (OIDC Core §5.7: email is optional and
+  non-identifying).
+- **Malformed claim on re-login overwrites a previously-stored valid
+  email to NULL.** If an IdP changes from a valid to an invalid claim, the
+  stored email is cleared on next login. The rejection is logged at `warn`
+  with a `had_prior_email` field so operators can tell a known-good value
+  being wiped (IdP misconfiguration) apart from a first-login carrying junk.
+
+Write an operator-facing Starlight page covering email-claim validation
+behaviour when the admin user-management surface lands.
+
+### Admin `PATCH /api/users/{id}`: addr-spec email validation
+
+**Source:** `backend/src/routes/users/mod.rs` — UNK-309
+
+The admin `PATCH /api/users/{id}` endpoint validates the email field
+against the same RFC 5322 _addr-spec_ rules as the OIDC path
+(`is_addr_spec`). This tightens the prior `EmailAddress::is_valid` check,
+which accepted display-name (`Alice <alice@example.com>`) and
+domain-literal (`alice@[127.0.0.1]`) forms — both now rejected with 422.
+Email changes and clears do **not** bump `session_version`: email is not
+an access-control input (login identity is the OIDC `sub`, RLS keys on
+user id/role/`is_child`), so no active session needs invalidating.
+
+Write an operator-facing Starlight page documenting these constraints when
+the admin user-management UI lands.
