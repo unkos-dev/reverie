@@ -185,8 +185,13 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
 /// the RFC-5322 addr-spec invariant (UNK-309). Per
 /// OIDC Core §5.7 the `email` claim is optional and non-identifying, so an invalid
 /// claim degrades to `NULL` rather than failing authentication — login never depends
-/// on an optional claim's format. The rejected value is logged by shape only
-/// (length), never verbatim (Hard Rule 7).
+/// on an optional claim's format. On a returning user the
+/// `ON CONFLICT … DO UPDATE SET email = EXCLUDED.email` clause overwrites a
+/// previously-stored valid email with `NULL` when the `IdP` later emits a malformed
+/// claim (Option B: never persist a junk value in the column); identity is preserved
+/// because the conflict key is `oidc_subject`. The rejected value is logged by shape
+/// only (length), never verbatim (Hard Rule 7); the `had_prior_email` log field lets
+/// operators distinguish that overwrite from a first-login with a malformed claim.
 ///
 /// # Errors
 ///
@@ -202,23 +207,40 @@ pub async fn upsert_from_oidc_and_maybe_promote(
     // Validate the OIDC email claim before persisting (UNK-309). Trim first so a
     // whitespace-only claim reads as absence; degrade a non-empty-but-invalid
     // value to NULL with a shape-only warning.
-    let email = match email.map(str::trim).filter(|e| !e.is_empty()) {
+    let email = match email.map(str::trim) {
+        Some("") => {
+            // Claim present but whitespace-only: absence, not a value. (A truly
+            // absent claim — `None` — is the normal optional-claim path per OIDC
+            // Core §5.7 and is not logged, to avoid per-login debug noise for IdPs
+            // that omit `email`.)
+            tracing::debug!(
+                oidc_subject = %subject,
+                "OIDC email claim is whitespace-only; persisting NULL"
+            );
+            None
+        }
         Some(e) if is_addr_spec(e) => Some(e),
         Some(e) => {
+            // Non-empty but not a valid addr-spec: degrade to NULL. On a returning
+            // user the ON CONFLICT path overwrites a previously-stored valid email,
+            // so surface `had_prior_email` to distinguish an IdP misconfiguration
+            // wiping a known-good value from a first-login carrying junk.
+            let had_prior_email = sqlx::query_scalar!(
+                "SELECT email IS NOT NULL AS \"had_email!\" FROM users WHERE oidc_subject = $1",
+                subject,
+            )
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false);
             tracing::warn!(
                 oidc_subject = %subject,
                 rejected_email_len = e.len(),
+                had_prior_email,
                 "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub (UNK-309)"
             );
             None
         }
-        None => {
-            tracing::debug!(
-                oidc_subject = %subject,
-                "OIDC email claim absent; persisting NULL"
-            );
-            None
-        }
+        None => None,
     };
 
     let mut tx = pool.begin().await?;

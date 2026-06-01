@@ -337,6 +337,32 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
     AppError::Internal(e.into())
 }
 
+/// Validate an admin-supplied `email` for `PATCH /api/users/{id}`.
+///
+/// Returns the trimmed addr-spec on success. Rejects an empty/whitespace-only
+/// value and any non-addr-spec form (display-name, domain-literal — see
+/// [`is_addr_spec`]) with [`AppError::Validation`] (422).
+///
+/// THREAT: an admin submitting a malformed value is surfaced server-side for
+/// security observability. The rejection is logged by shape (length) only —
+/// never the value verbatim (Hard Rule 7).
+fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Result<&str, AppError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation("email must not be empty".into()));
+    }
+    if !is_addr_spec(trimmed) {
+        tracing::warn!(
+            admin_id = %admin_id,
+            target_user_id = %target_user_id,
+            rejected_email_len = trimmed.len(),
+            "admin PATCH rejected malformed email value (UNK-309)"
+        );
+        return Err(AppError::Validation("email must be a valid address".into()));
+    }
+    Ok(trimmed)
+}
+
 /// `PATCH /api/users/{id}` — update `display_name` / `email` (admin only).
 ///
 /// Does not bump `session_version`: neither `email` nor `display_name` gates
@@ -347,8 +373,8 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::NotFound`] when the target user does not exist.
 /// - [`AppError::Validation`] when `display_name` is null or empty, when
-///   `email` is not a valid RFC 5322 address, or when `email` is already
-///   in use by another user.
+///   `email` is not a valid RFC 5322 addr-spec (display-name and domain-literal
+///   forms are rejected), or when `email` is already in use by another user.
 /// - [`AppError::Internal`] on database errors.
 async fn update_user(
     current_user: CurrentUser,
@@ -420,13 +446,7 @@ async fn update_user(
                 .map_err(|e| AppError::Internal(e.into()))?;
             }
             Some(email) => {
-                let trimmed = email.trim();
-                if trimmed.is_empty() {
-                    return Err(AppError::Validation("email must not be empty".into()));
-                }
-                if !is_addr_spec(trimmed) {
-                    return Err(AppError::Validation("email must be a valid address".into()));
-                }
+                let trimmed = validate_patch_email(email, current_user.user_id, id)?;
                 // Check unique constraint proactively for a clear error message.
                 let conflict = sqlx::query_scalar!(
                     "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2",
