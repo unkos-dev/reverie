@@ -46,15 +46,25 @@ STDERR="$(printf '%s' "$INPUT" | jq -r '.tool_response.stderr // empty' 2>/dev/n
 CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // "unknown"' 2>/dev/null)" || CMD="[extraction-failed]"
 TOOL_USE_ID="$(printf '%s' "$INPUT" | jq -r '.tool_use_id // "unknown"' 2>/dev/null)" || TOOL_USE_ID="[extraction-failed]"
 
-# Two POSIX ERE character classes with different exclusion sets:
-# Pattern 1 (KEY=VALUE): [^] \t"',}]+ excludes ], space, tab, quotes, comma, }
-# Pattern 2 (KEY: "val"): [^]"',}]+  excludes ] and quotes but allows spaces
-# Both use the POSIX rule: ] immediately after [^ is literal (not class closer).
-# Do NOT move ] away from first position in either class.
+# Pattern 1 (KEY=VALUE) uses a NEGATED class [^] \t"',}]+ excluding ], space,
+#   tab, quotes, comma, } — the POSIX rule "] immediately after [^ is literal"
+#   keeps ] inside the class; do NOT move it from first position.
+# Pattern 2 (KEY:"val", JSON/YAML) uses a POSITIVE "secret-shaped" class:
+#   [A-Za-z0-9._/+=~-]{8,} — a base64/token charset, no whitespace, min 8 chars.
+#   THREAT/tradeoff (UNK-326): redacting only secret-shaped values stops the
+#   PostToolUse scanner from blanking non-secret values that sit under keys
+#   literally named *TOKEN/SECRET/etc in legitimate JSON (e.g. `gh api`
+#   responses) — booleans, numbers, short enum strings, prose. The {8,} floor
+#   mirrors the URL-cred pattern below (line for ://creds requires {8,}); the
+#   no-whitespace class mirrors Pattern 1. Residual: a 1–7 char JSON secret
+#   value passes through, consistent with the hook's existing 8-char floor. A
+#   value indistinguishable from a real secret (≥8 no-space token charset) is
+#   still redacted — fail-safe is preserved for the cases that matter.
+#   The / inside the class is escaped (\/) because it is the sed s/// delimiter.
 apply_redactions() {
   /bin/sed -E \
     -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE))=[^] \t"'"'"',}]+/\1=[REDACTED]/gI' \
-    -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE))"?:[ \t]*"?[^]"'"'"',}]+/\1=[REDACTED]/gI' \
+    -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE))"?:[ \t]*"?[A-Za-z0-9._\/+=~-]{8,}/\1=[REDACTED]/gI' \
     -e 's|://[^/:@]+:[^@]{8,}@|://[REDACTED:url-creds]@|g' \
     -e 's/Bearer [A-Za-z0-9._-]{20,}/Bearer [REDACTED]/gI' \
     -e 's/gh[pousr]_[A-Za-z0-9]{20,}/[REDACTED:github-pat]/g' \
