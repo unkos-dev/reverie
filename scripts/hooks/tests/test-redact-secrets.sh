@@ -77,6 +77,43 @@ run_test \
   "stdout" \
   "hunter2secretvalue"
 
+# Pattern 1b (secret-shaped): generic ≥8-char no-prefix secret in JSON must still redact
+run_test \
+  "Pattern 1b: secret-shaped generic token in JSON" \
+  '"api_token": "hunter2tokenvalue"' \
+  "" \
+  'api_token=\[REDACTED\]' \
+  "yes" \
+  "stdout" \
+  "hunter2tokenvalue"
+
+# False positive: short value (<8 chars) under a secret-named JSON key must pass through
+run_test \
+  "False positive: short value under secret key" \
+  '"client_secret": "short"' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
+# False positive: boolean value under a secret-named JSON key must pass through
+run_test \
+  "False positive: boolean value under secret key" \
+  '"has_secret": false' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
+# False positive: structured/numeric value under a token-named JSON key must pass through
+run_test \
+  "False positive: numeric value under token key" \
+  '"refresh_token": 12345' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
 # Pattern 2: URL-embedded credentials
 run_test \
   "Pattern 2: URL credentials" \
