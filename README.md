@@ -58,6 +58,23 @@ reporting, dev-vs-prod differences) and
 [docs/deployment/reverse-proxy.md](docs/deployment/reverse-proxy.md) for
 Caddy / nginx / Traefik samples.
 
+### Verifying image signatures
+
+Every published image is signed with [Sigstore](https://www.sigstore.dev/)
+cosign using keyless signing — no long-lived key, with the signature
+recorded in the public Rekor transparency log. Verify an image before
+pulling it:
+
+```bash
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/unkos-dev/reverie/\.github/workflows/docker-publish\.yml@.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/unkos-dev/reverie:<tag>
+```
+
+A successful verification confirms the image was built by this repo's
+release workflow and has not been tampered with since.
+
 ## License
 
 This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
