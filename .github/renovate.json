@@ -73,10 +73,10 @@
   ],
   "customManagers": [
     {
-      "description": "Rust-crate tools pinned inline via taiki-e/install-action `with: tool: <crate>@<ver>` syntax. install-action's manifest silently advances unpinned tools, so the project pins versions inline. Renovate's github-actions manager doesn't reach inside `with:` values, so without this manager those pins stay frozen. Hand-listed depNames avoid false matches on any non-Rust install-action entry that might appear later (today's only one is cargo-nextest; sqlx-cli uses a different idiom — see the second manager).",
+      "description": "Rust-crate tools pinned inline via taiki-e/install-action `with: tool: <crate>@<ver>,<crate>@<ver>` syntax. install-action's manifest silently advances unpinned tools, so the project pins versions inline. Renovate's github-actions manager doesn't reach inside `with:` values, so without this manager those pins stay frozen. Tools are comma-joined in one `tool:` value, so the regex matches each `<crate>@<ver>` token by a hand-listed crate-name allowlist (cargo-nextest, cargo-llvm-cov) rather than anchoring on `tool:` — the anchor only ever preceded the first token and would leave later tools frozen. The allowlist keeps matches crate-scoped; sqlx-cli uses a different idiom — see the second manager.",
       "customType": "regex",
       "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
-      "matchStrings": ["tool:\\s+(?<depName>cargo-nextest)@(?<currentValue>[0-9.]+)"],
+      "matchStrings": ["(?<depName>cargo-nextest|cargo-llvm-cov)@(?<currentValue>[0-9.]+)"],
       "datasourceTemplate": "crate"
     },
     {

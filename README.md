@@ -5,6 +5,7 @@ A high-performance, self-hosted ebook library manager.
 [![CI](https://github.com/unkos-dev/reverie/actions/workflows/ci.yml/badge.svg)](https://github.com/unkos-dev/reverie/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/unkos-dev/reverie/actions/workflows/codeql.yml/badge.svg)](https://github.com/unkos-dev/reverie/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/unkos-dev/reverie/badge)](https://scorecard.dev/viewer/?uri=github.com/unkos-dev/reverie)
+[![codecov](https://codecov.io/gh/unkos-dev/reverie/graph/badge.svg)](https://codecov.io/gh/unkos-dev/reverie)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 > **Status:** Pre-alpha. Under active development.

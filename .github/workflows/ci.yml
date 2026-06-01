@@ -132,7 +132,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
-          components: clippy, rustfmt
+          # llvm-tools-preview ships the llvm-profdata/llvm-cov binaries
+          # cargo-llvm-cov shells out to for instrumentation-based coverage.
+          components: clippy, rustfmt, llvm-tools-preview
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -166,11 +168,12 @@ jobs:
         run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres --locked
 
       # cargo-nextest replaces the default `cargo test` runner for the
-      # Test step below. install-action ships a prebuilt binary for
-      # cargo-nextest, so this is a ~5s download.
+      # Test step below; cargo-llvm-cov wraps that run to collect
+      # instrumentation-based coverage. install-action ships prebuilt
+      # binaries for both, so this is a ~5s download.
       - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
         with:
-          tool: cargo-nextest@0.9
+          tool: cargo-nextest@0.9,cargo-llvm-cov@0.8.7
 
       - name: Apply migrations
         run: sqlx migrate run
@@ -226,8 +229,12 @@ jobs:
       # concurrent conns vs. Postgres's default `max_connections=100`).
       # Comfortable headroom; first cold-run on this PR validates it
       # empirically.
-      - name: Test
-        run: cargo nextest run --workspace
+      # Single pass: run the nextest suite under llvm-cov instrumentation
+      # and emit an LCOV report for Codecov. cargo-llvm-cov keeps its
+      # instrumented build in a separate target dir (target/llvm-cov-target),
+      # so it neither disturbs nor reuses the regular build above.
+      - name: Test (with coverage)
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
 
       # nextest does not run doctests. Reverie has none today, but the
       # tiered comment policy (`adr/2026-05-08-tiered-comment-policy.md`)
@@ -235,6 +242,16 @@ jobs:
       # drift fails CI from day one. Near-instant while empty.
       - name: Doctests
         run: cargo test --doc --workspace
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
+        with:
+          files: backend/lcov.info
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Coverage is informational — a Codecov outage or a missing/expired
+          # token must never red-X the build.
+          fail_ci_if_error: false
 
   audit:
     name: Security Audit
@@ -420,8 +437,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test
+      - name: Test (with coverage)
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
+        with:
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Coverage is informational — a Codecov outage or a missing/expired
+          # token must never red-X the build.
+          fail_ci_if_error: false
 
       - name: Stylelint
         run: npx stylelint 'src/**/*.css' --max-warnings 0
