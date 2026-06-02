@@ -19,6 +19,7 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       audit: ${{ steps.filter.outputs.audit }}
@@ -66,6 +67,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -258,6 +260,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.audit == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -289,6 +292,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -328,6 +332,7 @@ jobs:
   repo-lint:
     name: Repo lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -419,6 +424,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -478,6 +484,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.staging == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -591,3 +598,36 @@ jobs:
             echo "${stderr}" >&2
             exit 1
           fi
+
+  # Single required status check for the branch ruleset. Aggregates every CI
+  # job so the ruleset requires only this one context. Path-conditional jobs
+  # that legitimately skip on a given PR (docs-only, frontend-only, etc.) no
+  # longer leave an individually-required check unsatisfied — the trap that
+  # blocked docs PRs from merging. Fails only when a needed job actually
+  # failed or was cancelled; `skipped` is treated as a pass.
+  #
+  # `if: always()` is load-bearing: without it the gate would itself be
+  # skipped when an upstream job fails, and GitHub reports a skipped required
+  # check as success — which would let a broken build merge.
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs:
+      - changes
+      - backend
+      - audit
+      - workflow-lint
+      - repo-lint
+      - frontend
+      - staging-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "A required CI job failed or was cancelled:"
+          echo "$RESULTS"
+          exit 1

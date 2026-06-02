@@ -30,6 +30,11 @@ on:
 permissions:
   contents: read
 
+# One close per PR; serialize the rare double-fire (close+merge race).
+concurrency:
+  group: linear-close-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   close-linear-issue:
     # Only merged, same-repo PRs. The same-repo guard makes the fork-skip

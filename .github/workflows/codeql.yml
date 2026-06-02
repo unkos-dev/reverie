@@ -34,6 +34,7 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       javascript-typescript: ${{ steps.filter.outputs.javascript-typescript }}
       rust: ${{ steps.filter.outputs.rust }}
@@ -67,6 +68,7 @@ jobs:
     # the default-branch-protection ruleset's code-scanning rule is
     # satisfied even on PRs that touch no path-gated source.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       # CodeQL needs security-events: write to upload SARIF results.
       security-events: write
@@ -93,6 +95,7 @@ jobs:
     needs: changes
     if: github.event_name == 'schedule' || needs.changes.outputs.javascript-typescript == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       security-events: write
       actions: read
@@ -117,6 +120,7 @@ jobs:
     needs: changes
     if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       security-events: write
       actions: read
@@ -139,3 +143,29 @@ jobs:
         uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
         with:
           category: /language:rust
+
+  # Single required CodeQL context for the branch ruleset. A gate in ci.yml
+  # cannot `needs:` jobs in this separate workflow, so CodeQL carries its own.
+  # Requiring this aggregate instead of the per-language Analyze (*) jobs means
+  # a PR that doesn't touch a given language (its analyze job skips) is not
+  # blocked by an unsatisfied required check. `analyze-actions` always runs, so
+  # there is always at least one real CodeQL result per commit. `if: always()`
+  # is load-bearing for the same reason as the CI gate.
+  codeql-gate:
+    name: CodeQL gate
+    if: always()
+    needs:
+      - analyze-actions
+      - analyze-javascript-typescript
+      - analyze-rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any analysis failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "A required CodeQL analysis failed or was cancelled:"
+          echo "$RESULTS"
+          exit 1
