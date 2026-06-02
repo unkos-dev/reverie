@@ -57,6 +57,7 @@ jobs:
   # filter lives here in the matrix shape rather than as a job gate.
   prepare-matrix:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
     steps:
@@ -73,6 +74,9 @@ jobs:
   build:
     needs: prepare-matrix
     runs-on: ${{ matrix.runner }}
+    # Native Rust image build (no QEMU); bounded well above observed
+    # build time but far below the 6h default so a hung build fails fast.
+    timeout-minutes: 60
     # Push the per-arch image by digest to GHCR.
     permissions:
       contents: read
@@ -160,6 +164,7 @@ jobs:
 
   merge:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs:
       - build
     # Job-level block replaces the workflow-level grant (it does not merge
