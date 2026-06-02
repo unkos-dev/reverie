@@ -6,6 +6,8 @@ Implement the reverie-side of ADR `adr/2026-06-02-hybrid-migration-entrypoints-a
 
 Homelab (env template, `REVERIE_MIGRATOR_PASSWORD` secret, ansible) is a **separate** cross-repo pass — NOT in this plan.
 
+**Pre-v0.1.0 operating stance vs. design target.** The migration system is _designed_ for the post-v0.1.0 production model: forward-only, immutable applied migrations, least-privilege role (per the ADR). Pre-v0.1.0, no Reverie database is load-bearing — we _operate_ disposably: edit the initial migration in place and recreate (`down -v` → fresh apply), consolidating into one rolled-up migration before first release. This is an operating stance, not a design constraint; it does not soften any production-targeted choice. The data-preserving cutover machinery (`REASSIGN OWNED`, forward grant-migrations) is operationally N/A until a load-bearing DB exists at v0.1.0 — designed-for, not exercised now.
+
 ## User Story
 
 As a self-hosting operator
@@ -41,7 +43,7 @@ Today `db::run_migrations` runs unconditionally in-process at startup (`lib.rs:2
 ## OPEN QUESTIONS (resolve before/at implementation — do NOT guess)
 
 1. **Confirm the shipped compose target + migration-DSN env placement.** The shipped operator compose is `docker/compose.staging.yml` — it already has a `reverie:` app service (`ghcr.io/unkos-dev/reverie`) gated on `reverie-postgres: condition: service_healthy`, fed by `env_file:`. (Repo `docker-compose.yml` is **dev-only**, postgres service only; dev migrate = `cargo run -- migrate`, no compose service.) Task 9 retargets to `compose.staging.yml`. Two points still need human confirmation: (a) confirm `compose.staging.yml` is the intended target (vs. a not-yet-created public example); (b) `DATABASE_URL_MIGRATION` must reach ONLY the new `reverie-migrate` service, NOT the app `reverie` service's shared `env_file:` — so it lives in a migrate-scoped env file or inline `environment:` on the migrate service. **Confirm before Task 9.**
-2. **Staging existing-DB ownership** (ADR-flagged): staging objects are almost certainly owned by `reverie` (superuser) — the 2026-05-26 rollup reset only `_sqlx_migrations`, not objects, and the PG volume persists. Run, connected to the target DB as superuser: `SELECT relname, relowner::regrole FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='r';` → if `reverie`-owned, a one-time `REASSIGN OWNED BY reverie TO reverie_migrator` (run as superuser) is required, else recreate. Homelab-side execution; this plan only records the diagnostic + branch.
+2. **Staging cutover — recreate (disposable dev infra).** Staging is a throwaway pre-v0.1.0 DB (see the operating-stance note above), so the cutover is simply: `docker compose down -v` → fresh apply with `reverie_migrator` running the migration. Objects are then `reverie_migrator`-owned natively — no `REASSIGN OWNED`, no checksum reconciliation. The data-preserving path (diagnose ownership via `pg_class.relowner`, `REASSIGN OWNED`) is post-v0.1.0 machinery and is NOT exercised here; it stays a design consideration for the production upgrade story, not a step in this plan. Homelab-side execution; this plan only records the branch.
 
 ---
 
@@ -201,7 +203,7 @@ CREATE ROLE reverie_app WITH LOGIN PASSWORD :'app_pw';
 - ACTION: in the GRANT block (`...up.sql:839-937`) add `GRANT SELECT ON _sqlx_migrations TO reverie_app;`.
 - GOTCHA: `_sqlx_migrations` is created by the runner before user SQL executes, so the grant is valid inside the migration. Migrator owns it → can grant.
 - GOTCHA: pre-release schema is mutable — edit the existing initial migration in place (no new migration file) per project convention; re-run `cargo sqlx prepare`.
-- GOTCHA (existing DBs / staging): the in-place edit changes the file's checksum, so any DB where the initial migration already ran (the staging persisted volume) will fail sqlx's checksum verification on the next `migrate` and the grant never lands → `verify_schema_current` then errors on the app pool's missing SELECT. In-place edit is safe ONLY for fresh DBs. Staging must therefore take the **recreate** branch of OPEN QUESTION 2 (down -v → fresh apply), NOT the volume-preserving `REASSIGN OWNED` branch; if the volume must be preserved, the grant ships as a separate forward migration instead. Resolve in OPEN QUESTION 2 before staging rollout.
+- GOTCHA (pre-v0.1.0 only): in-place edit changes the file's checksum, so any DB where the initial migration already ran would fail sqlx's checksum check. Pre-release this never bites — every Reverie DB is disposable and recreated (`down -v` → fresh apply), so the checksum is computed fresh. In-place edit is the correct pre-release workflow (see the operating-stance note); the forward-migration alternative is post-v0.1.0 discipline and out of this plan.
 - VALIDATE: fresh DB migrate; `\dp _sqlx_migrations` shows reverie_app SELECT.
 
 ### Task 7: UPDATE `backend/src/db.rs` — implement `verify_schema_current`
@@ -317,15 +319,14 @@ docker compose config   # parses
 
 ## Risks and Mitigations
 
-| Risk                                                                               | L    | I    | Mitigation                                                                                                                                             |
-| ---------------------------------------------------------------------------------- | ---- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `migration_database_url` Option ripples to many `Config` builds                    | MED  | MED  | grep all constructors; `test_support.rs:25` known; compiler enforces                                                                                   |
-| Staging objects superuser-owned → migrator can't ALTER/DROP                        | HIGH | HIGH | OPEN QUESTION 2: diagnose ownership, `REASSIGN OWNED` (as superuser) or recreate; homelab-side                                                         |
-| migrator missing `CREATE ON SCHEMA public` → extension/table create fails on PG15+ | MED  | HIGH | Task 1 grants both DB + schema CREATE; Level 4 fresh-DB test                                                                                           |
-| schema divergence check needs app read of `_sqlx_migrations`                       | —    | —    | Task 6 GRANT + Task 5 test gate it                                                                                                                     |
-| in-place migration edit → checksum mismatch on staging's persisted volume          | MED  | HIGH | Task 6 GOTCHA: staging takes OPEN Q2 recreate branch (fresh apply), or grant ships as forward migration                                                |
-| migration DSN re-injected into app via `staging.env.runtime.example`               | MED  | HIGH | Task 10: DSN lives ONLY in `staging.env.migrate.example`; runtime template stays migration-cred-free                                                   |
-| default-false flag → bare-docker app starts unmigrated (DB behind binary)          | MED  | MED  | documented two-step / flag; **schema-behind** refusal (Task 7, fail-closed) makes the unmigrated case a legible startup error, not silent runtime 500s |
+| Risk                                                                               | L   | I    | Mitigation                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | --- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `migration_database_url` Option ripples to many `Config` builds                    | MED | MED  | grep all constructors; `test_support.rs:25` known; compiler enforces                                                                                   |
+| Staging objects superuser-owned (pre-existing dev DB)                              | LOW | LOW  | recreate (`down -v` → fresh apply); `reverie_migrator` owns objects natively. No `REASSIGN` pre-v0.1.0 — see OPEN QUESTION 2                           |
+| migrator missing `CREATE ON SCHEMA public` → extension/table create fails on PG15+ | MED | HIGH | Task 1 grants both DB + schema CREATE; Level 4 fresh-DB test                                                                                           |
+| schema divergence check needs app read of `_sqlx_migrations`                       | —   | —    | Task 6 GRANT + Task 5 test gate it                                                                                                                     |
+| migration DSN re-injected into app via `staging.env.runtime.example`               | MED | HIGH | Task 10: DSN lives ONLY in `staging.env.migrate.example`; runtime template stays migration-cred-free                                                   |
+| default-false flag → bare-docker app starts unmigrated (DB behind binary)          | MED | MED  | documented two-step / flag; **schema-behind** refusal (Task 7, fail-closed) makes the unmigrated case a legible startup error, not silent runtime 500s |
 
 ---
 
