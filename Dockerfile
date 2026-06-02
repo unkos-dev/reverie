@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.24
+# syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 
 # Stage 1a: chef base — pinned cargo-chef install shared across planner + cooker.
 # Version pin prevents recipe.json schema drift between planner emit and cooker
@@ -40,7 +40,7 @@ RUN cargo build --release
 # but package-lock.json is unchanged — buildkit reuses the mount within a single
 # build. GHA runners are ephemeral so the mount does not persist across runs;
 # cross-run npm reuse is provided by the gha layer cache instead.
-FROM node:24.16.0-slim AS frontend-builder
+FROM node:24.16.0-slim@sha256:242549cd46785b480c832479a730f4f2a20865d61ea2e404fdb2a5c3d3b73ecf AS frontend-builder
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -49,7 +49,7 @@ RUN npm run build
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
-FROM debian:trixie-slim AS runtime
+FROM debian:trixie-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8 AS runtime
 # UNK-165: curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect a successful migration window before flipping traffic.
