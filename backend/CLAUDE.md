@@ -26,7 +26,7 @@ Migrations auto-apply on startup via `db::run_migrations()`. The runner
 uses `DATABASE_URL_MIGRATION` (schema-owner DSN, required) to connect an
 ephemeral single-connection pool, applies all pending migrations in a
 batch transaction (all-or-nothing), then drops the pool before runtime
-pools are created. See `adr/2026-05-26-auto-migration-on-startup.md`.
+pools are created. See `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`.
 
 Dev: set `DATABASE_URL_MIGRATION=postgres://reverie:reverie@localhost:5433/reverie_dev`
 (same as schema owner). `#[sqlx::test]` still uses sqlx's built-in
