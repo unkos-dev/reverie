@@ -3,7 +3,7 @@ status: accepted
 date: 2026-05-12
 decision-makers: john
 supersedes:
-  - "2026-05-12-decouple-staging-image-from-semver-releases.md"
+  - "superseded/2026-05-12-decouple-staging-image-from-semver-releases.md"
 ---
 
 # Per-architecture native runners with manifest-list merge for Docker publish
@@ -11,7 +11,7 @@ supersedes:
 ## Context and Problem Statement
 
 The predecessor ADR
-[`2026-05-12-decouple-staging-image-from-semver-releases.md`](2026-05-12-decouple-staging-image-from-semver-releases.md)
+[`2026-05-12-decouple-staging-image-from-semver-releases.md`](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md)
 established two publication channels (`main`-push → `:main` + `:sha-<7>`;
 `v*`-tag push → `:vX.Y.Z` + `:X.Y`). It flagged multi-arch readiness as a
 later concern. Subsequent work (`UNK-241`, PR #223, merged 2026-05-12)
@@ -232,7 +232,7 @@ Open a superseding ADR if any of the following happen:
 
 - MADR 4.0: <https://adr.github.io/madr/>
 - Supersedes:
-  [`adr/2026-05-12-decouple-staging-image-from-semver-releases.md`](2026-05-12-decouple-staging-image-from-semver-releases.md)
+  [`adr/2026-05-12-decouple-staging-image-from-semver-releases.md`](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md)
   — two-channel publication and `:latest`-not-auto-assigned decisions
   remain in force; build-shape decision is replaced
 - Related:

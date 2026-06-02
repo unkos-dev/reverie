@@ -1,6 +1,11 @@
 ---
-status: "{proposed | accepted | rejected | deprecated | superseded by [title](YYYY-MM-DD-title.md)}"
+status: "{proposed | accepted | rejected | deprecated | superseded}"
 date: { YYYY-MM-DD }
+# Paths to ADRs this one replaces, e.g. ["superseded/YYYY-MM-DD-old.md"]; [] if none.
+supersedes: []
+# When this ADR is itself superseded later: set status to `superseded` and add
+#   superseded-by: ["../YYYY-MM-DD-new.md"]
+# then move this file into adr/superseded/.
 decision-makers: "{everyone who owns the decision}"
 consulted: "{everyone whose expertise was sought}"
 informed: "{everyone kept up-to-date}"
