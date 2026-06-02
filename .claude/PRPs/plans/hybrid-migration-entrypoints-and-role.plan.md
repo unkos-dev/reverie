@@ -26,7 +26,7 @@ Today `db::run_migrations` runs unconditionally in-process at startup (`lib.rs:2
 - `reverie migrate` subcommand: `main.rs` arg dispatch (`std::env::args()`, no new dep) → a `reverie_api::run_migrate()` entrypoint that reads `DATABASE_URL_MIGRATION` directly (NOT full `Config`) and calls `db::run_migrations`, then exits.
 - Server startup: gate the in-process `run_migrations` call on `REVERIE_AUTO_MIGRATE`; when off, run a new read-only `db::verify_schema_current(&app_pool)` using the app pool (requires `GRANT SELECT ON _sqlx_migrations TO reverie_app`). **Fail-closed in both directions**: refuse to start on schema-ahead (DB newer than binary) AND schema-behind (binary newer than DB — the common "forgot to run `migrate`" case), so divergence is a legible startup error, never silent runtime SQL failures.
 - Migration initial-schema GRANT block: add the `_sqlx_migrations` read grant; object ownership shifts to `reverie_migrator` by connection identity.
-- Compose: add a one-shot `reverie-migrate` service + gate the app via `depends_on: condition: service_completed_successfully` — see OPEN QUESTION on which compose file.
+- Compose (NOT in this plan): the one-shot `reverie-migrate` service + app `service_completed_successfully` gating is operator topology, tracked in **UNK-330** (canonical `compose.yml`, v0.1.0 gate). Pre-release dev migrates via `cargo run -- migrate`.
 
 ## Metadata
 
@@ -34,16 +34,16 @@ Today `db::run_migrations` runs unconditionally in-process at startup (`lib.rs:2
 | ---------------- | -------------------------------------------------------------------- |
 | Type             | REFACTOR + NEW_CAPABILITY                                            |
 | Complexity       | MEDIUM-HIGH                                                          |
-| Systems Affected | db roles, Rust config + entrypoint, migrations SQL, compose, docs    |
+| Systems Affected | db roles, Rust config + entrypoint, migrations SQL, docs             |
 | Dependencies     | sqlx (existing), thiserror (existing); NO new crate (std::env::args) |
-| Estimated Tasks  | 12                                                                   |
+| Estimated Tasks  | 11                                                                   |
 
 ---
 
-## OPEN QUESTIONS (resolve before/at implementation — do NOT guess)
+## Scope Boundaries (both prior open questions resolved)
 
-1. **Confirm the shipped compose target + migration-DSN env placement.** The shipped operator compose is `docker/compose.staging.yml` — it already has a `reverie:` app service (`ghcr.io/unkos-dev/reverie`) gated on `reverie-postgres: condition: service_healthy`, fed by `env_file:`. (Repo `docker-compose.yml` is **dev-only**, postgres service only; dev migrate = `cargo run -- migrate`, no compose service.) Task 9 retargets to `compose.staging.yml`. Two points still need human confirmation: (a) confirm `compose.staging.yml` is the intended target (vs. a not-yet-created public example); (b) `DATABASE_URL_MIGRATION` must reach ONLY the new `reverie-migrate` service, NOT the app `reverie` service's shared `env_file:` — so it lives in a migrate-scoped env file or inline `environment:` on the migrate service. **Confirm before Task 9.**
-2. **Staging cutover — recreate (disposable dev infra).** Staging is a throwaway pre-v0.1.0 DB (see the operating-stance note above), so the cutover is simply: `docker compose down -v` → fresh apply with `reverie_migrator` running the migration. Objects are then `reverie_migrator`-owned natively — no `REASSIGN OWNED`, no checksum reconciliation. The data-preserving path (diagnose ownership via `pg_class.relowner`, `REASSIGN OWNED`) is post-v0.1.0 machinery and is NOT exercised here; it stays a design consideration for the production upgrade story, not a step in this plan. Homelab-side execution; this plan only records the branch.
+1. **Compose topology — deferred, not decided here.** The migrate sidecar + canonical operator `compose.yml` are operator/production topology, tracked in **UNK-330** (v0.1.0 gate). This plan ships **no** compose changes; pre-release dev migrates via `cargo run -- migrate`. (Repo `docker-compose.yml` stays dev-only, postgres-only.)
+2. **Staging cutover — recreate (disposable dev infra).** Staging is a throwaway pre-v0.1.0 DB (see the operating-stance note under Summary), so the cutover is simply `docker compose down -v` → fresh apply with `reverie_migrator` running the migration. Objects are then `reverie_migrator`-owned natively — no `REASSIGN OWNED`, no checksum reconciliation. The data-preserving path (`pg_class.relowner` diagnosis, `REASSIGN OWNED`) is post-v0.1.0 machinery, designed-for but not exercised here. Homelab-side execution.
 
 ---
 
@@ -132,21 +132,20 @@ CREATE ROLE reverie_app WITH LOGIN PASSWORD :'app_pw';
 
 ## Files to Change
 
-| File                                                      | Action | Justification                                                                                                                                                                                                                       |
-| --------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docker/init-roles.sql`                                   | UPDATE | add `reverie_migrator` role + grants (CONNECT, CREATE ON DB, USAGE+CREATE ON SCHEMA public)                                                                                                                                         |
-| `backend/src/config.rs`                                   | UPDATE | `migration_database_url: Option<String>`; `auto_migrate: bool`; conditional-required logic; rewrite 3 migration-url tests + add flag tests                                                                                          |
-| `backend/src/db.rs`                                       | UPDATE | add `verify_schema_current(pool)` read-only check (fail-closed: refuses schema-ahead AND schema-behind); add `MigrationError::SchemaBehind` variant alongside the existing ahead path                                               |
-| `backend/src/lib.rs`                                      | UPDATE | gate `run_migrations` on `auto_migrate`; else call `verify_schema_current` with app pool; add `pub async fn run_migrate()`                                                                                                          |
-| `backend/src/main.rs`                                     | UPDATE | `std::env::args()` dispatch: `migrate` → `run_migrate()`, else `run()`                                                                                                                                                              |
-| `backend/migrations/20260526000000_initial_schema.up.sql` | UPDATE | add `GRANT SELECT ON _sqlx_migrations TO reverie_app`                                                                                                                                                                               |
-| `backend/src/test_support.rs`                             | UPDATE | `test_config()` migration field → `None`; add `migrator_pool_for` if needed                                                                                                                                                         |
-| `docker/staging.env.runtime.example`                      | UPDATE | do NOT add `DATABASE_URL_MIGRATION` — this is the app `reverie` service's `env_file:` (`compose.staging.yml:78`); keeping the migration DSN out of it is the whole point (Task 9). Only fix the "schema owner bypasses RLS" wording |
-| `docker/staging.env.migrate.example`                      | CREATE | migrate-scoped env template: `DATABASE_URL_MIGRATION` (reverie_migrator DSN) ONLY; sourced by the `reverie-migrate` one-shot service, never the app                                                                                 |
-| `.env.example`                                            | UPDATE | dev `DATABASE_URL_MIGRATION` → reverie_migrator role; note hybrid invocation                                                                                                                                                        |
-| `backend/CLAUDE.md`                                       | UPDATE | document hybrid invocation + reverie_migrator (path ref already updated)                                                                                                                                                            |
-| `docker/compose.staging.yml`                              | UPDATE | add `reverie-migrate` one-shot + app `service_completed_successfully` gating — see OPEN QUESTION 1 (env-DSN placement)                                                                                                              |
-| `docs/` (Starlight)                                       | UPDATE | operator-facing: migrate step, REVERIE_AUTO_MIGRATE, bare-docker two-step (per memory: rationale in user docs)                                                                                                                      |
+| File                                                      | Action | Justification                                                                                                                                                                         |
+| --------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker/init-roles.sql`                                   | UPDATE | add `reverie_migrator` role + grants (CONNECT, CREATE ON DB, USAGE+CREATE ON SCHEMA public)                                                                                           |
+| `backend/src/config.rs`                                   | UPDATE | `migration_database_url: Option<String>`; `auto_migrate: bool`; conditional-required logic; rewrite 3 migration-url tests + add flag tests                                            |
+| `backend/src/db.rs`                                       | UPDATE | add `verify_schema_current(pool)` read-only check (fail-closed: refuses schema-ahead AND schema-behind); add `MigrationError::SchemaBehind` variant alongside the existing ahead path |
+| `backend/src/lib.rs`                                      | UPDATE | gate `run_migrations` on `auto_migrate`; else call `verify_schema_current` with app pool; add `pub async fn run_migrate()`                                                            |
+| `backend/src/main.rs`                                     | UPDATE | `std::env::args()` dispatch: `migrate` → `run_migrate()`, else `run()`                                                                                                                |
+| `backend/migrations/20260526000000_initial_schema.up.sql` | UPDATE | add `GRANT SELECT ON _sqlx_migrations TO reverie_app`                                                                                                                                 |
+| `backend/src/test_support.rs`                             | UPDATE | `test_config()` migration field → `None`; add `migrator_pool_for` if needed                                                                                                           |
+| `.env.example`                                            | UPDATE | dev `DATABASE_URL_MIGRATION` → reverie_migrator role; note hybrid invocation                                                                                                          |
+| `backend/CLAUDE.md`                                       | UPDATE | document hybrid invocation + reverie_migrator (path ref already updated)                                                                                                              |
+| `docs/` (Starlight)                                       | UPDATE | operator-facing: migrate step, REVERIE_AUTO_MIGRATE, bare-docker two-step (per memory: rationale in user docs)                                                                        |
+
+> Compose + staging env files (`compose.staging.yml` / canonical `compose.yml`, migrate-scoped + app env templates) are **NOT** in this plan — operator topology, tracked in **UNK-330** (v0.1.0 gate).
 
 ---
 
@@ -155,7 +154,8 @@ CREATE ROLE reverie_app WITH LOGIN PASSWORD :'app_pw';
 - Homelab env template / `REVERIE_MIGRATOR_PASSWORD` Infisical secret / ansible — separate cross-repo pass.
 - Changing the migration runner internals (batch tx, schema-ahead, advisory lock, logging) — carried forward unchanged from the superseded ADR.
 - `lock_timeout` strategy changes (UNK-296) / logging-convention changes (UNK-297).
-- Staging REASSIGN/recreate execution — diagnostic recorded here; execution is homelab-side.
+- Compose migrate sidecar + canonical operator `compose.yml` (+ migrate-scoped env example, staging app env wiring) — operator topology, tracked in **UNK-330** (v0.1.0 gate). Pre-release dev migrates via `cargo run -- migrate`.
+- Staging cutover execution — recreate (homelab-side); see Scope Boundaries.
 
 ---
 
@@ -221,26 +221,19 @@ CREATE ROLE reverie_app WITH LOGIN PASSWORD :'app_pw';
 - GOTCHA: `run()` has `#[allow(clippy::too_many_lines)]` already; keep the branch tidy.
 - VALIDATE: `cargo run -- migrate` against dev compose applies/no-ops; `cargo run` (no arg, flag unset) starts and runs the read-only check (no migration DSN needed).
 
-### Task 9: compose — migrate service + app gating ⚠ blocked on OPEN QUESTION 1
+### Task 9: docs + examples
 
-- ACTION: in `docker/compose.staging.yml` (the shipped operator compose — see OPEN Q1), add `reverie-migrate` (same image, `command: ["migrate"]`, `restart: "no"`, sourcing a migrate-scoped `env_file: .env.migrate` (spec'd by Task 10's `staging.env.migrate.example`) carrying `DATABASE_URL_MIGRATION` ONLY — NOT the app's `.env.runtime`, `depends_on: reverie-postgres: condition: service_healthy`) and gate the app `reverie` service with `depends_on: reverie-migrate: condition: service_completed_successfully` (keeping its existing `reverie-postgres: service_healthy`). The app `reverie` service keeps `env_file: .env.runtime` and that file must NOT carry `DATABASE_URL_MIGRATION`.
-- GOTCHA: dev `docker-compose.yml` is postgres-only; dev migrate is `cargo run -- migrate`, NOT a compose service. Do not bolt an app service onto the dev compose without confirming intent.
-- GOTCHA: postgres:18 PGDATA volume already at `/var/lib/postgresql` in dev compose (correct for PG18) — don't regress it.
-- VALIDATE: `docker compose config` parses; one-shot exits 0 then app starts; on forced migrate failure, app does not start.
-
-### Task 10: docs + examples
-
-- ACTION: create `docker/staging.env.migrate.example` (migrate-scoped, `DATABASE_URL_MIGRATION` only); reconcile `.env.example` + `backend/CLAUDE.md` wording; Starlight operator docs for the migrate step, `REVERIE_AUTO_MIGRATE`, bare-docker two-step.
-- GOTCHA: `DATABASE_URL_MIGRATION` is REMOVED from / never added to `staging.env.runtime.example` (the app's `env_file:`) — it lives ONLY in the migrate-scoped example. Adding it to the runtime template would re-inject the migration credential into the app container, defeating the plan's core objective.
+- ACTION: dev `.env.example` (`DATABASE_URL_MIGRATION` → reverie_migrator role; note hybrid invocation); reconcile `backend/CLAUDE.md` wording; Starlight operator docs for the migrate step, `REVERIE_AUTO_MIGRATE`, bare-docker two-step.
+- GOTCHA: the migrate-scoped env example + staging/operator compose env wiring are NOT here — they ship with the compose sidecar in **UNK-330**.
 - MEMORY: rationale belongs in user-facing docs, not only ADR.
 - VALIDATE: markdownlint (lint-staged), doc-lint.
 
-### Task 11: role-attribute + posture tests
+### Task 10: role-attribute + posture tests
 
 - ACTION: `#[sqlx::test(migrations="./migrations")]` asserting `reverie_migrator` is `rolsuper=false, rolcreaterole=false, rolbypassrls=false` (first role-attribute test in the repo); a test/assert that the migration set contains no superuser-only op (no non-trusted `CREATE EXTENSION`, `CREATE ROLE`, `ALTER SYSTEM`, event trigger) — ADR Confirmation invariant.
 - VALIDATE: `cargo test`.
 
-### Task 12: full validation + sqlx cache
+### Task 11: full validation + sqlx cache
 
 - ACTION: `cargo sqlx prepare --workspace` (migration SQL changed); fmt/clippy/nextest.
 - VALIDATE: see Validation Commands.
@@ -297,12 +290,7 @@ docker compose down -v && docker compose up -d postgres
 # objects in public owned by reverie_migrator
 ```
 
-### Level 5: COMPOSE (after OPEN QUESTION 1)
-
-```bash
-docker compose config   # parses
-# migrate one-shot exits 0 → app starts; forced failure → app blocked
-```
+(Compose-level validation — one-shot exits 0 → app starts; forced failure → app blocked — ships with the sidecar in **UNK-330**.)
 
 ---
 
@@ -313,7 +301,7 @@ docker compose config   # parses
 - [ ] `reverie migrate` subcommand runs migrations without building full Config.
 - [ ] `REVERIE_AUTO_MIGRATE` default false; true requires the DSN.
 - [ ] Levels 1-3 pass; new tests cover the contract + role attributes + migration-set audit.
-- [ ] Docs reconciled; no superuser creds in app container.
+- [ ] Docs reconciled (dev `.env.example` + `backend/CLAUDE.md` + operator docs). In-code default server path reads no migration DSN. (Compose-level "no migration DSN in app container" verification ships with UNK-330.)
 
 ---
 
@@ -322,10 +310,9 @@ docker compose config   # parses
 | Risk                                                                               | L   | I    | Mitigation                                                                                                                                             |
 | ---------------------------------------------------------------------------------- | --- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `migration_database_url` Option ripples to many `Config` builds                    | MED | MED  | grep all constructors; `test_support.rs:25` known; compiler enforces                                                                                   |
-| Staging objects superuser-owned (pre-existing dev DB)                              | LOW | LOW  | recreate (`down -v` → fresh apply); `reverie_migrator` owns objects natively. No `REASSIGN` pre-v0.1.0 — see OPEN QUESTION 2                           |
+| Staging objects superuser-owned (pre-existing dev DB)                              | LOW | LOW  | recreate (`down -v` → fresh apply); `reverie_migrator` owns objects natively. No `REASSIGN` pre-v0.1.0 — see Scope Boundaries §2                       |
 | migrator missing `CREATE ON SCHEMA public` → extension/table create fails on PG15+ | MED | HIGH | Task 1 grants both DB + schema CREATE; Level 4 fresh-DB test                                                                                           |
 | schema divergence check needs app read of `_sqlx_migrations`                       | —   | —    | Task 6 GRANT + Task 5 test gate it                                                                                                                     |
-| migration DSN re-injected into app via `staging.env.runtime.example`               | MED | HIGH | Task 10: DSN lives ONLY in `staging.env.migrate.example`; runtime template stays migration-cred-free                                                   |
 | default-false flag → bare-docker app starts unmigrated (DB behind binary)          | MED | MED  | documented two-step / flag; **schema-behind** refusal (Task 7, fail-closed) makes the unmigrated case a legible startup error, not silent runtime 500s |
 
 ---
