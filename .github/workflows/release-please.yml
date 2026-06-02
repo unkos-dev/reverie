@@ -11,9 +11,17 @@ on:
 permissions:
   contents: read
 
+# Serialize release-please runs so rapid main pushes can't race updates to
+# the standing release PR. cancel-in-progress: false queues rather than
+# cancels — a half-applied release-PR update is worse than waiting.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       # Create release commits, tags, and GitHub Releases.
       contents: write

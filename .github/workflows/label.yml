@@ -13,9 +13,16 @@ on:
 permissions:
   contents: read
 
+# Coalesce rapid synchronize events on the same PR; only the latest
+# changed-file set needs labeling.
+concurrency:
+  group: label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   label:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # pull_request_target runs with a write-capable token in the base-repo
     # context; scope the write to this job alone rather than the workflow.
     permissions:

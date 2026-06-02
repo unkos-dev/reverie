@@ -22,13 +22,21 @@ on:
     branches: [main]
 
 # Least privilege at the top; the analysis job widens to exactly the two
-# write scopes it needs.
-permissions: read-all
+# write scopes it needs. (The job below declares its own permissions block,
+# which fully overrides this — kept narrow for correctness if a future job
+# is added without its own block.)
+permissions:
+  contents: read
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       # Read repo contents for checkout. A public repo would clone fine
       # even at `contents: none` (OSSF's template omits this for public
