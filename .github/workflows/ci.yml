@@ -1,6 +1,12 @@
 name: CI
 
 on:
+  # Run on pushes to main so coverage is uploaded for main's head commit.
+  # PRs are squash-merged, which lands a new SHA on main that no
+  # pull_request run ever tested — without a push trigger, Codecov never
+  # receives a default-branch report and the coverage badge reads "unknown".
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   merge_group:

@@ -36,6 +36,25 @@ flags:
       - frontend/
     carryforward: true
 
+# Components give a path-based coverage breakdown on the dashboard and in the
+# PR comment ("components" is requested in comment.layout below). Unlike flags,
+# components need no separate upload — they slice whatever coverage arrived.
+# Kept informational, consistent with the flags/project config above.
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        informational: true
+  individual_components:
+    - component_id: backend
+      name: backend
+      paths:
+        - backend/**
+    - component_id: frontend
+      name: frontend
+      paths:
+        - frontend/**
+
 comment:
   layout: "header, diff, flags, components"
   require_changes: false
