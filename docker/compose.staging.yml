@@ -32,7 +32,7 @@
 
 services:
   reverie-postgres:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:96d56f7f57c6aacd1fcb908bc83b345ec5f83231ee486dd66a1baadce274db88
     # Scope explicitly: postgres only needs bootstrap credentials and the
     # init-roles.sql password inputs. Loading the full app `.env` would
     # leak unrelated secrets (DATABASE_URL, OIDC client secret, session
