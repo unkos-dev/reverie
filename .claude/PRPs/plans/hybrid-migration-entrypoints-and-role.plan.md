@@ -2,7 +2,7 @@
 
 ## Summary
 
-Implement the reverie-side of ADR `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`. Replace the cluster-superuser migration identity with a dedicated non-superuser `reverie_migrator` role, and split migration invocation into (a) a `reverie migrate` CLI subcommand (out-of-band, the shipped default) and (b) an opt-in `REVERIE_AUTO_MIGRATE` in-process startup flag (default **false**). The application process must hold **no** migration credential in the default topology, while still performing a read-only schema-ahead check.
+Implement the reverie-side of ADR `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`. Replace the cluster-superuser migration identity with a dedicated non-superuser `reverie_migrator` role, and split migration invocation into (a) a `reverie migrate` CLI subcommand (out-of-band, the shipped default) and (b) an opt-in `REVERIE_AUTO_MIGRATE` in-process startup flag (default **false**). The application process must hold **no** migration credential in the default topology, while still performing a read-only schema-divergence check (fail-closed in both directions — ahead and behind).
 
 Homelab (env template, `REVERIE_MIGRATOR_PASSWORD` secret, ansible) is a **separate** cross-repo pass — NOT in this plan.
 
@@ -14,7 +14,7 @@ So that my exposed application process never carries cluster-superuser database 
 
 ## Problem Statement
 
-Today `db::run_migrations` runs unconditionally in-process at startup (`lib.rs:274`) using `DATABASE_URL_MIGRATION`, which is unconditionally required by `Config::from_source` (`config.rs:400`) and in the bundled image resolves to the cluster superuser (`POSTGRES_USER=reverie`). That credential sits in the long-lived web process environ for its whole lifetime. Testable failures this fixes: (1) the app process env must not contain a schema-management DSN when run out-of-band; (2) the migration identity must be a non-superuser; (3) a stale app must still refuse to serve against a newer schema without holding the migration DSN.
+Today `db::run_migrations` runs unconditionally in-process at startup (`lib.rs:274`) using `DATABASE_URL_MIGRATION`, which is unconditionally required by `Config::from_source` (`config.rs:400`) and in the bundled image resolves to the cluster superuser (`POSTGRES_USER=reverie`). That credential sits in the long-lived web process environ for its whole lifetime. Testable failures this fixes: (1) the app process env must not contain a schema-management DSN when run out-of-band; (2) the migration identity must be a non-superuser; (3) a stale app must still refuse to serve against a divergent schema (newer OR older) without holding the migration DSN.
 
 ## Solution Statement
 
