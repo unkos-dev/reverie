@@ -138,7 +138,7 @@ review when a `-- no-transaction` migration is added.
 Per-migration and dry-run rejected: partial-state failure and doubled migration
 time respectively (see Pros and Cons).
 
-### Schema-version safety — schema-ahead detection + checksum (option 1)
+### Schema-version safety — bidirectional schema-divergence detection + checksum (option 1)
 
 On startup the runner compares the binary's embedded migration list against
 `_sqlx_migrations`; if the database holds rows unknown to the binary, startup
@@ -146,6 +146,17 @@ fails with a clear "schema is newer than this application — upgrade the image 
 roll back the database" message. It also verifies each applied migration's stored
 checksum against the embedded file's SHA-384 hash, failing on mismatch and
 naming the offending version.
+
+In the out-of-band default (`REVERIE_AUTO_MIGRATE=false`) the application does not
+migrate, so at startup it instead runs a read-only schema check that is
+fail-closed in **both** directions: it refuses to serve when the database is ahead
+of the binary (as above) AND when the binary is ahead of the database — an
+operator who deployed a new image but has not yet run `reverie migrate`. The
+schema-behind direction is the more common operator error and, left undetected,
+surfaces as scattered runtime SQL failures against missing columns rather than a
+single legible startup refusal; the bare `docker run` path has no compose gating,
+so this check is the only backstop there. The check is read-only (SELECT on
+`_sqlx_migrations`) and holds no migration credential.
 
 ### Connection and concurrency
 
@@ -162,15 +173,16 @@ interim default pending [UNK-296](https://linear.app/unkos/issue/UNK-296).
 
 Interim levels pending [UNK-297](https://linear.app/unkos/issue/UNK-297):
 
-| Scenario                      | Level | Message                                                                      |
-| ----------------------------- | ----- | ---------------------------------------------------------------------------- |
-| No pending migrations         | DEBUG | `database schema is up to date`                                              |
-| Migrations applied            | INFO  | `applied {n} pending migrations ({elapsed}ms)`                               |
-| Individual migration applying | DEBUG | `applying migration {version} ({name})`                                      |
-| Schema ahead of binary        | ERROR | `database schema is newer than this application version` + recovery guidance |
-| Batch migration failure       | ERROR | `migration batch failed: {error}` + batch recovery guidance                  |
-| No-tx migration SQL failure   | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery       |
-| No-tx tracking INSERT failure | ERROR | `no-transaction migration {version} ({name}) applied but tracking failed`    |
+| Scenario                                     | Level | Message                                                                                    |
+| -------------------------------------------- | ----- | ------------------------------------------------------------------------------------------ |
+| No pending migrations                        | DEBUG | `database schema is up to date`                                                            |
+| Migrations applied                           | INFO  | `applied {n} pending migrations ({elapsed}ms)`                                             |
+| Individual migration applying                | DEBUG | `applying migration {version} ({name})`                                                    |
+| Schema ahead of binary                       | ERROR | `database schema is newer than this application version` + recovery guidance               |
+| Schema behind binary (out-of-band app start) | ERROR | `database schema is older than this application — run reverie migrate` + recovery guidance |
+| Batch migration failure                      | ERROR | `migration batch failed: {error}` + batch recovery guidance                                |
+| No-tx migration SQL failure                  | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery                     |
+| No-tx tracking INSERT failure                | ERROR | `no-transaction migration {version} ({name}) applied but tracking failed`                  |
 
 Recovery guidance distinguishes batch failure ("pin the previous image tag —
 database is untouched"), no-tx SQL failure ("transactional migrations already
@@ -198,7 +210,8 @@ do NOT revert — manually insert the tracking row").
   must be re-verified on sqlx bumps.
 - Neutral, because a version-skew window exists if `depends_on` ordering is
   bypassed (manual "restart just the app"); mitigated by the advisory lock, the
-  schema-ahead check, and backward-compatible migration discipline.
+  bidirectional schema-divergence check (which refuses on both schema-ahead and
+  schema-behind), and backward-compatible migration discipline.
 - Neutral, because object ownership belongs to `reverie_migrator`. On a fresh
   database this is automatic; an existing database with objects owned by another
   role needs a one-time `REASSIGN OWNED` or a recreate. `prp-plan` must confirm
@@ -212,6 +225,9 @@ do NOT revert — manually insert the tracking row").
   the `reverie-migrate` service, never on `reverie` (grep-checkable).
 - A test asserts the migration set contains no superuser-only operation, keeping
   the non-superuser role sufficient as migrations are added.
+- The out-of-band app startup check refuses on both schema-ahead and schema-behind
+  divergence (a test asserts each direction errors), so a forgotten `reverie
+migrate` is a legible startup failure, not silent runtime errors.
 
 ## Pros and Cons of the Options
 
