@@ -1,12 +1,25 @@
 ---
-status: accepted
+status: superseded
 date: 2026-05-26
+supersedes: []
+superseded-by: ["../2026-06-02-hybrid-migration-entrypoints-and-role.md"]
 decision-makers: junkovich
 consulted: []
 informed: []
 ---
 
 # Auto-migrate database on startup with all-or-nothing batch transactions
+
+> **Superseded 2026-06-02** by
+> [Hybrid migration entrypoints with a dedicated least-privilege migration role](../2026-06-02-hybrid-migration-entrypoints-and-role.md),
+> which is the single live ADR for Reverie's database migration model. It carries
+> forward every decision below (all-or-nothing batch transactions, schema-ahead
+> detection, checksum verification, advisory-lock concurrency, `lock_timeout`,
+> logging) and revises two: the migration _lifecycle_ (always-on in-process →
+> out-of-band-by-default plus an opt-in `REVERIE_AUTO_MIGRATE` flag) and the
+> migration _connection role_ (cluster superuser → dedicated non-superuser
+> `reverie_migrator`). This file is retained for decision history only — do not
+> build against it.
 
 ## Context and Problem Statement
 
@@ -18,7 +31,7 @@ Self-hosted applications in the same category (Gitea, Immich, Kavita, Paperless-
 
 How should Reverie apply database migrations at startup, and what transaction semantics should protect the operator from partial-migration failures?
 
-Related: [persisted settings ADR](2026-05-26-persisted-settings.md) (assumes "migrations auto-run on startup" in its consequences), [tower-sessions ADR](2026-05-08-tower-sessions-sqlx-store.md) (precedent for embedding third-party schemas in the sqlx migration pipeline).
+Related: [persisted settings ADR](../2026-05-26-persisted-settings.md) (assumes "migrations auto-run on startup" in its consequences), [tower-sessions ADR](../2026-05-08-tower-sessions-sqlx-store.md) (precedent for embedding third-party schemas in the sqlx migration pipeline).
 
 ## Decision Drivers
 
@@ -252,6 +265,9 @@ Deployment sequence:
 - Bad, because abandoned by tools that tried it (early Flyway)
 
 ## More Information
+
+> Superseded — see the banner at the top of this file. The notes below are
+> retained as part of the historical record.
 
 **Restart-loop behaviour**: with `restart: unless-stopped` (Docker) or `restartPolicy: Always` (Kubernetes), a persistent migration failure causes the container to hammer Postgres in a restart loop. The ERROR log message includes recovery guidance to break the loop by pinning the previous image tag. Future enhancement: exponential backoff on repeated migration failure (not in scope for this ADR).
 
