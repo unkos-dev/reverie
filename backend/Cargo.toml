@@ -51,7 +51,7 @@ time = { version = "0.3.47", features = ["serde"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = "0.7.18"
 tower-http = { version = "0.6.11", features = ["cors", "fs", "trace"] }
-tower-sessions = "0.14"
+tower-sessions = "0.15.0"
 # Despite the version-number divergence, tower-sessions-sqlx-store 0.15
 # is what pairs with tower-sessions 0.14 — both depend on
 # tower-sessions-core 0.14. The 0.14.x line of tower-sessions-sqlx-store
