@@ -179,7 +179,7 @@ jobs:
       # Test step below; cargo-llvm-cov wraps that run to collect
       # instrumentation-based coverage. install-action ships prebuilt
       # binaries for both, so this is a ~5s download.
-      - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
+      - uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2
         with:
           tool: cargo-nextest@0.9,cargo-llvm-cov@0.8.7
 
@@ -276,7 +276,7 @@ jobs:
       # `cargo install` from source — ~5s vs ~1-2 min per run. Mirrors the
       # nextest/llvm-cov/typos install pattern; version pinned (Renovate's
       # install-action customManager keeps it current).
-      - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
+      - uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2
         with:
           tool: cargo-audit@0.22.1
       - name: Audit dependencies
@@ -382,7 +382,7 @@ jobs:
 
       # typos ships official release binaries that install-action tracks; pin
       # to the workspace-image version.
-      - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
+      - uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2
         with:
           tool: typos@1.46.2
 
