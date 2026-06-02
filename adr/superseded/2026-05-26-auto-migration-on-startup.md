@@ -1,6 +1,7 @@
 ---
 status: superseded
 date: 2026-05-26
+supersedes: []
 superseded-by: ["../2026-06-02-hybrid-migration-entrypoints-and-role.md"]
 decision-makers: junkovich
 consulted: []

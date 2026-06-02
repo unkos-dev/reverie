@@ -1,6 +1,7 @@
 ---
 status: superseded
 date: 2026-05-12
+supersedes: []
 decision-makers: john
 superseded-by:
   - "../2026-05-12-platform-matrix-via-native-runners.md"
