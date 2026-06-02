@@ -1,9 +1,10 @@
 ---
 status: superseded
 date: 2026-05-12
+supersedes: []
 decision-makers: john
 superseded-by:
-  - "2026-05-12-platform-matrix-via-native-runners.md"
+  - "../2026-05-12-platform-matrix-via-native-runners.md"
 ---
 
 # Decouple staging Docker image publication from semver release tags
@@ -257,9 +258,9 @@ ghcr.io/unkos-dev/reverie:main` succeeds from a clean
 ## More Information
 
 - MADR 4.0: <https://adr.github.io/madr/>
-- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](2026-04-30-adopt-architecture-decision-records.md)
+- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](../2026-04-30-adopt-architecture-decision-records.md)
   — meta-ADR that established this format
-- Related: [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
+- Related: [`adr/2026-05-05-single-image-distribution-central-csp.md`](../2026-05-05-single-image-distribution-central-csp.md)
   — upstream invariant. The image _contents_ are decided by that
   ADR; this ADR decides _when_ the image publishes
 - Tracker: [UNK-240](https://linear.app/unkos/issue/UNK-240) — the

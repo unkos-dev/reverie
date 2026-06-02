@@ -9,6 +9,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - Shape: canonical [MADR 4.0](https://adr.github.io/madr/). Copy [TEMPLATE.md](TEMPLATE.md) — not the `adr` skill's bundled template (it bolts on an Implementation Plan section this repo does not want).
 - Sections (in order): Context and Problem Statement → Decision Drivers (opt) → Considered Options → Decision Outcome (Consequences, Confirmation) → Pros and Cons of the Options (opt) → More Information (opt)
 - Status values: `proposed`, `accepted`, `rejected`, `deprecated`, `superseded`
+- Supersession (header fields, not status prose): the replacement ADR carries `supersedes: ["superseded/<old>.md"]`; the replaced ADR carries `status: superseded` + `superseded-by: ["../<new>.md"]` and is moved into `adr/superseded/`. Paths are relative to the file.
 - **Not an implementation plan.** ADRs record the decision + rationale. Build steps, file lists, verification checklists → `prp-plan` output (`.claude/PRPs/plans/`). See [CLAUDE.md](CLAUDE.md).
 
 ## Workflow
@@ -16,7 +17,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - Create a new ADR as `proposed`.
 - Discuss and iterate.
 - When the team commits: mark it `accepted` (or `rejected`).
-- If replaced later: create a new ADR and mark the old one `superseded` with a link.
+- If replaced later: create the replacement with `supersedes: ["superseded/<old>.md"]`; on the old ADR set `status: superseded` + `superseded-by: ["../<new>.md"]` and `git mv` it into `adr/superseded/`.
 
 ## ADRs
 
@@ -28,7 +29,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [CodeRabbit AI code review: parallel trial alongside Greptile](2026-05-07-coderabbit-parallel-trial.md) (accepted, 2026-05-07)
 - [Tiered comment policy for an OSS-released codebase](2026-05-08-tiered-comment-policy.md) (accepted, 2026-05-08)
 - [Adopt tower-sessions-sqlx-store for Postgres-backed sessions](2026-05-08-tower-sessions-sqlx-store.md) (proposed, 2026-05-08)
-- [Decouple staging Docker image publication from semver release tags](2026-05-12-decouple-staging-image-from-semver-releases.md) (superseded by [Per-architecture native runners with manifest-list merge](2026-05-12-platform-matrix-via-native-runners.md), 2026-05-12)
+- [Decouple staging Docker image publication from semver release tags](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md) (superseded by [Per-architecture native runners with manifest-list merge](2026-05-12-platform-matrix-via-native-runners.md), 2026-05-12)
 - [Per-architecture native runners with manifest-list merge for Docker publish](2026-05-12-platform-matrix-via-native-runners.md) (accepted, 2026-05-12)
 - [GHA build cache + cargo-chef Dockerfile layering for Docker publish](2026-05-13-image-build-cache.md) (accepted, 2026-05-13)
 - [Outbound HTTP clients in Reverie must send an explicit User-Agent](2026-05-18-outbound-http-user-agent.md) (proposed, 2026-05-18)
@@ -38,5 +39,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Frontend data-layer dependencies for Step 11](2026-05-22-frontend-data-layer-deps.md) (accepted, 2026-05-22)
 - [Backend auxiliary crates for Step 11](2026-05-22-backend-aux-crates.md) (accepted, 2026-05-22)
 - [Persist operator-tunable settings to database with live reload](2026-05-26-persisted-settings.md) (accepted, 2026-05-26)
-- [Auto-migrate database on startup with all-or-nothing batch transactions](2026-05-26-auto-migration-on-startup.md) (accepted, 2026-05-26)
+- [Auto-migrate database on startup with all-or-nothing batch transactions](superseded/2026-05-26-auto-migration-on-startup.md) (superseded by [Database migration model: hybrid entrypoints, least-privilege role, all-or-nothing batch](2026-06-02-hybrid-migration-entrypoints-and-role.md), 2026-05-26)
 - [Reconcile `validation_status` vocabulary and introduce a typed `ValidationStatus` enum](2026-05-28-validation-status-vocabulary.md) (accepted, 2026-05-28)
+- [Database migration model: hybrid entrypoints, least-privilege role, all-or-nothing batch](2026-06-02-hybrid-migration-entrypoints-and-role.md) (accepted, 2026-06-02)

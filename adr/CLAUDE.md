@@ -22,7 +22,7 @@ sections.
 
 ## Canonical sections (in order)
 
-Front matter: `status`, `date`, `decision-makers`, `consulted`, `informed`.
+Front matter: `status`, `date`, `supersedes` (paths replaced; `[]` if none), `decision-makers`, `consulted`, `informed`. A superseded ADR also carries `superseded-by` and moves to `superseded/`.
 
 1. `## Context and Problem Statement`
 2. `## Decision Drivers` (optional)
