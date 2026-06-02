@@ -155,6 +155,7 @@ jobs:
     name: CodeQL gate
     if: always()
     needs:
+      - changes
       - analyze-actions
       - analyze-javascript-typescript
       - analyze-rust
