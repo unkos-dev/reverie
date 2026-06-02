@@ -266,7 +266,13 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - run: cargo install cargo-audit --locked
+      # Prebuilt cargo-audit (GitHub Releases via install-action) instead of
+      # `cargo install` from source — ~5s vs ~1-2 min per run. Mirrors the
+      # nextest/llvm-cov/typos install pattern; version pinned (Renovate's
+      # install-action customManager keeps it current).
+      - uses: taiki-e/install-action@0fd46367812ee04360509b4169d9f659d6892bb2 # v2
+        with:
+          tool: cargo-audit@0.22.1
       - name: Audit dependencies
         # Suppressed advisories — each must have a justification:
         #
