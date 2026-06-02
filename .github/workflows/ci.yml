@@ -99,7 +99,7 @@ jobs:
       # Single source of truth for the sqlx-cli pin. Both the cache key
       # and the `cargo install` invocation reference this; bumping it in
       # one place without the other would let a stale binary be restored.
-      SQLX_CLI_VERSION: "0.8.6"
+      SQLX_CLI_VERSION: "0.9.0"
       # CI build-speed tweaks (CI-only — local dev untouched).
       #
       # Incremental builds add metadata-tracking overhead that's wasted in
