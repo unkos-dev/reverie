@@ -122,6 +122,7 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [sqlx pinned to 0.8 (tower-sessions-sqlx-store peer pin)](2026-06-02-sqlx-0-9-blocked.md) — adopted because tower-sessions-sqlx-store 0.15.0 pins sqlx ^0.8, so sqlx 0.9 (`#326`/`#325`) can't compile; our QueryBuilder migration is mechanical but blocked behind the store release; lifts with the tower-sessions ecosystem bump (UNK-101)
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
 - [ISBN not validated on metadata PATCH](2026-05-26-isbn-patch-no-checksum.md) — adopted from 11c; no checksum/length check; lifts on validation PR
