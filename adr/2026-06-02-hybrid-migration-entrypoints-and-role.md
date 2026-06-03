@@ -180,6 +180,7 @@ Interim levels pending [UNK-297](https://linear.app/unkos/issue/UNK-297):
 | Individual migration applying                | DEBUG | `applying migration {version} ({name})`                                                    |
 | Schema ahead of binary                       | ERROR | `database schema is newer than this application version` + recovery guidance               |
 | Schema behind binary (out-of-band app start) | ERROR | `database schema is older than this application — run reverie migrate` + recovery guidance |
+| Never-migrated DB (no migration history)     | ERROR | `database is not initialized (no migration history) — run reverie migrate first`           |
 | Batch migration failure                      | ERROR | `migration batch failed: {error}` + batch recovery guidance                                |
 | No-tx migration SQL failure                  | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery                     |
 | No-tx tracking INSERT failure                | ERROR | `no-transaction migration {version} ({name}) applied but tracking failed`                  |
@@ -226,8 +227,10 @@ do NOT revert — manually insert the tracking row").
 - A test asserts the migration set contains no superuser-only operation, keeping
   the non-superuser role sufficient as migrations are added.
 - The out-of-band app startup check refuses on both schema-ahead and schema-behind
-  divergence (a test asserts each direction errors), so a forgotten `reverie
-migrate` is a legible startup failure, not silent runtime errors.
+  divergence, and reports a never-migrated database (no migration history) as a
+  distinct `not initialized` error rather than a raw missing-relation failure (a
+  test asserts each case), so a forgotten `reverie migrate` is a legible startup
+  failure, not silent runtime errors.
 
 ## Pros and Cons of the Options
 

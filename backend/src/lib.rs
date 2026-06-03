@@ -271,22 +271,44 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
-    let migration_report = db::run_migrations(&config.migration_database_url)
-        .await
-        .context("database migration failed")?;
-    if migration_report.applied > 0 {
-        tracing::info!(
-            count = migration_report.applied,
-            elapsed_ms = migration_report.elapsed_ms,
-            "applied pending migrations"
-        );
-    } else {
-        tracing::debug!("database schema is up to date");
+    // Migration handling is split by REVERIE_AUTO_MIGRATE. Default (off):
+    // the application process holds no migration credential and instead
+    // verifies the schema is current using its own app pool (after pool
+    // init, below) — migrations run out-of-band via `reverie migrate`. Opt-in
+    // (on): run migrations in-process here, before any runtime pool exists,
+    // using the migration DSN the long-lived process then carries.
+    if config.auto_migrate {
+        let migration_url = config
+            .migration_database_url
+            .as_deref()
+            .context("REVERIE_AUTO_MIGRATE is set but DATABASE_URL_MIGRATION is missing")?;
+        let migration_report = db::run_migrations(migration_url)
+            .await
+            .context("database migration failed")?;
+        if migration_report.applied > 0 {
+            tracing::info!(
+                count = migration_report.applied,
+                elapsed_ms = migration_report.elapsed_ms,
+                "applied pending migrations"
+            );
+        } else {
+            tracing::debug!("database schema is up to date");
+        }
     }
 
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
+
+    // Default path: confirm the out-of-band migration ran and the schema
+    // matches this binary. Fail-closed on any divergence (ahead OR behind)
+    // and on a never-migrated database, so a stale or unmigrated deployment
+    // is a legible startup error rather than silent runtime SQL failures.
+    if !config.auto_migrate {
+        db::verify_schema_current(&pool)
+            .await
+            .context("database schema verification failed")?;
+    }
 
     let oidc_client = auth::oidc::init_oidc_client(&config)
         .await
@@ -393,6 +415,91 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The subcommand selected on the command line.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Command {
+    /// `reverie migrate` — apply pending migrations out-of-band, then exit.
+    Migrate,
+    /// No subcommand — run the long-lived HTTP server.
+    Serve,
+}
+
+/// Map the first CLI argument to a [`Command`].
+///
+/// `migrate` → [`Command::Migrate`]; no argument → [`Command::Serve`]. Any
+/// other token is an error rather than a silent fall-through to the server: a
+/// typo (`reverie migration`, `reverie --help`) must not boot the
+/// long-running server, which in a compose `service_completed_successfully`
+/// slot would make a one-shot migrate container run forever as a server.
+///
+/// # Errors
+///
+/// Returns an error naming the unknown subcommand.
+pub fn parse_command(arg: Option<&str>) -> anyhow::Result<Command> {
+    match arg {
+        Some("migrate") => Ok(Command::Migrate),
+        None => Ok(Command::Serve),
+        Some(unknown) => Err(anyhow::anyhow!(
+            "unknown subcommand: {unknown:?}; valid subcommands: migrate"
+        )),
+    }
+}
+
+/// Resolve the migration DSN from the raw `DATABASE_URL_MIGRATION` value,
+/// treating empty/whitespace as unset.
+///
+/// `std::env::var` returns `Ok("")` for an exported-empty var, which would
+/// otherwise reach `db::run_migrations` as a cryptic `Connection` parse error;
+/// this mirrors the `.filter()` guard in [`Config::from_source`].
+///
+/// # Errors
+///
+/// Returns an error when the value is `None`, empty, or whitespace-only.
+fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
+    var.filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("DATABASE_URL_MIGRATION is required for `reverie migrate`"))
+}
+
+/// Apply pending database migrations, then exit. This is the `reverie
+/// migrate` subcommand entrypoint — the shipped default for schema
+/// management, run out-of-band so the long-lived server process never
+/// carries the migration credential.
+///
+/// Deliberately does NOT build the full [`Config`]: a migrate container has
+/// no business holding the OIDC secret or the application DSN. It reads only
+/// `DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN) and reuses
+/// [`db::run_migrations`].
+///
+/// # Errors
+///
+/// - If `DATABASE_URL_MIGRATION` is unset or empty (an exported-empty value
+///   is treated as unset, mirroring [`Config::from_source`]).
+/// - If the migration run fails (see [`db::MigrationError`]).
+pub async fn run_migrate() -> anyhow::Result<()> {
+    // run_migrate bypasses run(), where the tracing subscriber is normally
+    // installed. Without one here, every event in this function AND inside
+    // db::run_migrations drops silently, leaving the operator with only an
+    // exit code. Best-effort: .ok() tolerates a host that already installed
+    // a global subscriber.
+    tracing_subscriber::fmt().try_init().ok();
+
+    let migration_url = resolve_migration_dsn(std::env::var("DATABASE_URL_MIGRATION").ok())?;
+
+    let report = db::run_migrations(&migration_url)
+        .await
+        .context("database migration failed")?;
+    if report.applied > 0 {
+        tracing::info!(
+            count = report.applied,
+            elapsed_ms = report.elapsed_ms,
+            "applied pending migrations"
+        );
+    } else {
+        tracing::info!("database schema is already up to date");
+    }
+    Ok(())
+}
+
 async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
     let ctrl_c = tokio::signal::ctrl_c();
     #[allow(
@@ -411,8 +518,32 @@ async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_log_filter;
+    use super::{Command, parse_command, resolve_log_filter, resolve_migration_dsn};
     use crate::test_support;
+
+    #[test]
+    fn parse_command_maps_migrate_none_and_rejects_unknown() {
+        assert_eq!(parse_command(Some("migrate")).unwrap(), Command::Migrate);
+        assert_eq!(parse_command(None).unwrap(), Command::Serve);
+
+        let err = parse_command(Some("migration")).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown subcommand"), "got: {msg}");
+        assert!(
+            msg.contains("migration"),
+            "should echo the bad token: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_migration_dsn_rejects_missing_and_empty() {
+        assert!(resolve_migration_dsn(None).is_err());
+        assert!(resolve_migration_dsn(Some(String::new())).is_err());
+        assert!(resolve_migration_dsn(Some("   ".into())).is_err());
+
+        let url = "postgres://reverie_migrator@localhost/reverie_dev";
+        assert_eq!(resolve_migration_dsn(Some(url.into())).unwrap(), url);
+    }
 
     #[tokio::test]
     async fn health_returns_ok() {

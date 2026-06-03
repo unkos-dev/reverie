@@ -11,9 +11,14 @@
 //!   The `manifestations_*_system` RLS policies match only on this GUC,
 //!   so user-facing handlers (which never set it) cannot cross into the
 //!   system policies even by accident.
-//! * [`run_migrations`] — ephemeral single-connection pool used during
-//!   startup to apply pending migrations as schema owner. Dropped before
-//!   any runtime pool is created.
+//! * [`run_migrations`] — ephemeral single-connection pool that applies
+//!   pending migrations as the least-privilege `reverie_migrator` role.
+//!   Invoked out-of-band by the `reverie migrate` subcommand (the shipped
+//!   default), or in-process at startup only when `REVERIE_AUTO_MIGRATE` is
+//!   set. The pool is dropped before any runtime pool is created.
+//! * [`verify_schema_current`] — read-only schema-divergence check run on
+//!   the application pool at startup when `REVERIE_AUTO_MIGRATE` is off.
+//!   Holds no migration credential; fail-closed on ahead/behind/never-migrated.
 //! * [`acquire_with_rls`] — user-scoped transaction wrapper that injects
 //!   `app.current_user_id` via `SET LOCAL`-equivalent
 //!   `set_config(..., true)`. Auto-resets on commit/rollback so a
@@ -113,7 +118,7 @@ pub async fn acquire_with_rls(
 }
 
 // ---------------------------------------------------------------------------
-// Auto-migration runner
+// Migration runner + read-only schema verification
 // ---------------------------------------------------------------------------
 
 const LOCK_TIMEOUT_SQL: &str = "SET lock_timeout = '30s'";
@@ -207,6 +212,27 @@ pub enum MigrationError {
         version: i64,
     },
 
+    /// Database is missing a migration this binary knows about — the schema
+    /// is older than the binary (the "forgot to run `reverie migrate`"
+    /// case). Surfaced only by the read-only startup verification; the
+    /// migration runner applies pending migrations instead of erroring.
+    #[error(
+        "database schema is behind this application (migration {version} is not applied) \
+         — run `reverie migrate` (or set REVERIE_AUTO_MIGRATE=true) before starting the server"
+    )]
+    SchemaBehind {
+        /// The earliest embedded migration version not present in the
+        /// database.
+        version: i64,
+    },
+
+    /// The database has never been migrated — the `_sqlx_migrations`
+    /// tracking table does not exist. Distinguished from a divergent schema
+    /// so a fresh deployment gets an actionable message instead of a raw
+    /// missing-relation SQL error.
+    #[error("database is not initialized (no migration history) — run `reverie migrate` first")]
+    NotInitialized,
+
     /// Stored checksum for an applied migration differs from the embedded
     /// migration file. The file was modified after initial application.
     #[error(
@@ -254,6 +280,87 @@ pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError
     let result = run_migrations_inner(&pool).await;
     pool.close().await;
     result
+}
+
+/// Verify the database schema matches this binary's embedded migrations,
+/// read-only, without holding any migration credential.
+///
+/// This is the default server-startup gate when `REVERIE_AUTO_MIGRATE` is
+/// off: migrations run out-of-band via `reverie migrate`, and the long-lived
+/// application process only confirms the schema is current using its own
+/// (least-privilege) app pool — which has `SELECT` on `_sqlx_migrations` but
+/// no schema-management rights. Fail-closed in BOTH directions:
+/// [`MigrationError::SchemaAhead`] when the DB is newer than the binary, and
+/// [`MigrationError::SchemaBehind`] when the DB is older (the common
+/// "forgot to migrate" case). Refusing on schema-behind is deliberate: the
+/// migrate-then-app topology has no legitimate window where the app runs
+/// newer than the DB, and the bare-docker path has no compose gating, so
+/// this check is the only backstop against silent runtime SQL failures.
+///
+/// # Errors
+///
+/// - [`MigrationError::NotInitialized`] if `_sqlx_migrations` does not exist
+///   (a never-migrated database).
+/// - [`MigrationError::SchemaAhead`] / [`MigrationError::SchemaBehind`] on
+///   version divergence.
+/// - [`MigrationError::Connection`] if the read fails (auth, connectivity).
+pub async fn verify_schema_current(pool: &PgPool) -> Result<(), MigrationError> {
+    // Catalog probe FIRST. A never-migrated database has no
+    // `_sqlx_migrations` table; without this probe the version SELECT below
+    // surfaces a cryptic "relation _sqlx_migrations does not exist" instead
+    // of the legible NotInitialized message, defeating the fail-closed goal.
+    let table_exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('public._sqlx_migrations') IS NOT NULL")
+            .fetch_one(pool)
+            .await
+            .map_err(MigrationError::Connection)?;
+    if !table_exists {
+        return Err(MigrationError::NotInitialized);
+    }
+
+    // Mirror the runner's `WHERE success = true` filter (the runner only
+    // ever writes success=true rows, but stay consistent defensively).
+    let applied_versions: std::collections::HashSet<i64> =
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success = true")
+            .fetch_all(pool)
+            .await
+            .map_err(MigrationError::Connection)?
+            .into_iter()
+            .collect();
+
+    let migrator = sqlx::migrate!("./migrations");
+    let embedded_versions: std::collections::HashSet<i64> = migrator
+        .iter()
+        .filter(|m| m.migration_type.is_up_migration())
+        .map(|m| m.version)
+        .collect();
+
+    let (ahead, behind) = diverged_versions(&applied_versions, &embedded_versions);
+    if let Some(&version) = ahead.first() {
+        return Err(MigrationError::SchemaAhead { version });
+    }
+    if let Some(&version) = behind.first() {
+        return Err(MigrationError::SchemaBehind { version });
+    }
+    Ok(())
+}
+
+/// Pure set comparison of applied vs embedded migration versions. Returns
+/// `(ahead, behind)` where `ahead` = applied versions the binary does not
+/// know (DB newer) and `behind` = embedded versions not yet applied (DB
+/// older). Both are sorted ascending so callers report a deterministic
+/// version. This is plain set math — it raises no errors; each caller
+/// decides which direction is fatal (the runner applies `behind`, the
+/// verifier refuses it).
+fn diverged_versions(
+    applied: &std::collections::HashSet<i64>,
+    embedded: &std::collections::HashSet<i64>,
+) -> (Vec<i64>, Vec<i64>) {
+    let mut ahead: Vec<i64> = applied.difference(embedded).copied().collect();
+    let mut behind: Vec<i64> = embedded.difference(applied).copied().collect();
+    ahead.sort_unstable();
+    behind.sort_unstable();
+    (ahead, behind)
 }
 
 /// Inner implementation operating on an already-connected pool.
@@ -352,13 +459,14 @@ async fn run_locked(
     let embedded_versions: std::collections::HashSet<i64> =
         embedded.iter().map(|m| m.version).collect();
 
-    // Schema-ahead detection: any applied version not in embedded set.
-    for &applied_version in applied_map.keys() {
-        if !embedded_versions.contains(&applied_version) {
-            return Err(MigrationError::SchemaAhead {
-                version: applied_version,
-            });
-        }
+    // Schema-ahead detection (shares the pure set comparison with
+    // verify_schema_current): any applied version not in the embedded set.
+    // The runner only errors on `ahead` — `behind` is exactly the pending
+    // set it applies below, so it is intentionally ignored here.
+    let applied_versions: std::collections::HashSet<i64> = applied_map.keys().copied().collect();
+    let (ahead, _behind) = diverged_versions(&applied_versions, &embedded_versions);
+    if let Some(&version) = ahead.first() {
+        return Err(MigrationError::SchemaAhead { version });
     }
 
     // Checksum verification for applied migrations.
@@ -782,5 +890,138 @@ mod tests {
             row_count_after_first.0, row_count_after_second.0,
             "row count should be stable across runs"
         );
+    }
+
+    // --- verify_schema_current (read-only startup check, default server path) ---
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn verify_schema_current_ok_when_up_to_date(pool: PgPool) {
+        // Exercised through the app role (reverie_app) to prove the
+        // GRANT SELECT ON _sqlx_migrations is in place: the default server
+        // path runs this check on the app pool, never the migrator DSN.
+        let app_pool = crate::test_support::db::app_pool_for(&pool).await;
+        verify_schema_current(&app_pool)
+            .await
+            .expect("up-to-date schema should verify Ok via the app pool");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn verify_schema_current_detects_ahead(pool: PgPool) {
+        // Inject a future migration row via the owner pool (app role has
+        // SELECT only on _sqlx_migrations and could not write this).
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time)
+             VALUES (99_999_999_999_999, 'future_migration', now(), true, '\\x00', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let app_pool = crate::test_support::db::app_pool_for(&pool).await;
+        let err = verify_schema_current(&app_pool).await.unwrap_err();
+        assert!(
+            matches!(
+                err,
+                MigrationError::SchemaAhead {
+                    version: 99_999_999_999_999
+                }
+            ),
+            "expected SchemaAhead, got: {err}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn verify_schema_current_detects_behind(pool: PgPool) {
+        // Simulate a DB behind the binary: delete the most recent applied
+        // row so the embedded migrator knows a version the DB has not
+        // applied. The table stays present (this is NOT the table-absent
+        // path). Fail-closed: a stale app must refuse to serve.
+        let removed: i64 =
+            sqlx::query_scalar("DELETE FROM _sqlx_migrations WHERE version = (SELECT max(version) FROM _sqlx_migrations) RETURNING version")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let app_pool = crate::test_support::db::app_pool_for(&pool).await;
+        let err = verify_schema_current(&app_pool).await.unwrap_err();
+        assert!(
+            matches!(err, MigrationError::SchemaBehind { version } if version == removed),
+            "expected SchemaBehind {{ version: {removed} }}, got: {err}"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn verify_schema_current_table_absent_is_not_initialized(pool: PgPool) {
+        // Fresh DB, never migrated — _sqlx_migrations does not exist. The
+        // catalog probe must precede the version SELECT so the operator sees
+        // a legible "run `reverie migrate`" message, NOT a raw
+        // "relation _sqlx_migrations does not exist" SQL error. This is
+        // UNK-331's first-boot state.
+        let err = verify_schema_current(&pool).await.unwrap_err();
+        assert!(
+            matches!(err, MigrationError::NotInitialized),
+            "expected NotInitialized, got: {err}"
+        );
+        assert!(
+            err.to_string().contains("reverie migrate"),
+            "NotInitialized message must point operator at `reverie migrate`: {err}"
+        );
+    }
+
+    // --- Least-privilege migration identity (ADR Confirmation invariants) ---
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn migrator_role_is_least_privilege(pool: PgPool) {
+        // The dedicated migration identity must hold no cluster-wide
+        // authority — it owns only the objects it creates and runs under RLS.
+        let (is_super, can_createrole, can_bypassrls): (bool, bool, bool) = sqlx::query_as(
+            "SELECT rolsuper, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname = 'reverie_migrator'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("reverie_migrator must exist (docker/init-roles.sql seeds it)");
+        assert!(!is_super, "reverie_migrator must not be SUPERUSER");
+        assert!(!can_createrole, "reverie_migrator must not have CREATEROLE");
+        assert!(!can_bypassrls, "reverie_migrator must not have BYPASSRLS");
+    }
+
+    #[test]
+    fn migration_set_has_no_superuser_only_operations() {
+        // The migration set must be applicable by the non-superuser
+        // reverie_migrator. Scan the embedded SQL for operations that require
+        // superuser. CREATE EXTENSION is allowed only for the two trusted
+        // extensions (pg_trgm, pgcrypto), which a non-superuser with CREATE on
+        // the target schema may install; any other extension needs superuser.
+        let migrator = sqlx::migrate!("./migrations");
+        for m in migrator
+            .iter()
+            .filter(|m| m.migration_type.is_up_migration())
+        {
+            for line in m.sql.lines() {
+                let upper = line.to_uppercase();
+                assert!(
+                    !upper.contains("ALTER SYSTEM"),
+                    "migration {} contains ALTER SYSTEM (superuser-only): {line}",
+                    m.version
+                );
+                assert!(
+                    !upper.contains("CREATE ROLE") && !upper.contains("CREATE USER"),
+                    "migration {} provisions roles (superuser/createrole-only; roles belong in docker/init-roles.sql): {line}",
+                    m.version
+                );
+                assert!(
+                    !upper.contains("CREATE EVENT TRIGGER"),
+                    "migration {} creates an event trigger (superuser-only): {line}",
+                    m.version
+                );
+                if upper.contains("CREATE EXTENSION") {
+                    assert!(
+                        upper.contains("PG_TRGM") || upper.contains("PGCRYPTO"),
+                        "migration {} installs a non-allowlisted extension (only trusted pg_trgm/pgcrypto are installable by the non-superuser migrator): {line}",
+                        m.version
+                    );
+                }
+            }
+        }
     }
 }

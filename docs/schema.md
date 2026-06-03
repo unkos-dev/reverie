@@ -100,12 +100,21 @@ separate — a job can fail while individual files succeeded, and vice versa.
 
 ## Database Role Architecture
 
-| Role                | Purpose                       | Privileges                                       | RLS                              |
-| ------------------- | ----------------------------- | ------------------------------------------------ | -------------------------------- |
-| `reverie`           | Schema owner, runs migrations | DDL + full DML                                   | Bypasses (owner)                 |
-| `reverie_app`       | Web app, OPDS, webhooks       | DML on all tables                                | Enforced — user-scoped           |
-| `reverie_ingestion` | Background pipeline           | DML on pipeline tables only                      | Own permissive policy            |
-| `reverie_readonly`  | Debugging, reporting          | SELECT on most tables (excludes `device_tokens`) | Enforced — same as `reverie_app` |
+| Role                | Purpose                              | Privileges                                                 | RLS                              |
+| ------------------- | ------------------------------------ | ---------------------------------------------------------- | -------------------------------- |
+| `reverie`           | Cluster bootstrap — provisions roles | Superuser; not used at runtime or for migrations           | Bypasses (superuser)             |
+| `reverie_migrator`  | Runs migrations (`reverie migrate`)  | CREATE on database + schema `public`; owns created objects | Enforced — NOBYPASSRLS           |
+| `reverie_app`       | Web app, OPDS, webhooks              | DML on all tables                                          | Enforced — user-scoped           |
+| `reverie_ingestion` | Background pipeline                  | DML on pipeline tables only                                | Own permissive policy            |
+| `reverie_readonly`  | Debugging, reporting                 | SELECT on most tables (excludes `device_tokens`)           | Enforced — same as `reverie_app` |
+
+Migrations run as the dedicated least-privilege `reverie_migrator`
+(`NOSUPERUSER NOCREATEROLE NOBYPASSRLS`), **not** the cluster superuser.
+This keeps cluster-wide authority out of the schema-management path: the
+migrator can create and own schema objects but cannot create roles, alter
+the server, or bypass row-level security. The application process holds no
+migration credential at all on the default path — see
+[Database migrations](deployment/database-migrations.md).
 
 ### `reverie_ingestion` Access Scope
 
