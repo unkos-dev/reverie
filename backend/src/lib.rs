@@ -447,23 +447,29 @@ pub enum Command {
     Serve,
 }
 
-/// Map the first CLI argument to a [`Command`].
+/// Map the CLI argument tail (everything after `argv[0]`) to a [`Command`].
 ///
-/// `migrate` → [`Command::Migrate`]; no argument → [`Command::Serve`]. Any
-/// other token is an error rather than a silent fall-through to the server: a
-/// typo (`reverie migration`, `reverie --help`) must not boot the
-/// long-running server, which in a compose `service_completed_successfully`
-/// slot would make a one-shot migrate container run forever as a server.
+/// no args → [`Command::Serve`]; exactly `migrate` → [`Command::Migrate`]. Any
+/// other token, OR any trailing argument, is an error rather than a silent
+/// fall-through: a typo (`reverie migration`, `reverie --help`) must not boot
+/// the long-running server, and a write-capable subcommand must not silently
+/// ignore extra tokens (`reverie migrate typo` must not run migrations). In a
+/// compose `service_completed_successfully` slot either mistake would make a
+/// one-shot migrate container run forever as a server.
 ///
 /// # Errors
 ///
-/// Returns an error naming the unknown subcommand.
-pub fn parse_command(arg: Option<&str>) -> anyhow::Result<Command> {
-    match arg {
-        Some("migrate") => Ok(Command::Migrate),
-        None => Ok(Command::Serve),
-        Some(unknown) => Err(anyhow::anyhow!(
-            "unknown subcommand: {unknown:?}; valid subcommands: migrate"
+/// Returns an error naming the unknown subcommand, or reporting unexpected
+/// trailing arguments.
+pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
+    match args {
+        [] => Ok(Command::Serve),
+        [cmd] if cmd == "migrate" => Ok(Command::Migrate),
+        [cmd] => Err(anyhow::anyhow!(
+            "unknown subcommand: {cmd:?}; valid subcommands: migrate"
+        )),
+        [cmd, ..] => Err(anyhow::anyhow!(
+            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate]"
         )),
     }
 }
@@ -499,6 +505,11 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
 ///   is treated as unset, mirroring [`Config::from_source`]).
 /// - If the migration run fails (see [`db::MigrationError`]).
 pub async fn run_migrate() -> anyhow::Result<()> {
+    // run_migrate bypasses Config::from_env, which is where dotenv is normally
+    // loaded — so load it here too, or `cargo run -- migrate` would ignore a
+    // DATABASE_URL_MIGRATION set in the project .env and fail spuriously.
+    dotenvy::dotenv().ok();
+
     // run_migrate bypasses run(), where the tracing subscriber is normally
     // installed. Without one here, every event in this function AND inside
     // db::run_migrations drops silently, leaving the operator with only an
@@ -547,16 +558,26 @@ mod tests {
     use crate::test_support;
 
     #[test]
-    fn parse_command_maps_migrate_none_and_rejects_unknown() {
-        assert_eq!(parse_command(Some("migrate")).unwrap(), Command::Migrate);
-        assert_eq!(parse_command(None).unwrap(), Command::Serve);
+    fn parse_command_maps_args_rejects_unknown_and_trailing() {
+        let migrate = vec!["migrate".to_string()];
+        assert_eq!(parse_command(&migrate).unwrap(), Command::Migrate);
+        assert_eq!(parse_command(&[]).unwrap(), Command::Serve);
 
-        let err = parse_command(Some("migration")).unwrap_err();
+        let unknown = vec!["migration".to_string()];
+        let err = parse_command(&unknown).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown subcommand"), "got: {msg}");
         assert!(
             msg.contains("migration"),
             "should echo the bad token: {msg}"
+        );
+
+        // A write-capable subcommand must not silently ignore extra tokens.
+        let trailing = vec!["migrate".to_string(), "typo".to_string()];
+        let err = parse_command(&trailing).unwrap_err();
+        assert!(
+            err.to_string().contains("trailing"),
+            "trailing args must be rejected, got: {err}"
         );
     }
 
@@ -584,72 +605,41 @@ mod tests {
             .expect("flag off + current schema must verify Ok via the app pool");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn apply_or_verify_flag_off_refuses_behind_schema(pool: sqlx::PgPool) {
-        // Delete the latest applied row → DB behind the binary. The verify
-        // branch must refuse (fail-closed); the migrate branch would instead
-        // re-apply it. A refusal proves the selector chose verify.
-        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = (SELECT max(version) FROM _sqlx_migrations)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let cfg = test_support::test_config();
+    #[sqlx::test(migrations = false)]
+    async fn apply_or_verify_flag_off_takes_verify_branch(pool: sqlx::PgPool) {
+        // Fresh, never-migrated DB + flag off. The verify branch returns
+        // NotInitialized; the migrate branch would instead APPLY all
+        // migrations and succeed. A NotInitialized error therefore proves the
+        // selector chose verify — the security contract (no migration
+        // credential on the default path). Inverting the branch flips this to
+        // Ok and fails the assert.
+        let cfg = test_support::test_config(); // auto_migrate: false
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
-        let chain = format!("{err:#}");
         assert!(
-            chain.contains("behind"),
-            "expected a SchemaBehind refusal (verify branch), got: {chain}"
+            format!("{err:#}").contains("not initialized"),
+            "flag off must take the verify branch (NotInitialized on a fresh DB), got: {err:#}"
         );
     }
 
     #[sqlx::test(migrations = false)]
-    async fn apply_or_verify_flag_on_migrates_as_reverie_migrator(pool: sqlx::PgPool) {
-        // Grant the fresh per-test DB the same privileges docker/init-roles.sql
-        // grants in real deployments (sqlx::test DBs are ungranted), then run
-        // the migrate branch AS reverie_migrator. This pins the flag-on branch
-        // AND proves the least-privilege migrator can apply the full set
-        // (DB-level CREATE for `CREATE SCHEMA tower_sessions`, trusted
-        // CREATE EXTENSION) — which only manual e2e covered before.
-        let db_name: String = sqlx::query_scalar("SELECT current_database()")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        sqlx::query(&format!(
-            "GRANT CREATE ON DATABASE \"{db_name}\" TO reverie_migrator"
-        ))
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query("GRANT USAGE, CREATE ON SCHEMA public TO reverie_migrator")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let opts = pool.connect_options();
-        let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
-            .unwrap_or_else(|_| "reverie_migrator".into());
-        let migrator_url = format!(
-            "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
-            opts.get_host(),
-            opts.get_port()
-        );
-
+    async fn apply_or_verify_flag_on_takes_migrate_branch(pool: sqlx::PgPool) {
+        // Flag on + DSN absent. Only the migrate branch inspects
+        // migration_database_url, so the "DATABASE_URL_MIGRATION is missing"
+        // error proves the selector chose migrate; the verify branch would
+        // instead read the schema and return NotInitialized. Inverting the
+        // branch flips the error message and fails the assert. (The migrate
+        // branch's privilege sufficiency is covered by
+        // `db::tests::reverie_migrator_can_apply_full_migration_set`.)
         let mut cfg = test_support::test_config();
         cfg.auto_migrate = true;
-        cfg.migration_database_url = Some(migrator_url);
-
-        // app pool unused on the migrate branch; pass the owner pool.
-        apply_or_verify_schema(&cfg, &pool)
-            .await
-            .expect("flag on: reverie_migrator must apply the full migration set");
-
-        let applied: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success = true")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert!(applied > 0, "migrate branch should have applied migrations");
+        cfg.migration_database_url = None;
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
+        assert!(
+            format!("{err:#}").contains("DATABASE_URL_MIGRATION is missing"),
+            "flag on must take the migrate branch (checks the DSN), got: {err:#}"
+        );
     }
 
     #[tokio::test]

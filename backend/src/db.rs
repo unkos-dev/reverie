@@ -320,6 +320,11 @@ pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError
 /// - [`MigrationError::VerificationRead`] if the read fails (app-pool auth,
 ///   connectivity, or missing `SELECT` on `_sqlx_migrations`).
 pub async fn verify_schema_current(pool: &PgPool) -> Result<(), MigrationError> {
+    // The two reads below use raw `sqlx::query_scalar` rather than the
+    // compile-time-checked macro: `_sqlx_migrations` is managed by sqlx itself
+    // and is absent from the user prepare cache, so the macro cannot validate
+    // it. The migration runner reads the same table the same way.
+    //
     // Catalog probe FIRST. A never-migrated database has no
     // `_sqlx_migrations` table; without this probe the version SELECT below
     // surfaces a cryptic "relation _sqlx_migrations does not exist" instead
@@ -1038,5 +1043,45 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn reverie_migrator_can_apply_full_migration_set(pool: PgPool) {
+        // Prove the least-privilege migrator (NOT a superuser) can apply the
+        // WHOLE set: DB-level CREATE for `CREATE SCHEMA tower_sessions`, trusted
+        // `CREATE EXTENSION`, and object creation in public. A missing grant or
+        // a superuser-only op would fail here. sqlx::test DBs are fresh and
+        // ungranted, so first replicate docker/init-roles.sql's migrator grants
+        // on this per-test DB, then run migrations through a reverie_migrator
+        // connection. Complements `migrator_role_is_least_privilege` (which
+        // asserts the role lacks authority) by proving it has *enough*.
+        let db_name: String = sqlx::query_scalar("SELECT current_database()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query(&format!(
+            "GRANT CREATE ON DATABASE \"{db_name}\" TO reverie_migrator"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("GRANT USAGE, CREATE ON SCHEMA public TO reverie_migrator")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let opts = pool.connect_options();
+        let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
+            .unwrap_or_else(|_| "reverie_migrator".into());
+        let migrator_url = format!(
+            "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
+            opts.get_host(),
+            opts.get_port()
+        );
+
+        let report = run_migrations(&migrator_url)
+            .await
+            .expect("reverie_migrator must apply the full migration set as a non-superuser");
+        assert!(report.applied > 0, "should have applied migrations");
     }
 }

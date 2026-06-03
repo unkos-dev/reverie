@@ -26,7 +26,7 @@ directions (schema-ahead AND schema-behind) plus a never-migrated
 | Metric     | Predicted     | Actual      | Reasoning                                                              |
 | ---------- | ------------- | ----------- | --------------------------------------------------------------------- |
 | Complexity | MEDIUM-HIGH   | MEDIUM      | Mechanical 7-site Config ripple; shared set-diff helper kept runner intact |
-| Confidence | —             | High        | All tasks landed in dependency order; no pivots; 703 tests green       |
+| Confidence | —             | High        | All tasks landed in dependency order; no pivots; 709 tests green (incl. review-round additions) |
 
 No deviation from the plan's design. One environment workaround: the dev DB is
 reachable from this Coder workspace only via the container hostname
@@ -61,7 +61,7 @@ reachable from this Coder workspace only via the container hostname
 | `cargo fmt --check`                | ✅     | clean (one line auto-wrapped)    |
 | `cargo clippy --workspace --all-targets --locked -D warnings` | ✅ | 0 warnings |
 | `cargo sqlx prepare --workspace --check -- --tests` | ✅ | no drift             |
-| `cargo nextest run -p reverie-api` | ✅     | 703 passed, 1 skipped            |
+| `cargo nextest run -p reverie-api` | ✅     | 709 passed, 1 skipped            |
 | broken-intra-doc-links             | ✅     | exit 0 (3 pre-existing private-link warns elsewhere) |
 
 New tests: 4 × `verify_schema_current` (ok / ahead / behind / table-absent),

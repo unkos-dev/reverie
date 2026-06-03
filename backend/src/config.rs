@@ -407,14 +407,22 @@ impl Config {
         let oidc_redirect_uri = get("OIDC_REDIRECT_URI")
             .ok_or_else(|| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
 
-        // Default server path holds no migration credential: the DSN is
-        // optional unless auto-migrate is opted into. An exported-empty value
-        // is treated as unset (mirrors the `run_migrate` entrypoint guard).
+        // The default verify-only path holds NO migration credential: the DSN
+        // is only read and stored when in-process migration is opted into.
+        // Leaving it `None` when `auto_migrate` is off means the long-lived
+        // server process never carries the migrator credential in `Config`,
+        // even if `DATABASE_URL_MIGRATION` happens to be exported. An
+        // exported-empty value is treated as unset (mirrors `run_migrate`).
         let auto_migrate = parse_bool(get, "REVERIE_AUTO_MIGRATE", false)?;
-        let migration_database_url = get("DATABASE_URL_MIGRATION").filter(|s| !s.trim().is_empty());
-        if auto_migrate && migration_database_url.is_none() {
-            return Err(ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()));
-        }
+        let migration_database_url = if auto_migrate {
+            let url = get("DATABASE_URL_MIGRATION").filter(|s| !s.trim().is_empty());
+            if url.is_none() {
+                return Err(ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()));
+            }
+            url
+        } else {
+            None
+        };
 
         let ingestion_database_url =
             get("DATABASE_URL_INGESTION").unwrap_or_else(|| database_url.clone());
@@ -911,10 +919,10 @@ mod tests {
         assert_eq!(config.library_path, "./library");
         assert_eq!(config.ingestion_path, "./ingestion");
         assert_eq!(config.quarantine_path, "./quarantine");
-        assert_eq!(
-            config.migration_database_url.as_deref(),
-            Some("postgres://test@localhost/reverie_dev")
-        );
+        // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
+        // unset (off), so the DSN is intentionally NOT carried into Config.
+        assert_eq!(config.migration_database_url, None);
+        assert!(!config.auto_migrate);
         // Falls back to DATABASE_URL when DATABASE_URL_INGESTION is unset
         assert_eq!(
             config.ingestion_database_url,
@@ -1088,10 +1096,15 @@ mod tests {
 
     #[test]
     fn from_env_custom_migration_url() {
-        let vars = with_overrides(&[(
-            "DATABASE_URL_MIGRATION",
-            "postgres://schema_owner@localhost/reverie_dev",
-        )]);
+        // The DSN is only stored when auto-migrate is on; set the flag so the
+        // custom value is retained (off would yield None regardless).
+        let vars = with_overrides(&[
+            ("REVERIE_AUTO_MIGRATE", "true"),
+            (
+                "DATABASE_URL_MIGRATION",
+                "postgres://schema_owner@localhost/reverie_dev",
+            ),
+        ]);
         let config = Config::from_source(&env_for_owned(&vars)).unwrap();
         assert_eq!(
             config.migration_database_url.as_deref(),

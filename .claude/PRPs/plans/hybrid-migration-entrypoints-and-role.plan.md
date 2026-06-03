@@ -241,7 +241,7 @@ CREATE ROLE reverie_app WITH LOGIN PASSWORD :'app_pw';
 
 ### Task 11: full validation + sqlx cache
 
-- ACTION: `cargo sqlx prepare --workspace` (migration SQL changed); fmt/clippy/nextest.
+- ACTION: `cargo sqlx prepare --workspace -- --tests` (migration SQL changed; `-- --tests` so test-only query metadata is captured too); fmt/clippy/nextest.
 - VALIDATE: see Validation Commands.
 
 ---
