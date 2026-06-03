@@ -43,18 +43,19 @@ sqlx's automatic migration pass.
 
 **`MigrationError` failure modes** (operator-facing, with recovery):
 
-| Variant              | Meaning                                                  | Recovery                                             |
-| -------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
-| `Connection`         | Bad DSN, auth failure, unreachable host                  | Fix `DATABASE_URL_MIGRATION`                         |
-| `SessionSetup`       | Post-connect init failed (lock_timeout, lock acq)        | Check DB permissions and concurrent connections      |
-| `BatchFailed`        | SQL error in transactional migration                     | DB untouched — pin previous image                    |
-| `NoTxFailed`         | `-- no-transaction` migration SQL failed                 | TX migrations committed — fix failing SQL, re-deploy |
-| `NoTxTrackingFailed` | No-tx migration applied but tracking INSERT failed       | Migration IS applied — manually insert tracking row  |
-| `SchemaAhead`        | DB has migrations unknown to binary                      | Upgrade image or roll back DB                        |
-| `SchemaBehind`       | Binary has migrations not applied to DB (startup verify) | Run `reverie migrate` before starting the server     |
-| `NotInitialized`     | DB never migrated (`_sqlx_migrations` absent)            | Run `reverie migrate` first                          |
-| `ChecksumMismatch`   | Migration file modified after application                | Restore original migration file                      |
-| `LockTimeout`        | Advisory lock not acquired (30s budget)                  | Another instance running migrations                  |
+| Variant              | Meaning                                                  | Recovery                                                                    |
+| -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `Connection`         | Bad DSN, auth failure, unreachable host                  | Fix `DATABASE_URL_MIGRATION`                                                |
+| `SessionSetup`       | Post-connect init failed (lock_timeout, lock acq)        | Check DB permissions and concurrent connections                             |
+| `BatchFailed`        | SQL error in transactional migration                     | DB untouched — pin previous image                                           |
+| `NoTxFailed`         | `-- no-transaction` migration SQL failed                 | TX migrations committed — fix failing SQL, re-deploy                        |
+| `NoTxTrackingFailed` | No-tx migration applied but tracking INSERT failed       | Migration IS applied — manually insert tracking row                         |
+| `SchemaAhead`        | DB has migrations unknown to binary                      | Upgrade image or roll back DB                                               |
+| `SchemaBehind`       | Binary has migrations not applied to DB (startup verify) | Run `reverie migrate` before starting the server                            |
+| `NotInitialized`     | DB never migrated (`_sqlx_migrations` absent)            | Run `reverie migrate` first                                                 |
+| `VerificationRead`   | App pool can't read `_sqlx_migrations` (startup verify)  | Grant `reverie_app` SELECT (re-run `reverie migrate`); check `DATABASE_URL` |
+| `ChecksumMismatch`   | Migration file modified after application                | Restore original migration file                                             |
+| `LockTimeout`        | Advisory lock not acquired (30s budget)                  | Another instance running migrations                                         |
 
 ### Upgrade note: postgres:18 mount path
 

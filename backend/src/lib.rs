@@ -271,44 +271,16 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
-    // Migration handling is split by REVERIE_AUTO_MIGRATE. Default (off):
-    // the application process holds no migration credential and instead
-    // verifies the schema is current using its own app pool (after pool
-    // init, below) — migrations run out-of-band via `reverie migrate`. Opt-in
-    // (on): run migrations in-process here, before any runtime pool exists,
-    // using the migration DSN the long-lived process then carries.
-    if config.auto_migrate {
-        let migration_url = config
-            .migration_database_url
-            .as_deref()
-            .context("REVERIE_AUTO_MIGRATE is set but DATABASE_URL_MIGRATION is missing")?;
-        let migration_report = db::run_migrations(migration_url)
-            .await
-            .context("database migration failed")?;
-        if migration_report.applied > 0 {
-            tracing::info!(
-                count = migration_report.applied,
-                elapsed_ms = migration_report.elapsed_ms,
-                "applied pending migrations"
-            );
-        } else {
-            tracing::debug!("database schema is up to date");
-        }
-    }
-
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
 
-    // Default path: confirm the out-of-band migration ran and the schema
-    // matches this binary. Fail-closed on any divergence (ahead OR behind)
-    // and on a never-migrated database, so a stale or unmigrated deployment
-    // is a legible startup error rather than silent runtime SQL failures.
-    if !config.auto_migrate {
-        db::verify_schema_current(&pool)
-            .await
-            .context("database schema verification failed")?;
-    }
+    // Startup schema step — apply in-process (opt-in) or verify (default).
+    // Extracted to apply_or_verify_schema so the flag selector (the security
+    // contract that the default path carries no migration credential) is
+    // pinned by tests. The app pool is created first but performs no
+    // schema-dependent query before this runs.
+    apply_or_verify_schema(&config, &pool).await?;
 
     let oidc_client = auth::oidc::init_oidc_client(&config)
         .await
@@ -415,7 +387,58 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Startup schema step: apply pending migrations in-process when
+/// `config.auto_migrate` is set, otherwise verify the schema is current via
+/// the application pool (holding no migration credential).
+///
+/// This is the seam that carries the PR's security contract — the default
+/// path (`auto_migrate == false`) must NOT migrate and must NOT require a
+/// migration DSN. Extracted from `run()` so the flag selector is pinned by
+/// tests; inverting the branch is otherwise invisible to the suite.
+///
+/// # Errors
+///
+/// - `auto_migrate` set but `migration_database_url` is `None` (defensive —
+///   `Config::from_source` already rejects this).
+/// - The in-process migration run fails (see [`db::run_migrations`]).
+/// - Schema verification fails or detects divergence (see
+///   [`db::verify_schema_current`]).
+async fn apply_or_verify_schema(config: &Config, app_pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    if config.auto_migrate {
+        let migration_url = config
+            .migration_database_url
+            .as_deref()
+            .context("REVERIE_AUTO_MIGRATE is set but DATABASE_URL_MIGRATION is missing")?;
+        let report = db::run_migrations(migration_url)
+            .await
+            .context("database migration failed")?;
+        if report.applied > 0 {
+            tracing::info!(
+                count = report.applied,
+                elapsed_ms = report.elapsed_ms,
+                "applied pending migrations"
+            );
+        } else {
+            tracing::debug!("database schema is up to date");
+        }
+        Ok(())
+    } else {
+        // Default path: confirm the out-of-band migration ran and the schema
+        // matches this binary. Fail-closed on any divergence (ahead OR behind)
+        // and on a never-migrated database, so a stale or unmigrated deployment
+        // is a legible startup error rather than silent runtime SQL failures.
+        db::verify_schema_current(app_pool)
+            .await
+            .context("database schema verification failed")
+    }
+}
+
 /// The subcommand selected on the command line.
+///
+/// Deliberately NOT `#[non_exhaustive]`: `main.rs` matches it exhaustively, so
+/// adding a variant is a compile error there rather than a silent fall-through
+/// to the server — the same "a typo must not boot the server" property
+/// [`parse_command`] enforces at runtime.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     /// `reverie migrate` — apply pending migrations out-of-band, then exit.
@@ -518,7 +541,9 @@ async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, parse_command, resolve_log_filter, resolve_migration_dsn};
+    use super::{
+        Command, apply_or_verify_schema, parse_command, resolve_log_filter, resolve_migration_dsn,
+    };
     use crate::test_support;
 
     #[test]
@@ -543,6 +568,88 @@ mod tests {
 
         let url = "postgres://reverie_migrator@localhost/reverie_dev";
         assert_eq!(resolve_migration_dsn(Some(url.into())).unwrap(), url);
+    }
+
+    // apply_or_verify_schema is the flag selector carrying the security
+    // contract: flag off MUST take the verify branch (no migration credential),
+    // flag on MUST take the migrate branch. These pin the branch both ways so an
+    // inverted condition fails the suite.
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn apply_or_verify_flag_off_verifies_ok(pool: sqlx::PgPool) {
+        let cfg = test_support::test_config(); // auto_migrate: false
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        apply_or_verify_schema(&cfg, &app_pool)
+            .await
+            .expect("flag off + current schema must verify Ok via the app pool");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn apply_or_verify_flag_off_refuses_behind_schema(pool: sqlx::PgPool) {
+        // Delete the latest applied row → DB behind the binary. The verify
+        // branch must refuse (fail-closed); the migrate branch would instead
+        // re-apply it. A refusal proves the selector chose verify.
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = (SELECT max(version) FROM _sqlx_migrations)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let cfg = test_support::test_config();
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("behind"),
+            "expected a SchemaBehind refusal (verify branch), got: {chain}"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn apply_or_verify_flag_on_migrates_as_reverie_migrator(pool: sqlx::PgPool) {
+        // Grant the fresh per-test DB the same privileges docker/init-roles.sql
+        // grants in real deployments (sqlx::test DBs are ungranted), then run
+        // the migrate branch AS reverie_migrator. This pins the flag-on branch
+        // AND proves the least-privilege migrator can apply the full set
+        // (DB-level CREATE for `CREATE SCHEMA tower_sessions`, trusted
+        // CREATE EXTENSION) — which only manual e2e covered before.
+        let db_name: String = sqlx::query_scalar("SELECT current_database()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query(&format!(
+            "GRANT CREATE ON DATABASE \"{db_name}\" TO reverie_migrator"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("GRANT USAGE, CREATE ON SCHEMA public TO reverie_migrator")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let opts = pool.connect_options();
+        let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
+            .unwrap_or_else(|_| "reverie_migrator".into());
+        let migrator_url = format!(
+            "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
+            opts.get_host(),
+            opts.get_port()
+        );
+
+        let mut cfg = test_support::test_config();
+        cfg.auto_migrate = true;
+        cfg.migration_database_url = Some(migrator_url);
+
+        // app pool unused on the migrate branch; pass the owner pool.
+        apply_or_verify_schema(&cfg, &pool)
+            .await
+            .expect("flag on: reverie_migrator must apply the full migration set");
+
+        let applied: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success = true")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(applied > 0, "migrate branch should have applied migrations");
     }
 
     #[tokio::test]

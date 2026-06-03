@@ -233,6 +233,19 @@ pub enum MigrationError {
     #[error("database is not initialized (no migration history) — run `reverie migrate` first")]
     NotInitialized,
 
+    /// A read against `_sqlx_migrations` during read-only schema verification
+    /// failed. Unlike [`Self::Connection`], the failing pool is the
+    /// application pool (`reverie_app` / `DATABASE_URL`), NOT the migration
+    /// DSN — most often `reverie_app` lacks `SELECT` on `_sqlx_migrations` (a
+    /// database migrated before that grant existed), or a transport/auth
+    /// failure on the app pool.
+    #[error(
+        "failed to read migration history during schema verification: {0} \
+         — ensure reverie_app has SELECT on _sqlx_migrations (re-run `reverie migrate`) \
+         and that DATABASE_URL is reachable"
+    )]
+    VerificationRead(#[source] sqlx::Error),
+
     /// Stored checksum for an applied migration differs from the embedded
     /// migration file. The file was modified after initial application.
     #[error(
@@ -289,10 +302,11 @@ pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError
 /// off: migrations run out-of-band via `reverie migrate`, and the long-lived
 /// application process only confirms the schema is current using its own
 /// (least-privilege) app pool — which has `SELECT` on `_sqlx_migrations` but
-/// no schema-management rights. Fail-closed in BOTH directions:
-/// [`MigrationError::SchemaAhead`] when the DB is newer than the binary, and
+/// no schema-management rights. Fail-closed in every divergence case:
+/// [`MigrationError::SchemaAhead`] when the DB is newer than the binary,
 /// [`MigrationError::SchemaBehind`] when the DB is older (the common
-/// "forgot to migrate" case). Refusing on schema-behind is deliberate: the
+/// "forgot to migrate" case), and [`MigrationError::NotInitialized`] when the
+/// DB was never migrated at all. Refusing on schema-behind is deliberate: the
 /// migrate-then-app topology has no legitimate window where the app runs
 /// newer than the DB, and the bare-docker path has no compose gating, so
 /// this check is the only backstop against silent runtime SQL failures.
@@ -303,7 +317,8 @@ pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError
 ///   (a never-migrated database).
 /// - [`MigrationError::SchemaAhead`] / [`MigrationError::SchemaBehind`] on
 ///   version divergence.
-/// - [`MigrationError::Connection`] if the read fails (auth, connectivity).
+/// - [`MigrationError::VerificationRead`] if the read fails (app-pool auth,
+///   connectivity, or missing `SELECT` on `_sqlx_migrations`).
 pub async fn verify_schema_current(pool: &PgPool) -> Result<(), MigrationError> {
     // Catalog probe FIRST. A never-migrated database has no
     // `_sqlx_migrations` table; without this probe the version SELECT below
@@ -313,7 +328,7 @@ pub async fn verify_schema_current(pool: &PgPool) -> Result<(), MigrationError> 
         sqlx::query_scalar("SELECT to_regclass('public._sqlx_migrations') IS NOT NULL")
             .fetch_one(pool)
             .await
-            .map_err(MigrationError::Connection)?;
+            .map_err(MigrationError::VerificationRead)?;
     if !table_exists {
         return Err(MigrationError::NotInitialized);
     }
@@ -324,7 +339,7 @@ pub async fn verify_schema_current(pool: &PgPool) -> Result<(), MigrationError> 
         sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success = true")
             .fetch_all(pool)
             .await
-            .map_err(MigrationError::Connection)?
+            .map_err(MigrationError::VerificationRead)?
             .into_iter()
             .collect();
 

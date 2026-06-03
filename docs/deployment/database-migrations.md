@@ -65,12 +65,17 @@ rather than a stream of failed requests.
 If you run the image directly without a one-shot migrate service, migrate
 first, then start the server:
 
+> Pre-v0.1.0 the conventional `latest` tag is intentionally unset. These
+> examples pin `:main` (the floating staging tag, **`linux/arm64` only** until
+> the first amd64 multi-arch release ships). Once `v0.1.0` is tagged, swap
+> `:main` for `:vX.Y.Z`.
+
 ```bash
-docker run --rm --env-file .env ghcr.io/unkos-dev/reverie:latest migrate
+docker run --rm --env-file .env ghcr.io/unkos-dev/reverie:main migrate
 ```
 
 ```bash
-docker run -d --env-file .env -p 3000:3000 ghcr.io/unkos-dev/reverie:latest
+docker run -d --env-file .env -p 3000:3000 ghcr.io/unkos-dev/reverie:main
 ```
 
 The second command starts the server, which verifies the schema and serves.

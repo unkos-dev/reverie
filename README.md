@@ -27,6 +27,10 @@ A high-performance, self-hosted ebook library manager.
 cd backend && cargo run
 ```
 
+> **Note:** `cargo run` verifies the schema is current but does not migrate; it
+> refuses to start on a fresh or behind database. Run `cargo run -- migrate`
+> first to initialise/upgrade the schema.
+
 ```bash
 # Frontend
 cd frontend && npm install && npm run dev
