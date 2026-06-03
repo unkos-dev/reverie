@@ -33,7 +33,7 @@ jobs:
       staging: ${{ steps.filter.outputs.staging }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: filter
         with:
@@ -121,7 +121,7 @@ jobs:
       # of the cache key); subsequent runs see the speedup.
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Create database roles
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
@@ -271,7 +271,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       # Prebuilt cargo-audit (GitHub Releases via install-action) instead of
       # `cargo install` from source — ~5s vs ~1-2 min per run. Mirrors the
       # nextest/llvm-cov/typos install pattern; version pinned (Renovate's
@@ -306,7 +306,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       # Direct curl-tarball install pins the exact upstream release.
       # taiki-e/install-action's manifest doesn't track actionlint@1.7.12,
@@ -346,7 +346,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       # Direct curl-tarball install pins the exact upstream release + SHA256,
       # mirroring the actionlint install above. taiki-e/install-action carries
@@ -441,7 +441,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -498,7 +498,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       # Build .env from the committed example to also catch regressions where
       # a required key is renamed in compose.staging.yml but not in the
