@@ -1712,18 +1712,23 @@ mod tests {
     async fn backfill_normalises_dashed_isbns(pool: sqlx::PgPool) {
         // Exercises the backfill statements from
         // 20260603032915_normalise_existing_isbns.up.sql against rows that
-        // predate ISBN normalisation: one with dashed isbn_13 +
-        // spaced/lowercase isbn_10, one with a `urn:isbn:` OPF prefix. The
-        // migration itself only proves it applies to an empty table; this
-        // proves the transform collapses real divergent data, including the
-        // prefix forms `normalise()` strips. The backfill SQL below is kept
-        // verbatim in sync with the migration file.
+        // predate ISBN normalisation: dashed isbn_13 + spaced/lowercase
+        // isbn_10, a `urn:isbn:` OPF prefix, and a leading-whitespace +
+        // prefix value (the case where a missing trim would leave the prefix
+        // literal and silently break rematch). The migration itself only
+        // proves it applies to an empty table; this proves the transform
+        // collapses real divergent data, including the prefix and whitespace
+        // forms `normalise()` strips. The backfill SQL below is kept verbatim
+        // in sync with the migration file.
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let prefix_marker = Uuid::new_v4().simple().to_string();
         let (_work2, m_prefix) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &prefix_marker).await;
+        let ws_marker = Uuid::new_v4().simple().to_string();
+        let (_work3, m_ws) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &ws_marker).await;
 
         sqlx::query!(
             "UPDATE manifestations SET isbn_13 = $1, isbn_10 = $2 WHERE id = $3",
@@ -1742,21 +1747,29 @@ mod tests {
         .execute(&ing_pool)
         .await
         .expect("seed prefixed isbn");
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+            " urn:isbn:9780306406157",
+            m_ws,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed whitespace-prefixed isbn");
 
         sqlx::query!(
             "UPDATE manifestations \
-             SET isbn_10 = upper(regexp_replace(regexp_replace(isbn_10, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')) \
+             SET isbn_10 = upper(regexp_replace(regexp_replace(regexp_replace(isbn_10, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')) \
              WHERE isbn_10 IS NOT NULL \
-               AND isbn_10 <> upper(regexp_replace(regexp_replace(isbn_10, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g'))"
+               AND isbn_10 <> upper(regexp_replace(regexp_replace(regexp_replace(isbn_10, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g'))"
         )
         .execute(&ing_pool)
         .await
         .expect("backfill isbn_10");
         sqlx::query!(
             "UPDATE manifestations \
-             SET isbn_13 = regexp_replace(regexp_replace(isbn_13, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g') \
+             SET isbn_13 = regexp_replace(regexp_replace(regexp_replace(isbn_13, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g') \
              WHERE isbn_13 IS NOT NULL \
-               AND isbn_13 <> regexp_replace(regexp_replace(isbn_13, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')"
+               AND isbn_13 <> regexp_replace(regexp_replace(regexp_replace(isbn_13, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')"
         )
         .execute(&ing_pool)
         .await
@@ -1777,6 +1790,12 @@ mod tests {
             .await
             .expect("fetch prefix normalised");
         assert_eq!(prefix_row.isbn_13.as_deref(), Some("9780306406157"));
+
+        let ws_row = sqlx::query!("SELECT isbn_13 FROM manifestations WHERE id = $1", m_ws)
+            .fetch_one(&ing_pool)
+            .await
+            .expect("fetch whitespace-prefix normalised");
+        assert_eq!(ws_row.isbn_13.as_deref(), Some("9780306406157"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
