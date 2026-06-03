@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT isbn_10, isbn_13 FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "isbn_10",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "isbn_13",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "f8490ce9c008feb2b94bb32f496a313573e69b78eac5a9aef105b8787c7c36db"
+}

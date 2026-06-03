@@ -93,6 +93,24 @@ pub fn isbn10_to_isbn13(isbn10: &str) -> Option<String> {
     Some(format!("{prefix}{check}"))
 }
 
+/// Validate `raw` as an `ISBN-10` and return its normalised form (digits only,
+/// uppercase `X` check digit, hyphens/spaces/prefixes stripped). `None` when the
+/// length or check digit is invalid.
+///
+/// Used by the metadata PATCH handler to store ISBNs in the same digits-only
+/// shape the ingestion pipeline produces, so rematch's exact-equality join
+/// finds ingested twins regardless of operator input formatting.
+pub fn checked_isbn10(raw: &str) -> Option<String> {
+    validate_isbn10(raw).then(|| normalise(raw))
+}
+
+/// Validate `raw` as an `ISBN-13` and return its normalised form (digits only,
+/// hyphens/spaces/prefixes stripped). `None` when the length or check digit is
+/// invalid. See [`checked_isbn10`] for the normalisation rationale.
+pub fn checked_isbn13(raw: &str) -> Option<String> {
+    validate_isbn13(raw).then(|| normalise(raw))
+}
+
 /// Parse a raw identifier string: strip prefixes, normalise, detect length, validate.
 pub fn parse_isbn(raw: &str) -> IsbnResult {
     let normalised = normalise(raw);
@@ -223,5 +241,31 @@ mod tests {
         let result = parse_isbn("0-8044-2957-X");
         assert!(result.valid);
         assert_eq!(result.isbn_10.as_deref(), Some("080442957X"));
+    }
+
+    #[test]
+    fn checked_isbn13_normalises_valid() {
+        assert_eq!(
+            checked_isbn13("978-0-306-40615-7").as_deref(),
+            Some("9780306406157")
+        );
+    }
+
+    #[test]
+    fn checked_isbn13_rejects_bad_check_digit() {
+        assert_eq!(checked_isbn13("9780306406150"), None);
+    }
+
+    #[test]
+    fn checked_isbn10_normalises_and_uppercases_x() {
+        assert_eq!(
+            checked_isbn10("0-8044-2957-x").as_deref(),
+            Some("080442957X")
+        );
+    }
+
+    #[test]
+    fn checked_isbn10_rejects_wrong_length() {
+        assert_eq!(checked_isbn10("12345"), None);
     }
 }
