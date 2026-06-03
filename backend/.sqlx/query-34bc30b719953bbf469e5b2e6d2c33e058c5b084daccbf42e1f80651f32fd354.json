@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET isbn_10 = upper(regexp_replace(regexp_replace(isbn_10, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')) WHERE isbn_10 IS NOT NULL AND isbn_10 <> upper(regexp_replace(regexp_replace(isbn_10, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g'))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "34bc30b719953bbf469e5b2e6d2c33e058c5b084daccbf42e1f80651f32fd354"
+}

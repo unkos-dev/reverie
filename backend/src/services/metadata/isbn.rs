@@ -101,14 +101,16 @@ pub fn isbn10_to_isbn13(isbn10: &str) -> Option<String> {
 /// shape the ingestion pipeline produces, so rematch's exact-equality join
 /// finds ingested twins regardless of operator input formatting.
 pub fn checked_isbn10(raw: &str) -> Option<String> {
-    validate_isbn10(raw).then(|| normalise(raw))
+    let normalised = normalise(raw);
+    validate_isbn10(&normalised).then_some(normalised)
 }
 
 /// Validate `raw` as an `ISBN-13` and return its normalised form (digits only,
 /// hyphens/spaces/prefixes stripped). `None` when the length or check digit is
 /// invalid. See [`checked_isbn10`] for the normalisation rationale.
 pub fn checked_isbn13(raw: &str) -> Option<String> {
-    validate_isbn13(raw).then(|| normalise(raw))
+    let normalised = normalise(raw);
+    validate_isbn13(&normalised).then_some(normalised)
 }
 
 /// Parse a raw identifier string: strip prefixes, normalise, detect length, validate.

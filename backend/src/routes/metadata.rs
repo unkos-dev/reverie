@@ -1711,13 +1711,19 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn backfill_normalises_dashed_isbns(pool: sqlx::PgPool) {
         // Exercises the backfill statements from
-        // 20260603032915_normalise_existing_isbns.up.sql against a row that
-        // predates ISBN normalisation (dashed isbn_13, spaced/lowercase
-        // isbn_10). The migration itself only proves it applies to an empty
-        // table; this proves the transform collapses real divergent data.
+        // 20260603032915_normalise_existing_isbns.up.sql against rows that
+        // predate ISBN normalisation: one with dashed isbn_13 +
+        // spaced/lowercase isbn_10, one with a `urn:isbn:` OPF prefix. The
+        // migration itself only proves it applies to an empty table; this
+        // proves the transform collapses real divergent data, including the
+        // prefix forms `normalise()` strips. The backfill SQL below is kept
+        // verbatim in sync with the migration file.
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let prefix_marker = Uuid::new_v4().simple().to_string();
+        let (_work2, m_prefix) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &prefix_marker).await;
 
         sqlx::query!(
             "UPDATE manifestations SET isbn_13 = $1, isbn_10 = $2 WHERE id = $3",
@@ -1728,21 +1734,29 @@ mod tests {
         .execute(&ing_pool)
         .await
         .expect("seed dashed isbns");
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+            "urn:isbn:9780306406157",
+            m_prefix,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed prefixed isbn");
 
         sqlx::query!(
             "UPDATE manifestations \
-             SET isbn_10 = upper(regexp_replace(isbn_10, '[- ]', '', 'g')) \
+             SET isbn_10 = upper(regexp_replace(regexp_replace(isbn_10, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')) \
              WHERE isbn_10 IS NOT NULL \
-               AND isbn_10 <> upper(regexp_replace(isbn_10, '[- ]', '', 'g'))"
+               AND isbn_10 <> upper(regexp_replace(regexp_replace(isbn_10, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g'))"
         )
         .execute(&ing_pool)
         .await
         .expect("backfill isbn_10");
         sqlx::query!(
             "UPDATE manifestations \
-             SET isbn_13 = regexp_replace(isbn_13, '[- ]', '', 'g') \
+             SET isbn_13 = regexp_replace(regexp_replace(isbn_13, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g') \
              WHERE isbn_13 IS NOT NULL \
-               AND isbn_13 <> regexp_replace(isbn_13, '[- ]', '', 'g')"
+               AND isbn_13 <> regexp_replace(regexp_replace(isbn_13, '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')"
         )
         .execute(&ing_pool)
         .await
@@ -1757,6 +1771,12 @@ mod tests {
         .expect("fetch normalised");
         assert_eq!(row.isbn_13.as_deref(), Some("9780306406157"));
         assert_eq!(row.isbn_10.as_deref(), Some("080442957X"));
+
+        let prefix_row = sqlx::query!("SELECT isbn_13 FROM manifestations WHERE id = $1", m_prefix)
+            .fetch_one(&ing_pool)
+            .await
+            .expect("fetch prefix normalised");
+        assert_eq!(prefix_row.isbn_13.as_deref(), Some("9780306406157"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
