@@ -20,6 +20,7 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::work;
 use crate::services::enrichment::field_lock::{self, EntityType};
+use crate::services::metadata::isbn;
 use crate::state::AppState;
 
 /// Build the metadata-review router.
@@ -767,6 +768,19 @@ async fn update_book_metadata(
             touched_isbn = true;
         }
         if let Some(value) = maybe_value {
+            // Reject malformed ISBNs (wrong length, bad check digit,
+            // non-numeric) and normalise valid ones to digits-only so the
+            // stored value matches the ingestion surface and rematch's
+            // exact-equality join can find ingested twins. Guard lives here,
+            // not in `apply_version`, so accept/revert paths keep accepting
+            // historical pre-validation/pre-normalisation values.
+            let value = match field {
+                "isbn_10" => isbn::checked_isbn10(&value)
+                    .ok_or_else(|| AppError::Validation("invalid isbn_10".into()))?,
+                "isbn_13" => isbn::checked_isbn13(&value)
+                    .ok_or_else(|| AppError::Validation("invalid isbn_13".into()))?,
+                _ => value,
+            };
             let json = serde_json::Value::String(value);
             let version_id = insert_manual_version(
                 &mut tx,
@@ -1480,7 +1494,7 @@ mod tests {
         let (_work_b, m_b) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker_b).await;
 
-        let isbn = "9780000000017";
+        let isbn = "9780306406157";
         sqlx::query!(
             "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
             isbn,
@@ -1518,6 +1532,270 @@ mod tests {
             Some(work_a),
             "ISBN PATCH did not trigger rematch — suspected_duplicate_work_id is {suspected:?}, expected Some({work_a})"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_isbn13_bad_check_digit_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        // 13 digits, correct length, wrong check digit (valid form ends 7).
+        let response = server
+            .patch(&format!("/api/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_13": "9780306406150"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_isbn10_wrong_length_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let response = server
+            .patch(&format!("/api/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_10": "12345"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_isbn13_non_numeric_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        // 13 chars, but a letter where a digit must be.
+        let response = server
+            .patch(&format!("/api/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_13": "978030640615X"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_valid_isbn10_accepted(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        // Valid ISBN-10 (check digit 2) must pass the new guard.
+        let response = server
+            .patch(&format!("/api/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_10": "0306406152"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_hyphenated_isbn13_stored_normalized(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let response = server
+            .patch(&format!("/api/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_13": "978-0-306-40615-7"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        // Stored canonical value is digits-only, matching the ingestion
+        // surface so rematch exact-equality can find ingested twins.
+        let stored: Option<String> =
+            sqlx::query_scalar!("SELECT isbn_13 FROM manifestations WHERE id = $1", m)
+                .fetch_one(&ing_pool)
+                .await
+                .expect("fetch isbn_13");
+        assert_eq!(stored.as_deref(), Some("9780306406157"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_dashed_isbn_rematches_undashed_twin(pool: sqlx::PgPool) {
+        // m_a carries an ingested (digits-only) ISBN; PATCHing m_b with the
+        // same ISBN in dashed form must normalise on write so rematch's
+        // exact-equality join wires the duplicate pointer.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let marker_a = Uuid::new_v4().simple().to_string();
+        let marker_b = Uuid::new_v4().simple().to_string();
+        let (work_a, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker_a).await;
+        let (_work_b, m_b) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker_b).await;
+
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+            "9780306406157",
+            m_a,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed isbn_a");
+
+        let response = server
+            .patch(&format!("/api/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"isbn_13": "978-0-306-40615-7"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        let suspected: Option<Uuid> = sqlx::query_scalar!(
+            "SELECT suspected_duplicate_work_id FROM manifestations WHERE id = $1",
+            m_b,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch suspected");
+        assert_eq!(
+            suspected,
+            Some(work_a),
+            "dashed PATCH did not rematch undashed twin — suspected_duplicate_work_id is {suspected:?}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn backfill_normalises_dashed_isbns(pool: sqlx::PgPool) {
+        // Exercises the backfill statements from
+        // 20260603032915_normalise_existing_isbns.up.sql against rows that
+        // predate ISBN normalisation: dashed isbn_13 + spaced/lowercase
+        // isbn_10, a `urn:isbn:` OPF prefix, and a leading-whitespace +
+        // prefix value (the case where a missing trim would leave the prefix
+        // literal and silently break rematch). The migration itself only
+        // proves it applies to an empty table; this proves the transform
+        // collapses real divergent data, including the prefix and whitespace
+        // forms `normalise()` strips. The backfill SQL below is kept verbatim
+        // in sync with the migration file.
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let prefix_marker = Uuid::new_v4().simple().to_string();
+        let (_work2, m_prefix) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &prefix_marker).await;
+        let ws_marker = Uuid::new_v4().simple().to_string();
+        let (_work3, m_ws) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &ws_marker).await;
+
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1, isbn_10 = $2 WHERE id = $3",
+            "978-0-306-40615-7",
+            "0-8044-2957-x",
+            m,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed dashed isbns");
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+            "urn:isbn:9780306406157",
+            m_prefix,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed prefixed isbn");
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+            " urn:isbn:9780306406157",
+            m_ws,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed whitespace-prefixed isbn");
+
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET isbn_10 = upper(regexp_replace(regexp_replace(regexp_replace(isbn_10, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')) \
+             WHERE isbn_10 IS NOT NULL \
+               AND isbn_10 <> upper(regexp_replace(regexp_replace(regexp_replace(isbn_10, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g'))"
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("backfill isbn_10");
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET isbn_13 = regexp_replace(regexp_replace(regexp_replace(isbn_13, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g') \
+             WHERE isbn_13 IS NOT NULL \
+               AND isbn_13 <> regexp_replace(regexp_replace(regexp_replace(isbn_13, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '^(urn:isbn:|URN:ISBN:|isbn:|ISBN:|ISBN )', ''), '[- ]', '', 'g')"
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("backfill isbn_13");
+
+        let row = sqlx::query!(
+            "SELECT isbn_10, isbn_13 FROM manifestations WHERE id = $1",
+            m
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch normalised");
+        assert_eq!(row.isbn_13.as_deref(), Some("9780306406157"));
+        assert_eq!(row.isbn_10.as_deref(), Some("080442957X"));
+
+        let prefix_row = sqlx::query!("SELECT isbn_13 FROM manifestations WHERE id = $1", m_prefix)
+            .fetch_one(&ing_pool)
+            .await
+            .expect("fetch prefix normalised");
+        assert_eq!(prefix_row.isbn_13.as_deref(), Some("9780306406157"));
+
+        let ws_row = sqlx::query!("SELECT isbn_13 FROM manifestations WHERE id = $1", m_ws)
+            .fetch_one(&ing_pool)
+            .await
+            .expect("fetch whitespace-prefix normalised");
+        assert_eq!(ws_row.isbn_13.as_deref(), Some("9780306406157"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
