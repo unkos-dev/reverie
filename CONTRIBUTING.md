@@ -38,6 +38,10 @@ Backend only (requires Rust toolchain):
 cd backend && cargo run
 ```
 
+> Run `cargo run -- migrate` once to initialise the schema before the first
+> `cargo run` — the server verifies the schema and refuses to start if it is
+> fresh or behind.
+
 Frontend only (requires Node.js >=24.15.0):
 
 ```bash

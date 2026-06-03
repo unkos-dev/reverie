@@ -77,9 +77,19 @@ pub struct Config {
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match
     /// the value registered with the issuer.
     pub oidc_redirect_uri: String,
-    /// Migration DSN (`DATABASE_URL_MIGRATION`, required). Schema-owner
-    /// credentials for the ephemeral migration pool. Bypasses RLS.
-    pub migration_database_url: String,
+    /// Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`
+    /// credentials for the ephemeral migration pool. `None` on the default
+    /// server path — the application process holds no migration credential
+    /// unless [`Self::auto_migrate`] is set. Required (else
+    /// [`ConfigError::MissingVar`]) only when `auto_migrate` is true.
+    pub migration_database_url: Option<String>,
+    /// Run pending migrations in-process at startup
+    /// (`REVERIE_AUTO_MIGRATE`, default `false`). The shipped default is
+    /// out-of-band migration via `reverie migrate`; when this is `true` the
+    /// long-lived server process carries the migration credential for its
+    /// whole lifetime, so it is an opt-in escape hatch only. Requires
+    /// [`Self::migration_database_url`] to be set.
+    pub auto_migrate: bool,
     /// Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`); falls back to
     /// `database_url` when unset. Connections run as
     /// `reverie_ingestion` against the `*_ingestion_full_access` RLS
@@ -397,9 +407,22 @@ impl Config {
         let oidc_redirect_uri = get("OIDC_REDIRECT_URI")
             .ok_or_else(|| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
 
-        let migration_database_url = get("DATABASE_URL_MIGRATION")
-            .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()))?;
+        // The default verify-only path holds NO migration credential: the DSN
+        // is only read and stored when in-process migration is opted into.
+        // Leaving it `None` when `auto_migrate` is off means the long-lived
+        // server process never carries the migrator credential in `Config`,
+        // even if `DATABASE_URL_MIGRATION` happens to be exported. An
+        // exported-empty value is treated as unset (mirrors `run_migrate`).
+        let auto_migrate = parse_bool(get, "REVERIE_AUTO_MIGRATE", false)?;
+        let migration_database_url = if auto_migrate {
+            let url = get("DATABASE_URL_MIGRATION").filter(|s| !s.trim().is_empty());
+            if url.is_none() {
+                return Err(ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()));
+            }
+            url
+        } else {
+            None
+        };
 
         let ingestion_database_url =
             get("DATABASE_URL_INGESTION").unwrap_or_else(|| database_url.clone());
@@ -479,6 +502,7 @@ impl Config {
             oidc_client_secret,
             oidc_redirect_uri,
             migration_database_url,
+            auto_migrate,
             ingestion_database_url,
             format_priority,
             cleanup_mode,
@@ -895,10 +919,10 @@ mod tests {
         assert_eq!(config.library_path, "./library");
         assert_eq!(config.ingestion_path, "./ingestion");
         assert_eq!(config.quarantine_path, "./quarantine");
-        assert_eq!(
-            config.migration_database_url,
-            "postgres://test@localhost/reverie_dev"
-        );
+        // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
+        // unset (off), so the DSN is intentionally NOT carried into Config.
+        assert_eq!(config.migration_database_url, None);
+        assert!(!config.auto_migrate);
         // Falls back to DATABASE_URL when DATABASE_URL_INGESTION is unset
         assert_eq!(
             config.ingestion_database_url,
@@ -1010,8 +1034,32 @@ mod tests {
     }
 
     #[test]
-    fn from_env_missing_migration_url() {
+    fn from_env_missing_migration_url_ok_when_auto_migrate_off() {
+        // New contract: with REVERIE_AUTO_MIGRATE off (default), the migration
+        // DSN is not required — the default server path only verifies the
+        // schema via the app pool and never holds a migration credential.
         let vars = without_keys(&["DATABASE_URL_MIGRATION"]);
+        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        assert_eq!(config.migration_database_url, None);
+        assert!(!config.auto_migrate);
+    }
+
+    #[test]
+    fn from_env_empty_migration_url_treated_as_none_when_auto_migrate_off() {
+        // An exported-empty DSN is indistinguishable from unset for the
+        // default path: both yield None, no error.
+        let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "")]);
+        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        assert_eq!(config.migration_database_url, None);
+    }
+
+    #[test]
+    fn from_env_auto_migrate_true_requires_migration_url() {
+        let vars = with_overrides(&[("REVERIE_AUTO_MIGRATE", "true")]);
+        let vars = vars
+            .into_iter()
+            .filter(|(k, _)| k != "DATABASE_URL_MIGRATION")
+            .collect::<Vec<_>>();
         let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
         assert!(
             err.to_string().contains("DATABASE_URL_MIGRATION"),
@@ -1020,25 +1068,47 @@ mod tests {
     }
 
     #[test]
-    fn from_env_empty_migration_url_rejected() {
-        let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "")]);
+    fn from_env_auto_migrate_true_with_url_ok() {
+        let vars = with_overrides(&[
+            ("REVERIE_AUTO_MIGRATE", "true"),
+            (
+                "DATABASE_URL_MIGRATION",
+                "postgres://reverie_migrator@localhost/reverie_dev",
+            ),
+        ]);
+        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        assert!(config.auto_migrate);
+        assert_eq!(
+            config.migration_database_url.as_deref(),
+            Some("postgres://reverie_migrator@localhost/reverie_dev")
+        );
+    }
+
+    #[test]
+    fn from_env_auto_migrate_invalid_value_rejected() {
+        let vars = with_overrides(&[("REVERIE_AUTO_MIGRATE", "yes")]);
         let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
         assert!(
-            err.to_string().contains("DATABASE_URL_MIGRATION"),
+            err.to_string().contains("REVERIE_AUTO_MIGRATE"),
             "expected var name in error: {err}"
         );
     }
 
     #[test]
     fn from_env_custom_migration_url() {
-        let vars = with_overrides(&[(
-            "DATABASE_URL_MIGRATION",
-            "postgres://schema_owner@localhost/reverie_dev",
-        )]);
+        // The DSN is only stored when auto-migrate is on; set the flag so the
+        // custom value is retained (off would yield None regardless).
+        let vars = with_overrides(&[
+            ("REVERIE_AUTO_MIGRATE", "true"),
+            (
+                "DATABASE_URL_MIGRATION",
+                "postgres://schema_owner@localhost/reverie_dev",
+            ),
+        ]);
         let config = Config::from_source(&env_for_owned(&vars)).unwrap();
         assert_eq!(
-            config.migration_database_url,
-            "postgres://schema_owner@localhost/reverie_dev"
+            config.migration_database_url.as_deref(),
+            Some("postgres://schema_owner@localhost/reverie_dev")
         );
     }
 

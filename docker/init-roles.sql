@@ -16,8 +16,13 @@
 --     resolved via a server-side SELECT + `\gset`.
 --
 -- Role architecture:
---   reverie           — schema owner (created by POSTGRES_USER). Runs migrations.
---                    Bypasses RLS. Never used by the application at runtime.
+--   reverie           — cluster bootstrap superuser (created by POSTGRES_USER).
+--                    Provisions roles here; NOT the migration identity. Never
+--                    used by the application at runtime.
+--   reverie_migrator  — dedicated least-privilege migration identity
+--                    (NOSUPERUSER NOCREATEROLE NOBYPASSRLS). Runs `reverie
+--                    migrate`; owns the schema objects it creates. See
+--                    adr/2026-06-02-hybrid-migration-entrypoints-and-role.md.
 --   reverie_app       — web application service account. RLS enforced (user-scoped).
 --   reverie_ingestion — background pipeline service account. Has own permissive
 --                    RLS policy on manifestations. Scoped to pipeline tables.
@@ -31,9 +36,11 @@
 \set app_password ''
 \set ingestion_password ''
 \set readonly_password ''
+\set migrator_password ''
 \getenv app_password REVERIE_APP_PASSWORD
 \getenv ingestion_password REVERIE_INGESTION_PASSWORD
 \getenv readonly_password REVERIE_READONLY_PASSWORD
+\getenv migrator_password REVERIE_MIGRATOR_PASSWORD
 
 -- Resolve dev fallbacks server-side. NULLIF strips empty strings,
 -- COALESCE substitutes the role name. `\gset` captures the resolved
@@ -43,12 +50,19 @@
 SELECT
   COALESCE(NULLIF(:'app_password', ''), 'reverie_app')             AS app_pw,
   COALESCE(NULLIF(:'ingestion_password', ''), 'reverie_ingestion') AS ing_pw,
-  COALESCE(NULLIF(:'readonly_password', ''), 'reverie_readonly')   AS ro_pw
+  COALESCE(NULLIF(:'readonly_password', ''), 'reverie_readonly')   AS ro_pw,
+  COALESCE(NULLIF(:'migrator_password', ''), 'reverie_migrator')   AS mig_pw
 \gset
 
 CREATE ROLE reverie_app       WITH LOGIN PASSWORD :'app_pw';
 CREATE ROLE reverie_ingestion WITH LOGIN PASSWORD :'ing_pw';
 CREATE ROLE reverie_readonly  WITH LOGIN PASSWORD :'ro_pw';
+-- Dedicated migration identity. Explicitly NOSUPERUSER NOCREATEROLE
+-- NOBYPASSRLS so a least-privilege audit can confirm the migrator holds no
+-- cluster-wide authority — it owns only the schema objects it creates and
+-- runs migrations under RLS like any other role.
+CREATE ROLE reverie_migrator  WITH LOGIN PASSWORD :'mig_pw'
+  NOSUPERUSER NOCREATEROLE NOBYPASSRLS;
 
 -- CONNECT grants are kept explicit so they remain load-bearing if a
 -- future migration ever issues `REVOKE CONNECT ON DATABASE … FROM PUBLIC`
@@ -61,4 +75,17 @@ BEGIN
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO reverie_app', db);
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO reverie_ingestion', db);
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO reverie_readonly', db);
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO reverie_migrator', db);
+  -- Database-level CREATE is REQUIRED and is NOT redundant with the
+  -- schema-level CREATE granted below: the initial migration runs
+  -- `CREATE SCHEMA IF NOT EXISTS tower_sessions`, and creating a *schema*
+  -- needs database CREATE. `CREATE ON SCHEMA public` only authorises objects
+  -- *within* public. A least-privilege audit must keep both.
+  EXECUTE format('GRANT CREATE ON DATABASE %I TO reverie_migrator', db);
 END $$;
+
+-- Schema-level grants for the migrator. PG15+ removed the implicit CREATE on
+-- schema public from PUBLIC, so `CREATE EXTENSION ... WITH SCHEMA public` and
+-- `CREATE TABLE` in public both REQUIRE an explicit CREATE here — database
+-- CREATE alone is insufficient. The public schema exists at init time.
+GRANT USAGE, CREATE ON SCHEMA public TO reverie_migrator;

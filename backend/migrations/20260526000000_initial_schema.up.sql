@@ -846,6 +846,17 @@ GRANT USAGE ON SCHEMA public TO reverie_readonly;
 GRANT USAGE ON SCHEMA tower_sessions TO reverie_app;
 GRANT USAGE ON SCHEMA tower_sessions TO reverie_readonly;
 
+-- The default server path (REVERIE_AUTO_MIGRATE off) runs a read-only
+-- schema-divergence check on the app pool instead of holding the migration
+-- DSN. That check reads applied versions from _sqlx_migrations, so the app
+-- role needs SELECT on it. SELECT only — the app never writes migration
+-- tracking. The table is created by the migration runner before this SQL
+-- executes; in a real deploy the runner connects as reverie_migrator so the
+-- table is reverie_migrator-owned, while under #[sqlx::test] it is owned by
+-- the schema owner (reverie) — either owner can issue this grant.
+-- See adr/2026-06-02-hybrid-migration-entrypoints-and-role.md.
+GRANT SELECT ON TABLE public._sqlx_migrations TO reverie_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_cache TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_cache TO reverie_ingestion;
 GRANT SELECT ON TABLE public.api_cache TO reverie_readonly;

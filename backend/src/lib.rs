@@ -271,22 +271,16 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
-    let migration_report = db::run_migrations(&config.migration_database_url)
-        .await
-        .context("database migration failed")?;
-    if migration_report.applied > 0 {
-        tracing::info!(
-            count = migration_report.applied,
-            elapsed_ms = migration_report.elapsed_ms,
-            "applied pending migrations"
-        );
-    } else {
-        tracing::debug!("database schema is up to date");
-    }
-
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
+
+    // Startup schema step — apply in-process (opt-in) or verify (default).
+    // Extracted to apply_or_verify_schema so the flag selector (the security
+    // contract that the default path carries no migration credential) is
+    // pinned by tests. The app pool is created first but performs no
+    // schema-dependent query before this runs.
+    apply_or_verify_schema(&config, &pool).await?;
 
     let oidc_client = auth::oidc::init_oidc_client(&config)
         .await
@@ -393,6 +387,153 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Startup schema step: apply pending migrations in-process when
+/// `config.auto_migrate` is set, otherwise verify the schema is current via
+/// the application pool (holding no migration credential).
+///
+/// This is the seam that carries the PR's security contract — the default
+/// path (`auto_migrate == false`) must NOT migrate and must NOT require a
+/// migration DSN. Extracted from `run()` so the flag selector is pinned by
+/// tests; inverting the branch is otherwise invisible to the suite.
+///
+/// # Errors
+///
+/// - `auto_migrate` set but `migration_database_url` is `None` (defensive —
+///   `Config::from_source` already rejects this).
+/// - The in-process migration run fails (see [`db::run_migrations`]).
+/// - Schema verification fails or detects divergence (see
+///   [`db::verify_schema_current`]).
+async fn apply_or_verify_schema(config: &Config, app_pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    if config.auto_migrate {
+        let migration_url = config
+            .migration_database_url
+            .as_deref()
+            .context("REVERIE_AUTO_MIGRATE is set but DATABASE_URL_MIGRATION is missing")?;
+        let report = db::run_migrations(migration_url)
+            .await
+            .context("database migration failed")?;
+        if report.applied > 0 {
+            tracing::info!(
+                count = report.applied,
+                elapsed_ms = report.elapsed_ms,
+                "applied pending migrations"
+            );
+        } else {
+            tracing::debug!("database schema is up to date");
+        }
+        Ok(())
+    } else {
+        // Default path: confirm the out-of-band migration ran and the schema
+        // matches this binary. Fail-closed on any divergence (ahead OR behind)
+        // and on a never-migrated database, so a stale or unmigrated deployment
+        // is a legible startup error rather than silent runtime SQL failures.
+        db::verify_schema_current(app_pool)
+            .await
+            .context("database schema verification failed")
+    }
+}
+
+/// The subcommand selected on the command line.
+///
+/// Deliberately NOT `#[non_exhaustive]`: `main.rs` matches it exhaustively, so
+/// adding a variant is a compile error there rather than a silent fall-through
+/// to the server — the same "a typo must not boot the server" property
+/// [`parse_command`] enforces at runtime.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Command {
+    /// `reverie migrate` — apply pending migrations out-of-band, then exit.
+    Migrate,
+    /// No subcommand — run the long-lived HTTP server.
+    Serve,
+}
+
+/// Map the CLI argument tail (everything after `argv[0]`) to a [`Command`].
+///
+/// no args → [`Command::Serve`]; exactly `migrate` → [`Command::Migrate`]. Any
+/// other token, OR any trailing argument, is an error rather than a silent
+/// fall-through: a typo (`reverie migration`, `reverie --help`) must not boot
+/// the long-running server, and a write-capable subcommand must not silently
+/// ignore extra tokens (`reverie migrate typo` must not run migrations). In a
+/// compose `service_completed_successfully` slot either mistake would make a
+/// one-shot migrate container run forever as a server.
+///
+/// # Errors
+///
+/// Returns an error naming the unknown subcommand, or reporting unexpected
+/// trailing arguments.
+pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
+    match args {
+        [] => Ok(Command::Serve),
+        [cmd] if cmd == "migrate" => Ok(Command::Migrate),
+        [cmd] => Err(anyhow::anyhow!(
+            "unknown subcommand: {cmd:?}; valid subcommands: migrate"
+        )),
+        [cmd, ..] => Err(anyhow::anyhow!(
+            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate]"
+        )),
+    }
+}
+
+/// Resolve the migration DSN from the raw `DATABASE_URL_MIGRATION` value,
+/// treating empty/whitespace as unset.
+///
+/// `std::env::var` returns `Ok("")` for an exported-empty var, which would
+/// otherwise reach `db::run_migrations` as a cryptic `Connection` parse error;
+/// this mirrors the `.filter()` guard in [`Config::from_source`].
+///
+/// # Errors
+///
+/// Returns an error when the value is `None`, empty, or whitespace-only.
+fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
+    var.filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("DATABASE_URL_MIGRATION is required for `reverie migrate`"))
+}
+
+/// Apply pending database migrations, then exit. This is the `reverie
+/// migrate` subcommand entrypoint — the shipped default for schema
+/// management, run out-of-band so the long-lived server process never
+/// carries the migration credential.
+///
+/// Deliberately does NOT build the full [`Config`]: a migrate container has
+/// no business holding the OIDC secret or the application DSN. It reads only
+/// `DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN) and reuses
+/// [`db::run_migrations`].
+///
+/// # Errors
+///
+/// - If `DATABASE_URL_MIGRATION` is unset or empty (an exported-empty value
+///   is treated as unset, mirroring [`Config::from_source`]).
+/// - If the migration run fails (see [`db::MigrationError`]).
+pub async fn run_migrate() -> anyhow::Result<()> {
+    // run_migrate bypasses Config::from_env, which is where dotenv is normally
+    // loaded — so load it here too, or `cargo run -- migrate` would ignore a
+    // DATABASE_URL_MIGRATION set in the project .env and fail spuriously.
+    dotenvy::dotenv().ok();
+
+    // run_migrate bypasses run(), where the tracing subscriber is normally
+    // installed. Without one here, every event in this function AND inside
+    // db::run_migrations drops silently, leaving the operator with only an
+    // exit code. Best-effort: .ok() tolerates a host that already installed
+    // a global subscriber.
+    tracing_subscriber::fmt().try_init().ok();
+
+    let migration_url = resolve_migration_dsn(std::env::var("DATABASE_URL_MIGRATION").ok())?;
+
+    let report = db::run_migrations(&migration_url)
+        .await
+        .context("database migration failed")?;
+    if report.applied > 0 {
+        tracing::info!(
+            count = report.applied,
+            elapsed_ms = report.elapsed_ms,
+            "applied pending migrations"
+        );
+    } else {
+        tracing::info!("database schema is already up to date");
+    }
+    Ok(())
+}
+
 async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
     let ctrl_c = tokio::signal::ctrl_c();
     #[allow(
@@ -411,8 +552,95 @@ async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_log_filter;
+    use super::{
+        Command, apply_or_verify_schema, parse_command, resolve_log_filter, resolve_migration_dsn,
+    };
     use crate::test_support;
+
+    #[test]
+    fn parse_command_maps_args_rejects_unknown_and_trailing() {
+        let migrate = vec!["migrate".to_string()];
+        assert_eq!(parse_command(&migrate).unwrap(), Command::Migrate);
+        assert_eq!(parse_command(&[]).unwrap(), Command::Serve);
+
+        let unknown = vec!["migration".to_string()];
+        let err = parse_command(&unknown).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown subcommand"), "got: {msg}");
+        assert!(
+            msg.contains("migration"),
+            "should echo the bad token: {msg}"
+        );
+
+        // A write-capable subcommand must not silently ignore extra tokens.
+        let trailing = vec!["migrate".to_string(), "typo".to_string()];
+        let err = parse_command(&trailing).unwrap_err();
+        assert!(
+            err.to_string().contains("trailing"),
+            "trailing args must be rejected, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_migration_dsn_rejects_missing_and_empty() {
+        assert!(resolve_migration_dsn(None).is_err());
+        assert!(resolve_migration_dsn(Some(String::new())).is_err());
+        assert!(resolve_migration_dsn(Some("   ".into())).is_err());
+
+        let url = "postgres://reverie_migrator@localhost/reverie_dev";
+        assert_eq!(resolve_migration_dsn(Some(url.into())).unwrap(), url);
+    }
+
+    // apply_or_verify_schema is the flag selector carrying the security
+    // contract: flag off MUST take the verify branch (no migration credential),
+    // flag on MUST take the migrate branch. These pin the branch both ways so an
+    // inverted condition fails the suite.
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn apply_or_verify_flag_off_verifies_ok(pool: sqlx::PgPool) {
+        let cfg = test_support::test_config(); // auto_migrate: false
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        apply_or_verify_schema(&cfg, &app_pool)
+            .await
+            .expect("flag off + current schema must verify Ok via the app pool");
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn apply_or_verify_flag_off_takes_verify_branch(pool: sqlx::PgPool) {
+        // Fresh, never-migrated DB + flag off. The verify branch returns
+        // NotInitialized; the migrate branch would instead APPLY all
+        // migrations and succeed. A NotInitialized error therefore proves the
+        // selector chose verify — the security contract (no migration
+        // credential on the default path). Inverting the branch flips this to
+        // Ok and fails the assert.
+        let cfg = test_support::test_config(); // auto_migrate: false
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
+        assert!(
+            format!("{err:#}").contains("not initialized"),
+            "flag off must take the verify branch (NotInitialized on a fresh DB), got: {err:#}"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn apply_or_verify_flag_on_takes_migrate_branch(pool: sqlx::PgPool) {
+        // Flag on + DSN absent. Only the migrate branch inspects
+        // migration_database_url, so the "DATABASE_URL_MIGRATION is missing"
+        // error proves the selector chose migrate; the verify branch would
+        // instead read the schema and return NotInitialized. Inverting the
+        // branch flips the error message and fails the assert. (The migrate
+        // branch's privilege sufficiency is covered by
+        // `db::tests::reverie_migrator_can_apply_full_migration_set`.)
+        let mut cfg = test_support::test_config();
+        cfg.auto_migrate = true;
+        cfg.migration_database_url = None;
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let err = apply_or_verify_schema(&cfg, &app_pool).await.unwrap_err();
+        assert!(
+            format!("{err:#}").contains("DATABASE_URL_MIGRATION is missing"),
+            "flag on must take the migrate branch (checks the DSN), got: {err:#}"
+        );
+    }
 
     #[tokio::test]
     async fn health_returns_ok() {

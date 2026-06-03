@@ -7,12 +7,13 @@ Port 5433 (5432 taken by host's shared-postgres).
 
 **Roles** (created by `docker/init-roles.sql` on first start):
 
-| Role                | Connection                                                                  | Purpose                                               |
-| ------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `reverie`           | `postgres://reverie:reverie@localhost:5433/reverie_dev`                     | Schema owner. Runs migrations. Never used at runtime. |
-| `reverie_app`       | `postgres://reverie_app:reverie_app@localhost:5433/reverie_dev`             | Web application. RLS enforced.                        |
-| `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev` | Background pipeline. Scoped RLS.                      |
-| `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5433/reverie_dev`   | Debug/reporting. SELECT only.                         |
+| Role                | Connection                                                                  | Purpose                                                                        |
+| ------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `reverie`           | `postgres://reverie:reverie@localhost:5433/reverie_dev`                     | Cluster bootstrap (provisions roles). Never used at runtime or for migrations. |
+| `reverie_migrator`  | `postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev`   | Runs migrations (`reverie migrate`). Least-privilege; owns schema objects.     |
+| `reverie_app`       | `postgres://reverie_app:reverie_app@localhost:5433/reverie_dev`             | Web application. RLS enforced.                                                 |
+| `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev` | Background pipeline. Scoped RLS.                                               |
+| `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5433/reverie_dev`   | Debug/reporting. SELECT only.                                                  |
 
 `tower_sessions` schema (created by the consolidated
 `20260526000000_initial_schema` migration) RLS-exempt — session
@@ -22,30 +23,39 @@ user resolution, so RLS-gating lookup is chicken-and-egg. Access
 controlled at role-grant boundary: `reverie_app` gets DML,
 `reverie_readonly` gets SELECT, `reverie_ingestion` gets nothing.
 
-Migrations auto-apply on startup via `db::run_migrations()`. The runner
-uses `DATABASE_URL_MIGRATION` (schema-owner DSN, required) to connect an
-ephemeral single-connection pool, applies all pending migrations in a
-batch transaction (all-or-nothing), then drops the pool before runtime
-pools are created. See `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`.
+Migrations run as the least-privilege `reverie_migrator` role, out-of-band via
+the `reverie migrate` subcommand (the shipped default). The runner connects an
+ephemeral single-connection pool with `DATABASE_URL_MIGRATION`, applies pending
+migrations in a batch transaction (all-or-nothing), then drops the pool. The
+long-lived server holds no migration credential by default: with
+`REVERIE_AUTO_MIGRATE` off (default), `run()` instead calls
+`db::verify_schema_current()` on the app pool and refuses to start on any schema
+divergence (ahead, behind, or never-migrated). `REVERIE_AUTO_MIGRATE=true` opts
+into in-process migration at startup (server then carries the migration DSN).
+See `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`.
 
-Dev: set `DATABASE_URL_MIGRATION=postgres://reverie:reverie@localhost:5433/reverie_dev`
-(same as schema owner). `#[sqlx::test]` still uses sqlx's built-in
+Dev: set `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev`
+and run `cargo run -- migrate` to apply (bare `cargo run` only verifies and
+refuses on divergence). `#[sqlx::test]` still uses sqlx's built-in
 migrator for most tests. Exception: migration-runner tests that need a
 fresh database use `#[sqlx::test(migrations = false)]` to suppress
 sqlx's automatic migration pass.
 
 **`MigrationError` failure modes** (operator-facing, with recovery):
 
-| Variant              | Meaning                                            | Recovery                                             |
-| -------------------- | -------------------------------------------------- | ---------------------------------------------------- |
-| `Connection`         | Bad DSN, auth failure, unreachable host            | Fix `DATABASE_URL_MIGRATION`                         |
-| `SessionSetup`       | Post-connect init failed (lock_timeout, lock acq)  | Check DB permissions and concurrent connections      |
-| `BatchFailed`        | SQL error in transactional migration               | DB untouched — pin previous image                    |
-| `NoTxFailed`         | `-- no-transaction` migration SQL failed           | TX migrations committed — fix failing SQL, re-deploy |
-| `NoTxTrackingFailed` | No-tx migration applied but tracking INSERT failed | Migration IS applied — manually insert tracking row  |
-| `SchemaAhead`        | DB has migrations unknown to binary                | Upgrade image or roll back DB                        |
-| `ChecksumMismatch`   | Migration file modified after application          | Restore original migration file                      |
-| `LockTimeout`        | Advisory lock not acquired (30s budget)            | Another instance running migrations                  |
+| Variant              | Meaning                                                  | Recovery                                                                    |
+| -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `Connection`         | Bad DSN, auth failure, unreachable host                  | Fix `DATABASE_URL_MIGRATION`                                                |
+| `SessionSetup`       | Post-connect init failed (lock_timeout, lock acq)        | Check DB permissions and concurrent connections                             |
+| `BatchFailed`        | SQL error in transactional migration                     | DB untouched — pin previous image                                           |
+| `NoTxFailed`         | `-- no-transaction` migration SQL failed                 | TX migrations committed — fix failing SQL, re-deploy                        |
+| `NoTxTrackingFailed` | No-tx migration applied but tracking INSERT failed       | Migration IS applied — manually insert tracking row                         |
+| `SchemaAhead`        | DB has migrations unknown to binary                      | Upgrade image or roll back DB                                               |
+| `SchemaBehind`       | Binary has migrations not applied to DB (startup verify) | Run `reverie migrate` before starting the server                            |
+| `NotInitialized`     | DB never migrated (`_sqlx_migrations` absent)            | Run `reverie migrate` first                                                 |
+| `VerificationRead`   | App pool can't read `_sqlx_migrations` (startup verify)  | Grant `reverie_app` SELECT (re-run `reverie migrate`); check `DATABASE_URL` |
+| `ChecksumMismatch`   | Migration file modified after application                | Restore original migration file                                             |
+| `LockTimeout`        | Advisory lock not acquired (30s budget)                  | Another instance running migrations                                         |
 
 ### Upgrade note: postgres:18 mount path
 
@@ -58,7 +68,7 @@ dropped:
 docker compose down
 docker volume rm reverie_pgdata
 docker compose up -d
-# Migrations auto-apply on next `cargo run` (no manual sqlx migrate needed)
+# Re-apply migrations on the fresh volume: `cargo run -- migrate`
 ```
 
 ### Coder workspace caveat

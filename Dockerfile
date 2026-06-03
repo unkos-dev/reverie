@@ -52,7 +52,8 @@ RUN npm run build
 FROM debian:trixie-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8 AS runtime
 # UNK-165: curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
-# detect a successful migration window before flipping traffic.
+# detect when the server is up and the schema check has passed before
+# flipping traffic.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 RUN useradd -r -s /bin/false reverie
@@ -68,8 +69,10 @@ USER reverie
 EXPOSE 3000
 
 # UNK-165: probe the readiness endpoint (DB-dependent) so the container is
-# only reported healthy once migrations are applied and the pool is live.
-# 60s start-period covers the migration window for first boot.
+# only reported healthy once the startup schema check passes and the pool is
+# live. The default entrypoint verifies the schema (it does not migrate); run
+# `reverie migrate` first, or set REVERIE_AUTO_MIGRATE=true (then the
+# start-period must also cover the in-process migration on first boot).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl --fail --silent --show-error --output /dev/null http://127.0.0.1:3000/health/ready
 
