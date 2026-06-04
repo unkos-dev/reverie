@@ -37,7 +37,7 @@ cuts v0.19.0 (or higher).
 `backend/Cargo.toml:51` keeps `tower-sessions = "0.14"` pinned, with
 inline note at L52-58 explaining the `tower-sessions-sqlx-store` 0.15
 ↔ tower-sessions 0.14 pairing (ADR
-[`2026-05-08-tower-sessions-sqlx-store.md`](../adr/2026-05-08-tower-sessions-sqlx-store.md)).
+[`2026-05-08-tower-sessions-sqlx-store.md`](../adr/superseded/2026-05-08-tower-sessions-sqlx-store.md)).
 The inline note now references the load-bearing upstream PR,
 axum-login#315 (refreshed in the same change that adopted this
 debt entry).
@@ -86,6 +86,6 @@ no unreviewed-HEAD risk).
   — upstream fix merged but unreleased
 - [axum-login#320](https://github.com/maxcountryman/axum-login/pull/320)
   — dependabot duplicate, closed
-- [`adr/2026-05-08-tower-sessions-sqlx-store.md`](../adr/2026-05-08-tower-sessions-sqlx-store.md)
+- [`adr/2026-05-08-tower-sessions-sqlx-store.md`](../adr/superseded/2026-05-08-tower-sessions-sqlx-store.md)
   — pairing rationale
 - `backend/Cargo.toml:26,51-59` — pin sites

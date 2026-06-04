@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: superseded
 date: 2026-05-08
+superseded-by: ["../2026-06-04-first-party-session-layer.md"]
 decision-makers: john
 ---
 
@@ -26,7 +27,7 @@ candidates were considered:
 - **`tower-sessions-rusqlite-store` / `tower-sessions-redis-store`**
   — same family, different backends. Not relevant: Reverie's
   primary store is already Postgres (per
-  [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
+  [`adr/2026-05-05-single-image-distribution-central-csp.md`](../2026-05-05-single-image-distribution-central-csp.md)
   and the wider stack), and adding Redis or sqlite as a session
   backend introduces a second persistence dependency for no win.
 
@@ -156,7 +157,7 @@ the contract:
   (`tower-sessions-redis-store`).** Rejected — adds a second
   persistence dependency to the deployment. Reverie targets
   single-image self-hosting (per the
-  [single-image distribution ADR](2026-05-05-single-image-distribution-central-csp.md));
+  [single-image distribution ADR](../2026-05-05-single-image-distribution-central-csp.md));
   every additional service the operator has to run is friction
   against the deployment story.
 - **Embed the schema migration in the crate's own `migrate()`
@@ -179,7 +180,7 @@ the contract:
 - [UNK-101](https://linear.app/unkos/issue/UNK-101) — coordinated
   `tower-sessions` 0.14 → 0.15 bump, blocked on
   `axum-login@0.18.0` peer-pin
-- [`adr/2026-05-04-greptile-trial.md`](2026-05-04-greptile-trial.md)
+- [`adr/2026-05-04-greptile-trial.md`](../2026-05-04-greptile-trial.md)
   — Greptile's "No new direct dependencies without an ADR" rule
   flagged the original PR #180 missing this ADR
 - `backend/Cargo.toml:39-44` — inline pin rationale, cross-

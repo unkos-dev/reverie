@@ -57,7 +57,7 @@ tower-sessions = "0.14"
 # tower-sessions-core 0.14. The 0.14.x line of tower-sessions-sqlx-store
 # pins tower-sessions-core 0.13 and is compile-incompatible with
 # tower-sessions 0.14. Coordinated bump required when tower-sessions
-# advances to 0.15. ADR: adr/2026-05-08-tower-sessions-sqlx-store.md.
+# advances to 0.15. ADR: adr/superseded/2026-05-08-tower-sessions-sqlx-store.md.
 # UNK-101 tracks the eventual coordinated bump. Blocked on axum-login
 # crates.io release > 0.18.0 (fix merged upstream as axum-login#315 on
 # 2026-05-07, unreleased). See debt/2026-05-21-tower-sessions-0-14-pin.md.
