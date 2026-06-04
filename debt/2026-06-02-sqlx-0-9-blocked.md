@@ -12,6 +12,11 @@ superseded-by: ~
 
 # sqlx pinned to 0.8 (tower-sessions-sqlx-store peer pin)
 
+> **Part 2 lifted 2026-06-04 (PR #424, UNK-101).** The first-party session
+> layer removed `tower-sessions-sqlx-store`, so the upstream `sqlx ^0.8` wall is
+> gone. This entry stays **active** for part 1 only — the mechanical
+> `QueryBuilder` migration — until sqlx 0.9 actually lands.
+
 ## Constraint
 
 `backend/Cargo.toml:47` pins `sqlx = "0.8.6"`. Renovate

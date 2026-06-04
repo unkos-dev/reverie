@@ -292,7 +292,6 @@ mod tests {
     // and a sibling `test_server_with_security()` helper that injects a custom
     // `SecurityConfig`. No DB is required for any of these — they hit /health,
     // /api/__nope__, and SPA paths.
-    use crate::auth::backend::AuthBackend;
     use crate::build_router_with_session_store;
     use crate::config::SecurityConfig;
     use crate::test_support;
@@ -320,12 +319,8 @@ mod tests {
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
-        let auth_backend = AuthBackend {
-            pool: state.pool.clone(),
-        };
         TestServer::new(build_router_with_session_store(
             state,
-            auth_backend,
             tower_sessions::MemoryStore::default(),
         ))
     }

@@ -13,8 +13,9 @@ use openidconnect::{
     Scope, TokenResponse,
 };
 
-use crate::auth::backend::OidcCredentials;
-use crate::auth::middleware::{AuthCtx, CurrentUser};
+use tower_sessions::Session;
+
+use crate::auth::middleware::CurrentUser;
 use crate::auth::oidc;
 use crate::auth::theme_cookie::set_theme_cookie;
 use crate::error::AppError;
@@ -42,7 +43,7 @@ pub struct CallbackParams {
 
 async fn login(
     State(state): State<AppState>,
-    auth_session: AuthCtx,
+    session: Session,
 ) -> Result<impl IntoResponse, AppError> {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -64,7 +65,6 @@ async fn login(
     // long-lived app-level `csrf_token` (synchronizer-token Phase 1)
     // that `/auth/callback` writes after a successful login. See
     // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
-    let session = &auth_session.session;
     session
         .insert("pkce_verifier", pkce_verifier.secret().clone())
         .await
@@ -83,17 +83,15 @@ async fn login(
 
 async fn callback(
     State(state): State<AppState>,
-    mut auth_session: AuthCtx,
+    session: Session,
     jar: CookieJar,
     axum::extract::Query(params): axum::extract::Query<CallbackParams>,
 ) -> Result<(CookieJar, Redirect), AppError> {
-    let session = &auth_session.session;
-
     // Validate OIDC anti-forgery state (the `state` query param echoed
     // back by the IdP must match the value `/auth/login` stored under
     // `oidc_csrf_state`). This is the OIDC transient — distinct from
     // the long-lived `csrf_token` that the synchronizer-token defense
-    // writes after `auth_session.login()` below.
+    // writes after `auth::session::login()` below.
     let stored_csrf: String = session
         .get("oidc_csrf_state")
         .await
@@ -146,37 +144,28 @@ async fn callback(
         .email()
         .map(|e: &openidconnect::EndUserEmail| e.as_str());
 
-    // Authenticate via axum-login backend (upserts user + first-user promotion)
-    let user = auth_session
-        .authenticate(OidcCredentials {
-            subject: subject.to_owned(),
-            display_name: display_name.to_owned(),
-            email: email.map(std::borrow::ToOwned::to_owned),
-        })
+    // Upsert the user directly (first-user promotion handled inside). The
+    // OIDC claims are already signature-verified by `openidconnect` above.
+    let user = user::upsert_from_oidc_and_maybe_promote(&state.pool, subject, display_name, email)
         .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("auth backend error: {e}")))?
-        .ok_or(AppError::Unauthorized)?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("user upsert failed: {e}")))?;
 
-    // Log the user in — cycles session ID (fixation prevention) and stores auth hash
-    auth_session
-        .login(&user)
+    // Log the user in — cycles session ID (fixation prevention) and persists
+    // user_id + session_version for per-request rehydration.
+    crate::auth::session::login(&session, &user)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
 
     // Clean up single-use OIDC flow state from session. A failure here
     // leaves residual OIDC material in the session store but must not abort
     // the login redirect — the user is already authenticated. Log instead.
-    if let Err(e) = auth_session.session.remove::<String>("pkce_verifier").await {
+    if let Err(e) = session.remove::<String>("pkce_verifier").await {
         tracing::warn!(error = %e, "failed to remove pkce_verifier from session after OIDC callback");
     }
-    if let Err(e) = auth_session
-        .session
-        .remove::<String>("oidc_csrf_state")
-        .await
-    {
+    if let Err(e) = session.remove::<String>("oidc_csrf_state").await {
         tracing::warn!(error = %e, "failed to remove oidc_csrf_state from session after OIDC callback");
     }
-    if let Err(e) = auth_session.session.remove::<String>("nonce").await {
+    if let Err(e) = session.remove::<String>("nonce").await {
         tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
     }
 
@@ -204,8 +193,7 @@ async fn callback(
     let mut csrf_bytes = [0u8; 32];
     rand::fill(&mut csrf_bytes);
     let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
-    auth_session
-        .session
+    session
         .insert("csrf_token", &csrf_token)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -217,9 +205,8 @@ async fn callback(
     Ok((jar, Redirect::temporary("/")))
 }
 
-async fn logout(mut auth_session: AuthCtx) -> Result<impl IntoResponse, AppError> {
-    auth_session
-        .logout()
+async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {
+    crate::auth::session::logout(&session)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("logout failed: {e}")))?;
     Ok(axum::http::StatusCode::NO_CONTENT)
@@ -227,7 +214,7 @@ async fn logout(mut auth_session: AuthCtx) -> Result<impl IntoResponse, AppError
 
 async fn me(
     current_user: CurrentUser,
-    auth_session: AuthCtx,
+    session: Session,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let u = user::find_by_id(&state.pool, current_user.user_id)
@@ -243,8 +230,7 @@ async fn me(
     // the missing case as `null` rather than 500: the response shape
     // stays stable, and the Phase 2 middleware (not this handler) is
     // what refuses unsafe verbs without a token.
-    let csrf_token: Option<String> = auth_session
-        .session
+    let csrf_token: Option<String> = session
         .get("csrf_token")
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -329,6 +315,49 @@ mod tests {
         let server = test_support::test_server();
         let response = server.get("/auth/me").await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    fn session_set_cookie(response: &axum_test::TestResponse) -> String {
+        response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find(|c| c.starts_with("id="))
+            .expect("session `id` cookie emitted by /auth/login")
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn session_cookie_carries_httponly_lax_and_no_secure_by_default() {
+        let server = test_support::test_server();
+        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        assert!(
+            cookie.contains("HttpOnly"),
+            "session cookie must be HttpOnly; got: {cookie}"
+        );
+        assert!(
+            cookie.contains("SameSite=Lax"),
+            "session cookie must be SameSite=Lax; got: {cookie}"
+        );
+        assert!(
+            !cookie.contains("Secure"),
+            "session cookie must not be Secure when behind_https=false; got: {cookie}"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_cookie_secure_tracks_behind_https() {
+        let mut state = test_support::test_state();
+        state.config.security.behind_https = true;
+        let app =
+            crate::build_router_with_session_store(state, tower_sessions::MemoryStore::default());
+        let server = axum_test::TestServer::new(app);
+        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        assert!(
+            cookie.contains("Secure"),
+            "session cookie must be Secure when behind_https=true; got: {cookie}"
+        );
     }
 
     #[tokio::test]
@@ -518,7 +547,6 @@ mod tests {
     /// and the FOUC theme cookie seeded from the freshly-loaded user record.
     #[sqlx::test(migrations = "./migrations")]
     async fn callback_succeeds_first_user_promoted_to_admin(pool: sqlx::PgPool) {
-        use crate::auth::backend::AuthBackend;
         use crate::models::role::Role;
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
@@ -543,10 +571,7 @@ mod tests {
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
-        let auth_backend = AuthBackend {
-            pool: app_pool.clone(),
-        };
-        let app = crate::build_router_with_session_store(state, auth_backend, store.clone());
+        let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
@@ -607,11 +632,11 @@ mod tests {
             "/",
         );
 
-        // Session-fixation defence: axum-login's login() must rotate the
-        // session id, so the cookie value after callback differs from the
-        // one issued by /auth/login. A regression where login() stops
-        // cycling would let a pre-auth attacker plant a session id that
-        // becomes authenticated post-login.
+        // Session-fixation defence: our login() (auth::session::login →
+        // cycle_id) must rotate the session id, so the cookie value after
+        // callback differs from the one issued by /auth/login. A regression
+        // where login() stops cycling would let a pre-auth attacker plant a
+        // session id that becomes authenticated post-login.
         let new_session_value = cb_resp.cookie("id").value().to_string();
         assert_ne!(
             new_session_value, session_cookie_value,
@@ -649,8 +674,8 @@ mod tests {
         assert_eq!(row.email.as_deref(), Some("alice@example.com"));
 
         // Step 7: the cycled session cookie authenticates /auth/me.
-        // axum-login's login() rotates the session id; axum-test's
-        // save_cookies() picks up the new id from the callback response.
+        // login() rotates the session id; axum-test's save_cookies()
+        // picks up the new id from the callback response.
         let me_resp = server.get("/auth/me").await;
         assert_eq!(me_resp.status_code(), StatusCode::OK);
         let me_body: serde_json::Value = me_resp.json();
@@ -713,7 +738,6 @@ mod tests {
     /// Locks Pass-1 finding D1 from the PR #306 adversarial review.
     #[sqlx::test(migrations = "./migrations")]
     async fn re_login_preserves_app_csrf_token(pool: sqlx::PgPool) {
-        use crate::auth::backend::AuthBackend;
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
         use tower_sessions::session::Id as SessionId;
@@ -733,10 +757,7 @@ mod tests {
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
-        let auth_backend = AuthBackend {
-            pool: app_pool.clone(),
-        };
-        let app = crate::build_router_with_session_store(state, auth_backend, store.clone());
+        let app = crate::build_router_with_session_store(state, store.clone());
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
@@ -854,6 +875,324 @@ mod tests {
             Some(token_a.as_str()),
             "/auth/me must keep returning the app csrf_token (not the \
              OIDC transient) after a re-login attempt without callback",
+        );
+    }
+
+    // Force-logout enforcement: bumping `users.session_version` must reject
+    // the next request on an already-authenticated session. This moved out of
+    // axum-login's `from_session` auth-hash check into the first-party
+    // `CurrentUser` extractor (ADR 2026-06-04); previously only the DB-column
+    // bump was tested (`routes/users/tests.rs`), never end-to-end enforcement.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn session_version_bump_forces_logout(pool: sqlx::PgPool) {
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        // Drive /auth/login → /auth/callback to establish an authenticated session.
+        let login_resp = server.get("/auth/login").await;
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            "force-logout-subject",
+            Some("fl@example.com"),
+            Some("FL Test"),
+            &nonce,
+        )
+        .await;
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+        assert_eq!(
+            cb_resp.status_code(),
+            StatusCode::TEMPORARY_REDIRECT,
+            "callback should succeed: {}",
+            cb_resp.text()
+        );
+        // login() rotates the id via cycle_id, so the authenticated session
+        // lives under a NEW id (the pre-login `session_id` row is already gone).
+        // The flush assertion below must target this rotated id, not the stale one.
+        let auth_session_id: SessionId = cb_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse rotated session id");
+
+        // The session authenticates BEFORE the bump — guards against the test
+        // passing for the wrong reason (e.g. session never established).
+        let me_before = server.get("/auth/me").await;
+        assert_eq!(
+            me_before.status_code(),
+            StatusCode::OK,
+            "session must authenticate before session_version is bumped"
+        );
+
+        // Bump session_version in the DB (admin role change / security event).
+        sqlx::query!(
+            "UPDATE users SET session_version = session_version + 1 WHERE oidc_subject = $1",
+            "force-logout-subject",
+        )
+        .execute(&app_pool)
+        .await
+        .expect("bump session_version");
+
+        // The stored session_version is now stale → next request is rejected.
+        let me_after = server.get("/auth/me").await;
+        assert_eq!(
+            me_after.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "bumped session_version must force-logout the session on the next request"
+        );
+
+        // Force-logout must also flush the row server-side, not just 401 — a
+        // lingering row would keep re-loading on every request until idle expiry.
+        let flushed = store
+            .load(&auth_session_id)
+            .await
+            .expect("load session after force-logout");
+        assert!(
+            flushed.is_none(),
+            "force-logout must flush the stale session row server-side"
+        );
+    }
+
+    // A session whose user row has been deleted must 401 on the next request
+    // AND flush the orphaned session row — otherwise the row re-loads (one
+    // `find_by_id` per request) until 24h idle expiry reaps it.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn deleted_user_session_is_flushed_on_next_request(pool: sqlx::PgPool) {
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        // Establish an authenticated session via /auth/login → /auth/callback.
+        let login_resp = server.get("/auth/login").await;
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            "deleted-user-subject",
+            Some("del@example.com"),
+            Some("Del Test"),
+            &nonce,
+        )
+        .await;
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+        assert_eq!(
+            cb_resp.status_code(),
+            StatusCode::TEMPORARY_REDIRECT,
+            "callback should succeed: {}",
+            cb_resp.text()
+        );
+        // login() rotates the id; the authenticated session lives under the
+        // post-cycle_id id, which is what the flush assertion must target.
+        let auth_session_id: SessionId = cb_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse rotated session id");
+
+        // Session authenticates before deletion — guards against a false pass.
+        let me_before = server.get("/auth/me").await;
+        assert_eq!(
+            me_before.status_code(),
+            StatusCode::OK,
+            "session must authenticate before the user is deleted"
+        );
+
+        // Delete the user row out from under the live session.
+        sqlx::query!(
+            "DELETE FROM users WHERE oidc_subject = $1",
+            "deleted-user-subject"
+        )
+        .execute(&app_pool)
+        .await
+        .expect("delete user");
+
+        let me_after = server.get("/auth/me").await;
+        assert_eq!(
+            me_after.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a session for a deleted user must be rejected on the next request"
+        );
+
+        // The orphaned row must be flushed, not left to linger until expiry.
+        let flushed = store
+            .load(&auth_session_id)
+            .await
+            .expect("load session after user deletion");
+        assert!(
+            flushed.is_none(),
+            "a deleted-user session row must be flushed server-side"
+        );
+    }
+
+    // with_always_save(true): an authenticated read must slide the OnInactivity
+    // expiry. Without it, OnInactivity only refreshes on a save (login), so an
+    // active user would be logged out 24h after login regardless of activity.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authenticated_read_slides_inactivity_expiry(pool: sqlx::PgPool) {
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        let login_resp = server.get("/auth/login").await;
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            "slide-subject",
+            Some("slide@example.com"),
+            Some("Slide"),
+            &nonce,
+        )
+        .await;
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+        assert_eq!(cb_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let auth_session_id: SessionId = cb_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse rotated session id");
+
+        let expiry_before = store
+            .load(&auth_session_id)
+            .await
+            .expect("load")
+            .expect("record present")
+            .expiry_date;
+
+        // Sleep so the post-read save lands at a strictly later instant than the
+        // login save; the assertion is `>` so any positive delta proves sliding.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        let me = server.get("/auth/me").await;
+        assert_eq!(me.status_code(), StatusCode::OK);
+
+        let expiry_after = store
+            .load(&auth_session_id)
+            .await
+            .expect("load")
+            .expect("record present")
+            .expiry_date;
+
+        assert!(
+            expiry_after > expiry_before,
+            "an authenticated read must slide the inactivity expiry \
+             (before={expiry_before}, after={expiry_after})"
         );
     }
 }

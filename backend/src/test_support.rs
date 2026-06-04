@@ -1,7 +1,6 @@
 use axum::Router;
 use axum_test::TestServer;
 
-use crate::auth::backend::AuthBackend;
 use crate::auth::oidc::OidcClient;
 use crate::config::{
     CleanupMode, Config, CoverConfig, EnrichmentConfig, OpdsConfig, SecurityConfig, WritebackConfig,
@@ -166,14 +165,8 @@ pub fn test_state() -> AppState {
 /// and `build_router_with_session_store` with a real pool.
 pub fn test_server() -> TestServer {
     let state = test_state();
-    let auth_backend = AuthBackend {
-        pool: state.pool.clone(),
-    };
-    let app: Router = crate::build_router_with_session_store(
-        state,
-        auth_backend,
-        tower_sessions::MemoryStore::default(),
-    );
+    let app: Router =
+        crate::build_router_with_session_store(state, tower_sessions::MemoryStore::default());
     TestServer::new(app)
 }
 
@@ -379,7 +372,6 @@ pub mod db {
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
     ) -> axum_test::TestServer {
-        use crate::auth::backend::AuthBackend;
         use crate::state::AppState;
         let state = AppState {
             pool: app_pool.clone(),
@@ -389,10 +381,7 @@ pub mod db {
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
-        let auth_backend = AuthBackend {
-            pool: app_pool.clone(),
-        };
-        let app = crate::build_router(state, auth_backend);
+        let app = crate::build_router(state);
         axum_test::TestServer::new(app)
     }
 
@@ -408,7 +397,6 @@ pub mod db {
         ingestion_pool: &PgPool,
         library_path: &std::path::Path,
     ) -> axum_test::TestServer {
-        use crate::auth::backend::AuthBackend;
         use crate::config::OpdsConfig;
         use crate::state::AppState;
 
@@ -428,10 +416,7 @@ pub mod db {
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
-        let auth_backend = AuthBackend {
-            pool: app_pool.clone(),
-        };
-        let app = crate::build_router(state, auth_backend);
+        let app = crate::build_router(state);
         axum_test::TestServer::new(app)
     }
 

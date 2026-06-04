@@ -1,12 +1,8 @@
 //! User accounts and OIDC-driven upsert / first-user promotion.
 //!
 //! Two row shapes coexist: a private `UserRow` decoded from the DB and
-//! the public [`crate::models::user::User`] returned to callers. The
-//! split keeps `axum-login`-required derived state
-//! (`session_version_bytes`) out of the serialised JSON shape and lets
-//! `User::from` compute it once at row-load time.
+//! the public [`crate::models::user::User`] returned to callers.
 
-use axum_login::AuthUser;
 use email_address::{EmailAddress, Options};
 use serde::Serialize;
 use sqlx::PgPool;
@@ -33,11 +29,9 @@ struct UserRow {
 
 /// Public user row exposed to handlers and serialised in API responses.
 ///
-/// The [`AuthUser`] impl returns `session_version_bytes` (a cached
-/// little-endian encoding of `session_version`) from
-/// `session_auth_hash`; bumping `users.session_version` therefore
-/// invalidates every existing session for that user — see the comment
-/// in the impl for the rationale over hashing `updated_at`.
+/// `session_version` is the force-logout lever: bumping `users.session_version`
+/// makes every existing session's stored copy stale, which
+/// [`crate::auth::middleware::CurrentUser`] rejects on the next request.
 #[derive(Debug, Clone, Serialize)]
 pub struct User {
     /// Primary key.
@@ -60,17 +54,15 @@ pub struct User {
     /// `now()` of the most recent change to any user-facing field.
     pub updated_at: OffsetDateTime,
     /// Monotonic counter incremented to force-invalidate every active
-    /// session for this user; consumed via [`AuthUser::session_auth_hash`].
+    /// session for this user; compared per-request by
+    /// [`crate::auth::middleware::CurrentUser`].
     pub session_version: i32,
     /// Selected UI theme; see [`ThemePreference`].
     pub theme_preference: ThemePreference,
-    #[serde(skip)]
-    session_version_bytes: Vec<u8>,
 }
 
 impl From<UserRow> for User {
     fn from(row: UserRow) -> Self {
-        let session_version_bytes = row.session_version.to_le_bytes().to_vec();
         Self {
             id: row.id,
             oidc_subject: row.oidc_subject,
@@ -82,24 +74,7 @@ impl From<UserRow> for User {
             updated_at: row.updated_at,
             session_version: row.session_version,
             theme_preference: row.theme_preference,
-            session_version_bytes,
         }
-    }
-}
-
-impl AuthUser for User {
-    type Id = Uuid;
-
-    fn id(&self) -> Self::Id {
-        self.id
-    }
-
-    fn session_auth_hash(&self) -> &[u8] {
-        // Intentional session invalidation: incrementing session_version forces
-        // logout of all sessions for this user. This is preferred over hashing
-        // updated_at because it only invalidates when we explicitly want it to
-        // (e.g., admin action, security event), not on every profile update.
-        &self.session_version_bytes
     }
 }
 
@@ -324,7 +299,6 @@ mod tests {
         // First user in a fresh DB is auto-promoted to admin.
         assert_eq!(user.role, Role::Admin);
         assert_eq!(user.session_version, 0);
-        assert_eq!(user.session_version_bytes, 0_i32.to_le_bytes());
 
         let updated = upsert_from_oidc_and_maybe_promote(
             &pool,
@@ -451,6 +425,32 @@ mod tests {
         assert!(
             result.is_err(),
             "expected sqlx decode error for unknown DB variant, got {result:?}"
+        );
+    }
+
+    // Migration 20260604120000 adds CHECK (session_version >= 0). A negative
+    // value must be rejected at the schema layer so the force-logout counter
+    // can never be reset below an already-issued version (which would revive
+    // sessions force-logout had invalidated).
+    #[sqlx::test(migrations = "./migrations")]
+    async fn session_version_check_rejects_negative(pool: PgPool) {
+        let subject = format!("check-subject-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Check", None)
+            .await
+            .expect("create user");
+
+        let err = sqlx::query!(
+            "UPDATE users SET session_version = -1 WHERE id = $1",
+            user.id
+        )
+        .execute(&pool)
+        .await
+        .expect_err("negative session_version must violate the CHECK constraint");
+
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("users_session_version_nonneg"),
+            "violation must be the session_version CHECK: {err}"
         );
     }
 }

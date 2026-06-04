@@ -157,7 +157,7 @@ workaround.
   generates per-test 2048-bit RSA keypair, exposes `OidcClient` with
   JWKS embedded so `id_token_verifier` needs no network IO. Tests
   needing OIDC `nonce` set in session by `/auth/login` build router
-  via `crate::build_router_with_session_store(state, auth_backend, store)`
+  via `crate::build_router_with_session_store(state, store)`
   with shared `tower_sessions::MemoryStore` so test can read back
   before driving `/auth/callback`.
 - **Logging:** `tracing` with structured fields. Never `println!` or
@@ -284,10 +284,11 @@ backend/
 │   ├── lib.rs           # Library crate root: modules, build_router, run()
 │   ├── main.rs          # Thin binary entry: #[tokio::main] reverie_api::run()
 │   ├── auth/            # Authentication subsystem
-│   │   ├── backend.rs   # axum-login AuthnBackend (OIDC credentials)
 │   │   ├── basic_only.rs # BasicOnly extractor (OPDS Basic-only auth)
 │   │   ├── middleware.rs # CurrentUser extractor (session + Basic auth)
 │   │   ├── oidc.rs      # OIDC client init and discovery
+│   │   ├── session.rs   # First-party login/logout helpers on tower_sessions::Session
+│   │   ├── store.rs     # First-party Postgres SessionStore + ExpiredDeletion
 │   │   ├── theme_cookie.rs # FOUC theme cookie (set_theme_cookie, attribute parity)
 │   │   └── token.rs     # Device token generation and sha256 constant-time verification
 │   ├── routes/          # Axum route handlers, grouped by domain

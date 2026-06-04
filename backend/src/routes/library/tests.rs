@@ -21,7 +21,6 @@ use crate::test_support;
 /// the page-size knob so pagination-overflow tests can drive small
 /// pages without inserting a hundred fixture rows.
 fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: u32) -> TestServer {
-    use crate::auth::backend::AuthBackend;
     use crate::config::OpdsConfig;
     use crate::state::AppState;
 
@@ -40,10 +39,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
         settings: test_support::test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     };
-    let auth_backend = AuthBackend {
-        pool: app_pool.clone(),
-    };
-    TestServer::new(crate::build_router(state, auth_backend))
+    TestServer::new(crate::build_router(state))
 }
 
 /// Insert a work + matching author (returns the manifestation id) so

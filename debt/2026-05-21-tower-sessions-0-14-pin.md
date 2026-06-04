@@ -1,16 +1,23 @@
 ---
-status: active
+status: lifted
 severity: low
 surfaces: [developer]
 adopted: 2026-05-21
 adopted-because: axum-login 0.18.0 (latest crates.io release) peer-pins tower-sessions 0.14; upgrade to 0.15 requires either axum-login release containing the bump or a git dep override
 lift-when-class: internal-refactor
 lift-when: first-party session layer lands (adr/2026-06-04-first-party-session-layer.md) — removes axum-login + tower-sessions-sqlx-store, unblocking tower-sessions 0.15 (UNK-101)
-lifted: ~
+lifted: 2026-06-04
 superseded-by: ~
 ---
 
 # tower-sessions pinned to 0.14 (axum-login + sqlx-store peer pins)
+
+> **Lifted 2026-06-04 (UNK-101).** The first-party session layer
+> ([`adr/2026-06-04-first-party-session-layer.md`](../adr/2026-06-04-first-party-session-layer.md))
+> removed both `axum-login` and `tower-sessions-sqlx-store` from
+> `backend/Cargo.toml` and bumped `tower-sessions` to 0.15 directly (the bump
+> was applied in that PR rather than via Renovate PR #128, which #128 supersedes).
+> Entry retained for audit.
 
 ## Constraint
 

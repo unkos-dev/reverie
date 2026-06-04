@@ -23,7 +23,6 @@ anyhow = "1.0.102"
 async-trait = "0.1.89"
 axum = "0.8.9"
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
-axum-login = "0.18"
 base64ct = { version = "1.8.3", features = ["std"] }
 crc = "3.4.0"
 dotenvy = "0.15.7"
@@ -39,6 +38,7 @@ quick-xml = "0.40.1"
 rand = "0.10.1"
 regex = "1.12.3"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json", "stream"] }
+rmp-serde = "1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 serde_with = { version = "3.20.0", default-features = false, features = ["std"] }
@@ -51,17 +51,11 @@ time = { version = "0.3.47", features = ["serde"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = "0.7.18"
 tower-http = { version = "0.6.11", features = ["cors", "fs", "trace"] }
-tower-sessions = "0.14"
-# Despite the version-number divergence, tower-sessions-sqlx-store 0.15
-# is what pairs with tower-sessions 0.14 — both depend on
-# tower-sessions-core 0.14. The 0.14.x line of tower-sessions-sqlx-store
-# pins tower-sessions-core 0.13 and is compile-incompatible with
-# tower-sessions 0.14. Coordinated bump required when tower-sessions
-# advances to 0.15. ADR: adr/superseded/2026-05-08-tower-sessions-sqlx-store.md.
-# UNK-101 tracks the eventual coordinated bump. Blocked on axum-login
-# crates.io release > 0.18.0 (fix merged upstream as axum-login#315 on
-# 2026-05-07, unreleased). See debt/2026-05-21-tower-sessions-0-14-pin.md.
-tower-sessions-sqlx-store = { version = "0.15.0", features = ["postgres"] }
+# tower-sessions core is the maintained session-lifecycle primitive (kept);
+# the abandoned axum-login + tower-sessions-sqlx-store wrappers were replaced
+# with first-party code (auth::store, auth::session, auth::middleware).
+# ADR: adr/2026-06-04-first-party-session-layer.md (UNK-101).
+tower-sessions = "0.15"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
