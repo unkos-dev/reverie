@@ -16,10 +16,10 @@
 //! [`SessionStore::load`](tower_sessions::session_store::SessionStore::load)
 //! filters `expiry_date > now()` so an expired cookie can never resurrect a
 //! session; [`SessionStore::create`](tower_sessions::session_store::SessionStore::create)
-//! regenerates the id on a collision caught by its `EXISTS` precheck rather
-//! than blindly overwriting. The precheck is non-transactional, so the
-//! guarantee is probabilistic, not absolute — but the 128-bit CSPRNG id space
-//! (~2⁻¹²⁸ per pair) makes the check-then-insert race window negligible.
+//! inserts atomically with `ON CONFLICT DO NOTHING` and regenerates the id on a
+//! collision rather than overwriting — so a concurrent creator can never clobber
+//! a live session row (the previous check-then-upsert left a TOCTOU window). A
+//! real collision is cryptographically improbable anyway (128-bit CSPRNG ids).
 //! The `tower_sessions.session` table is intentionally RLS-exempt — session
 //! load must precede user resolution, so RLS-gating it is chicken-and-egg
 //! (see `backend/CLAUDE.md`); access is bounded at the role-grant layer
@@ -49,8 +49,8 @@ impl PostgresStore {
         Self { pool }
     }
 
-    /// Upsert a record by id. Shared by `create` (post collision-check) and
-    /// `save`.
+    /// Upsert a record by id (`ON CONFLICT DO UPDATE`). Used by `save`; `create`
+    /// has its own atomic insert-only path.
     async fn upsert(&self, record: &Record) -> session_store::Result<()> {
         let id = record.id.to_string();
         let data =
@@ -74,28 +74,36 @@ impl PostgresStore {
 #[async_trait]
 impl SessionStore for PostgresStore {
     async fn create(&self, record: &mut Record) -> session_store::Result<()> {
-        // The default trait impl delegates to `save` with no collision check;
-        // override so a freshly-minted id that already exists is regenerated
-        // rather than overwriting a live session. (tower-sessions 0.15 routes
-        // freshly-created sessions — including those minted by `cycle_id` —
-        // through `create` rather than `save`; re-verify against upstream if
-        // bumping tower-sessions.)
+        // The default trait impl delegates to `save` (an unconditional upsert)
+        // with no collision check. Override with an atomic insert: `ON CONFLICT
+        // DO NOTHING RETURNING id` returns a row only when the id was free, so a
+        // NULL result means a collision with a live row — regenerate the id and
+        // retry. Unlike a check-then-upsert, there is no TOCTOU window in which a
+        // concurrent creator could overwrite a live session.
+        // (tower-sessions 0.15 routes freshly-created sessions — including those
+        // minted by `cycle_id` — through `create` rather than `save`; re-verify
+        // against upstream if bumping tower-sessions.)
         loop {
             let id = record.id.to_string();
-            let exists = sqlx::query_scalar!(
-                r#"SELECT EXISTS(SELECT 1 FROM tower_sessions.session WHERE id = $1) AS "exists!""#,
+            let data = rmp_serde::to_vec(record)
+                .map_err(|e| session_store::Error::Encode(e.to_string()))?;
+            let inserted = sqlx::query_scalar!(
+                "INSERT INTO tower_sessions.session (id, data, expiry_date) \
+                 VALUES ($1, $2, $3) \
+                 ON CONFLICT (id) DO NOTHING \
+                 RETURNING id",
                 id,
+                data,
+                record.expiry_date,
             )
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await
             .map_err(|e| session_store::Error::Backend(e.to_string()))?;
-            if exists {
-                record.id = Id::default();
-                continue;
+            if inserted.is_some() {
+                return Ok(());
             }
-            break;
+            record.id = Id::default();
         }
-        self.upsert(record).await
     }
 
     async fn save(&self, record: &Record) -> session_store::Result<()> {

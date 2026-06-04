@@ -94,7 +94,15 @@ where
         .with_http_only(true)
         .with_secure(state.config.security.behind_https)
         .with_same_site(tower_sessions::cookie::SameSite::Lax)
-        .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
+        .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)))
+        // Save on every request so `OnInactivity` actually tracks inactivity:
+        // the expiry is recomputed from the last save, and reads (e.g.
+        // `/auth/me`) don't otherwise save, so without this the 24h window would
+        // count from the last login rather than the last request. Costs one
+        // session-row UPDATE per request that carries a session; the sliding
+        // window is worth it. A flushed session (force-logout) is not resurrected
+        // — tower-sessions skips the save for a deleted session.
+        .with_always_save(true);
 
     // Reserved-prefix routes — /api, /auth, /health, /opds. API CSP layered on
     // matched responses; unmatched paths flow into the composite fallback

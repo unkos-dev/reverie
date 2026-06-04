@@ -1101,4 +1101,98 @@ mod tests {
             "a deleted-user session row must be flushed server-side"
         );
     }
+
+    // with_always_save(true): an authenticated read must slide the OnInactivity
+    // expiry. Without it, OnInactivity only refreshes on a save (login), so an
+    // active user would be logged out 24h after login regardless of activity.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authenticated_read_slides_inactivity_expiry(pool: sqlx::PgPool) {
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        let login_resp = server.get("/auth/login").await;
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            "slide-subject",
+            Some("slide@example.com"),
+            Some("Slide"),
+            &nonce,
+        )
+        .await;
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+        assert_eq!(cb_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let auth_session_id: SessionId = cb_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse rotated session id");
+
+        let expiry_before = store
+            .load(&auth_session_id)
+            .await
+            .expect("load")
+            .expect("record present")
+            .expiry_date;
+
+        // Sleep so the post-read save lands at a strictly later instant than the
+        // login save; the assertion is `>` so any positive delta proves sliding.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        let me = server.get("/auth/me").await;
+        assert_eq!(me.status_code(), StatusCode::OK);
+
+        let expiry_after = store
+            .load(&auth_session_id)
+            .await
+            .expect("load")
+            .expect("record present")
+            .expiry_date;
+
+        assert!(
+            expiry_after > expiry_before,
+            "an authenticated read must slide the inactivity expiry \
+             (before={expiry_before}, after={expiry_after})"
+        );
+    }
 }
