@@ -7,7 +7,7 @@ adopted-because: axum-login 0.18.0 (latest crates.io release) peer-pins tower-se
 lift-when-class: internal-refactor
 lift-when: first-party session layer lands (adr/2026-06-04-first-party-session-layer.md) — removes axum-login + tower-sessions-sqlx-store, unblocking tower-sessions 0.15 (UNK-101)
 lifted: 2026-06-04
-superseded-by: ~
+superseded-by: PR #424 (https://github.com/unkos-dev/reverie/pull/424)
 ---
 
 # tower-sessions pinned to 0.14 (axum-login + sqlx-store peer pins)
