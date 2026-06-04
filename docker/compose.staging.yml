@@ -10,22 +10,33 @@
 # alongside this file are populated by the host secret-management agent
 # (out-of-tree); compose only consumes them.
 #
-# Two env files keep the postgres-bootstrap blast radius out of the app
-# container:
+# Three env files keep each credential scoped to the one container that
+# needs it, so a compromise of any single container leaks only that
+# container's creds via `/proc/<pid>/environ`:
 #
 #   `.env` — auto-loaded by compose for `${VAR}` interpolation. Holds
-#            postgres-bootstrap creds and runtime-role passwords (consumed
-#            only by `reverie-postgres` via the explicit `environment:`
-#            block below) plus REVERIE_VERSION (image tag).
-#            Spec: docker/staging.env.bootstrap.example.
+#            postgres-bootstrap creds and runtime-role passwords (including
+#            REVERIE_MIGRATOR_PASSWORD), consumed only by `reverie-postgres`
+#            via the explicit `environment:` block below, plus REVERIE_VERSION
+#            (image tag). Spec: docker/staging.env.bootstrap.example.
 #
 #   `.env.runtime` — injected only into the `reverie` service. Holds
 #            DATABASE_URL, DATABASE_URL_INGESTION, REVERIE_FRONTEND_DIST_PATH,
 #            REVERIE_PORT, REVERIE_OPERATOR_CONTACT, REVERIE_LOG_LEVEL,
-#            OIDC config. Spec: docker/staging.env.runtime.example.
+#            OIDC config. Carries NO schema-management credential by design —
+#            in the shipped topology the long-lived app holds zero DDL creds
+#            (see adr/2026-06-02-hybrid-migration-entrypoints-and-role.md).
+#            Spec: docker/staging.env.runtime.example.
 #
-# Compromise of the reverie container exposes only the non-superuser
-# DATABASE_URL passwords via `/proc/<pid>/environ`, not POSTGRES_PASSWORD.
+#   `.env.migrate` — injected only into the one-shot `reverie-migrate`
+#            service. Holds DATABASE_URL_MIGRATION (the least-privilege
+#            `reverie_migrator` DSN). Scoped away from the app so DDL creds
+#            never reach the long-lived process.
+#            Spec: docker/staging.env.migrate.example.
+#
+# Compromise of the long-lived reverie container exposes only the
+# non-superuser DATABASE_URL passwords via `/proc/<pid>/environ` — not
+# POSTGRES_PASSWORD and not the migration DDL credential.
 #
 # Bring up:  docker compose -f docker/compose.staging.yml up -d
 # Validate:  docker compose -f docker/compose.staging.yml config
@@ -47,6 +58,7 @@ services:
       REVERIE_APP_PASSWORD: ${REVERIE_APP_PASSWORD:?required}
       REVERIE_INGESTION_PASSWORD: ${REVERIE_INGESTION_PASSWORD:?required}
       REVERIE_READONLY_PASSWORD: ${REVERIE_READONLY_PASSWORD:?required}
+      REVERIE_MIGRATOR_PASSWORD: ${REVERIE_MIGRATOR_PASSWORD:?required}
     volumes:
       # Parent-dir mount required by postgres:18+ (image places data in a
       # major-version subdirectory `/var/lib/postgresql/<major>/<cluster>/`
@@ -69,18 +81,62 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # One-shot schema-migration step. Runs `reverie migrate` to completion
+  # against the least-privilege `reverie_migrator` DSN, then exits. The app
+  # is gated on its successful exit (see `reverie` depends_on), so the shipped
+  # upgrade path stays one command: `docker compose pull && up -d` runs this
+  # to completion, then starts the app. All-or-nothing batch semantics mean a
+  # failed migration leaves the DB untouched — recovery is "pin the old tag,
+  # restart" (adr/2026-06-02-hybrid-migration-entrypoints-and-role.md).
+  reverie-migrate:
+    image: ghcr.io/unkos-dev/reverie:${REVERIE_VERSION:?required}
+    # Appends to the image's exec-form ENTRYPOINT (`["reverie-api"]`, see
+    # Dockerfile) → `reverie-api migrate` → Command::Migrate
+    # (backend/src/lib.rs). Migrates then exits zero on success, non-zero on
+    # failure. If the ENTRYPOINT is ever changed to a non-exec form or the
+    # binary renamed, this must become a full `command: ["reverie-api",
+    # "migrate"]` or the subcommand is silently dropped.
+    command: ["migrate"]
+    # DDL credential isolation: `.env.migrate` carries ONLY
+    # DATABASE_URL_MIGRATION (the reverie_migrator DSN). This credential
+    # appears on this short-lived service and nowhere else — never on the
+    # long-lived `reverie` app container. (ADR confirmation: grep proves
+    # DATABASE_URL_MIGRATION is absent from the `reverie` service.)
+    env_file:
+      - path: .env.migrate
+        required: true
+    depends_on:
+      reverie-postgres:
+        condition: service_healthy
+    # The image's baked HEALTHCHECK probes the HTTP server, which a one-shot
+    # migrate container never starts — disable it so the container isn't
+    # marked unhealthy. `depends_on: service_completed_successfully` gates on
+    # exit code, not health, so this does not affect the app's start gate.
+    healthcheck:
+      disable: true
+    # One-shot: do not restart on exit. A non-zero exit must surface as a
+    # failed migrate step (and block the app), not a crash-loop.
+    restart: "no"
+
   reverie:
     image: ghcr.io/unkos-dev/reverie:${REVERIE_VERSION:?required}
     # Scoped runtime env — `.env.runtime` excludes postgres-bootstrap
-    # superuser creds (POSTGRES_USER/PASSWORD/DB) so a compromised app
-    # container reading `/proc/<pid>/environ` can't escalate to a DB
-    # superuser. Spec: docker/staging.env.runtime.example.
+    # superuser creds (POSTGRES_USER/PASSWORD/DB) AND the migration DDL
+    # credential (DATABASE_URL_MIGRATION, scoped to `reverie-migrate`), so a
+    # compromised app container reading `/proc/<pid>/environ` can neither
+    # escalate to a DB superuser nor obtain schema-management rights. Spec:
+    # docker/staging.env.runtime.example.
     env_file:
       - path: .env.runtime
         required: true
     depends_on:
       reverie-postgres:
         condition: service_healthy
+      # Gate on the migrate step finishing cleanly. The app refuses to serve
+      # against a schema-behind database (bidirectional divergence check), so
+      # this ordering is what makes `up -d` a correct one-command upgrade.
+      reverie-migrate:
+        condition: service_completed_successfully
     # Healthcheck baked into the runtime image (see Dockerfile) — compose
     # inherits HEALTHCHECK from the image so no override here.
     #

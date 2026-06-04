@@ -510,20 +510,24 @@ jobs:
         run: |
           set -euo pipefail
           cp staging.env.bootstrap.example .env
-          # `.env.runtime` is required: true on the reverie service; compose
-          # still validates env_file presence at parse time even when the
-          # service isn't being started. Populate with stub values — never
-          # read since reverie isn't started.
+          # `.env.runtime` and `.env.migrate` are required: true on the
+          # reverie / reverie-migrate services; compose validates env_file
+          # presence at parse time even when those services aren't started.
+          # Populate with stub values — never read since neither is started.
           cp staging.env.runtime.example .env.runtime
+          cp staging.env.migrate.example .env.migrate
           # Use `=.*` (not `=$`) so substitutions remain robust if the
           # example files ever acquire non-empty default values; an exact-
           # empty anchor would silently no-op and the smoke would fail
-          # later at auth with an opaque 28P01.
+          # later at auth with an opaque 28P01. REVERIE_MIGRATOR_PASSWORD is
+          # `${...:?required}` on postgres now, so leaving it empty would hard
+          # -fail interpolation at `up` — a distinct value is mandatory here.
           sed -i \
             -e 's|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=smoke_super_pw_1|' \
             -e 's|^REVERIE_APP_PASSWORD=.*|REVERIE_APP_PASSWORD=smoke_app_pw_2|' \
             -e 's|^REVERIE_INGESTION_PASSWORD=.*|REVERIE_INGESTION_PASSWORD=smoke_ing_pw_3|' \
             -e 's|^REVERIE_READONLY_PASSWORD=.*|REVERIE_READONLY_PASSWORD=smoke_ro_pw_4|' \
+            -e 's|^REVERIE_MIGRATOR_PASSWORD=.*|REVERIE_MIGRATOR_PASSWORD=smoke_mig_pw_5|' \
             -e 's|^REVERIE_VERSION=.*|REVERIE_VERSION=smoke-test|' \
             .env
 
@@ -542,7 +546,7 @@ jobs:
               reverie-postgres psql -v ON_ERROR_STOP=1 -At \
               -U reverie -d reverie "$@"
           }
-          for role in reverie_app reverie_ingestion reverie_readonly; do
+          for role in reverie_app reverie_ingestion reverie_readonly reverie_migrator; do
             exists=$(exec_psql -c "SELECT 1 FROM pg_roles WHERE rolname = '${role}' AND rolcanlogin")
             if [ "$exists" != "1" ]; then
               echo "Role ${role} missing or cannot login" >&2
@@ -576,6 +580,25 @@ jobs:
           login_as reverie_app       smoke_app_pw_2
           login_as reverie_ingestion smoke_ing_pw_3
           login_as reverie_readonly  smoke_ro_pw_4
+          login_as reverie_migrator  smoke_mig_pw_5
+
+      # The migration identity is load-bearing for the threat model: it must
+      # NOT be a superuser, must NOT create roles, and must NOT bypass RLS
+      # (adr/2026-06-02-hybrid-migration-entrypoints-and-role.md). A regression
+      # that drops the NOSUPERUSER NOCREATEROLE NOBYPASSRLS clause from
+      # init-roles.sql would silently re-privilege the migrator — assert it.
+      - name: Assert reverie_migrator is least-privilege
+        run: |
+          set -euo pipefail
+          attrs=$(docker compose -f docker/compose.staging.yml exec -T \
+            -e PGPASSWORD=smoke_super_pw_1 \
+            reverie-postgres psql -v ON_ERROR_STOP=1 -At \
+            -U reverie -d reverie \
+            -c "SELECT rolsuper, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname = 'reverie_migrator'")
+          if [ "$attrs" != "f|f|f" ]; then
+            echo "reverie_migrator is not least-privilege: rolsuper|rolcreaterole|rolbypassrls = ${attrs} (want f|f|f)" >&2
+            exit 1
+          fi
 
       - name: Tear down postgres service
         if: always()
