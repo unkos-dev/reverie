@@ -1,0 +1,83 @@
+# cargo-deny configuration — supply-chain policy for the Rust workspace.
+#
+# Single source of truth for dependency policy. `cargo deny check` (run in CI
+# by the `audit` job in .github/workflows/ci.yml) runs all four checks below.
+# This replaced a standalone `cargo audit` step: cargo-deny's `advisories`
+# check reads the same RustSec advisory database cargo-audit used, so retiring
+# cargo-audit loses no advisory coverage while adding license, ban, and source
+# policy in one tool with one config. Advisory suppressions and their
+# justifications now live here (see [advisories].ignore) instead of as
+# `--ignore` flags plus a YAML comment.
+
+[graph]
+# Evaluate the full feature graph, matching the lockfile-wide scope the former
+# `cargo audit` had (it scanned all of Cargo.lock).
+all-features = true
+
+[advisories]
+# RustSec advisory database. Vulnerabilities always error and cannot be
+# downgraded — that is the load-bearing guarantee. `unmaintained` is scoped to
+# direct workspace dependencies only: flagging deep-transitive unmaintained
+# crates we cannot act on is noise (cargo-audit did not fail the build on these
+# either). `yanked = "warn"` preserves the prior non-failing behaviour for
+# yanked crates.
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+  # rsa — Marvin Attack (PKCS#1 v1.5 timing sidechannel). No patched version
+  # exists upstream. rsa is pulled in transitively via openidconnect for JWT
+  # *verification* only; the vulnerable PKCS#1 v1.5 *decryption* path is never
+  # invoked.
+  { id = "RUSTSEC-2023-0071", reason = "no upstream fix; rsa used transitively via openidconnect for JWT verification only — vulnerable PKCS#1 v1.5 decryption path never invoked" },
+  # rand — soundness issue (aliased &mut via log + thread_rng). rand 0.8.x is
+  # pulled in transitively by sqlx 0.8; the ecosystem has not yet released a
+  # sqlx 0.9 / rand-0.9-compatible version. Revisit when sqlx 0.9 goes stable.
+  { id = "RUSTSEC-2026-0097", reason = "rand 0.8.x pulled transitively by sqlx 0.8; no sqlx 0.9 / rand-0.9 release yet — revisit when sqlx 0.9 is stable" },
+]
+
+[licenses]
+# Permissive-only allowlist, derived from the licenses actually present in the
+# dependency tree (`cargo metadata` over all features). A new dependency that
+# introduces a license outside this set fails CI — the deliberate gate that
+# keeps a copyleft (GPL/LGPL/AGPL) or unknown license from entering the tree
+# unreviewed. confidence-threshold left at the 0.8 default.
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "Unlicense",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "BSL-1.0",
+  "bzip2-1.0.6",
+  "CDLA-Permissive-2.0",
+]
+
+# reverie-api is the project's own crate and is AGPL-3.0-or-later (the project
+# license). It is never published to crates.io and is not a third-party
+# dependency, so its copyleft license is scoped to itself here rather than
+# added to the dep allowlist above — an AGPL *dependency* must still fail.
+[[licenses.exceptions]]
+crate = "reverie-api"
+allow = ["AGPL-3.0-or-later"]
+
+[bans]
+# Duplicate versions are reported but do not fail the build: the tree carries
+# legitimate transitional duplicates (e.g. r-efi 5/6, webpki-roots 0.26/1.0)
+# outside our control. Wildcard version requirements are denied — a `*` in a
+# manifest defeats reproducible builds and version pinning.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+# Only crates.io is permitted today. An unknown registry or any git source
+# fails CI: a git dependency bypasses the registry's immutability and yank
+# semantics and must be a reviewed, deliberate choice.
+unknown-registry = "deny"
+unknown-git = "deny"

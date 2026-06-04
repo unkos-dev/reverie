@@ -54,6 +54,7 @@ jobs:
             audit:
               - 'backend/Cargo.toml'
               - 'backend/Cargo.lock'
+              - 'backend/deny.toml'
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
@@ -262,7 +263,7 @@ jobs:
           fail_ci_if_error: false
 
   audit:
-    name: Security Audit
+    name: Dependency policy (cargo-deny)
     needs: changes
     if: needs.changes.outputs.audit == 'true'
     runs-on: ubuntu-latest
@@ -272,26 +273,21 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # Prebuilt cargo-audit (GitHub Releases via install-action) instead of
-      # `cargo install` from source — ~5s vs ~1-2 min per run. Mirrors the
-      # nextest/llvm-cov/typos install pattern; version pinned (Renovate's
-      # install-action customManager keeps it current).
+      # Prebuilt cargo-deny (GitHub Releases via install-action) instead of
+      # `cargo install` from source. Mirrors the nextest/llvm-cov/typos install
+      # pattern; version pinned (Renovate's install-action customManager keeps
+      # it current).
       - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
         with:
-          tool: cargo-audit@0.22.1
-      - name: Audit dependencies
-        # Suppressed advisories — each must have a justification:
-        #
-        # RUSTSEC-2023-0071 — rsa: Marvin Attack (PKCS#1 v1.5 timing sidechannel).
-        #   No patched version exists upstream. Reverie uses rsa transitively via
-        #   openidconnect for JWT *verification* only — the vulnerable PKCS#1 v1.5
-        #   *decryption* path is never invoked.
-        #
-        # RUSTSEC-2026-0097 — rand: soundness issue (aliased &mut via log+thread_rng).
-        #   rand 0.8.x is pulled in transitively by sqlx 0.8; the ecosystem has not
-        #   yet released sqlx 0.9 / rand-0.9-compatible versions. Revisit when
-        #   sqlx 0.9 goes stable.
-        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
+          tool: cargo-deny@0.19.8
+      # Replaces the former `cargo audit` step. cargo-deny's `advisories` check
+      # reads the same RustSec database, so advisory coverage is unchanged;
+      # `cargo deny check` additionally enforces the license, ban, and source
+      # policy in backend/deny.toml. Advisory suppressions (RUSTSEC-2023-0071,
+      # RUSTSEC-2026-0097) and their justifications live in deny.toml's
+      # [advisories].ignore.
+      - name: Check dependencies (advisories, licenses, bans, sources)
+        run: cargo deny check
 
   # UNK-245: catch syntax / context-availability violations in workflow
   # files before merge. Mirrors the `actionlint` invocation wired into
@@ -678,6 +674,45 @@ jobs:
             exit 1
           fi
 
+  # Server-side secret scan. gitleaks runs as a husky pre-commit hook
+  # (`gitleaks protect --staged`), but pre-commit is client-side: bypassable
+  # (`git commit --no-verify`) and never runs on fork PRs. CLAUDE.md hard-rule-8
+  # asserts a server-side secret-scan guarantee the hook alone cannot give.
+  # Intentionally unconditional — no `changes` path filter: a secret can land
+  # in markdown, .env.example, or any non-code file, so every PR is scanned.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # Direct curl-tarball install pins the exact upstream release + SHA256,
+      # mirroring the actionlint/shellcheck/hadolint installs. gitleaks is a Go
+      # binary; install-action does not carry it. Version matches the
+      # workspace-image gitleaks the pre-commit hook uses, so local and CI
+      # evaluate against the same scanner.
+      - name: Install gitleaks v8.30.1
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$HOME/.local/bin" gitleaks
+          rm "$tarball"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Filesystem scan of the checkout (`dir`) — the "no secret in the tree"
+      # guarantee, mirroring the staged-diff scan the pre-commit hook runs.
+      # --redact keeps any match out of the public CI log.
+      - name: Scan for secrets
+        run: gitleaks dir . --no-banner --redact
+
   # Single required status check for the branch ruleset. Aggregates every CI
   # job so the ruleset requires only this one context. Path-conditional jobs
   # that legitimately skip on a given PR (docs-only, frontend-only, etc.) no
@@ -699,6 +734,7 @@ jobs:
       - repo-lint
       - frontend
       - staging-smoke
+      - secret-scan
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
