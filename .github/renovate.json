@@ -14,6 +14,7 @@
   "rangeStrategy": "bump",
   "prConcurrentLimit": 20,
   "minimumReleaseAge": "3 days",
+  "prCreation": "not-pending",
   "vulnerabilityAlerts": {
     "enabled": true,
     "schedule": ["at any time"],
