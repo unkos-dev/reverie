@@ -172,8 +172,7 @@ mod tests {
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
-        let auth_backend = crate::auth::backend::AuthBackend { pool: pool.clone() };
-        let app = crate::build_router(state, auth_backend);
+        let app = crate::build_router(state);
         let server = axum_test::TestServer::new(app);
 
         use base64ct::Encoding;

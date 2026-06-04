@@ -19,7 +19,8 @@
 
 use tokio_util::sync::CancellationToken;
 use tower_sessions::session_store::{self, ExpiredDeletion};
-use tower_sessions_sqlx_store::PostgresStore;
+
+use crate::auth::store::PostgresStore;
 
 /// Sweep cadence.
 ///

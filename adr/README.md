@@ -42,4 +42,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Auto-migrate database on startup with all-or-nothing batch transactions](superseded/2026-05-26-auto-migration-on-startup.md) (superseded by [Database migration model: hybrid entrypoints, least-privilege role, all-or-nothing batch](2026-06-02-hybrid-migration-entrypoints-and-role.md), 2026-05-26)
 - [Reconcile `validation_status` vocabulary and introduce a typed `ValidationStatus` enum](2026-05-28-validation-status-vocabulary.md) (accepted, 2026-05-28)
 - [Database migration model: hybrid entrypoints, least-privilege role, all-or-nothing batch](2026-06-02-hybrid-migration-entrypoints-and-role.md) (accepted, 2026-06-02)
-- [First-party session layer on tower-sessions core; drop axum-login and tower-sessions-sqlx-store](2026-06-04-first-party-session-layer.md) (proposed, 2026-06-04)
+- [First-party session layer on tower-sessions core; drop axum-login and tower-sessions-sqlx-store](2026-06-04-first-party-session-layer.md) (accepted, 2026-06-04)

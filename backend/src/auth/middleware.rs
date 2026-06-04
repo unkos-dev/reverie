@@ -1,46 +1,37 @@
 //! `CurrentUser` extractor and Basic-auth verification for Reverie.
 //!
 //! [`crate::auth::middleware::CurrentUser`] is the primary identity extractor used by route handlers.
-//! It resolves the caller in two steps: session cookie first (via
-//! axum-login's `AuthSession`), Basic auth second (via
+//! It resolves the caller in two steps: session cookie first (rehydrated from
+//! the first-party [`tower_sessions::Session`] — read `user_id`, reload the user,
+//! compare `session_version`), Basic auth second (via
 //! [`crate::auth::middleware::verify_basic`]). Handlers that receive a `CurrentUser` are guaranteed
 //! an authenticated identity; unauthenticated requests are rejected with
 //! `AppError::Unauthorized` before the handler body runs.
-//!
-//! [`crate::auth::middleware::AuthCtx`] is a type alias for the axum-login session handle, exposed
-//! so OIDC callback handlers can call `auth_session.login(&user)` without
-//! importing the full generic form.
 //!
 //! # Tier 2 — security-critical
 //!
 //! This module is the authentication seam for every non-public route.
 //! Threat annotations mark the timing-side-channel mitigations in
-//! [`crate::auth::middleware::verify_basic`] and the role-assertion invariants on [`crate::auth::middleware::CurrentUser`].
+//! [`crate::auth::middleware::verify_basic`], the `session_version` force-logout
+//! check, and the role-assertion invariants on [`crate::auth::middleware::CurrentUser`].
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use axum_login::AuthSession;
 use base64ct::Encoding;
+use tower_sessions::Session;
 use uuid::Uuid;
 
-use crate::auth::backend::AuthBackend;
 use crate::error::AppError;
 use crate::models::role::Role;
 use crate::models::{device_token, user};
 use crate::state::AppState;
 
-/// axum-login session handle parameterised on [`AuthBackend`].
-///
-/// Exposes `login`, `logout`, and `user` on the OIDC callback and logout
-/// handlers without requiring callers to spell out the full generic form.
-pub type AuthCtx = AuthSession<AuthBackend>;
-
 /// Resolved identity for an authenticated request.
 ///
 /// Extracted from the request by [`FromRequestParts`]. Resolution order:
-/// session cookie (via axum-login) → `Authorization: Basic` (via
-/// [`verify_basic`]). Returns [`AppError::Unauthorized`] if neither
-/// path yields a valid identity.
+/// session cookie (rehydrated from [`tower_sessions::Session`]) →
+/// `Authorization: Basic` (via [`verify_basic`]). Returns
+/// [`AppError::Unauthorized`] if neither path yields a valid identity.
 ///
 /// Role-assertion methods ([`require_admin`](CurrentUser::require_admin),
 /// [`require_not_child`](CurrentUser::require_not_child)) are the canonical
@@ -200,16 +191,41 @@ impl FromRequestParts<AppState> for CurrentUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        // Try session cookie via axum-login (populated by AuthManagerLayer)
-        if let Ok(auth_session) =
-            <AuthCtx as FromRequestParts<AppState>>::from_request_parts(parts, state).await
-            && let Some(u) = auth_session.user
+        // Session cookie path. The `Session` is populated by
+        // `SessionManagerLayer`; on a request with no session cookie it is
+        // empty and `get("user_id")` is `None`, so we fall through cleanly
+        // (no DB hit, no 500) to the Basic-auth path below.
+        if let Ok(session) = Session::from_request_parts(parts, state).await
+            && let Some(user_id) = session
+                .get::<Uuid>("user_id")
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?
+            && let Some(user) = user::find_by_id(&state.pool, user_id)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?
         {
-            return Ok(Self {
-                user_id: u.id,
-                role: u.role,
-                is_child: u.is_child,
-            });
+            // THREAT (force-logout): the session stores the `session_version`
+            // captured at login; if `users.session_version` has since been
+            // bumped (role change, security event) the stored copy is stale and
+            // the session is rejected. Plain `==` is safe here — session
+            // contents are server-side state, not attacker-controlled (the
+            // cookie carries only the random session id).
+            let stored_version = session
+                .get::<i32>("session_version")
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+            if stored_version == Some(user.session_version) {
+                return Ok(Self {
+                    user_id: user.id,
+                    role: user.role,
+                    is_child: user.is_child,
+                });
+            }
+            // Stale version: wipe the session row server-side, then fall
+            // through. No silent discard (backend/CLAUDE.md): log on failure.
+            if let Err(e) = session.flush().await {
+                tracing::warn!(error = %e, "force-logout flush failed");
+            }
         }
 
         // Fall back to Basic auth

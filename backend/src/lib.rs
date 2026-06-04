@@ -9,8 +9,7 @@
 //! Phase 0).
 //!
 //! Embedders mounting Reverie under their own server may use
-//! [`build_router`] directly with a fully-initialised [`state::AppState`]
-//! and [`auth::backend::AuthBackend`].
+//! [`build_router`] directly with a fully-initialised [`state::AppState`].
 
 #![deny(missing_docs)]
 #![cfg_attr(
@@ -37,12 +36,10 @@ pub(crate) mod test_support;
 
 use anyhow::Context as _;
 use axum::Router;
-use axum_login::AuthManagerLayerBuilder;
 use tower_sessions::{Expiry, SessionManagerLayer};
-use tower_sessions_sqlx_store::PostgresStore;
 use tracing_subscriber::EnvFilter;
 
-use crate::auth::backend::AuthBackend;
+use crate::auth::store::PostgresStore;
 use crate::config::Config;
 use crate::state::AppState;
 
@@ -57,20 +54,17 @@ use crate::state::AppState;
 /// Production callers should reach this through [`run`]. Embedders mounting
 /// Reverie inside another Axum service can call it directly, supplying a
 /// fully-initialised [`AppState`] (DB pools + finalised CSP headers on
-/// `state.config.security`) and an [`AuthBackend`] sharing the same primary
-/// pool.
-pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
+/// `state.config.security`).
+pub fn build_router(state: AppState) -> Router {
     // Sessions persist to Postgres so a backend restart doesn't log every
-    // user out. The backing schema is provisioned by the
-    // `20260507000001_tower_sessions_postgres_store` migration; defaults
-    // (`tower_sessions.session`) match `PostgresStore::new`'s built-ins so
-    // no `with_schema_name`/`with_table_name` overrides are needed.
-    // Expired-session cleanup runs as a scheduled sweep in `run` (see
-    // `services::session_sweep`), driving `ExpiredDeletion::delete_expired`
+    // user out. The first-party `auth::store::PostgresStore` targets
+    // `tower_sessions.session` (provisioned by the consolidated initial-schema
+    // migration). Expired-session cleanup runs as a scheduled sweep in `run`
+    // (see `services::session_sweep`), driving `ExpiredDeletion::delete_expired`
     // hourly under the shared cancellation token. Embedders calling this
     // function directly are responsible for their own reaping.
     let session_store = PostgresStore::new(state.pool.clone());
-    build_router_with_session_store(state, auth_backend, session_store)
+    build_router_with_session_store(state, session_store)
 }
 
 /// Same as [`build_router`] but with a caller-provided session store.
@@ -84,24 +78,20 @@ pub fn build_router(state: AppState, auth_backend: AuthBackend) -> Router {
 /// shared-store seam is only required by tests that exercise routing
 /// internals (which already need crate-private access for fixtures).
 /// Production builds use `PostgresStore` via [`build_router`].
-pub(crate) fn build_router_with_session_store<S>(
-    state: AppState,
-    auth_backend: AuthBackend,
-    session_store: S,
-) -> Router
+pub(crate) fn build_router_with_session_store<S>(state: AppState, session_store: S) -> Router
 where
     S: tower_sessions::SessionStore + Clone,
 {
-    // Secure flag intentionally omitted: backend runs behind a TLS-terminating
-    // reverse proxy and sees plain HTTP, so Secure would prevent cookie delivery.
-    // Cookies are unsigned — session security relies on the cryptographic randomness
-    // of tower-sessions session IDs (ChaCha-seeded via `rand` crate).
+    // `.with_secure(false)` is load-bearing: tower-sessions defaults Secure to
+    // true, but the backend runs behind a TLS-terminating reverse proxy and
+    // sees plain HTTP, so a Secure cookie would never be delivered. Cookies are
+    // unsigned — session security relies on the cryptographic randomness of
+    // tower-sessions session IDs (CSPRNG `i128` via the `rand` crate).
     let session_layer = SessionManagerLayer::new(session_store)
         .with_http_only(true)
+        .with_secure(false)
         .with_same_site(tower_sessions::cookie::SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
-
-    let auth_layer = AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
     // Reserved-prefix routes — /api, /auth, /health, /opds. API CSP layered on
     // matched responses; unmatched paths flow into the composite fallback
@@ -160,7 +150,7 @@ where
         .layer(axum::middleware::from_fn(
             error::instance::problem_instance_layer,
         ))
-        .layer(auth_layer)
+        .layer(session_layer)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -296,7 +286,6 @@ pub async fn run() -> anyhow::Result<()> {
     let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
     let last_settings_reload = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 
-    let auth_backend = AuthBackend { pool: pool.clone() };
     let state = AppState {
         pool,
         ingestion_pool,
@@ -305,7 +294,7 @@ pub async fn run() -> anyhow::Result<()> {
         settings,
         last_settings_reload,
     };
-    let app = build_router(state.clone(), auth_backend);
+    let app = build_router(state.clone());
 
     // Spawn ingestion watcher with a cancellation token for graceful shutdown
     let cancel_token = tokio_util::sync::CancellationToken::new();
@@ -713,7 +702,8 @@ mod tests {
         use time::OffsetDateTime;
         use tower_sessions::SessionStore;
         use tower_sessions::session::{Id, Record};
-        use tower_sessions_sqlx_store::PostgresStore;
+
+        use crate::auth::store::PostgresStore;
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
 
@@ -758,7 +748,8 @@ mod tests {
         use time::OffsetDateTime;
         use tower_sessions::SessionStore;
         use tower_sessions::session::{Id, Record};
-        use tower_sessions_sqlx_store::PostgresStore;
+
+        use crate::auth::store::PostgresStore;
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let store = PostgresStore::new(app_pool.clone());
