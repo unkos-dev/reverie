@@ -520,8 +520,9 @@ jobs:
           # example files ever acquire non-empty default values; an exact-
           # empty anchor would silently no-op and the smoke would fail
           # later at auth with an opaque 28P01. REVERIE_MIGRATOR_PASSWORD is
-          # `${...:?required}` on postgres now, so leaving it empty would hard
-          # -fail interpolation at `up` — a distinct value is mandatory here.
+          # `${...:?required}` on postgres now, so leaving it empty would make
+          # compose hard-fail interpolation at `up` — a distinct value here is
+          # mandatory.
           sed -i \
             -e 's|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=smoke_super_pw_1|' \
             -e 's|^REVERIE_APP_PASSWORD=.*|REVERIE_APP_PASSWORD=smoke_app_pw_2|' \
@@ -582,12 +583,16 @@ jobs:
           login_as reverie_readonly  smoke_ro_pw_4
           login_as reverie_migrator  smoke_mig_pw_5
 
-      # The migration identity is load-bearing for the threat model: it must
-      # NOT be a superuser, must NOT create roles, and must NOT bypass RLS
-      # (adr/2026-06-02-hybrid-migration-entrypoints-and-role.md). A regression
-      # that drops the NOSUPERUSER NOCREATEROLE NOBYPASSRLS clause from
-      # init-roles.sql would silently re-privilege the migrator — assert it.
-      - name: Assert reverie_migrator is least-privilege
+      # The migration identity must not be a superuser, create roles, or
+      # bypass RLS (adr/2026-06-02-hybrid-migration-entrypoints-and-role.md).
+      # Scope of this assertion: it catches *active* escalation — a CREATE
+      # ROLE with SUPERUSER/CREATEROLE/BYPASSRLS, or a later ALTER ROLE that
+      # adds one. It does NOT catch deletion of the explicit NOSUPERUSER
+      # NOCREATEROLE NOBYPASSRLS clause from init-roles.sql, because those are
+      # the Postgres CREATE ROLE defaults — removing the clause yields the
+      # same f|f|f. That clause is retained for audit-legibility; its presence
+      # is guarded by code review, not by this check.
+      - name: Assert reverie_migrator is not over-privileged
         run: |
           set -euo pipefail
           attrs=$(docker compose -f docker/compose.staging.yml exec -T \
@@ -596,7 +601,46 @@ jobs:
             -U reverie -d reverie \
             -c "SELECT rolsuper, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname = 'reverie_migrator'")
           if [ "$attrs" != "f|f|f" ]; then
-            echo "reverie_migrator is not least-privilege: rolsuper|rolcreaterole|rolbypassrls = ${attrs} (want f|f|f)" >&2
+            echo "reverie_migrator is over-privileged: rolsuper|rolcreaterole|rolbypassrls = ${attrs} (want f|f|f)" >&2
+            exit 1
+          fi
+
+      # The migrator's two non-obvious grants make migrations actually work and
+      # are flagged load-bearing in init-roles.sql: CREATE on the database (for
+      # `CREATE SCHEMA tower_sessions` in the initial migration) and CREATE on
+      # schema public (PG15+ revoked the implicit PUBLIC grant). Role-exists /
+      # login / f|f|f all stay green if either is dropped — only a real DDL
+      # round-trip catches it. One statement exercises both (schema create =
+      # database CREATE; table-in-schema = schema CREATE), leaving no residue.
+      - name: Assert reverie_migrator has DDL capability
+        run: |
+          set -euo pipefail
+          docker compose -f docker/compose.staging.yml exec -T \
+            -e PGPASSWORD=smoke_mig_pw_5 \
+            reverie-postgres psql -v ON_ERROR_STOP=1 -At \
+            -h localhost -U reverie_migrator -d reverie \
+            -c "CREATE SCHEMA _smoke_ddl; CREATE TABLE _smoke_ddl.probe (id int); DROP SCHEMA _smoke_ddl CASCADE;"
+
+      # Threat-model backstop: the long-lived app must hold zero DDL
+      # credentials, so DATABASE_URL_MIGRATION must reach `reverie-migrate` and
+      # NOT the `reverie` app service. Asserted against the fully-rendered
+      # config so a future edit that inlines it under `reverie` or adds it to
+      # `.env.runtime` fails here instead of shipping green. Parse-time only —
+      # no running container needed; runs while env files are still intact
+      # (before the negative-path step blanks a var).
+      - name: Assert DATABASE_URL_MIGRATION is scoped to reverie-migrate only
+        working-directory: docker
+        run: |
+          set -euo pipefail
+          rendered=$(docker compose -f compose.staging.yml config)
+          if ! awk '/^  reverie-migrate:/{f=1} f && /^  [a-z]/ && !/^  reverie-migrate:/{f=0} f' <<<"$rendered" \
+               | grep -q 'DATABASE_URL_MIGRATION'; then
+            echo "DATABASE_URL_MIGRATION missing from reverie-migrate service config" >&2
+            exit 1
+          fi
+          if awk '/^  reverie:/{f=1} f && /^  [a-z]/ && !/^  reverie:/{f=0} f' <<<"$rendered" \
+               | grep -q 'DATABASE_URL_MIGRATION'; then
+            echo "DATABASE_URL_MIGRATION leaked into the reverie app service — credential isolation broken" >&2
             exit 1
           fi
 

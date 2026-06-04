@@ -66,7 +66,8 @@ services:
       # legacy `…/data` child path errors out at first init.
       - pg-data:/var/lib/postgresql
       # init-roles.sql creates the runtime roles (reverie_app,
-      # reverie_ingestion, reverie_readonly) on first-boot DB init. The
+      # reverie_ingestion, reverie_readonly) plus the reverie_migrator
+      # migration identity on first-boot DB init. The
       # postgres entrypoint only runs /docker-entrypoint-initdb.d/* against
       # an uninitialized data directory (no `PG_VERSION` file present); on
       # subsequent restarts the script is skipped.
@@ -93,15 +94,20 @@ services:
     # Appends to the image's exec-form ENTRYPOINT (`["reverie-api"]`, see
     # Dockerfile) → `reverie-api migrate` → Command::Migrate
     # (backend/src/lib.rs). Migrates then exits zero on success, non-zero on
-    # failure. If the ENTRYPOINT is ever changed to a non-exec form or the
-    # binary renamed, this must become a full `command: ["reverie-api",
-    # "migrate"]` or the subcommand is silently dropped.
+    # failure. Two distinct fragilities to keep in mind:
+    #   - ENTRYPOINT switched to shell form: `command` is then passed to
+    #     `sh -c`, so `migrate` alone is a command-not-found. Fix by writing
+    #     the full exec-form `command: ["reverie-api", "migrate"]`.
+    #   - Binary renamed: update ENTRYPOINT itself; this `command` stays just
+    #     the subcommand and keeps appending to whatever the new binary is.
     command: ["migrate"]
     # DDL credential isolation: `.env.migrate` carries ONLY
-    # DATABASE_URL_MIGRATION (the reverie_migrator DSN). This credential
-    # appears on this short-lived service and nowhere else — never on the
-    # long-lived `reverie` app container. (ADR confirmation: grep proves
-    # DATABASE_URL_MIGRATION is absent from the `reverie` service.)
+    # DATABASE_URL_MIGRATION (the reverie_migrator DSN). The isolation is
+    # structural — this service's env_file is `.env.migrate`, the app's is
+    # `.env.runtime`, and `.env.runtime` deliberately holds no migration
+    # credential — so the DDL credential never reaches the long-lived
+    # `reverie` app container. A CI step enforces this against the rendered
+    # config (asserts the key is absent from the `reverie` service).
     env_file:
       - path: .env.migrate
         required: true
