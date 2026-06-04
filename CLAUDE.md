@@ -152,8 +152,6 @@ Two artifact types, two locations:
 
 When invoking `superpowers:brainstorming`, explicitly pass spec location alongside topic (belt-and-suspenders) — agents reading CLAUDE.md honor this section, but SKILL.md default not auto-enforced.
 
-> Optimized tool-use workflow for agents: see [SDL.md](./SDL.md).
-
 ## ADRs (Architecture Decision Records)
 
 Long-form rationale for architectural decisions lives in `adr/` as MADR-shape files. `adr` skill handles full workflow: Socratic capture → draft → checklist review.

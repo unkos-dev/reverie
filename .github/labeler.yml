@@ -21,7 +21,6 @@
           - "**/CLAUDE.md"
           - "**/AGENTS.md"
           - "**/GEMINI.md"
-          - "SDL.md"
 
 "area/infra":
   - changed-files:
