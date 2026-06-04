@@ -4,8 +4,8 @@ severity: low
 surfaces: [developer]
 adopted: 2026-06-02
 adopted-because: sqlx 0.9 bump (Renovate #326 crate, #325 sqlx-cli) cannot compile — tower-sessions-sqlx-store 0.15.0 (latest) pins sqlx ^0.8, so our 0.9 PgPool mismatches the store's 0.8 PgPool
-lift-when-class: dep-unblocks
-lift-when: tower-sessions-sqlx-store crates.io release accepting sqlx ^0.9 — part of the same coordinated tower-sessions ecosystem bump that lifts the tower-sessions 0.14 pin (UNK-101)
+lift-when-class: internal-refactor
+lift-when: first-party session store lands (adr/2026-06-04-first-party-session-layer.md) removing tower-sessions-sqlx-store → the sqlx ^0.8 store wall is gone; then the mechanical QueryBuilder migration lands sqlx 0.9 (UNK-101)
 lifted: ~
 superseded-by: ~
 ---
@@ -47,8 +47,12 @@ The break has **two distinct parts**, and only one is ours to fix:
 
 This is the **same dependency wall** that blocks the tower-sessions 0.14
 pin (see [`2026-05-21-tower-sessions-0-14-pin.md`](2026-05-21-tower-sessions-0-14-pin.md)
-/ PR `#128`). The tower-sessions / tower-sessions-sqlx-store / axum-login
-trio moves as a unit; sqlx 0.9 is gated behind the same coordinated bump.
+/ PR `#128`). Rather than wait for a coordinated upstream release,
+reverie drops `tower-sessions-sqlx-store` entirely — replacing it with a
+first-party `SessionStore` on `tower-sessions` core (ADR
+[`2026-06-04-first-party-session-layer.md`](../adr/2026-06-04-first-party-session-layer.md)).
+Removing the store removes the `sqlx ^0.8` pin (part 2), leaving only the
+mechanical migration (part 1) between reverie and sqlx 0.9.
 
 ## Workaround
 
@@ -73,14 +77,15 @@ in 0.9 is load-bearing for the current threat model.
 
 ## Lift conditions
 
-Lift trigger: a `tower-sessions-sqlx-store` crates.io release that
-accepts `sqlx ^0.9` (expected alongside the broader tower-sessions
-ecosystem bump that lifts UNK-101 / PR #128).
+Lift trigger: the first-party session store lands (ADR
+[`2026-06-04-first-party-session-layer.md`](../adr/2026-06-04-first-party-session-layer.md)),
+removing `tower-sessions-sqlx-store` and with it the `sqlx ^0.8` pin.
+Only the mechanical migration (part 1) then remains.
 
-When that release ships:
+When the store dep is gone:
 
-1. Bump `tower-sessions-sqlx-store` (and the paired tower-sessions /
-   axum-login bumps per the sister entry) in `backend/Cargo.toml`.
+1. Confirm `tower-sessions-sqlx-store` is no longer in
+   `backend/Cargo.toml` (removed by the ADR's first-party store).
 2. Land Renovate PR `#326` (`sqlx → 0.9`): drop the `'q` lifetime from
    every `QueryBuilder<'_, Postgres>` / `Separated<…>`; fix the `SqlStr`
    `.as_bytes()` site; resolve the one borrow-escape.
@@ -99,6 +104,8 @@ When that release ships:
   `sqlx-cli → 0.9.0`, lands paired with #326
 - [`2026-05-21-tower-sessions-0-14-pin.md`](2026-05-21-tower-sessions-0-14-pin.md)
   — sister entry; same tower-sessions ecosystem wall
+- [`adr/2026-06-04-first-party-session-layer.md`](../adr/2026-06-04-first-party-session-layer.md)
+  — drops tower-sessions-sqlx-store, removing the `sqlx ^0.8` wall
 - [UNK-101](https://linear.app/unkos/issue/UNK-101) — tower-sessions
   ecosystem bump (the coordinated lift work this rides on)
 - `backend/Cargo.toml:47` — sqlx pin site
