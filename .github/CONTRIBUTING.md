@@ -20,7 +20,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 <type>(<scope>): <description>
 ```
 
-Branch names use the same type prefix: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `perf/`. See [CLAUDE.md](CLAUDE.md) for the full specification, examples, and breaking-change conventions.
+Branch names use the same type prefix: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `perf/`. See [CLAUDE.md](../CLAUDE.md) for the full specification, examples, and breaking-change conventions.
 
 ## Development setup
 
@@ -48,11 +48,11 @@ Frontend only (requires Node.js >=24.15.0):
 cd frontend && npm install && npm run dev
 ```
 
-See [backend/CLAUDE.md](backend/CLAUDE.md) and [frontend/CLAUDE.md](frontend/CLAUDE.md) for subsystem-specific conventions (database roles, testing helpers, linting rules).
+See [backend/CLAUDE.md](../backend/CLAUDE.md) and [frontend/CLAUDE.md](../frontend/CLAUDE.md) for subsystem-specific conventions (database roles, testing helpers, linting rules).
 
 ### Pre-commit prerequisites
 
-The lint-staged pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit (version pinned to **v1.7.12** in [`lint-staged.config.js`](lint-staged.config.js) and [`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+The lint-staged pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit (version pinned to **v1.7.12** in [`lint-staged.config.js`](../lint-staged.config.js) and [`.github/workflows/ci.yml`](workflows/ci.yml)):
 
 ```bash
 # Linux + macOS — pinned binary (Homebrew's formula is not version-pinned,
@@ -72,7 +72,7 @@ If `actionlint` is not on `PATH`, the pre-commit hook fails with a clear `comman
 - **Negative cases** — invalid input is rejected, error paths are exercised
 - **Edge cases** — where the behaviour is non-obvious
 
-PRs without tests will not be approved. See [CLAUDE.md](CLAUDE.md) Hard Rule 5 for the full policy.
+PRs without tests will not be approved. See [CLAUDE.md](../CLAUDE.md) Hard Rule 5 for the full policy.
 
 ## Pull request process
 

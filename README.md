@@ -87,4 +87,4 @@ release workflow and has not been tampered with since.
 
 This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution terms.
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for contribution terms.
