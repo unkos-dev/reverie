@@ -1,13 +1,10 @@
 ---
-status: active
 severity: low
 surfaces: [end-user]
 adopted: 2026-05-24
 adopted-because: "11c (PR #316) ships metadata edit UI but BookDetail does not yet carry publisher/pub_date canonical columns; UI confirmation for those fields deferred"
 lift-when-class: internal-refactor
 lift-when: BookDetail API response includes publisher and pub_date canonical columns; same PR adds UI fields to the metadata edit dialog for confirming/editing those values
-lifted: ~
-superseded-by: ~
 ---
 
 # Publisher and pub_date missing from metadata edit UI

@@ -1,13 +1,10 @@
 ---
-status: active
 severity: low
 surfaces: [developer]
 adopted: 2026-05-24
 adopted-because: "11c (PR #316) ships manual metadata edit alongside the enrichment pipeline; the two paths normalize publisher whitespace differently before hashing, producing distinct value_hash entries for semantically identical values"
 lift-when-class: internal-refactor
 lift-when: PR unifies whitespace normalization for publisher values across manual edit (PATCH metadata) and enrichment pipeline paths; same PR adds a test proving identical publisher strings produce identical value_hash regardless of entry path
-lifted: ~
-superseded-by: ~
 ---
 
 # Publisher whitespace hash-normalization diverges between manual and enrichment paths
