@@ -57,7 +57,7 @@ the defaults, but they aren't the primary target — decisions about defaults
 lean toward the exposed case.
 
 Security-relevant rules for this repo are tracked in
-[`.claude/security/`](.claude/security/), which imports Project CodeGuard's
+[`.claude/security/`](../.claude/security/), which imports Project CodeGuard's
 core categories. That's the nearest thing to a canonical reference for
 what we consider reasonable care here.
 
