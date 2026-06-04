@@ -6,8 +6,9 @@
 //!
 //! # Tier 2 — security-critical
 //!
-//! THREAT (session fixation): [`login`] rotates the session id via
-//! [`Session::cycle_id`] before persisting identity, so a pre-auth attacker who
+//! THREAT (session fixation): [`login`](crate::auth::session::login) rotates the session id via
+//! [`Session::cycle_id`](tower_sessions::Session::cycle_id) before persisting
+//! identity, so a pre-auth attacker who
 //! plants a known session id cannot have it become authenticated post-login.
 //! Identity is stored as two server-side keys (`user_id`, `session_version`);
 //! the cookie carries only the random id, so the values are trusted on read.

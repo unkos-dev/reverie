@@ -1,18 +1,22 @@
-//! First-party Postgres [`SessionStore`] for `tower-sessions`.
+//! First-party Postgres [`SessionStore`](tower_sessions::session_store::SessionStore)
+//! for `tower-sessions`.
 //!
 //! Replaces the abandoned `tower-sessions-sqlx-store` crate (ADR
 //! `2026-06-04-first-party-session-layer.md`). Targets the **unchanged**
 //! `tower_sessions.session` table (`id text`, `data bytea`, `expiry_date
 //! timestamptz`) — schema, grants, RLS-exemption, and the `expiry_date` index
 //! are carried forward from the superseded sqlx-store ADR. The reaper lives in
-//! [`crate::services::session_sweep`], driving [`ExpiredDeletion`] hourly.
+//! [`crate::services::session_sweep`], driving
+//! [`ExpiredDeletion`](tower_sessions::session_store::ExpiredDeletion) hourly.
 //!
 //! # Tier 2 — security-critical
 //!
 //! THREAT: session rows are the bootstrap for user identity, so this store is
 //! on the authentication-critical path. Two invariants are load-bearing:
-//! [`SessionStore::load`] filters `expiry_date > now()` so an expired cookie can
-//! never resurrect a session; [`SessionStore::create`] regenerates the id on the
+//! [`SessionStore::load`](tower_sessions::session_store::SessionStore::load)
+//! filters `expiry_date > now()` so an expired cookie can never resurrect a
+//! session; [`SessionStore::create`](tower_sessions::session_store::SessionStore::create)
+//! regenerates the id on the
 //! (cryptographically improbable) collision rather than overwriting a live row.
 //! The `tower_sessions.session` table is intentionally RLS-exempt — session
 //! load must precede user resolution, so RLS-gating it is chicken-and-egg
@@ -24,7 +28,8 @@ use sqlx::PgPool;
 use tower_sessions::session::{Id, Record};
 use tower_sessions::session_store::{self, ExpiredDeletion, SessionStore};
 
-/// Postgres-backed [`SessionStore`] over `tower_sessions.session`.
+/// Postgres-backed [`SessionStore`](tower_sessions::session_store::SessionStore)
+/// over `tower_sessions.session`.
 ///
 /// Serializes the whole [`Record`] (id + data map + expiry) into the `data
 /// bytea` column via `MessagePack` (`rmp_serde`); the `id text` and `expiry_date
