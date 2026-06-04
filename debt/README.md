@@ -122,11 +122,11 @@ translation pass when it joins.
 
 <!-- listed most-stale first; new entries go to the top -->
 
-- [sqlx pinned to 0.8 (tower-sessions-sqlx-store peer pin)](2026-06-02-sqlx-0-9-blocked.md) — adopted because tower-sessions-sqlx-store 0.15.0 pins sqlx ^0.8, so sqlx 0.9 (`#326`/`#325`) can't compile; our QueryBuilder migration is mechanical but blocked behind the store release; lifts with the tower-sessions ecosystem bump (UNK-101)
+- [sqlx pinned to 0.8 (tower-sessions-sqlx-store peer pin)](2026-06-02-sqlx-0-9-blocked.md) — adopted because tower-sessions-sqlx-store 0.15.0 pins sqlx ^0.8, so sqlx 0.9 (`#326`/`#325`) can't compile; our QueryBuilder migration is mechanical but blocked behind the store; lifts when the first-party session store (ADR 2026-06-04) drops tower-sessions-sqlx-store, then the mechanical migration lands sqlx 0.9 (UNK-101)
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
 - [`load_pending_versions` query has no row limit](2026-05-26-load-pending-versions-unbounded.md) — adopted from 11c; unbounded result set; lifts on LIMIT or pagination PR
-- [tower-sessions pinned to 0.14 (axum-login peer pin)](2026-05-21-tower-sessions-0-14-pin.md) — adopted because axum-login 0.18.0 peer-pins tower-sessions 0.14; lifts on axum-login release > 0.18.0 (UNK-101)
+- [tower-sessions pinned to 0.14 (axum-login + sqlx-store peer pins)](2026-05-21-tower-sessions-0-14-pin.md) — double-blocked by axum-login 0.18.0 and tower-sessions-sqlx-store 0.15.0 (both pin tower-sessions 0.14); lifts via the first-party session layer (ADR 2026-06-04) that drops both wrappers (UNK-101)
 - [Staging compose has no automated CI smoke test](2026-05-08-staging-compose-no-ci-smoke.md) — adopted because CI smoke for `compose.staging.yml` is real eng work; lifts on UNK-185
 - [MemoryStore for production sessions](2026-05-05-memory-store-sessions.md) — adopted because PostgresStore not wired at scaffold; lifts on UNK-163
 - [Vite allowedHosts permissive in dev](2026-05-05-vite-allowed-hosts-permissive.md) — adopted because workspace hostnames unenumerable for static allowlist; lifts on UNK-168

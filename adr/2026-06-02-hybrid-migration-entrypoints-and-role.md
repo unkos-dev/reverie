@@ -28,7 +28,7 @@ This ADR supersedes an earlier migration decision; see
 [More Information](#more-information).
 
 Related: [persisted settings ADR](2026-05-26-persisted-settings.md),
-[tower-sessions ADR](2026-05-08-tower-sessions-sqlx-store.md),
+[tower-sessions ADR](superseded/2026-05-08-tower-sessions-sqlx-store.md),
 [UNK-296](https://linear.app/unkos/issue/UNK-296) (lock/timeout strategy),
 [UNK-297](https://linear.app/unkos/issue/UNK-297) (logging conventions).
 

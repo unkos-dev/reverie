@@ -31,7 +31,7 @@ Self-hosted applications in the same category (Gitea, Immich, Kavita, Paperless-
 
 How should Reverie apply database migrations at startup, and what transaction semantics should protect the operator from partial-migration failures?
 
-Related: [persisted settings ADR](../2026-05-26-persisted-settings.md) (assumes "migrations auto-run on startup" in its consequences), [tower-sessions ADR](../2026-05-08-tower-sessions-sqlx-store.md) (precedent for embedding third-party schemas in the sqlx migration pipeline).
+Related: [persisted settings ADR](../2026-05-26-persisted-settings.md) (assumes "migrations auto-run on startup" in its consequences), [tower-sessions ADR](2026-05-08-tower-sessions-sqlx-store.md) (precedent for embedding third-party schemas in the sqlx migration pipeline).
 
 ## Decision Drivers
 
