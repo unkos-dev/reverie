@@ -177,10 +177,11 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
   hand-written store; the context changed when the store became the second pin
   blocking UNK-101. Its session-table schema, grants, RLS-exemption, and
   expiry-index decisions are carried forward in the Decision Outcome above.
-- [`debt/2026-05-21-tower-sessions-0-14-pin.md`](../debt/2026-05-21-tower-sessions-0-14-pin.md)
-  — records the 0.14 pin; its lift path is revised by this decision (no longer
-  "wait for an axum-login release" but "land this ADR's first-party
-  replacement"). To be updated alongside.
+- The 0.14 pin was tracked in `debt/2026-05-21-tower-sessions-0-14-pin.md`
+  (since purged — `git log --diff-filter=D -- debt/` recovers it): this
+  decision's first-party replacement was its lift path, and PR #424 removed
+  both `axum-login` and `tower-sessions-sqlx-store`, unpinning `tower-sessions`
+  to 0.15.
 - Adoption / health basis (2026-06-04): `tower-sessions` 0.15.0 (2026-02-01),
   73 dependents; `axum-login` 0.18.0 (2025-07-20), frozen;
   `tower-sessions-sqlx-store` 0.15.0 (2025-01-01), frozen; `axum-session`

@@ -170,7 +170,7 @@ Workaround = known-wrong-shape accepted temporarily due to specific constraint. 
 Hard rules:
 
 - **Every debt entry has recorded lift condition.** Can't state measurable lift condition → shape wrong, fix shape, don't accept workaround.
-- **Debt reviewed at every release tag and at start of non-trivial planning work.** When constraint lifts, entry flipped to `status: lifted` (kept for audit), not grandfathered into "this is how we do it".
+- **Debt reviewed at every release tag and at start of non-trivial planning work.** When a workaround is fully resolved (lift condition met _and_ proper fix shipped), the entry is **purged** — file deleted, README line removed, purge commit names the resolving PR (git keeps history via `git log --diff-filter=D -- debt/`). A merely unblocked workaround whose fix hasn't shipped stays active. Don't grandfather a workaround into "this is how we do it".
 - **Workarounds adopted under temporary constraints (missing tooling, unbuilt infra, blocked deps) = tech debt, not idiomatic patterns.** Trace each candidate workaround to its justification before defending; justification lifted → debt.
 
 Format + lifecycle: `debt/README.md`. Entries machine-extractable; post-v0.2 a public dev roadmap will consume active entries as "Known limitations and accepted technical debt" section.

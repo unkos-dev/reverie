@@ -1,13 +1,10 @@
 ---
-status: active
 severity: low
 surfaces: [developer]
 adopted: 2026-05-05
 adopted-because: openidconnect v4 CoreIdTokenClaims::new public API requires chrono types at the call site; documented inline in backend/CLAUDE.md and test_support.rs at adoption time
 lift-when-class: dep-unblocks
 lift-when: openidconnect v5 stable release decouples chrono types, OR migrate to alternative OIDC lib, OR introduce a wrap-and-convert layer at the test boundary
-lifted: ~
-superseded-by: ~
 ---
 
 # chrono in OIDC test mock

@@ -1,13 +1,10 @@
 ---
-status: active
 severity: low
 surfaces: [developer, server-operator]
 adopted: 2026-05-05
 adopted-because: Coder workspace's shared-postgres container occupies host port 5432; project compose used 5433 to coexist; recognised as debt 2026-05-05
 lift-when-class: external-standard
 lift-when: UNK-169 (revert to OSS-convention 5432) merged to main
-lifted: ~
-superseded-by: ~
 ---
 
 # Dev postgres host port 5433
