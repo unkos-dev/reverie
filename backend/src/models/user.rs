@@ -427,4 +427,30 @@ mod tests {
             "expected sqlx decode error for unknown DB variant, got {result:?}"
         );
     }
+
+    // Migration 20260604120000 adds CHECK (session_version >= 0). A negative
+    // value must be rejected at the schema layer so the force-logout counter
+    // can never be reset below an already-issued version (which would revive
+    // sessions force-logout had invalidated).
+    #[sqlx::test(migrations = "./migrations")]
+    async fn session_version_check_rejects_negative(pool: PgPool) {
+        let subject = format!("check-subject-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Check", None)
+            .await
+            .expect("create user");
+
+        let err = sqlx::query!(
+            "UPDATE users SET session_version = -1 WHERE id = $1",
+            user.id
+        )
+        .execute(&pool)
+        .await
+        .expect_err("negative session_version must violate the CHECK constraint");
+
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("users_session_version_nonneg"),
+            "violation must be the session_version CHECK: {err}"
+        );
+    }
 }

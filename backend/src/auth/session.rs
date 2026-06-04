@@ -20,6 +20,18 @@ use tower_sessions::Session;
 
 use crate::models::user::User;
 
+/// Session-store key holding the authenticated user's UUID.
+///
+/// Single source of truth shared by [`login`] (write) and
+/// [`crate::auth::middleware::CurrentUser`] (read) — a one-sided rename would
+/// otherwise silently force every session to fail rehydration.
+pub(crate) const SESSION_KEY_USER_ID: &str = "user_id";
+
+/// Session-store key holding the `session_version` snapshot captured at login.
+///
+/// Shared write/read constant; see [`SESSION_KEY_USER_ID`] for the rationale.
+pub(crate) const SESSION_KEY_SESSION_VERSION: &str = "session_version";
+
 /// Log `user` into `session`: rotate the id (fixation defence), then persist
 /// the identity claims read back per-request by
 /// [`crate::auth::middleware::CurrentUser`].
@@ -30,9 +42,9 @@ use crate::models::user::User;
 /// fails (store I/O or serialization).
 pub async fn login(session: &Session, user: &User) -> Result<(), tower_sessions::session::Error> {
     session.cycle_id().await?;
-    session.insert("user_id", user.id).await?;
+    session.insert(SESSION_KEY_USER_ID, user.id).await?;
     session
-        .insert("session_version", user.session_version)
+        .insert(SESSION_KEY_SESSION_VERSION, user.session_version)
         .await?;
     Ok(())
 }

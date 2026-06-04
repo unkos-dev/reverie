@@ -317,6 +317,49 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
 
+    fn session_set_cookie(response: &axum_test::TestResponse) -> String {
+        response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find(|c| c.starts_with("id="))
+            .expect("session `id` cookie emitted by /auth/login")
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn session_cookie_carries_httponly_lax_and_no_secure_by_default() {
+        let server = test_support::test_server();
+        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        assert!(
+            cookie.contains("HttpOnly"),
+            "session cookie must be HttpOnly; got: {cookie}"
+        );
+        assert!(
+            cookie.contains("SameSite=Lax"),
+            "session cookie must be SameSite=Lax; got: {cookie}"
+        );
+        assert!(
+            !cookie.contains("Secure"),
+            "session cookie must not be Secure when behind_https=false; got: {cookie}"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_cookie_secure_tracks_behind_https() {
+        let mut state = test_support::test_state();
+        state.config.security.behind_https = true;
+        let app =
+            crate::build_router_with_session_store(state, tower_sessions::MemoryStore::default());
+        let server = axum_test::TestServer::new(app);
+        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        assert!(
+            cookie.contains("Secure"),
+            "session cookie must be Secure when behind_https=true; got: {cookie}"
+        );
+    }
+
     #[tokio::test]
     async fn patch_theme_returns_401_without_auth() {
         let server = test_support::test_server();
@@ -835,11 +878,11 @@ mod tests {
         );
     }
 
-    /// Force-logout enforcement: bumping `users.session_version` must reject
-    /// the next request on an already-authenticated session. This moved out of
-    /// axum-login's `from_session` auth-hash check into the first-party
-    /// `CurrentUser` extractor (ADR 2026-06-04); previously only the DB-column
-    /// bump was tested (`routes/users/tests.rs`), never end-to-end enforcement.
+    // Force-logout enforcement: bumping `users.session_version` must reject
+    // the next request on an already-authenticated session. This moved out of
+    // axum-login's `from_session` auth-hash check into the first-party
+    // `CurrentUser` extractor (ADR 2026-06-04); previously only the DB-column
+    // bump was tested (`routes/users/tests.rs`), never end-to-end enforcement.
     #[sqlx::test(migrations = "./migrations")]
     async fn session_version_bump_forces_logout(pool: sqlx::PgPool) {
         use crate::state::AppState;
@@ -903,6 +946,14 @@ mod tests {
             "callback should succeed: {}",
             cb_resp.text()
         );
+        // login() rotates the id via cycle_id, so the authenticated session
+        // lives under a NEW id (the pre-login `session_id` row is already gone).
+        // The flush assertion below must target this rotated id, not the stale one.
+        let auth_session_id: SessionId = cb_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse rotated session id");
 
         // The session authenticates BEFORE the bump — guards against the test
         // passing for the wrong reason (e.g. session never established).
@@ -928,6 +979,126 @@ mod tests {
             me_after.status_code(),
             StatusCode::UNAUTHORIZED,
             "bumped session_version must force-logout the session on the next request"
+        );
+
+        // Force-logout must also flush the row server-side, not just 401 — a
+        // lingering row would keep re-loading on every request until idle expiry.
+        let flushed = store
+            .load(&auth_session_id)
+            .await
+            .expect("load session after force-logout");
+        assert!(
+            flushed.is_none(),
+            "force-logout must flush the stale session row server-side"
+        );
+    }
+
+    // A session whose user row has been deleted must 401 on the next request
+    // AND flush the orphaned session row — otherwise the row re-loads (one
+    // `find_by_id` per request) until 24h idle expiry reaps it.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn deleted_user_session_is_flushed_on_next_request(pool: sqlx::PgPool) {
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        // Establish an authenticated session via /auth/login → /auth/callback.
+        let login_resp = server.get("/auth/login").await;
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            "deleted-user-subject",
+            Some("del@example.com"),
+            Some("Del Test"),
+            &nonce,
+        )
+        .await;
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+        assert_eq!(
+            cb_resp.status_code(),
+            StatusCode::TEMPORARY_REDIRECT,
+            "callback should succeed: {}",
+            cb_resp.text()
+        );
+        // login() rotates the id; the authenticated session lives under the
+        // post-cycle_id id, which is what the flush assertion must target.
+        let auth_session_id: SessionId = cb_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse rotated session id");
+
+        // Session authenticates before deletion — guards against a false pass.
+        let me_before = server.get("/auth/me").await;
+        assert_eq!(
+            me_before.status_code(),
+            StatusCode::OK,
+            "session must authenticate before the user is deleted"
+        );
+
+        // Delete the user row out from under the live session.
+        sqlx::query!(
+            "DELETE FROM users WHERE oidc_subject = $1",
+            "deleted-user-subject"
+        )
+        .execute(&app_pool)
+        .await
+        .expect("delete user");
+
+        let me_after = server.get("/auth/me").await;
+        assert_eq!(
+            me_after.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a session for a deleted user must be rejected on the next request"
+        );
+
+        // The orphaned row must be flushed, not left to linger until expiry.
+        let flushed = store
+            .load(&auth_session_id)
+            .await
+            .expect("load session after user deletion");
+        assert!(
+            flushed.is_none(),
+            "a deleted-user session row must be flushed server-side"
         );
     }
 }

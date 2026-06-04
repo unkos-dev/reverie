@@ -82,14 +82,17 @@ pub(crate) fn build_router_with_session_store<S>(state: AppState, session_store:
 where
     S: tower_sessions::SessionStore + Clone,
 {
-    // `.with_secure(false)` is load-bearing: tower-sessions defaults Secure to
-    // true, but the backend runs behind a TLS-terminating reverse proxy and
-    // sees plain HTTP, so a Secure cookie would never be delivered. Cookies are
-    // unsigned — session security relies on the cryptographic randomness of
-    // tower-sessions session IDs (CSPRNG `i128` via the `rand` crate).
+    // `Secure` is gated on `behind_https`, mirroring the HSTS gate in
+    // `security::headers`. The browser evaluates `Secure` against its own leg
+    // to the edge (HTTPS when a TLS-terminating proxy fronts us — the
+    // proxy→backend hop being plain HTTP is irrelevant), so a TLS-fronted
+    // deploy (`REVERIE_BEHIND_HTTPS=true`) gets `Secure=true` and an HTTP-only
+    // LAN deploy gets `Secure=false`. Cookies are unsigned — session security
+    // relies on the cryptographic randomness of tower-sessions session IDs
+    // (CSPRNG `i128` via the `rand` crate) regardless of this flag.
     let session_layer = SessionManagerLayer::new(session_store)
         .with_http_only(true)
-        .with_secure(false)
+        .with_secure(state.config.security.behind_https)
         .with_same_site(tower_sessions::cookie::SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
 
@@ -771,6 +774,84 @@ mod tests {
         assert!(
             loaded.is_none(),
             "expired session must not be returned by load"
+        );
+    }
+
+    // `save` upserts an EXISTING row (the `ON CONFLICT DO UPDATE` branch). The
+    // create/restart tests only cover the INSERT branch; this locks the UPDATE
+    // branch against the live schema rather than relying on compile-validation
+    // of shared `upsert` SQL alone.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn store_save_updates_existing_record(pool: sqlx::PgPool) {
+        use std::collections::HashMap;
+        use time::OffsetDateTime;
+        use tower_sessions::SessionStore;
+        use tower_sessions::session::{Id, Record};
+
+        use crate::auth::store::PostgresStore;
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let store = PostgresStore::new(app_pool.clone());
+
+        let mut record = Record {
+            id: Id::default(),
+            data: HashMap::new(),
+            expiry_date: OffsetDateTime::now_utc() + time::Duration::hours(1),
+        };
+        store.create(&mut record).await.expect("create session");
+
+        record
+            .data
+            .insert("user_id".into(), serde_json::json!("user-7"));
+        store
+            .save(&record)
+            .await
+            .expect("save upserts the existing row");
+
+        let loaded = store
+            .load(&record.id)
+            .await
+            .expect("load")
+            .expect("record present after save");
+        assert_eq!(
+            loaded.data.get("user_id"),
+            Some(&serde_json::json!("user-7")),
+            "save must persist the updated payload onto the existing row"
+        );
+    }
+
+    // `delete` removes the row by id (logout / explicit invalidation path).
+    #[sqlx::test(migrations = "./migrations")]
+    async fn store_delete_removes_record(pool: sqlx::PgPool) {
+        use std::collections::HashMap;
+        use time::OffsetDateTime;
+        use tower_sessions::SessionStore;
+        use tower_sessions::session::{Id, Record};
+
+        use crate::auth::store::PostgresStore;
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let store = PostgresStore::new(app_pool.clone());
+
+        let mut record = Record {
+            id: Id::default(),
+            data: HashMap::new(),
+            expiry_date: OffsetDateTime::now_utc() + time::Duration::hours(1),
+        };
+        store.create(&mut record).await.expect("create session");
+        assert!(
+            store.load(&record.id).await.expect("load").is_some(),
+            "record must exist before delete"
+        );
+
+        store.delete(&record.id).await.expect("delete record");
+        assert!(
+            store
+                .load(&record.id)
+                .await
+                .expect("load after delete")
+                .is_none(),
+            "delete must remove the row"
         );
     }
 }

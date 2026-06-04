@@ -11,9 +11,12 @@
 //! # Tier 2 — security-critical
 //!
 //! This module is the authentication seam for every non-public route.
-//! Threat annotations mark the timing-side-channel mitigations in
-//! [`crate::auth::middleware::verify_basic`], the `session_version` force-logout
-//! check, and the role-assertion invariants on [`crate::auth::middleware::CurrentUser`].
+//! Inline `// THREAT:` annotations mark the timing-side-channel mitigation in
+//! [`crate::auth::middleware::verify_basic`] and the `session_version`
+//! force-logout check. The role-assertion contract on
+//! [`crate::auth::middleware::CurrentUser`] is enforced structurally (private
+//! `role`/`is_child` fields, access only via the `require_*` methods) and
+//! documented in `///` prose on those items.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -21,6 +24,7 @@ use base64ct::Encoding;
 use tower_sessions::Session;
 use uuid::Uuid;
 
+use crate::auth::session::{SESSION_KEY_SESSION_VERSION, SESSION_KEY_USER_ID};
 use crate::error::AppError;
 use crate::models::role::Role;
 use crate::models::{device_token, user};
@@ -35,25 +39,22 @@ use crate::state::AppState;
 ///
 /// Role-assertion methods ([`require_admin`](CurrentUser::require_admin),
 /// [`require_not_child`](CurrentUser::require_not_child)) are the canonical
-/// way for handlers to enforce access control; callers must not read `role`
-/// or `is_child` and implement their own checks.
+/// way for handlers to enforce access control. `role` and `is_child` are
+/// private precisely so they cannot be read directly — the assertion methods
+/// are the single, compile-enforced point of access control, which keeps the
+/// logic in one place and survives future role-model changes.
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     /// Database UUID of the authenticated user.
     pub user_id: Uuid,
 
-    /// Access-control role assigned to this user.
-    ///
-    /// Use [`require_admin`](CurrentUser::require_admin) rather than matching
-    /// directly — keeps role-assertion logic in one place and simplifies future
-    /// role-model changes.
-    pub role: Role,
+    /// Access-control role assigned to this user. Private — gate via
+    /// [`require_admin`](CurrentUser::require_admin).
+    role: Role,
 
-    /// Whether this account is flagged as a child profile.
-    ///
-    /// Use [`require_not_child`](CurrentUser::require_not_child) for access
-    /// control rather than reading this field directly.
-    pub is_child: bool,
+    /// Whether this account is flagged as a child profile. Private — gate via
+    /// [`require_not_child`](CurrentUser::require_not_child).
+    is_child: bool,
 }
 
 impl CurrentUser {
@@ -193,17 +194,21 @@ impl FromRequestParts<AppState> for CurrentUser {
     ) -> Result<Self, Self::Rejection> {
         // Session cookie path. The `Session` is populated by
         // `SessionManagerLayer`; on a request with no session cookie it is
-        // empty and `get("user_id")` is `None`, so we fall through cleanly
+        // empty and `get(user_id)` is `None`, so we fall through cleanly
         // (no DB hit, no 500) to the Basic-auth path below.
         if let Ok(session) = Session::from_request_parts(parts, state).await
             && let Some(user_id) = session
-                .get::<Uuid>("user_id")
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?
-            && let Some(user) = user::find_by_id(&state.pool, user_id)
+                .get::<Uuid>(SESSION_KEY_USER_ID)
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?
         {
+            // The session claims an identity. It is valid only if the user row
+            // still exists AND the stored `session_version` matches the live
+            // one; any other outcome (user deleted, or version bumped) means the
+            // session must be torn down server-side.
+            let user = user::find_by_id(&state.pool, user_id)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
             // THREAT (force-logout): the session stores the `session_version`
             // captured at login; if `users.session_version` has since been
             // bumped (role change, security event) the stored copy is stale and
@@ -211,20 +216,24 @@ impl FromRequestParts<AppState> for CurrentUser {
             // contents are server-side state, not attacker-controlled (the
             // cookie carries only the random session id).
             let stored_version = session
-                .get::<i32>("session_version")
+                .get::<i32>(SESSION_KEY_SESSION_VERSION)
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
-            if stored_version == Some(user.session_version) {
+            if let Some(user) = user
+                && stored_version == Some(user.session_version)
+            {
                 return Ok(Self {
                     user_id: user.id,
                     role: user.role,
                     is_child: user.is_child,
                 });
             }
-            // Stale version: wipe the session row server-side, then fall
+            // Invalid session — user deleted, or `session_version` stale. Wipe
+            // the row server-side so an orphaned/stale session can't keep
+            // re-loading on every request until 24h idle expiry, then fall
             // through. No silent discard (backend/CLAUDE.md): log on failure.
             if let Err(e) = session.flush().await {
-                tracing::warn!(error = %e, "force-logout flush failed");
+                tracing::warn!(error = %e, "session flush failed (force-logout / deleted user)");
             }
         }
 
