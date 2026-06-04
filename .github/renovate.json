@@ -14,10 +14,17 @@
   "rangeStrategy": "bump",
   "prConcurrentLimit": 20,
   "minimumReleaseAge": "3 days",
+  "prCreation": "not-pending",
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "schedule": ["at any time"],
-    "labels": ["dependencies", "security"]
+    "labels": ["dependencies", "security"],
+    "prCreation": "immediate"
   },
   "packageRules": [
     {
