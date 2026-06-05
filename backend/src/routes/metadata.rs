@@ -822,8 +822,8 @@ async fn update_book_metadata(
 }
 
 /// Insert one `metadata_versions` row with `source='manual'`, returning
-/// its id. `value_hash` is the canonical SHA-256 of the serialised
-/// value — same shape as the enrichment pipeline emits, so duplicate
+/// its id. `value_hash` is the SHA-256 of the field-normalised
+/// canonical-JSON value — same shape as the enrichment pipeline emits, so duplicate
 /// manual saves of the same value collide on the existing
 /// `(manifestation, source, field, value_hash)` unique. We surface
 /// that collision as a no-op by bumping `last_seen_at` /
@@ -2009,12 +2009,7 @@ mod tests {
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"publisher": "  Acme Press  "}}))
             .await;
-        assert_eq!(
-            response.status_code(),
-            StatusCode::NO_CONTENT,
-            "body = {}",
-            response.text()
-        );
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
 
         // The stored manual hash must equal the enrichment pipeline's
         // canonical hash for the trimmed-equivalent value — byte for byte.
@@ -2075,6 +2070,49 @@ mod tests {
             rows.len(),
             1,
             "whitespace-variant publishers must collapse to one journal row; got {}",
+            rows.len()
+        );
+        assert_eq!(
+            rows[0].observation_count, 2,
+            "second save must bump observation_count via ON CONFLICT, not insert a new row"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_pub_date_iso_variants_dedup(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // Same calendar date — one bare ISO date, one with a time suffix. The
+        // canonical normaliser coerces both to the YYYY-MM-DD prefix, so the
+        // second save must dedup rather than open a parallel journal row.
+        for pub_date in ["2024-01-15", "2024-01-15T00:00:00Z"] {
+            let response = server
+                .patch(&format!("/api/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"fields": {"pub_date": pub_date}}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        }
+
+        let rows = sqlx::query!(
+            "SELECT observation_count FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'pub_date'",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch manual pub_date rows");
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "ISO-variant pub_dates must collapse to one journal row; got {}",
             rows.len()
         );
         assert_eq!(

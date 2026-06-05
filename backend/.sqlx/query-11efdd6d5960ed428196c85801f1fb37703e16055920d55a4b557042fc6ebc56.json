@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT observation_count FROM metadata_versions WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'pub_date'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "observation_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "observation_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "11efdd6d5960ed428196c85801f1fb37703e16055920d55a4b557042fc6ebc56"
+}
