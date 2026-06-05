@@ -32,7 +32,7 @@ Hard Rules), reverie's rule wins — document the deviation in this README's
 | `codeguard-0-authentication-mfa.md` | OIDC via Authentik, device-token path, MFA posture |
 | `codeguard-0-authorization-access-control.md` | Row-level security, IDOR prevention |
 | `codeguard-0-session-management-and-cookies.md` | tower-sessions, cookie flags, expiry discipline |
-| `codeguard-0-supply-chain-security.md` | cargo audit, npm audit, Docker image pinning, SBOM |
+| `codeguard-0-supply-chain-security.md` | cargo deny, npm audit, Docker image pinning, SBOM |
 | `codeguard-0-file-handling-and-uploads.md` | EPUB ingestion path, magic-byte validation, safe storage |
 | `codeguard-0-xml-and-serialization.md` | OPDS feed generation, EPUB XML parsing, XXE prevention |
 | `codeguard-0-logging.md` | tracing discipline, redaction, no-secret-leakage |
