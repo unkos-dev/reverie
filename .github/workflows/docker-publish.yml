@@ -83,6 +83,8 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
@@ -146,10 +148,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Export digest
+        env:
+          # Map expansions into env vars rather than interpolating into the
+          # run body (zizmor template-injection). Both are trusted here —
+          # runner.temp is GitHub-controlled, build.outputs.digest is a buildx
+          # sha256 — but env-mapping is the idiomatic hardening and clears the
+          # finding on this privileged GHCR-publish workflow.
+          RUNNER_TEMP: ${{ runner.temp }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          mkdir -p "${{ runner.temp }}/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${BUILD_DIGEST#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -226,8 +235,13 @@ jobs:
       - name: Inspect image
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Env-mapped rather than interpolated into the run body
+          # (zizmor template-injection). meta.outputs.version is the first
+          # docker/metadata-action tag — semver on a release-tag push, the
+          # branch name on a push to main — never attacker-controlled.
+          IMAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          docker buildx imagetools inspect "${IMAGE_REF}:${{ steps.meta.outputs.version }}"
+          docker buildx imagetools inspect "${IMAGE_REF}:${IMAGE_VERSION}"
 
       # Keyless Sigstore signing of every published image — both the
       # floating `:main` / `:sha-<7>` staging tags and the `vX.Y.Z`

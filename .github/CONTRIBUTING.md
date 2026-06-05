@@ -70,6 +70,8 @@ pipx install yamllint==1.33.0
 
 If `actionlint` or `yamllint` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
 
+Workflow files are additionally scanned in CI by [zizmor](https://github.com/zizmorcore/zizmor) (the merge-blocking `workflow-security` job) for GitHub Actions security issues — credential persistence, template injection, cache poisoning, and dangerous triggers. It is a CI-only tool, so there is nothing to install locally; documented suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
+
 ## Testing requirements
 
 **Tests are mandatory.** No feature or bug fix is complete without tests. Follow the test-first pattern:
