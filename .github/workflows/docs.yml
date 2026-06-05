@@ -61,10 +61,22 @@ jobs:
       # being a global required context — docs.yml is path-gated and has no CI
       # gate aggregator, so making it globally required would re-introduce the
       # skip-blocks-merge trap #406 fixed.
+      # Starlight builds with base path /reverie/, so internal links render as
+      # root-relative `/reverie/...`. lychee resolves a root-relative `/X`
+      # against `--root-dir` as `<root-dir>/X`, so expose docs/dist under a
+      # `reverie` subdir and point --root-dir at its parent: `/reverie/X` then
+      # resolves to docs/dist/X. A symlink avoids duplicating the built site.
+      - name: Stage built docs at the Pages base path
+        run: |
+          mkdir -p "${RUNNER_TEMP}/linkroot"
+          ln -sfn "${GITHUB_WORKSPACE}/docs/dist" "${RUNNER_TEMP}/linkroot/reverie"
+
       - name: Check internal links (gating)
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
         with:
-          args: "--offline --no-progress docs/dist"
+          # --root-dir must be absolute. Scans the symlinked tree; root-relative
+          # /reverie/... links resolve through it to the real docs/dist.
+          args: "--offline --no-progress --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
           fail: true
 
       # External links: full network check, advisory only. continue-on-error
@@ -77,7 +89,9 @@ jobs:
         continue-on-error: true
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
         with:
-          args: "--no-progress --scheme http --scheme https docs/dist"
+          # Same staged root so internal links resolve (then drop out via the
+          # scheme filter) and only http/https URLs are actually network-checked.
+          args: "--no-progress --scheme http --scheme https --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
           fail: true
 
       # Deploy artifacts are only needed for the actual Pages publish.

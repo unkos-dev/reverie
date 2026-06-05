@@ -4,6 +4,25 @@
 # underlying issue is genuinely absent, zizmor's heuristic just can't confirm
 # it. Every entry carries a justification; this file is the audit trail.
 rules:
+  ref-version-mismatch:
+    ignore:
+      # The repo pins every action by immutable commit SHA (the supply-chain
+      # control, enforced by Renovate's helpers:pinGitHubActionDigests and the
+      # SHA-pinning policy) and annotates each with a major-version comment
+      # (`# v2`, `# v4`) that Renovate maintains. ref-version-mismatch wants the
+      # comment to name the exact tag the SHA resolves to; when a major tag
+      # later moves past the pinned SHA, the `# vN` comment reads as "mismatched"
+      # even though the SHA is correct and current per our pinning convention.
+      # The exact-version comment it wants conflicts with that deliberate,
+      # Renovate-managed convention and adds nothing over the SHA pin itself, so
+      # the audit is disabled for the affected files. Action staleness is
+      # Renovate's job. (zizmor ignores are per-file, not glob — a new workflow
+      # that pins a SHA-with-major-comment will re-trigger this and should be
+      # added here.)
+      - ci.yml
+      - codeql.yml
+      - scheduled-audit.yml
+      - scorecard.yml
   cache-poisoning:
     ignore:
       # docs.yml's build job uses actions/setup-node, and the same workflow
