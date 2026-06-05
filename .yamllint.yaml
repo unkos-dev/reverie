@@ -1,0 +1,26 @@
+# yamllint configuration (UNK-327).
+#
+# Scoped to the rules that catch genuine YAML mistakes — syntax errors,
+# duplicate keys, trailing whitespace, tab indentation — while disabling the
+# stylistic rules that would fight Prettier, the authoritative YAML formatter
+# in this repo (see the "Format check (prettier)" CI step in ci.yml). Prettier
+# owns indentation, quoting, and line wrapping; yamllint is the semantic
+# backstop, not a second formatter. Wired into the `repo-lint` CI job and the
+# local pre-commit chain so both evaluate the same ruleset.
+extends: default
+
+rules:
+  # Prettier does not wrap long lines (URLs, SHA pins, prose comments) and
+  # owns line width. A width rule here would only ever fight the formatter.
+  line-length: disable
+  # GitHub Actions workflow files never carry a `---` document start.
+  document-start: disable
+  # `on:` is a legitimate top-level workflow key; the truthy rule would flag
+  # it as a misspelled boolean. Keep the check for values, drop it for keys.
+  truthy:
+    check-keys: false
+  # Prettier emits a single space before an inline comment; the default rule
+  # wants two and would reject every Prettier-formatted file.
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable

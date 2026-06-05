@@ -55,7 +55,7 @@
       "platformAutomerge": true
     },
     {
-      "description": "Third-party actions (dtolnay, dorny, Swatinem, taiki-e, docker/*, googleapis, …): auto-merge `pin` (tag -> its current SHA, no code change) and `patch` only. `digest` updates — a SHA-pinned tag re-pointed to new code — are deliberately NOT auto-merged and fall through to a manual PR. Unlike a Docker sha256, action source is human-reviewable, and these publishers do not share GitHub's trust boundary, so a digest bump is reviewed before it runs with the workflow GITHUB_TOKEN. This is the standing enforcement of debt/2026-05-30-github-actions-unpinned-sha.md.",
+      "description": "Third-party actions (dtolnay, dorny, Swatinem, taiki-e, docker/*, googleapis, …): auto-merge `pin` (tag -> its current SHA, no code change) and `patch` only. `digest` updates — a SHA-pinned tag re-pointed to new code — are deliberately NOT auto-merged and fall through to a manual PR. Unlike a Docker sha256, action source is human-reviewable, and these publishers do not share GitHub's trust boundary, so a digest bump is reviewed before it runs with the workflow GITHUB_TOKEN. This is the standing enforcement of the project's GitHub-Actions SHA-pinning policy.",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["patch", "pin"],
       "automerge": true,
@@ -95,6 +95,14 @@
       "matchStrings": ["SQLX_CLI_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "sqlx-cli",
       "datasourceTemplate": "crate"
+    },
+    {
+      "description": "Curl-installed lint binaries (actionlint + gitleaks are Go, shellcheck + hadolint are Haskell) are pinned by a `<TOOL>_VERSION` env var plus a `<TOOL>_SHA256` checksum the install step verifies. install-action carries none of them, so they live as direct curl-tarball installs and would otherwise freeze silently (UNK-327 repo-hygiene). Each version line carries a `# renovate:` inline annotation naming the github-releases datasource + repo; this manager reads those annotations so Renovate raises a bump PR when a new upstream release ships. CAVEAT: Renovate updates the VERSION token only — it cannot recompute a release-tarball SHA256, so the bump PR will red-X on the `sha256sum -c` check until a reviewer pastes the new checksum from the upstream release. That visible-failure is the intended outcome: a stale pin is now a loud PR instead of silent drift.",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\w+_VERSION:\\s*\"(?<currentValue>[^\"]+)\""
+      ]
     }
   ]
 }

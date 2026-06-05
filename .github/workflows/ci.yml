@@ -262,6 +262,71 @@ jobs:
           # token must never red-X the build.
           fail_ci_if_error: false
 
+  # UNK-327: MSRV floor enforcement. backend/Cargo.toml declares a
+  # `rust-version`; this job compiles the whole workspace on exactly that
+  # pinned toolchain so a dependency bump or new syntax that silently raises
+  # the real minimum fails CI here instead of breaking self-hosters who build
+  # from source on the documented floor. Compile-only (`cargo check`) against
+  # the committed .sqlx cache (SQLX_OFFLINE) — no Postgres service needed,
+  # since this verifies the toolchain, not runtime behaviour.
+  msrv:
+    name: MSRV check
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Use the committed query cache so no live database is required.
+      SQLX_OFFLINE: "true"
+      # Single-shot CI build — incremental metadata tracking is pure overhead.
+      CARGO_INCREMENTAL: 0
+    steps:
+      # Read-only job (compile check) — keep the token out of .git/config.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # Read the MSRV straight from Cargo.toml so the toolchain this job pins
+      # and the declared `rust-version` can never drift apart. The sed anchors
+      # on `^rust-version` and stops at the first quote (`[^"]*"`), so it
+      # captures the *value's* version even if a trailing inline comment carries
+      # another quoted version (a greedy `.*"..."` would grab the comment's
+      # number and silently install the wrong toolchain). `|| true` lets a
+      # dropped field flow through as empty (grep exits 1 under pipefail
+      # otherwise) so the format guard — not an opaque pipe failure — reports
+      # it. The guard also rejects a malformed value (e.g. unquoted `1.91`,
+      # which the sed passes through whole).
+      - name: Resolve declared MSRV
+        id: msrv
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/^rust-version[^"]*"([0-9.]+)".*/\1/' || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Could not extract a valid rust-version from backend/Cargo.toml (got: '${version}')" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # The pinned SHA is dtolnay/rust-toolchain's `stable` tag; the
+      # `toolchain:` input overrides which channel is actually installed, so
+      # the same action revision installs the MSRV toolchain here.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: backend
+
+      # --locked forbids the resolver from upgrading to newer, higher-MSRV
+      # dependency versions than the committed lockfile; --all-targets ensures
+      # tests and benches compile on the floor too, not just lib + bin.
+      - name: Check workspace builds on MSRV
+        run: cargo check --workspace --all-targets --locked
+
   audit:
     name: Dependency policy (cargo-deny)
     needs: changes
@@ -294,6 +359,35 @@ jobs:
       - name: Check dependencies (advisories, licenses, bans, sources)
         run: cargo deny check
 
+  # UNK-327: PR-gate newly-introduced vulnerable dependencies. Diffs the PR's
+  # dependency manifest against the base branch and fails on any added crate or
+  # npm package carrying a known advisory at/above the severity floor. This
+  # complements the other two layers: cargo-deny scans the whole lockfile
+  # (already-present advisories), Renovate reacts post-merge, and this gates
+  # the introduction inline on the PR. pull_request-only — the action compares
+  # base..head and has no diff to evaluate on push or merge_group, so it is
+  # gated to PR events and counts as a pass (skipped) for the CI gate
+  # elsewhere. contents:read (job inherits the workflow default) is sufficient;
+  # no PR comment is emitted, so pull-requests:write is deliberately not
+  # granted.
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Read-only job — the action talks to the dependency-review API via the
+      # job's GITHUB_TOKEN env, not .git/config, so dropping persisted creds
+      # costs nothing and keeps the token off disk.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # License policy is owned by cargo-deny (backend/deny.toml) to avoid a
+          # second, drifting allowlist; this layer gates vulnerabilities only.
+          fail-on-severity: moderate
+
   # UNK-245: catch syntax / context-availability violations in workflow
   # files before merge. Mirrors the `actionlint` invocation wired into
   # the local pre-commit chain (lint-staged.config.js); both pin the same
@@ -316,6 +410,7 @@ jobs:
       # CONTRIBUTING.md so local + CI use the same artefact.
       - name: Install actionlint v1.7.12
         env:
+          # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
           ACTIONLINT_VERSION: "1.7.12"
           ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
         run: |
@@ -332,16 +427,12 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
-  # Server-side lint gate for shell scripts, the Dockerfile, and spelling.
-  # lint-staged runs these locally pre-commit, but pre-commit is client-side:
-  # it is bypassable (`git commit --no-verify`) and never runs on PRs opened
-  # from forks. This job is the authoritative surface for contributor changes.
-  # Tool versions are pinned to match the workspace image so local pre-commit
-  # and CI evaluate against the same binaries.
-  #
-  # markdownlint and yamllint are intentionally absent: markdownlint lands in a
-  # dedicated PR (it needs a one-off baseline triage), and yamllint once the
-  # workspace image ships the binary.
+  # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
+  # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
+  # client-side: it is bypassable (`git commit --no-verify`) and never runs on
+  # PRs opened from forks. This job is the authoritative surface for contributor
+  # changes. Tool versions are pinned to match the workspace image so local
+  # pre-commit and CI evaluate against the same binaries.
   repo-lint:
     name: Repo lint
     runs-on: ubuntu-latest
@@ -354,6 +445,7 @@ jobs:
       # neither shellcheck nor hadolint; both publish official release binaries.
       - name: Install shellcheck v0.9.0
         env:
+          # renovate: datasource=github-releases depName=koalaman/shellcheck extractVersion=^v(?<version>.+)$
           SHELLCHECK_VERSION: "0.9.0"
           SHELLCHECK_SHA256: "700324c6dd0ebea0117591c6cc9d7350d9c7c5c287acbad7630fa17b1d4d9e2f"
         run: |
@@ -370,6 +462,7 @@ jobs:
 
       - name: Install hadolint 2.14.0
         env:
+          # renovate: datasource=github-releases depName=hadolint/hadolint extractVersion=^v(?<version>.+)$
           HADOLINT_VERSION: "2.14.0"
           HADOLINT_SHA256: "6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47"
         run: |
@@ -400,6 +493,21 @@ jobs:
 
       - name: Spell check (typos)
         run: typos
+
+      # yamllint is pip-only (no standalone release binary), so it installs via
+      # pipx (preinstalled on ubuntu-latest) rather than the curl-tarball path
+      # used for shellcheck and hadolint above. Version pinned to the yamllint
+      # the workspace image ships (hard-rule-8: tooling lands in the image
+      # first), keeping local pre-commit and CI on the same linter. Config is
+      # the repo-root .yamllint.yaml, auto-discovered from the working directory.
+      - name: Install yamllint 1.33.0
+        run: pipx install yamllint==1.33.0
+
+      # Tracked YAML only (git ls-files), matching the shellcheck/hadolint
+      # scoping above so gitignored scratch is skipped. xargs -r no-ops on an
+      # empty set; a lint failure propagates a non-zero exit and fails the job.
+      - name: YAML lint (yamllint)
+        run: git ls-files -z '*.yml' '*.yaml' | xargs -0 -r yamllint
 
       # markdownlint-cli2 is npm-only (no standalone release binary), so unlike
       # shellcheck/hadolint/typos it needs Node + an install. `npm ci` off the
@@ -707,6 +815,7 @@ jobs:
       # evaluate against the same scanner.
       - name: Install gitleaks v8.30.1
         env:
+          # renovate: datasource=github-releases depName=gitleaks/gitleaks extractVersion=^v(?<version>.+)$
           GITLEAKS_VERSION: "8.30.1"
           GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
         run: |
@@ -754,7 +863,9 @@ jobs:
     needs:
       - changes
       - backend
+      - msrv
       - audit
+      - dependency-review
       - workflow-lint
       - repo-lint
       - frontend

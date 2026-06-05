@@ -1,0 +1,55 @@
+name: Scheduled advisory scan
+
+# A newly-disclosed RustSec advisory against an unchanged Cargo.lock is
+# invisible to the PR-triggered `audit` job in ci.yml, which only fires when
+# dependency or workflow files change. This cron re-runs the advisory half of cargo-deny
+# against the committed lockfile so a freshly-published advisory surfaces
+# within a day even with zero dependency churn. Renovate's vulnerability alerts
+# cover the same ground reactively; this is the deterministic backstop. The
+# former standalone `cargo audit` step was retired in #427 when cargo-deny took
+# over advisory coverage, so this cron runs `cargo deny check advisories`
+# rather than `cargo audit` (UNK-327).
+on:
+  schedule:
+    # 18:00 UTC daily (02:00 Australia/Perth) — off-peak, clear of the Renovate
+    # schedule windows in .github/renovate.json.
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-audit
+  cancel-in-progress: true
+
+jobs:
+  advisories:
+    name: Advisory scan (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # Read-only job (lockfile scan) — keep the token out of .git/config.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # Prebuilt cargo-deny via install-action, mirroring the `audit` job in
+      # ci.yml. Version pinned; Renovate's install-action customManager keeps
+      # both occurrences in lockstep. fallback:none fails closed if no prebuilt
+      # is available rather than silently switching install source.
+      - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
+        with:
+          tool: cargo-deny@0.19.8
+          fallback: none
+
+      # Advisories only. The license/bans/sources policy is a PR-time concern
+      # already enforced by ci.yml's `audit` job; this cron exists solely to
+      # catch newly-disclosed advisories against the static lockfile, so
+      # scoping to the advisories check keeps a red run unambiguous — it means
+      # a new advisory, not a policy edit.
+      - name: Check advisories
+        run: cargo deny check advisories

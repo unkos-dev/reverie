@@ -32,7 +32,7 @@ cd reverie
 docker compose up
 ```
 
-Backend only (requires Rust toolchain):
+Backend only (requires Rust toolchain — MSRV **1.91**, declared as `rust-version` in `backend/Cargo.toml` and enforced in CI):
 
 ```bash
 cd backend && cargo run
@@ -62,7 +62,13 @@ curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v1.7.12/action
   | tar -xz -C "$HOME/.local/bin" actionlint
 ```
 
-If `actionlint` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same check, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
+The hook also runs [`yamllint`](https://www.yamllint.com/) on changed `*.{yml,yaml}` files (version pinned to **1.33.0** in CI). It is pip-installable:
+
+```bash
+pipx install yamllint==1.33.0
+```
+
+If `actionlint` or `yamllint` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
 
 ## Testing requirements
 
