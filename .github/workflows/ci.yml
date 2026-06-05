@@ -287,15 +287,22 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       # Read the MSRV straight from Cargo.toml so the toolchain this job pins
-      # and the declared `rust-version` can never drift apart. Fails loudly if
-      # the field is ever dropped.
+      # and the declared `rust-version` can never drift apart. The sed anchors
+      # on `^rust-version` and stops at the first quote (`[^"]*"`), so it
+      # captures the *value's* version even if a trailing inline comment carries
+      # another quoted version (a greedy `.*"..."` would grab the comment's
+      # number and silently install the wrong toolchain). `|| true` lets a
+      # dropped field flow through as empty (grep exits 1 under pipefail
+      # otherwise) so the format guard — not an opaque pipe failure — reports
+      # it. The guard also rejects a malformed value (e.g. unquoted `1.91`,
+      # which the sed passes through whole).
       - name: Resolve declared MSRV
         id: msrv
         run: |
           set -euo pipefail
-          version=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"([0-9.]+)".*/\1/')
-          if [ -z "${version}" ]; then
-            echo "rust-version not declared in backend/Cargo.toml" >&2
+          version=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/^rust-version[^"]*"([0-9.]+)".*/\1/' || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Could not extract a valid rust-version from backend/Cargo.toml (got: '${version}')" >&2
             exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -412,16 +419,12 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
-  # Server-side lint gate for shell scripts, the Dockerfile, and spelling.
-  # lint-staged runs these locally pre-commit, but pre-commit is client-side:
-  # it is bypassable (`git commit --no-verify`) and never runs on PRs opened
-  # from forks. This job is the authoritative surface for contributor changes.
-  # Tool versions are pinned to match the workspace image so local pre-commit
-  # and CI evaluate against the same binaries.
-  #
-  # markdownlint and yamllint are intentionally absent: markdownlint lands in a
-  # dedicated PR (it needs a one-off baseline triage), and yamllint once the
-  # workspace image ships the binary.
+  # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
+  # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
+  # client-side: it is bypassable (`git commit --no-verify`) and never runs on
+  # PRs opened from forks. This job is the authoritative surface for contributor
+  # changes. Tool versions are pinned to match the workspace image so local
+  # pre-commit and CI evaluate against the same binaries.
   repo-lint:
     name: Repo lint
     runs-on: ubuntu-latest
@@ -485,10 +488,10 @@ jobs:
 
       # yamllint is pip-only (no standalone release binary), so it installs via
       # pipx (preinstalled on ubuntu-latest) rather than the curl-tarball path
-      # used for the Go binaries above. Version pinned to the yamllint the
-      # workspace image ships (hard-rule-8: tooling lands in the image first),
-      # keeping local pre-commit and CI on the same linter. Config is the
-      # repo-root .yamllint.yaml, auto-discovered from the working directory.
+      # used for shellcheck and hadolint above. Version pinned to the yamllint
+      # the workspace image ships (hard-rule-8: tooling lands in the image
+      # first), keeping local pre-commit and CI on the same linter. Config is
+      # the repo-root .yamllint.yaml, auto-discovered from the working directory.
       - name: Install yamllint 1.33.0
         run: pipx install yamllint==1.33.0
 

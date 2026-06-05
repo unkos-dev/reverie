@@ -2,7 +2,7 @@ name: Scheduled advisory scan
 
 # A newly-disclosed RustSec advisory against an unchanged Cargo.lock is
 # invisible to the PR-triggered `audit` job in ci.yml, which only fires when
-# dependency files change. This cron re-runs the advisory half of cargo-deny
+# dependency or workflow files change. This cron re-runs the advisory half of cargo-deny
 # against the committed lockfile so a freshly-published advisory surfaces
 # within a day even with zero dependency churn. Renovate's vulnerability alerts
 # cover the same ground reactively; this is the deterministic backstop. The
