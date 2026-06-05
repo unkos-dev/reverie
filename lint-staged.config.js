@@ -7,6 +7,12 @@ module.exports = {
   ".github/workflows/**/*.{yml,yaml}": "actionlint -color",
   "*.sh": "shellcheck",
   "Dockerfile*": "hadolint",
+  // yamllint mirrors the `repo-lint` CI job (.github/workflows/ci.yml) so
+  // local pre-commit and CI evaluate the same ruleset (.yamllint.yaml,
+  // auto-discovered from the repo root). actionlint above is workflow-syntax
+  // specific; yamllint is the general YAML semantic check across every tracked
+  // .yml/.yaml. Version pinned in the workspace image (hard-rule-8).
+  "*.{yml,yaml}": "yamllint",
   "*.{md,rs,ts,tsx,js,jsx,toml}": "typos",
   // impeccable runs a full scan of frontend/src rather than scanning only
   // staged files: cross-file checks (e.g. neighbours of a touched component)

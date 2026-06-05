@@ -2,6 +2,14 @@
 name = "reverie-api"
 version = "0.0.0"
 edition = "2024"
+# Minimum supported Rust version. Set by first-party code: session_sweep and
+# settings use `Duration::from_hours`/`from_mins`, stabilized in 1.91.0. That
+# sits above both the edition-2024 floor (1.85) and the highest dependency-
+# declared rust-version (1.88, from time/image/darling/zip). Enforced two ways:
+# clippy's `incompatible_msrv` lint (denied workspace-wide) flags any use of a
+# newer std API, and the CI `msrv` job compiles on exactly this toolchain. Bump
+# only when one of those proves the real floor has risen (UNK-327).
+rust-version = "1.91"
 license = "AGPL-3.0-or-later"
 description = "Reverie ebook library manager — API server"
 
