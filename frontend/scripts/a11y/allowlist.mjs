@@ -77,6 +77,25 @@ export function filterAllowed(violations) {
 }
 
 /**
+ * Whether a scanned pathname matches the intended target, ignoring a trailing
+ * slash on either side. The runner's liveness check uses this: the client
+ * router (or Vite) may normalise `/design/system` to `/design/system/`, and a
+ * naive suffix match would wrongly accept `/system` for `/design/system` — so
+ * compare slash-stripped and exact.
+ *
+ * @param {unknown} url scanned `window.location.pathname`
+ * @param {string} target intended path (begins with "/")
+ * @returns {boolean}
+ */
+export function urlMatches(url, target) {
+  if (typeof url !== "string") {
+    return false;
+  }
+  const strip = (/** @type {string} */ s) => s.replace(/\/+$/, "") || "/";
+  return strip(url) === strip(target);
+}
+
+/**
  * Gate verdict. Passes only when the scan genuinely ran AND no non-allowlisted
  * violation remains. An empty result with `scanOk: false` (crashed browser,
  * blank/wrong page) must FAIL — empty is not the same as "0 violations".

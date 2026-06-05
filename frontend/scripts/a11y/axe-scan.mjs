@@ -23,7 +23,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { verdict } from "./allowlist.mjs";
+import { urlMatches, verdict } from "./allowlist.mjs";
 
 const BASE_URL = process.env.A11Y_BASE_URL ?? "http://localhost:5173";
 const TARGETS = (process.env.A11Y_TARGETS ?? "/design/system")
@@ -70,6 +70,11 @@ function ab(args, input) {
     input,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    // agent-browser self-times-out (~25s default), but a wedged daemon would
+    // otherwise let spawnSync block until the CI job's 20-min wall clock. Cap it
+    // so a hang fails fast with a clear `status !== 0` rather than burning the
+    // whole budget.
+    timeout: 60_000,
     env: process.env,
   });
 }
@@ -109,7 +114,7 @@ function scanTarget(target) {
   if (typeof result?.testEngine !== "string") {
     return fail("axe result missing testEngine — scan did not run");
   }
-  if (typeof result?.url !== "string" || !result.url.endsWith(target)) {
+  if (!urlMatches(result?.url, target)) {
     return fail(`scanned url "${result?.url}" does not match target "${target}"`);
   }
   const probed = (result.counts?.passes ?? 0) + (result.counts?.inapplicable ?? 0);

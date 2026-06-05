@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { ALLOWLIST, filterAllowed, verdict } from "../allowlist.mjs";
+import { ALLOWLIST, filterAllowed, urlMatches, verdict } from "../allowlist.mjs";
 
 // Real axe output captured against /design/system (full WCAG 2.2 AA tag set).
 // Ground truth for the allowlist: 1 color-contrast violation, 4 nodes —
@@ -106,5 +106,31 @@ describe("a11y verdict — liveness gate", () => {
     const result = verdict({ violations: REAL_VIOLATIONS, scanOk: true });
     expect(result.remaining).toHaveLength(1);
     expect(result.remaining[0].nodes[0].html).toContain('data-slot="badge"');
+  });
+});
+
+describe("a11y urlMatches — liveness URL check", () => {
+  it("matches an exact path", () => {
+    expect(urlMatches("/design/system", "/design/system")).toBe(true);
+  });
+
+  it("ignores a trailing slash the router may add to the scanned url", () => {
+    expect(urlMatches("/design/system/", "/design/system")).toBe(true);
+  });
+
+  it("ignores a trailing slash on the target", () => {
+    expect(urlMatches("/design/system", "/design/system/")).toBe(true);
+  });
+
+  it("rejects a suffix (partial) match", () => {
+    expect(urlMatches("/design/system", "/system")).toBe(false);
+  });
+
+  it("rejects a different path", () => {
+    expect(urlMatches("/design/hero", "/design/system")).toBe(false);
+  });
+
+  it("rejects a non-string url", () => {
+    expect(urlMatches(undefined, "/design/system")).toBe(false);
   });
 });

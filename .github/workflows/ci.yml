@@ -680,6 +680,14 @@ jobs:
       # workspace-image version, fail-closed (no `command -v` fallback). The local
       # ARM workspace points it at Brave via AGENT_BROWSER_EXECUTABLE; on the x86
       # CI runner `install --with-deps` fetches the Chromium it drives by default.
+      #
+      # Integrity: unlike the curl-tarball installs above (actionlint, shellcheck,
+      # gitleaks — SHA256-pinned), the Chromium binary is fetched by agent-browser's
+      # own installer from an opaque, version-derived URL we don't control, so there
+      # is no stable artifact to SHA-pin. Integrity is delegated to the version-
+      # pinned npm package (`agent-browser@0.27.0`, registry-served). Scope-limited:
+      # the browser only drives a read-only axe scan of our own local dev server —
+      # not a privileged/deploy context — so the residual supply-chain surface is low.
       - name: Install agent-browser 0.27.0
         run: |
           set -euo pipefail
