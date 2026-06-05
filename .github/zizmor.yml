@@ -16,9 +16,13 @@ rules:
       # The exact-version comment it wants conflicts with that deliberate,
       # Renovate-managed convention and adds nothing over the SHA pin itself, so
       # the audit is disabled for the affected files. Action staleness is
-      # Renovate's job. (zizmor ignores are per-file, not glob — a new workflow
-      # that pins a SHA-with-major-comment will re-trigger this and should be
-      # added here.)
+      # Renovate's job. The audit fires per-instance only once a major tag has
+      # actually moved PAST the pinned SHA (so the `# vN` comment no longer
+      # resolves to that SHA) — not on the mere presence of a major-version
+      # comment. These four files are the ones currently drifted; other
+      # workflows use the same SHA+`# vN` convention but were clean at triage
+      # because their tags had not yet moved. zizmor ignores are per-file (no
+      # glob), so add a file here if a future run flags it.
       - ci.yml
       - codeql.yml
       - scheduled-audit.yml

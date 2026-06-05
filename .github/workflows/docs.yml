@@ -86,6 +86,7 @@ jobs:
       # already covers. fail:true still surfaces the broken links in the step
       # log; continue-on-error swallows the non-zero exit at the job level.
       - name: Check external links (advisory)
+        id: external-links
         continue-on-error: true
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
         with:
@@ -93,6 +94,14 @@ jobs:
           # scheme filter) and only http/https URLs are actually network-checked.
           args: "--no-progress --scheme http --scheme https --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
           fail: true
+
+      # continue-on-error keeps the advisory pass from blocking, but a green
+      # job with broken external links is invisible unless a reviewer clicks
+      # into the step log. Surface a ::warning:: annotation so the signal
+      # appears on the PR without changing the non-blocking semantics.
+      - name: Flag broken external links
+        if: steps.external-links.outcome == 'failure'
+        run: echo "::warning::lychee found broken external links in the docs — see the 'Check external links (advisory)' step summary."
 
       # Deploy artifacts are only needed for the actual Pages publish.
       # Pull-request runs validate the build and stop here.

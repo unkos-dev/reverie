@@ -236,7 +236,9 @@ jobs:
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # Env-mapped rather than interpolated into the run body
-          # (zizmor template-injection); meta.outputs.version is tag-derived.
+          # (zizmor template-injection). meta.outputs.version is the first
+          # docker/metadata-action tag — semver on a release-tag push, the
+          # branch name on a push to main — never attacker-controlled.
           IMAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           docker buildx imagetools inspect "${IMAGE_REF}:${IMAGE_VERSION}"
