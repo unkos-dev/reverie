@@ -15,7 +15,7 @@
 // the gate pass trivially. Do not narrow it.
 //
 // Liveness: an empty violation set from a crashed browser, a blank page, or a
-// mis-pointed URL is indistinguishable from "0 violations". The runner asserts
+// wrong URL is indistinguishable from "0 violations". The runner asserts
 // the scan genuinely ran (testEngine present, url matched, non-trivial
 // passes/inapplicable, clean agent-browser exits) and fails the gate otherwise.
 

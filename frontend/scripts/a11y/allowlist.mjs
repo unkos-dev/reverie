@@ -79,7 +79,7 @@ export function filterAllowed(violations) {
 /**
  * Gate verdict. Passes only when the scan genuinely ran AND no non-allowlisted
  * violation remains. An empty result with `scanOk: false` (crashed browser,
- * blank/mis-pointed page) must FAIL — empty is not the same as "0 violations".
+ * blank/wrong page) must FAIL — empty is not the same as "0 violations".
  *
  * @param {{ violations?: ReadonlyArray<{ id: string, nodes?: ReadonlyArray<{ html?: string }> }>, scanOk?: boolean }} input
  * @returns {{ pass: boolean, remaining: Array<{ id: string, nodes: Array<{ html?: string }> }> }}

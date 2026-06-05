@@ -87,7 +87,7 @@ describe("a11y verdict — liveness gate", () => {
   });
 
   it("fails when an allowed-only result is reported but the scan did not run", () => {
-    // Finding S1: an empty/blank result from a crashed or mis-pointed scan
+    // Finding S1: an empty/blank result from a crashed scan or wrong page
     // must NEVER pass — empty must not be mistaken for "0 violations".
     expect(verdict({ violations: [], scanOk: false }).pass).toBe(false);
   });
