@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT value_hash AS \"value_hash!\" FROM metadata_versions WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'publisher'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value_hash!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "value_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b801c7119a4ab03f4996ee92eb8434dc657bd7125e8f37f245cd2d18395c6d5c"
+}

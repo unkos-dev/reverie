@@ -11,7 +11,6 @@ use axum::response::IntoResponse;
 use axum::routing::{get, patch, post};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -20,6 +19,7 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::work;
 use crate::services::enrichment::field_lock::{self, EntityType};
+use crate::services::enrichment::value_hash;
 use crate::services::metadata::isbn;
 use crate::state::AppState;
 
@@ -842,9 +842,11 @@ async fn insert_manual_version(
     field: &str,
     value: &Value,
 ) -> Result<Uuid, AppError> {
-    let mut hasher = Sha256::new();
-    hasher.update(value.to_string().as_bytes());
-    let hash = hasher.finalize().to_vec();
+    // Hash via the shared canonical normaliser (same call the enrichment
+    // pipeline uses) so whitespace-equivalent values — e.g. a publisher
+    // with stray leading/trailing space — produce an identical `value_hash`
+    // regardless of entry path, restoring journal dedup.
+    let hash = value_hash::value_hash(field, value);
 
     // `status` is reset to `pending` on conflict so a previously-
     // rejected manual entry of the same value is re-offered for
@@ -1984,5 +1986,100 @@ mod tests {
         .await
         .expect("fetch status");
         assert_eq!(status, "pending", "conflict path must reset status");
+    }
+
+    // ── Publisher hash convergence (debt: publisher-hash-divergence) ──────
+    //
+    // The manual edit path must hash via the same canonical normaliser as
+    // the enrichment pipeline so whitespace-equivalent publishers dedup
+    // identically regardless of entry path.
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_publisher_hash_matches_enrichment_canonical(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"publisher": "  Acme Press  "}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        // The stored manual hash must equal the enrichment pipeline's
+        // canonical hash for the trimmed-equivalent value — byte for byte.
+        let stored: Vec<u8> = sqlx::query_scalar!(
+            "SELECT value_hash AS \"value_hash!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'publisher'",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch stored publisher hash");
+
+        let canonical = crate::services::enrichment::value_hash::value_hash(
+            "publisher",
+            &serde_json::json!("Acme Press"),
+        );
+        assert_eq!(
+            stored, canonical,
+            "manual publisher hash must equal enrichment canonical hash for whitespace-equivalent values"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_publisher_whitespace_variants_dedup(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // Same logical publisher, divergent leading/trailing whitespace.
+        for publisher in ["Penguin Random House", "  Penguin Random House  "] {
+            let response = server
+                .patch(&format!("/api/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"fields": {"publisher": publisher}}))
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::NO_CONTENT,
+                "body = {}",
+                response.text()
+            );
+        }
+
+        let rows = sqlx::query!(
+            "SELECT observation_count FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'publisher'",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch manual publisher rows");
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "whitespace-variant publishers must collapse to one journal row; got {}",
+            rows.len()
+        );
+        assert_eq!(
+            rows[0].observation_count, 2,
+            "second save must bump observation_count via ON CONFLICT, not insert a new row"
+        );
     }
 }
