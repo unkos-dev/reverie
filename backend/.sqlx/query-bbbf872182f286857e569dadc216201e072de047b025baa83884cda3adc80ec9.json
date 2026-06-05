@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "ts!",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "shelves",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,102 +6,222 @@
       {
         "ordinal": 0,
         "name": "enrichment_enabled",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_enabled"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "enrichment_concurrency",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_concurrency"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "enrichment_poll_idle_secs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_poll_idle_secs"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "enrichment_fetch_budget_secs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_fetch_budget_secs"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "cover_max_bytes",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_max_bytes"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "cover_download_timeout_secs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_download_timeout_secs"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "cover_min_long_edge_px",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_min_long_edge_px"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "cover_redirect_limit",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_redirect_limit"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "writeback_enabled",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_enabled"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "writeback_concurrency",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_concurrency"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "writeback_poll_idle_secs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_poll_idle_secs"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "writeback_max_attempts",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_max_attempts"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "opds_enabled",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "opds_enabled"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "opds_page_size",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "opds_page_size"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "format_priority",
-        "type_info": "TextArray"
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "format_priority"
+          }
+        }
       },
       {
         "ordinal": 15,
         "name": "cleanup_mode",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cleanup_mode"
+          }
+        }
       },
       {
         "ordinal": 16,
         "name": "openlibrary_base_url",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "openlibrary_base_url"
+          }
+        }
       },
       {
         "ordinal": 17,
         "name": "googlebooks_base_url",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "googlebooks_base_url"
+          }
+        }
       },
       {
         "ordinal": 18,
         "name": "hardcover_base_url",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "hardcover_base_url"
+          }
+        }
       },
       {
         "ordinal": 19,
         "name": "updated_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

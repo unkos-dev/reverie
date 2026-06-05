@@ -32,7 +32,7 @@ cd reverie
 docker compose up
 ```
 
-Backend only (requires Rust toolchain — MSRV **1.91**, declared as `rust-version` in `backend/Cargo.toml` and enforced in CI):
+Backend only (requires Rust toolchain — MSRV **1.94**, declared as `rust-version` in `backend/Cargo.toml` and enforced in CI):
 
 ```bash
 cd backend && cargo run

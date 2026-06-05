@@ -6,42 +6,85 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "batch_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "batch_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "source_path",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "source_path"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "status!",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
         "name": "error_message",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "error_message"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "started_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "started_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "completed_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "completed_at"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "created_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "created_at"
+          }
+        }
       }
     ],
     "parameters": {

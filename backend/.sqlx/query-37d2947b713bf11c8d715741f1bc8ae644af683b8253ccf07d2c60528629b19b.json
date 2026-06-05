@@ -17,12 +17,24 @@
               ]
             }
           }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "role"
+          }
         }
       },
       {
         "ordinal": 1,
         "name": "is_child",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "is_child"
+          }
+        }
       }
     ],
     "parameters": {

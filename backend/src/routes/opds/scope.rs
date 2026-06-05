@@ -34,7 +34,7 @@ pub enum Scope {
 /// would have to hand-number `$N` in the embedded fragment to stay consistent
 /// with the other binds. Pushing fragments + binds directly through the
 /// caller's builder keeps all numbering in one place.
-pub fn push_scope(qb: &mut QueryBuilder<'_, Postgres>, scope: &Scope, manifestation_alias: &str) {
+pub fn push_scope(qb: &mut QueryBuilder<Postgres>, scope: &Scope, manifestation_alias: &str) {
     if let Scope::Shelf(uuid) = scope {
         qb.push("EXISTS (SELECT 1 FROM shelf_items si JOIN shelves s ON s.id = si.shelf_id WHERE si.manifestation_id = ");
         qb.push(manifestation_alias);
@@ -50,7 +50,7 @@ pub fn push_scope(qb: &mut QueryBuilder<'_, Postgres>, scope: &Scope, manifestat
 /// `manifestations` row must also be in that shelf.
 #[allow(dead_code)] // alternative helper; current handlers inline the EXISTS
 pub fn push_visible_manifestation(
-    qb: &mut QueryBuilder<'_, Postgres>,
+    qb: &mut QueryBuilder<Postgres>,
     scope: &Scope,
     parent_alias_for_work_id_column: &str,
 ) {
@@ -70,18 +70,18 @@ mod tests {
 
     #[test]
     fn library_scope_pushes_nothing() {
-        let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new("SELECT 1 WHERE ");
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("SELECT 1 WHERE ");
         push_scope(&mut qb, &Scope::Library, "m");
-        let sql = qb.into_sql();
+        let sql = qb.into_string();
         assert_eq!(sql, "SELECT 1 WHERE ");
     }
 
     #[test]
     fn shelf_scope_pushes_fragment_and_one_bind() {
         let shelf_id = Uuid::new_v4();
-        let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new("SELECT 1 WHERE ");
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("SELECT 1 WHERE ");
         push_scope(&mut qb, &Scope::Shelf(shelf_id), "m");
-        let sql = qb.into_sql();
+        let sql = qb.into_string();
         assert!(sql.contains("shelf_items"));
         assert!(sql.contains("JOIN shelves s ON"));
         assert!(sql.contains("s.user_id = current_setting('app.current_user_id', true)::uuid"));
@@ -93,10 +93,9 @@ mod tests {
 
     #[test]
     fn visible_manifestation_library_is_plain_exists() {
-        let mut qb: QueryBuilder<'_, Postgres> =
-            QueryBuilder::new("SELECT 1 FROM authors a WHERE ");
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("SELECT 1 FROM authors a WHERE ");
         push_visible_manifestation(&mut qb, &Scope::Library, "a");
-        let sql = qb.into_sql();
+        let sql = qb.into_string();
         assert!(
             sql.contains("EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id = a.work_id)")
         );
@@ -106,10 +105,9 @@ mod tests {
     #[test]
     fn visible_manifestation_shelf_wraps_scope() {
         let shelf_id = Uuid::new_v4();
-        let mut qb: QueryBuilder<'_, Postgres> =
-            QueryBuilder::new("SELECT 1 FROM authors a WHERE ");
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("SELECT 1 FROM authors a WHERE ");
         push_visible_manifestation(&mut qb, &Scope::Shelf(shelf_id), "a");
-        let sql = qb.into_sql();
+        let sql = qb.into_string();
         assert!(sql.contains("m.work_id = a.work_id"));
         assert!(sql.contains("shelf_items"));
         assert!(sql.contains("s.id = $1"));

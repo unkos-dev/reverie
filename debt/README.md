@@ -146,7 +146,6 @@ no translation pass.
 <!-- listed most-stale first; new entries go to the top -->
 
 - [a11y gate advisory until showcase baseline clean](2026-06-05-a11y-gate-advisory.md) — adopted from UNK-268; the gate fails on a known default-Badge contrast violation (UNK-345) deliberately not allowlisted, so it ships `continue-on-error` to avoid blocking its own + all frontend PRs; lifts when UNK-345 ships and the gate flips to blocking
-- [sqlx pinned to 0.8 (was tower-sessions-sqlx-store peer pin)](2026-06-02-sqlx-0-9-blocked.md) — **part 2 (upstream store wall) lifted 2026-06-04 (PR #424)**: the first-party session layer dropped tower-sessions-sqlx-store, removing the `sqlx ^0.8` pin. **Part 1 remains, now unblocked, not yet landed**: the mechanical `QueryBuilder` (drop `'q` lifetime) → sqlx 0.9 migration; lands Renovate #326/#325 + `.sqlx` regen (UNK-101)
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
 - [Dev postgres host port 5433](2026-05-05-dev-postgres-port-5433.md) — adopted because Coder workspace's shared-postgres on 5432; lifts on UNK-169

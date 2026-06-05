@@ -18,6 +18,12 @@
               ]
             }
           }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "validation_status"
+          }
         }
       }
     ],

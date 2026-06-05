@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "response",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "api_cache",
+            "name": "response"
+          }
+        }
       },
       {
         "ordinal": 1,
@@ -22,17 +28,35 @@
               ]
             }
           }
+        },
+        "origin": {
+          "Table": {
+            "table": "api_cache",
+            "name": "response_kind"
+          }
         }
       },
       {
         "ordinal": 2,
         "name": "http_status",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "api_cache",
+            "name": "http_status"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "fetched_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "api_cache",
+            "name": "fetched_at"
+          }
+        }
       }
     ],
     "parameters": {

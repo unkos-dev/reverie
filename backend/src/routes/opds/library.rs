@@ -233,10 +233,7 @@ fn parse_cursor(raw: Option<&str>) -> Result<Option<super::cursor::Cursor>, AppE
         .map_err(|_| AppError::Validation("invalid cursor".into()))
 }
 
-fn push_cursor_predicate(
-    qb: &mut QueryBuilder<'_, Postgres>,
-    cursor: Option<&super::cursor::Cursor>,
-) {
+fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, cursor: Option<&super::cursor::Cursor>) {
     if let Some(c) = cursor {
         qb.push(" AND (m.created_at, m.id) < (");
         qb.push_bind(c.created_at);
@@ -277,7 +274,7 @@ pub(super) async fn emit_new(
 
     let cursor = parse_cursor(cursor.as_deref())?;
 
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
                 w.id AS work_id, w.title, w.description, w.language \
          FROM manifestations m \
@@ -374,7 +371,7 @@ pub(super) async fn emit_authors(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     // authors with at least one visible manifestation under scope.
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT a.id, a.name FROM authors a \
          WHERE EXISTS (SELECT 1 FROM work_authors wa \
              JOIN manifestations m ON m.work_id = wa.work_id \
@@ -429,7 +426,7 @@ pub(super) async fn emit_author_books(
 
     let cursor = parse_cursor(cursor.as_deref())?;
 
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
                 w.id AS work_id, w.title, w.description, w.language \
          FROM manifestations m \
@@ -521,7 +518,7 @@ pub(super) async fn emit_series(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT s.id, s.name FROM series s \
          WHERE EXISTS (SELECT 1 FROM series_works sw \
              JOIN manifestations m ON m.work_id = sw.work_id \
@@ -578,7 +575,7 @@ pub(super) async fn emit_series_books(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
                 w.id AS work_id, w.title, w.description, w.language, sw.position \
          FROM manifestations m \
@@ -661,7 +658,7 @@ pub(super) async fn emit_search(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
                 w.id AS work_id, w.title, w.description, w.language \
          FROM manifestations m \

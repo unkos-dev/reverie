@@ -19,17 +19,35 @@
               ]
             }
           }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_status"
+          }
         }
       },
       {
         "ordinal": 1,
         "name": "enrichment_attempt_count",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempt_count"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "enrichment_error",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_error"
+          }
+        }
       }
     ],
     "parameters": {

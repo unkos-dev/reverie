@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "new_value!",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
       }
     ],
     "parameters": {

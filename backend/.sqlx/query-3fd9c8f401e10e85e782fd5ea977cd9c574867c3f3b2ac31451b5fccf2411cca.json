@@ -6,17 +6,30 @@
       {
         "ordinal": 0,
         "name": "source",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "source"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "status!",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "ordinal": 2,
         "name": "new_value!",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
       }
     ],
     "parameters": {

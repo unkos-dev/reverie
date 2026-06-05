@@ -6,47 +6,101 @@
       {
         "ordinal": 0,
         "name": "title?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "title_version_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title_version_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "language",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "language"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "language_version_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "language_version_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "publisher",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "publisher"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "publisher_version_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "publisher_version_id"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "pub_date_version_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pub_date_version_id"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "isbn_13",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_13"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "isbn_13_version_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_13_version_id"
+          }
+        }
       }
     ],
     "parameters": {
