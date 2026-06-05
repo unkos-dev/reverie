@@ -280,6 +280,11 @@ jobs:
       - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
         with:
           tool: cargo-deny@0.19.8
+          # Fail closed: without this, install-action falls back to
+          # cargo-binstall/cargo-install if a prebuilt is unavailable, silently
+          # changing the install source. A security scanner's provenance must be
+          # deterministic, so a missing prebuilt should fail the job, not drift.
+          fallback: none
       # Replaces the former `cargo audit` step. cargo-deny's `advisories` check
       # reads the same RustSec database, so advisory coverage is unchanged;
       # `cargo deny check` additionally enforces the license, ban, and source
@@ -686,6 +691,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Full history so the pull_request scan below can walk the whole
+          # branch range (base..HEAD), not just the tip commit.
+          fetch-depth: 0
+          # This job only reads the filesystem; do not persist the auth token
+          # into the checked-out repo's .git/config — least privilege for the
+          # one job whose whole purpose is to find credentials.
+          persist-credentials: false
 
       # Direct curl-tarball install pins the exact upstream release + SHA256,
       # mirroring the actionlint/shellcheck/hadolint installs. gitleaks is a Go
@@ -707,11 +720,23 @@ jobs:
           rm "$tarball"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # Filesystem scan of the checkout (`dir`) — the "no secret in the tree"
-      # guarantee, mirroring the staged-diff scan the pre-commit hook runs.
-      # --redact keeps any match out of the public CI log.
+      # On a pull_request, scan every commit the branch introduces
+      # (`base..HEAD`) via git mode — not just the HEAD tree. A secret added and
+      # later removed within the same branch is gone from the working tree but
+      # stays permanently readable in the pushed branch history, so a HEAD-only
+      # `dir` scan would pass while the credential is still exposed. On
+      # push/merge_group there is no PR base, so fall back to a full-tree `dir`
+      # scan of the checkout. --redact keeps any match out of the public CI log.
       - name: Scan for secrets
-        run: gitleaks dir . --no-banner --redact
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_BASE_SHA}" ]; then
+            gitleaks git . --no-banner --redact --log-opts "${PR_BASE_SHA}..HEAD"
+          else
+            gitleaks dir . --no-banner --redact
+          fi
 
   # Single required status check for the branch ruleset. Aggregates every CI
   # job so the ruleset requires only this one context. Path-conditional jobs
