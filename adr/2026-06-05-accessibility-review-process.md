@@ -139,6 +139,13 @@ cannot be mistaken for "0 violations".
   `target-size`) — it does **not** include `color-contrast`. Narrowing the gate
   to `wcag22aa` alone would make it pass trivially; the full AA tag set is
   required and is hard-coded in the runner.
+- Rollout: the gate ships **advisory** (`continue-on-error` on the `a11y` job's
+  gate step) because the showcase baseline contains one known, deliberately
+  un-allowlisted violation (the default Badge contrast, UNK-345). It flips to
+  blocking once UNK-345 ships and the gate passes — tracked in
+  `debt/2026-06-05-a11y-gate-advisory.md`. The `### Confirmation` invariant
+  (fails on non-allowlisted violations) holds at the runner level today and at
+  the CI-gate level after the flip.
 - Revisit trigger: when Chrome for ARM64 Linux ships (and Chrome-for-Testing
   publishes a linux-arm64 driver), re-evaluate whether `@axe-core/cli` becomes
   viable as a simpler off-the-shelf replacement for the first-party runner.
