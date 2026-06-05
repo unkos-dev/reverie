@@ -48,7 +48,7 @@ resolve to brand variables.
 
 **No state-color tokens.** `--color-success`, `--color-warning`,
 `--color-danger`, `--color-info`, and `--color-neutral` are deliberately
-absent — see [Philosophy § State without hue](/design/philosophy/#state-without-hue).
+absent — see [Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue).
 
 The Light-theme accent (`#8E6F38`) is the brand's `#C9A961` darkened to
 satisfy WCAG 2.2 1.4.11 (UI component 3:1) and 1.4.3 large-text

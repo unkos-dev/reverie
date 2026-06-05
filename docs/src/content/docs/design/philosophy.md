@@ -7,7 +7,7 @@ Reverie is a self-hosted ebook library for people who want their library to
 look like a library. Its design register is **boutique cinematic**: warm
 canvases, type-led hierarchy, and a single decisive accent (Reverie Gold).
 This document captures the conceptual rules; concrete tokens, type scale,
-and motion are codified in [Visual Identity](/design/visual-identity/) and
+and motion are codified in [Visual Identity](/reverie/design/visual-identity/) and
 the canonical theme tree at `frontend/src/styles/themes/`.
 
 ## Brand identity is the source of truth
@@ -60,7 +60,7 @@ or `--color-neutral`. Adding any hue-coded state token requires a
 separate brand-aligned decision; do not "harmlessly add" them on the
 assumption they'll be useful later. Charts and code blocks are scoped
 exceptions — when they ship, the deviation is documented in
-[Visual Identity](/design/visual-identity/) and constrained to the
+[Visual Identity](/reverie/design/visual-identity/) and constrained to the
 surface that requires it.
 
 `--color-fg-faint` is **decorative-only** — breadcrumb separators,
@@ -84,7 +84,7 @@ The Light-theme accent (`#8E6F38`) passes WCAG 2.2 1.4.11 (UI-component
 Light surfaces where `bg-accent` carries normal body text. The
 restriction "use Reverie Gold only for focus rings, large CTAs, and
 recovery actions" is the brand's mitigation; the
-[`/design/system`](/design/visual-identity/) gallery may surface a
+[`/design/system`](/reverie/design/visual-identity/) gallery may surface a
 small number of axe violations on the documented `lg`-size button +
 badge surfaces, and the design-system axe gate tolerates those.
 Introducing `bg-accent` on _new_ normal-size Light surfaces is a brand
@@ -106,7 +106,7 @@ device state, not session state. The FOUC pre-paint script reads the
 cookie synchronously, sets `<html data-theme>` before React hydrates,
 and the canonical theme tree's `[data-theme="dark"]` / `light`
 selectors swap palette runtime variables. See
-[Visual Identity § Theme Architecture](/design/visual-identity/#theme-architecture)
+[Visual Identity § Theme Architecture](/reverie/design/visual-identity/#theme-architecture)
 for the cross-stack contract.
 
 ## What we don't build
