@@ -284,7 +284,10 @@ jobs:
       # Single-shot CI build — incremental metadata tracking is pure overhead.
       CARGO_INCREMENTAL: 0
     steps:
+      # Read-only job (compile check) — keep the token out of .git/config.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       # Read the MSRV straight from Cargo.toml so the toolchain this job pins
       # and the declared `rust-version` can never drift apart. The sed anchors
@@ -373,7 +376,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Read-only job — the action talks to the dependency-review API via the
+      # job's GITHUB_TOKEN env, not .git/config, so dropping persisted creds
+      # costs nothing and keeps the token off disk.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           # License policy is owned by cargo-deny (backend/deny.toml) to avoid a
