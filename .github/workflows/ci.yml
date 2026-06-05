@@ -642,6 +642,82 @@ jobs:
       - name: Build
         run: npm run build
 
+  # UNK-268: WCAG 2.2 AA accessibility gate. Runs axe-core (via agent-browser
+  # over CDP) against the dev-only design showcase and fails on any violation
+  # outside the documented allowlist in frontend/scripts/a11y/allowlist.mjs.
+  # Frontend-conditional so docs/backend-only PRs skip it (and the ci-gate
+  # aggregator treats a skip as a pass).
+  #
+  # Driver = agent-browser, not @axe-core/cli: the cli's bundled chromedriver is
+  # x64-only and unusable on the ARM64 dev workspace, so the gate would not be
+  # locally reproducible. agent-browser drives a CDP browser on both arches. The
+  # showcase routes are dev-only (registered under import.meta.env.DEV), so axe
+  # MUST run against `npm run dev`, never the production build.
+  a11y:
+    name: Accessibility (axe)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.16.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # agent-browser is a verification-stack binary (hard-rule-8): pinned to the
+      # workspace-image version, fail-closed (no `command -v` fallback). The local
+      # ARM workspace points it at Brave via AGENT_BROWSER_EXECUTABLE; on the x86
+      # CI runner `install --with-deps` fetches the Chromium it drives by default.
+      - name: Install agent-browser 0.27.0
+        run: |
+          set -euo pipefail
+          npm install -g agent-browser@0.27.0
+          agent-browser install --with-deps
+
+      # The design showcase exists only under `npm run dev`. Start it, wait for
+      # readiness, then run the gate — both in one step so the backgrounded server
+      # shares the step's lifetime. The gate writes a11y-results.json regardless
+      # of pass/fail; the upload step captures it on always(). `npm run a11y` is
+      # the last command, so its exit code is the step's (a violation = red).
+      - name: Run accessibility gate
+        run: |
+          npm run dev > /tmp/vite-dev.log 2>&1 &
+          DEV_PID=$!
+          trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/design/system > /dev/null; then
+              echo "dev server ready"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "dev server did not become ready in 60s" >&2
+              cat /tmp/vite-dev.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          npm run a11y
+
+      - name: Upload a11y report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: a11y-results
+          path: frontend/a11y-results.json
+          if-no-files-found: warn
+
   # UNK-185: smoke test the staging compose init path. Catches role-clause
   # regressions in init-roles.sql and required-env-var regressions in the
   # compose `${VAR:?required}` interpolations before they land on staging.
@@ -919,6 +995,7 @@ jobs:
       - workflow-security
       - repo-lint
       - frontend
+      - a11y
       - staging-smoke
       - secret-scan
     runs-on: ubuntu-latest

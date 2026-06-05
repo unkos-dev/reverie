@@ -82,6 +82,12 @@ Workflow files are additionally scanned in CI by [zizmor](https://github.com/ziz
 
 PRs without tests will not be approved. See [CLAUDE.md](../CLAUDE.md) Hard Rule 5 for the full policy.
 
+## Accessibility
+
+Reverie targets **WCAG 2.2 Level AA** as a design invariant. The process — what the automated gate covers, what the manual audit owns, the audit cadence, and how the one accepted brand carve-out (Reverie Gold on large CTAs) is documented — is recorded in [`adr/2026-06-05-accessibility-review-process.md`](../adr/2026-06-05-accessibility-review-process.md).
+
+For frontend changes, the `a11y` CI job runs axe-core against the design showcase and fails on any WCAG 2.2 AA violation outside the documented allowlist (`frontend/scripts/a11y/allowlist.mjs`). Run it locally with `npm run a11y` (from `frontend/`, with the dev server up). UI-touching PRs also carry an accessibility checklist in the PR template.
+
 ## Pull request process
 
 1. Create a feature branch from `main` using the appropriate prefix
