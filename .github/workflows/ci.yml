@@ -105,7 +105,7 @@ jobs:
       # Single source of truth for the sqlx-cli pin. Both the cache key
       # and the `cargo install` invocation reference this; bumping it in
       # one place without the other would let a stale binary be restored.
-      SQLX_CLI_VERSION: "0.8.6"
+      SQLX_CLI_VERSION: "0.9.0"
       # CI build-speed tweaks (CI-only — local dev untouched).
       #
       # Incremental builds add metadata-tracking overhead that's wasted in
@@ -181,7 +181,10 @@ jobs:
 
       - name: Install sqlx-cli (cache miss only)
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres --locked
+        # No `--locked`: sqlx-cli 0.9 stopped shipping Cargo.lock in its
+        # published crate (the sqlx workspace dropped lockfile git-tracking),
+        # so `cargo install --locked sqlx-cli` errors with no lockfile to honour.
+        run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
 
       # cargo-nextest replaces the default `cargo test` runner for the
       # Test step below; cargo-llvm-cov wraps that run to collect

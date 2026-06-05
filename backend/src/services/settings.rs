@@ -67,7 +67,7 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
     use sqlx::{Postgres, QueryBuilder};
 
     debug_assert!(!req.is_empty(), "save() called with empty UpdateSettings");
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE settings SET ");
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE settings SET ");
     let mut separated = qb.separated(", ");
 
     if let Some(v) = req.enrichment_enabled {

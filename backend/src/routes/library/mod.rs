@@ -155,7 +155,7 @@ async fn list(
         .inspect_err(|e| tracing::error!(error = %e, "list: acquire_with_rls failed"))
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut qb: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.work_id, m.created_at, m.isbn_13, \
                 m.ingestion_status::text AS ingestion_status, \
                 m.validation_status, \
@@ -322,7 +322,7 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
 /// / HAVING. Empty `tag` list → no predicate. Caller validates
 /// `params.tag.len() <= MAX_TAG_FILTERS` before calling, so the
 /// `i64::from(u32)` cast on `tag.len()` is provably in range.
-fn push_filter_predicates(qb: &mut QueryBuilder<'_, Postgres>, params: &ListParams) {
+fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) {
     if let Some(author_id) = params.author {
         qb.push(
             " AND EXISTS (SELECT 1 FROM work_authors wa \
@@ -367,11 +367,7 @@ fn push_filter_predicates(qb: &mut QueryBuilder<'_, Postgres>, params: &ListPara
     }
 }
 
-fn push_cursor_predicate(
-    qb: &mut QueryBuilder<'_, Postgres>,
-    sort: SortMode,
-    key: Option<&CursorKey>,
-) {
+fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, sort: SortMode, key: Option<&CursorKey>) {
     let Some(key) = key else {
         return;
     };
@@ -470,7 +466,7 @@ fn push_cursor_predicate(
     }
 }
 
-fn push_order_by(qb: &mut QueryBuilder<'_, Postgres>, sort: SortMode) {
+fn push_order_by(qb: &mut QueryBuilder<Postgres>, sort: SortMode) {
     match sort {
         SortMode::Recent => {
             // `m.id` alone is unique per row, but pair it with

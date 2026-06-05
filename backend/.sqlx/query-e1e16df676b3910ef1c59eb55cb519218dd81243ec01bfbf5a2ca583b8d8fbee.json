@@ -17,12 +17,24 @@
               ]
             }
           }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "role"
+          }
         }
       },
       {
         "ordinal": 1,
         "name": "email",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
       }
     ],
     "parameters": {

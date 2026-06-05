@@ -535,7 +535,7 @@ async fn run_locked(
                     "applying migration"
                 );
 
-                sqlx::raw_sql(m.sql.as_ref())
+                sqlx::raw_sql(m.sql.clone())
                     .execute(&mut **conn)
                     .await
                     .map_err(|e| {
@@ -592,7 +592,7 @@ async fn run_locked(
             "applying no-transaction migration"
         );
 
-        sqlx::raw_sql(m.sql.as_ref())
+        sqlx::raw_sql(m.sql.clone())
             .execute(&mut **conn)
             .await
             .map_err(|e| MigrationError::NoTxFailed {
@@ -676,7 +676,7 @@ mod tests {
             .iter()
             .find(|m| m.migration_type.is_up_migration())
             .expect("at least one up migration");
-        let computed = Sha384::digest(first_up.sql.as_bytes());
+        let computed = Sha384::digest(first_up.sql.as_str().as_bytes());
         assert_eq!(
             first_up.checksum.as_ref(),
             computed.as_slice(),
@@ -1017,7 +1017,7 @@ mod tests {
             .iter()
             .filter(|m| m.migration_type.is_up_migration())
         {
-            for line in m.sql.lines() {
+            for line in m.sql.as_str().lines() {
                 let upper = line.to_uppercase();
                 assert!(
                     !upper.contains("ALTER SYSTEM"),
@@ -1059,9 +1059,9 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "GRANT CREATE ON DATABASE \"{db_name}\" TO reverie_migrator"
-        ))
+        )))
         .execute(&pool)
         .await
         .unwrap();

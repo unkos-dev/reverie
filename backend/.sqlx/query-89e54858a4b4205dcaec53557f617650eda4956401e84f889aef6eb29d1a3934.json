@@ -19,6 +19,12 @@
               ]
             }
           }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_status"
+          }
         }
       }
     ],

@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "field_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "field_name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "new_value!",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "work_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "work_id"
+          }
+        }
       }
     ],
     "parameters": {
