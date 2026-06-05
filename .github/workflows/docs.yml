@@ -34,18 +34,51 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
+      # No npm cache here, despite docs/package-lock.json existing: this build
+      # job feeds the privileged Pages deploy, so a cache it shares with that
+      # path is a cache-poisoning surface (zizmor cache-poisoning, error). The
+      # docs dependency install is small, so dropping the cache costs little and
+      # closes the finding outright rather than accepting it (UNK-327).
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24.16.0
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
 
       - name: Install docs dependencies
         run: cd docs && npm ci
 
       - name: Build Starlight
         run: cd docs && npm run build
+
+      # Link-check the *rendered* site (UNK-327). Hybrid posture: internal and
+      # relative links are deterministic and fully under our control, so a
+      # broken one fails the build; external URLs are flaky (rate-limits,
+      # transient 5xx) and only ever warned about. `--offline` resolves
+      # file/relative links without any network IO, so this gating pass cannot
+      # flake. It runs on PRs too (the build job does), gating docs PRs without
+      # being a global required context — docs.yml is path-gated and has no CI
+      # gate aggregator, so making it globally required would re-introduce the
+      # skip-blocks-merge trap #406 fixed.
+      - name: Check internal links (gating)
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--offline --no-progress docs/dist"
+          fail: true
+
+      # External links: full network check, advisory only. continue-on-error
+      # keeps a dead third-party URL or a transient rate-limit from red-X-ing an
+      # unrelated docs PR. `--scheme http --scheme https` restricts this pass to
+      # absolute URLs so it does not re-walk the internal links the gating pass
+      # already covers. fail:true still surfaces the broken links in the step
+      # log; continue-on-error swallows the non-zero exit at the job level.
+      - name: Check external links (advisory)
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--no-progress --scheme http --scheme https docs/dist"
+          fail: true
 
       # Deploy artifacts are only needed for the actual Pages publish.
       # Pull-request runs validate the build and stop here.

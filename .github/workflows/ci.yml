@@ -34,6 +34,8 @@ jobs:
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: filter
         with:
@@ -123,6 +125,8 @@ jobs:
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Create database roles
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
@@ -338,6 +342,8 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       # Prebuilt cargo-deny (GitHub Releases via install-action) instead of
       # `cargo install` from source. Mirrors the nextest/llvm-cov/typos install
       # pattern; version pinned (Renovate's install-action customManager keeps
@@ -402,6 +408,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       # Direct curl-tarball install pins the exact upstream release.
       # taiki-e/install-action's manifest doesn't track actionlint@1.7.12,
@@ -427,6 +435,38 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
+  # UNK-327: workflow-security scanner. actionlint (above) checks workflow
+  # syntax and context availability; zizmor checks the security class neither
+  # actionlint nor CodeQL's actions analyzer covers — credential persistence
+  # (artipacked), template injection in run blocks, cache poisoning of
+  # privileged deploys, dangerous triggers (pull_request_target), and
+  # over-broad permissions. Relevant here because label.yml uses
+  # pull_request_target and docker-publish.yml is a privileged GHCR deployer.
+  workflow-security:
+    name: Workflow security (zizmor)
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        with:
+          # Gate mode: fail the job on any finding rather than uploading SARIF
+          # to code-scanning (CodeQL already owns that surface). This keeps the
+          # job at contents:read — SARIF upload would need security-events:write
+          # — and makes a finding a hard red, not a silently-filed Security-tab
+          # entry that does not block merge.
+          advanced-security: false
+          # Pin the zizmor binary so a new upstream release cannot silently add
+          # findings and break the gate on an unrelated PR; bump deliberately.
+          # Matches the version the workflow baseline was triaged against.
+          version: "1.25.2"
+
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
   # client-side: it is bypassable (`git commit --no-verify`) and never runs on
@@ -439,6 +479,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       # Direct curl-tarball install pins the exact upstream release + SHA256,
       # mirroring the actionlint install above. taiki-e/install-action carries
@@ -551,6 +593,8 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -608,6 +652,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       # Build .env from the committed example to also catch regressions where
       # a required key is renamed in compose.staging.yml but not in the
@@ -867,6 +913,7 @@ jobs:
       - audit
       - dependency-review
       - workflow-lint
+      - workflow-security
       - repo-lint
       - frontend
       - staging-smoke

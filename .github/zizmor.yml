@@ -1,0 +1,18 @@
+# zizmor configuration (UNK-327). Documented suppressions for the workflow-
+# security gate (the `workflow-security` job in .github/workflows/ci.yml). Each
+# entry suppresses a tool false-positive, NOT an accepted security risk — the
+# underlying issue is genuinely absent, zizmor's heuristic just can't confirm
+# it. Every entry carries a justification; this file is the audit trail.
+rules:
+  cache-poisoning:
+    ignore:
+      # docs.yml's build job uses actions/setup-node, and the same workflow
+      # deploys the built site to GitHub Pages — zizmor flags that pairing as a
+      # cache-poisoning surface. The npm cache is deliberately disabled (no
+      # `cache:` input; see the comment on setup-node in docs.yml), so there is
+      # no cache to poison. This Low-confidence finding is a residual heuristic
+      # on the action's mere presence in a deploying workflow, not an enabled
+      # cache. zizmor rates cache-poisoning Low-confidence regardless of the
+      # `cache:` setting, so a confidence threshold cannot distinguish this safe
+      # state from a real one without blinding the audit entirely.
+      - docs.yml
