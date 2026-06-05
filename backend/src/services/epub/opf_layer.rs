@@ -256,17 +256,20 @@ pub fn validate(
                             .map(std::string::ToString::to_string)
                     });
 
-                // EPUB 3 self-closing group-position carries its value in the
-                // `content` attr (no text body). Buffer it keyed by the refines
-                // target and resolve against the collection id at end of pass,
-                // so element order doesn't matter — mirrors the Event::Start
-                // arm (UNK-315, the self-closing gap UNK-234 left open).
+                // EPUB 3 self-closing group-position: value lives in the
+                // `content` attr, no text body (quick-xml fires Event::Empty,
+                // not Event::Start). Mirrors the Event::Start arm's
+                // buffer-and-resolve (UNK-315, the self-closing gap UNK-234
+                // left open).
                 if let Some(ref prop) = prop
                     && prop == "group-position"
-                    && let Some(refines) = refines_attr
-                    && let Some(pos) = content.as_deref().and_then(|c| c.parse::<f64>().ok())
                 {
-                    group_positions.insert(refines, pos);
+                    if let Some(refines) = refines_attr
+                        && let Some(pos) = content.as_deref().and_then(|c| c.parse::<f64>().ok())
+                    {
+                        group_positions.insert(refines, pos);
+                    }
+                    continue;
                 }
 
                 // Accessibility meta via property attribute
@@ -639,6 +642,49 @@ mod tests {
         let series = data.series_meta.unwrap();
         assert_eq!(series.name, "A Song of Ice and Fire");
         assert_eq!(series.position, Some(2.0));
+    }
+
+    #[test]
+    fn epub3_collection_series_self_closing_non_numeric_position() {
+        // A malformed (non-numeric) content must not suppress the series name:
+        // position degrades to None, series_meta itself stays Some (UNK-315).
+        let opf = br##"<package>
+            <metadata>
+                <dc:title>A Storm of Swords</dc:title>
+                <meta property="belongs-to-collection" id="c01">A Song of Ice and Fire</meta>
+                <meta refines="#c01" property="group-position" content="three"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let result = validate(&handle, Some("OEBPS/content.opf"), &mut issues);
+        let data = result.unwrap();
+        let series = data.series_meta.unwrap();
+        assert_eq!(series.name, "A Song of Ice and Fire");
+        assert!(series.position.is_none());
+    }
+
+    #[test]
+    fn epub3_collection_series_self_closing_fractional_position() {
+        // EPUB3 allows fractional positions (0.5 prologues, 1.5 interludes);
+        // the field is f64 end-to-end and must not truncate (UNK-315).
+        let opf = br##"<package>
+            <metadata>
+                <dc:title>The Hedge Knight</dc:title>
+                <meta property="belongs-to-collection" id="c01">A Song of Ice and Fire</meta>
+                <meta refines="#c01" property="group-position" content="1.5"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let result = validate(&handle, Some("OEBPS/content.opf"), &mut issues);
+        let data = result.unwrap();
+        let series = data.series_meta.unwrap();
+        assert_eq!(series.position, Some(1.5));
     }
 
     #[test]
