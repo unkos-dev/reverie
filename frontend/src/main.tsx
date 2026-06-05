@@ -29,6 +29,7 @@ import { ThemeProvider } from "./lib/theme/ThemeProvider.tsx";
 import { Toaster } from "./components/ui/sonner.tsx";
 import { queryClient } from "./lib/query/client";
 import {
+  adminDashboardRoute,
   adminUsersRoute,
   bookRoute,
   libraryRoute,
@@ -51,6 +52,7 @@ const routes: RouteObject[] = [
       shelvesRoute,
       shelfDetailRoute,
       adminUsersRoute,
+      adminDashboardRoute,
     ],
   },
 ];

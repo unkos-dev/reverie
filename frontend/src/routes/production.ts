@@ -67,3 +67,12 @@ export const adminUsersRoute: RouteObject = {
     return { loader: mod.loader, Component: mod.Component };
   },
 };
+
+/** `/admin/dashboard` — admin-only library-health dashboard. */
+export const adminDashboardRoute: RouteObject = {
+  path: "admin/dashboard",
+  lazy: async () => {
+    const mod = await import("./dashboard");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};
