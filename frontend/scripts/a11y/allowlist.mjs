@@ -6,20 +6,17 @@
 // dev-only design showcase and must fail on any WCAG 2.2 AA violation EXCEPT
 // the one deliberate brand carve-out: Reverie Gold on large CTAs.
 //
-// Discriminator is element ROLE read from `node.html`, NOT background colour:
-// the permitted lg buttons and the NON-permitted default badge render the
-// *identical* gold background `#8e6f38` (cream `#e8dcc2` foreground, ~3.44:1),
-// so bg colour cannot separate allow from deny. Matching also uses `node.html`
-// rather than `node.target` because the button loading state's target is the
+// Discriminator is element ROLE read from `node.html`, NOT background colour.
+// The lg-button carve-out matches on role because background colour is not a
+// reliable discriminator: the default Badge variant once rendered the same gold
+// background `#8e6f38` as the permitted lg buttons (de-gilded in UNK-345), and
+// future surfaces could collide again. Matching also uses `node.html` rather
+// than `node.target` because the button loading state's target is the
 // `.animate-[loading-pulse…]` class with no `data-size`, while its html carries
 // `data-slot="button" data-size="lg"`. See frontend/DESIGN.md §2 "Light-Gold
 // Restriction Rule": gold on light surfaces is permitted only on focus rings,
 // large CTAs, and recovery actions — "axe-core contrast violations on small-text
 // gold are the right signal: the surface is misusing the accent."
-//
-// The default Badge variant fires the same color-contrast rule on the same gold
-// bg but is NOT a permitted surface and is deliberately left out of the
-// allowlist — the gate fails on it. Tracked for fix in UNK-345.
 
 /**
  * Documented, accepted WCAG carve-outs. Each entry matches a node iff the
