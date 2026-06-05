@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ingestion_jobs (batch_id, source_path, status, completed_at) VALUES ($1, $2, ($3::text)::job_status, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f4a5574fae437c564c1518cdefea3421666feba528980807d049079c47c1a416"
+}
