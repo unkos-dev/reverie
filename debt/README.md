@@ -147,6 +147,5 @@ no translation pass.
 
 - [a11y gate advisory until showcase baseline clean](2026-06-05-a11y-gate-advisory.md) — adopted from UNK-268; the gate fails on a known default-Badge contrast violation (UNK-345) deliberately not allowlisted, so it ships `continue-on-error` to avoid blocking its own + all frontend PRs; lifts when UNK-345 ships and the gate flips to blocking
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
-- [Publisher whitespace hash-normalization diverges between paths](2026-05-26-publisher-hash-divergence.md) — adopted from 11c; manual edit vs enrichment normalise differently; lifts on shared normaliser
 - [Dev postgres host port 5433](2026-05-05-dev-postgres-port-5433.md) — adopted because Coder workspace's shared-postgres on 5432; lifts on UNK-169
 - [chrono in OIDC test mock](2026-05-05-chrono-in-oidc-mock.md) — adopted because openidconnect v4 forces chrono types in test setup; lifts on dep-unblock or wrapper
