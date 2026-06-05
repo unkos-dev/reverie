@@ -70,6 +70,9 @@ jobs:
               - '.github/workflows/ci.yml'
             workflows:
               - '.github/workflows/**'
+              # zizmor reads .github/zizmor.yml; a suppression edit must
+              # re-run the workflow-security scan even with no workflow change.
+              - '.github/zizmor.yml'
 
   backend:
     name: Backend
