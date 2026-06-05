@@ -131,6 +131,34 @@ jobs:
         with:
           persist-credentials: false
 
+      # The sqlx-cli version that regenerates/checks the `.sqlx` offline
+      # cache must track the `sqlx` *crate* version, or `cargo sqlx prepare
+      # --check` validates against a cache produced by a mismatched
+      # proc-macro. Both are hand-set in different files (the crate in
+      # backend/Cargo.toml, the cli pin here), so Renovate bumping one
+      # without a human mirroring the other is a silent within-repo drift.
+      # This guard anchors on the crate (the source) and fails loud if the
+      # cli pin (the copy) lags. Homelab's Coder-image guard anchors on the
+      # same crate version for its sqlx-cli pin.
+      - name: sqlx-cli pin matches sqlx crate version
+        run: |
+          # This step runs in the job's default working-directory (backend/),
+          # so Cargo.toml is relative; the ::error file= paths below stay
+          # repo-root-relative for GitHub's annotation resolver.
+          crate="$(yq -p toml -o yaml '.dependencies.sqlx.version // .dependencies.sqlx' Cargo.toml)"
+          case "$crate" in
+            [0-9]*.[0-9]*) ;;
+            *)
+              echo "::error file=backend/Cargo.toml::could not parse sqlx crate version (got '$crate'); the dependency shape may have changed — update this guard"
+              exit 1
+              ;;
+          esac
+          if [ "$crate" != "$SQLX_CLI_VERSION" ]; then
+            echo "::error file=.github/workflows/ci.yml::SQLX_CLI_VERSION ($SQLX_CLI_VERSION) != sqlx crate version ($crate in backend/Cargo.toml) — keep the cli pin in lockstep with the crate"
+            exit 1
+          fi
+          echo "sqlx-cli pin ($SQLX_CLI_VERSION) matches sqlx crate ($crate)"
+
       - name: Create database roles
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
