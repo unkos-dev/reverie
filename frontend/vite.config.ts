@@ -94,7 +94,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      include: ["src/**", "vite-plugins/**"],
+      include: ["src/**", "vite-plugins/**", "scripts/a11y/**"],
     },
     projects: [
       {
@@ -103,6 +103,19 @@ export default defineConfig({
           name: "vite-plugins",
           environment: "node",
           include: ["vite-plugins/**/__tests__/**/*.test.ts"],
+        },
+      },
+      {
+        // a11y gate logic (scripts/a11y/) is plain ESM tooling, not app code,
+        // so it lives outside src/ and runs in a node env like vite-plugins.
+        // The pure allowlist/verdict module is the only logic-bearing surface
+        // and is unit-tested here; the runner that drives agent-browser is
+        // exercised end-to-end via `npm run a11y`.
+        extends: true,
+        test: {
+          name: "a11y",
+          environment: "node",
+          include: ["scripts/a11y/**/__tests__/**/*.test.mjs"],
         },
       },
       {

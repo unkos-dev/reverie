@@ -1,0 +1,107 @@
+{
+  "url": "/design/system",
+  "engine": "axe-core",
+  "counts": {
+    "violations": 1,
+    "passes": 23,
+    "inapplicable": 39
+  },
+  "violations": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "nodes": [
+        {
+          "target": [".bg-surface.p-4.gap-3:nth-child(1) > .h-9.bg-primary[data-size=\"lg\"]"],
+          "html": "<button data-slot=\"button\" data-variant=\"default\" data-size=\"lg\" class=\"group/button inline-...\">",
+          "impact": "serious",
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "fgColor": "#e8dcc2",
+                "bgColor": "#8e6f38",
+                "contrastRatio": 3.44,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": null,
+                "expectedContrastRatio": "4.5:1"
+              }
+            }
+          ]
+        },
+        {
+          "target": [".items-start.gap-2.flex-col > .h-9.bg-primary[data-size=\"lg\"]"],
+          "html": "<button data-slot=\"button\" data-variant=\"default\" data-size=\"lg\" class=\"group/button inline-...\">",
+          "impact": "serious",
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "fgColor": "#e8dcc2",
+                "bgColor": "#8e6f38",
+                "contrastRatio": 3.44,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": null,
+                "expectedContrastRatio": "4.5:1"
+              }
+            }
+          ]
+        },
+        {
+          "target": [".animate-\\[loading-pulse_1\\.6s_ease-in-out_infinite\\]"],
+          "html": "<button data-slot=\"button\" data-variant=\"default\" data-size=\"lg\" class=\"group/button inline-...\">",
+          "impact": "serious",
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "fgColor": "#e9ddc3",
+                "bgColor": "#987c48",
+                "contrastRatio": 2.93,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": null,
+                "expectedContrastRatio": "4.5:1"
+              }
+            }
+          ]
+        },
+        {
+          "target": [".group\\/badge.h-5.w-fit:nth-child(1)"],
+          "html": "<span data-slot=\"badge\" data-variant=\"default\" class=\"group/badge inline-f...\">",
+          "impact": "serious",
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "fgColor": "#e8dcc2",
+                "bgColor": "#8e6f38",
+                "contrastRatio": 3.44,
+                "fontSize": "9.0pt (12px)",
+                "fontWeight": "normal",
+                "messageKey": null,
+                "expectedContrastRatio": "4.5:1"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
