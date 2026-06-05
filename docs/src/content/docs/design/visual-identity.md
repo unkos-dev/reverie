@@ -56,8 +56,8 @@ contrast against `#E8DCC2`. It does **not** pass 1.4.3 normal-text
 4.5:1 — restrict to focus rings, large CTAs, and recovery actions.
 axe-core surfaces this as a violation on any Light surface where
 `bg-accent` carries normal body text; the design-system axe gate
-tolerates these documented violations on the `lg`-size button + badge
-surfaces in the `/design/system` gallery, but introducing
+tolerates this documented violation on the `lg`-size primary button
+surface in the `/design/system` gallery, but introducing
 `bg-accent` on _new_ normal-size Light surfaces is a brand violation,
 not an axe-noise issue.
 

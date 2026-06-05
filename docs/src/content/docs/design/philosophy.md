@@ -85,8 +85,8 @@ Light surfaces where `bg-accent` carries normal body text. The
 restriction "use Reverie Gold only for focus rings, large CTAs, and
 recovery actions" is the brand's mitigation; the
 [`/design/system`](/reverie/design/visual-identity/) gallery may surface a
-small number of axe violations on the documented `lg`-size button +
-badge surfaces, and the design-system axe gate tolerates those.
+small number of axe violations on the documented `lg`-size primary
+button surface, and the design-system axe gate tolerates those.
 Introducing `bg-accent` on _new_ normal-size Light surfaces is a brand
 violation, not an axe-noise issue, and reviewers should reject it.
 

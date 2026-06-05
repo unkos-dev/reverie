@@ -62,9 +62,10 @@ Concretely:
   on **large CTAs** (primary `data-slot="button"` `data-size="lg"`), per
   DESIGN.md §2. The allowlist (`frontend/scripts/a11y/allowlist.mjs`) matches on
   element role read from the node HTML — **not** background colour, because the
-  permitted button and a non-permitted badge share the identical gold
-  background; bg colour cannot separate them. Every allowlist entry carries an
-  inline rationale.
+  permitted button and the (then non-permitted) default badge rendered the
+  identical gold background; bg colour cannot reliably separate allow from deny.
+  The badge has since been de-gilded (UNK-345), but role-keyed matching stays
+  the correct shape. Every allowlist entry carries an inline rationale.
 - **Manual audit cadence.** A manual a11y pass is run **at every release tag**
   and **before any net-new view ships**. Any team member may perform and sign
   off the audit; a designated a11y reviewer is optional.
@@ -82,8 +83,8 @@ Concretely:
 - Good, because the WCAG 2.2 AA invariant is now enforced on every
   frontend-touching PR and reproducible locally on ARM64.
 - Good, because the carve-out is explicit and role-keyed, so the gate still
-  fails on genuine misuse (e.g. the default Badge variant — tracked in
-  UNK-345 — fails the gate rather than being masked).
+  fails on genuine misuse (the default Badge variant's cream-on-gold contrast
+  failed the gate rather than being masked — UNK-345, fixed in PR #434).
 - Bad, because the gate currently covers only the design showcase; post-login
   views (Home/Library/Detail) need an authenticated session and are not yet
   scanned. They are added to the run targets as that becomes possible.
@@ -139,13 +140,12 @@ cannot be mistaken for "0 violations".
   `target-size`) — it does **not** include `color-contrast`. Narrowing the gate
   to `wcag22aa` alone would make it pass trivially; the full AA tag set is
   required and is hard-coded in the runner.
-- Rollout: the gate ships **advisory** (`continue-on-error` on the `a11y` job's
-  gate step) because the showcase baseline contains one known, deliberately
-  un-allowlisted violation (the default Badge contrast, UNK-345). It flips to
-  blocking once UNK-345 ships and the gate passes — tracked in
-  `debt/2026-06-05-a11y-gate-advisory.md`. The `### Confirmation` invariant
-  (fails on non-allowlisted violations) holds at the runner level today and at
-  the CI-gate level after the flip.
+- Rollout: the gate shipped **advisory** (`continue-on-error` on the `a11y`
+  job's gate step) while the showcase baseline contained one known, deliberately
+  un-allowlisted violation (the default Badge contrast, UNK-345). UNK-345 shipped
+  (PR #434) and the gate passes, so `continue-on-error` was removed and the gate
+  now **blocks**. The `### Confirmation` invariant (fails on non-allowlisted
+  violations) holds at both the runner and CI-gate level.
 - Revisit trigger: when Chrome for ARM64 Linux ships (and Chrome-for-Testing
   publishes a linux-arm64 driver), re-evaluate whether `@axe-core/cli` becomes
   viable as a simpler off-the-shelf replacement for the first-party runner.
