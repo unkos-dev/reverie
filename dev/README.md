@@ -44,6 +44,14 @@ Parsing lives in `frontend/vite-plugins/allowed-hosts.ts`; the inline
 security comment in `frontend/vite.config.ts` documents the threat
 model the allowlist closes.
 
+Setting this variable also affects the dev Content-Security-Policy:
+`buildDevCsp` (`frontend/vite-plugins/dev-csp.ts`) adds a `wss://<host>`
+origin to `connect-src` for each non-loopback hostname, so the HMR
+websocket is permitted through a TLS-terminating edge without a separate
+env var. Entries are validated as bare hostnames — a value carrying a
+scheme, path, whitespace, or `;` throws at startup rather than corrupting
+the CSP header.
+
 ### `REVERIE_DEV_HMR_CLIENT_PORT`
 
 Optional integer (1..=65535). Overrides the port the browser uses for

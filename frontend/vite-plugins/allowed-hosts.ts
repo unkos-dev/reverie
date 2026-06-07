@@ -23,6 +23,13 @@
  */
 export const DEFAULT_LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
 
+// Characters permitted in a single REVERIE_DEV_HOSTS entry: hostname labels
+// (letters, digits, `.`, `-`), the IPv6 bracket literal (`[`, `]`, `:`), and
+// an optional `:port`. Whitespace, `;`, `/`, and any scheme are excluded so a
+// value cannot break out of the `wss://<host>` CSP token it is interpolated
+// into (see the THREAT note on parseAllowedHosts).
+const HOST_TOKEN = /^[A-Za-z0-9.\-:[\]]+$/;
+
 /**
  * Parse `REVERIE_DEV_HOSTS` into the array Vite's dev server uses as its
  * `server.allowedHosts` value. Whitespace-trimmed, comma-separated entries
@@ -41,6 +48,15 @@ export const DEFAULT_LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.
  * short-circuit (`DEFAULT_LOOPBACK_HOSTS` documentation above) for
  * concurrent localhost access.
  *
+ * THREAT: this output also seeds the dev CSP `connect-src` (see
+ * `vite-plugins/dev-csp.ts`), where each non-loopback entry is interpolated
+ * into a `wss://<host>` source token. An entry carrying whitespace or a `;`
+ * would split or terminate the directive — injecting an attacker-shaped CSP
+ * directive into the dev response header. Each entry is therefore validated
+ * against a host-token character set (hostname / IPv4 / bracketed-IPv6 /
+ * optional `:port` only) and a non-conforming value throws at config load rather
+ * than reaching either consumer. Cross-reference: `adr/2026-05-08-tiered-comment-policy.md` § Tier 2.
+ *
  * Cross-references:
  *   - `adr/2026-05-08-tiered-comment-policy.md` § Tier 2.
  *   - `frontend/CLAUDE.md` § Dev environment variables (operator contract).
@@ -56,5 +72,13 @@ export function parseAllowedHosts(envValue: string | undefined): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
   if (entries.length === 0) return [...DEFAULT_LOOPBACK_HOSTS];
+  for (const entry of entries) {
+    if (!HOST_TOKEN.test(entry)) {
+      throw new Error(
+        `REVERIE_DEV_HOSTS entries must be bare hostnames (optionally with :port), ` +
+          `got ${JSON.stringify(entry)}. Remove any scheme, path, or whitespace.`,
+      );
+    }
+  }
   return entries;
 }

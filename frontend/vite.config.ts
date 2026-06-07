@@ -4,28 +4,14 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { parseAllowedHosts } from "./vite-plugins/allowed-hosts";
 import { cspHashPlugin } from "./vite-plugins/csp-hash";
+import { buildDevCsp } from "./vite-plugins/dev-csp";
 import { parseHmrConfig } from "./vite-plugins/hmr-config";
 
-// Dev-only CSP — intentionally relaxed with 'unsafe-inline' / 'unsafe-eval' so
-// Vite HMR, esbuild error overlays, and Tailwind JIT work. The production CSP
-// is a strict, hash-based policy served by the backend (see
-// backend/src/security/csp.rs). These dev relaxations do not ship to prod.
-//
-// `static.cloudflareinsights.com` (script-src) and `cloudflareinsights.com`
-// (connect-src) accommodate the Cloudflare Web Analytics RUM beacon that the
-// edge auto-injects into HTML when a dev hostname is proxied through a CF
-// zone with RUM enabled. Per-hostname Exclude rules are a Cloudflare Pro
-// feature, so the cheapest fix is allowlisting the beacon origins here. The
-// allowlist is dev-only and does not appear in the production CSP. See
-// docs/deployment/cloudflare-edge-dev-hostnames.md.
-const DEV_CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com",
-  "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173 https://cloudflareinsights.com",
-  "img-src 'self' data:",
-  "font-src 'self'",
-].join("; ");
+// Dev-only CSP. The `connect-src` HMR websocket origins are derived from
+// REVERIE_DEV_HOSTS so a non-loopback dev host fronted by a TLS edge is
+// allowed to open its HMR socket; see vite-plugins/dev-csp.ts for the policy
+// rationale and the Cloudflare RUM beacon allowances.
+const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), cspHashPlugin()],

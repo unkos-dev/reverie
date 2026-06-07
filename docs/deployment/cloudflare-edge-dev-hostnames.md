@@ -38,8 +38,15 @@ auto-injected script does not trip a CSP violation on every page load:
 
 ```text
 script-src  'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com
-connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173 https://cloudflareinsights.com
+connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173 [wss://<host> per REVERIE_DEV_HOSTS] https://cloudflareinsights.com
 ```
+
+The loopback `ws://` origins are always present. For each non-loopback
+hostname in `REVERIE_DEV_HOSTS`, `buildDevCsp`
+([`frontend/vite-plugins/dev-csp.ts`](../../frontend/vite-plugins/dev-csp.ts))
+appends a `wss://<host>` origin to `connect-src` so the HMR websocket can
+traverse a TLS edge — the same allowlist input the dev server's host guard
+already consumes, so no separate env var is needed.
 
 The cleaner alternative — a per-hostname **Exclude** rule under
 **Web Analytics → Manage site → Advanced options** — requires a
