@@ -88,6 +88,12 @@ describe("buildDevCsp", () => {
     expect(connect).toContain("ws://localhost:5173");
   });
 
+  it("does not emit a wss origin for 127.0.0.1 supplied explicitly in the env", () => {
+    const connect = tokens(buildDevCsp("127.0.0.1"), "connect-src");
+    expect(connect.filter((t) => t.startsWith("wss://"))).toHaveLength(0);
+    expect(connect).toContain("ws://127.0.0.1:5173");
+  });
+
   it("keeps both Cloudflare RUM beacon origins", () => {
     const csp = buildDevCsp("reverie-dev.unkos.net");
     expect(tokens(csp, "connect-src")).toContain("https://cloudflareinsights.com");
