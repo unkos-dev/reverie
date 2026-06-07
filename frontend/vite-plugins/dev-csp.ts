@@ -17,6 +17,15 @@
 // (vite-plugins/allowed-hosts.ts), so any non-loopback dev host already in
 // the server allowlist automatically gets its HMR origin permitted in CSP —
 // no separate env var, no hardcoded hostname.
+//
+// THREAT: each non-loopback host is interpolated into a `wss://<host>` token
+// inside the CSP header value. A host carrying whitespace or `;` would break
+// out of that token and inject an attacker-shaped directive into the dev
+// response header. The host entries are validated upstream in
+// `parseAllowedHosts` (which rejects any non-host-token character before this
+// module sees them), so `buildDevCsp` assumes well-formed bare hostnames.
+// Dev-only — the production CSP (backend/src/security/csp.rs) is unaffected.
+// Cross-reference: adr/2026-05-08-tiered-comment-policy.md § Tier 2.
 
 import { DEFAULT_LOOPBACK_HOSTS, parseAllowedHosts } from "./allowed-hosts";
 
@@ -30,10 +39,13 @@ import { DEFAULT_LOOPBACK_HOSTS, parseAllowedHosts } from "./allowed-hosts";
 const LOOPBACK_WS_ORIGINS: readonly string[] = ["ws://localhost:5173", "ws://127.0.0.1:5173"];
 
 /**
- * True for hostnames Vite treats as loopback (and which the fixed
- * [[LOOPBACK_WS_ORIGINS]] already cover), so they are not turned into a
+ * True for hostnames Vite treats as loopback, so they are not turned into a
  * derived `wss://` remote origin. Matches the declarative loopback defaults
- * plus the `*.localhost` suffix Vite short-circuits.
+ * plus the `*.localhost` suffix Vite short-circuits. Of these, only
+ * `localhost` and `127.0.0.1` appear in [[LOOPBACK_WS_ORIGINS]]; `[::1]` and
+ * `*.localhost` hosts are intentionally absent from the websocket allowlist
+ * (see the [[LOOPBACK_WS_ORIGINS]] comment) — they are filtered here so they
+ * are never emitted as a remote `wss://` origin either.
  */
 function isLoopbackHost(host: string): boolean {
   return DEFAULT_LOOPBACK_HOSTS.includes(host) || host.endsWith(".localhost");
@@ -43,10 +55,13 @@ function isLoopbackHost(host: string): boolean {
  * Build the dev-only Content-Security-Policy header value.
  *
  * The `connect-src` directive permits the loopback HMR sockets unconditionally
- * and, for every non-loopback host in `devHosts`, a `wss://<host>` origin (the
- * TLS edge terminates on 443, so the browser dials `wss://<host>/` and a bare
- * authority matches). When `devHosts` is unset/empty the result reproduces the
- * historical loopback-only policy exactly.
+ * and, for every non-loopback host in `devHosts`, a `wss://<host>` origin. The
+ * authority is emitted bare (no port), which by CSP matches only the `wss`
+ * scheme default — port 443. This is correct for the supported topology (a TLS
+ * edge terminating on 443, so the browser dials `wss://<host>/`); an edge on a
+ * non-default TLS port would need an explicit port and is out of scope. When
+ * `devHosts` is unset/empty the result reproduces the historical loopback-only
+ * policy exactly.
  *
  * @param devHosts - Raw `REVERIE_DEV_HOSTS` value (comma-separated) or
  *   undefined. Parsed via [[parseAllowedHosts]] — the same input the dev

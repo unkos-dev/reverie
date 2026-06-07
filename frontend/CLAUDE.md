@@ -106,7 +106,12 @@
   Codespaces) must export the workspace-assigned hostname, e.g.
   `REVERIE_DEV_HOSTS=dev.example.com npm run dev`. Parsing lives in
   `vite-plugins/allowed-hosts.ts`; the value is a strict replacement of the
-  declarative defaults, not a merge.
+  declarative defaults, not a merge. The same value also seeds the dev
+  Content-Security-Policy: each non-loopback host gets a `wss://<host>` origin
+  added to `connect-src` by `buildDevCsp` (`vite-plugins/dev-csp.ts`), so the
+  HMR websocket is permitted through a TLS edge without a separate env var.
+  Entries are validated as bare hostnames — a scheme, path, whitespace, or `;`
+  throws at startup.
 
 - `REVERIE_DEV_HMR_CLIENT_PORT` (optional, integer 1..=65535) — port the
   HMR websocket client reconnects to. Default (unset) = the dev server's

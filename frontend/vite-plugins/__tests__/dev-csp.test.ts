@@ -17,9 +17,35 @@ function tokens(csp: string, name: string): string[] {
 const TODAY_CONNECT_SRC =
   "connect-src 'self' ws://localhost:5173 ws://127.0.0.1:5173 https://cloudflareinsights.com";
 
+// The full historical policy, pinned so any drift in a non-connect-src
+// directive (a dropped origin, a changed keyword) fails loudly.
+const HISTORICAL_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com",
+  "style-src 'self' 'unsafe-inline'",
+  TODAY_CONNECT_SRC,
+  "img-src 'self' data:",
+  "font-src 'self'",
+].join("; ");
+
 describe("buildDevCsp", () => {
   it("reproduces today's loopback connect-src exactly when REVERIE_DEV_HOSTS is unset", () => {
     expect(directive(buildDevCsp(undefined), "connect-src")).toBe(TODAY_CONNECT_SRC);
+  });
+
+  it("reproduces the full historical CSP byte-for-byte when REVERIE_DEV_HOSTS is unset", () => {
+    expect(buildDevCsp(undefined)).toBe(HISTORICAL_CSP);
+  });
+
+  it("does not emit a wss origin for a .localhost subdomain", () => {
+    const connect = tokens(buildDevCsp("app.localhost"), "connect-src");
+    expect(connect.filter((t) => t.startsWith("wss://"))).toHaveLength(0);
+    expect(connect).toContain("ws://localhost:5173");
+  });
+
+  it("propagates the upstream rejection of a directive-injecting host", () => {
+    // parseAllowedHosts validates before this module sees the entry.
+    expect(() => buildDevCsp("dev.example.com;default-src *")).toThrow(/REVERIE_DEV_HOSTS/);
   });
 
   it("reproduces today's loopback connect-src when REVERIE_DEV_HOSTS is empty", () => {

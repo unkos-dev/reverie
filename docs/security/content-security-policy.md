@@ -86,14 +86,14 @@ absolute `http(s)://` URL.
 
 ## Dev mode vs production
 
-| Surface              | Dev (Vite dev server)                                                                              | Production (Docker container)                                  |
-| -------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| HTML CSP             | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket                                                    | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'`        |
-| API CSP              | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`  |
-| HSTS                 | Off                                                                                                | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
-| `font-src` policy    | `'self'` (matches prod)                                                                            | `'self'` (declared in `csp.rs::build_html_csp`)                |
-| `connect-src` policy | `'self'` plus Vite HMR WebSocket                                                                   | `'self'` (declared in `csp.rs::build_html_csp`)                |
-| index.html source    | Vite dev server, transformed with plugin markers                                                   | Pre-built `dist/index.html` served by the backend              |
+| Surface              | Dev (Vite dev server)                                                                                               | Production (Docker container)                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| HTML CSP             | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket                                                                     | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'`        |
+| API CSP              | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses                  | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`  |
+| HSTS                 | Off                                                                                                                 | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
+| `font-src` policy    | `'self'` (matches prod)                                                                                             | `'self'` (declared in `csp.rs::build_html_csp`)                |
+| `connect-src` policy | `'self'` plus loopback HMR WebSocket origins, plus `wss://<host>` for each non-loopback host in `REVERIE_DEV_HOSTS` | `'self'` (declared in `csp.rs::build_html_csp`)                |
+| index.html source    | Vite dev server, transformed with plugin markers                                                                    | Pre-built `dist/index.html` served by the backend              |
 
 **Dev relaxations do not ship to prod.** `'unsafe-inline' 'unsafe-eval'` in
 dev are declared in `frontend/vite.config.ts` `server.headers` and apply
