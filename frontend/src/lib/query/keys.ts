@@ -63,4 +63,12 @@ export const queryKeys = {
     /** `/auth/me` — current authenticated user identity. */
     me: () => ["auth", "me"] as const,
   },
+  dashboard: {
+    /** Root namespace; invalidate to refetch every dashboard-* slot. */
+    all: ["dashboard"] as const,
+    /** `GET /api/dashboard/stats` aggregate metrics (admin only). */
+    stats: () => ["dashboard", "stats"] as const,
+    /** `GET /api/dashboard/activity` recent batches, keyed by limit. */
+    activity: (limit: number) => ["dashboard", "activity", limit] as const,
+  },
 };

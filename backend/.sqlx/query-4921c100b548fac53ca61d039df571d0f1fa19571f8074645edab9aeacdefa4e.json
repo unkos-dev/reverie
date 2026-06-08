@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT batch_id AS \"batch_id!\",\n                  MIN(created_at) AS \"started_at!\",\n                  CASE WHEN COUNT(*) FILTER (WHERE status IN ('queued','running')) > 0\n                       THEN NULL ELSE MAX(completed_at) END AS ended_at,\n                  COUNT(*)                                               AS \"total!\",\n                  COUNT(*) FILTER (WHERE status = 'complete')            AS \"completed!\",\n                  COUNT(*) FILTER (WHERE status = 'failed')              AS \"failed!\",\n                  COUNT(*) FILTER (WHERE status = 'skipped')             AS \"skipped!\",\n                  COUNT(*) FILTER (WHERE status IN ('queued','running')) AS \"in_progress!\"\n           FROM ingestion_jobs\n           GROUP BY batch_id\n           ORDER BY MIN(created_at) DESC\n           LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "batch_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "batch_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "started_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "ended_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "skipped!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "in_progress!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "4921c100b548fac53ca61d039df571d0f1fa19571f8074645edab9aeacdefa4e"
+}

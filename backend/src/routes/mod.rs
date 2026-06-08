@@ -11,6 +11,8 @@ pub mod auth;
 /// Sort-aware base64url pagination cursor (shared across `/api/*`
 /// list endpoints).
 pub mod cursor;
+/// Admin-only library-health dashboard (`/api/dashboard/*`).
+pub mod dashboard;
 /// Manifestation enrichment trigger / dry-run / status endpoints.
 pub mod enrichment;
 /// Liveness + readiness probes.
