@@ -84,7 +84,11 @@ and job claim is concurrency-safe
 ### Consequences
 
 - Good, because an operator who needs availability can scale out without forking
-  Reverie; statelessness is the only precondition and it is cheap.
+  Reverie; statelessness is the architectural precondition and it is cheap. It is
+  necessary but not sufficient: the reclaim lease deferred by the
+  [durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md) is the
+  remaining multi-instance lift, since restart-bounded reclaim is unsafe across
+  concurrent instances.
 - Good, because Reverie's scope and failure surface stay bounded — no
   distributed-systems code to maintain, fewer moving parts for the
   single-instance majority.

@@ -20,12 +20,13 @@ list (browser, OPDS, admin, future), what "no unbounded queries" means as a hard
 rule, and the tradeoffs the project is accepting by choosing keyset.
 
 The contract is also not yet uniformly met. The catalog (`/api/books`) and the
-OPDS acquisition feeds are keyset-paginated with a stable tiebreaker; OPDS
-navigation and series feeds deliberately return a whole, naturally-bounded set
-on one page. But `/api/shelves` and `/api/users` issue `LIMIT`-less `SELECT`s —
-they return the entire set with no cap. So today the surface is a mix of keyset,
-justified single-page, and genuinely unbounded queries, with no recorded rule
-distinguishing them.
+OPDS _acquisition_ feeds are keyset-paginated with a stable tiebreaker, and the
+OPDS series-_editions_ feed is a capped single page. But several lists issue
+`LIMIT`-less `SELECT`s whose row count grows with library or user size —
+`/api/shelves`, `/api/users`, `GET /api/shelves/{id}` items, and the OPDS
+authors- and series-_navigation_ feeds all return the entire set with no cap. So
+today the surface is a mix of keyset, capped single-page, and genuinely
+unbounded queries, with no recorded rule distinguishing them.
 
 This matters at scale (the blueprint targets 50k+ libraries) and for the threat
 model: Reverie's is the multi-user exposed instance, where an unbounded list
@@ -67,12 +68,15 @@ Chosen option: **A**.
   (opaque base64url cursor, `Link` + body `next_cursor`). Offset is rejected for
   the reasons in that ADR.
 - **A capped single page is the justified exception, not an omission.** A list
-  with a known small natural ceiling — OPDS navigation groups, a series'
-  editions — may return whole on one page, but only as a deliberate decision and
-  only with a defensive `LIMIT` so it is bounded by construction rather than by
-  assumption. `/api/shelves` and `/api/users` currently return uncapped sets;
-  they are not yet compliant and must be brought to either a cap or keyset
-  pagination.
+  with a known small natural ceiling — e.g. a single series' editions — may
+  return whole on one page, but only as a deliberate decision and only with a
+  defensive `LIMIT` so it is bounded by construction rather than by assumption
+  (the OPDS series-editions feed already does this). A list whose size grows with
+  library or user count does **not** qualify: `/api/shelves`, `/api/users`,
+  `GET /api/shelves/{id}` items, and the OPDS authors- and series-_navigation_
+  feeds currently return uncapped sets and are not yet compliant — each must be
+  brought to keyset pagination, or to a defensive cap only where a small ceiling
+  is genuinely justified.
 - **Accepted tradeoffs (eyes open).** Keyset gives up two things the project
   consciously forgoes: cheap random access (no "jump to page N" — only
   next/prev from a cursor) and an exact total inline. A total count, where
@@ -109,9 +113,10 @@ Enforced as the `backend/CLAUDE.md` **"No unbounded queries"** invariant: every
 list is keyset-paginated or single-page with a hard `LIMIT`; no `LIMIT`-less
 scans; total-count is a separate approximate/cached query, never an exact
 `COUNT(*)` on the hot path. Verified at scale by the synthetic large-library
-perf fixture ([UNK-369](https://linear.app/unkos/issue/UNK-369)). The current
-`/api/shelves` and `/api/users` uncapped queries are the known non-compliant
-cases, tracked separately.
+perf fixture ([UNK-369](https://linear.app/unkos/issue/UNK-369)). The currently
+non-compliant cases — `/api/shelves`, `/api/users`, `GET /api/shelves/{id}`
+items, and the OPDS authors- and series-navigation feeds (all `LIMIT`-less) —
+are tracked separately.
 
 ## Pros and Cons of the Options
 
@@ -133,8 +138,9 @@ cases, tracked separately.
 ### C — no contract, ad hoc per endpoint
 
 - Good, because each endpoint can do the locally simplest thing.
-- Bad, because it is how `/api/shelves` and `/api/users` became unbounded in the
-  first place; without a rule, the resource-exhaustion surface grows silently.
+- Bad, because it is how `/api/shelves`, `/api/users`, and the OPDS navigation
+  feeds became unbounded in the first place; without a rule, the
+  resource-exhaustion surface grows silently.
 
 ## More Information
 
