@@ -72,7 +72,7 @@ function DashboardPage(): ReactElement {
     enabled: isAdmin,
   });
 
-  const { data: activity } = useQuery({
+  const { data: activity, error: activityError } = useQuery({
     queryKey: queryKeys.dashboard.activity(ACTIVITY_LIMIT),
     queryFn: ({ signal }) => getDashboardActivity(ACTIVITY_LIMIT, signal),
     enabled: isAdmin,
@@ -121,7 +121,7 @@ function DashboardPage(): ReactElement {
 
       {stats && <StatsView stats={stats} />}
 
-      <RecentBatches activity={activity?.batches ?? []} />
+      <RecentBatches activity={activity?.batches ?? []} error={activityError} />
     </div>
   );
 }
@@ -270,50 +270,66 @@ function StatsView({ stats }: { stats: DashboardStats }): ReactElement {
   );
 }
 
-function RecentBatches({ activity }: { activity: DashboardActivity["batches"] }): ReactElement {
+function RecentBatches({
+  activity,
+  error,
+}: {
+  activity: DashboardActivity["batches"];
+  error: Error | null;
+}): ReactElement {
+  let body: ReactElement;
+  if (error) {
+    body = (
+      <p className="text-destructive">
+        Failed to load ingestion activity:{" "}
+        {error instanceof ApiError ? error.detail : error.message}
+      </p>
+    );
+  } else if (activity.length === 0) {
+    body = <p className="text-sm text-fg-muted">No ingestion runs recorded yet.</p>;
+  } else {
+    body = (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Started</TableHead>
+            <TableHead className="text-right">Total</TableHead>
+            <TableHead className="text-right">Done</TableHead>
+            <TableHead className="text-right">Failed</TableHead>
+            <TableHead className="text-right">Skipped</TableHead>
+            <TableHead className="text-right">In&nbsp;progress</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {activity.map((b) => (
+            <TableRow key={b.batch_id}>
+              <TableCell className="font-medium">
+                {new Date(b.started_at).toLocaleString()}
+                {b.ended_at === null && (
+                  <Badge variant="secondary" className="ml-2">
+                    running
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-right">{formatNumber(b.total)}</TableCell>
+              <TableCell className="text-right">{formatNumber(b.completed)}</TableCell>
+              <TableCell className="text-right">{formatNumber(b.failed)}</TableCell>
+              <TableCell className="text-right">{formatNumber(b.skipped)}</TableCell>
+              <TableCell className="text-right">{formatNumber(b.in_progress)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle>Recent ingestion batches</CardTitle>
         <Activity className="size-4 text-fg-muted" />
       </CardHeader>
-      <CardContent>
-        {activity.length === 0 ? (
-          <p className="text-sm text-fg-muted">No ingestion runs recorded yet.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Started</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Done</TableHead>
-                <TableHead className="text-right">Failed</TableHead>
-                <TableHead className="text-right">Skipped</TableHead>
-                <TableHead className="text-right">In&nbsp;progress</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {activity.map((b) => (
-                <TableRow key={b.batch_id}>
-                  <TableCell className="font-medium">
-                    {new Date(b.started_at).toLocaleString()}
-                    {b.ended_at === null && (
-                      <Badge variant="secondary" className="ml-2">
-                        running
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">{formatNumber(b.total)}</TableCell>
-                  <TableCell className="text-right">{formatNumber(b.completed)}</TableCell>
-                  <TableCell className="text-right">{formatNumber(b.failed)}</TableCell>
-                  <TableCell className="text-right">{formatNumber(b.skipped)}</TableCell>
-                  <TableCell className="text-right">{formatNumber(b.in_progress)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
+      <CardContent>{body}</CardContent>
     </Card>
   );
 }

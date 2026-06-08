@@ -1,14 +1,24 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import { queryKeys } from "@/lib/query/keys";
 import type { DashboardStats, DashboardActivity } from "@/api/dashboard";
+import { getDashboardStats, getDashboardActivity } from "@/api/dashboard";
 import { ACTIVITY_LIMIT } from "./DashboardPage";
 
 import { DashboardPage } from "./DashboardPage";
+
+// Spy on the API client so error states can be driven deterministically.
+// Both default to rejecting: seeded-cache tests render from the primed cache,
+// and their background refetch rejecting (not resolving) keeps that data in
+// place rather than overwriting it with `undefined`.
+vi.mock("@/api/dashboard", () => ({
+  getDashboardStats: vi.fn().mockRejectedValue(new Error("unmocked stats call")),
+  getDashboardActivity: vi.fn().mockRejectedValue(new Error("unmocked activity call")),
+}));
 
 const ADMIN_ME = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -120,6 +130,18 @@ describe("DashboardPage", () => {
   test("footnotes the clean bucket with non-epub count", async () => {
     renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
     expect(await screen.findByText(/104/)).toBeInTheDocument();
+  });
+
+  test("surfaces an error when stats fail to load", async () => {
+    vi.mocked(getDashboardStats).mockRejectedValueOnce(new Error("stats boom"));
+    renderDashboard(ADMIN_ME, null, { batches: [] });
+    expect(await screen.findByText(/failed to load metrics/i)).toBeInTheDocument();
+  });
+
+  test("surfaces an error when ingestion activity fails to load", async () => {
+    vi.mocked(getDashboardActivity).mockRejectedValueOnce(new Error("activity boom"));
+    renderDashboard(ADMIN_ME, statsFixture(), null);
+    expect(await screen.findByText(/failed to load ingestion activity/i)).toBeInTheDocument();
   });
 
   test("renders empty library without dividing by zero", async () => {
