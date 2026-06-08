@@ -284,3 +284,28 @@ async fn activity_limit_is_clamped(pool: PgPool) {
     assert_eq!(zero.status_code(), StatusCode::OK);
     assert_eq!(zero.json::<Value>()["batches"].as_array().unwrap().len(), 1);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn activity_endpoint_rejects_non_admin(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, adult_auth) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "dash-activity-adult").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/dashboard/activity")
+        .add_header(AUTHORIZATION, adult_auth)
+        .await;
+    test_support::assert_problem(&response, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn activity_endpoint_requires_auth(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server.get("/api/dashboard/activity").await;
+    assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+}
