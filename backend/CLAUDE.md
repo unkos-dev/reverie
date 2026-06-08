@@ -284,11 +284,13 @@ records the _why_; the rule here is the day-to-day enforcement.
   queries in a loop. New list/detail paths add **query-count assertions** in
   tests so a regression fails CI. Large-library optimisation must not degrade
   small-library UX. (Verified at scale by the synthetic perf fixture, UNK-369.)
-- **No unbounded queries.** Every list endpoint is keyset/cursor-paginated and
-  bounded — no `LIMIT`-less scans, no offset pagination. Total-count is a
-  separate approximate/cached query, never an exact `COUNT(*)` on the hot path.
-  Mechanism already shipped (`adr/2026-05-22-json-api-conventions.md`); the
-  project-wide contract + tradeoffs live in ADR-7 (to be drafted).
+- **No unbounded queries.** Every list is bounded by construction — keyset /
+  cursor-paginated (the default) or a single page with a hard `LIMIT` (justified
+  naturally-bounded sets only); no `LIMIT`-less scans, no offset pagination.
+  Total-count is a separate approximate/cached query, never an exact `COUNT(*)`
+  on the hot path. Mechanism: `adr/2026-05-22-json-api-conventions.md`;
+  project-wide contract + tradeoffs:
+  `adr/2026-06-08-keyset-pagination-list-contract.md`.
 - **Timeouts + backpressure everywhere.** Request, pool-acquire, DB statement,
   and outbound-HTTP calls all carry a timeout. A slow query with no statement
   timeout pins the pool regardless of rate limiting. DB-side timeout values are
@@ -298,10 +300,13 @@ records the _why_; the rule here is the day-to-day enforcement.
   the `database-reviewer` agent. (Review tracked in UNK-368.)
 - **Atomic transactions for multi-write invariants.** Wrap any multi-statement
   state change that must be all-or-nothing in a transaction; don't rely on
-  statement ordering. (Decision recorded in ADR-1b, to be drafted.)
+  statement ordering. (Decision recorded in
+  `adr/2026-06-08-postgres-backed-crash-safe-state.md`.)
 - **Stateless application.** No critical state in process memory — durable state
   lives in Postgres so an instant kill is safe and an operator can scale out /
-  run HA if they choose. (ADR-1b crash-safe state, ADR-2a scale stance.)
+  run HA if they choose. (`adr/2026-06-08-postgres-backed-crash-safe-state.md`
+  crash-safe state; `adr/2026-06-08-scale-stance-stateless-enable-not-own.md`
+  scale stance.)
 - **Async by default.** tokio / Axum / sqlx async top to bottom; no blocking IO
   on the async runtime (use `spawn_blocking` for unavoidable blocking work).
 - **No ORM — explicit `sqlx` queries.** ORMs hide N+1 behind implicit relation
