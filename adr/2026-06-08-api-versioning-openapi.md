@@ -83,10 +83,11 @@ Chosen options: **V1 + S1.**
   second source of truth that drifts from the code — exactly what the generated
   reference exists to prevent.
 
-  The version is **3.1, not 3.2**, on three grounds. Code-first generation in the
-  Rust ecosystem emits 3.1 today — the dominant axum generator's version enum has
-  a single `3.1.0` variant — so pinning the contract to 3.2 would pin it to an
-  unreleased upstream capability, the same wait-on-upstream trap the
+  The version is **3.1, not 3.2**, on three grounds. The code-first generator
+  this would use (utoipa, the dominant axum-native option) emits 3.1 — its
+  `OpenApiVersion` enum has a single `3.1.0` variant — so pinning the contract to
+  3.2 would pin it to an unreleased upstream capability, the same wait-on-upstream
+  trap the
   [first-party session layer ADR](2026-06-04-first-party-session-layer.md)
   refused. 3.2's additions (querystring object schemas, Server-Sent Events
   metadata, JSON Lines streaming) describe surfaces Reverie does not have — its
@@ -156,8 +157,8 @@ that generated document.
 
 - Good, because the code is the single source of truth; the spec and reference
   cannot drift from it.
-- Good, because 3.1 is exactly what code-first Rust generators emit today — no
-  upstream wait, no unachievable target.
+- Good, because 3.1 is exactly what the code-first Rust generator (utoipa) emits
+  today — no upstream wait, no unachievable target.
 - Bad, because annotations live in the handlers, coupling spec detail to handler
   code.
 

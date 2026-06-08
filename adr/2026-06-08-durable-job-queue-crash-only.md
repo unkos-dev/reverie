@@ -15,8 +15,8 @@ Reverie runs background work — enrichment, cover/metadata writeback, ingestion
 follow-up. The claim path already exists: jobs are Postgres rows, claimed with
 `FOR UPDATE SKIP LOCKED`, with one `in_progress` row per work-unit enforced by a
 partial unique index. What is half-wired is crash recovery of an orphaned
-`in_progress` row: writeback reverts orphaned `in_progress` rows to `pending` on
-worker startup, but enrichment reverts only on graceful shutdown — so a hard
+`in_progress` row: writeback reverts orphaned `in_progress` rows to `pending` at
+startup, but enrichment reverts only on graceful shutdown — so a hard
 kill of enrichment strands its `in_progress` rows with nothing to reclaim them.
 No decision is on record for how a crashed job is reclaimed.
 
@@ -34,12 +34,13 @@ lease / visibility timeouts to do it?
 - **In-flight work must survive an instant kill** with no lost work and no
   permanently-stuck `in_progress` rows — without bespoke liveness tracking.
 - **Single-instance is the default; don't pre-build multi-instance machinery.**
-  The [pooling ADR](2026-06-08-connection-pooling-pgpool.md) defers its
+  The [pooling ADR](2026-06-08-connection-pooling.md) defers its
   multi-instance concern to the topology that needs it; the job model should
   hold the same posture.
-- **Exact reclaim beats a wall-clock guess.** With one worker process, a restart
-  _proves_ every `in_progress` row is an orphan; a fixed timeout only guesses
-  whether the holder is dead, and guesses wrong for a long-but-healthy job.
+- **Exact reclaim beats a wall-clock guess.** Within a single instance, a
+  restart _proves_ every `in_progress` row is an orphan (the process that held
+  them is gone); a fixed timeout only guesses whether the holder is dead, and
+  guesses wrong for a long-but-healthy job.
 - **Reuse Postgres, add no broker.** Postgres is already the crash-safe store; a
   queue service is another component and SPOF.
 - **At-least-once is acceptable if handlers are idempotent.** Exactly-once is not
@@ -59,19 +60,28 @@ lease / visibility timeouts to do it?
 
 Chosen option: **A**.
 
+_Terminology:_ an **instance** is one app process (the deployment unit); a
+**worker** is one of the N concurrent job-running tasks inside it
+(`enrichment.concurrency`, a `Semaphore`-gated pool). Reclaim exactness rests on
+the **instance** boundary, not on worker count.
+
 - **Jobs are Postgres rows claimed with `FOR UPDATE SKIP LOCKED`**, so concurrent
   workers never grab the same job. This is the concurrency-safe primitive the
   [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md) names
   as a "don't preclude scale" guardrail. Mutual exclusion of one `in_progress`
   row per work-unit is enforced by a partial unique index.
-- **Crash recovery is restart-bounded.** On worker startup, orphaned
-  `in_progress` rows are reverted to `pending` and re-claimed. With a single
-  worker process a restart proves any `in_progress` row is an orphan, so reclaim
-  is exact and needs no timeout to tune. Writeback already does this; enrichment
-  must be brought to parity (it currently reverts only on shutdown).
-- **Live-process job death is closed by point fixes, not a lease.** A job whose
-  task dies while the process stays alive (panic or hang) is the one case
-  startup-revert misses. Hangs are bounded by per-job timeouts — already a
+- **Crash recovery is restart-bounded.** At instance startup — once per process
+  boot, before the worker pool begins claiming — orphaned `in_progress` rows are
+  reverted to `pending` and re-claimed. Because every worker lives inside the one
+  instance, a crash kills them all together, so a restart proves any
+  `in_progress` row is an orphan regardless of how many workers were running;
+  reclaim is exact and needs no timeout to tune. Writeback already reverts at
+  startup; enrichment must be brought to parity (it currently reverts only on
+  graceful shutdown, so a hard kill strands its rows).
+- **Live-worker job death is closed by point fixes, not a lease.** A worker task
+  that dies while the instance stays alive (panic or hang) is the one case
+  startup-revert misses — and in a pool it is the _common_ individual failure,
+  not whole-process death. Hangs are bounded by per-job timeouts — already a
   project-wide invariant (`backend/CLAUDE.md` "Timeouts + backpressure
   everywhere"; enrichment has a fetch budget) — turning a hang into a caught
   error that completes the job's bookkeeping. A task panic re-pends the row via a
@@ -90,12 +100,12 @@ Chosen option: **A**.
   avoids needless re-runs on a planned restart — politeness, not correctness.
 - **No distribution.** Durability and mutual exclusion come from Postgres; there
   is no external broker, distributed scheduler, or cross-node coordination.
-  Parallelism is multiple workers against the one queue.
+  Parallelism is a pool of N workers within the instance against the one queue.
 
 **Deferred: lease / visibility-timeout is the multi-instance lift, not part of
 the default.** The moment an operator runs multiple instances (enabled, not
 owned, by the [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md);
-no leader election means concurrent worker sets), restart-bounded reclaim becomes
+no leader election means each instance runs its own worker pool), restart-bounded reclaim becomes
 unsafe — one instance booting would re-pend a peer's still-running job. That
 topology, and only that topology, needs wall-clock leases _plus_ heartbeat
 renewal to avoid double-running long jobs. The lease lands with multi-instance
@@ -132,7 +142,7 @@ startup-revert parity gap is tracked separately.
 ### Confirmation
 
 Jobs are claimed with `FOR UPDATE SKIP LOCKED`, one `in_progress` row per
-work-unit; orphaned `in_progress` rows are reverted on worker startup; every job
+work-unit; orphaned `in_progress` rows are reverted at instance startup (before the worker pool claims); every job
 is bounded by a timeout and guarded against task panic; handlers are idempotent
 and file-mutating handlers document re-run safety. No external message broker
 appears in the deployment, and no code path depends on a graceful shutdown for
@@ -153,7 +163,7 @@ correctness.
 
 - Good, because it is the correct mechanism once multiple instances run, where no
   worker may assume a peer is dead.
-- Bad, because for one worker it replaces an exact restart signal with a
+- Bad, because for a single instance it replaces an exact restart signal with a
   wall-clock guess that double-runs long-but-healthy jobs unless heartbeat
   renewal is added — real machinery for a topology not in the default.
 - Bad, because a fixed lease expiring mid-run can let two workers mutate the same
@@ -182,7 +192,7 @@ correctness.
 - [Scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md) —
   durable-not-distributed posture and the `SKIP LOCKED` concurrency guardrail;
   multi-instance is the trigger for the deferred lease.
-- [Pooling ADR](2026-06-08-connection-pooling-pgpool.md) — the same
+- [Pooling ADR](2026-06-08-connection-pooling.md) — the same
   defer-the-multi-instance-concern posture this ADR mirrors.
 - [UNK-365](https://linear.app/unkos/issue/UNK-365) (durable queue),
   [UNK-98](https://linear.app/unkos/issue/UNK-98) (dispatcher idempotency),

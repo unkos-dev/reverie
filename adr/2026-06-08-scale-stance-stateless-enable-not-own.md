@@ -39,7 +39,7 @@ audience self-hosts. Where is the line between _enabling_ scale and _owning_ it?
 - **"Enable, don't own"** — the same philosophy applied to integrations
   ([standards-first integrations ADR](2026-06-08-standards-first-integrations.md))
   and to connection pooling
-  ([pooling ADR](2026-06-08-connection-pooling-pgpool.md)).
+  ([pooling ADR](2026-06-08-connection-pooling.md)).
 
 ## Considered Options
 
@@ -69,9 +69,9 @@ Chosen option: **A**.
   ([durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md)).
 - **Single-instance is the supported default; multi-instance is operator-owned.**
   When an operator scales out, they own the load balancer, the Postgres HA, and
-  the connection-budget sizing the
-  [pooling ADR](2026-06-08-connection-pooling-pgpool.md) deferred (N instances ×
-  pool size against one Postgres).
+  the connection-budget sizing this ADR owns (deferred here by the
+  [pooling ADR](2026-06-08-connection-pooling.md)): N instances ×
+  pool size against one Postgres.
 
 This stance does require a small standing guardrail: features must stay _safe_
 under concurrent instances even though one is the default — startup migration is
@@ -140,8 +140,9 @@ LOCKED` job claim.
 
 - [Crash-safe state ADR](2026-06-08-postgres-backed-crash-safe-state.md) —
   statelessness as a durability property; this ADR is its scaling complement.
-- [Pooling ADR](2026-06-08-connection-pooling-pgpool.md) — owns the
-  multi-instance connection-budget sizing referenced above.
+- [Pooling ADR](2026-06-08-connection-pooling.md) — owns the in-process
+  pool; the multi-instance connection-budget sizing (N instances × pool size) is
+  owned here, on the scale axis.
 - [Durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md) —
   durable-not-distributed worker design.
 - [Standards-first integrations ADR](2026-06-08-standards-first-integrations.md)
