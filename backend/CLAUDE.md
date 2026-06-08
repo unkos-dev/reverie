@@ -274,6 +274,44 @@ nullifies differentiation.
   distinct vocabulary. Shared words push trigram similarity above 0.6
   match threshold, cause false-positive de-duplication in tests.
 
+## Performance & Data-Access Invariants
+
+Several of these invariants pair with an ADR that records the _why_; the rule
+here is the day-to-day enforcement.
+
+- **No N+1 queries.** Use set-based queries; never issue per-row follow-up
+  queries in a loop. New list/detail paths add **query-count assertions** in
+  tests so a regression fails CI. Large-library optimisation must not degrade
+  small-library UX. (Verified at scale by the synthetic perf fixture, UNK-369.)
+- **No unbounded queries.** Every list is bounded by construction — keyset /
+  cursor-paginated (the default) or a single page with a hard `LIMIT` (justified
+  naturally-bounded sets only); no `LIMIT`-less scans, no offset pagination.
+  Total-count is a separate approximate/cached query, never an exact `COUNT(*)`
+  on the hot path. Mechanism: `adr/2026-05-22-json-api-conventions.md`;
+  project-wide contract + tradeoffs:
+  `adr/2026-06-08-keyset-pagination-list-contract.md`.
+- **Timeouts + backpressure everywhere.** Request, pool-acquire, DB statement,
+  and outbound-HTTP calls all carry a timeout. A slow query with no statement
+  timeout pins the pool regardless of rate limiting. DB-side timeout values are
+  decided in UNK-296 (lock/timeout ADR).
+- **Indexing discipline.** Index FKs and frequent WHERE / ORDER BY / JOIN
+  columns (incl. keyset sort keys); don't over-index write-heavy columns. Use
+  the `database-reviewer` agent. (Review tracked in UNK-368.)
+- **Atomic transactions for multi-write invariants.** Wrap any multi-statement
+  state change that must be all-or-nothing in a transaction; don't rely on
+  statement ordering. (Decision recorded in
+  `adr/2026-06-08-postgres-backed-crash-safe-state.md`.)
+- **Stateless application.** No critical state in process memory — durable state
+  lives in Postgres so an instant kill is safe and an operator can scale out /
+  run HA if they choose. (`adr/2026-06-08-postgres-backed-crash-safe-state.md`
+  crash-safe state; `adr/2026-06-08-scale-stance-stateless-enable-not-own.md`
+  scale stance.)
+- **Async by default.** tokio / Axum / sqlx async top to bottom; no blocking IO
+  on the async runtime (use `spawn_blocking` for unavoidable blocking work).
+- **No ORM — explicit `sqlx` queries.** ORMs hide N+1 behind implicit relation
+  traversal; explicit compile-time-checked queries keep it visible. See the
+  `sqlx` convention under **## Conventions** for the macro + carve-out rules.
+
 ## Project Structure (as it grows)
 
 ```text
