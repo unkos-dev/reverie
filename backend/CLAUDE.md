@@ -276,9 +276,8 @@ nullifies differentiation.
 
 ## Performance & Data-Access Invariants
 
-Standing rules from the 2026-06-08 architecture triage
-(`plans/2026-06-08-architecture-triage-map.md`). Several pair with an ADR that
-records the _why_; the rule here is the day-to-day enforcement.
+Several of these invariants pair with an ADR that records the _why_; the rule
+here is the day-to-day enforcement.
 
 - **No N+1 queries.** Use set-based queries; never issue per-row follow-up
   queries in a loop. New list/detail paths add **query-count assertions** in

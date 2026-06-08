@@ -44,7 +44,7 @@ the project give up to get it?
   cheap resource-exhaustion vector; no query may scale its row count with
   attacker-influenced data.
 - **Enables the N+1 discipline.** A bounded page is the precondition for the
-  set-based-query / no-N+1 invariant to hold at scale (seed #10).
+  set-based-query / no-N+1 invariant to hold at scale.
 
 ## Considered Options
 
@@ -147,7 +147,7 @@ are tracked separately.
 - [JSON API conventions ADR](2026-05-22-json-api-conventions.md) — the cursor
   _mechanism_ (encoding, `Link` header, offset rejection) this contract makes
   project-wide; that ADR is not superseded, it is the prior art this references.
-- Pairs with the `backend/CLAUDE.md` "No N+1 queries" invariant (seed #10): a
+- Pairs with the `backend/CLAUDE.md` "No N+1 queries" invariant: a
   bounded page is the precondition for set-based queries to hold at scale.
 - [UNK-369](https://linear.app/unkos/issue/UNK-369) — synthetic large-library
   perf fixture that verifies the contract holds at both small and large N.
