@@ -116,7 +116,7 @@ scans; total-count is a separate approximate/cached query, never an exact
 perf fixture ([UNK-369](https://linear.app/unkos/issue/UNK-369)). The currently
 non-compliant cases — `/api/shelves`, `/api/users`, `GET /api/shelves/{id}`
 items, and the OPDS authors- and series-navigation feeds (all `LIMIT`-less) —
-are tracked separately.
+are tracked in [UNK-374](https://linear.app/unkos/issue/UNK-374).
 
 ## Pros and Cons of the Options
 

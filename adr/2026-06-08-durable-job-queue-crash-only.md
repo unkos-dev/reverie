@@ -118,8 +118,8 @@ topology that justifies it.
 Implementation is the durable-queue epic
 ([UNK-365](https://linear.app/unkos/issue/UNK-365)); dispatcher idempotency is
 tracked in [UNK-98](https://linear.app/unkos/issue/UNK-98); the enrichment
-startup-revert parity gap is tracked under the same durable-queue epic
-([UNK-365](https://linear.app/unkos/issue/UNK-365)).
+startup-revert parity gap is tracked in
+[UNK-373](https://linear.app/unkos/issue/UNK-373).
 
 ### Consequences
 
