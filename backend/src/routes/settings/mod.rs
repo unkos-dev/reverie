@@ -1,4 +1,4 @@
-//! `/api/settings` admin-only settings management routes.
+//! `/api/v1/settings` admin-only settings management routes.
 //!
 //! THREAT: Privilege escalation — all endpoints are admin-gated via
 //! `require_admin()`. Non-admin callers receive 403.
@@ -23,12 +23,12 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/settings` router.
+/// Build the `/api/v1/settings` router.
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/settings", get(get_settings).put(put_settings))
+    Router::new().route("/api/v1/settings", get(get_settings).put(put_settings))
 }
 
-/// Response shape for `GET /api/settings`.
+/// Response shape for `GET /api/v1/settings`.
 #[derive(serde::Serialize)]
 struct SettingsResponse {
     #[serde(flatten)]
@@ -38,7 +38,7 @@ struct SettingsResponse {
     last_successful_reload_at: Option<OffsetDateTime>,
 }
 
-/// `GET /api/settings` — return current persisted settings (admin only).
+/// `GET /api/v1/settings` — return current persisted settings (admin only).
 ///
 /// Reads directly from the database so the response always reflects
 /// the latest persisted state (admin endpoint, single-row read,
@@ -69,7 +69,7 @@ async fn get_settings(
     }))
 }
 
-/// Response shape for `PUT /api/settings`.
+/// Response shape for `PUT /api/v1/settings`.
 #[derive(serde::Serialize)]
 struct PutSettingsResponse {
     #[serde(flatten)]
@@ -77,7 +77,7 @@ struct PutSettingsResponse {
     restart_required: bool,
 }
 
-/// `PUT /api/settings` — partial update of settings (admin only).
+/// `PUT /api/v1/settings` — partial update of settings (admin only).
 ///
 /// Accepts RFC 7396 JSON Merge Patch: absent fields are unchanged.
 /// Validates field values before persisting. Updates the local

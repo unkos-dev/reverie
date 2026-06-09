@@ -1,4 +1,4 @@
-//! `GET /api/search?q=` — hybrid full-text + trigram search (11b).
+//! `GET /api/v1/search?q=` — hybrid full-text + trigram search (11b).
 //!
 //! Mirrors the read pattern of [`crate::routes::opds::library::emit_search`]
 //! (same RLS seam via [`crate::db::acquire_with_rls`]) but two
@@ -54,8 +54,8 @@ use crate::state::AppState;
 /// `ts_headline` cost and matches the front-end input cap.
 const MAX_Q_LEN: usize = 200;
 
-/// Top-N rows returned by `GET /api/search`. Command-palette UX needs
-/// a tight set; deeper exploration uses `/api/books` with filters.
+/// Top-N rows returned by `GET /api/v1/search`. Command-palette UX needs
+/// a tight set; deeper exploration uses `/api/v1/books` with filters.
 const SEARCH_LIMIT: i64 = 20;
 
 /// Trigram similarity floor — rows below this are dropped from the
@@ -77,7 +77,7 @@ const SNIPPET_HL_START: &str = "\u{0002}";
 /// [`SNIPPET_HL_START`].
 const SNIPPET_HL_END: &str = "\u{0003}";
 
-/// `?q=` query parameter for `GET /api/search`.
+/// `?q=` query parameter for `GET /api/v1/search`.
 #[derive(Debug, Deserialize)]
 pub(super) struct SearchParams {
     /// Free-form query text. Empty / whitespace-only → 422; over
@@ -86,7 +86,7 @@ pub(super) struct SearchParams {
     q: Option<String>,
 }
 
-/// `GET /api/search` — return the top hybrid-ranked manifestations
+/// `GET /api/v1/search` — return the top hybrid-ranked manifestations
 /// matching `q`, snippet-highlighted via `ts_headline`.
 ///
 /// # Errors
@@ -210,7 +210,7 @@ pub(super) async fn search(
             title: r.title,
             authors: authors.get(&r.work_id).cloned().unwrap_or_default(),
             snippet: r.snippet,
-            cover_url: Some(format!("/api/books/{}/cover/thumb", r.m_id)),
+            cover_url: Some(format!("/api/v1/books/{}/cover/thumb", r.m_id)),
         })
         .collect();
 

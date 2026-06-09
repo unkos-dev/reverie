@@ -1,4 +1,4 @@
-//! `/api/users*` admin-only user management routes.
+//! `/api/v1/users*` admin-only user management routes.
 //!
 //! THREAT: Privilege escalation and horizontal privilege abuse. All mutations
 //! are admin-gated via `require_admin()`; `session_version` bumps ensure role
@@ -18,7 +18,7 @@
 //!
 //! # Last-admin protection (TOCTOU-safe)
 //!
-//! `PUT /api/users/{id}/role` and `PUT /api/users/{id}/child-status` —
+//! `PUT /api/v1/users/{id}/role` and `PUT /api/v1/users/{id}/child-status` —
 //! acquire `SELECT … FOR UPDATE` on all admin rows (`ORDER BY id`) first,
 //! then lock the target row. Consistent lock order (admin rows always
 //! before target) prevents deadlock when two concurrent demotions each
@@ -43,13 +43,13 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/users*` router.
+/// Build the `/api/v1/users*` router.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/users", get(list_users))
-        .route("/api/users/{id}/role", put(update_role))
-        .route("/api/users/{id}/child-status", put(update_child_status))
-        .route("/api/users/{id}", patch(update_user))
+        .route("/api/v1/users", get(list_users))
+        .route("/api/v1/users/{id}/role", put(update_role))
+        .route("/api/v1/users/{id}/child-status", put(update_child_status))
+        .route("/api/v1/users/{id}", patch(update_user))
 }
 
 /// Wire-format user row returned by list and mutation endpoints.
@@ -64,7 +64,7 @@ struct UserResponse {
     updated_at: OffsetDateTime,
 }
 
-/// `GET /api/users` — list all users (admin only).
+/// `GET /api/v1/users` — list all users (admin only).
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
@@ -94,13 +94,13 @@ async fn list_users(
     Ok(axum::Json(rows))
 }
 
-/// Body for `PUT /api/users/{id}/role`.
+/// Body for `PUT /api/v1/users/{id}/role`.
 #[derive(Debug, Deserialize)]
 struct UpdateRoleRequest {
     role: Role,
 }
 
-/// `PUT /api/users/{id}/role` — change a user's role (admin only).
+/// `PUT /api/v1/users/{id}/role` — change a user's role (admin only).
 ///
 /// Last-admin protection: acquires `FOR UPDATE` on all admin rows
 /// before the demotion check to prevent TOCTOU races.
@@ -200,13 +200,13 @@ async fn update_role(
     Ok(axum::Json(row))
 }
 
-/// Body for `PUT /api/users/{id}/child-status`.
+/// Body for `PUT /api/v1/users/{id}/child-status`.
 #[derive(Debug, Deserialize)]
 struct UpdateChildStatusRequest {
     is_child: bool,
 }
 
-/// `PUT /api/users/{id}/child-status` — toggle child status (admin only).
+/// `PUT /api/v1/users/{id}/child-status` — toggle child status (admin only).
 ///
 /// When `is_child` is set to `true`, `role` is simultaneously set to
 /// `'child'` in the same transaction to satisfy `chk_child_role_sync`.
@@ -301,7 +301,7 @@ async fn update_child_status(
     Ok(axum::Json(row))
 }
 
-/// Body for `PATCH /api/users/{id}`.
+/// Body for `PATCH /api/v1/users/{id}`.
 ///
 /// RFC 7396 JSON Merge Patch: absent keys are untouched; explicit
 /// `null` on `email` clears; `null` on `display_name` is rejected
@@ -337,7 +337,7 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
     AppError::Internal(e.into())
 }
 
-/// Validate an admin-supplied `email` for `PATCH /api/users/{id}`.
+/// Validate an admin-supplied `email` for `PATCH /api/v1/users/{id}`.
 ///
 /// Returns the trimmed addr-spec on success. Rejects an empty/whitespace-only
 /// value and any non-addr-spec form (display-name, domain-literal — see
@@ -363,7 +363,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     Ok(trimmed)
 }
 
-/// `PATCH /api/users/{id}` — update `display_name` / `email` (admin only).
+/// `PATCH /api/v1/users/{id}` — update `display_name` / `email` (admin only).
 ///
 /// Does not bump `session_version`: neither `email` nor `display_name` gates
 /// access (login identity is the OIDC `sub`, not email; see module-level

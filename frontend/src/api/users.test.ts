@@ -62,7 +62,7 @@ describe("updateUserRole", () => {
     const result = await updateUserRole(STUB_USER.id, "adult");
     expect(result.role).toBe("adult");
     const call = vi.mocked(fetch).mock.calls[0];
-    expect(call[0]).toBe(`/api/users/${STUB_USER.id}/role`);
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/role`);
     expect(call[1]?.method).toBe("PUT");
   });
 
@@ -114,7 +114,7 @@ describe("updateUser", () => {
     const result = await updateUser(STUB_USER.id, { display_name: "Bob" });
     expect(result.display_name).toBe("Bob");
     const call = vi.mocked(fetch).mock.calls[0];
-    expect(call[0]).toBe(`/api/users/${STUB_USER.id}`);
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}`);
     expect(call[1]?.method).toBe("PATCH");
   });
 

@@ -60,11 +60,11 @@ persisting. Two operator-visible behaviours:
 Write an operator-facing Starlight page covering email-claim validation
 behaviour when the admin user-management surface lands.
 
-### Admin `PATCH /api/users/{id}`: addr-spec email validation
+### Admin `PATCH /api/v1/users/{id}`: addr-spec email validation
 
 **Source:** `backend/src/routes/users/mod.rs` — UNK-309
 
-The admin `PATCH /api/users/{id}` endpoint validates the email field
+The admin `PATCH /api/v1/users/{id}` endpoint validates the email field
 against the same RFC 5322 _addr-spec_ rules as the OIDC path
 (`is_addr_spec`). This tightens the prior `EmailAddress::is_valid` check,
 which accepted display-name (`Alice <alice@example.com>`) and

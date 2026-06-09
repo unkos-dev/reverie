@@ -1,6 +1,6 @@
 //! OPDS 1.2 catalog routes. Mount under `/opds/*` with a Basic-only
 //! extractor (RFC 7617), plus a dual-mount cover handler at
-//! `/api/books/:id/cover{,/thumb}` behind cookie-or-Basic for the web UI.
+//! `/api/v1/books/:id/cover{,/thumb}` behind cookie-or-Basic for the web UI.
 //!
 //! Scope is URL-based: pair a device at `/opds/library/*` to see the whole
 //! library (further filtered by child-account RLS) or at
@@ -40,7 +40,7 @@ pub fn router_enabled(config: &OpdsConfig) -> Option<Router<AppState>> {
     )
 }
 
-/// The `/api/books/:id/cover{,/thumb}` mount. Behind the cookie-or-Basic
+/// The `/api/v1/books/:id/cover{,/thumb}` mount. Behind the cookie-or-Basic
 /// [`crate::auth::middleware::CurrentUser`] extractor so the web UI
 /// can load covers with a session cookie. Always mounted — independent of
 /// `config.opds.enabled` — because the web UI needs it regardless of OPDS.

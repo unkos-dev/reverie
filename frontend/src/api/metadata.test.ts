@@ -31,7 +31,7 @@ describe("acceptVersion", () => {
     await acceptVersion("m-1", "v-1");
 
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
-    expect(input).toBe("/api/manifestations/m-1/metadata/accept");
+    expect(input).toBe("/api/v1/manifestations/m-1/metadata/accept");
     expect(init?.method).toBe("POST");
     expect(parseJsonBody(init?.body)).toEqual({ version_id: "v-1" });
   });
@@ -45,7 +45,7 @@ describe("rejectVersion", () => {
 
     await rejectVersion("m-1", "v-9");
 
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/manifestations/m-1/metadata/reject");
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/v1/manifestations/m-1/metadata/reject");
     expect(parseJsonBody(fetchSpy.mock.calls[0]?.[1]?.body)).toEqual({
       version_id: "v-9",
     });
@@ -60,7 +60,7 @@ describe("revertField", () => {
 
     await revertField("m-1", "description", null);
 
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/manifestations/m-1/metadata/revert");
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/v1/manifestations/m-1/metadata/revert");
     expect(parseJsonBody(fetchSpy.mock.calls[0]?.[1]?.body)).toEqual({
       field_name: "description",
       version_id: null,

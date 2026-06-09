@@ -6,7 +6,7 @@ use validator::{Validate, ValidationError};
 /// Basic-only extractor and `public_url` must be set — feeds emit absolute URLs
 /// rooted at `public_url`.
 ///
-/// Note: the dual-mounted cover handlers at `/api/books/:id/cover{,/thumb}` are
+/// Note: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are
 /// mounted independently of `enabled` because the web UI (Step 10) needs them
 /// regardless of OPDS availability.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]

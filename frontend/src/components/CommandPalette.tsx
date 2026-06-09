@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/command";
 import { queryKeys } from "@/lib/query/keys";
 
-/** Debounce delay between keystroke and the `/api/search` request. */
+/** Debounce delay between keystroke and the `/api/v1/search` request. */
 const DEBOUNCE_MS = 200;
 /** Minimum query length before a request fires — avoids one-char noise. */
 const MIN_Q_LEN = 2;

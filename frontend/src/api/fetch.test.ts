@@ -50,7 +50,7 @@ describe("apiFetch — credentials + method normalisation", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/books");
+    await apiFetch("/api/v1/books");
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const init = fetchSpy.mock.calls[0]?.[1];
@@ -63,7 +63,7 @@ describe("apiFetch — credentials + method normalisation", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/books/1", { method: "patch" });
+    await apiFetch("/api/v1/books/1", { method: "patch" });
 
     const init = fetchSpy.mock.calls[0]?.[1];
     expect(init?.method).toBe("PATCH");
@@ -77,7 +77,7 @@ describe("apiFetch — CSRF header injection", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/books");
+    await apiFetch("/api/v1/books");
 
     const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
     expect(headers.has("X-CSRF-Token")).toBe(false);
@@ -89,7 +89,7 @@ describe("apiFetch — CSRF header injection", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/books", { method: "POST", body: "{}" });
+    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
 
     const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
     expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
@@ -101,7 +101,7 @@ describe("apiFetch — CSRF header injection", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/books/1", { method });
+    await apiFetch("/api/v1/books/1", { method });
 
     const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
     expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
@@ -112,7 +112,7 @@ describe("apiFetch — CSRF header injection", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await apiFetch("/api/books", { method: "POST" });
+    await apiFetch("/api/v1/books", { method: "POST" });
 
     const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
     expect(headers.has("X-CSRF-Token")).toBe(false);
@@ -130,7 +130,7 @@ describe("apiFetch — RFC 7807 error parsing", () => {
       }),
     );
 
-    const err = await apiFetch("/api/books").catch((e: unknown) => e);
+    const err = await apiFetch("/api/v1/books").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     const apiErr = err as ApiError;
     expect(apiErr.status).toBe(401);
@@ -150,7 +150,7 @@ describe("apiFetch — RFC 7807 error parsing", () => {
       }),
     );
 
-    const err = (await apiFetch("/api/books").catch((e: unknown) => e)) as ApiError;
+    const err = (await apiFetch("/api/v1/books").catch((e: unknown) => e)) as ApiError;
     expect(err.status).toBe(500);
     expect(err.title).toBe("Internal Server Error");
   });
@@ -164,7 +164,7 @@ describe("apiFetch — RFC 7807 error parsing", () => {
       }),
     );
 
-    const err = (await apiFetch("/api/books").catch((e: unknown) => e)) as ApiError;
+    const err = (await apiFetch("/api/v1/books").catch((e: unknown) => e)) as ApiError;
     expect(err.status).toBe(502);
     expect(err.title).toBe("Bad Gateway");
     expect(err.type).toBeNull();
@@ -191,7 +191,7 @@ describe("apiFetch — csrf-mismatch retry", () => {
     // Retry: succeeds.
     fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    const result = await apiFetch("/api/books", { method: "POST" });
+    const result = await apiFetch("/api/v1/books", { method: "POST" });
 
     expect(result).toEqual({ ok: true });
     expect(fetchSpy).toHaveBeenCalledTimes(3);
@@ -219,7 +219,7 @@ describe("apiFetch — csrf-mismatch retry", () => {
       }),
     );
 
-    const err = (await apiFetch("/api/books", { method: "POST" }).catch(
+    const err = (await apiFetch("/api/v1/books", { method: "POST" }).catch(
       (e: unknown) => e,
     )) as ApiError;
     expect(err.status).toBe(403);
@@ -239,7 +239,7 @@ describe("apiFetch — csrf-mismatch retry", () => {
       }),
     );
 
-    const err = (await apiFetch("/api/books").catch((e: unknown) => e)) as ApiError;
+    const err = (await apiFetch("/api/v1/books").catch((e: unknown) => e)) as ApiError;
     expect(err.status).toBe(403);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
@@ -249,14 +249,14 @@ describe("apiFetch — body decoding", () => {
   test("204 No Content returns undefined without parsing", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
 
-    const result = await apiFetch("/api/books/1", { method: "DELETE" });
+    const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
     expect(result).toBeUndefined();
   });
 
   test("205 Reset Content returns undefined without parsing", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 205 }));
 
-    const result = await apiFetch("/api/books/1", { method: "DELETE" });
+    const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
     expect(result).toBeUndefined();
   });
 
@@ -276,7 +276,7 @@ describe("apiFetch — body decoding", () => {
     // Retry: succeeds with 204 (typical for DELETE after rotation).
     fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
-    const result = await apiFetch("/api/books/1", { method: "DELETE" });
+    const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
     expect(result).toBeUndefined();
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });

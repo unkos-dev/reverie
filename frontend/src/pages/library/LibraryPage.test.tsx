@@ -18,7 +18,7 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     authors: ["Fyodor Dostoevsky"],
     series: null,
     isbn_13: "9780374528379",
-    cover_url: "/api/books/11111111/cover/thumb",
+    cover_url: "/api/v1/books/11111111/cover/thumb",
     ingestion_status: "complete",
     validation_status: "clean",
     enrichment_status: "complete",

@@ -3,7 +3,7 @@
  *
  * Mounted as a controlled shadcn `<Sheet>` from [`VersionsTab`]. Each
  * field tracks a `touched` flag; only touched keys land in the
- * `PATCH /api/books/{id}/metadata` body so the RFC 7396 sparse-update
+ * `PATCH /api/v1/books/{id}/metadata` body so the RFC 7396 sparse-update
  * semantics on the server see exactly the operator's intent.
  *
  * Untouched canonical values seed the inputs as a convenience — the

@@ -1,5 +1,5 @@
 /**
- * Read-only client for the `/api/books` and `/api/works/{id}` surface.
+ * Read-only client for the `/api/v1/books` and `/api/v1/works/{id}` surface.
  *
  * Mirrors the response DTOs in `backend/src/models/library.rs`. Field
  * names are snake_case to match the wire shape — no `serde(rename)` on
@@ -69,13 +69,13 @@ const BookListResponseSchema = z.object({
   items: z.array(BookListItemSchema),
   next_cursor: z.string().nullable(),
 });
-/** Envelope returned by `GET /api/books`. `next_cursor === null` means end-of-list. */
+/** Envelope returned by `GET /api/v1/books`. `next_cursor === null` means end-of-list. */
 export type BookListResponse = z.infer<typeof BookListResponseSchema>;
 
-/** Sort modes accepted by `GET /api/books?sort=…`. */
+/** Sort modes accepted by `GET /api/v1/books?sort=…`. */
 export type ListSort = "recent" | "title" | "author";
 
-/** Query parameters for `GET /api/books`. Every field is optional. */
+/** Query parameters for `GET /api/v1/books`. Every field is optional. */
 export interface ListBooksParams {
   cursor?: string;
   author?: string;
@@ -142,7 +142,7 @@ const BookDetailSchema = z.object({
   updated_at: z.string(),
 });
 /**
- * `GET /api/books/{id}` response. Carries `BookListItem` fields plus
+ * `GET /api/v1/books/{id}` response. Carries `BookListItem` fields plus
  * work-level prose and metadata-version counts. Mirrors `BookDetail`.
  */
 export type BookDetail = z.infer<typeof BookDetailSchema>;
@@ -169,7 +169,7 @@ const WorkDetailSchema = z.object({
   series: SeriesRefSchema.nullable(),
   manifestations: z.array(WorkManifestationSchema),
 });
-/** `GET /api/works/{id}` response. Lists every visible manifestation for the work. */
+/** `GET /api/v1/works/{id}` response. Lists every visible manifestation for the work. */
 export type WorkDetail = z.infer<typeof WorkDetailSchema>;
 
 /**
@@ -185,7 +185,7 @@ export async function listBooks(
   params: ListBooksParams = {},
   signal?: AbortSignal,
 ): Promise<BookListResponse> {
-  const url = buildUrl("/api/books", {
+  const url = buildUrl("/api/v1/books", {
     cursor: params.cursor,
     author: params.author,
     series: params.series,
@@ -204,7 +204,7 @@ export async function listBooks(
  */
 export async function getBook(id: string, signal?: AbortSignal): Promise<BookDetail> {
   const body = await apiFetch(
-    `/api/books/${encodeURIComponent(id)}`,
+    `/api/v1/books/${encodeURIComponent(id)}`,
     signal ? { method: "GET", signal } : { method: "GET" },
   );
   return BookDetailSchema.parse(body);
@@ -216,7 +216,7 @@ export async function getBook(id: string, signal?: AbortSignal): Promise<BookDet
  */
 export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDetail> {
   const body = await apiFetch(
-    `/api/works/${encodeURIComponent(id)}`,
+    `/api/v1/works/${encodeURIComponent(id)}`,
     signal ? { method: "GET", signal } : { method: "GET" },
   );
   return WorkDetailSchema.parse(body);
@@ -232,7 +232,7 @@ const UpdateBookMetadataFieldsSchema = z.object({
   isbn_13: z.string().nullable().optional(),
 });
 /**
- * RFC 7396 JSON Merge Patch body for `PATCH /api/books/{id}/metadata`.
+ * RFC 7396 JSON Merge Patch body for `PATCH /api/v1/books/{id}/metadata`.
  *
  * Each field value distinguishes three states:
  * * key omitted → field unchanged
@@ -278,11 +278,11 @@ export async function updateBookMetadata(
     body: JSON.stringify({ fields }),
     ...(signal ? { signal } : {}),
   };
-  await apiFetch(`/api/books/${encodeURIComponent(id)}/metadata`, init);
+  await apiFetch(`/api/v1/books/${encodeURIComponent(id)}/metadata`, init);
 }
 
 /**
- * Build a `URL` for an `/api/*` endpoint, dropping `undefined` params.
+ * Build a `URL` for an `/api/v1/*` endpoint, dropping `undefined` params.
  * Uses `window.location.origin` as the base so the URL is parseable;
  * the same-origin prefix is stripped by the proxy/route on the server.
  */

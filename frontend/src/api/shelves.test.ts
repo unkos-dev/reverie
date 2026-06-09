@@ -66,7 +66,7 @@ describe("listShelves", () => {
 });
 
 describe("getShelf", () => {
-  test("calls GET /api/shelves/{id}", async () => {
+  test("calls GET /api/v1/shelves/{id}", async () => {
     const body = {
       id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
       name: "Holiday",
@@ -79,7 +79,7 @@ describe("getShelf", () => {
     const result = await getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     expect(result.name).toBe("Holiday");
     const url = fetchSpy.mock.calls[0]?.[0] as string;
-    expect(url).toBe("/api/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    expect(url).toBe("/api/v1/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
   });
 });
 
@@ -160,7 +160,7 @@ describe("shelf items", () => {
     );
     const url = fetchSpy.mock.calls[0]?.[0] as string;
     expect(url).toBe(
-      "/api/shelves/ffffffff-ffff-ffff-ffff-ffffffffffff/items/00000000-0000-0000-0000-000000000002",
+      "/api/v1/shelves/ffffffff-ffff-ffff-ffff-ffffffffffff/items/00000000-0000-0000-0000-000000000002",
     );
   });
 

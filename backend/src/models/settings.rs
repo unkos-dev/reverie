@@ -103,7 +103,7 @@ impl Settings {
 // port, database_url, OIDC, library_path). Currently empty because
 // no restart-required fields are in the settings table yet.
 
-/// Partial update request for `PUT /api/settings`.
+/// Partial update request for `PUT /api/v1/settings`.
 ///
 /// All fields optional — absent fields are left unchanged (JSON Merge
 /// Patch semantics per RFC 7396). `CleanupMode` and

@@ -48,7 +48,7 @@ export const queryKeys = {
   shelves: {
     /** Root namespace; invalidate to refetch every shelves-* slot. */
     all: ["shelves"] as const,
-    /** `GET /api/shelves` list. */
+    /** `GET /api/v1/shelves` list. */
     list: () => ["shelves", "list"] as const,
     /** Single shelf detail (with items). */
     detail: (id: string) => ["shelves", "detail", id] as const,
@@ -56,7 +56,7 @@ export const queryKeys = {
   users: {
     /** Root namespace; invalidate to refetch every users-* slot. */
     all: ["users"] as const,
-    /** `GET /api/users` list (admin only). */
+    /** `GET /api/v1/users` list (admin only). */
     list: () => ["users", "list"] as const,
   },
   auth: {
@@ -66,9 +66,9 @@ export const queryKeys = {
   dashboard: {
     /** Root namespace; invalidate to refetch every dashboard-* slot. */
     all: ["dashboard"] as const,
-    /** `GET /api/dashboard/stats` aggregate metrics (admin only). */
+    /** `GET /api/v1/dashboard/stats` aggregate metrics (admin only). */
     stats: () => ["dashboard", "stats"] as const,
-    /** `GET /api/dashboard/activity` recent batches, keyed by limit. */
+    /** `GET /api/v1/dashboard/activity` recent batches, keyed by limit. */
     activity: (limit: number) => ["dashboard", "activity", limit] as const,
   },
 };

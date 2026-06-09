@@ -1,6 +1,6 @@
 //! Cover image handlers, dual-mounted. `/opds/books/:id/cover{,/thumb}` sits
 //! under `BasicOnly` so OPDS clients' Basic credentials stay within the
-//! RFC 7617 paired protection space. `/api/books/:id/cover{,/thumb}` sits
+//! RFC 7617 paired protection space. `/api/v1/books/:id/cover{,/thumb}` sits
 //! under `CurrentUser` (cookie-or-Basic) for the web UI. Handler body is
 //! shared; the two mounts differ only in extractor wrapping.
 
@@ -47,13 +47,13 @@ pub fn opds_router() -> Router<AppState> {
         )
 }
 
-/// Build the API-mount cover router (`/api/books/:id/cover{,/thumb}`)
+/// Build the API-mount cover router (`/api/v1/books/:id/cover{,/thumb}`)
 /// gated by [`CurrentUser`] so the web UI can load covers with a
 /// session cookie. Always mounted independent of `config.opds.enabled`.
 pub fn api_router() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/books/{id}/cover",
+            "/api/v1/books/{id}/cover",
             get(
                 |user: CurrentUser,
                  State(state): State<AppState>,
@@ -63,7 +63,7 @@ pub fn api_router() -> Router<AppState> {
             ),
         )
         .route(
-            "/api/books/{id}/cover/thumb",
+            "/api/v1/books/{id}/cover/thumb",
             get(
                 |user: CurrentUser,
                  State(state): State<AppState>,

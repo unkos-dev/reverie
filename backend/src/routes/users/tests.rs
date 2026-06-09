@@ -1,4 +1,4 @@
-//! Integration tests for `/api/users*` admin endpoints.
+//! Integration tests for `/api/v1/users*` admin endpoints.
 
 use axum::http::{HeaderName, HeaderValue, StatusCode};
 use serde_json::json;
@@ -15,7 +15,7 @@ fn auth(header: &str) -> (HeaderName, HeaderValue) {
     )
 }
 
-// ---------- GET /api/users ----------
+// ---------- GET /api/v1/users ----------
 
 #[sqlx::test(migrations = "./migrations")]
 async fn list_users_as_admin_returns_all(pool: PgPool) {
@@ -29,7 +29,7 @@ async fn list_users_as_admin_returns_all(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/users")
+        .get("/api/v1/users")
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -54,7 +54,7 @@ async fn list_users_as_adult_returns_403(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/users")
+        .get("/api/v1/users")
         .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
@@ -69,13 +69,13 @@ async fn list_users_as_child_returns_403(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/users")
+        .get("/api/v1/users")
         .add_header(auth(&child_basic).0, auth(&child_basic).1)
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
 }
 
-// ---------- PUT /api/users/{id}/role ----------
+// ---------- PUT /api/v1/users/{id}/role ----------
 
 #[sqlx::test(migrations = "./migrations")]
 async fn promote_adult_to_admin(pool: PgPool) {
@@ -87,7 +87,7 @@ async fn promote_adult_to_admin(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{adult_id}/role"))
+        .put(&format!("/api/v1/users/{adult_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"role": "admin"}))
         .await;
@@ -124,7 +124,7 @@ async fn demote_admin_to_adult_with_multiple_admins(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{admin2_id}/role"))
+        .put(&format!("/api/v1/users/{admin2_id}/role"))
         .add_header(auth(&admin1_basic).0, auth(&admin1_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
@@ -141,7 +141,7 @@ async fn demote_sole_admin_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{admin_id}/role"))
+        .put(&format!("/api/v1/users/{admin_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
@@ -162,7 +162,7 @@ async fn non_admin_put_role_returns_403(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{adult_id}/role"))
+        .put(&format!("/api/v1/users/{adult_id}/role"))
         .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
         .json(&json!({"role": "admin"}))
         .await;
@@ -179,7 +179,7 @@ async fn set_role_child_on_non_child_user_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{adult_id}/role"))
+        .put(&format!("/api/v1/users/{adult_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"role": "child"}))
         .await;
@@ -201,14 +201,14 @@ async fn put_role_nonexistent_user_returns_404(pool: PgPool) {
     let fake_id = Uuid::new_v4();
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{fake_id}/role"))
+        .put(&format!("/api/v1/users/{fake_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
     test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }
 
-// ---------- PUT /api/users/{id}/child-status ----------
+// ---------- PUT /api/v1/users/{id}/child-status ----------
 
 #[sqlx::test(migrations = "./migrations")]
 async fn toggle_child_on_sets_role_child(pool: PgPool) {
@@ -220,7 +220,7 @@ async fn toggle_child_on_sets_role_child(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{adult_id}/child-status"))
+        .put(&format!("/api/v1/users/{adult_id}/child-status"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"is_child": true}))
         .await;
@@ -253,7 +253,7 @@ async fn toggle_child_off_reverts_role_to_adult(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{child_id}/child-status"))
+        .put(&format!("/api/v1/users/{child_id}/child-status"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"is_child": false}))
         .await;
@@ -271,7 +271,7 @@ async fn toggle_child_on_sole_admin_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{admin_id}/child-status"))
+        .put(&format!("/api/v1/users/{admin_id}/child-status"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"is_child": true}))
         .await;
@@ -283,7 +283,7 @@ async fn toggle_child_on_sole_admin_returns_422(pool: PgPool) {
     );
 }
 
-// ---------- PATCH /api/users/{id} ----------
+// ---------- PATCH /api/v1/users/{id} ----------
 
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_user_updates_display_name_and_email(pool: PgPool) {
@@ -295,7 +295,7 @@ async fn patch_user_updates_display_name_and_email(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"display_name": "Updated Name", "email": "new@example.com"}))
         .await;
@@ -323,7 +323,7 @@ async fn patch_user_null_email_clears(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"email": null}))
         .await;
@@ -341,7 +341,7 @@ async fn patch_user_null_display_name_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"display_name": null}))
         .await;
@@ -369,7 +369,7 @@ async fn patch_user_duplicate_email_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{user2_id}"))
+        .patch(&format!("/api/v1/users/{user2_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"email": "shared@example.com"}))
         .await;
@@ -397,7 +397,7 @@ async fn patch_user_case_insensitive_email_uniqueness(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{user2_id}"))
+        .patch(&format!("/api/v1/users/{user2_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"email": "alice@example.com"}))
         .await;
@@ -415,7 +415,7 @@ async fn patch_nonexistent_user_returns_404(pool: PgPool) {
     let fake_id = Uuid::new_v4();
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{fake_id}"))
+        .patch(&format!("/api/v1/users/{fake_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"display_name": "Ghost"}))
         .await;
@@ -449,7 +449,7 @@ async fn patch_user_invalid_email_format_returns_422(pool: PgPool) {
             continue;
         }
         let r = server
-            .patch(&format!("/api/users/{adult_id}"))
+            .patch(&format!("/api/v1/users/{adult_id}"))
             .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
             .json(&json!({"email": bad}))
             .await;
@@ -502,7 +502,7 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
     // leaves ≥2 admins). Let's test the real last-admin scenario:
     // first demote admin3 down to 2 admins, then race the last two.
     let r = server
-        .put(&format!("/api/users/{admin3_id}/role"))
+        .put(&format!("/api/v1/users/{admin3_id}/role"))
         .add_header(auth(&admin1_basic).0, auth(&admin1_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
@@ -517,7 +517,7 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
     // can verify the constraint holds sequentially: first one succeeds,
     // second fails.
     let r1 = server
-        .put(&format!("/api/users/{admin2_id}/role"))
+        .put(&format!("/api/v1/users/{admin2_id}/role"))
         .add_header(auth(&admin1_basic).0, auth(&admin1_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
@@ -529,7 +529,7 @@ async fn concurrent_demote_last_two_admins_one_succeeds_one_fails(pool: PgPool) 
 
     // Now only admin1 remains. Self-demotion must fail.
     let r2 = server
-        .put(&format!("/api/users/{admin1_id}/role"))
+        .put(&format!("/api/v1/users/{admin1_id}/role"))
         .add_header(auth(&admin1_basic).0, auth(&admin1_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
@@ -552,7 +552,7 @@ async fn non_admin_put_child_status_returns_403(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{adult_id}/child-status"))
+        .put(&format!("/api/v1/users/{adult_id}/child-status"))
         .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
         .json(&json!({"is_child": true}))
         .await;
@@ -568,7 +568,7 @@ async fn non_admin_patch_user_returns_403(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
         .json(&json!({"display_name": "Hacker"}))
         .await;
@@ -586,7 +586,7 @@ async fn patch_user_whitespace_display_name_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"display_name": "   "}))
         .await;
@@ -608,7 +608,7 @@ async fn patch_user_whitespace_email_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"email": "   "}))
         .await;
@@ -633,7 +633,7 @@ async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .put(&format!("/api/users/{child_id}/role"))
+        .put(&format!("/api/v1/users/{child_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"role": "adult"}))
         .await;
@@ -668,7 +668,7 @@ async fn patch_email_does_not_bump_session_version(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"email": "sv-test@example.com"}))
         .await;
@@ -713,7 +713,7 @@ async fn patch_email_null_does_not_bump_session_version(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"email": null}))
         .await;
@@ -750,7 +750,7 @@ async fn patch_display_name_only_does_not_bump_session_version(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .patch(&format!("/api/users/{adult_id}"))
+        .patch(&format!("/api/v1/users/{adult_id}"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
         .json(&json!({"display_name": "New Name Only"}))
         .await;

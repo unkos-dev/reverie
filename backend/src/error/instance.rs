@@ -62,12 +62,12 @@ mod tests {
     #[tokio::test]
     async fn middleware_captures_request_path() {
         let app = Router::new()
-            .route("/api/books", get(handler))
+            .route("/api/v1/books", get(handler))
             .layer(from_fn(problem_instance_layer));
         let server = TestServer::new(app);
-        let r = server.get("/api/books?cursor=foo").await;
+        let r = server.get("/api/v1/books?cursor=foo").await;
         r.assert_status_ok();
-        assert_eq!(r.text(), "/api/books");
+        assert_eq!(r.text(), "/api/v1/books");
     }
 
     #[tokio::test]

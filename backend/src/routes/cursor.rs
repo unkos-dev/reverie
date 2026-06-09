@@ -2,7 +2,7 @@
 //!
 //! Unlike the OPDS module's [`crate::routes::opds::cursor::Cursor`] —
 //! which is hard-wired to `(created_at, id)` because OPDS feeds only
-//! ever sort by recency — the JSON `/api/books` surface lets clients
+//! ever sort by recency — the JSON `/api/v1/books` surface lets clients
 //! pick a sort axis (`recent` | `title` | `author`). The cursor key
 //! therefore has to carry both the boundary value *and* which axis
 //! produced it, so that a client cannot replay a `sort=recent`
@@ -38,7 +38,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-/// Sort axis selectable via `?sort=...` on `/api/books`.
+/// Sort axis selectable via `?sort=...` on `/api/v1/books`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]

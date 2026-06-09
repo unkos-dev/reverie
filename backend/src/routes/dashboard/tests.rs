@@ -1,4 +1,4 @@
-//! Integration tests for the admin-only `/api/dashboard/*` endpoints
+//! Integration tests for the admin-only `/api/v1/dashboard/*` endpoints
 //! (Step 12 / UNK-81).
 //!
 //! Mirrors [`crate::routes::library::tests`] — `#[sqlx::test]` per case,
@@ -113,7 +113,7 @@ async fn stats_distinct_works_vs_manifestations(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/dashboard/stats")
+        .get("/api/v1/dashboard/stats")
         .add_header(AUTHORIZATION, admin_auth)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -141,7 +141,7 @@ async fn stats_empty_library_returns_zeros(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/dashboard/stats")
+        .get("/api/v1/dashboard/stats")
         .add_header(AUTHORIZATION, admin_auth)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -172,7 +172,7 @@ async fn stats_endpoint_rejects_non_admin(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/dashboard/stats")
+        .get("/api/v1/dashboard/stats")
         .add_header(AUTHORIZATION, adult_auth)
         .await;
     test_support::assert_problem(&response, problems::FORBIDDEN, StatusCode::FORBIDDEN);
@@ -184,7 +184,7 @@ async fn stats_endpoint_requires_auth(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let response = server.get("/api/dashboard/stats").await;
+    let response = server.get("/api/v1/dashboard/stats").await;
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
 }
 
@@ -201,7 +201,7 @@ async fn activity_endpoint_admin_lists_batches(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/dashboard/activity")
+        .get("/api/v1/dashboard/activity")
         .add_header(AUTHORIZATION, admin_auth)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -229,7 +229,7 @@ async fn activity_in_progress_sums_to_total(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/dashboard/activity")
+        .get("/api/v1/dashboard/activity")
         .add_header(AUTHORIZATION, admin_auth)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -270,7 +270,7 @@ async fn activity_limit_is_clamped(pool: PgPool) {
 
     // Huge limit clamps to 100 — no error.
     let huge = server
-        .get("/api/dashboard/activity?limit=99999")
+        .get("/api/v1/dashboard/activity?limit=99999")
         .add_header(AUTHORIZATION, admin_auth.clone())
         .await;
     assert_eq!(huge.status_code(), StatusCode::OK);
@@ -278,7 +278,7 @@ async fn activity_limit_is_clamped(pool: PgPool) {
 
     // Zero clamps to 1 — no Postgres negative/zero-LIMIT error, still returns rows.
     let zero = server
-        .get("/api/dashboard/activity?limit=0")
+        .get("/api/v1/dashboard/activity?limit=0")
         .add_header(AUTHORIZATION, admin_auth)
         .await;
     assert_eq!(zero.status_code(), StatusCode::OK);
@@ -294,7 +294,7 @@ async fn activity_endpoint_rejects_non_admin(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/dashboard/activity")
+        .get("/api/v1/dashboard/activity")
         .add_header(AUTHORIZATION, adult_auth)
         .await;
     test_support::assert_problem(&response, problems::FORBIDDEN, StatusCode::FORBIDDEN);
@@ -306,6 +306,6 @@ async fn activity_endpoint_requires_auth(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let response = server.get("/api/dashboard/activity").await;
+    let response = server.get("/api/v1/dashboard/activity").await;
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
 }

@@ -42,28 +42,31 @@ use crate::state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/manifestations/{id}/metadata",
+            "/api/v1/manifestations/{id}/metadata",
             get(get_manifestation_metadata),
         )
-        .route("/api/works/{id}/metadata", get(get_work_metadata))
+        .route("/api/v1/works/{id}/metadata", get(get_work_metadata))
         .route(
-            "/api/manifestations/{id}/metadata/accept",
+            "/api/v1/manifestations/{id}/metadata/accept",
             post(accept_manifestation),
         )
         .route(
-            "/api/manifestations/{id}/metadata/reject",
+            "/api/v1/manifestations/{id}/metadata/reject",
             post(reject_manifestation),
         )
         .route(
-            "/api/manifestations/{id}/metadata/revert",
+            "/api/v1/manifestations/{id}/metadata/revert",
             post(revert_manifestation),
         )
-        .route("/api/manifestations/{id}/metadata/lock", post(lock_field))
         .route(
-            "/api/manifestations/{id}/metadata/unlock",
+            "/api/v1/manifestations/{id}/metadata/lock",
+            post(lock_field),
+        )
+        .route(
+            "/api/v1/manifestations/{id}/metadata/unlock",
             post(unlock_field),
         )
-        .route("/api/books/{id}/metadata", patch(update_book_metadata))
+        .route("/api/v1/books/{id}/metadata", patch(update_book_metadata))
 }
 
 #[derive(Debug, Serialize)]
@@ -629,7 +632,7 @@ async fn clear_field(
 
 // ── manual metadata edit (RFC 7396 JSON Merge Patch) ──────────────────────
 
-/// Per-field sparse update body for `PATCH /api/books/{id}/metadata`.
+/// Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.
 ///
 /// Encodes RFC 7396 JSON Merge Patch semantics via
 /// `serde_with::rust::double_option` (per
@@ -662,7 +665,7 @@ struct UpdateMetadataFields {
     isbn_13: Option<Option<String>>,
 }
 
-/// Outer envelope for `PATCH /api/books/{id}/metadata`. The `fields`
+/// Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`
 /// wrapper keeps the door open for future top-level keys (eg. `tags`,
 /// `series_position`) without forcing a body-shape migration.
 #[derive(Debug, Deserialize)]
@@ -708,7 +711,7 @@ impl UpdateMetadataFields {
     }
 }
 
-/// `PATCH /api/books/{id}/metadata` — manual operator edit.
+/// `PATCH /api/v1/books/{id}/metadata` — manual operator edit.
 ///
 /// RFC 7396 JSON Merge Patch shape. For each touched field the handler
 /// inserts a `metadata_versions` row with `source = 'manual'` and then
@@ -920,7 +923,7 @@ mod tests {
         let server = test_support::test_server();
         let id = Uuid::new_v4();
         let response = server
-            .get(&format!("/api/manifestations/{id}/metadata"))
+            .get(&format!("/api/v1/manifestations/{id}/metadata"))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
@@ -931,7 +934,7 @@ mod tests {
         let id = Uuid::new_v4();
         let vid = Uuid::new_v4();
         let response = server
-            .post(&format!("/api/manifestations/{id}/metadata/accept"))
+            .post(&format!("/api/v1/manifestations/{id}/metadata/accept"))
             .json(&serde_json::json!({"version_id": vid}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
@@ -987,7 +990,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .post(&format!("/api/manifestations/{m_id}/metadata/accept"))
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"version_id": version_id}))
             .await;
@@ -1043,7 +1046,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .post(&format!("/api/manifestations/{m_id}/metadata/reject"))
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/reject"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"version_id": version_id}))
             .await;
@@ -1104,7 +1107,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .post(&format!("/api/manifestations/{m_id}/metadata/revert"))
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({
                 "field_name": "description",
@@ -1173,7 +1176,7 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         for vid in [v1, v2] {
             let response = server
-                .post(&format!("/api/manifestations/{m_id}/metadata/accept"))
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
                 .add_header(AUTHORIZATION, basic.clone())
                 .json(&serde_json::json!({"version_id": vid}))
                 .await;
@@ -1191,14 +1194,14 @@ mod tests {
         assert_eq!(job_count, 2, "two accepts must enqueue two rows (no dedup)");
     }
 
-    // ── PATCH /api/books/{id}/metadata (manual edit, RFC 7396) ───────────
+    // ── PATCH /api/v1/books/{id}/metadata (manual edit, RFC 7396) ───────────
 
     #[tokio::test]
     async fn patch_book_metadata_requires_auth() {
         let server = test_support::test_server();
         let id = Uuid::new_v4();
         let response = server
-            .patch(&format!("/api/books/{id}/metadata"))
+            .patch(&format!("/api/v1/books/{id}/metadata"))
             .json(&serde_json::json!({"fields": {"title": "X"}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
@@ -1216,7 +1219,7 @@ mod tests {
         let new_title = format!("Manual Title {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"title": new_title}}))
             .await;
@@ -1282,7 +1285,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
             .await;
@@ -1331,7 +1334,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {}}))
             .await;
@@ -1360,7 +1363,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"title": serde_json::Value::Null}}))
             .await;
@@ -1413,7 +1416,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"title": "Nope"}}))
             .await;
@@ -1440,7 +1443,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"title": "Operator-chosen"}}))
             .await;
@@ -1470,7 +1473,7 @@ mod tests {
 
         let fake = Uuid::new_v4();
         let response = server
-            .patch(&format!("/api/books/{fake}/metadata"))
+            .patch(&format!("/api/v1/books/{fake}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"title": "ghost"}}))
             .await;
@@ -1507,7 +1510,7 @@ mod tests {
         .expect("seed isbn_a");
 
         let response = server
-            .patch(&format!("/api/books/{m_b}/metadata"))
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_13": isbn}}))
             .await;
@@ -1547,7 +1550,7 @@ mod tests {
 
         // 13 digits, correct length, wrong check digit (valid form ends 7).
         let response = server
-            .patch(&format!("/api/books/{m}/metadata"))
+            .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_13": "9780306406150"}}))
             .await;
@@ -1569,7 +1572,7 @@ mod tests {
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let response = server
-            .patch(&format!("/api/books/{m}/metadata"))
+            .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_10": "12345"}}))
             .await;
@@ -1592,7 +1595,7 @@ mod tests {
 
         // 13 chars, but a letter where a digit must be.
         let response = server
-            .patch(&format!("/api/books/{m}/metadata"))
+            .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_13": "978030640615X"}}))
             .await;
@@ -1615,7 +1618,7 @@ mod tests {
 
         // Valid ISBN-10 (check digit 2) must pass the new guard.
         let response = server
-            .patch(&format!("/api/books/{m}/metadata"))
+            .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_10": "0306406152"}}))
             .await;
@@ -1637,7 +1640,7 @@ mod tests {
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let response = server
-            .patch(&format!("/api/books/{m}/metadata"))
+            .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_13": "978-0-306-40615-7"}}))
             .await;
@@ -1685,7 +1688,7 @@ mod tests {
         .expect("seed isbn_a");
 
         let response = server
-            .patch(&format!("/api/books/{m_b}/metadata"))
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"isbn_13": "978-0-306-40615-7"}}))
             .await;
@@ -1828,7 +1831,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
             .await;
@@ -1836,7 +1839,7 @@ mod tests {
 
         // Now GET the detail and confirm the audit row is absent.
         let detail = server
-            .get(&format!("/api/books/{m_id}"))
+            .get(&format!("/api/v1/books/{m_id}"))
             .add_header(AUTHORIZATION, basic)
             .await;
         assert_eq!(detail.status_code(), StatusCode::OK);
@@ -1884,7 +1887,7 @@ mod tests {
         // PATCH description -> null. Creates a `new_value = 'null'`
         // audit row + clears the canonical column.
         let r = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
             .await;
@@ -1904,7 +1907,7 @@ mod tests {
         .expect("null audit row exists");
 
         let accept = server
-            .post(&format!("/api/manifestations/{m_id}/metadata/accept"))
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"version_id": null_row_id}))
             .await;
@@ -1946,7 +1949,7 @@ mod tests {
 
         // First save.
         let r1 = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .json(&serde_json::json!({"fields": {"title": value.clone()}}))
             .await;
@@ -1972,7 +1975,7 @@ mod tests {
 
         // Second save of the same value — should reset to pending.
         let r2 = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"title": value}}))
             .await;
@@ -2005,7 +2008,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .patch(&format!("/api/books/{m_id}/metadata"))
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"fields": {"publisher": "  Acme Press  "}}))
             .await;
@@ -2045,7 +2048,7 @@ mod tests {
         // Same logical publisher, divergent leading/trailing whitespace.
         for publisher in ["Penguin Random House", "  Penguin Random House  "] {
             let response = server
-                .patch(&format!("/api/books/{m_id}/metadata"))
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
                 .json(&serde_json::json!({"fields": {"publisher": publisher}}))
                 .await;
@@ -2093,7 +2096,7 @@ mod tests {
         // second save must dedup rather than open a parallel journal row.
         for pub_date in ["2024-01-15", "2024-01-15T00:00:00Z"] {
             let response = server
-                .patch(&format!("/api/books/{m_id}/metadata"))
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
                 .json(&serde_json::json!({"fields": {"pub_date": pub_date}}))
                 .await;

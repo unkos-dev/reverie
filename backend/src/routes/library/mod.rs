@@ -1,4 +1,4 @@
-//! `/api/books*` JSON routes (Step 11a — list/detail/work).
+//! `/api/v1/books*` JSON routes (Step 11a — list/detail/work).
 //!
 //! Mirrors the read pattern of [`crate::routes::opds::library`] —
 //! same RLS seam (`db::acquire_with_rls`), same dynamic
@@ -51,17 +51,17 @@ mod search;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/books*`, `/api/works/{id}`, and `/api/search`
+/// Build the `/api/v1/books*`, `/api/v1/works/{id}`, and `/api/v1/search`
 /// router.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/books", get(list))
-        .route("/api/books/{id}", get(detail))
-        .route("/api/works/{id}", get(work_detail))
-        .route("/api/search", get(search::search))
+        .route("/api/v1/books", get(list))
+        .route("/api/v1/books/{id}", get(detail))
+        .route("/api/v1/works/{id}", get(work_detail))
+        .route("/api/v1/search", get(search::search))
 }
 
-/// Upper bound on `?tag=` repetitions accepted by `GET /api/books`.
+/// Upper bound on `?tag=` repetitions accepted by `GET /api/v1/books`.
 /// Practical input is ≤ 10 (UI palette caps at a handful); the limit
 /// is set higher than expected use to leave headroom but small enough
 /// to bound the COUNT subquery's parameter array. Exceeding the cap
@@ -69,7 +69,7 @@ pub fn router() -> Router<AppState> {
 /// pathologically large query.
 const MAX_TAG_FILTERS: usize = 20;
 
-/// `?cursor=` / `?sort=` / filter query parameters for `GET /api/books`.
+/// `?cursor=` / `?sort=` / filter query parameters for `GET /api/v1/books`.
 ///
 /// Decoded via [`axum_extra::extract::Query`] (not built-in
 /// `axum::Query`) so multi-value `?tag=a&tag=b` filters extend without
@@ -101,7 +101,7 @@ struct ListParams {
     tag: Vec<String>,
 }
 
-/// `GET /api/books` response envelope. Carries the page rows plus
+/// `GET /api/v1/books` response envelope. Carries the page rows plus
 /// the opaque cursor for the following page; pagination is also
 /// signalled via the RFC 8288 `Link` header on the response.
 ///
@@ -225,7 +225,7 @@ async fn list(
             authors: authors_by_work.get(&work_id).cloned().unwrap_or_default(),
             series,
             isbn_13: r.get("isbn_13"),
-            cover_url: format!("/api/books/{m_id}/cover/thumb"),
+            cover_url: format!("/api/v1/books/{m_id}/cover/thumb"),
             ingestion_status: parse_ingestion(&ingestion_raw)?,
             // Fallible decode: this dynamic QueryBuilder path can't use a
             // sqlx macro, and infallible `Row::get` panics on an unknown
@@ -570,7 +570,7 @@ pub(crate) async fn load_authors_for_works(
     Ok(out)
 }
 
-/// `GET /api/books/{id}` — single-manifestation detail with the
+/// `GET /api/v1/books/{id}` — single-manifestation detail with the
 /// work-level prose, tags, and a metadata-version summary used by the
 /// book-detail Versions tab.
 ///
@@ -637,7 +637,7 @@ async fn detail(
         isbn_10: row.isbn_10,
         publisher: row.publisher,
         pub_date: pub_date_str,
-        cover_url: format!("/api/books/{}/cover/thumb", row.id),
+        cover_url: format!("/api/v1/books/{}/cover/thumb", row.id),
         tags,
         ingestion_status: parse_ingestion(&row.ingestion_status)?,
         validation_status: row.validation_status,
@@ -817,7 +817,7 @@ async fn load_pending_versions(
     canonical_ids: &[Uuid],
 ) -> Result<Vec<MetadataVersionRow>, AppError> {
     // `new_value != 'null'::jsonb` excludes audit-trail rows recorded
-    // by the manual-clear path (`PATCH /api/books/{id}/metadata` with a
+    // by the manual-clear path (`PATCH /api/v1/books/{id}/metadata` with a
     // `null` value). Those rows live in the journal for accountability
     // but never become a draft an operator could accept — surfacing
     // them here would render `(null)` proposals with Accept/Reject
@@ -897,7 +897,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     u32::try_from(filled).unwrap_or(u32::MAX)
 }
 
-/// `GET /api/works/{id}` — work-level prose with every manifestation
+/// `GET /api/v1/works/{id}` — work-level prose with every manifestation
 /// of that work the current user can see.
 ///
 /// `works` carries no RLS policy on its own; RLS lives on
@@ -990,7 +990,7 @@ async fn work_detail(
             id: r.id,
             isbn_13: r.isbn_13,
             isbn_10: r.isbn_10,
-            cover_url: format!("/api/books/{}/cover/thumb", r.id),
+            cover_url: format!("/api/v1/books/{}/cover/thumb", r.id),
             ingestion_status: parse_ingestion(&r.ingestion_status)?,
             validation_status: r.validation_status,
             enrichment_status: parse_enrichment(&r.enrichment_status)?,

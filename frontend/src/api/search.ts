@@ -1,5 +1,5 @@
 /**
- * Client for the `/api/search?q=` endpoint (11b).
+ * Client for the `/api/v1/search?q=` endpoint (11b).
  *
  * Mirrors `SearchResponse` / `SearchHit` in
  * `backend/src/models/library.rs`. Snake_case field names match the
@@ -31,13 +31,13 @@ const SearchHitSchema = z.object({
   snippet: z.string().nullable(),
   cover_url: z.string().nullable(),
 });
-/** One result row from `GET /api/search`. Discriminate by `kind`. */
+/** One result row from `GET /api/v1/search`. Discriminate by `kind`. */
 export type SearchHit = z.infer<typeof SearchHitSchema>;
 
 const SearchResponseSchema = z.object({
   items: z.array(SearchHitSchema),
 });
-/** Envelope returned by `GET /api/search`. */
+/** Envelope returned by `GET /api/v1/search`. */
 export type SearchResponse = z.infer<typeof SearchResponseSchema>;
 
 /**
@@ -50,7 +50,7 @@ export type SearchResponse = z.infer<typeof SearchResponseSchema>;
  *   to cancel stale requests while the user types.
  */
 export async function searchLibrary(q: string, signal?: AbortSignal): Promise<SearchResponse> {
-  const url = new URL("/api/search", window.location.origin);
+  const url = new URL("/api/v1/search", window.location.origin);
   url.searchParams.set("q", q);
   const body = await apiFetch(url, signal ? { method: "GET", signal } : { method: "GET" });
   return SearchResponseSchema.parse(body);

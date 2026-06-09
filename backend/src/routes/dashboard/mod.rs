@@ -1,4 +1,4 @@
-//! `/api/dashboard/*` admin-only library-health aggregation routes
+//! `/api/v1/dashboard/*` admin-only library-health aggregation routes
 //! (Step 12 / UNK-81).
 //!
 //! THREAT: Privilege escalation / information disclosure — both endpoints
@@ -39,11 +39,11 @@ const DEFAULT_ACTIVITY_LIMIT: i64 = 20;
 /// of caller input.
 const MAX_ACTIVITY_LIMIT: i64 = 100;
 
-/// Build the `/api/dashboard/*` router (admin-only).
+/// Build the `/api/v1/dashboard/*` router (admin-only).
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/dashboard/stats", get(stats))
-        .route("/api/dashboard/activity", get(activity))
+        .route("/api/v1/dashboard/stats", get(stats))
+        .route("/api/v1/dashboard/activity", get(activity))
 }
 
 /// One `{ status, count }` bucket in a breakdown array. `status` is the
@@ -75,7 +75,7 @@ struct MetadataCoverage {
     has_cover: i64,
 }
 
-/// Response shape for `GET /api/dashboard/stats`.
+/// Response shape for `GET /api/v1/dashboard/stats`.
 #[derive(serde::Serialize)]
 struct StatsResponse {
     total_manifestations: i64,
@@ -92,7 +92,7 @@ struct StatsResponse {
     metadata_coverage: MetadataCoverage,
 }
 
-/// `GET /api/dashboard/stats` — library-wide aggregate health metrics
+/// `GET /api/v1/dashboard/stats` — library-wide aggregate health metrics
 /// (admin only).
 ///
 /// Computes the manifestation-side metrics in a single conditional-aggregate
@@ -230,7 +230,7 @@ async fn stats(
     }))
 }
 
-/// `?limit=` query parameter for `GET /api/dashboard/activity`. Absent →
+/// `?limit=` query parameter for `GET /api/v1/dashboard/activity`. Absent →
 /// [`DEFAULT_ACTIVITY_LIMIT`]; the value is clamped to `1..=MAX_ACTIVITY_LIMIT`
 /// in the handler before binding.
 #[derive(serde::Deserialize)]
@@ -255,13 +255,13 @@ struct BatchRow {
     in_progress: i64,
 }
 
-/// Response shape for `GET /api/dashboard/activity`.
+/// Response shape for `GET /api/v1/dashboard/activity`.
 #[derive(serde::Serialize)]
 struct ActivityResponse {
     batches: Vec<BatchRow>,
 }
 
-/// `GET /api/dashboard/activity?limit=N` — most-recent ingestion batches,
+/// `GET /api/v1/dashboard/activity?limit=N` — most-recent ingestion batches,
 /// newest first (admin only).
 ///
 /// Groups `ingestion_jobs` by `batch_id` into per-batch outcome counts.

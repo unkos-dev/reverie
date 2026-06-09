@@ -3,7 +3,7 @@
  *
  * Renders six metric groups (top-line stats, validation breakdown,
  * enrichment breakdown, metadata coverage, storage by format, recent
- * ingestion batches) from the two `/api/dashboard/*` endpoints using only
+ * ingestion batches) from the two `/api/v1/dashboard/*` endpoints using only
  * existing shadcn/ui primitives — no chart library. Non-admin callers are
  * redirected to `/library`.
  */
@@ -30,7 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Recent-batch page size requested from `/api/dashboard/activity`. */
+/** Recent-batch page size requested from `/api/v1/dashboard/activity`. */
 export const ACTIVITY_LIMIT = 20;
 
 const NUMBER_FORMAT = new Intl.NumberFormat("en-US");

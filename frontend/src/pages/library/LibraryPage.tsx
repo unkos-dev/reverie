@@ -3,7 +3,7 @@
  *
  * Mirrors the visual contract of the dev hero (`/design/hero/library`)
  * — same tokens, same grid spacing, same typographic hierarchy — but
- * sources data from the real `/api/books` endpoint via react-query's
+ * sources data from the real `/api/v1/books` endpoint via react-query's
  * `useSuspenseInfiniteQuery`. The route loader has already seeded
  * page 1 into the cache; this component subscribes and renders.
  *
@@ -303,7 +303,7 @@ function EmptyState(): ReactElement {
  * `/design/hero/library`).
  *
  * Source-list affordances (browse-by-shelf / browse-by-series chips
- * with an "add" action) land alongside the GET `/api/series/{id}` and
+ * with an "add" action) land alongside the GET `/api/v1/series/{id}` and
  * shelves CRUD endpoints in sub-phase 11d. Here we own the *clear*
  * half so navigation arrivals (CommandPalette, series link from a book
  * card) always have a way out.
@@ -421,7 +421,7 @@ interface ShelfPickerButtonProps {
  * popover listing the caller's shelves; selecting one sets the URL
  * param and triggers a refetch via the existing react-router data
  * mode. Author / series pickers are blocked on missing `GET
- * /api/authors` and `GET /api/series` list endpoints (recorded as a
+ * /api/v1/authors` and `GET /api/v1/series` list endpoints (recorded as a
  * follow-up in the 11d report).
  */
 function ShelfPickerButton({

@@ -123,7 +123,7 @@ where
         .merge(routes::shelves::router())
         .merge(routes::users::router())
         .merge(routes::settings::router())
-        // /api/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
+        // /api/v1/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
         // with a session cookie regardless of OPDS availability).
         .merge(routes::opds::covers_router());
     if let Some(opds) = routes::opds::router_enabled(&state.config.opds) {
@@ -161,7 +161,7 @@ where
         // `AppError::into_response` (called anywhere in the handler
         // stack below) can emit a populated RFC 7807 `instance`
         // field. Applies to all routes including the composite
-        // fallback so 404s on `/api/*` carry the instance too.
+        // fallback so 404s on `/api/v1/*` carry the instance too.
         .layer(axum::middleware::from_fn(
             error::instance::problem_instance_layer,
         ))
@@ -712,7 +712,7 @@ mod tests {
     #[tokio::test]
     async fn unmatched_api_route_returns_problem_with_instance() {
         let server = test_support::test_server();
-        let r = server.get("/api/__definitely_not_a_route__").await;
+        let r = server.get("/api/v1/__definitely_not_a_route__").await;
         let body = test_support::assert_problem(
             &r,
             crate::error::problems::NOT_FOUND,
@@ -720,7 +720,7 @@ mod tests {
         );
         assert_eq!(
             body["instance"].as_str(),
-            Some("/api/__definitely_not_a_route__"),
+            Some("/api/v1/__definitely_not_a_route__"),
             "instance must be populated by problem_instance_layer, got: {body}",
         );
     }

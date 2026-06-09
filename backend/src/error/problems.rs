@@ -34,7 +34,7 @@ pub const FORBIDDEN: &str = "forbidden";
 pub const VALIDATION: &str = "validation";
 
 /// `X-CSRF-Token` header missing on a mutating-verb request under
-/// `/api/*`. HTTP 428 Precondition Required.
+/// `/api/v1/*`. HTTP 428 Precondition Required.
 pub const CSRF_MISSING: &str = "csrf-missing";
 
 /// `X-CSRF-Token` header present but does not match the session

@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe("getSeries", () => {
-  test("calls GET /api/series/{id} and parses the body", async () => {
+  test("calls GET /api/v1/series/{id} and parses the body", async () => {
     const body = {
       id: "33333333-3333-3333-3333-333333333333",
       name: "Mistborn",
@@ -38,7 +38,7 @@ describe("getSeries", () => {
               id: "55555555-5555-5555-5555-555555555555",
               isbn_13: null,
               isbn_10: null,
-              cover_url: "/api/books/.../cover/thumb",
+              cover_url: "/api/v1/books/.../cover/thumb",
               ingestion_status: "complete",
               validation_status: "clean",
               enrichment_status: "complete",
@@ -63,7 +63,7 @@ describe("getSeries", () => {
     expect(result.works).toHaveLength(2);
     expect(result.works[1]?.manifestations).toEqual([]);
     const url = fetchSpy.mock.calls[0]?.[0] as string;
-    expect(url).toBe("/api/series/33333333-3333-3333-3333-333333333333");
+    expect(url).toBe("/api/v1/series/33333333-3333-3333-3333-333333333333");
   });
 
   test("surfaces 404 as ApiError", async () => {

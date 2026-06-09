@@ -1,4 +1,4 @@
-//! Integration tests for the `/api/books*` and `/api/works/{id}`
+//! Integration tests for the `/api/v1/books*` and `/api/v1/works/{id}`
 //! endpoints (11a Tasks 3, 5, 7).
 //!
 //! Mirrors [`crate::routes::opds::tests`] — `#[sqlx::test]` per case,
@@ -112,7 +112,7 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books")
+        .get("/api/v1/books")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -127,7 +127,7 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
     let first_id = items[0]["id"].as_str().expect("item id");
     assert_eq!(
         items[0]["cover_url"].as_str().unwrap(),
-        format!("/api/books/{first_id}/cover/thumb"),
+        format!("/api/v1/books/{first_id}/cover/thumb"),
     );
     // Value-assert (not just is_string): the list path is a runtime QueryBuilder
     // that decodes validation_status via PgRow::get into the ValidationStatus
@@ -173,7 +173,7 @@ async fn list_endpoint_decodes_pending_validation_status(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books")
+        .get("/api/v1/books")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -198,7 +198,7 @@ async fn list_endpoint_adult_sees_only_rls_visible(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books")
+        .get("/api/v1/books")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -223,7 +223,7 @@ async fn list_endpoint_child_sees_only_shelved(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books")
+        .get("/api/v1/books")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -249,7 +249,7 @@ async fn list_endpoint_unauthenticated_returns_401(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    let response = server.get("/api/books").await;
+    let response = server.get("/api/v1/books").await;
     test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
 }
 
@@ -261,7 +261,7 @@ async fn list_endpoint_malformed_cursor_returns_422(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/books?cursor=!!!not-base64url!!!")
+        .get("/api/v1/books?cursor=!!!not-base64url!!!")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -291,7 +291,7 @@ async fn list_endpoint_sort_title_orders_alphabetically(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books?sort=title")
+        .get("/api/v1/books?sort=title")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -340,7 +340,7 @@ async fn list_endpoint_multi_series_work_does_not_duplicate(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books")
+        .get("/api/v1/books")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -370,7 +370,7 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     .expect("encode");
 
     let response = server
-        .get(&format!("/api/books?sort=title&cursor={recent}"))
+        .get(&format!("/api/v1/books?sort=title&cursor={recent}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -402,7 +402,7 @@ async fn list_endpoint_sort_author_orders_by_first_author(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get("/api/books?sort=author")
+        .get("/api/v1/books?sort=author")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -448,7 +448,7 @@ async fn list_endpoint_sort_author_pagination_walk_across_null_boundary(pool: Pg
     let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
 
     let mut seen: Vec<String> = Vec::new();
-    let mut url = "/api/books?sort=author".to_string();
+    let mut url = "/api/v1/books?sort=author".to_string();
     let mut walked = 0u32;
     loop {
         let response = server
@@ -468,7 +468,7 @@ async fn list_endpoint_sort_author_pagination_walk_across_null_boundary(pool: Pg
         assert!(walked < 10, "runaway pagination: seen = {seen:?}");
         match body["next_cursor"].as_str() {
             Some(nc) => {
-                url = format!("/api/books?sort=author&cursor={nc}");
+                url = format!("/api/v1/books?sort=author&cursor={nc}");
             }
             None => break,
         }
@@ -507,7 +507,7 @@ async fn list_endpoint_pagination_walk_emits_link_and_flips_to_null(pool: PgPool
     let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
 
     let response = server
-        .get("/api/books")
+        .get("/api/v1/books")
         .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -525,7 +525,7 @@ async fn list_endpoint_pagination_walk_emits_link_and_flips_to_null(pool: PgPool
         .as_str()
         .expect("next_cursor present on overflow")
         .to_owned();
-    let next_url = format!("/api/books?cursor={nc}");
+    let next_url = format!("/api/v1/books?cursor={nc}");
 
     let response = server.get(&next_url).add_header(AUTHORIZATION, basic).await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -562,7 +562,7 @@ async fn list_endpoint_sort_title_pagination_walk(pool: PgPool) {
     let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
 
     let mut seen: Vec<String> = Vec::new();
-    let mut url = "/api/books?sort=title".to_string();
+    let mut url = "/api/v1/books?sort=title".to_string();
     let mut walked = 0u32;
     loop {
         let response = server
@@ -581,7 +581,7 @@ async fn list_endpoint_sort_title_pagination_walk(pool: PgPool) {
         walked += 1;
         assert!(walked < 10, "runaway pagination: seen = {seen:?}");
         match body["next_cursor"].as_str() {
-            Some(nc) => url = format!("/api/books?sort=title&cursor={nc}"),
+            Some(nc) => url = format!("/api/v1/books?sort=title&cursor={nc}"),
             None => break,
         }
     }
@@ -647,7 +647,7 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
     // page_size = 1 forces a boundary between every sibling pair.
     let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut url = "/api/books?sort=title".to_string();
+    let mut url = "/api/v1/books?sort=title".to_string();
     let mut walked = 0u32;
     loop {
         let response = server
@@ -669,7 +669,7 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
             "runaway pagination on multi-manifestation walk"
         );
         match body["next_cursor"].as_str() {
-            Some(nc) => url = format!("/api/books?sort=title&cursor={nc}"),
+            Some(nc) => url = format!("/api/v1/books?sort=title&cursor={nc}"),
             None => break,
         }
     }
@@ -682,7 +682,7 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
 }
 
 // ---------------------------------------------------------------------------
-// detail_endpoint — GET /api/books/{id}
+// detail_endpoint — GET /api/v1/books/{id}
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrations = "./migrations")]
@@ -747,7 +747,7 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/books/{m_id}"))
+        .get(&format!("/api/v1/books/{m_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -760,7 +760,7 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
     );
     assert_eq!(
         body["cover_url"].as_str().unwrap(),
-        format!("/api/books/{m_id}/cover/thumb"),
+        format!("/api/v1/books/{m_id}/cover/thumb"),
     );
     assert!(body["ingestion_status"].is_string());
     assert!(body["enrichment_status"].is_string());
@@ -845,7 +845,7 @@ async fn detail_endpoint_caps_pending_versions_at_200(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/books/{m_id}"))
+        .get(&format!("/api/v1/books/{m_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -899,7 +899,7 @@ async fn detail_endpoint_surfaces_publisher_and_pub_date(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/books/{m_id}"))
+        .get(&format!("/api/v1/books/{m_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -922,7 +922,7 @@ async fn detail_endpoint_hidden_id_returns_404(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/books/{m_id}"))
+        .get(&format!("/api/v1/books/{m_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     // RLS hides the row → 404, NOT 403 (existence-not-leaked).
@@ -937,7 +937,7 @@ async fn detail_endpoint_malformed_uuid_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/books/not-a-uuid")
+        .get("/api/v1/books/not-a-uuid")
         .add_header(AUTHORIZATION, basic)
         .await;
     // axum 0.8 default `Path<Uuid>` rejection: 400 plain-text body.
@@ -945,7 +945,7 @@ async fn detail_endpoint_malformed_uuid_returns_400(pool: PgPool) {
 }
 
 // ---------------------------------------------------------------------------
-// work_endpoint — GET /api/works/{id}
+// work_endpoint — GET /api/v1/works/{id}
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrations = "./migrations")]
@@ -1001,7 +1001,7 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/works/{work_id}"))
+        .get(&format!("/api/v1/works/{work_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -1037,7 +1037,7 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
         let mid = m["id"].as_str().unwrap();
         assert_eq!(
             m["cover_url"].as_str().unwrap(),
-            format!("/api/books/{mid}/cover/thumb"),
+            format!("/api/v1/books/{mid}/cover/thumb"),
         );
         assert!(m["ingestion_status"].is_string());
     }
@@ -1055,7 +1055,7 @@ async fn work_endpoint_malformed_uuid_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/works/not-a-uuid")
+        .get("/api/v1/works/not-a-uuid")
         .add_header(AUTHORIZATION, basic)
         .await;
     // axum 0.8 default `Path<Uuid>` rejection: 400 plain-text body.
@@ -1071,7 +1071,7 @@ async fn work_endpoint_hidden_work_returns_404(pool: PgPool) {
 
     // Nonexistent UUID → 404.
     let response = server
-        .get(&format!("/api/works/{}", Uuid::new_v4()))
+        .get(&format!("/api/v1/works/{}", Uuid::new_v4()))
         .add_header(AUTHORIZATION, basic)
         .await;
     test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
@@ -1091,7 +1091,7 @@ async fn work_endpoint_child_without_shelf_returns_404_not_empty_array(pool: PgP
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/works/{work_id}"))
+        .get(&format!("/api/v1/works/{work_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
@@ -1138,7 +1138,7 @@ async fn list_filter_by_author(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/books?author={author_id}"))
+        .get(&format!("/api/v1/books?author={author_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -1178,7 +1178,7 @@ async fn list_filter_by_series(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
-        .get(&format!("/api/books?series={series_id}"))
+        .get(&format!("/api/v1/books?series={series_id}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -1208,7 +1208,7 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let r = server
-        .get(&format!("/api/books?shelf={my_shelf}"))
+        .get(&format!("/api/v1/books?shelf={my_shelf}"))
         .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1220,7 +1220,7 @@ async fn list_filter_by_shelf_scoped_to_caller(pool: PgPool) {
     assert_eq!(items[0]["title"], "Caller Book");
 
     let r = server
-        .get(&format!("/api/books?shelf={other_shelf}"))
+        .get(&format!("/api/v1/books?shelf={other_shelf}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1242,7 +1242,7 @@ async fn list_filter_malformed_author_uuid_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/books?author=garbage")
+        .get("/api/v1/books?author=garbage")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -1265,7 +1265,7 @@ async fn list_filter_malformed_series_uuid_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/books?series=garbage")
+        .get("/api/v1/books?series=garbage")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -1288,7 +1288,7 @@ async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/books?shelf=garbage")
+        .get("/api/v1/books?shelf=garbage")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -1315,7 +1315,7 @@ async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/books?sort=garbage")
+        .get("/api/v1/books?sort=garbage")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -1345,7 +1345,7 @@ async fn list_filter_too_many_tags_returns_422(pool: PgPool) {
         .collect::<Vec<_>>()
         .join("&");
     let r = server
-        .get(&format!("/api/books?{qs}"))
+        .get(&format!("/api/v1/books?{qs}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1367,7 +1367,7 @@ async fn list_filter_multi_tag_and_match(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/books?tag=scifi&tag=hugo")
+        .get("/api/v1/books?tag=scifi&tag=hugo")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1392,7 +1392,7 @@ async fn search_returns_ranked_results(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search?q=galaxy")
+        .get("/api/v1/search?q=galaxy")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1420,7 +1420,7 @@ async fn search_typo_tolerant_via_trigram(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search?q=Hemingwy")
+        .get("/api/v1/search?q=Hemingwy")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1443,7 +1443,7 @@ async fn search_websearch_phrase_hits_phrase(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search?q=%22war+and+peace%22")
+        .get("/api/v1/search?q=%22war+and+peace%22")
         .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1478,7 +1478,7 @@ async fn search_websearch_exclude_operator(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search?q=tolstoy+-anna")
+        .get("/api/v1/search?q=tolstoy+-anna")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1504,7 +1504,7 @@ async fn search_empty_query_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search?q=")
+        .get("/api/v1/search?q=")
         .add_header(AUTHORIZATION, basic)
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1518,7 +1518,7 @@ async fn search_missing_query_returns_422(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search")
+        .get("/api/v1/search")
         .add_header(AUTHORIZATION, basic)
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1533,7 +1533,7 @@ async fn search_oversized_query_returns_422(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let long_q = "a".repeat(201);
     let r = server
-        .get(&format!("/api/search?q={long_q}"))
+        .get(&format!("/api/v1/search?q={long_q}"))
         .add_header(AUTHORIZATION, basic)
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1550,7 +1550,7 @@ async fn search_sql_injection_probe_is_safe(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let _ = server
-        .get("/api/search?q=%27%29%3B+DROP+TABLE+works%3B--")
+        .get("/api/v1/search?q=%27%29%3B+DROP+TABLE+works%3B--")
         .add_header(AUTHORIZATION, basic)
         .await;
 
@@ -1567,7 +1567,7 @@ async fn search_unauthenticated_returns_401(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server.get("/api/search?q=anything").await;
+    let r = server.get("/api/v1/search?q=anything").await;
     assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
 }
 
@@ -1586,7 +1586,7 @@ async fn search_child_only_sees_shelved_titles(pool: PgPool) {
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let r = server
-        .get("/api/search?q=story")
+        .get("/api/v1/search?q=story")
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -1650,7 +1650,7 @@ async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
         let start = Instant::now();
         let q = format!("title{i}");
         let r = server
-            .get(&format!("/api/search?q={q}"))
+            .get(&format!("/api/v1/search?q={q}"))
             .add_header(AUTHORIZATION, basic.clone())
             .await;
         times_ms.push(start.elapsed().as_millis());
@@ -1662,4 +1662,33 @@ async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
         p50 < P50_LIMIT_MS,
         "p50 {p50} ms over {P50_LIMIT_MS} ms gate (full set {times_ms:?})"
     );
+}
+
+/// PR1 (`/api`→`/api/v1`, UNK-376): the prefix change is a *move*, not an
+/// additive alias. The new versioned path serves; the old unversioned path is
+/// gone and — critically — falls through to the reserved-prefix JSON `404`
+/// Problem, never the SPA `index.html`, so stale API clients receive a
+/// machine-readable error instead of an HTML `200`.
+#[sqlx::test(migrations = "./migrations")]
+async fn api_v1_move_old_path_returns_problem_not_spa(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // New versioned path serves (empty library → 200, empty list).
+    let new = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(new.status_code(), StatusCode::OK);
+
+    // Old path is gone: reserved-prefix fallback emits a JSON Problem 404
+    // (assert_problem checks the application/problem+json Content-Type, so a
+    // regression that served SPA HTML here would fail).
+    let old = server
+        .get("/api/books")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&old, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }

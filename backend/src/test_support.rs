@@ -182,7 +182,7 @@ pub fn test_server() -> TestServer {
 /// caller-supplied `detail` when needed.
 ///
 /// ```ignore
-/// let r = server.get("/api/__nope__").await;
+/// let r = server.get("/api/v1/__nope__").await;
 /// let problem = test_support::assert_problem(
 ///     &r,
 ///     crate::error::problems::NOT_FOUND,
