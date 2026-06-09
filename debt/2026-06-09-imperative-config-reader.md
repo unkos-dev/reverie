@@ -78,5 +78,5 @@ wrong shape.
 - [`backend/src/config.rs`](../backend/src/config.rs) — the workaround site.
 - Driver: docs-as-done (UNK-370) — the configuration-reference requirement that
   surfaced this shape.
-- Linear: the config-refactor implementation epic (to be filed) carries the
-  scheduled work; until it exists, this entry is the canonical record.
+- Linear: UNK-375 (the config-refactor implementation epic) carries the
+  scheduled work; this entry is the canonical record of the debt.

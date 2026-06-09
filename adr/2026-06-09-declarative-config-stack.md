@@ -244,7 +244,8 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
   its lift condition (see `debt/`).
 - Implementation plan, task sequence (including the `config/` module split as the
   closing move), and verification live in prp-plan output
-  (`.claude/PRPs/plans/`), not here. A dedicated Linear epic tracks the refactor.
+  (`.claude/PRPs/plans/`), not here. The implementation epic is tracked as
+  UNK-375.
 - Revisit trigger: if implementation prototyping shows figment's env→nested-struct
   mapping cannot serve the existing variable layout without an outsized custom
   adapter, reconsider B (minimal light path) before committing the loader rewrite.
