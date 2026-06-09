@@ -66,7 +66,10 @@ tower-http = { version = "0.6.11", features = ["cors", "fs", "trace"] }
 tower-sessions = "0.15"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-url = "2.5.8"
+url = { version = "2.5.8", features = ["serde"] }
+figment    = { version = "0.10.19", features = ["env"] }
+validator  = { version = "0.20.0",  features = ["derive"] }
+schemars   = { version = "1.2.1",   features = ["url2"] }
 percent-encoding = "2.3.2"
 uuid = { version = "1.23.2", features = ["v4", "serde"] }
 walkdir = "2.5.0"

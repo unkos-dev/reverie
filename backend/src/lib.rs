@@ -169,8 +169,8 @@ where
 
 fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
     // Single source of truth: `configured_level` already encodes the
-    // REVERIE_LOG_LEVEL > RUST_LOG > "info" cascade resolved by
-    // Config::from_source. Re-reading RUST_LOG here would invert the
+    // REVERIE_LOG_LEVEL > RUST_LOG > "info" cascade resolved by the
+    // EnvProvider. Re-reading RUST_LOG here would invert the
     // precedence (ecosystem default beats operator namespace) and
     // contradict the documented behaviour on the Config::log_level field.
     match configured_level.parse::<EnvFilter>() {
@@ -270,6 +270,14 @@ pub async fn run() -> anyhow::Result<()> {
         tracing::warn!(
             "REVERIE_OPERATOR_CONTACT unset — OpenLibrary requests will run at the 1 req/s anonymous tier. \
              Set REVERIE_OPERATOR_CONTACT=<email-or-url> to unlock the identified 3 req/s tier."
+        );
+    }
+
+    if config.ingestion_dsn_defaulted {
+        tracing::warn!(
+            "DATABASE_URL_INGESTION unset — the ingestion pipeline will run as the application \
+             role (DATABASE_URL) instead of the scoped reverie_ingestion role. Role separation is \
+             inactive. Set DATABASE_URL_INGESTION=<reverie_ingestion DSN> to enforce it."
         );
     }
 
@@ -400,7 +408,7 @@ pub async fn run() -> anyhow::Result<()> {
 /// # Errors
 ///
 /// - `auto_migrate` set but `migration_database_url` is `None` (defensive —
-///   `Config::from_source` already rejects this).
+///   [`Config::from_figment`] already rejects this).
 /// - The in-process migration run fails (see [`db::run_migrations`]).
 /// - Schema verification fails or detects divergence (see
 ///   [`db::verify_schema_current`]).
@@ -444,6 +452,10 @@ async fn apply_or_verify_schema(config: &Config, app_pool: &sqlx::PgPool) -> any
 pub enum Command {
     /// `reverie migrate` — apply pending migrations out-of-band, then exit.
     Migrate,
+    /// `reverie print-config-schema` — emit the config JSON Schema to stdout,
+    /// then exit. A build/docs utility (regenerates the committed
+    /// `config.schema.json`); reads no environment and touches no database.
+    PrintConfigSchema,
     /// No subcommand — run the long-lived HTTP server.
     Serve,
 }
@@ -466,13 +478,49 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
     match args {
         [] => Ok(Command::Serve),
         [cmd] if cmd == "migrate" => Ok(Command::Migrate),
+        [cmd] if cmd == "print-config-schema" => Ok(Command::PrintConfigSchema),
         [cmd] => Err(anyhow::anyhow!(
-            "unknown subcommand: {cmd:?}; valid subcommands: migrate"
+            "unknown subcommand: {cmd:?}; valid subcommands: migrate, print-config-schema"
         )),
         [cmd, ..] => Err(anyhow::anyhow!(
-            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate]"
+            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate|print-config-schema]"
         )),
     }
+}
+
+/// Emit the [`config::Config`] JSON Schema to stdout — the
+/// `print-config-schema` subcommand. The output is the committed
+/// `backend/config.schema.json` artifact (CI drift-checks a fresh emit against
+/// it), and the source the UNK-370 configuration reference renders from.
+///
+/// Reads no environment and opens no database — it is `schema_for!` over the
+/// config structs, so it runs in any context. Deterministic: `schemars`
+/// orders definitions, and the trailing newline keeps `diff` POSIX-clean.
+///
+/// `schemars` emits each field's default into the schema (from the `Default`
+/// impls — e.g. `port`'s default `3000` is present). The artifact is safe to
+/// publish (hard rule 7) because every secret-bearing field defaults to
+/// `String::new()` / `None`, so it renders as `""` / `null` — never real
+/// credential material. The absence of a `Serialize` derive is a
+/// secret-leak-prevention measure for the *serialize* path, not the mechanism
+/// that keeps secrets out of the *schema*. Gated by the
+/// `config_schema_has_no_secret_default_values` test.
+///
+/// `println!` is forbidden (see `backend/CLAUDE.md`), so this writes through
+/// [`std::io::Write`] directly.
+///
+/// # Errors
+///
+/// Returns an error if schema serialization or the stdout write fails.
+pub fn print_config_schema() -> anyhow::Result<()> {
+    use std::io::Write as _;
+    let schema = schemars::schema_for!(config::Config);
+    let mut json = serde_json::to_string_pretty(&schema).context("serialize config schema")?;
+    json.push('\n');
+    std::io::stdout()
+        .write_all(json.as_bytes())
+        .context("write config schema to stdout")?;
+    Ok(())
 }
 
 /// Resolve the migration DSN from the raw `DATABASE_URL_MIGRATION` value,
@@ -480,7 +528,7 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 ///
 /// `std::env::var` returns `Ok("")` for an exported-empty var, which would
 /// otherwise reach `db::run_migrations` as a cryptic `Connection` parse error;
-/// this mirrors the `.filter()` guard in [`Config::from_source`].
+/// this mirrors the migration-DSN blank-guard in [`Config::from_figment`].
 ///
 /// # Errors
 ///
@@ -503,7 +551,7 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
 /// # Errors
 ///
 /// - If `DATABASE_URL_MIGRATION` is unset or empty (an exported-empty value
-///   is treated as unset, mirroring [`Config::from_source`]).
+///   is treated as unset, mirroring [`Config::from_figment`]).
 /// - If the migration run fails (see [`db::MigrationError`]).
 pub async fn run_migrate() -> anyhow::Result<()> {
     // run_migrate bypasses Config::from_env, which is where dotenv is normally
@@ -563,6 +611,8 @@ mod tests {
         let migrate = vec!["migrate".to_string()];
         assert_eq!(parse_command(&migrate).unwrap(), Command::Migrate);
         assert_eq!(parse_command(&[]).unwrap(), Command::Serve);
+        let schema = vec!["print-config-schema".to_string()];
+        assert_eq!(parse_command(&schema).unwrap(), Command::PrintConfigSchema);
 
         let unknown = vec!["migration".to_string()];
         let err = parse_command(&unknown).unwrap_err();
@@ -673,8 +723,8 @@ mod tests {
     }
 
     // resolve_log_filter parses `configured_level` directly — env precedence
-    // (REVERIE_LOG_LEVEL > RUST_LOG > "info") is resolved upstream by
-    // Config::from_source, so these tests are insensitive to whatever env
+    // (REVERIE_LOG_LEVEL > RUST_LOG > "info") is resolved upstream by the
+    // EnvProvider, so these tests are insensitive to whatever env
     // vars happen to be set in the test runner.
 
     #[test]

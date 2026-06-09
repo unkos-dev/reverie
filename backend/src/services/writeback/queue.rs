@@ -451,6 +451,7 @@ mod tests {
             hardcover_base_url: "https://example.invalid".into(),
             hardcover_api_token: None,
             operator_contact: None,
+            ingestion_dsn_defaulted: false,
         }
     }
 

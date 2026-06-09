@@ -165,7 +165,7 @@ workaround.
 - **Operator env-var namespacing:** when introducing operator-facing
   knob overlapping with Rust ecosystem default (e.g. `RUST_LOG`),
   prefer `REVERIE_*` name and cascade with `REVERIE_*` taking
-  precedence over ecosystem name. Resolve cascade once in `config.rs`
+  precedence over ecosystem name. Resolve cascade once in `config/provider.rs`
   so precedence is single source of truth. Rationale: operators read
   `REVERIE_*` namespace from staging docs; devs reach for ecosystem
   default. Cascading honours both without forcing either audience to
@@ -332,7 +332,7 @@ backend/
 │   ├── routes/          # Axum route handlers, grouped by domain
 │   ├── models/          # Database models and queries
 │   ├── services/        # Business logic
-│   ├── config.rs        # Environment-based configuration
+│   ├── config/          # Declarative config module (figment+serde+validator+schemars)
 │   ├── state.rs         # AppState (shared across handlers)
 │   └── error.rs         # AppError type
 └── tests/               # Integration tests (if separate from unit tests)

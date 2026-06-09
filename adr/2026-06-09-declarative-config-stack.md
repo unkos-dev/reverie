@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-06-09
 supersedes: []
 decision-makers: "John Unkovich"
@@ -12,7 +12,7 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 Reverie's runtime configuration is loaded by a hand-rolled imperative reader in
-[`backend/src/config.rs`](../backend/src/config.rs): `Config::from_source` threads
+`backend/src/config.rs`: `Config::from_source` threads
 ~40 environment variables across six structs (`Config` plus `EnrichmentConfig`,
 `CoverConfig`, `WritebackConfig`, `OpdsConfig`, `SecurityConfig`) as a long ladder
 of `get("KEY")` / `parse_*(get, "KEY", default)` calls, each with bespoke
@@ -165,16 +165,44 @@ owns the task sequence, the offload boundary, and the verification checklist.
   re-acquires the migrator credential-in-memory that
   [`2026-06-02-hybrid-migration-entrypoints-and-role.md`](2026-06-02-hybrid-migration-entrypoints-and-role.md)
   deliberately eliminated.
-- Bad, because much of `from_source`'s complexity survives as custom code in new
-  shapes: the `REVERIE_LOG_LEVEL > RUST_LOG > "info"` cascade, the
-  conditional-required migration DSN, the ingestion-DSN fallback, the
-  CSV→`Vec<enum>` and string→enum parses, and empty-as-unset handling. The net
-  declarative win is concentrated on the fields that were already trivial.
+- Bad (smaller than feared), because some of `from_source`'s complexity survives
+  as custom code in new shapes: the `REVERIE_LOG_LEVEL > RUST_LOG > "info"`
+  cascade, the conditional-required migration DSN, and the ingestion-DSN fallback
+  (all post-deserialize), plus two custom field deserializers — `format_priority`
+  (bare CSV→`Vec<enum>`) and `csp_report_endpoint` (raw-string injection guard).
+  Implementation prototyping established that figment does **not** coerce
+  `Str→num`/`Str→bool` from a raw-string provider — its own `Env` provider parses
+  each value via `Value`'s `FromStr` first. Mirroring that parse in `EnvProvider`
+  makes numeric coercion native and the strict-bool contract (UNK-106/110: only
+  lowercase `true`/`false`, rejecting `1`/`yes`) native too, so the per-field
+  bool/number deserializers first anticipated are unnecessary; enum, `url::Url`,
+  and `PathBuf` deserialize natively. The surviving custom surface is therefore
+  narrower than a hand-rolled reader's, concentrated on the two genuinely
+  non-standard fields.
 - Neutral, because the environment-variable-name-to-nested-struct mapping is not
   solved declaratively by serde for sub-struct fields (a uniform `_` split cannot
   serve both flat snake_case fields like `db_max_connections` and nested fields
-  like `enrichment.concurrency`). It stays hand-shaped via explicit per-key maps;
-  the cascade is handled as a one-field fallback, not a custom provider.
+  like `enrichment.concurrency`). It is carried by a small custom
+  `figment::Provider` (`EnvProvider`, ~60 lines) holding an explicit per-key
+  var→dotted-field map; the `REVERIE_LOG_LEVEL > RUST_LOG` cascade is resolved
+  inside that provider. The provider — rather than figment's lighter `Env::map()`
+  — is justified less by the mapping than by the **test seam**: its in-memory
+  `from_pairs` constructor keeps config tests parallel-safe without mutating
+  process env (UNK-100), which stock `figment::Env` (process-env-only) cannot do
+  without `Jail`'s global-env lock and the `getenv`/`setenv` race. The map doubles
+  as the introspectable var↔field registry the reference generator consumes. The
+  revisit trigger below was evaluated against this provider and did not fire.
+- Neutral, because the operator env-var surface is deliberately mixed — bare
+  ecosystem-canonical names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) alongside
+  `REVERIE_`-namespaced app-specific knobs — rather than a uniform scheme.
+  Regularizing every var to mirror the struct nesting (e.g. `__`-separated,
+  `REVERIE_OPDS__PUBLIC_URL`) would let stock `figment::Env::split("__")` drop
+  most of the per-key map, but was rejected: it spends pre-v1.0 latitude to
+  degrade operator ergonomics (longer, `__`-typo-prone names) and to make the
+  var↔field registry implicit. The bare/namespaced split matches mature
+  self-hosted peers and is the intended contract. (`OIDC_*` staying bare — which
+  risks collision on a shared host running another OIDC app — is flagged for
+  separate reconsideration, not settled here.)
 - Neutral, because the backend then runs two schema systems on disjoint surfaces —
   utoipa for the HTTP API and schemars for config. No type is described by both, so
   there is no duplication, only two purpose-built tools on separate surfaces.
@@ -240,8 +268,9 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
   (backend dependency-adoption precedent),
   [`2026-05-26-persisted-settings.md`](2026-05-26-persisted-settings.md)
   (distinct DB-backed runtime-settings surface).
-- The imperative reader is tracked as accepted technical debt with this refactor as
-  its lift condition (see `debt/`).
+- The imperative reader was tracked as accepted technical debt with this refactor
+  as its lift condition; that entry is purged by the implementing PR (see `debt/`
+  git history).
 - Implementation plan, task sequence (including the `config/` module split as the
   closing move), and verification live in prp-plan output
   (`.claude/PRPs/plans/`), not here. The implementation epic is tracked as

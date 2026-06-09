@@ -248,6 +248,14 @@ jobs:
       - name: Check sqlx query cache freshness
         run: cargo sqlx prepare --check -- --tests
 
+      # UNK-375: drift guard on the committed config JSON Schema. The schema is
+      # generated from the config structs by `print-config-schema`; a stale
+      # commit (struct changed but schema not regenerated) fails here — the same
+      # contract as the .sqlx cache above. UNK-370's config reference renders
+      # from this artifact. `--quiet --locked` keeps stdout to the schema alone.
+      - name: Check config schema freshness
+        run: cargo run --quiet --locked -- print-config-schema | diff -u config.schema.json -
+
       # UNK-172: grep-guard against new runtime `sqlx::query[*](...)`
       # invocations creeping back in. Allowlist documents legitimate
       # carve-outs (DDL, dynamic SQL, set_config GUC, enum-drift probes).

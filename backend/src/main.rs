@@ -7,6 +7,7 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match reverie_api::parse_command(&args)? {
         reverie_api::Command::Migrate => reverie_api::run_migrate().await,
+        reverie_api::Command::PrintConfigSchema => reverie_api::print_config_schema(),
         reverie_api::Command::Serve => reverie_api::run().await,
     }
 }

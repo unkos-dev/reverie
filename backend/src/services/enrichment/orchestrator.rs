@@ -1090,6 +1090,7 @@ mod tests {
             hardcover_base_url: hc_uri.into(),
             hardcover_api_token: hc_token.map(std::convert::Into::into),
             operator_contact: None,
+            ingestion_dsn_defaulted: false,
         }
     }
 
