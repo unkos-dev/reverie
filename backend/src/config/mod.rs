@@ -25,6 +25,7 @@ mod cover;
 mod enrichment;
 mod opds;
 mod provider;
+mod reference;
 mod security;
 mod writeback;
 
@@ -32,6 +33,7 @@ pub use cover::CoverConfig;
 pub use enrichment::EnrichmentConfig;
 pub use opds::OpdsConfig;
 pub use provider::EnvProvider;
+pub use reference::reference_markdown;
 pub use security::SecurityConfig;
 pub use writeback::WritebackConfig;
 
@@ -39,6 +41,24 @@ use crate::models::manifestation_format::ManifestationFormat;
 use figment::Figment;
 use provider::ENV_MAP;
 use validator::{Validate, ValidationErrors, ValidationErrorsKind};
+
+/// Environment variables that must be present and non-blank for the server to
+/// start (the Gate 3 check in [`Config::from_figment`]). Single source of truth
+/// shared with the generated config reference ([`reference_markdown`]) so the
+/// "Required" column can never drift from the startup contract — the schema's
+/// own `required` array is empty because every config struct is
+/// `#[serde(default)]`, so it cannot serve as that source.
+///
+/// `DATABASE_URL_MIGRATION` is deliberately absent: it is *conditionally*
+/// required (only when `REVERIE_AUTO_MIGRATE=true`, enforced by Gate 1) and is
+/// documented as such by the reference rather than listed here.
+pub(crate) const REQUIRED_ENV_VARS: &[&str] = &[
+    "DATABASE_URL",
+    "OIDC_ISSUER_URL",
+    "OIDC_CLIENT_ID",
+    "OIDC_CLIENT_SECRET",
+    "OIDC_REDIRECT_URI",
+];
 
 /// Resolved process-wide configuration. Fields reflect the settled view of
 /// the environment after defaults, parsing, and validation; subsystem
@@ -322,16 +342,21 @@ impl Config {
             cfg.ingestion_dsn_defaulted = true;
         }
 
-        // Gate 3 — required fields blank => MissingVar (NOT Invalid).
+        // Gate 3 — required fields blank => MissingVar (NOT Invalid). Var names
+        // come from REQUIRED_ENV_VARS (shared with the config reference); the
+        // field-accessor list below MUST stay aligned with that order.
         for (value, var) in [
-            (&cfg.database_url, "DATABASE_URL"),
-            (&cfg.oidc_issuer_url, "OIDC_ISSUER_URL"),
-            (&cfg.oidc_client_id, "OIDC_CLIENT_ID"),
-            (&cfg.oidc_client_secret, "OIDC_CLIENT_SECRET"),
-            (&cfg.oidc_redirect_uri, "OIDC_REDIRECT_URI"),
-        ] {
+            &cfg.database_url,
+            &cfg.oidc_issuer_url,
+            &cfg.oidc_client_id,
+            &cfg.oidc_client_secret,
+            &cfg.oidc_redirect_uri,
+        ]
+        .into_iter()
+        .zip(REQUIRED_ENV_VARS)
+        {
             if value.trim().is_empty() {
-                return Err(ConfigError::MissingVar(var.into()));
+                return Err(ConfigError::MissingVar((*var).into()));
             }
         }
 
@@ -1197,6 +1222,20 @@ mod tests {
         // Non-vacuity: a non-secret scalar still carries its real default, so
         // the assertion above is meaningful (the schema does emit defaults).
         assert_eq!(props["port"]["default"], serde_json::json!(3000));
+    }
+
+    #[test]
+    fn required_env_vars_are_known_and_mapped() {
+        // REQUIRED_ENV_VARS is the shared source of required-ness for both the
+        // Gate 3 startup check and the generated config reference. Every entry
+        // must be a real ENV_MAP var name, or the reference would mark a
+        // non-existent variable required.
+        assert!(!REQUIRED_ENV_VARS.is_empty());
+        let mapped: std::collections::HashSet<&str> =
+            ENV_MAP.iter().map(|(name, _)| *name).collect();
+        for var in REQUIRED_ENV_VARS {
+            assert!(mapped.contains(var), "required var {var} absent from ENV_MAP");
+        }
     }
 
     #[test]
