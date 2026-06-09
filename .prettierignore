@@ -30,3 +30,8 @@ backend/config.schema.json
 # rationale as the schema above: prettier would reflow the table and break the
 # byte-for-byte drift gate.
 docs/src/content/docs/reference/configuration.mdx
+
+# Generated OpenAPI spec (emitted code-first from the handlers, drift-gated by
+# tests/gen_openapi.rs). Same rationale: prettier would reflow the JSON and
+# break the byte-for-byte drift gate; keep it as utoipa emits it.
+docs/openapi.json

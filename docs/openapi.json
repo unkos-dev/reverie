@@ -1,0 +1,115 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Reverie API",
+    "description": "HTTP API for Reverie, a self-hosted ebook library manager. Generated from the server handlers; do not edit by hand.",
+    "license": {
+      "name": "AGPL-3.0-or-later",
+      "identifier": "AGPL-3.0-or-later"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness probe: returns `200 ok` as soon as the process is serving.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Process is live",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness probe: pings the application pool with `SELECT 1` and returns\n`503` while the database is unreachable so orchestrators withhold traffic.",
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "description": "Ready — database reachable",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database unreachable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "RFC 7807 `application/problem+json` error body, as emitted by the server's\n`AppError` type. Documentation-only: it mirrors the response shape so the\nspec can reference it, and is not constructed at runtime.",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation specific to this occurrence."
+          },
+          "instance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "URI reference identifying the specific request, when available."
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HTTP status code, repeated in the body per RFC 7807.",
+            "example": 404,
+            "minimum": 0
+          },
+          "title": {
+            "type": "string",
+            "description": "Short, human-readable summary of the problem type."
+          },
+          "type": {
+            "type": "string",
+            "description": "Stable URI reference identifying the problem type.",
+            "example": "https://reverie.example/probs/not-found"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Liveness and readiness probes."
+    }
+  ]
+}

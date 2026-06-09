@@ -1234,7 +1234,10 @@ mod tests {
         let mapped: std::collections::HashSet<&str> =
             ENV_MAP.iter().map(|(name, _)| *name).collect();
         for var in REQUIRED_ENV_VARS {
-            assert!(mapped.contains(var), "required var {var} absent from ENV_MAP");
+            assert!(
+                mapped.contains(var),
+                "required var {var} absent from ENV_MAP"
+            );
         }
     }
 

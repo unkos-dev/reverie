@@ -1,12 +1,12 @@
 //! Renders the operator-facing configuration reference (Starlight MDX) from the
-//! declarative config schema plus [`ENV_MAP`].
+//! declarative config schema plus `ENV_MAP`.
 //!
 //! The committed artifact (`docs/src/content/docs/reference/configuration.mdx`)
 //! is drift-gated by `tests/gen_config_ref.rs`: editing a config field's
 //! `///` doc, default, or range without regenerating the page fails CI. The
 //! schema (`schemars::schema_for!(Config)` — the same value the CI-gated
 //! `config.schema.json` is checked against) is the single source for each
-//! field's type/default/description; [`ENV_MAP`] supplies the operator-facing
+//! field's type/default/description; `ENV_MAP` supplies the operator-facing
 //! variable names, and [`REQUIRED_ENV_VARS`] supplies required-ness (the
 //! schema's own `required` array is empty under container `#[serde(default)]`).
 //!
@@ -24,7 +24,7 @@ use super::provider::ENV_MAP;
 ///
 /// # Errors
 ///
-/// Returns an error if the schema cannot be serialized, or if an [`ENV_MAP`]
+/// Returns an error if the schema cannot be serialized, or if an `ENV_MAP`
 /// entry names a dotted field path that does not resolve to a schema property
 /// (a fail-loud signal that the map and the structs have diverged).
 pub fn reference_markdown() -> anyhow::Result<String> {

@@ -27,6 +27,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod models;
+pub mod openapi;
 pub mod routes;
 pub mod security;
 pub mod services;
@@ -108,7 +109,9 @@ where
     // matched responses; unmatched paths flow into the composite fallback
     // below which attaches API CSP manually for reserved-prefix 404s.
     let mut api_like = Router::new()
-        .merge(routes::health::router())
+        // /health{,/ready} — OpenAPI pilot: the documented router is split into
+        // its runtime half here and its spec half in `openapi::spec_json`.
+        .merge(openapi::router())
         .merge(routes::auth::router())
         .merge(routes::tokens::router())
         .merge(routes::ingestion::router())
