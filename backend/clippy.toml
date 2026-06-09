@@ -7,3 +7,8 @@
 ## freely, production code may not.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+
+## `OpenAPI` is a proper-noun standard name (like clippy's built-in `OAuth` /
+## `GraphQL`) and should not be code-formatted in prose. `..` extends clippy's
+## default valid-ident list rather than replacing it.
+doc-valid-idents = ["OpenAPI", ".."]

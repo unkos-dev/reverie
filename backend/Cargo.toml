@@ -71,6 +71,13 @@ figment    = { version = "0.10.19", features = ["env"] }
 validator  = { version = "0.20.0",  features = ["derive"] }
 schemars   = { version = "1.2.1",   features = ["url2"] }
 percent-encoding = "2.3.2"
+# OpenAPI 3.1 contract generated code-first from the handlers (docs-as-done,
+# UNK-370; adr/2026-06-08-api-versioning-openapi.md). `time`/`uuid` features
+# map those types into the schema; `chrono` is intentionally NOT enabled
+# (backend/CLAUDE.md mandates the `time` crate). utoipa-axum's `OpenApiRouter`
+# makes a handler routed without `#[utoipa::path]` a compile error.
+utoipa = { version = "5.5", features = ["axum_extras", "time", "uuid"] }
+utoipa-axum = "0.2"
 uuid = { version = "1.23.2", features = ["v4", "serde"] }
 walkdir = "2.5.0"
 zip = "8.6.0"

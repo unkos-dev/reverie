@@ -92,7 +92,7 @@ Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` �
 
 9. **Every PR body must close its Linear issue.** Include a `Closes UNK-XXX` line in the PR body for any PR with a tracking issue. Branch-name matching to Linear's generated `gitBranchName` is unreliable (our `feat/` prefix diverges from it), so the magic-word is the only dependable auto-close channel. PR without it = issue silently stuck in Backlog after merge.
 
-10. **Docs are part of done.** Like the TDD mandate — docs ship with the change, not after. User-facing endpoint or config → generated reference covers it (API ref from OpenAPI; env/config ref from `config/`) + ≥ skeletal narrative docs in the feature PR. CI gates the docs build. Mechanism: UNK-370.
+10. **Docs are part of done.** Like the TDD mandate — docs ship with the change, not after. User-facing endpoint or config → generated reference covers it (API ref from OpenAPI; env/config ref from `config/`) + ≥ skeletal narrative docs in the feature PR. CI gates the docs build, and backend drift tests fail when a generated artifact goes stale. Regenerate from `backend/` with `REGEN=1 cargo test --test gen_openapi --test gen_config_ref` and commit the updated artifacts in the same PR. Mechanism: UNK-370 (Phase 1); full route coverage tracked in UNK-376.
 
 ---
 
