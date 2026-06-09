@@ -1,6 +1,6 @@
 # Implementation Report — docs-as-done (Phase 1 mechanism slice)
 
-**Plan**: `.claude/PRPs/plans/docs-as-done.plan.md` (archived → `completed/` on close)
+**Plan**: `.claude/PRPs/plans/completed/docs-as-done.plan.md` (archived on close)
 **Linear**: [UNK-370](https://linear.app/unkos/issue/UNK-370) (Phase 1, v0.1.0 milestone)
 **Branch**: `feat/unk-370-docs-as-done`
 **Date**: 2026-06-09

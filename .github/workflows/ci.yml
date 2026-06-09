@@ -82,6 +82,10 @@ jobs:
               # caught by the backend job's drift tests instead).
               - 'docs/**'
               - '.github/workflows/ci.yml'
+              # docs.yml carries its own astro build; a docs.yml-only PR must
+              # still run the docs gate here rather than first failing on the
+              # post-merge deploy lane.
+              - '.github/workflows/docs.yml'
 
   backend:
     name: Backend
