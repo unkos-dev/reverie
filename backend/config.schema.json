@@ -1,0 +1,428 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Config",
+  "description": "Resolved process-wide configuration. Fields reflect the settled view of\nthe environment after defaults, parsing, and validation; subsystem\nconfigs (OPDS, enrichment, cover, writeback, security) are nested as\nowned values so callers do not pass the entire `Config` into helpers\nthat only need one slice.",
+  "type": "object",
+  "properties": {
+    "auto_migrate": {
+      "description": "Run pending migrations in-process at startup\n(`REVERIE_AUTO_MIGRATE`, default `false`). The shipped default is\nout-of-band migration via `reverie migrate`; when this is `true` the\nlong-lived server process carries the migration credential for its\nwhole lifetime, so it is an opt-in escape hatch only. Requires\n[`Self::migration_database_url`] to be set.",
+      "type": "boolean",
+      "default": false
+    },
+    "cleanup_mode": {
+      "description": "Post-ingestion cleanup behaviour (`REVERIE_CLEANUP_MODE`,\ndefault `all`). See [`CleanupMode`] for variant semantics.",
+      "$ref": "#/$defs/CleanupMode",
+      "default": "all"
+    },
+    "cover": {
+      "description": "Cover-image acquisition limits (max bytes, redirect cap, etc.).",
+      "$ref": "#/$defs/CoverConfig"
+    },
+    "database_url": {
+      "description": "Primary database DSN (`DATABASE_URL`, required). Connections opened\nagainst this DSN run as `reverie_app`; user-facing queries acquire\ntransactions through [`crate::db::acquire_with_rls`].",
+      "type": "string",
+      "default": ""
+    },
+    "db_max_connections": {
+      "description": "Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default\n`10`); applied identically to the primary, ingestion, and\nwriteback pools.",
+      "type": "integer",
+      "format": "uint32",
+      "default": 10,
+      "minimum": 0
+    },
+    "enrichment": {
+      "description": "Metadata enrichment knobs (concurrency, cache TTLs, etc.).",
+      "$ref": "#/$defs/EnrichmentConfig"
+    },
+    "format_priority": {
+      "description": "Ranked acceptable formats (`REVERIE_FORMAT_PRIORITY`,\ncomma-separated; default `epub,pdf,mobi,azw3,cbz,cbr`). The\ningestion pipeline picks the highest-ranked file when an\nincoming work has multiple candidates.",
+      "type": "array",
+      "default": [
+        "epub",
+        "pdf",
+        "mobi",
+        "azw3",
+        "cbz",
+        "cbr"
+      ],
+      "items": {
+        "$ref": "#/$defs/ManifestationFormat"
+      }
+    },
+    "googlebooks_api_key": {
+      "description": "Optional Google Books API key\n(`REVERIE_GOOGLEBOOKS_API_KEY`); when set, requests bypass the\npublic anonymous quota.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "googlebooks_base_url": {
+      "description": "Google Books API base URL (`REVERIE_GOOGLEBOOKS_BASE_URL`,\ndefault `https://www.googleapis.com/books/v1`).",
+      "type": "string",
+      "default": "https://www.googleapis.com/books/v1"
+    },
+    "hardcover_api_token": {
+      "description": "Optional Hardcover bearer token\n(`REVERIE_HARDCOVER_API_TOKEN`); requests are skipped when\nunset.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "hardcover_base_url": {
+      "description": "Hardcover GraphQL endpoint (`REVERIE_HARDCOVER_BASE_URL`,\ndefault `https://api.hardcover.app/v1/graphql`).",
+      "type": "string",
+      "default": "https://api.hardcover.app/v1/graphql"
+    },
+    "ingestion_database_url": {
+      "description": "Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`); falls back to\n`database_url` when unset. Connections run as\n`reverie_ingestion` against the `*_ingestion_full_access` RLS\npolicies.",
+      "type": "string",
+      "default": ""
+    },
+    "ingestion_path": {
+      "description": "Watched ingestion drop directory (`REVERIE_INGESTION_PATH`,\ndefault `./ingestion`). The watcher consumes files from here.",
+      "type": "string",
+      "default": "./ingestion"
+    },
+    "library_path": {
+      "description": "Filesystem root for persisted manifestation files\n(`REVERIE_LIBRARY_PATH`, default `./library`). The OPDS download\nhandler canonicalises file paths against this root.",
+      "type": "string",
+      "default": "./library"
+    },
+    "log_level": {
+      "description": "Log-filter directive resolved from the environment with cascading\nprecedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `\"info\"`. The\n`REVERIE_*` operator namespace wins on conflict so staging docs\nstay coherent; `RUST_LOG` is honoured as the ecosystem default for\ndeveloper convenience. The subscriber filter in [`crate::run`]\nparses this string directly — no further env re-read — so the\nprecedence resolved here is the single source of truth for the\nprocess lifetime.",
+      "type": "string",
+      "default": "info"
+    },
+    "migration_database_url": {
+      "description": "Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`\ncredentials for the ephemeral migration pool. `None` on the default\nserver path — the application process holds no migration credential\nunless [`Self::auto_migrate`] is set. Required (else\n[`ConfigError::MissingVar`]) only when `auto_migrate` is true.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "oidc_client_id": {
+      "description": "OIDC client id (`OIDC_CLIENT_ID`, required).",
+      "type": "string",
+      "default": ""
+    },
+    "oidc_client_secret": {
+      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material — never logged.",
+      "type": "string",
+      "default": ""
+    },
+    "oidc_issuer_url": {
+      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`, required) — the trust seam\nfor the entire authentication subsystem. The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
+      "type": "string",
+      "default": ""
+    },
+    "oidc_redirect_uri": {
+      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match\nthe value registered with the issuer.",
+      "type": "string",
+      "default": ""
+    },
+    "opds": {
+      "description": "OPDS catalogue settings (mount enable, page size, realm,\n`public_url`).",
+      "$ref": "#/$defs/OpdsConfig"
+    },
+    "openlibrary_base_url": {
+      "description": "`OpenLibrary` API base URL (`REVERIE_OPENLIBRARY_BASE_URL`,\ndefault `https://openlibrary.org`).",
+      "type": "string",
+      "default": "https://openlibrary.org"
+    },
+    "operator_contact": {
+      "description": "Operator contact (`REVERIE_OPERATOR_CONTACT`); embedded into\nthe outbound `User-Agent` to claim `OpenLibrary`'s identified\n3 req/s rate-limit tier (vs. 1 req/s anonymous).",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "port": {
+      "description": "HTTP listen port (`REVERIE_PORT`, default `3000`).",
+      "type": "integer",
+      "format": "uint16",
+      "default": 3000,
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "quarantine_path": {
+      "description": "Failed-ingestion quarantine directory\n(`REVERIE_QUARANTINE_PATH`, default `./quarantine`).",
+      "type": "string",
+      "default": "./quarantine"
+    },
+    "security": {
+      "description": "Response-header policy (CSP, HSTS, reporting endpoint, dist\npath). `csp_*_header` fields are finalised by [`crate::run`]\nafter construction.",
+      "$ref": "#/$defs/SecurityConfig"
+    },
+    "writeback": {
+      "description": "Writeback worker knobs (concurrency, retry cap).",
+      "$ref": "#/$defs/WritebackConfig"
+    }
+  },
+  "$defs": {
+    "CleanupMode": {
+      "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string —\n`\"all\"` | `\"ingested\"` | `\"none\"`.",
+      "oneOf": [
+        {
+          "description": "Delete all files in the ingestion directory after a successful batch.",
+          "type": "string",
+          "const": "all"
+        },
+        {
+          "description": "Delete only files that were actually ingested (selected by format priority).",
+          "type": "string",
+          "const": "ingested"
+        },
+        {
+          "description": "Never delete source files — user handles cleanup manually.",
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
+    "CoverConfig": {
+      "description": "Cover-image acquisition limits applied by the cover service when\nfetching from third-party metadata providers.",
+      "type": "object",
+      "properties": {
+        "download_timeout_secs": {
+          "description": "Per-download HTTP timeout\n(`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 30,
+          "minimum": 0
+        },
+        "max_bytes": {
+          "description": "Maximum bytes accepted per cover image\n(`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 10485760,
+          "minimum": 0
+        },
+        "min_long_edge_px": {
+          "description": "Minimum long-edge pixel dimension; smaller images are rejected\n(`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1000,
+          "minimum": 0
+        },
+        "redirect_limit": {
+          "description": "Maximum HTTP redirect hops the cover fetcher will follow\n(`REVERIE_COVER_REDIRECT_LIMIT`, default `3`).",
+          "type": "integer",
+          "format": "uint",
+          "default": 3,
+          "minimum": 0
+        }
+      }
+    },
+    "EnrichmentConfig": {
+      "description": "Metadata-enrichment subsystem knobs (background workers that fetch\nfrom `OpenLibrary` / Google Books / Hardcover).",
+      "type": "object",
+      "properties": {
+        "cache_ttl_error_mins": {
+          "description": "Cache TTL for transient-error responses\n(`REVERIE_ENRICHMENT_CACHE_TTL_ERROR_MINS`, default `15`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 15,
+          "minimum": 0
+        },
+        "cache_ttl_hit_days": {
+          "description": "Cache TTL for successful (`hit`) responses\n(`REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS`, default `30`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 30,
+          "minimum": 0
+        },
+        "cache_ttl_miss_days": {
+          "description": "Cache TTL for \"not found\" (`miss`) responses\n(`REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS`, default `7`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 7,
+          "minimum": 0
+        },
+        "concurrency": {
+          "description": "In-flight enrichment job concurrency\n(`REVERIE_ENRICHMENT_CONCURRENCY`, default `2`; valid range 1-10).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 2,
+          "maximum": 10,
+          "minimum": 1
+        },
+        "enabled": {
+          "description": "Whether the enrichment queue is spawned\n(`REVERIE_ENRICHMENT_ENABLED`, default `true`).",
+          "type": "boolean",
+          "default": true
+        },
+        "fetch_budget_secs": {
+          "description": "Per-job overall fetch budget\n(`REVERIE_ENRICHMENT_FETCH_BUDGET_SECS`, default `15`).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 15,
+          "minimum": 0
+        },
+        "http_timeout_secs": {
+          "description": "Per-request HTTP timeout for outbound metadata fetches\n(`REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS`, default `10`).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 10,
+          "minimum": 0
+        },
+        "max_attempts": {
+          "description": "Maximum retry attempts before a job is considered exhausted\n(`REVERIE_ENRICHMENT_MAX_ATTEMPTS`, default `10`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 10,
+          "minimum": 0
+        },
+        "poll_idle_secs": {
+          "description": "Sleep between empty-queue polls\n(`REVERIE_ENRICHMENT_POLL_IDLE_SECS`, default `30`).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 30,
+          "minimum": 0
+        }
+      }
+    },
+    "ManifestationFormat": {
+      "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_FORMAT_PRIORITY` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
+      "oneOf": [
+        {
+          "description": "EPUB 2 / 3 reflowable e-book.",
+          "type": "string",
+          "const": "epub"
+        },
+        {
+          "description": "Portable Document Format.",
+          "type": "string",
+          "const": "pdf"
+        },
+        {
+          "description": "Mobipocket / older Kindle format.",
+          "type": "string",
+          "const": "mobi"
+        },
+        {
+          "description": "Amazon Kindle Format 8 (`.azw3`).",
+          "type": "string",
+          "const": "azw3"
+        },
+        {
+          "description": "Comic Book ZIP archive.",
+          "type": "string",
+          "const": "cbz"
+        },
+        {
+          "description": "Comic Book RAR archive.",
+          "type": "string",
+          "const": "cbr"
+        }
+      ]
+    },
+    "OpdsConfig": {
+      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set — feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI (Step 10) needs them\nregardless of OPDS availability.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether the `/opds/*` routes are mounted\n(`REVERIE_OPDS_ENABLED`, default `true`).",
+          "type": "boolean",
+          "default": true
+        },
+        "page_size": {
+          "description": "Default page size for paginated feeds (`REVERIE_OPDS_PAGE_SIZE`,\ndefault `50`; valid range 1-500).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 50,
+          "maximum": 500,
+          "minimum": 1
+        },
+        "public_url": {
+          "description": "Externally-visible base URL the catalogue emits absolute links\nrooted at (`REVERIE_PUBLIC_URL`). Required when `enabled=true`;\noptional otherwise.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri",
+          "default": null
+        },
+        "realm": {
+          "description": "`WWW-Authenticate: Basic realm=...` value emitted on 401\nresponses from `/opds/*` (`REVERIE_OPDS_REALM`, default\n`\"Reverie OPDS\"`). Validated to exclude `\"` to keep the header\nwell-formed.",
+          "type": "string",
+          "default": "Reverie OPDS"
+        }
+      }
+    },
+    "SecurityConfig": {
+      "description": "Response-header policy.\n\nCSP values are stored as precomputed `HeaderValue`s. They depend on\n`validate_frontend_dist` reading the on-disk FOUC script to derive its\nhash, so `csp_api_header` and `csp_html_header` are left as `None` after\ndeserialization and finalised by `main()` via\n[`crate::security::csp::build_api_csp`] /\n[`crate::security::csp::build_html_csp`]. A non-conformant CSP string\npanics in `main()` rather than silently dropping the header at request\ntime.\n\nHSTS and Reporting-Endpoints are derived from the booleans / URL stored\nhere via [`Self::hsts_header_value`] and\n[`Self::reporting_endpoints_header_value`]. Both compose static-ASCII\nstrings from validated inputs and panic on the impossible case (a\nprogramming invariant has been violated and we want to know).\n\nA `SecurityConfig` obtained directly from the config pipeline — without the\nCSP-finalisation pass — emits no `Content-Security-Policy` on either\nroute class (both fields stay `None`); HSTS and Reporting-Endpoints\nare still applied because they are derived on demand.",
+      "type": "object",
+      "properties": {
+        "behind_https": {
+          "description": "Whether the deployment is fronted by a TLS-terminating reverse\nproxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS\nemission — never emitted on plaintext HTTP because the browser\nwould refuse the next TLS-less request to this host.",
+          "type": "boolean",
+          "default": false
+        },
+        "csp_report_endpoint": {
+          "description": "Optional CSP-violation reporting endpoint\n(`REVERIE_CSP_REPORT_ENDPOINT`). Pre-validated at startup to\nreject `\"`/`;`/CR/LF (header-injection guard) and any scheme\nother than `http`/`https`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri",
+          "default": null
+        },
+        "frontend_dist_path": {
+          "description": "Optional path to the built frontend dist directory\n(`REVERIE_FRONTEND_DIST_PATH`). When set, the SPA assets router\nis mounted and the FOUC-script hash is read at startup to seed\nthe HTML CSP.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "hsts_include_subdomains": {
+          "description": "Whether the HSTS header carries `; includeSubDomains`\n(`REVERIE_HSTS_INCLUDE_SUBDOMAINS`, default `false`). Requires\n`behind_https=true`.",
+          "type": "boolean",
+          "default": false
+        },
+        "hsts_preload": {
+          "description": "Whether the HSTS header carries `; preload`\n(`REVERIE_HSTS_PRELOAD`, default `false`). Requires\n`hsts_include_subdomains=true` (chrome.com / hstspreload.org\nrules).",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "WritebackConfig": {
+      "description": "Writeback-worker knobs (the background task that flushes pending\ncanonical-metadata mutations into the source manifestation files).",
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "description": "In-flight writeback job concurrency\n(`REVERIE_WRITEBACK_CONCURRENCY`, default `2`; valid range 1-10).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 2,
+          "maximum": 10,
+          "minimum": 1
+        },
+        "enabled": {
+          "description": "Whether the writeback worker is spawned\n(`REVERIE_WRITEBACK_ENABLED`, default `true`).",
+          "type": "boolean",
+          "default": true
+        },
+        "max_attempts": {
+          "description": "Maximum retry attempts before a writeback job is considered\nexhausted (`REVERIE_WRITEBACK_MAX_ATTEMPTS`, default `10`).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 10,
+          "minimum": 0
+        },
+        "poll_idle_secs": {
+          "description": "Sleep between empty-queue polls\n(`REVERIE_WRITEBACK_POLL_IDLE_SECS`, default `5`).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 5,
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

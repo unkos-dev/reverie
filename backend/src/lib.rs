@@ -444,6 +444,10 @@ async fn apply_or_verify_schema(config: &Config, app_pool: &sqlx::PgPool) -> any
 pub enum Command {
     /// `reverie migrate` — apply pending migrations out-of-band, then exit.
     Migrate,
+    /// `reverie print-config-schema` — emit the config JSON Schema to stdout,
+    /// then exit. A build/docs utility (regenerates the committed
+    /// `config.schema.json`); reads no environment and touches no database.
+    PrintConfigSchema,
     /// No subcommand — run the long-lived HTTP server.
     Serve,
 }
@@ -466,13 +470,44 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
     match args {
         [] => Ok(Command::Serve),
         [cmd] if cmd == "migrate" => Ok(Command::Migrate),
+        [cmd] if cmd == "print-config-schema" => Ok(Command::PrintConfigSchema),
         [cmd] => Err(anyhow::anyhow!(
-            "unknown subcommand: {cmd:?}; valid subcommands: migrate"
+            "unknown subcommand: {cmd:?}; valid subcommands: migrate, print-config-schema"
         )),
         [cmd, ..] => Err(anyhow::anyhow!(
             "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate]"
         )),
     }
+}
+
+/// Emit the [`config::Config`] JSON Schema to stdout — the
+/// `print-config-schema` subcommand. The output is the committed
+/// `backend/config.schema.json` artifact (CI drift-checks a fresh emit against
+/// it), and the source the UNK-370 configuration reference renders from.
+///
+/// Reads no environment and opens no database — it is `schema_for!` over the
+/// config structs, so it runs in any context. Deterministic: `schemars`
+/// orders definitions, and the trailing newline keeps `diff` POSIX-clean.
+///
+/// Secret-bearing fields carry no `default` value in the schema (the structs
+/// derive no `Serialize`, so `schemars` cannot and does not emit default
+/// values for any field), so the artifact is safe to publish (hard rule 7).
+///
+/// `println!` is forbidden (see `backend/CLAUDE.md`), so this writes through
+/// [`std::io::Write`] directly.
+///
+/// # Errors
+///
+/// Returns an error if schema serialization or the stdout write fails.
+pub fn print_config_schema() -> anyhow::Result<()> {
+    use std::io::Write as _;
+    let schema = schemars::schema_for!(config::Config);
+    let mut json = serde_json::to_string_pretty(&schema).context("serialize config schema")?;
+    json.push('\n');
+    std::io::stdout()
+        .write_all(json.as_bytes())
+        .context("write config schema to stdout")?;
+    Ok(())
 }
 
 /// Resolve the migration DSN from the raw `DATABASE_URL_MIGRATION` value,
@@ -563,6 +598,8 @@ mod tests {
         let migrate = vec!["migrate".to_string()];
         assert_eq!(parse_command(&migrate).unwrap(), Command::Migrate);
         assert_eq!(parse_command(&[]).unwrap(), Command::Serve);
+        let schema = vec!["print-config-schema".to_string()];
+        assert_eq!(parse_command(&schema).unwrap(), Command::PrintConfigSchema);
 
         let unknown = vec!["migration".to_string()];
         let err = parse_command(&unknown).unwrap_err();

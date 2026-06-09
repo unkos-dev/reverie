@@ -1730,6 +1730,32 @@ mod tests {
     }
 
     #[test]
+    fn config_schema_has_no_secret_default_values() {
+        // Hard rule 7 / GOTCHA-SECRET: the emitted JSON Schema must carry no
+        // secret VALUE. schemars renders each field's default, so secret-
+        // bearing fields appear with `""` (required `String`) or `null`
+        // (optional) — both non-values; a non-empty string default would be a
+        // leak of real credential material.
+        let schema = serde_json::to_value(schemars::schema_for!(Config)).unwrap();
+        let props = schema["properties"].as_object().expect("properties object");
+        for field in [
+            "oidc_client_secret",
+            "googlebooks_api_key",
+            "hardcover_api_token",
+        ] {
+            let default = &props[field]["default"];
+            let safe = default.is_null() || default.as_str() == Some("");
+            assert!(
+                safe,
+                "secret field {field} carries a non-empty default in the schema: {default}"
+            );
+        }
+        // Non-vacuity: a non-secret scalar still carries its real default, so
+        // the assertion above is meaningful (the schema does emit defaults).
+        assert_eq!(props["port"]["default"], serde_json::json!(3000));
+    }
+
+    #[test]
     fn env_provider_from_process_env_reads_real_env() {
         // CARGO_PKG_NAME is set by cargo for every test run; it is unmapped in
         // ENV_MAP (ignored by `data`) but must be collected into the raw pairs.
