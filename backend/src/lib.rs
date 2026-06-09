@@ -497,9 +497,14 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 /// config structs, so it runs in any context. Deterministic: `schemars`
 /// orders definitions, and the trailing newline keeps `diff` POSIX-clean.
 ///
-/// Secret-bearing fields carry no `default` value in the schema (the structs
-/// derive no `Serialize`, so `schemars` cannot and does not emit default
-/// values for any field), so the artifact is safe to publish (hard rule 7).
+/// `schemars` emits each field's default into the schema (from the `Default`
+/// impls — e.g. `port`'s default `3000` is present). The artifact is safe to
+/// publish (hard rule 7) because every secret-bearing field defaults to
+/// `String::new()` / `None`, so it renders as `""` / `null` — never real
+/// credential material. The absence of a `Serialize` derive is a
+/// secret-leak-prevention measure for the *serialize* path, not the mechanism
+/// that keeps secrets out of the *schema*. Gated by the
+/// `config_schema_has_no_secret_default_values` test.
 ///
 /// `println!` is forbidden (see `backend/CLAUDE.md`), so this writes through
 /// [`std::io::Write`] directly.

@@ -55,6 +55,10 @@ impl Default for OpdsConfig {
 
 /// Reject a `"` in the OPDS `realm` — it flows into a `WWW-Authenticate: Basic
 /// realm="…"` header and an embedded quote would split the value.
+///
+/// THREAT: `realm` is emitted into the `WWW-Authenticate` response header on
+/// 401s from `/opds/*`; an embedded `"` terminates the quoted value early and
+/// opens header-value injection. Rejected here at config-load time.
 fn validate_realm(realm: &str) -> Result<(), ValidationError> {
     if realm.contains('"') {
         let mut e = ValidationError::new("realm_quote");
