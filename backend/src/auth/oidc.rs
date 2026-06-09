@@ -166,9 +166,10 @@ pub fn exchange_http_client() -> Result<openidconnect::reqwest::Client> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use figment::Figment;
 
     use super::*;
+    use crate::config::EnvProvider;
 
     fn config_with_overrides(overrides: &[(&str, &str)]) -> Config {
         let base: &[(&str, &str)] = &[
@@ -183,14 +184,11 @@ mod tests {
             ("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback"),
             ("REVERIE_OPDS_ENABLED", "false"),
         ];
-        let mut vars: HashMap<String, String> = base
-            .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-            .collect();
-        for (k, v) in overrides {
-            vars.insert((*k).to_string(), (*v).to_string());
-        }
-        Config::from_source(&|k| vars.get(k).cloned()).expect("test Config must build")
+        // base first, overrides last — later pairs win in EnvProvider's merge.
+        let mut vars: Vec<(&str, &str)> = base.to_vec();
+        vars.extend_from_slice(overrides);
+        Config::from_figment(&Figment::from(EnvProvider::from_pairs(&vars)))
+            .expect("test Config must build")
     }
 
     /// Regression test: the OIDC HTTP client must send a non-empty

@@ -1,11 +1,16 @@
 //! Environment-driven configuration loaded once at startup.
 //!
-//! [`Config::from_env`] is the production entry point; tests inject a
-//! `HashMap`-backed closure through [`Config::from_source`] so test setup
-//! never mutates the process environment (UNK-100). Subsystem configs
+//! Loading is a declarative figment pipeline (figment + serde + validator +
+//! schemars; `adr/2026-06-09-declarative-config-stack.md`): the custom
+//! [`EnvProvider`] maps env-var names to dotted struct paths, `serde`
+//! deserializes into the config structs (per-field defaults from the
+//! `Default` impls), [`Config::from_figment`] applies the post-deserialize
+//! security gates, and `validator` runs range + cross-field checks.
+//! [`Config::from_env`] is the production entry point; tests inject env as
+//! in-memory pairs via [`EnvProvider::from_pairs`] so test setup never
+//! mutates the process environment (UNK-100). Subsystem configs
 //! ([`OpdsConfig`], [`EnrichmentConfig`], [`CoverConfig`],
-//! [`WritebackConfig`], [`SecurityConfig`]) own their own per-var parsing
-//! to keep the `Config::from_source` body shallow.
+//! [`WritebackConfig`], [`SecurityConfig`]) nest as owned sub-structs.
 //!
 //! [`SecurityConfig`] is a partial value after `from_env` — the
 //! `csp_html_header` / `csp_api_header` fields stay `None` until
@@ -16,27 +21,20 @@
 //! so embedders bypassing `run` must perform the finalisation pass
 //! themselves via [`crate::security::csp`].
 
-use std::env;
-
 use figment::{
-    Metadata, Profile, Provider,
+    Figment, Metadata, Profile, Provider,
     value::{Dict, Map, Value},
 };
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 use crate::models::manifestation_format::ManifestationFormat;
-
-// Env-var lookup function. `Config::from_env` reads from process env; tests
-// inject a `HashMap`-backed closure via `Config::from_source` so test setup
-// never mutates global state. UNK-100; lifts
-// `debt/2026-05-05-env-lock-config-tests.md`.
-type EnvGet<'a> = dyn Fn(&str) -> Option<String> + 'a;
 
 /// Resolved process-wide configuration. Fields reflect the settled view of
 /// the environment after defaults, parsing, and validation; subsystem
 /// configs (OPDS, enrichment, cover, writeback, security) are nested as
 /// owned values so callers do not pass the entire `Config` into helpers
 /// that only need one slice.
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
 pub struct Config {
     /// HTTP listen port (`REVERIE_PORT`, default `3000`).
@@ -111,17 +109,22 @@ pub struct Config {
     /// default `all`). See [`CleanupMode`] for variant semantics.
     pub cleanup_mode: CleanupMode,
     /// Metadata enrichment knobs (concurrency, cache TTLs, etc.).
+    #[validate(nested)]
     pub enrichment: EnrichmentConfig,
     /// Cover-image acquisition limits (max bytes, redirect cap, etc.).
+    #[validate(nested)]
     pub cover: CoverConfig,
     /// Writeback worker knobs (concurrency, retry cap).
+    #[validate(nested)]
     pub writeback: WritebackConfig,
     /// OPDS catalogue settings (mount enable, page size, realm,
     /// `public_url`).
+    #[validate(nested)]
     pub opds: OpdsConfig,
     /// Response-header policy (CSP, HSTS, reporting endpoint, dist
     /// path). `csp_*_header` fields are finalised by [`crate::run`]
     /// after construction.
+    #[validate(nested)]
     pub security: SecurityConfig,
     /// `OpenLibrary` API base URL (`REVERIE_OPENLIBRARY_BASE_URL`,
     /// default `https://openlibrary.org`).
@@ -153,19 +156,22 @@ pub struct Config {
 /// Note: the dual-mounted cover handlers at `/api/books/:id/cover{,/thumb}` are
 /// mounted independently of `enabled` because the web UI (Step 10) needs them
 /// regardless of OPDS availability.
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
+#[validate(schema(function = "validate_opds_config"))]
 pub struct OpdsConfig {
     /// Whether the `/opds/*` routes are mounted
     /// (`REVERIE_OPDS_ENABLED`, default `true`).
     pub enabled: bool,
     /// Default page size for paginated feeds (`REVERIE_OPDS_PAGE_SIZE`,
     /// default `50`; valid range 1-500).
+    #[validate(range(min = 1, max = 500, message = "must be between 1 and 500"))]
     pub page_size: u32,
     /// `WWW-Authenticate: Basic realm=...` value emitted on 401
     /// responses from `/opds/*` (`REVERIE_OPDS_REALM`, default
     /// `"Reverie OPDS"`). Validated to exclude `"` to keep the header
     /// well-formed.
+    #[validate(custom(function = "validate_realm"))]
     pub realm: String,
     /// Externally-visible base URL the catalogue emits absolute links
     /// rooted at (`REVERIE_PUBLIC_URL`). Required when `enabled=true`;
@@ -175,7 +181,7 @@ pub struct OpdsConfig {
 
 /// Metadata-enrichment subsystem knobs (background workers that fetch
 /// from `OpenLibrary` / Google Books / Hardcover).
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
 pub struct EnrichmentConfig {
     /// Whether the enrichment queue is spawned
@@ -183,6 +189,7 @@ pub struct EnrichmentConfig {
     pub enabled: bool,
     /// In-flight enrichment job concurrency
     /// (`REVERIE_ENRICHMENT_CONCURRENCY`, default `2`; valid range 1-10).
+    #[validate(range(min = 1, max = 10, message = "must be between 1 and 10"))]
     pub concurrency: u32,
     /// Sleep between empty-queue polls
     /// (`REVERIE_ENRICHMENT_POLL_IDLE_SECS`, default `30`).
@@ -209,7 +216,7 @@ pub struct EnrichmentConfig {
 
 /// Cover-image acquisition limits applied by the cover service when
 /// fetching from third-party metadata providers.
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
 pub struct CoverConfig {
     /// Maximum bytes accepted per cover image
@@ -228,7 +235,7 @@ pub struct CoverConfig {
 
 /// Writeback-worker knobs (the background task that flushes pending
 /// canonical-metadata mutations into the source manifestation files).
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
 pub struct WritebackConfig {
     /// Whether the writeback worker is spawned
@@ -236,6 +243,7 @@ pub struct WritebackConfig {
     pub enabled: bool,
     /// In-flight writeback job concurrency
     /// (`REVERIE_WRITEBACK_CONCURRENCY`, default `2`; valid range 1-10).
+    #[validate(range(min = 1, max = 10, message = "must be between 1 and 10"))]
     pub concurrency: u32,
     /// Sleep between empty-queue polls
     /// (`REVERIE_WRITEBACK_POLL_IDLE_SECS`, default `5`).
@@ -250,7 +258,7 @@ pub struct WritebackConfig {
 /// CSP values are stored as precomputed `HeaderValue`s. They depend on
 /// `validate_frontend_dist` reading the on-disk FOUC script to derive its
 /// hash, so `csp_api_header` and `csp_html_header` are left as `None` after
-/// `from_env()` and finalised by `main()` via
+/// deserialization and finalised by `main()` via
 /// [`crate::security::csp::build_api_csp`] /
 /// [`crate::security::csp::build_html_csp`]. A non-conformant CSP string
 /// panics in `main()` rather than silently dropping the header at request
@@ -262,12 +270,13 @@ pub struct WritebackConfig {
 /// strings from validated inputs and panic on the impossible case (a
 /// programming invariant has been violated and we want to know).
 ///
-/// A `SecurityConfig` obtained directly from `from_env()` — without the
+/// A `SecurityConfig` obtained directly from the config pipeline — without the
 /// CSP-finalisation pass — emits no `Content-Security-Policy` on either
 /// route class (both fields stay `None`); HSTS and Reporting-Endpoints
 /// are still applied because they are derived on demand.
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
+#[validate(schema(function = "validate_security_config"))]
 pub struct SecurityConfig {
     /// Whether the deployment is fronted by a TLS-terminating reverse
     /// proxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS
@@ -295,13 +304,13 @@ pub struct SecurityConfig {
     /// the HTML CSP.
     pub frontend_dist_path: Option<std::path::PathBuf>,
     /// Precomputed `Content-Security-Policy` header for HTML
-    /// responses. `None` after [`Self::from_env`]; finalised by
+    /// responses. `None` after [`Config::from_env`]; finalised by
     /// [`crate::run`] from the FOUC-script hash + reporting endpoint.
     #[serde(skip)]
     #[schemars(skip)]
     pub csp_html_header: Option<axum::http::HeaderValue>,
     /// Precomputed `Content-Security-Policy` header for API
-    /// responses. `None` after [`Self::from_env`]; finalised by
+    /// responses. `None` after [`Config::from_env`]; finalised by
     /// [`crate::run`] from the reporting endpoint
     /// (`default-src 'none'`-rooted, no script-src hashes).
     #[serde(skip)]
@@ -363,18 +372,16 @@ pub enum ConfigError {
         /// Why the supplied value was rejected.
         reason: String,
     },
-}
-
-/// Process-env adapter for `Config::from_env`. Extracted from a closure so it
-/// is callable from a test (no `unsafe { env::set_var }` needed — tests read
-/// vars cargo always sets, like `CARGO_PKG_NAME`).
-fn process_env_get(k: &str) -> Option<String> {
-    env::var(k).ok()
+    /// Two or more validation failures surfaced together. Only the
+    /// declarative `validate()` phase aggregates; deserialize-phase
+    /// (figment `extract`) errors remain fail-fast, one at a time.
+    #[error("{} configuration error(s):\n{}", .0.len(), .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"))]
+    Multiple(Vec<Self>),
 }
 
 impl Config {
     /// Public entry point for production: loads `.env` (best-effort) then
-    /// reads from process env via `std::env::var`.
+    /// reads from the process environment through the figment pipeline.
     ///
     /// # Errors
     ///
@@ -383,160 +390,82 @@ impl Config {
     /// when an optional variable is set but fails parse or validation
     /// (out-of-range numerics, unsupported `format_priority` entries,
     /// malformed URLs, header-injection-prone characters in
-    /// `REVERIE_CSP_REPORT_ENDPOINT`, etc.). The variant carries the
-    /// offending variable name so the surfaced operator-facing message
-    /// is actionable.
+    /// `REVERIE_CSP_REPORT_ENDPOINT`, etc.); returns [`ConfigError::Multiple`]
+    /// when more than one declarative validation fails together. The
+    /// variant carries the offending variable name so the surfaced
+    /// operator-facing message is actionable.
     pub fn from_env() -> Result<Self, ConfigError> {
         dotenvy::dotenv().ok();
-        Self::from_source(&process_env_get)
+        Self::from_figment(&Figment::from(EnvProvider::from_process_env()))
     }
 
-    /// Inject env via a closure. Tests pass a `HashMap`-backed `&EnvGet` so
-    /// they never mutate process env (UNK-100). Production calls this via
-    /// `from_env` with the `std::env::var` adapter.
+    /// Load configuration from a prepared [`Figment`].
+    ///
+    /// The pipeline is: figment `extract` (typed deserialization, with
+    /// per-field defaults supplied by the `#[serde(default)]` `Default`
+    /// impls — no separate `Serialized::defaults` layer is needed, which
+    /// also keeps secret-bearing fields out of any `Serialize` path) →
+    /// post-deserialize security gates → declarative `validate()`.
+    ///
+    /// Post-deserialize gates, in order:
+    ///
+    /// 1. **Migration-credential gate** (security-load-bearing): figment
+    ///    deserializes `migration_database_url` from `DATABASE_URL_MIGRATION`
+    ///    unconditionally. When `auto_migrate` is off the field is forced
+    ///    back to `None` so the long-lived server never carries the migrator
+    ///    credential; when on, an absent/blank DSN is a `MissingVar`. See
+    ///    `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`.
+    /// 2. **Ingestion-DSN fallback**: a blank `ingestion_database_url` clones
+    ///    `database_url` (role-scoped DSN, defaults to the app DSN).
+    /// 3. **Required-field check**: a blank required field (`DATABASE_URL`,
+    ///    `OIDC_*`) is a `MissingVar` — distinct from `Invalid` so the
+    ///    operator message says "set the var", not "fix the value".
     ///
     /// # Errors
     ///
-    /// Same surface as [`Self::from_env`] minus the dotenv side-effect:
-    /// [`ConfigError::MissingVar`] for missing required vars,
-    /// [`ConfigError::Invalid`] for values that fail parse or
-    /// validation.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Config::from_source threads ~15 independent env vars with error propagation; extracting would produce boilerplate without improving readability"
-    )]
-    pub fn from_source(get: &EnvGet<'_>) -> Result<Self, ConfigError> {
-        let database_url =
-            get("DATABASE_URL").ok_or_else(|| ConfigError::MissingVar("DATABASE_URL".into()))?;
+    /// [`ConfigError::MissingVar`] for unset required vars,
+    /// [`ConfigError::Invalid`] for a single parse/validation failure, and
+    /// [`ConfigError::Multiple`] for aggregated `validate()` failures.
+    pub fn from_figment(figment: &Figment) -> Result<Self, ConfigError> {
+        let mut cfg: Self = figment.extract().map_err(|e| map_figment_error(&e))?;
 
-        let port = get("REVERIE_PORT")
-            .unwrap_or_else(|| "3000".into())
-            .parse::<u16>()
-            .map_err(|e| ConfigError::Invalid {
-                var: "REVERIE_PORT".into(),
-                reason: e.to_string(),
-            })?;
-
-        let oidc_issuer_url = get("OIDC_ISSUER_URL")
-            .ok_or_else(|| ConfigError::MissingVar("OIDC_ISSUER_URL".into()))?;
-        let oidc_client_id = get("OIDC_CLIENT_ID")
-            .ok_or_else(|| ConfigError::MissingVar("OIDC_CLIENT_ID".into()))?;
-        let oidc_client_secret = get("OIDC_CLIENT_SECRET")
-            .ok_or_else(|| ConfigError::MissingVar("OIDC_CLIENT_SECRET".into()))?;
-        let oidc_redirect_uri = get("OIDC_REDIRECT_URI")
-            .ok_or_else(|| ConfigError::MissingVar("OIDC_REDIRECT_URI".into()))?;
-
-        // The default verify-only path holds NO migration credential: the DSN
-        // is only read and stored when in-process migration is opted into.
-        // Leaving it `None` when `auto_migrate` is off means the long-lived
-        // server process never carries the migrator credential in `Config`,
-        // even if `DATABASE_URL_MIGRATION` happens to be exported. An
-        // exported-empty value is treated as unset (mirrors `run_migrate`).
-        let auto_migrate = parse_bool(get, "REVERIE_AUTO_MIGRATE", false)?;
-        let migration_database_url = if auto_migrate {
-            let url = get("DATABASE_URL_MIGRATION").filter(|s| !s.trim().is_empty());
-            if url.is_none() {
+        // Gate 1 — migration credential (GOTCHA-MIGGATE). The blank check is
+        // trimmed: `DATABASE_URL_MIGRATION="   "` must refuse start cleanly
+        // rather than boot carrying a garbage credential.
+        if cfg.auto_migrate {
+            if cfg
+                .migration_database_url
+                .as_deref()
+                .is_none_or(|s| s.trim().is_empty())
+            {
                 return Err(ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()));
             }
-            url
         } else {
-            None
-        };
+            cfg.migration_database_url = None;
+        }
 
-        let ingestion_database_url =
-            get("DATABASE_URL_INGESTION").unwrap_or_else(|| database_url.clone());
+        // Gate 2 — ingestion DSN falls back to the app DSN when blank.
+        if cfg.ingestion_database_url.trim().is_empty() {
+            cfg.ingestion_database_url = cfg.database_url.clone();
+        }
 
-        let format_priority: Vec<ManifestationFormat> = get("REVERIE_FORMAT_PRIORITY")
-            .unwrap_or_else(|| "epub,pdf,mobi,azw3,cbz,cbr".into())
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty())
-            .map(|s| {
-                s.parse::<ManifestationFormat>()
-                    .map_err(|_| ConfigError::Invalid {
-                        var: "REVERIE_FORMAT_PRIORITY".into(),
-                        reason: format!(
-                            "unsupported format '{s}'. Supported: epub, pdf, mobi, azw3, cbz, cbr"
-                        ),
-                    })
-            })
-            .collect::<Result<_, _>>()?;
-
-        let cleanup_mode = match get("REVERIE_CLEANUP_MODE")
-            .unwrap_or_else(|| "all".into())
-            .to_lowercase()
-            .as_str()
-        {
-            "all" => CleanupMode::All,
-            "ingested" => CleanupMode::Ingested,
-            "none" => CleanupMode::None,
-            other => {
-                return Err(ConfigError::Invalid {
-                    var: "REVERIE_CLEANUP_MODE".into(),
-                    reason: format!("expected 'all', 'ingested', or 'none', got '{other}'"),
-                });
+        // Gate 3 — required fields blank => MissingVar (NOT Invalid).
+        for (value, var) in [
+            (&cfg.database_url, "DATABASE_URL"),
+            (&cfg.oidc_issuer_url, "OIDC_ISSUER_URL"),
+            (&cfg.oidc_client_id, "OIDC_CLIENT_ID"),
+            (&cfg.oidc_client_secret, "OIDC_CLIENT_SECRET"),
+            (&cfg.oidc_redirect_uri, "OIDC_REDIRECT_URI"),
+        ] {
+            if value.trim().is_empty() {
+                return Err(ConfigError::MissingVar(var.into()));
             }
-        };
+        }
 
-        let enrichment = EnrichmentConfig::from_source(get)?;
-        let cover = CoverConfig::from_source(get)?;
-        let writeback = WritebackConfig::from_source(get)?;
-        let opds = OpdsConfig::from_source(get)?;
-        let security = SecurityConfig::from_source(get)?;
+        // Declarative validation (range + cross-field). Aggregated.
+        cfg.validate().map_err(|e| map_validation_errors(&e))?;
 
-        let openlibrary_base_url =
-            get("REVERIE_OPENLIBRARY_BASE_URL").unwrap_or_else(|| "https://openlibrary.org".into());
-        let googlebooks_base_url = get("REVERIE_GOOGLEBOOKS_BASE_URL")
-            .unwrap_or_else(|| "https://www.googleapis.com/books/v1".into());
-        let googlebooks_api_key = get("REVERIE_GOOGLEBOOKS_API_KEY").filter(|s| !s.is_empty());
-        let hardcover_base_url = get("REVERIE_HARDCOVER_BASE_URL")
-            .unwrap_or_else(|| "https://api.hardcover.app/v1/graphql".into());
-        let hardcover_api_token = get("REVERIE_HARDCOVER_API_TOKEN").filter(|s| !s.is_empty());
-        let operator_contact = get("REVERIE_OPERATOR_CONTACT").filter(|s| !s.is_empty());
-
-        Ok(Self {
-            port,
-            database_url,
-            library_path: get("REVERIE_LIBRARY_PATH").unwrap_or_else(|| "./library".into()),
-            ingestion_path: get("REVERIE_INGESTION_PATH").unwrap_or_else(|| "./ingestion".into()),
-            quarantine_path: get("REVERIE_QUARANTINE_PATH")
-                .unwrap_or_else(|| "./quarantine".into()),
-            // Operator namespace (REVERIE_LOG_LEVEL) wins over Rust ecosystem
-            // default (RUST_LOG) so staging docs that advertise the REVERIE_*
-            // prefix are honoured, while dev workflows keyed on RUST_LOG keep
-            // working via fallback. See backend/CLAUDE.md "Operator env-var
-            // namespacing" for the wider pattern.
-            log_level: get("REVERIE_LOG_LEVEL")
-                .or_else(|| get("RUST_LOG"))
-                .unwrap_or_else(|| "info".into()),
-            db_max_connections: get("REVERIE_DB_MAX_CONNECTIONS")
-                .unwrap_or_else(|| "10".into())
-                .parse::<u32>()
-                .map_err(|e| ConfigError::Invalid {
-                    var: "REVERIE_DB_MAX_CONNECTIONS".into(),
-                    reason: e.to_string(),
-                })?,
-            oidc_issuer_url,
-            oidc_client_id,
-            oidc_client_secret,
-            oidc_redirect_uri,
-            migration_database_url,
-            auto_migrate,
-            ingestion_database_url,
-            format_priority,
-            cleanup_mode,
-            enrichment,
-            cover,
-            writeback,
-            opds,
-            security,
-            openlibrary_base_url,
-            googlebooks_base_url,
-            googlebooks_api_key,
-            hardcover_base_url,
-            hardcover_api_token,
-            operator_contact,
-        })
+        Ok(cfg)
     }
 
     /// `User-Agent` string for outbound metadata API requests.  `OpenLibrary`
@@ -550,196 +479,7 @@ impl Config {
     }
 }
 
-impl EnrichmentConfig {
-    fn from_source(get: &EnvGet<'_>) -> Result<Self, ConfigError> {
-        let enabled = parse_bool(get, "REVERIE_ENRICHMENT_ENABLED", true)?;
-        let concurrency = parse_u32(get, "REVERIE_ENRICHMENT_CONCURRENCY", 2)?;
-        if !(1..=10).contains(&concurrency) {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_ENRICHMENT_CONCURRENCY".into(),
-                reason: format!("must be 1-10, got {concurrency}"),
-            });
-        }
-        let poll_idle_secs = parse_u64(get, "REVERIE_ENRICHMENT_POLL_IDLE_SECS", 30)?;
-        let fetch_budget_secs = parse_u64(get, "REVERIE_ENRICHMENT_FETCH_BUDGET_SECS", 15)?;
-        let http_timeout_secs = parse_u64(get, "REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS", 10)?;
-        let max_attempts = parse_u32(get, "REVERIE_ENRICHMENT_MAX_ATTEMPTS", 10)?;
-        let cache_ttl_hit_days = parse_u32(get, "REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS", 30)?;
-        let cache_ttl_miss_days = parse_u32(get, "REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS", 7)?;
-        let cache_ttl_error_mins = parse_u32(get, "REVERIE_ENRICHMENT_CACHE_TTL_ERROR_MINS", 15)?;
-
-        Ok(Self {
-            enabled,
-            concurrency,
-            poll_idle_secs,
-            fetch_budget_secs,
-            http_timeout_secs,
-            max_attempts,
-            cache_ttl_hit_days,
-            cache_ttl_miss_days,
-            cache_ttl_error_mins,
-        })
-    }
-}
-
-impl WritebackConfig {
-    fn from_source(get: &EnvGet<'_>) -> Result<Self, ConfigError> {
-        let enabled = parse_bool(get, "REVERIE_WRITEBACK_ENABLED", true)?;
-        let concurrency = parse_u32(get, "REVERIE_WRITEBACK_CONCURRENCY", 2)?;
-        if !(1..=10).contains(&concurrency) {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_WRITEBACK_CONCURRENCY".into(),
-                reason: format!("must be 1-10, got {concurrency}"),
-            });
-        }
-        let poll_idle_secs = parse_u64(get, "REVERIE_WRITEBACK_POLL_IDLE_SECS", 5)?;
-        let max_attempts = parse_u32(get, "REVERIE_WRITEBACK_MAX_ATTEMPTS", 10)?;
-        Ok(Self {
-            enabled,
-            concurrency,
-            poll_idle_secs,
-            max_attempts,
-        })
-    }
-}
-
-impl CoverConfig {
-    fn from_source(get: &EnvGet<'_>) -> Result<Self, ConfigError> {
-        let max_bytes = parse_u64(get, "REVERIE_COVER_MAX_BYTES", 10_485_760)?;
-        let download_timeout_secs = parse_u64(get, "REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS", 30)?;
-        let min_long_edge_px = parse_u32(get, "REVERIE_COVER_MIN_LONG_EDGE_PX", 1000)?;
-        let redirect_limit = parse_u32(get, "REVERIE_COVER_REDIRECT_LIMIT", 3)? as usize;
-
-        Ok(Self {
-            max_bytes,
-            download_timeout_secs,
-            min_long_edge_px,
-            redirect_limit,
-        })
-    }
-}
-
-impl OpdsConfig {
-    fn from_source(get: &EnvGet<'_>) -> Result<Self, ConfigError> {
-        let enabled = parse_bool(get, "REVERIE_OPDS_ENABLED", true)?;
-        let page_size = parse_u32(get, "REVERIE_OPDS_PAGE_SIZE", 50)?;
-        if !(1..=500).contains(&page_size) {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_OPDS_PAGE_SIZE".into(),
-                reason: format!("must be 1-500, got {page_size}"),
-            });
-        }
-        let realm = get("REVERIE_OPDS_REALM").unwrap_or_else(|| "Reverie OPDS".into());
-        if realm.contains('"') {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_OPDS_REALM".into(),
-                reason: "must not contain '\"'".into(),
-            });
-        }
-        let public_url = match get("REVERIE_PUBLIC_URL").filter(|s| !s.is_empty()) {
-            Some(s) => Some(url::Url::parse(&s).map_err(|e| ConfigError::Invalid {
-                var: "REVERIE_PUBLIC_URL".into(),
-                reason: e.to_string(),
-            })?),
-            None => None,
-        };
-        if enabled && public_url.is_none() {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_PUBLIC_URL".into(),
-                reason: "required when REVERIE_OPDS_ENABLED=true".into(),
-            });
-        }
-        Ok(Self {
-            enabled,
-            page_size,
-            realm,
-            public_url,
-        })
-    }
-}
-
 impl SecurityConfig {
-    /// Production entry point: read security-related env vars from the
-    /// process environment.
-    ///
-    /// The returned value is a partial — `csp_html_header` and
-    /// `csp_api_header` are `None` until [`crate::run`] precomputes them
-    /// from the FOUC-script hash and the configured report endpoint.
-    /// Embedders that bypass `run` must perform that finalisation
-    /// themselves (see [`crate::security::csp`]).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ConfigError::Invalid`] when a security-related variable
-    /// fails validation: HSTS preconditions
-    /// (`REVERIE_HSTS_INCLUDE_SUBDOMAINS` requires `behind_https`;
-    /// `REVERIE_HSTS_PRELOAD` requires `include_subdomains`), the
-    /// CSP-reporting URL header-injection guard (`"`/`;`/CR/LF rejected),
-    /// or unsupported scheme on the reporting URL.
-    pub fn from_env() -> Result<Self, ConfigError> {
-        Self::from_source(&process_env_get)
-    }
-
-    fn from_source(get: &EnvGet<'_>) -> Result<Self, ConfigError> {
-        let behind_https = parse_bool(get, "REVERIE_BEHIND_HTTPS", false)?;
-        let hsts_include_subdomains = parse_bool(get, "REVERIE_HSTS_INCLUDE_SUBDOMAINS", false)?;
-        let hsts_preload = parse_bool(get, "REVERIE_HSTS_PRELOAD", false)?;
-
-        if hsts_include_subdomains && !behind_https {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_HSTS_INCLUDE_SUBDOMAINS".into(),
-                reason: "requires REVERIE_BEHIND_HTTPS=true".into(),
-            });
-        }
-        if hsts_preload && !hsts_include_subdomains {
-            return Err(ConfigError::Invalid {
-                var: "REVERIE_HSTS_PRELOAD".into(),
-                reason: "requires REVERIE_HSTS_INCLUDE_SUBDOMAINS=true".into(),
-            });
-        }
-
-        let csp_report_endpoint = match get("REVERIE_CSP_REPORT_ENDPOINT").filter(|s| !s.is_empty())
-        {
-            Some(s) => {
-                // Header-injection guard: this URL flows into a response header
-                // (Reporting-Endpoints / report-to / report-uri). Reject quote
-                // and CR/LF/semicolon which would split or escape values.
-                if s.chars().any(|c| matches!(c, '"' | ';' | '\r' | '\n')) {
-                    return Err(ConfigError::Invalid {
-                        var: "REVERIE_CSP_REPORT_ENDPOINT".into(),
-                        reason: "must not contain \" ; CR or LF".into(),
-                    });
-                }
-                let parsed = url::Url::parse(&s).map_err(|e| ConfigError::Invalid {
-                    var: "REVERIE_CSP_REPORT_ENDPOINT".into(),
-                    reason: e.to_string(),
-                })?;
-                if !matches!(parsed.scheme(), "http" | "https") {
-                    return Err(ConfigError::Invalid {
-                        var: "REVERIE_CSP_REPORT_ENDPOINT".into(),
-                        reason: format!("scheme must be http or https, got '{}'", parsed.scheme()),
-                    });
-                }
-                Some(parsed)
-            }
-            None => None,
-        };
-
-        let frontend_dist_path = get("REVERIE_FRONTEND_DIST_PATH")
-            .filter(|s| !s.is_empty())
-            .map(std::path::PathBuf::from);
-
-        Ok(Self {
-            behind_https,
-            hsts_include_subdomains,
-            hsts_preload,
-            csp_report_endpoint,
-            frontend_dist_path,
-            csp_html_header: None,
-            csp_api_header: None,
-        })
-    }
-
     /// HSTS response-header value. `None` when `behind_https=false` — the
     /// middleware must not emit HSTS on plaintext HTTP or the browser would
     /// refuse to talk to the host on its next TLS-less request. The composed
@@ -763,8 +503,8 @@ impl SecurityConfig {
     }
 
     /// `Reporting-Endpoints: csp-endpoint="<url>"`. `None` when
-    /// `csp_report_endpoint` is unset. The URL was validated by
-    /// [`Self::from_env`] (no `"` `;` CR or LF; valid `url::Url`); `as_str()`
+    /// `csp_report_endpoint` is unset. The URL was validated at deserialize
+    /// time by `de_csp_endpoint` (no `"` `;` CR or LF; valid `url::Url`); `as_str()`
     /// returns the canonical percent-encoded form. `from_str` panics on the
     /// impossible case rather than silently dropping the header.
     pub fn reporting_endpoints_header_value(&self) -> Option<axum::http::HeaderValue> {
@@ -776,37 +516,176 @@ impl SecurityConfig {
     }
 }
 
-fn parse_bool(get: &EnvGet<'_>, var: &str, default: bool) -> Result<bool, ConfigError> {
-    // Strict: accept only lowercase "true"/"false" (exact match). The previous
-    // lenient form accepted "1"/"0"/"yes"/"no" with case-insensitivity; it was
-    // tightened in UNK-106 so operator-facing values have a single canonical
-    // form. Pre-MVP: no operators to migrate.
-    get(var).map_or(Ok(default), |v| match v.as_str() {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(ConfigError::Invalid {
-            var: var.into(),
-            reason: format!("expected 'true' or 'false', got '{v}'"),
-        }),
-    })
+// ---------------------------------------------------------------------------
+// Declarative validators (validator 0.20). Range checks are field attributes;
+// cross-field checks are struct-level `schema` functions. Cross-field errors
+// carry the offending env-var name as a `"var"` param because the validator
+// error tree keys struct-level failures under the opaque `"__all__"` key,
+// which the reverse field→env-name map cannot resolve. Single-field checks
+// (`validate_realm`) need no `"var"` param — their tree path reverse-maps
+// natively (`opds.realm` → `REVERIE_OPDS_REALM`).
+// ---------------------------------------------------------------------------
+
+/// Reject a `"` in the OPDS `realm` — it flows into a `WWW-Authenticate: Basic
+/// realm="…"` header and an embedded quote would split the value.
+fn validate_realm(realm: &str) -> Result<(), ValidationError> {
+    if realm.contains('"') {
+        let mut e = ValidationError::new("realm_quote");
+        e.message = Some("must not contain '\"'".into());
+        return Err(e);
+    }
+    Ok(())
 }
 
-fn parse_u32(get: &EnvGet<'_>, var: &str, default: u32) -> Result<u32, ConfigError> {
-    get(var).map_or(Ok(default), |v| {
-        v.parse::<u32>().map_err(|e| ConfigError::Invalid {
-            var: var.into(),
-            reason: e.to_string(),
-        })
-    })
+/// OPDS cross-field rule: when the catalogue is enabled it emits absolute URLs
+/// rooted at `public_url`, so `public_url` is required.
+fn validate_opds_config(opds: &OpdsConfig) -> Result<(), ValidationError> {
+    if opds.enabled && opds.public_url.is_none() {
+        let mut e = ValidationError::new("public_url_required");
+        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
+        e.message = Some("required when REVERIE_OPDS_ENABLED=true".into());
+        return Err(e);
+    }
+    Ok(())
 }
 
-fn parse_u64(get: &EnvGet<'_>, var: &str, default: u64) -> Result<u64, ConfigError> {
-    get(var).map_or(Ok(default), |v| {
-        v.parse::<u64>().map_err(|e| ConfigError::Invalid {
-            var: var.into(),
-            reason: e.to_string(),
-        })
-    })
+/// HSTS precondition ladder (chrome.com / hstspreload.org rules): subdomains
+/// requires HTTPS; preload requires subdomains. Never emit HSTS on plaintext.
+fn validate_security_config(sec: &SecurityConfig) -> Result<(), ValidationError> {
+    if sec.hsts_include_subdomains && !sec.behind_https {
+        let mut e = ValidationError::new("hsts_subdomains_requires_https");
+        e.add_param("var".into(), &"REVERIE_HSTS_INCLUDE_SUBDOMAINS");
+        e.message = Some("requires REVERIE_BEHIND_HTTPS=true".into());
+        return Err(e);
+    }
+    if sec.hsts_preload && !sec.hsts_include_subdomains {
+        let mut e = ValidationError::new("hsts_preload_requires_subdomains");
+        e.add_param("var".into(), &"REVERIE_HSTS_PRELOAD");
+        e.message = Some("requires REVERIE_HSTS_INCLUDE_SUBDOMAINS=true".into());
+        return Err(e);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Error mapping: figment / validator errors → var-named `ConfigError`.
+// ---------------------------------------------------------------------------
+
+/// Dotted field paths whose value is secret material. A deserialize error on
+/// one of these must never echo the offending value into a `ConfigError`
+/// (hard rule 7). This is reachable, not theoretical: `EnvProvider` parses
+/// `OIDC_CLIENT_SECRET=true` / `=123` into a `Value::Bool` / `Value::Num`,
+/// which fails to deserialize into the `String` field with an `invalid type:
+/// found bool true` message — figment echoes the value. The scrub replaces
+/// that reason with a value-free one for any secret-bearing key path.
+const SECRET_FIELDS: &[&str] = &[
+    "oidc_client_secret",
+    "googlebooks_api_key",
+    "hardcover_api_token",
+];
+
+/// Reverse the [`ENV_MAP`]: dotted field path → operator-facing env-var name.
+/// On the `log_level` collision (`REVERIE_LOG_LEVEL` and `RUST_LOG` both map
+/// there) the `REVERIE_*` name is preferred; `log_level` never fails
+/// deserialize/validation so the choice is academic.
+fn env_name_for(dotted: &str) -> Option<&'static str> {
+    ENV_MAP
+        .iter()
+        .filter(|(_, d)| *d == dotted)
+        .map(|(name, _)| *name)
+        .max_by_key(|name| usize::from(name.starts_with("REVERIE_")))
+}
+
+/// Map a figment `extract` error (deserialize phase, fail-fast) to a
+/// var-named [`ConfigError::Invalid`]. The error's key path
+/// (`["security", "csp_report_endpoint"]`) reverse-maps to the env-var name;
+/// the message is taken up to figment's ` for key …` suffix. Secret-bearing
+/// fields surface a value-free reason.
+fn map_figment_error(e: &figment::Error) -> ConfigError {
+    let dotted = e.path.join(".");
+    let var = env_name_for(&dotted).map_or_else(|| dotted.clone(), ToString::to_string);
+    if SECRET_FIELDS.contains(&dotted.as_str()) {
+        return ConfigError::Invalid {
+            var,
+            reason: "invalid value (omitted — secret-bearing field)".into(),
+        };
+    }
+    // figment's Display is "<message> for key \"<profile.path>\" in <source>";
+    // keep only the message so the reason is clean and value-faithful.
+    let full = e.to_string();
+    let reason = full
+        .split_once(" for key ")
+        .map_or(full.as_str(), |(msg, _)| msg)
+        .to_string();
+    ConfigError::Invalid { var, reason }
+}
+
+/// Walk the nested `validate()` error tree into a flat list of var-named
+/// [`ConfigError::Invalid`], then collapse to a single error or
+/// [`ConfigError::Multiple`]. Field errors reverse-map by their tree path;
+/// struct-level (`__all__`) errors carry the var name as a `"var"` param.
+fn map_validation_errors(errs: &ValidationErrors) -> ConfigError {
+    let mut out: Vec<ConfigError> = Vec::new();
+    collect_validation_errors(errs, "", &mut out);
+    if out.len() == 1 {
+        // `swap_remove(0)` avoids cloning; the vec is dropped right after.
+        out.swap_remove(0)
+    } else {
+        ConfigError::Multiple(out)
+    }
+}
+
+/// Recursive helper for [`map_validation_errors`]. `prefix` is the dotted path
+/// accumulated from enclosing structs.
+fn collect_validation_errors(errs: &ValidationErrors, prefix: &str, out: &mut Vec<ConfigError>) {
+    for (field, kind) in errs.errors() {
+        match kind {
+            ValidationErrorsKind::Field(field_errors) => {
+                for fe in field_errors {
+                    // Struct-level (`schema`) errors land under "__all__" and
+                    // name their var explicitly; field errors reverse-map by
+                    // the accumulated dotted path.
+                    let var = fe
+                        .params
+                        .get("var")
+                        .and_then(|v| v.as_str())
+                        .map(ToString::to_string)
+                        .or_else(|| {
+                            let dotted = join_path(prefix, field);
+                            env_name_for(&dotted).map(ToString::to_string)
+                        })
+                        .unwrap_or_else(|| join_path(prefix, field));
+                    let reason = fe
+                        .message
+                        .as_ref()
+                        .map_or_else(|| fe.code.to_string(), ToString::to_string);
+                    out.push(ConfigError::Invalid { var, reason });
+                }
+            }
+            ValidationErrorsKind::Struct(inner) => {
+                collect_validation_errors(inner, &join_path(prefix, field), out);
+            }
+            ValidationErrorsKind::List(items) => {
+                for (idx, inner) in items {
+                    let path = format!("{}[{idx}]", join_path(prefix, field));
+                    collect_validation_errors(inner, &path, out);
+                }
+            }
+        }
+    }
+}
+
+/// Join a dotted-path prefix with a child key, skipping the synthetic
+/// `__all__` struct-level key (which is not a real field segment).
+fn join_path(prefix: &str, field: &str) -> String {
+    if field == "__all__" {
+        return prefix.to_string();
+    }
+    if prefix.is_empty() {
+        field.to_string()
+    } else {
+        format!("{prefix}.{field}")
+    }
 }
 
 /// Deserialize the comma-separated `REVERIE_FORMAT_PRIORITY` surface
@@ -816,7 +695,7 @@ fn parse_u64(get: &EnvGet<'_>, var: &str, default: u64) -> Result<u64, ConfigErr
 /// syntax (`[a,b]`) — so the split lives here rather than relying on figment's
 /// array parsing. Each token is trimmed, lowercased, and parsed via
 /// [`ManifestationFormat`]'s `FromStr`; an unsupported token rejects the whole
-/// value. Mirrors the imperative contract previously in `Config::from_source`.
+/// value.
 fn de_format_priority<'de, D>(de: D) -> Result<Vec<ManifestationFormat>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -871,11 +750,10 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// SCAFFOLD (Tasks 3-5): Default impls + EnvProvider skeleton.
-// These are ADDITIVE — all existing from_source / from_env / parse_* code
-// above is unchanged and continues to work. The new code is intentionally
-// dead/unused until the reviewer wires it into from_figment (Task 6).
-// Clippy will warn about dead_code — that is expected per the plan.
+// Default impls — the single source for every optional field's default value,
+// consumed by serde's container `#[serde(default)]` during figment extract.
+// Required fields (database_url, oidc_*) default to empty and are caught by
+// the post-extract required-check as `MissingVar` (GOTCHA-REQUIRED).
 // ---------------------------------------------------------------------------
 
 impl Default for Config {
@@ -971,25 +849,9 @@ impl Default for OpdsConfig {
     }
 }
 
-impl Default for SecurityConfig {
-    fn default() -> Self {
-        Self {
-            behind_https: false,
-            hsts_include_subdomains: false,
-            hsts_preload: false,
-            csp_report_endpoint: None,
-            frontend_dist_path: None,
-            csp_html_header: None,
-            csp_api_header: None,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Task 5: EnvProvider — custom figment::Provider skeleton.
-//
-// NOT wired into from_env / from_source — skeleton only.
-// The reviewer completes Task 6 (figment pipeline) on top of this.
+// EnvProvider — the custom figment::Provider keystone (env-var → field map,
+// empty-as-unset filter, REVERIE_LOG_LEVEL > RUST_LOG cascade, value parse).
 // ---------------------------------------------------------------------------
 
 /// The env-var name → dotted-field-path map.
@@ -998,7 +860,7 @@ impl Default for SecurityConfig {
 ///   flat top-level fields: `REVERIE_PORT` → `"port"`
 ///   sub-struct fields:     `REVERIE_ENRICHMENT_CONCURRENCY` → `"enrichment.concurrency"`
 ///
-/// Non-`REVERIE_` vars (DATABASE_URL, OIDC_*) are included explicitly.
+/// Non-`REVERIE_` vars (`DATABASE_URL`, `OIDC_*`) are included explicitly.
 /// `REVERIE_LOG_LEVEL` and `RUST_LOG` both map to `"log_level"`; their
 /// precedence cascade is resolved in [`EnvProvider::data`] (GOTCHA-CASCADE).
 const ENV_MAP: &[(&str, &str)] = &[
@@ -1093,7 +955,7 @@ const ENV_MAP: &[(&str, &str)] = &[
 
 /// Custom [`figment::Provider`] feeding the config pipeline from environment
 /// variables. Maps each known env-var name to its dotted field path via
-/// [`ENV_MAP`], parses values into typed figment `Value`s, and drops empties
+/// `ENV_MAP`, parses values into typed figment `Value`s, and drops empties
 /// (empty-as-unset). Unmapped vars (`PATH`, `HOME`, …) are ignored.
 ///
 /// # Why a custom provider rather than stock [`figment::providers::Env`]
@@ -1106,15 +968,16 @@ const ENV_MAP: &[(&str, &str)] = &[
 ///    env. Stock `Env` reads only [`std::env::vars`]; testing it means
 ///    `Jail`/`temp-env`/`set_var`, all of which mutate global env under a lock
 ///    — serializing those tests and racing the suite's other env readers
-///    (`process_env_get`, dotenvy), the `getenv`/`setenv` data race that makes
-///    `set_var` `unsafe`. `from_pairs` touches no process env. Production
+///    (`dotenvy`, [`Self::from_process_env`]), the `getenv`/`setenv` data race
+///    that makes `set_var` `unsafe`. `from_pairs` touches no process env.
+///    Production
 ///    ([`Self::from_process_env`]) runs through the same code so tests exercise
 ///    the real parse path (UNK-100).
 /// 2. **A frozen, irregular var→field contract.** The operator surface mixes
 ///    bare ecosystem names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) with
 ///    `REVERIE_`-namespaced knobs, and several map to a nested path the var
 ///    name doesn't spell (`REVERIE_PUBLIC_URL` → `opds.public_url`). No
-///    uniform separator rule derives that, so [`ENV_MAP`] is the explicit
+///    uniform separator rule derives that, so `ENV_MAP` is the explicit
 ///    registry — which also doubles as the introspectable var↔field source the
 ///    config-reference generator consumes (UNK-370).
 ///
@@ -1123,7 +986,7 @@ const ENV_MAP: &[(&str, &str)] = &[
 /// [`Config::from_figment`].
 ///
 /// GOTCHA-SPLIT (secondary): the explicit map also sidesteps
-/// `Env::split("_")`, which would wrongly split snake_case flat fields
+/// `Env::split("_")`, which would wrongly split `snake_case` flat fields
 /// (`db_max_connections` → `db.max.connections`).
 pub struct EnvProvider {
     pairs: Vec<(String, String)>,
@@ -1233,18 +1096,21 @@ fn merge_dict(dst: &mut Dict, src: Dict) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
-    /// Build an `EnvGet` closure backed by an in-memory map. Tests inject
-    /// env via this rather than mutating process env (UNK-100 — eliminates
-    /// the `sqlx::test` race that `ENV_LOCK` + `unsafe { env::set_var }` was
-    /// working around).
-    fn env_for(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
-        let map: HashMap<String, String> = vars
-            .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-            .collect();
-        move |k| map.get(k).cloned()
+    /// Build a `Config` through the figment pipeline from in-memory env pairs —
+    /// the process-env-free, parallel-safe test seam (UNK-100, GOTCHA-TESTSEAM).
+    /// Strings flow through `EnvProvider`'s parse/coerce path, exercising the
+    /// real production deserialization (GOTCHA-TESTFIDELITY): no pre-typed
+    /// `Serialized(struct)` shortcut that would bypass where the bugs live.
+    fn cfg_from(vars: &[(&str, &str)]) -> Result<Config, ConfigError> {
+        Config::from_figment(&Figment::from(EnvProvider::from_pairs(vars)))
+    }
+
+    /// `cfg_from` variant for owned-string var lists built via
+    /// `with_overrides` / `without_keys`.
+    fn cfg_from_owned(vars: &[(String, String)]) -> Result<Config, ConfigError> {
+        let refs: Vec<(&str, &str)> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        cfg_from(&refs)
     }
 
     const BASE_VARS: &[(&str, &str)] = &[
@@ -1285,54 +1151,26 @@ mod tests {
             .collect()
     }
 
-    /// `env_for` variant taking owned-string slices — for callers that build
-    /// the var list via `with_overrides` / `without_keys`.
-    fn env_for_owned(vars: &[(String, String)]) -> impl Fn(&str) -> Option<String> + use<'_> {
-        let map: HashMap<&str, &str> = vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        move |k| map.get(k).map(|s| (*s).to_string())
-    }
-
-    /// Every `KEY=` line in `docker/staging.env.runtime.example` should name a
-    /// variable read by `Config::from_source`. This is a best-effort textual
-    /// scan of `config.rs` call sites (`get("KEY")` and the
-    /// `parse_*(get, "KEY", …)` helper form), not a proof — it reliably catches
-    /// the common case of a renamed or typo'd key that appears nowhere in the
-    /// code, which is the UNK-250 failure mode.
+    /// Every `KEY=` line in `docker/staging.env.runtime.example` must be a
+    /// variable the loader actually reads — now expressed as a key in the
+    /// declarative [`ENV_MAP`] (the structured replacement for the former
+    /// textual `get("KEY")` source scan).
     ///
-    /// Guards against the operator-facing failure class in UNK-250: an example
-    /// var whose name diverges from the code either hard-fails startup with a
+    /// Guards the operator-facing failure class in UNK-250: an example var
+    /// whose name diverges from the loader either hard-fails startup with a
     /// misleading `MissingVar` (loud) or is silently ignored while a fallback
     /// takes over (silent — e.g. ingestion DSN falling back to the app role,
     /// collapsing the documented role-separation threat model). The example
     /// file is an intentional *subset* of all knobs, so the check is one-way:
-    /// example keys ⊆ names read by `from_source`, not the reverse.
+    /// example keys ⊆ [`ENV_MAP`] keys, not the reverse.
     #[test]
-    fn staging_runtime_example_keys_are_read_by_config() {
+    fn staging_runtime_example_keys_are_in_env_map() {
         // Compile-time embed: a missing file fails the build rather than
         // silently skipping the guard.
-        let config_src = include_str!("config.rs");
         let example = include_str!("../../docker/staging.env.runtime.example");
 
-        // Direct reads are `get("KEY")`; the subsystem configs read through
-        // `parse_bool(get, "KEY", default)` / `parse_u32` / `parse_u64`, whose
-        // call sites spell `get, "KEY"`. Scan for both so a helper-read key in
-        // the example file is not mistaken for a divergence. Comment lines are
-        // skipped so quoted tokens in docs (including this test's own docstring)
-        // never leak into the allow-set and mask a real divergence.
-        let mut read_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for line in config_src.lines() {
-            if line.trim_start().starts_with("//") {
-                continue;
-            }
-            for needle in ["get(\"", "get, \""] {
-                for (i, m) in line.match_indices(needle) {
-                    let rest = &line[i + m.len()..];
-                    if let Some(end) = rest.find('"') {
-                        read_names.insert(&rest[..end]);
-                    }
-                }
-            }
-        }
+        let map_keys: std::collections::HashSet<&str> =
+            ENV_MAP.iter().map(|(name, _)| *name).collect();
 
         let mut violations: Vec<&str> = example
             .lines()
@@ -1340,20 +1178,20 @@ mod tests {
             .filter(|l| !l.starts_with('#') && !l.is_empty())
             .filter_map(|l| l.split_once('='))
             .map(|(k, _)| k.trim())
-            .filter(|k| !read_names.contains(*k))
+            .filter(|k| !map_keys.contains(*k))
             .collect();
         violations.sort_unstable();
 
         assert!(
             violations.is_empty(),
-            "staging.env.runtime.example contains keys not read by config.rs: {violations:?}. \
-             Rename them to match the `get(\"...\")` call in config.rs, or drop them."
+            "staging.env.runtime.example contains keys absent from ENV_MAP: {violations:?}. \
+             Add them to ENV_MAP (with their dotted field path), or drop them from the example."
         );
     }
 
     #[test]
     fn from_env_with_defaults() {
-        let config = Config::from_source(&env_for(BASE_VARS)).unwrap();
+        let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.port, 3000);
         assert_eq!(config.database_url, "postgres://test@localhost/reverie_dev");
         assert_eq!(config.library_path, "./library");
@@ -1400,7 +1238,7 @@ mod tests {
 
     #[test]
     fn user_agent_without_contact_reports_unidentified() {
-        let config = Config::from_source(&env_for(BASE_VARS)).unwrap();
+        let config = cfg_from(BASE_VARS).unwrap();
         let ua = config.user_agent();
         assert!(ua.starts_with("Reverie/"), "missing Reverie/ prefix: {ua}");
         assert!(ua.ends_with("(unidentified)"), "unexpected suffix: {ua}");
@@ -1409,7 +1247,7 @@ mod tests {
     #[test]
     fn user_agent_with_contact_embeds_identifier() {
         let vars = with_overrides(&[("REVERIE_OPERATOR_CONTACT", "ops@example.com")]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(config.operator_contact.as_deref(), Some("ops@example.com"));
         let ua = config.user_agent();
         assert!(ua.contains("(ops@example.com)"), "missing contact: {ua}");
@@ -1419,7 +1257,7 @@ mod tests {
     #[test]
     fn from_env_rejects_concurrency_out_of_range() {
         let vars = with_overrides(&[("REVERIE_ENRICHMENT_CONCURRENCY", "11")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(err.to_string().contains("REVERIE_ENRICHMENT_CONCURRENCY"));
     }
 
@@ -1433,7 +1271,7 @@ mod tests {
             ("REVERIE_QUARANTINE_PATH", "/data/quarantine"),
             ("RUST_LOG", "debug"),
         ]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(config.port, 8080);
         assert_eq!(
             config.database_url,
@@ -1446,7 +1284,7 @@ mod tests {
     #[test]
     fn from_env_prefers_reverie_log_level_over_rust_log() {
         let vars = with_overrides(&[("REVERIE_LOG_LEVEL", "debug"), ("RUST_LOG", "trace")]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(
             config.log_level, "debug",
             "REVERIE_LOG_LEVEL should win when both env vars are set"
@@ -1456,20 +1294,20 @@ mod tests {
     #[test]
     fn from_env_uses_reverie_log_level_when_rust_log_unset() {
         let vars = with_overrides(&[("REVERIE_LOG_LEVEL", "warn")]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(config.log_level, "warn");
     }
 
     #[test]
     fn from_env_defaults_log_level_to_info_when_neither_var_set() {
-        let config = Config::from_source(&env_for(BASE_VARS)).unwrap();
+        let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.log_level, "info");
     }
 
     #[test]
     fn from_env_missing_database_url() {
         let vars = without_keys(&["DATABASE_URL"]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(err.to_string().contains("DATABASE_URL"));
     }
 
@@ -1479,7 +1317,7 @@ mod tests {
         // DSN is not required — the default server path only verifies the
         // schema via the app pool and never holds a migration credential.
         let vars = without_keys(&["DATABASE_URL_MIGRATION"]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(config.migration_database_url, None);
         assert!(!config.auto_migrate);
     }
@@ -1489,7 +1327,7 @@ mod tests {
         // An exported-empty DSN is indistinguishable from unset for the
         // default path: both yield None, no error.
         let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "")]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(config.migration_database_url, None);
     }
 
@@ -1500,7 +1338,7 @@ mod tests {
             .into_iter()
             .filter(|(k, _)| k != "DATABASE_URL_MIGRATION")
             .collect::<Vec<_>>();
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(
             err.to_string().contains("DATABASE_URL_MIGRATION"),
             "expected var name in error: {err}"
@@ -1516,7 +1354,7 @@ mod tests {
                 "postgres://reverie_migrator@localhost/reverie_dev",
             ),
         ]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert!(config.auto_migrate);
         assert_eq!(
             config.migration_database_url.as_deref(),
@@ -1527,7 +1365,7 @@ mod tests {
     #[test]
     fn from_env_auto_migrate_invalid_value_rejected() {
         let vars = with_overrides(&[("REVERIE_AUTO_MIGRATE", "yes")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(
             err.to_string().contains("REVERIE_AUTO_MIGRATE"),
             "expected var name in error: {err}"
@@ -1545,7 +1383,7 @@ mod tests {
                 "postgres://schema_owner@localhost/reverie_dev",
             ),
         ]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(
             config.migration_database_url.as_deref(),
             Some("postgres://schema_owner@localhost/reverie_dev")
@@ -1561,7 +1399,7 @@ mod tests {
             ),
             ("REVERIE_FORMAT_PRIORITY", "pdf, EPUB , mobi"),
         ]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(
             config.ingestion_database_url,
             "postgres://ingestion@localhost/reverie_dev"
@@ -1579,7 +1417,7 @@ mod tests {
     #[test]
     fn from_env_rejects_unsupported_format_priority() {
         let vars = with_overrides(&[("REVERIE_FORMAT_PRIORITY", "epub,djvu")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("djvu"), "expected djvu in error: {msg}");
         assert!(
@@ -1591,7 +1429,7 @@ mod tests {
     #[test]
     fn opds_enabled_without_public_url_errors() {
         let vars = with_overrides(&[("REVERIE_OPDS_ENABLED", "true")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("REVERIE_PUBLIC_URL"),
@@ -1603,7 +1441,7 @@ mod tests {
     fn opds_page_size_out_of_range_errors() {
         for bad in ["0", "501"] {
             let vars = with_overrides(&[("REVERIE_OPDS_PAGE_SIZE", bad)]);
-            let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+            let err = cfg_from_owned(&vars).unwrap_err();
             let msg = err.to_string();
             assert!(
                 msg.contains("REVERIE_OPDS_PAGE_SIZE"),
@@ -1615,7 +1453,7 @@ mod tests {
     #[test]
     fn opds_realm_with_double_quote_errors() {
         let vars = with_overrides(&[("REVERIE_OPDS_REALM", "bad\"quote")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("REVERIE_OPDS_REALM"),
@@ -1629,7 +1467,7 @@ mod tests {
             ("REVERIE_OPDS_ENABLED", "true"),
             ("REVERIE_PUBLIC_URL", "https://reverie.example.com/"),
         ]);
-        let config = Config::from_source(&env_for_owned(&vars)).unwrap();
+        let config = cfg_from_owned(&vars).unwrap();
         assert!(config.opds.enabled);
         assert_eq!(
             config.opds.public_url.as_ref().map(url::Url::as_str),
@@ -1637,9 +1475,16 @@ mod tests {
         );
     }
 
+    /// Build just the `SecurityConfig` slice through the full pipeline.
+    /// `BASE_VARS` satisfy the unrelated required fields (OPDS disabled there)
+    /// so only the security knobs under test drive the outcome.
+    fn security_from(extra: &[(&str, &str)]) -> Result<SecurityConfig, ConfigError> {
+        cfg_from_owned(&with_overrides(extra)).map(|c| c.security)
+    }
+
     #[test]
     fn security_defaults_all_off() {
-        let cfg = SecurityConfig::from_source(&env_for(&[])).unwrap();
+        let cfg = security_from(&[]).unwrap();
         assert!(!cfg.behind_https);
         assert!(!cfg.hsts_include_subdomains);
         assert!(!cfg.hsts_preload);
@@ -1649,9 +1494,7 @@ mod tests {
 
     #[test]
     fn security_hsts_subdomains_without_https_errors() {
-        let err =
-            SecurityConfig::from_source(&env_for(&[("REVERIE_HSTS_INCLUDE_SUBDOMAINS", "true")]))
-                .unwrap_err();
+        let err = security_from(&[("REVERIE_HSTS_INCLUDE_SUBDOMAINS", "true")]).unwrap_err();
         assert!(
             err.to_string().contains("REVERIE_HSTS_INCLUDE_SUBDOMAINS"),
             "unexpected: {err}"
@@ -1660,10 +1503,10 @@ mod tests {
 
     #[test]
     fn security_hsts_preload_without_subdomains_errors() {
-        let err = SecurityConfig::from_source(&env_for(&[
+        let err = security_from(&[
             ("REVERIE_BEHIND_HTTPS", "true"),
             ("REVERIE_HSTS_PRELOAD", "true"),
-        ]))
+        ])
         .unwrap_err();
         assert!(
             err.to_string().contains("REVERIE_HSTS_PRELOAD"),
@@ -1673,11 +1516,11 @@ mod tests {
 
     #[test]
     fn security_hsts_full_stack_ok() {
-        let cfg = SecurityConfig::from_source(&env_for(&[
+        let cfg = security_from(&[
             ("REVERIE_BEHIND_HTTPS", "true"),
             ("REVERIE_HSTS_INCLUDE_SUBDOMAINS", "true"),
             ("REVERIE_HSTS_PRELOAD", "true"),
-        ]))
+        ])
         .unwrap();
         assert!(cfg.behind_https);
         assert!(cfg.hsts_include_subdomains);
@@ -1691,25 +1534,20 @@ mod tests {
 
     #[test]
     fn security_hsts_header_absent_when_plaintext() {
-        let cfg = SecurityConfig::from_source(&env_for(&[])).unwrap();
+        let cfg = security_from(&[]).unwrap();
         assert!(cfg.hsts_header_value().is_none());
     }
 
     #[test]
     fn security_report_endpoint_bad_scheme_errors() {
-        let err = SecurityConfig::from_source(&env_for(&[(
-            "REVERIE_CSP_REPORT_ENDPOINT",
-            "ftp://bad.example",
-        )]))
-        .unwrap_err();
+        let err =
+            security_from(&[("REVERIE_CSP_REPORT_ENDPOINT", "ftp://bad.example")]).unwrap_err();
         assert!(err.to_string().contains("scheme"), "unexpected: {err}");
     }
 
     #[test]
     fn security_report_endpoint_malformed_url_errors() {
-        let err =
-            SecurityConfig::from_source(&env_for(&[("REVERIE_CSP_REPORT_ENDPOINT", "not a url")]))
-                .unwrap_err();
+        let err = security_from(&[("REVERIE_CSP_REPORT_ENDPOINT", "not a url")]).unwrap_err();
         assert!(
             err.to_string().contains("REVERIE_CSP_REPORT_ENDPOINT"),
             "unexpected: {err}"
@@ -1718,14 +1556,15 @@ mod tests {
 
     #[test]
     fn security_report_endpoint_injection_chars_errors() {
+        // The raw-string guard in `de_csp_endpoint` runs at deserialize time,
+        // BEFORE `url::Url::parse` percent-encodes the quote — verifying the 3
+        // injection forms route through the serde path, not removed code.
         for bad in [
             "https://ok.example/\";x=y",
             "https://ok.example/;evil",
             "https://ok.example/\r\nX-Injected: 1",
         ] {
-            let err =
-                SecurityConfig::from_source(&env_for(&[("REVERIE_CSP_REPORT_ENDPOINT", bad)]))
-                    .unwrap_err();
+            let err = security_from(&[("REVERIE_CSP_REPORT_ENDPOINT", bad)]).unwrap_err();
             assert!(
                 err.to_string().contains("must not contain"),
                 "unexpected: {err}"
@@ -1735,11 +1574,8 @@ mod tests {
 
     #[test]
     fn security_report_endpoint_happy_path() {
-        let cfg = SecurityConfig::from_source(&env_for(&[(
-            "REVERIE_CSP_REPORT_ENDPOINT",
-            "https://log.example/csp",
-        )]))
-        .unwrap();
+        let cfg =
+            security_from(&[("REVERIE_CSP_REPORT_ENDPOINT", "https://log.example/csp")]).unwrap();
         let url = cfg.csp_report_endpoint.as_ref().unwrap();
         assert_eq!(url.as_str(), "https://log.example/csp");
         let hv = cfg.reporting_endpoints_header_value().unwrap();
@@ -1751,23 +1587,167 @@ mod tests {
 
     #[test]
     fn security_parse_bool_rejects_legacy_truthy() {
-        // UNK-110: strict form rejects the old "1"/"yes" spellings.
-        let err =
-            SecurityConfig::from_source(&env_for(&[("REVERIE_BEHIND_HTTPS", "yes")])).unwrap_err();
+        // UNK-110: strict form rejects the old "1"/"yes" spellings — native
+        // now (EnvProvider parses "yes" to a `Str`, which a `bool` field
+        // refuses), no custom bool deserializer (GOTCHA-BOOL, Task 9).
+        let err = security_from(&[("REVERIE_BEHIND_HTTPS", "yes")]).unwrap_err();
         assert!(err.to_string().contains("REVERIE_BEHIND_HTTPS"));
+    }
+
+    // --- Tasks 6-9 gate tests (the new pipeline's security/correctness gates;
+    //     the pre-existing substring asserts above do NOT distinguish the
+    //     variants or the var-name source, so these are load-bearing). ---
+
+    #[test]
+    fn missing_database_url_is_missing_var_variant() {
+        // GOTCHA-REQUIRED: unset required var must be the `MissingVar`
+        // VARIANT (recovery: set the var), never `Invalid` (fix the value).
+        let vars = without_keys(&["DATABASE_URL"]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::MissingVar(v) if v == "DATABASE_URL"),
+            "expected MissingVar(DATABASE_URL), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn nested_validate_error_names_env_var() {
+        // GOTCHA-ERRNAME: a sub-struct range failure must surface the ENV VAR
+        // (tree traversal + reverse map), not the Rust dotted field path.
+        let vars = with_overrides(&[("REVERIE_ENRICHMENT_CONCURRENCY", "11")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        let s = err.to_string();
+        assert!(
+            s.contains("REVERIE_ENRICHMENT_CONCURRENCY"),
+            "expected env var name, got: {s}"
+        );
+        assert!(
+            !s.contains("enrichment.concurrency"),
+            "leaked dotted field path: {s}"
+        );
+    }
+
+    #[test]
+    fn multi_violation_yields_multiple() {
+        // GOTCHA-AGG: two range violations aggregate into `Multiple`.
+        let vars = with_overrides(&[
+            ("REVERIE_ENRICHMENT_CONCURRENCY", "11"),
+            ("REVERIE_WRITEBACK_CONCURRENCY", "0"),
+        ]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        let ConfigError::Multiple(inner) = &err else {
+            panic!("expected Multiple, got: {err:?}");
+        };
+        assert!(inner.len() >= 2, "expected >=2 errors, got {}", inner.len());
+        let s = err.to_string();
+        assert!(s.contains("REVERIE_ENRICHMENT_CONCURRENCY"), "{s}");
+        assert!(s.contains("REVERIE_WRITEBACK_CONCURRENCY"), "{s}");
+    }
+
+    #[test]
+    fn auto_migrate_blank_migration_url_is_missing_var() {
+        // GOTCHA-MIGGATE (trim fidelity): a whitespace-only DSN must refuse
+        // start cleanly, not boot carrying a garbage migration credential.
+        let vars = with_overrides(&[
+            ("REVERIE_AUTO_MIGRATE", "true"),
+            ("DATABASE_URL_MIGRATION", "   "),
+        ]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::MissingVar(v) if v == "DATABASE_URL_MIGRATION"),
+            "expected MissingVar(DATABASE_URL_MIGRATION), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn migration_url_nulled_when_auto_migrate_off() {
+        // GOTCHA-MIGGATE (null-out): the long-lived server must not carry the
+        // migrator credential when auto_migrate is off, even if the DSN is set.
+        let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "postgres://m@localhost/d")]);
+        let cfg = cfg_from_owned(&vars).unwrap();
+        assert_eq!(cfg.migration_database_url, None);
+    }
+
+    #[test]
+    fn missing_oidc_secret_error_names_var_not_value() {
+        // Hard rule 7: a missing secret surfaces only the var NAME via
+        // MissingVar (a distinct code path from the deserialize-error scrub
+        // below — here the secret was never set, so there is no value).
+        let vars = without_keys(&["OIDC_CLIENT_SECRET"]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::MissingVar(v) if v == "OIDC_CLIENT_SECRET"),
+            "expected MissingVar(OIDC_CLIENT_SECRET), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn secret_field_deser_error_has_no_value() {
+        // GOTCHA-SECRET-ERR (hard rule 7): a non-string-shaped secret value
+        // (`true` parses to Value::Bool) fails String deserialization at
+        // `extract()`, and figment's raw message would echo the value. The
+        // SECRET_FIELDS scrub must replace the reason with a value-free one
+        // while still naming the var.
+        let vars = with_overrides(&[("OIDC_CLIENT_SECRET", "true")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        let s = err.to_string();
+        assert!(s.contains("OIDC_CLIENT_SECRET"), "must name the var: {s}");
+        assert!(s.contains("omitted"), "expected scrubbed reason, got: {s}");
+        assert!(!s.contains("true"), "secret value leaked into error: {s}");
+    }
+
+    #[test]
+    fn env_provider_maps_flat_and_nested_key() {
+        // GOTCHA-SPLIT: flat snake_case stays flat; only genuinely nested vars
+        // nest. `db_max_connections` must NOT become `db.max.connections`.
+        let p = EnvProvider::from_pairs(&[
+            ("REVERIE_DB_MAX_CONNECTIONS", "20"),
+            ("REVERIE_ENRICHMENT_CONCURRENCY", "3"),
+        ]);
+        let data = p.data().unwrap();
+        let dict = data.get(&Profile::Default).unwrap();
+        assert!(
+            matches!(dict.get("db_max_connections"), Some(Value::Num(..))),
+            "db_max_connections should be a flat numeric leaf"
+        );
+        assert!(
+            dict.get("db").is_none(),
+            "must not split into a `db` sub-dict"
+        );
+        let Some(Value::Dict(_, enr)) = dict.get("enrichment") else {
+            panic!("enrichment should nest into a sub-dict");
+        };
+        assert!(enr.contains_key("concurrency"));
+    }
+
+    #[test]
+    fn env_provider_drops_empty_as_unset() {
+        // GOTCHA-EMPTY: an exported-empty var equals unset.
+        let p = EnvProvider::from_pairs(&[("REVERIE_GOOGLEBOOKS_API_KEY", "")]);
+        let data = p.data().unwrap();
+        let dict = data.get(&Profile::Default).unwrap();
+        assert!(dict.get("googlebooks_api_key").is_none());
+    }
+
+    #[test]
+    fn env_provider_from_process_env_reads_real_env() {
+        // CARGO_PKG_NAME is set by cargo for every test run; it is unmapped in
+        // ENV_MAP (ignored by `data`) but must be collected into the raw pairs.
+        let p = EnvProvider::from_process_env();
+        assert!(p.pairs.iter().any(|(k, _)| k == "CARGO_PKG_NAME"));
     }
 
     #[test]
     fn from_env_invalid_port() {
         let vars = with_overrides(&[("REVERIE_PORT", "not_a_number")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(err.to_string().contains("REVERIE_PORT"));
     }
 
     #[test]
     fn from_env_invalid_cleanup_mode() {
         let vars = with_overrides(&[("REVERIE_CLEANUP_MODE", "archive")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(
             err.to_string().contains("REVERIE_CLEANUP_MODE"),
             "unexpected: {err}"
@@ -1778,7 +1758,7 @@ mod tests {
     fn opds_page_size_boundary_values_accepted() {
         for boundary in ["1", "500"] {
             let vars = with_overrides(&[("REVERIE_OPDS_PAGE_SIZE", boundary)]);
-            let cfg = Config::from_source(&env_for_owned(&vars))
+            let cfg = cfg_from_owned(&vars)
                 .unwrap_or_else(|e| panic!("page_size={boundary} should be accepted: {e}"));
             assert_eq!(cfg.opds.page_size, boundary.parse::<u32>().unwrap());
         }
@@ -1787,27 +1767,14 @@ mod tests {
     #[test]
     fn from_env_rejects_zero_enrichment_concurrency() {
         let vars = with_overrides(&[("REVERIE_ENRICHMENT_CONCURRENCY", "0")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(err.to_string().contains("REVERIE_ENRICHMENT_CONCURRENCY"));
     }
 
     #[test]
     fn from_env_rejects_zero_writeback_concurrency() {
         let vars = with_overrides(&[("REVERIE_WRITEBACK_CONCURRENCY", "0")]);
-        let err = Config::from_source(&env_for_owned(&vars)).unwrap_err();
+        let err = cfg_from_owned(&vars).unwrap_err();
         assert!(err.to_string().contains("REVERIE_WRITEBACK_CONCURRENCY"));
-    }
-
-    // Cover the production wiring `&process_env_get`. CARGO_PKG_NAME is set by
-    // cargo for every test run; UNSET_REVERIE_TEST_VAR is reserved nowhere.
-    #[test]
-    fn process_env_get_reads_process_env_for_set_var() {
-        let v = super::process_env_get("CARGO_PKG_NAME");
-        assert_eq!(v.as_deref(), Some("reverie-api"));
-    }
-
-    #[test]
-    fn process_env_get_returns_none_for_unset_var() {
-        assert!(super::process_env_get("UNSET_REVERIE_TEST_VAR").is_none());
     }
 }

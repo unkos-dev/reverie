@@ -101,7 +101,7 @@ pub fn build_api_csp(report_endpoint: Option<&url::Url>) -> String {
 
 fn append_reporting(out: &mut String, report_endpoint: Option<&url::Url>) {
     if let Some(url) = report_endpoint {
-        // The URL passed the header-injection guard in SecurityConfig::from_env
+        // The URL passed the header-injection guard in `de_csp_endpoint`
         // (no `"` `;` CR or LF); `as_str()` renders the canonical form.
         out.push_str("; report-to csp-endpoint");
         out.push_str("; report-uri ");

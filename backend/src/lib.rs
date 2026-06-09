@@ -169,8 +169,8 @@ where
 
 fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
     // Single source of truth: `configured_level` already encodes the
-    // REVERIE_LOG_LEVEL > RUST_LOG > "info" cascade resolved by
-    // Config::from_source. Re-reading RUST_LOG here would invert the
+    // REVERIE_LOG_LEVEL > RUST_LOG > "info" cascade resolved by the
+    // EnvProvider. Re-reading RUST_LOG here would invert the
     // precedence (ecosystem default beats operator namespace) and
     // contradict the documented behaviour on the Config::log_level field.
     match configured_level.parse::<EnvFilter>() {
@@ -400,7 +400,7 @@ pub async fn run() -> anyhow::Result<()> {
 /// # Errors
 ///
 /// - `auto_migrate` set but `migration_database_url` is `None` (defensive —
-///   `Config::from_source` already rejects this).
+///   [`Config::from_figment`] already rejects this).
 /// - The in-process migration run fails (see [`db::run_migrations`]).
 /// - Schema verification fails or detects divergence (see
 ///   [`db::verify_schema_current`]).
@@ -480,7 +480,7 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 ///
 /// `std::env::var` returns `Ok("")` for an exported-empty var, which would
 /// otherwise reach `db::run_migrations` as a cryptic `Connection` parse error;
-/// this mirrors the `.filter()` guard in [`Config::from_source`].
+/// this mirrors the migration-DSN blank-guard in [`Config::from_figment`].
 ///
 /// # Errors
 ///
@@ -503,7 +503,7 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
 /// # Errors
 ///
 /// - If `DATABASE_URL_MIGRATION` is unset or empty (an exported-empty value
-///   is treated as unset, mirroring [`Config::from_source`]).
+///   is treated as unset, mirroring [`Config::from_figment`]).
 /// - If the migration run fails (see [`db::MigrationError`]).
 pub async fn run_migrate() -> anyhow::Result<()> {
     // run_migrate bypasses Config::from_env, which is where dotenv is normally
@@ -673,8 +673,8 @@ mod tests {
     }
 
     // resolve_log_filter parses `configured_level` directly — env precedence
-    // (REVERIE_LOG_LEVEL > RUST_LOG > "info") is resolved upstream by
-    // Config::from_source, so these tests are insensitive to whatever env
+    // (REVERIE_LOG_LEVEL > RUST_LOG > "info") is resolved upstream by the
+    // EnvProvider, so these tests are insensitive to whatever env
     // vars happen to be set in the test runner.
 
     #[test]
