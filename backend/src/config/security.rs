@@ -107,6 +107,12 @@ impl SecurityConfig {
 
 /// HSTS precondition ladder (chrome.com / hstspreload.org rules): subdomains
 /// requires HTTPS; preload requires subdomains. Never emit HSTS on plaintext.
+///
+/// THREAT: HSTS pins a host to HTTPS in the browser for `max-age`. Emitting it
+/// (or `includeSubDomains`/`preload`) on a plaintext-reachable deployment would
+/// brick the host — the browser refuses the next TLS-less request and there is
+/// no in-band recovery. This ladder rejects those combinations at config-load
+/// time rather than letting a misconfiguration self-DoS the instance.
 fn validate_security_config(sec: &SecurityConfig) -> Result<(), ValidationError> {
     if sec.hsts_include_subdomains && !sec.behind_https {
         let mut e = ValidationError::new("hsts_subdomains_requires_https");

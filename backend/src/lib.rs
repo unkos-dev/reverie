@@ -483,7 +483,7 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
             "unknown subcommand: {cmd:?}; valid subcommands: migrate, print-config-schema"
         )),
         [cmd, ..] => Err(anyhow::anyhow!(
-            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate]"
+            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate|print-config-schema]"
         )),
     }
 }
