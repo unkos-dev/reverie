@@ -32,6 +32,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       staging: ${{ steps.filter.outputs.staging }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -73,6 +74,14 @@ jobs:
               # zizmor reads .github/zizmor.yml; a suppression edit must
               # re-run the workflow-security scan even with no workflow change.
               - '.github/zizmor.yml'
+            docs:
+              # The generated reference artifacts (docs/openapi.json,
+              # reference/configuration.mdx) live under docs/, so a backend
+              # regen that updates them trips this filter too — no separate
+              # backend trigger needed (a stale-but-unregenerated artifact is
+              # caught by the backend job's drift tests instead).
+              - 'docs/**'
+              - '.github/workflows/ci.yml'
 
   backend:
     name: Backend
@@ -1025,6 +1034,59 @@ jobs:
             gitleaks dir . --no-banner --redact
           fi
 
+  # Build the Starlight docs site and gate on broken internal links. This is
+  # the PR-time docs build: docs.yml no longer triggers on pull_request (it
+  # keeps the push-to-main + tag Pages deploy), so the build lives here where
+  # it can join ci-gate. Cross-workflow `needs` is impossible, which is why the
+  # job is duplicated into ci.yml rather than referenced from docs.yml. A
+  # skipped docs job (no docs/** change) is treated as a pass by ci-gate's
+  # always()/failure-only aggregator, so this does not re-introduce the
+  # skip-blocks-merge trap (#406).
+  docs:
+    name: Docs build
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # No npm cache: this build mirrors docs.yml, which deliberately drops the
+      # cache to close a cache-poisoning surface shared with the Pages deploy
+      # path (zizmor cache-poisoning; UNK-327). The install is small.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.16.0
+
+      - name: Install docs dependencies
+        run: cd docs && npm ci
+
+      - name: Build Starlight
+        run: cd docs && npm run build
+
+      # Starlight builds with base path /reverie/, so internal links render as
+      # root-relative /reverie/...; lychee resolves a root-relative /X against
+      # --root-dir as <root-dir>/X. Expose docs/dist under a `reverie` subdir
+      # and point --root-dir at its parent so /reverie/X resolves to
+      # docs/dist/X. A symlink avoids duplicating the built site. (Mirrors
+      # docs.yml.)
+      - name: Stage built docs at the Pages base path
+        run: |
+          mkdir -p "${RUNNER_TEMP}/linkroot"
+          ln -sfn "${GITHUB_WORKSPACE}/docs/dist" "${RUNNER_TEMP}/linkroot/reverie"
+
+      # Internal/relative links are deterministic and under our control, so a
+      # broken one fails the build. --offline resolves file/relative links with
+      # no network IO, so this gating pass cannot flake. External-URL checking
+      # stays in docs.yml (advisory, on main) — not duplicated into the gate.
+      - name: Check internal links (gating)
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--offline --no-progress --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
+          fail: true
+
   # Single required status check for the branch ruleset. Aggregates every CI
   # job so the ruleset requires only this one context. Path-conditional jobs
   # that legitimately skip on a given PR (docs-only, frontend-only, etc.) no
@@ -1051,6 +1113,7 @@ jobs:
       - a11y
       - staging-smoke
       - secret-scan
+      - docs
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -1,5 +1,8 @@
 name: Docs
 
+# PR-time docs builds live in ci.yml's `docs` job so they can join the
+# `ci-gate` aggregator (cross-workflow `needs` is impossible). This workflow
+# owns only the Pages deploy on push-to-main + tags (plus manual dispatch).
 on:
   push:
     branches: [main]
@@ -8,23 +11,16 @@ on:
       - ".github/workflows/docs.yml"
     tags:
       - "v*"
-  pull_request:
-    paths:
-      - "docs/**"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
-# Least privilege by default; only the deploy job is elevated to publish
-# Pages. Pull-request runs build-only and never reach the elevated job.
+# Least privilege by default; only the deploy job is elevated to publish Pages.
 permissions:
   contents: read
 
-# Isolate pull-request builds into their own per-PR group so they never
-# cancel an in-flight deploy, while keeping every real deploy event
-# (main, tags, manual) in one shared `pages` group so concurrent Pages
-# deployments stay serialized.
+# Every event here is a real deploy event (main, tags, manual); keep them in
+# one shared `pages` group so concurrent Pages deployments stay serialized.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
+  group: pages
   cancel-in-progress: true
 
 jobs:
@@ -57,10 +53,8 @@ jobs:
       # broken one fails the build; external URLs are flaky (rate-limits,
       # transient 5xx) and only ever warned about. `--offline` resolves
       # file/relative links without any network IO, so this gating pass cannot
-      # flake. It runs on PRs too (the build job does), gating docs PRs without
-      # being a global required context — docs.yml is path-gated and has no CI
-      # gate aggregator, so making it globally required would re-introduce the
-      # skip-blocks-merge trap #406 fixed.
+      # flake. PR-time link checking lives in ci.yml's `docs` job; this pass
+      # guards the build that feeds the actual Pages deploy.
       # Starlight builds with base path /reverie/, so internal links render as
       # root-relative `/reverie/...`. lychee resolves a root-relative `/X`
       # against `--root-dir` as `<root-dir>/X`, so expose docs/dist under a
@@ -103,17 +97,15 @@ jobs:
         if: steps.external-links.outcome == 'failure'
         run: echo "::warning::lychee found broken external links in the docs — see the 'Check external links (advisory)' step summary."
 
-      # Deploy artifacts are only needed for the actual Pages publish.
-      # Pull-request runs validate the build and stop here.
+      # Every trigger of this workflow is a real deploy event (main, tags,
+      # manual), so the artifact always feeds the Pages publish below.
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: docs/dist
 
   deploy:
     needs: build
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
