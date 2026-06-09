@@ -21,13 +21,24 @@
 //! so embedders bypassing `run` must perform the finalisation pass
 //! themselves via [`crate::security::csp`].
 
-use figment::{
-    Figment, Metadata, Profile, Provider,
-    value::{Dict, Map, Value},
-};
-use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
+mod cover;
+mod enrichment;
+mod opds;
+mod provider;
+mod security;
+mod writeback;
+
+pub use cover::CoverConfig;
+pub use enrichment::EnrichmentConfig;
+pub use opds::OpdsConfig;
+pub use provider::EnvProvider;
+pub use security::SecurityConfig;
+pub use writeback::WritebackConfig;
 
 use crate::models::manifestation_format::ManifestationFormat;
+use figment::Figment;
+use provider::ENV_MAP;
+use validator::{Validate, ValidationErrors, ValidationErrorsKind};
 
 /// Resolved process-wide configuration. Fields reflect the settled view of
 /// the environment after defaults, parsing, and validation; subsystem
@@ -147,175 +158,6 @@ pub struct Config {
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
     pub operator_contact: Option<String>,
-}
-
-/// OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a
-/// Basic-only extractor and `public_url` must be set — feeds emit absolute URLs
-/// rooted at `public_url`.
-///
-/// Note: the dual-mounted cover handlers at `/api/books/:id/cover{,/thumb}` are
-/// mounted independently of `enabled` because the web UI (Step 10) needs them
-/// regardless of OPDS availability.
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
-#[serde(default)]
-#[validate(schema(function = "validate_opds_config"))]
-pub struct OpdsConfig {
-    /// Whether the `/opds/*` routes are mounted
-    /// (`REVERIE_OPDS_ENABLED`, default `true`).
-    pub enabled: bool,
-    /// Default page size for paginated feeds (`REVERIE_OPDS_PAGE_SIZE`,
-    /// default `50`; valid range 1-500).
-    #[validate(range(min = 1, max = 500, message = "must be between 1 and 500"))]
-    pub page_size: u32,
-    /// `WWW-Authenticate: Basic realm=...` value emitted on 401
-    /// responses from `/opds/*` (`REVERIE_OPDS_REALM`, default
-    /// `"Reverie OPDS"`). Validated to exclude `"` to keep the header
-    /// well-formed.
-    #[validate(custom(function = "validate_realm"))]
-    pub realm: String,
-    /// Externally-visible base URL the catalogue emits absolute links
-    /// rooted at (`REVERIE_PUBLIC_URL`). Required when `enabled=true`;
-    /// optional otherwise.
-    pub public_url: Option<url::Url>,
-}
-
-/// Metadata-enrichment subsystem knobs (background workers that fetch
-/// from `OpenLibrary` / Google Books / Hardcover).
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
-#[serde(default)]
-pub struct EnrichmentConfig {
-    /// Whether the enrichment queue is spawned
-    /// (`REVERIE_ENRICHMENT_ENABLED`, default `true`).
-    pub enabled: bool,
-    /// In-flight enrichment job concurrency
-    /// (`REVERIE_ENRICHMENT_CONCURRENCY`, default `2`; valid range 1-10).
-    #[validate(range(min = 1, max = 10, message = "must be between 1 and 10"))]
-    pub concurrency: u32,
-    /// Sleep between empty-queue polls
-    /// (`REVERIE_ENRICHMENT_POLL_IDLE_SECS`, default `30`).
-    pub poll_idle_secs: u64,
-    /// Per-job overall fetch budget
-    /// (`REVERIE_ENRICHMENT_FETCH_BUDGET_SECS`, default `15`).
-    pub fetch_budget_secs: u64,
-    /// Per-request HTTP timeout for outbound metadata fetches
-    /// (`REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS`, default `10`).
-    pub http_timeout_secs: u64,
-    /// Maximum retry attempts before a job is considered exhausted
-    /// (`REVERIE_ENRICHMENT_MAX_ATTEMPTS`, default `10`).
-    pub max_attempts: u32,
-    /// Cache TTL for successful (`hit`) responses
-    /// (`REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS`, default `30`).
-    pub cache_ttl_hit_days: u32,
-    /// Cache TTL for "not found" (`miss`) responses
-    /// (`REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS`, default `7`).
-    pub cache_ttl_miss_days: u32,
-    /// Cache TTL for transient-error responses
-    /// (`REVERIE_ENRICHMENT_CACHE_TTL_ERROR_MINS`, default `15`).
-    pub cache_ttl_error_mins: u32,
-}
-
-/// Cover-image acquisition limits applied by the cover service when
-/// fetching from third-party metadata providers.
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
-#[serde(default)]
-pub struct CoverConfig {
-    /// Maximum bytes accepted per cover image
-    /// (`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB).
-    pub max_bytes: u64,
-    /// Per-download HTTP timeout
-    /// (`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`).
-    pub download_timeout_secs: u64,
-    /// Minimum long-edge pixel dimension; smaller images are rejected
-    /// (`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`).
-    pub min_long_edge_px: u32,
-    /// Maximum HTTP redirect hops the cover fetcher will follow
-    /// (`REVERIE_COVER_REDIRECT_LIMIT`, default `3`).
-    pub redirect_limit: usize,
-}
-
-/// Writeback-worker knobs (the background task that flushes pending
-/// canonical-metadata mutations into the source manifestation files).
-#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
-#[serde(default)]
-pub struct WritebackConfig {
-    /// Whether the writeback worker is spawned
-    /// (`REVERIE_WRITEBACK_ENABLED`, default `true`).
-    pub enabled: bool,
-    /// In-flight writeback job concurrency
-    /// (`REVERIE_WRITEBACK_CONCURRENCY`, default `2`; valid range 1-10).
-    #[validate(range(min = 1, max = 10, message = "must be between 1 and 10"))]
-    pub concurrency: u32,
-    /// Sleep between empty-queue polls
-    /// (`REVERIE_WRITEBACK_POLL_IDLE_SECS`, default `5`).
-    pub poll_idle_secs: u64,
-    /// Maximum retry attempts before a writeback job is considered
-    /// exhausted (`REVERIE_WRITEBACK_MAX_ATTEMPTS`, default `10`).
-    pub max_attempts: u32,
-}
-
-/// Response-header policy.
-///
-/// CSP values are stored as precomputed `HeaderValue`s. They depend on
-/// `validate_frontend_dist` reading the on-disk FOUC script to derive its
-/// hash, so `csp_api_header` and `csp_html_header` are left as `None` after
-/// deserialization and finalised by `main()` via
-/// [`crate::security::csp::build_api_csp`] /
-/// [`crate::security::csp::build_html_csp`]. A non-conformant CSP string
-/// panics in `main()` rather than silently dropping the header at request
-/// time.
-///
-/// HSTS and Reporting-Endpoints are derived from the booleans / URL stored
-/// here via [`Self::hsts_header_value`] and
-/// [`Self::reporting_endpoints_header_value`]. Both compose static-ASCII
-/// strings from validated inputs and panic on the impossible case (a
-/// programming invariant has been violated and we want to know).
-///
-/// A `SecurityConfig` obtained directly from the config pipeline — without the
-/// CSP-finalisation pass — emits no `Content-Security-Policy` on either
-/// route class (both fields stay `None`); HSTS and Reporting-Endpoints
-/// are still applied because they are derived on demand.
-#[derive(Debug, Clone, Default, serde::Deserialize, schemars::JsonSchema, Validate)]
-#[serde(default)]
-#[validate(schema(function = "validate_security_config"))]
-pub struct SecurityConfig {
-    /// Whether the deployment is fronted by a TLS-terminating reverse
-    /// proxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS
-    /// emission — never emitted on plaintext HTTP because the browser
-    /// would refuse the next TLS-less request to this host.
-    pub behind_https: bool,
-    /// Whether the HSTS header carries `; includeSubDomains`
-    /// (`REVERIE_HSTS_INCLUDE_SUBDOMAINS`, default `false`). Requires
-    /// `behind_https=true`.
-    pub hsts_include_subdomains: bool,
-    /// Whether the HSTS header carries `; preload`
-    /// (`REVERIE_HSTS_PRELOAD`, default `false`). Requires
-    /// `hsts_include_subdomains=true` (chrome.com / hstspreload.org
-    /// rules).
-    pub hsts_preload: bool,
-    /// Optional CSP-violation reporting endpoint
-    /// (`REVERIE_CSP_REPORT_ENDPOINT`). Pre-validated at startup to
-    /// reject `"`/`;`/CR/LF (header-injection guard) and any scheme
-    /// other than `http`/`https`.
-    #[serde(default, deserialize_with = "de_csp_endpoint")]
-    pub csp_report_endpoint: Option<url::Url>,
-    /// Optional path to the built frontend dist directory
-    /// (`REVERIE_FRONTEND_DIST_PATH`). When set, the SPA assets router
-    /// is mounted and the FOUC-script hash is read at startup to seed
-    /// the HTML CSP.
-    pub frontend_dist_path: Option<std::path::PathBuf>,
-    /// Precomputed `Content-Security-Policy` header for HTML
-    /// responses. `None` after [`Config::from_env`]; finalised by
-    /// [`crate::run`] from the FOUC-script hash + reporting endpoint.
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub csp_html_header: Option<axum::http::HeaderValue>,
-    /// Precomputed `Content-Security-Policy` header for API
-    /// responses. `None` after [`Config::from_env`]; finalised by
-    /// [`crate::run`] from the reporting endpoint
-    /// (`default-src 'none'`-rooted, no script-src hashes).
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub csp_api_header: Option<axum::http::HeaderValue>,
 }
 
 /// Post-ingestion cleanup behaviour selector for the watcher's
@@ -479,92 +321,30 @@ impl Config {
     }
 }
 
-impl SecurityConfig {
-    /// HSTS response-header value. `None` when `behind_https=false` — the
-    /// middleware must not emit HSTS on plaintext HTTP or the browser would
-    /// refuse to talk to the host on its next TLS-less request. The composed
-    /// string is static ASCII; `from_str` panics on the impossible case so
-    /// any future composition bug surfaces loudly instead of silently
-    /// dropping the header.
-    pub fn hsts_header_value(&self) -> Option<axum::http::HeaderValue> {
-        if !self.behind_https {
-            return None;
-        }
-        let mut v = String::from("max-age=31536000");
-        if self.hsts_include_subdomains {
-            v.push_str("; includeSubDomains");
-        }
-        if self.hsts_preload {
-            v.push_str("; preload");
-        }
-        Some(axum::http::HeaderValue::from_str(&v).unwrap_or_else(|e| {
-            panic!("HSTS string is not a valid HTTP header value ({e}): {v:?}")
-        }))
-    }
-
-    /// `Reporting-Endpoints: csp-endpoint="<url>"`. `None` when
-    /// `csp_report_endpoint` is unset. The URL was validated at deserialize
-    /// time by `de_csp_endpoint` (no `"` `;` CR or LF; valid `url::Url`); `as_str()`
-    /// returns the canonical percent-encoded form. `from_str` panics on the
-    /// impossible case rather than silently dropping the header.
-    pub fn reporting_endpoints_header_value(&self) -> Option<axum::http::HeaderValue> {
-        let url = self.csp_report_endpoint.as_ref()?;
-        let v = format!("csp-endpoint=\"{}\"", url.as_str());
-        Some(axum::http::HeaderValue::from_str(&v).unwrap_or_else(|e| {
-            panic!("Reporting-Endpoints value is not a valid HTTP header value ({e}): {v:?}")
-        }))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Declarative validators (validator 0.20). Range checks are field attributes;
-// cross-field checks are struct-level `schema` functions. Cross-field errors
-// carry the offending env-var name as a `"var"` param because the validator
-// error tree keys struct-level failures under the opaque `"__all__"` key,
-// which the reverse field→env-name map cannot resolve. Single-field checks
-// (`validate_realm`) need no `"var"` param — their tree path reverse-maps
-// natively (`opds.realm` → `REVERIE_OPDS_REALM`).
-// ---------------------------------------------------------------------------
-
-/// Reject a `"` in the OPDS `realm` — it flows into a `WWW-Authenticate: Basic
-/// realm="…"` header and an embedded quote would split the value.
-fn validate_realm(realm: &str) -> Result<(), ValidationError> {
-    if realm.contains('"') {
-        let mut e = ValidationError::new("realm_quote");
-        e.message = Some("must not contain '\"'".into());
-        return Err(e);
-    }
-    Ok(())
-}
-
-/// OPDS cross-field rule: when the catalogue is enabled it emits absolute URLs
-/// rooted at `public_url`, so `public_url` is required.
-fn validate_opds_config(opds: &OpdsConfig) -> Result<(), ValidationError> {
-    if opds.enabled && opds.public_url.is_none() {
-        let mut e = ValidationError::new("public_url_required");
-        e.add_param("var".into(), &"REVERIE_PUBLIC_URL");
-        e.message = Some("required when REVERIE_OPDS_ENABLED=true".into());
-        return Err(e);
-    }
-    Ok(())
-}
-
-/// HSTS precondition ladder (chrome.com / hstspreload.org rules): subdomains
-/// requires HTTPS; preload requires subdomains. Never emit HSTS on plaintext.
-fn validate_security_config(sec: &SecurityConfig) -> Result<(), ValidationError> {
-    if sec.hsts_include_subdomains && !sec.behind_https {
-        let mut e = ValidationError::new("hsts_subdomains_requires_https");
-        e.add_param("var".into(), &"REVERIE_HSTS_INCLUDE_SUBDOMAINS");
-        e.message = Some("requires REVERIE_BEHIND_HTTPS=true".into());
-        return Err(e);
-    }
-    if sec.hsts_preload && !sec.hsts_include_subdomains {
-        let mut e = ValidationError::new("hsts_preload_requires_subdomains");
-        e.add_param("var".into(), &"REVERIE_HSTS_PRELOAD");
-        e.message = Some("requires REVERIE_HSTS_INCLUDE_SUBDOMAINS=true".into());
-        return Err(e);
-    }
-    Ok(())
+/// Deserialize the comma-separated `REVERIE_FORMAT_PRIORITY` surface
+/// (`epub,pdf,mobi`) into the ranked `Vec<ManifestationFormat>`.
+///
+/// The env contract is bare CSV in a single variable — NOT figment array
+/// syntax (`[a,b]`) — so the split lives here rather than relying on figment's
+/// array parsing. Each token is trimmed, lowercased, and parsed via
+/// [`ManifestationFormat`]'s `FromStr`; an unsupported token rejects the whole
+/// value.
+fn de_format_priority<'de, D>(de: D) -> Result<Vec<ManifestationFormat>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = <String as serde::Deserialize>::deserialize(de)?;
+    raw.split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.parse::<ManifestationFormat>().map_err(|_| {
+                serde::de::Error::custom(format!(
+                    "unsupported format '{s}'. Supported: epub, pdf, mobi, azw3, cbz, cbr"
+                ))
+            })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -688,67 +468,6 @@ fn join_path(prefix: &str, field: &str) -> String {
     }
 }
 
-/// Deserialize the comma-separated `REVERIE_FORMAT_PRIORITY` surface
-/// (`epub,pdf,mobi`) into the ranked `Vec<ManifestationFormat>`.
-///
-/// The env contract is bare CSV in a single variable — NOT figment array
-/// syntax (`[a,b]`) — so the split lives here rather than relying on figment's
-/// array parsing. Each token is trimmed, lowercased, and parsed via
-/// [`ManifestationFormat`]'s `FromStr`; an unsupported token rejects the whole
-/// value.
-fn de_format_priority<'de, D>(de: D) -> Result<Vec<ManifestationFormat>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let raw = <String as serde::Deserialize>::deserialize(de)?;
-    raw.split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            s.parse::<ManifestationFormat>().map_err(|_| {
-                serde::de::Error::custom(format!(
-                    "unsupported format '{s}'. Supported: epub, pdf, mobi, azw3, cbz, cbr"
-                ))
-            })
-        })
-        .collect()
-}
-
-/// Deserialize `REVERIE_CSP_REPORT_ENDPOINT` into `Option<url::Url>` with the
-/// header-injection guard applied to the RAW string BEFORE `url::Url::parse`.
-///
-/// THREAT: this URL is emitted into the `Reporting-Endpoints` response header.
-/// `url::Url::parse` percent-encodes (`"` → `%22`) and rejects CR/LF with a
-/// generic message, so a guard placed on the parsed `Url` (or a
-/// `#[validate(custom)]` on the typed value) would silently pass quote
-/// injection and surface the wrong error for CR/LF. The raw-string char guard
-/// therefore runs first, then the scheme allowlist — order mirrors the former
-/// imperative path exactly. See `adr/2026-06-09-declarative-config-stack.md`
-/// (GOTCHA-CSPRAW) and the `security_report_endpoint_injection_chars_errors`
-/// test (3 forms).
-fn de_csp_endpoint<'de, D>(de: D) -> Result<Option<url::Url>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = <String as serde::Deserialize>::deserialize(de)?;
-    if s.is_empty() {
-        return Ok(None);
-    }
-    // THREAT: reject quote / semicolon / CR / LF on the raw string — these
-    // would split or escape the response header value (header injection).
-    if s.chars().any(|c| matches!(c, '"' | ';' | '\r' | '\n')) {
-        return Err(serde::de::Error::custom("must not contain \" ; CR or LF"));
-    }
-    let parsed = url::Url::parse(&s).map_err(serde::de::Error::custom)?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(serde::de::Error::custom(format!(
-            "scheme must be http or https, got '{}'",
-            parsed.scheme()
-        )));
-    }
-    Ok(Some(parsed))
-}
-
 // ---------------------------------------------------------------------------
 // Default impls — the single source for every optional field's default value,
 // consumed by serde's container `#[serde(default)]` during figment extract.
@@ -796,299 +515,6 @@ impl Default for Config {
             hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
             hardcover_api_token: None,
             operator_contact: None,
-        }
-    }
-}
-
-impl Default for EnrichmentConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            concurrency: 2,
-            poll_idle_secs: 30,
-            fetch_budget_secs: 15,
-            http_timeout_secs: 10,
-            max_attempts: 10,
-            cache_ttl_hit_days: 30,
-            cache_ttl_miss_days: 7,
-            cache_ttl_error_mins: 15,
-        }
-    }
-}
-
-impl Default for CoverConfig {
-    fn default() -> Self {
-        Self {
-            max_bytes: 10_485_760,
-            download_timeout_secs: 30,
-            min_long_edge_px: 1000,
-            redirect_limit: 3,
-        }
-    }
-}
-
-impl Default for WritebackConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            concurrency: 2,
-            poll_idle_secs: 5,
-            max_attempts: 10,
-        }
-    }
-}
-
-impl Default for OpdsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            page_size: 50,
-            realm: "Reverie OPDS".into(),
-            public_url: None,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// EnvProvider — the custom figment::Provider keystone (env-var → field map,
-// empty-as-unset filter, REVERIE_LOG_LEVEL > RUST_LOG cascade, value parse).
-// ---------------------------------------------------------------------------
-
-/// The env-var name → dotted-field-path map.
-///
-/// Convention:
-///   flat top-level fields: `REVERIE_PORT` → `"port"`
-///   sub-struct fields:     `REVERIE_ENRICHMENT_CONCURRENCY` → `"enrichment.concurrency"`
-///
-/// Non-`REVERIE_` vars (`DATABASE_URL`, `OIDC_*`) are included explicitly.
-/// `REVERIE_LOG_LEVEL` and `RUST_LOG` both map to `"log_level"`; their
-/// precedence cascade is resolved in [`EnvProvider::data`] (GOTCHA-CASCADE).
-const ENV_MAP: &[(&str, &str)] = &[
-    // --- top-level flat fields ---
-    ("DATABASE_URL", "database_url"),
-    ("DATABASE_URL_MIGRATION", "migration_database_url"),
-    ("DATABASE_URL_INGESTION", "ingestion_database_url"),
-    ("OIDC_ISSUER_URL", "oidc_issuer_url"),
-    ("OIDC_CLIENT_ID", "oidc_client_id"),
-    ("OIDC_CLIENT_SECRET", "oidc_client_secret"),
-    ("OIDC_REDIRECT_URI", "oidc_redirect_uri"),
-    ("REVERIE_PORT", "port"),
-    ("REVERIE_LIBRARY_PATH", "library_path"),
-    ("REVERIE_INGESTION_PATH", "ingestion_path"),
-    ("REVERIE_QUARANTINE_PATH", "quarantine_path"),
-    // Cascade resolved in `EnvProvider::data` (GOTCHA-CASCADE): both map to
-    // `log_level`; `REVERIE_LOG_LEVEL` wins when both are set.
-    ("REVERIE_LOG_LEVEL", "log_level"),
-    ("RUST_LOG", "log_level"),
-    ("REVERIE_DB_MAX_CONNECTIONS", "db_max_connections"),
-    ("REVERIE_AUTO_MIGRATE", "auto_migrate"),
-    ("REVERIE_FORMAT_PRIORITY", "format_priority"),
-    ("REVERIE_CLEANUP_MODE", "cleanup_mode"),
-    ("REVERIE_OPENLIBRARY_BASE_URL", "openlibrary_base_url"),
-    ("REVERIE_GOOGLEBOOKS_BASE_URL", "googlebooks_base_url"),
-    ("REVERIE_GOOGLEBOOKS_API_KEY", "googlebooks_api_key"),
-    ("REVERIE_HARDCOVER_BASE_URL", "hardcover_base_url"),
-    ("REVERIE_HARDCOVER_API_TOKEN", "hardcover_api_token"),
-    ("REVERIE_OPERATOR_CONTACT", "operator_contact"),
-    // --- enrichment sub-struct ---
-    ("REVERIE_ENRICHMENT_ENABLED", "enrichment.enabled"),
-    ("REVERIE_ENRICHMENT_CONCURRENCY", "enrichment.concurrency"),
-    (
-        "REVERIE_ENRICHMENT_POLL_IDLE_SECS",
-        "enrichment.poll_idle_secs",
-    ),
-    (
-        "REVERIE_ENRICHMENT_FETCH_BUDGET_SECS",
-        "enrichment.fetch_budget_secs",
-    ),
-    (
-        "REVERIE_ENRICHMENT_HTTP_TIMEOUT_SECS",
-        "enrichment.http_timeout_secs",
-    ),
-    ("REVERIE_ENRICHMENT_MAX_ATTEMPTS", "enrichment.max_attempts"),
-    (
-        "REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS",
-        "enrichment.cache_ttl_hit_days",
-    ),
-    (
-        "REVERIE_ENRICHMENT_CACHE_TTL_MISS_DAYS",
-        "enrichment.cache_ttl_miss_days",
-    ),
-    (
-        "REVERIE_ENRICHMENT_CACHE_TTL_ERROR_MINS",
-        "enrichment.cache_ttl_error_mins",
-    ),
-    // --- cover sub-struct ---
-    ("REVERIE_COVER_MAX_BYTES", "cover.max_bytes"),
-    (
-        "REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS",
-        "cover.download_timeout_secs",
-    ),
-    ("REVERIE_COVER_MIN_LONG_EDGE_PX", "cover.min_long_edge_px"),
-    ("REVERIE_COVER_REDIRECT_LIMIT", "cover.redirect_limit"),
-    // --- writeback sub-struct ---
-    ("REVERIE_WRITEBACK_ENABLED", "writeback.enabled"),
-    ("REVERIE_WRITEBACK_CONCURRENCY", "writeback.concurrency"),
-    (
-        "REVERIE_WRITEBACK_POLL_IDLE_SECS",
-        "writeback.poll_idle_secs",
-    ),
-    ("REVERIE_WRITEBACK_MAX_ATTEMPTS", "writeback.max_attempts"),
-    // --- opds sub-struct ---
-    ("REVERIE_OPDS_ENABLED", "opds.enabled"),
-    ("REVERIE_OPDS_PAGE_SIZE", "opds.page_size"),
-    ("REVERIE_OPDS_REALM", "opds.realm"),
-    ("REVERIE_PUBLIC_URL", "opds.public_url"),
-    // --- security sub-struct ---
-    ("REVERIE_BEHIND_HTTPS", "security.behind_https"),
-    (
-        "REVERIE_HSTS_INCLUDE_SUBDOMAINS",
-        "security.hsts_include_subdomains",
-    ),
-    ("REVERIE_HSTS_PRELOAD", "security.hsts_preload"),
-    (
-        "REVERIE_CSP_REPORT_ENDPOINT",
-        "security.csp_report_endpoint",
-    ),
-    ("REVERIE_FRONTEND_DIST_PATH", "security.frontend_dist_path"),
-];
-
-/// Custom [`figment::Provider`] feeding the config pipeline from environment
-/// variables. Maps each known env-var name to its dotted field path via
-/// `ENV_MAP`, parses values into typed figment `Value`s, and drops empties
-/// (empty-as-unset). Unmapped vars (`PATH`, `HOME`, …) are ignored.
-///
-/// # Why a custom provider rather than stock [`figment::providers::Env`]
-///
-/// Two reasons, in order of load-bearing-ness:
-///
-/// 1. **A race-free, parallel-safe test seam.** [`Self::from_pairs`] injects
-///    env as in-memory string pairs, so the config-parsing tests run
-///    concurrently (each `sqlx::test` owns its DB) without mutating process
-///    env. Stock `Env` reads only [`std::env::vars`]; testing it means
-///    `Jail`/`temp-env`/`set_var`, all of which mutate global env under a lock
-///    — serializing those tests and racing the suite's other env readers
-///    (`dotenvy`, [`Self::from_process_env`]), the `getenv`/`setenv` data race
-///    that makes `set_var` `unsafe`. `from_pairs` touches no process env.
-///    Production
-///    ([`Self::from_process_env`]) runs through the same code so tests exercise
-///    the real parse path (UNK-100).
-/// 2. **A frozen, irregular var→field contract.** The operator surface mixes
-///    bare ecosystem names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) with
-///    `REVERIE_`-namespaced knobs, and several map to a nested path the var
-///    name doesn't spell (`REVERIE_PUBLIC_URL` → `opds.public_url`). No
-///    uniform separator rule derives that, so `ENV_MAP` is the explicit
-///    registry — which also doubles as the introspectable var↔field source the
-///    config-reference generator consumes (UNK-370).
-///
-/// Value parsing mirrors stock `Env` exactly (see [`Self::data`]); the custom
-/// surface is only the two facts above. The pipeline is built in
-/// [`Config::from_figment`].
-///
-/// GOTCHA-SPLIT (secondary): the explicit map also sidesteps
-/// `Env::split("_")`, which would wrongly split `snake_case` flat fields
-/// (`db_max_connections` → `db.max.connections`).
-pub struct EnvProvider {
-    pairs: Vec<(String, String)>,
-}
-
-impl EnvProvider {
-    /// Collect all current process environment variables.
-    pub fn from_process_env() -> Self {
-        Self {
-            pairs: std::env::vars().collect(),
-        }
-    }
-
-    /// Build from an explicit slice of `(key, value)` string pairs.
-    /// Used in tests as an in-memory seam (no process-env mutation, no
-    /// `figment::Jail` — parallel-safe, GOTCHA-TESTSEAM).
-    pub fn from_pairs(pairs: &[(&str, &str)]) -> Self {
-        Self {
-            pairs: pairs
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-                .collect(),
-        }
-    }
-}
-
-impl Provider for EnvProvider {
-    fn metadata(&self) -> Metadata {
-        Metadata::named("EnvProvider")
-    }
-
-    fn data(&self) -> Result<Map<Profile, Dict>, figment::Error> {
-        // Build a lookup map from ENV_MAP for O(1) access.
-        let lookup: std::collections::HashMap<&str, &str> = ENV_MAP.iter().copied().collect();
-
-        let mut dict = Dict::new();
-
-        for (key, val) in &self.pairs {
-            // Empty string == unset (GOTCHA-EMPTY).
-            if val.is_empty() {
-                continue;
-            }
-            // Only process keys we know about; ignore PATH, HOME, etc.
-            let Some(&dotted) = lookup.get(key.as_str()) else {
-                continue;
-            };
-            // Log cascade (GOTCHA-CASCADE): `REVERIE_LOG_LEVEL` > `RUST_LOG` >
-            // `"info"` (the `Default`). Both vars map to `log_level` in
-            // ENV_MAP, so skip `RUST_LOG` when the operator-namespace var is
-            // present — otherwise `pairs` ordering would decide the winner.
-            if key == "RUST_LOG"
-                && self
-                    .pairs
-                    .iter()
-                    .any(|(k, v)| k == "REVERIE_LOG_LEVEL" && !v.is_empty())
-            {
-                continue;
-            }
-            // Parse the raw string into a typed figment `Value` (numeric →
-            // `Num`, `true`/`false` → `Bool`, else `Str`) exactly as
-            // `figment::providers::Env` does internally (env.rs: `v.parse()`).
-            // `Value::from(String)` would force `Value::Str` for everything,
-            // which the deserializer then refuses to coerce into `u16`/`bool`
-            // fields (`InvalidType(Str, "u16")`). The parse keeps the strict
-            // bool contract intact: only lowercase `true`/`false` become `Bool`;
-            // `1`/`yes`/`True` parse to `Num`/`Str` and are rejected by a `bool`
-            // field. `Value`'s `FromStr` error is `Infallible`.
-            let leaf = val
-                .parse::<Value>()
-                .unwrap_or_else(|never: std::convert::Infallible| match never {});
-            let nested = figment::util::nest(dotted, leaf);
-            // Merge nested into our accumulating dict.
-            // `nested` is a Value::Dict; extract its inner map and extend.
-            if let figment::value::Value::Dict(_, inner) = nested {
-                merge_dict(&mut dict, inner);
-            }
-        }
-
-        let mut map = Map::new();
-        map.insert(Profile::Default, dict);
-        Ok(map)
-    }
-}
-
-/// Recursively merge `src` into `dst`, with `src` winning on conflict.
-fn merge_dict(dst: &mut Dict, src: Dict) {
-    for (k, v) in src {
-        // Check if dst already has this key as a Dict so we can recurse.
-        // We use a separate `contains_key` check to avoid holding multiple
-        // mutable borrows simultaneously (borrow checker limitation with
-        // match on get_mut + entry in the same arm).
-        let existing_is_dict = matches!(dst.get(&k), Some(figment::value::Value::Dict(_, _)));
-        if existing_is_dict {
-            if let figment::value::Value::Dict(_, src_inner) = v {
-                if let Some(figment::value::Value::Dict(_, dst_inner)) = dst.get_mut(&k) {
-                    merge_dict(dst_inner, src_inner);
-                }
-            } else {
-                dst.insert(k, v);
-            }
-        } else {
-            dst.insert(k, v);
         }
     }
 }
@@ -1167,7 +593,7 @@ mod tests {
     fn staging_runtime_example_keys_are_in_env_map() {
         // Compile-time embed: a missing file fails the build rather than
         // silently skipping the guard.
-        let example = include_str!("../../docker/staging.env.runtime.example");
+        let example = include_str!("../../../docker/staging.env.runtime.example");
 
         let map_keys: std::collections::HashSet<&str> =
             ENV_MAP.iter().map(|(name, _)| *name).collect();
@@ -1697,39 +1123,6 @@ mod tests {
     }
 
     #[test]
-    fn env_provider_maps_flat_and_nested_key() {
-        // GOTCHA-SPLIT: flat snake_case stays flat; only genuinely nested vars
-        // nest. `db_max_connections` must NOT become `db.max.connections`.
-        let p = EnvProvider::from_pairs(&[
-            ("REVERIE_DB_MAX_CONNECTIONS", "20"),
-            ("REVERIE_ENRICHMENT_CONCURRENCY", "3"),
-        ]);
-        let data = p.data().unwrap();
-        let dict = data.get(&Profile::Default).unwrap();
-        assert!(
-            matches!(dict.get("db_max_connections"), Some(Value::Num(..))),
-            "db_max_connections should be a flat numeric leaf"
-        );
-        assert!(
-            dict.get("db").is_none(),
-            "must not split into a `db` sub-dict"
-        );
-        let Some(Value::Dict(_, enr)) = dict.get("enrichment") else {
-            panic!("enrichment should nest into a sub-dict");
-        };
-        assert!(enr.contains_key("concurrency"));
-    }
-
-    #[test]
-    fn env_provider_drops_empty_as_unset() {
-        // GOTCHA-EMPTY: an exported-empty var equals unset.
-        let p = EnvProvider::from_pairs(&[("REVERIE_GOOGLEBOOKS_API_KEY", "")]);
-        let data = p.data().unwrap();
-        let dict = data.get(&Profile::Default).unwrap();
-        assert!(dict.get("googlebooks_api_key").is_none());
-    }
-
-    #[test]
     fn config_schema_has_no_secret_default_values() {
         // Hard rule 7 / GOTCHA-SECRET: the emitted JSON Schema must carry no
         // secret VALUE. schemars renders each field's default, so secret-
@@ -1753,14 +1146,6 @@ mod tests {
         // Non-vacuity: a non-secret scalar still carries its real default, so
         // the assertion above is meaningful (the schema does emit defaults).
         assert_eq!(props["port"]["default"], serde_json::json!(3000));
-    }
-
-    #[test]
-    fn env_provider_from_process_env_reads_real_env() {
-        // CARGO_PKG_NAME is set by cargo for every test run; it is unmapped in
-        // ENV_MAP (ignored by `data`) but must be collected into the raw pairs.
-        let p = EnvProvider::from_process_env();
-        assert!(p.pairs.iter().any(|(k, _)| k == "CARGO_PKG_NAME"));
     }
 
     #[test]
