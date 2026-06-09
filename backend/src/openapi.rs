@@ -42,9 +42,11 @@ const API_VERSION: &str = "0.1.0";
 pub struct ApiDoc;
 
 /// RFC 7807 `application/problem+json` error body, as emitted by the server's
-/// `AppError` type. Documentation-only: it mirrors the response shape so the
-/// spec can reference it, and is not constructed at runtime.
-#[derive(serde::Serialize, utoipa::ToSchema)]
+/// `AppError` type. Documentation-only: it mirrors the response shape and is
+/// never constructed or serialized at runtime. Registered as a shared component
+/// describing the standard error envelope; the data routes that actually return
+/// it are annotated to reference it in phase 2 (UNK-376).
+#[derive(utoipa::ToSchema)]
 pub struct ProblemDetails {
     /// Stable URI reference identifying the problem type.
     #[schema(example = "https://reverie.example/probs/not-found")]

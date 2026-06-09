@@ -42,6 +42,10 @@ use figment::Figment;
 use provider::ENV_MAP;
 use validator::{Validate, ValidationErrors, ValidationErrorsKind};
 
+/// Accessor returning a required field's resolved value, paired with its
+/// env-var name in [`REQUIRED_FIELDS`].
+type RequiredFieldAccessor = fn(&Config) -> &str;
+
 /// Environment variables that must be present and non-blank for the server to
 /// start (the Gate 3 check in [`Config::from_figment`]). Single source of truth
 /// shared with the generated config reference ([`reference_markdown`]) so the
@@ -49,15 +53,21 @@ use validator::{Validate, ValidationErrors, ValidationErrorsKind};
 /// own `required` array is empty because every config struct is
 /// `#[serde(default)]`, so it cannot serve as that source.
 ///
+/// Each entry pairs the env-var name (the reference's "Required" column reads
+/// these) with an accessor for the resolved field value (Gate 3 rejects a blank
+/// one). Pairing name and accessor in one entry makes them structurally
+/// impossible to misalign — adding a required variable is a single edit here,
+/// with no parallel list to keep in lockstep.
+///
 /// `DATABASE_URL_MIGRATION` is deliberately absent: it is *conditionally*
 /// required (only when `REVERIE_AUTO_MIGRATE=true`, enforced by Gate 1) and is
 /// documented as such by the reference rather than listed here.
-pub(crate) const REQUIRED_ENV_VARS: &[&str] = &[
-    "DATABASE_URL",
-    "OIDC_ISSUER_URL",
-    "OIDC_CLIENT_ID",
-    "OIDC_CLIENT_SECRET",
-    "OIDC_REDIRECT_URI",
+pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
+    ("DATABASE_URL", |c| c.database_url.as_str()),
+    ("OIDC_ISSUER_URL", |c| c.oidc_issuer_url.as_str()),
+    ("OIDC_CLIENT_ID", |c| c.oidc_client_id.as_str()),
+    ("OIDC_CLIENT_SECRET", |c| c.oidc_client_secret.as_str()),
+    ("OIDC_REDIRECT_URI", |c| c.oidc_redirect_uri.as_str()),
 ];
 
 /// Resolved process-wide configuration. Fields reflect the settled view of
@@ -342,21 +352,12 @@ impl Config {
             cfg.ingestion_dsn_defaulted = true;
         }
 
-        // Gate 3 — required fields blank => MissingVar (NOT Invalid). Var names
-        // come from REQUIRED_ENV_VARS (shared with the config reference); the
-        // field-accessor list below MUST stay aligned with that order.
-        for (value, var) in [
-            &cfg.database_url,
-            &cfg.oidc_issuer_url,
-            &cfg.oidc_client_id,
-            &cfg.oidc_client_secret,
-            &cfg.oidc_redirect_uri,
-        ]
-        .into_iter()
-        .zip(REQUIRED_ENV_VARS)
-        {
-            if value.trim().is_empty() {
-                return Err(ConfigError::MissingVar((*var).into()));
+        // Gate 3 — required fields blank => MissingVar (NOT Invalid). Name and
+        // field accessor are paired in REQUIRED_FIELDS (shared with the config
+        // reference), so the two can never drift out of alignment.
+        for &(var, field) in REQUIRED_FIELDS {
+            if field(&cfg).trim().is_empty() {
+                return Err(ConfigError::MissingVar(var.into()));
             }
         }
 
@@ -1184,6 +1185,23 @@ mod tests {
     }
 
     #[test]
+    fn every_required_field_omitted_yields_missing_var() {
+        // Drives Gate 3 across all of REQUIRED_FIELDS: omitting any one required
+        // variable must surface MissingVar naming that exact variable. Proves the
+        // name<->accessor pairing is correct for every entry, not just the two
+        // with bespoke tests above, and guards against a future entry whose
+        // accessor reads the wrong field.
+        for &(var, _) in REQUIRED_FIELDS {
+            let vars = without_keys(&[var]);
+            let err = cfg_from_owned(&vars).unwrap_err();
+            assert!(
+                matches!(&err, ConfigError::MissingVar(v) if v == var),
+                "omitting {var} should yield MissingVar({var}), got: {err:?}"
+            );
+        }
+    }
+
+    #[test]
     fn secret_field_deser_error_has_no_value() {
         // GOTCHA-SECRET-ERR (hard rule 7): a non-string-shaped secret value
         // (`true` parses to Value::Bool) fails String deserialization at
@@ -1225,15 +1243,15 @@ mod tests {
     }
 
     #[test]
-    fn required_env_vars_are_known_and_mapped() {
-        // REQUIRED_ENV_VARS is the shared source of required-ness for both the
+    fn required_fields_are_known_and_mapped() {
+        // REQUIRED_FIELDS is the shared source of required-ness for both the
         // Gate 3 startup check and the generated config reference. Every entry
         // must be a real ENV_MAP var name, or the reference would mark a
         // non-existent variable required.
-        assert!(!REQUIRED_ENV_VARS.is_empty());
+        assert!(!REQUIRED_FIELDS.is_empty());
         let mapped: std::collections::HashSet<&str> =
             ENV_MAP.iter().map(|(name, _)| *name).collect();
-        for var in REQUIRED_ENV_VARS {
+        for (var, _) in REQUIRED_FIELDS {
             assert!(
                 mapped.contains(var),
                 "required var {var} absent from ENV_MAP"

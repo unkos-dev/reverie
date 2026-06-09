@@ -12,7 +12,6 @@ use axum::response::IntoResponse;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
-use crate::openapi::ProblemDetails;
 use crate::state::AppState;
 
 /// Build the `/health{,/ready}` router as an [`OpenApiRouter`] so each handler's
@@ -46,7 +45,10 @@ pub async fn health() -> &'static str {
     tag = "health",
     responses(
         (status = 200, description = "Ready — database reachable", body = String, content_type = "text/plain"),
-        (status = 503, description = "Database unreachable", body = ProblemDetails, content_type = "application/problem+json")
+        // No body at runtime: the handler returns a bare 503 (empty body). The
+        // shared ProblemDetails error envelope is documented as a component and
+        // wired to the data routes that actually emit it in phase 2 (UNK-376).
+        (status = 503, description = "Database unreachable")
     )
 )]
 pub async fn ready(State(state): State<AppState>) -> Result<impl IntoResponse, StatusCode> {

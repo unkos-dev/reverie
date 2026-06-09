@@ -17,7 +17,7 @@
 use anyhow::{Context as _, anyhow};
 use serde_json::Value;
 
-use super::REQUIRED_ENV_VARS;
+use super::REQUIRED_FIELDS;
 use super::provider::ENV_MAP;
 
 /// Render the full Configuration reference page (frontmatter + table).
@@ -129,7 +129,7 @@ fn scalar_label(base: &str, node: &Value) -> String {
 /// `Yes` for unconditionally-required vars, `Conditional` for the migration DSN,
 /// `No` otherwise.
 fn required_label(var: &str) -> &'static str {
-    if REQUIRED_ENV_VARS.contains(&var) {
+    if REQUIRED_FIELDS.iter().any(|(name, _)| *name == var) {
         "Yes"
     } else if var == "DATABASE_URL_MIGRATION" {
         "Conditional"
@@ -179,4 +179,61 @@ fn describe(node: &Value) -> String {
 /// Escape characters that would break a Markdown table cell.
 fn escape_cell(text: &str) -> String {
     text.replace('|', "\\|")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ENV_MAP, resolve};
+    use serde_json::Value;
+
+    /// Collect every leaf field's dotted path from the config schema, descending
+    /// through `$ref`-linked sub-structs (mirrors [`super::node_for_path`]'s
+    /// traversal: a node is a sub-struct iff it resolves to one carrying its own
+    /// `properties`, otherwise it is a leaf).
+    fn collect_leaf_paths(node: &Value, defs: &Value, prefix: &str, out: &mut Vec<String>) {
+        let Some(props) = resolve(node, defs)
+            .get("properties")
+            .and_then(Value::as_object)
+        else {
+            return;
+        };
+        for (key, child) in props {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            if resolve(child, defs).get("properties").is_some() {
+                collect_leaf_paths(child, defs, &path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn every_schema_field_has_an_env_map_entry() {
+        // The reverse of node_for_path's guard. The renderer iterates ENV_MAP, so
+        // a new Config field added without an ENV_MAP entry produces no reference
+        // row, no render error, and no drift — it would be silently undocumented
+        // and unsettable from the environment. This asserts schema ⊆ ENV_MAP so
+        // that omission fails CI instead of disappearing.
+        let schema = serde_json::to_value(schemars::schema_for!(crate::config::Config))
+            .expect("serialize config schema");
+        let defs = schema.get("$defs").cloned().unwrap_or(Value::Null);
+        let mut leaves = Vec::new();
+        collect_leaf_paths(&schema, &defs, "", &mut leaves);
+        assert!(!leaves.is_empty(), "schema produced no leaf fields");
+
+        let mapped: std::collections::HashSet<&str> =
+            ENV_MAP.iter().map(|(_, path)| *path).collect();
+        let missing: Vec<&String> = leaves
+            .iter()
+            .filter(|p| !mapped.contains(p.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "schema fields with no ENV_MAP entry (silently undocumented config knobs): {missing:?}"
+        );
+    }
 }
