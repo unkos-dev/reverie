@@ -319,4 +319,16 @@ mod tests {
         };
         assert_eq!(s.as_str(), "error");
     }
+
+    #[test]
+    fn unmapped_vars_dropped_and_numeric_coerced() {
+        // Unmapped vars (PATH/HOME/…) never reach the Dict; a mapped numeric
+        // string coerces to `Value::Num` (not a `Str` the u16 field would
+        // reject as `InvalidType`).
+        let p = EnvProvider::from_pairs(&[("PATH", "/usr/bin"), ("REVERIE_PORT", "3000")]);
+        let data = p.data().unwrap();
+        let dict = data.get(&Profile::Default).unwrap();
+        assert!(dict.get("PATH").is_none(), "unmapped PATH must be dropped");
+        assert!(matches!(dict.get("port"), Some(Value::Num(..))));
+    }
 }

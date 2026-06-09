@@ -109,7 +109,7 @@
       "default": ""
     },
     "oidc_client_secret": {
-      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material — never logged.",
+      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material — never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
       "type": "string",
       "default": ""
     },
@@ -188,25 +188,25 @@
       "type": "object",
       "properties": {
         "download_timeout_secs": {
-          "description": "Per-download HTTP timeout\n(`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`).",
+          "description": "Per-download HTTP timeout\n(`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`). Must be ≥ 1 —\na zero timeout would abort every download immediately.",
           "type": "integer",
           "format": "uint64",
           "default": 30,
-          "minimum": 0
+          "minimum": 1
         },
         "max_bytes": {
-          "description": "Maximum bytes accepted per cover image\n(`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB).",
+          "description": "Maximum bytes accepted per cover image\n(`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB). Must be\n≥ 1 — a zero cap would reject every cover.",
           "type": "integer",
           "format": "uint64",
           "default": 10485760,
-          "minimum": 0
+          "minimum": 1
         },
         "min_long_edge_px": {
-          "description": "Minimum long-edge pixel dimension; smaller images are rejected\n(`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`).",
+          "description": "Minimum long-edge pixel dimension; smaller images are rejected\n(`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`). Must be ≥ 1 — a\nzero floor would defeat the quality filter and accept any image.",
           "type": "integer",
           "format": "uint32",
           "default": 1000,
-          "minimum": 0
+          "minimum": 1
         },
         "redirect_limit": {
           "description": "Maximum HTTP redirect hops the cover fetcher will follow\n(`REVERIE_COVER_REDIRECT_LIMIT`, default `3`).",

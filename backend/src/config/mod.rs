@@ -90,6 +90,10 @@ pub struct Config {
     pub oidc_client_id: String,
     /// OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as
     /// secret material — never logged.
+    ///
+    /// NOTE: any new secret-bearing field must also be added to the
+    /// `SECRET_FIELDS` list so a deserialize error never echoes its value
+    /// (hard rule 7).
     pub oidc_client_secret: String,
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match
     /// the value registered with the issuer.

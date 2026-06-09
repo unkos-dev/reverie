@@ -8,13 +8,19 @@ use validator::Validate;
 #[serde(default)]
 pub struct CoverConfig {
     /// Maximum bytes accepted per cover image
-    /// (`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB).
+    /// (`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB). Must be
+    /// ≥ 1 — a zero cap would reject every cover.
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub max_bytes: u64,
     /// Per-download HTTP timeout
-    /// (`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`).
+    /// (`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`). Must be ≥ 1 —
+    /// a zero timeout would abort every download immediately.
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub download_timeout_secs: u64,
     /// Minimum long-edge pixel dimension; smaller images are rejected
-    /// (`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`).
+    /// (`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`). Must be ≥ 1 — a
+    /// zero floor would defeat the quality filter and accept any image.
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub min_long_edge_px: u32,
     /// Maximum HTTP redirect hops the cover fetcher will follow
     /// (`REVERIE_COVER_REDIRECT_LIMIT`, default `3`).
