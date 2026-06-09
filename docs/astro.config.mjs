@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 
 export default defineConfig({
   site: "https://unkos-dev.github.io",
@@ -8,6 +9,15 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Reverie",
+      plugins: [
+        starlightOpenAPI([
+          {
+            base: "api",
+            schema: "./openapi.json",
+            label: "API Reference",
+          },
+        ]),
+      ],
       social: [
         {
           icon: "github",
@@ -28,6 +38,7 @@ export default defineConfig({
           label: "Reference",
           items: [{ autogenerate: { directory: "reference" } }],
         },
+        ...openAPISidebarGroups,
       ],
     }),
   ],

@@ -25,3 +25,13 @@ docker run -p 3000:3000 ghcr.io/unkos-dev/reverie:main
 ```
 
 > **Note:** Reverie is in pre-alpha. These instructions will be expanded as the project matures.
+
+## Documentation is part of done
+
+Reverie treats reference documentation like tests: it ships with the change, not
+after it. The [Configuration](/reverie/reference/configuration/) page and the API
+Reference are generated from source — the config schema and the OpenAPI 3.1 spec
+respectively — and CI fails when a committed artifact drifts from the code, or
+when the docs site stops building. Contributors regenerate with `REGEN=1 cargo
+test --test gen_openapi --test gen_config_ref` and commit the result alongside
+their change.
