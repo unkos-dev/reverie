@@ -145,6 +145,7 @@ no translation pass.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Imperative hand-rolled config reader](2026-06-09-imperative-config-reader.md) — adopted as scaffold-era shape recognised during UNK-370 review; lifts when adr/2026-06-09-declarative-config-stack.md ships
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Dev postgres host port 5433](2026-05-05-dev-postgres-port-5433.md) — adopted because Coder workspace's shared-postgres on 5432; lifts on UNK-169
 - [chrono in OIDC test mock](2026-05-05-chrono-in-oidc-mock.md) — adopted because openidconnect v4 forces chrono types in test setup; lifts on dep-unblock or wrapper
