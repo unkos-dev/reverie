@@ -1,13 +1,28 @@
 {
   "strictness": 1,
-  "commentTypes": ["logic", "syntax", "style", "info"],
+  "commentTypes": ["logic", "syntax"],
   "triggerOnUpdates": true,
+  "shouldUpdateDescription": false,
+  "statusCommentsEnabled": true,
+  "fixWithAI": false,
   "summarySection": {
     "included": true,
-    "collapsible": false
+    "collapsible": true
+  },
+  "confidenceScoreSection": {
+    "included": true
   },
   "updateExistingSummaryComment": true,
-  "ignorePatterns": ["**/package-lock.json", "**/Cargo.lock"],
+  "excludeBranches": ["release-please--**"],
+  "ignorePatterns": [
+    "**/package-lock.json",
+    "**/Cargo.lock",
+    "backend/.sqlx/**",
+    "backend/config.schema.json",
+    "docs/openapi.json",
+    "docs/src/content/docs/reference/configuration.mdx"
+  ],
+  "instructions": "ADRs in adr/ are authoritative architectural constraints, not background reading. Before flagging a pattern as wrong, check whether a relevant ADR in adr/ already decided it — a change that conforms to an accepted ADR is correct even if it looks unusual; a change that contradicts one is a finding. Cross-cutting ADRs (JSON:API conventions, validation-status vocabulary, keyset pagination, first-party session layer, standards-first integrations) are pinned below; consult the others in adr/ by filename when a diff touches their area.",
   "customContext": {
     "files": [
       {
@@ -25,6 +40,26 @@
       {
         "path": "adr/2026-05-03-strict-lint-policy.md",
         "description": "Strict lint policy ratified for both stacks. Backend: clippy::pedantic + nursery + cargo-deny. Frontend: tseslint strictTypeChecked + eslint-plugin-react. Style nits should already be machine-caught — flag what slipped past."
+      },
+      {
+        "path": "adr/2026-05-22-json-api-conventions.md",
+        "description": "Cross-cutting: JSON:API-style response envelope, error shape, and resource conventions every API route must follow."
+      },
+      {
+        "path": "adr/2026-05-28-validation-status-vocabulary.md",
+        "description": "Cross-cutting: canonical clean-vs-valid validation status vocabulary used across ingestion and metadata."
+      },
+      {
+        "path": "adr/2026-06-08-keyset-pagination-list-contract.md",
+        "description": "Cross-cutting: keyset (cursor) pagination is the list contract; offset pagination is a finding."
+      },
+      {
+        "path": "adr/2026-06-04-first-party-session-layer.md",
+        "description": "Cross-cutting: first-party session layer (dropped axum-login/tower-sessions); session/cookie handling must follow this design."
+      },
+      {
+        "path": "adr/2026-06-08-standards-first-integrations.md",
+        "description": "Cross-cutting: default to IETF/W3C/OWASP standards; deviation requires a conscious decision recorded in an ADR or debt entry."
       },
       {
         "path": ".claude/security/codeguard-0-authentication-mfa.md",
