@@ -59,7 +59,7 @@ aggregate into a new `ConfigError::Multiple` variant; deserialize-phase errors
 | Type             | REFACTOR                                                                                                                                                                                                                                                    |
 | Complexity       | HIGH                                                                                                                                                                                                                                                        |
 | Systems Affected | `backend/src/config.rs` (→ `config/`), `Cargo.toml`, `backend/CLAUDE.md`, `models/manifestation_format.rs`, bin entry (`print-config-schema`), `backend/config.schema.json` + CI drift-check, `docker/staging.env.runtime.example` (coverage test), `debt/` |
-| Dependencies     | figment, validator, schemars (versions pinned at impl, pass `cargo audit`); `url` `serde` feature                                                                                                                                                           |
+| Dependencies     | figment 0.10.19, validator 0.20.0, schemars 1.2.1 (pass `cargo audit`); `url` `serde` feature                                                                                                                                                               |
 | Estimated Tasks  | 14                                                                                                                                                                                                                                                          |
 
 ---
@@ -258,9 +258,9 @@ docs/debt 12–13; module split 14 last (keeps the diff reviewable).
 ### Task 1: UPDATE `backend/Cargo.toml` — add dependencies
 
 - **ACTION**: Add `figment`, `validator` (derive feature), `schemars`; add `serde` feature to `url`.
-- **IMPLEMENT**: `figment = { version = "<pin>", features = ["env"] }`; `validator = { version = "<pin>", features = ["derive"] }`; `schemars = { version = "<pin>" }`; change `url = "2.5.8"` → `url = { version = "2.5.8", features = ["serde"] }`.
-- **GOTCHA (GOTCHA-VERSION)**: Confirm schemars major — **0.8 and 1.0 differ in trait shape (`gen` vs `SchemaGenerator`) and attribute syntax**. Pin one, write all attrs against it. Confirm validator ≥ 0.18 for `schema(function = path)` (bare-path, not string) form. Context7 may blend versions — validate against the pin.
-- **GOTCHA**: schemars may need its own `url` integration feature for `url::Url` to impl `JsonSchema`; check the pinned version's feature list.
+- **IMPLEMENT (pins resolved 2026-06-09 via `cargo add --dry-run`)**: `figment = { version = "0.10.19", features = ["env"] }`; `validator = { version = "0.20.0", features = ["derive"] }`; `schemars = "1.2.1"`; change `url = "2.5.8"` → `url = { version = "2.5.8", features = ["serde"] }`.
+- **GOTCHA-VERSION (RESOLVED)**: schemars is **1.2.1 = 1.x** (`SchemaGenerator` trait shape; doc-comments render as `description` by default; `schema_for!` + `#[schemars(...)]` attrs are the 1.x forms — NOT 0.8's `gen`/older syntax). validator **0.20.0** ≥ 0.18 so the bare-path `schema(function = path)` / `custom(function = path)` form works. Write all attrs against these majors.
+- **GOTCHA (verify in spike)**: confirm whether schemars 1.x needs a `url` integration feature for `url::Url: JsonSchema` (Gemini spike note `a.` answers this). If a wrapper is unavoidable, record it rather than inventing one.
 - **VALIDATE**: `cargo audit` (each new dep passes) && `cargo build -p reverie-api`.
 
 ### Task 2: UPDATE `backend/src/models/manifestation_format.rs` — add derives
