@@ -27,7 +27,16 @@ use std::str::FromStr;
 /// negotiation. Extending the set requires both a Rust variant and a
 /// matching `ALTER TYPE … ADD VALUE` migration.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    sqlx::Type,
+    schemars::JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "manifestation_format", rename_all = "lowercase")]
