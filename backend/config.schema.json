@@ -24,11 +24,11 @@
       "default": ""
     },
     "db_max_connections": {
-      "description": "Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default\n`10`); applied identically to the primary, ingestion, and\nwriteback pools.",
+      "description": "Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default\n`10`); applied identically to the primary, ingestion, and\nwriteback pools. Must be ≥ 1 — a zero cap yields a pool that can\nnever hand out a connection (`PoolTimedOut` on the first query).",
       "type": "integer",
       "format": "uint32",
       "default": 10,
-      "minimum": 0
+      "minimum": 1
     },
     "enrichment": {
       "description": "Metadata enrichment knobs (concurrency, cache TTLs, etc.).",
@@ -164,7 +164,7 @@
   },
   "$defs": {
     "CleanupMode": {
-      "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string —\n`\"all\"` | `\"ingested\"` | `\"none\"`.",
+      "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string —\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through — the same property the `Command` enum\nrelies on.",
       "oneOf": [
         {
           "description": "Delete all files in the ingestion directory after a successful batch.",
@@ -274,7 +274,7 @@
           "type": "integer",
           "format": "uint32",
           "default": 10,
-          "minimum": 0
+          "minimum": 1
         },
         "poll_idle_secs": {
           "description": "Sleep between empty-queue polls\n(`REVERIE_ENRICHMENT_POLL_IDLE_SECS`, default `30`).",
@@ -413,7 +413,7 @@
           "type": "integer",
           "format": "uint32",
           "default": 10,
-          "minimum": 0
+          "minimum": 1
         },
         "poll_idle_secs": {
           "description": "Sleep between empty-queue polls\n(`REVERIE_WRITEBACK_POLL_IDLE_SECS`, default `5`).",

@@ -294,4 +294,29 @@ mod tests {
         let p = EnvProvider::from_process_env();
         assert!(p.pairs.iter().any(|(k, _)| k == "CARGO_PKG_NAME"));
     }
+
+    #[test]
+    fn cascade_rust_log_wins_when_reverie_log_level_absent() {
+        // GOTCHA-CASCADE leg: only RUST_LOG set → it provides log_level.
+        let p = EnvProvider::from_pairs(&[("RUST_LOG", "warn")]);
+        let data = p.data().unwrap();
+        let dict = data.get(&Profile::Default).unwrap();
+        let Some(Value::String(_, s)) = dict.get("log_level") else {
+            panic!("log_level should be present");
+        };
+        assert_eq!(s.as_str(), "warn");
+    }
+
+    #[test]
+    fn cascade_reverie_log_level_wins_over_rust_log() {
+        // GOTCHA-CASCADE leg: both set → REVERIE_LOG_LEVEL wins regardless of
+        // pair ordering (the skip reads the full pair list, not insertion order).
+        let p = EnvProvider::from_pairs(&[("REVERIE_LOG_LEVEL", "error"), ("RUST_LOG", "debug")]);
+        let data = p.data().unwrap();
+        let dict = data.get(&Profile::Default).unwrap();
+        let Some(Value::String(_, s)) = dict.get("log_level") else {
+            panic!("log_level should be present");
+        };
+        assert_eq!(s.as_str(), "error");
+    }
 }

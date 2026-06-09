@@ -19,6 +19,7 @@ pub struct WritebackConfig {
     pub poll_idle_secs: u64,
     /// Maximum retry attempts before a writeback job is considered
     /// exhausted (`REVERIE_WRITEBACK_MAX_ATTEMPTS`, default `10`).
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub max_attempts: u32,
 }
 

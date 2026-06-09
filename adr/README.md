@@ -51,4 +51,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Durable job queue: Postgres-backed, SKIP-LOCKED, crash-only via restart-bounded reclaim](2026-06-08-durable-job-queue-crash-only.md) (accepted, 2026-06-08)
 - [API versioning via URL path and OpenAPI 3.1 as the generated API contract](2026-06-08-api-versioning-openapi.md) (accepted, 2026-06-08)
 - [No unbounded queries: keyset pagination as the default list contract](2026-06-08-keyset-pagination-list-contract.md) (accepted, 2026-06-08)
-- [Adopt a declarative configuration stack (figment + serde + validator + schemars)](2026-06-09-declarative-config-stack.md) (proposed, 2026-06-09)
+- [Adopt a declarative configuration stack (figment + serde + validator + schemars)](2026-06-09-declarative-config-stack.md) (accepted, 2026-06-09)

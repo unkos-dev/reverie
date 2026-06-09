@@ -25,6 +25,7 @@ pub struct EnrichmentConfig {
     pub http_timeout_secs: u64,
     /// Maximum retry attempts before a job is considered exhausted
     /// (`REVERIE_ENRICHMENT_MAX_ATTEMPTS`, default `10`).
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub max_attempts: u32,
     /// Cache TTL for successful (`hit`) responses
     /// (`REVERIE_ENRICHMENT_CACHE_TTL_HIT_DAYS`, default `30`).

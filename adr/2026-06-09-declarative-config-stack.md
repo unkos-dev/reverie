@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-06-09
 supersedes: []
 decision-makers: "John Unkovich"
@@ -12,7 +12,7 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 Reverie's runtime configuration is loaded by a hand-rolled imperative reader in
-[`backend/src/config.rs`](../backend/src/config.rs): `Config::from_source` threads
+`backend/src/config.rs`: `Config::from_source` threads
 ~40 environment variables across six structs (`Config` plus `EnrichmentConfig`,
 `CoverConfig`, `WritebackConfig`, `OpdsConfig`, `SecurityConfig`) as a long ladder
 of `get("KEY")` / `parse_*(get, "KEY", default)` calls, each with bespoke
@@ -268,8 +268,9 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
   (backend dependency-adoption precedent),
   [`2026-05-26-persisted-settings.md`](2026-05-26-persisted-settings.md)
   (distinct DB-backed runtime-settings surface).
-- The imperative reader is tracked as accepted technical debt with this refactor as
-  its lift condition (see `debt/`).
+- The imperative reader was tracked as accepted technical debt with this refactor
+  as its lift condition; that entry is purged by the implementing PR (see `debt/`
+  git history).
 - Implementation plan, task sequence (including the `config/` module split as the
   closing move), and verification live in prp-plan output
   (`.claude/PRPs/plans/`), not here. The implementation epic is tracked as

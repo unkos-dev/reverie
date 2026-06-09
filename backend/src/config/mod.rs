@@ -75,7 +75,9 @@ pub struct Config {
     pub log_level: String,
     /// Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default
     /// `10`); applied identically to the primary, ingestion, and
-    /// writeback pools.
+    /// writeback pools. Must be ≥ 1 — a zero cap yields a pool that can
+    /// never hand out a connection (`PoolTimedOut` on the first query).
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub db_max_connections: u32,
     /// OIDC issuer URL (`OIDC_ISSUER_URL`, required) — the trust seam
     /// for the entire authentication subsystem. The boundary control
@@ -158,6 +160,17 @@ pub struct Config {
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
     pub operator_contact: Option<String>,
+    /// `true` when `DATABASE_URL_INGESTION` was unset/blank and
+    /// `ingestion_database_url` was defaulted to `database_url` by Gate 2
+    /// — i.e. the ingestion pipeline runs under the application role
+    /// (`reverie_app`) instead of the scoped `reverie_ingestion` role.
+    /// Not env-sourced; set by [`Config::from_figment`] and surfaced as a
+    /// startup `tracing::warn!` in [`crate::run`] (tracing is not yet live
+    /// when the fallback fires), so the role-separation collapse is
+    /// auditable rather than silent.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub ingestion_dsn_defaulted: bool,
 }
 
 /// Post-ingestion cleanup behaviour selector for the watcher's
@@ -165,6 +178,11 @@ pub struct Config {
 ///
 /// Wire format (JSON, DB `text` column): lowercase string —
 /// `"all"` | `"ingested"` | `"none"`.
+///
+/// Deliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it
+/// exhaustively, so adding a variant is a compile error at the match site
+/// rather than a silent fall-through — the same property the `Command` enum
+/// relies on.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
 )]
@@ -198,6 +216,11 @@ impl std::fmt::Display for CleanupMode {
 /// Configuration-load failure mode. Surfaces missing required vars and
 /// parse/validation failures with the offending var name attached so
 /// operator error messages are actionable.
+///
+/// Deliberately NOT `#[non_exhaustive]`: `reverie_api` is a single-crate
+/// application with no downstream consumers, and the call sites match the
+/// variants exhaustively, so a new variant surfaces as a compile error rather
+/// than being silently absorbed.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A required environment variable was unset. Carries the variable
@@ -286,9 +309,13 @@ impl Config {
             cfg.migration_database_url = None;
         }
 
-        // Gate 2 — ingestion DSN falls back to the app DSN when blank.
+        // Gate 2 — ingestion DSN falls back to the app DSN when blank. Record
+        // the fallback so `run()` can warn once tracing is live: this collapses
+        // the reverie_ingestion/reverie_app role separation and must be
+        // auditable, not silent.
         if cfg.ingestion_database_url.trim().is_empty() {
             cfg.ingestion_database_url = cfg.database_url.clone();
+            cfg.ingestion_dsn_defaulted = true;
         }
 
         // Gate 3 — required fields blank => MissingVar (NOT Invalid).
@@ -334,7 +361,8 @@ where
     D: serde::Deserializer<'de>,
 {
     let raw = <String as serde::Deserialize>::deserialize(de)?;
-    raw.split(',')
+    let formats: Vec<ManifestationFormat> = raw
+        .split(',')
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty())
         .map(|s| {
@@ -344,7 +372,17 @@ where
                 ))
             })
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    // A non-empty raw value that yields zero formats (e.g. `","` or `" , "`)
+    // is rejected rather than silently producing an empty priority list — an
+    // empty list makes the ingestion pipeline skip every candidate file with
+    // no operator-visible cause.
+    if formats.is_empty() {
+        return Err(serde::de::Error::custom(
+            "must list at least one format. Supported: epub, pdf, mobi, azw3, cbz, cbr",
+        ));
+    }
+    Ok(formats)
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +396,15 @@ where
 /// which fails to deserialize into the `String` field with an `invalid type:
 /// found bool true` message — figment echoes the value. The scrub replaces
 /// that reason with a value-free one for any secret-bearing key path.
+///
+/// The DSN fields embed credentials in their `user:password@host` form, so
+/// they are included defensively: a `String`-typed DSN does not currently
+/// reach a value-echoing coercion error (strings coerce trivially), but a
+/// future type change (e.g. a `url::Url` DSN field) would reopen that path.
 const SECRET_FIELDS: &[&str] = &[
+    "database_url",
+    "migration_database_url",
+    "ingestion_database_url",
     "oidc_client_secret",
     "googlebooks_api_key",
     "hardcover_api_token",
@@ -515,6 +561,7 @@ impl Default for Config {
             hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
             hardcover_api_token: None,
             operator_contact: None,
+            ingestion_dsn_defaulted: false,
         }
     }
 }
@@ -1187,5 +1234,100 @@ mod tests {
         let vars = with_overrides(&[("REVERIE_WRITEBACK_CONCURRENCY", "0")]);
         let err = cfg_from_owned(&vars).unwrap_err();
         assert!(err.to_string().contains("REVERIE_WRITEBACK_CONCURRENCY"));
+    }
+
+    #[test]
+    fn format_priority_comma_only_is_rejected() {
+        // A non-empty value that splits to zero formats must error, not boot
+        // with an empty priority list that silently skips every file.
+        let vars = with_overrides(&[("REVERIE_FORMAT_PRIORITY", ",")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(err.to_string().contains("REVERIE_FORMAT_PRIORITY"), "{err}");
+        assert!(err.to_string().contains("at least one format"), "{err}");
+    }
+
+    #[test]
+    fn db_max_connections_round_trips_as_flat_field() {
+        // GOTCHA-SPLIT end-to-end: the flat snake_case var deserializes onto
+        // the top-level u32 field (not a `db.max.connections` sub-dict).
+        let vars = with_overrides(&[("REVERIE_DB_MAX_CONNECTIONS", "20")]);
+        let cfg = cfg_from_owned(&vars).unwrap();
+        assert_eq!(cfg.db_max_connections, 20);
+    }
+
+    #[test]
+    fn db_max_connections_zero_is_rejected() {
+        let vars = with_overrides(&[("REVERIE_DB_MAX_CONNECTIONS", "0")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            err.to_string().contains("REVERIE_DB_MAX_CONNECTIONS"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn enrichment_max_attempts_zero_is_rejected() {
+        let vars = with_overrides(&[("REVERIE_ENRICHMENT_MAX_ATTEMPTS", "0")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            err.to_string().contains("REVERIE_ENRICHMENT_MAX_ATTEMPTS"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn writeback_max_attempts_zero_is_rejected() {
+        let vars = with_overrides(&[("REVERIE_WRITEBACK_MAX_ATTEMPTS", "0")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            err.to_string().contains("REVERIE_WRITEBACK_MAX_ATTEMPTS"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn ingestion_dsn_blank_flags_defaulted_fallback() {
+        // BASE_VARS omits DATABASE_URL_INGESTION → Gate 2 falls back to the app
+        // DSN and flags it so `run()` can warn about the role-separation collapse.
+        let cfg = cfg_from(BASE_VARS).unwrap();
+        assert!(cfg.ingestion_dsn_defaulted);
+        assert_eq!(cfg.ingestion_database_url, cfg.database_url);
+    }
+
+    #[test]
+    fn ingestion_dsn_explicit_clears_defaulted_flag() {
+        let vars = with_overrides(&[(
+            "DATABASE_URL_INGESTION",
+            "postgres://reverie_ingestion@localhost/reverie_dev",
+        )]);
+        let cfg = cfg_from_owned(&vars).unwrap();
+        assert!(!cfg.ingestion_dsn_defaulted);
+        assert_eq!(
+            cfg.ingestion_database_url,
+            "postgres://reverie_ingestion@localhost/reverie_dev"
+        );
+    }
+
+    #[test]
+    fn security_parse_bool_rejects_numeric_and_capitalized_truthy() {
+        // Only lowercase `true`/`false` are booleans; legacy-truthy spellings
+        // parse to Num (`1`) or Str (`True`/`YES`/`on`) and a `bool` field
+        // rejects them. `1` exercises a different parse branch than `yes`.
+        for bad in ["1", "True", "YES", "on"] {
+            let err = security_from(&[("REVERIE_BEHIND_HTTPS", bad)]).unwrap_err();
+            assert!(
+                err.to_string().contains("REVERIE_BEHIND_HTTPS"),
+                "expected '{bad}' rejected: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn security_hsts_https_only_emits_max_age_only() {
+        // behind_https without subdomains/preload is a valid production config:
+        // a bare max-age with no suffixes.
+        let cfg = security_from(&[("REVERIE_BEHIND_HTTPS", "true")]).unwrap();
+        let v = cfg.hsts_header_value().unwrap();
+        assert_eq!(v.to_str().unwrap(), "max-age=31536000");
     }
 }

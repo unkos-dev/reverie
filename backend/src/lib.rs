@@ -273,6 +273,14 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
+    if config.ingestion_dsn_defaulted {
+        tracing::warn!(
+            "DATABASE_URL_INGESTION unset — the ingestion pipeline will run as the application \
+             role (DATABASE_URL) instead of the scoped reverie_ingestion role. Role separation is \
+             inactive. Set DATABASE_URL_INGESTION=<reverie_ingestion DSN> to enforce it."
+        );
+    }
+
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
