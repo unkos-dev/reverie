@@ -317,9 +317,17 @@ jobs:
           IMAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
+          # Unmatched globs (empty sbom-out) must fail the glob itself, not
+          # hand a literal `*.spdx.json` path to jq's opaque ENOENT.
+          shopt -s failglob
           mkdir -p sbom-out
           docker buildx imagetools inspect "${IMAGE_REF}:${IMAGE_VERSION}" \
             --format '{{ json .SBOM }}' > sbom-raw.json
+          # An image published without an SBOM attestation inspects to JSON
+          # `null` — fail with a legible diagnostic instead of letting the
+          # shape-dispatch below trip over it.
+          jq -e '. != null' sbom-raw.json > /dev/null \
+            || { echo "::error::${IMAGE_REF}:${IMAGE_VERSION} carries no SBOM attestation"; exit 1; }
           # Single-platform inspect yields {"SPDX": …}; a multi-platform
           # index yields a platform-keyed map {"linux/amd64": {"SPDX": …}, …}.
           # Handle both so the job works for the single-arch staging shape
