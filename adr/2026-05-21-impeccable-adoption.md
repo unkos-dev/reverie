@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-05-21
+supersedes: []
 decision-makers: "John Unkovich"
 consulted: "—"
 informed: "Reverie contributors"
