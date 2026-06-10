@@ -204,3 +204,73 @@ fn spec_covers_library_routes() {
         "GET /api/v1/books 200 must document the Link pagination header"
     );
 }
+
+#[test]
+fn spec_covers_series_dashboard_routes() {
+    let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
+    let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+
+    // The three series + dashboard data routes are documented.
+    let paths = doc["paths"].as_object().expect("paths object");
+    for path in [
+        "/api/v1/series/{id}",
+        "/api/v1/dashboard/stats",
+        "/api/v1/dashboard/activity",
+    ] {
+        assert!(paths.contains_key(path), "{path} documented");
+    }
+
+    // All three are authed routes: they inherit the document-level session_cookie
+    // default and must NOT carry an operation-level `security` key (inherit-by-
+    // omission, the deny-by-default contract; only public ops opt out). The admin
+    // gate on dashboard is an authorization layer documented as a 403 below — not a
+    // separate security scheme.
+    for path in [
+        "/api/v1/series/{id}",
+        "/api/v1/dashboard/stats",
+        "/api/v1/dashboard/activity",
+    ] {
+        assert!(
+            doc["paths"][path]["get"].get("security").is_none(),
+            "GET {path} must inherit the global security default (no op-level security)"
+        );
+    }
+
+    // Response DTO schemas are registered as components (auto-collected via routes!),
+    // including the nested-only StatusCount/MetadataCoverage — proving routes! walked
+    // the transitive DTO graph, not just the top-level response bodies.
+    let schemas = &doc["components"]["schemas"];
+    for schema in [
+        "SeriesDetail",
+        "SeriesWork",
+        "StatsResponse",
+        "FormatBucket",
+        "StatusCount",
+        "MetadataCoverage",
+        "ActivityResponse",
+        "BatchRow",
+    ] {
+        assert!(
+            schemas.get(schema).is_some(),
+            "{schema} schema component present"
+        );
+    }
+
+    // series/{id} documents its 404 (missing / no-visible-manifestation, existence-
+    // not-leaked) against ProblemDetails.
+    assert!(
+        doc["paths"]["/api/v1/series/{id}"]["get"]["responses"]
+            .get("404")
+            .is_some(),
+        "GET /api/v1/series/{{id}} documents a 404 response"
+    );
+
+    // Both dashboard ops document a 403 — the admin gate's only contract signal
+    // (this cluster's novel assertion vs the library cluster's 404-only).
+    for path in ["/api/v1/dashboard/stats", "/api/v1/dashboard/activity"] {
+        assert!(
+            doc["paths"][path]["get"]["responses"].get("403").is_some(),
+            "GET {path} documents a 403 response (admin gate)"
+        );
+    }
+}

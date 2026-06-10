@@ -180,6 +180,102 @@
         }
       }
     },
+    "/api/v1/dashboard/activity": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "`GET /api/v1/dashboard/activity?limit=N` — most-recent ingestion batches,\nnewest first (admin only).",
+        "description": "Groups `ingestion_jobs` by `batch_id` into per-batch outcome counts.\n`acquire_with_rls` is used for pattern consistency but is not load-bearing\nhere — `ingestion_jobs` has no RLS.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "activity",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max recent batches to return; clamped to 1..=100, default 20.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Most-recent ingestion batches, newest first. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/stats": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "`GET /api/v1/dashboard/stats` — library-wide aggregate health metrics\n(admin only).",
+        "description": "Computes the manifestation-side metrics in a single conditional-aggregate\nscan joined to `works` (query A), plus one per-format `GROUP BY` (query\nB). Validation/enrichment breakdowns are reassembled in Rust from the\nfixed `FILTER` columns so the closed enum sets render deterministically.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "stats",
+        "responses": {
+          "200": {
+            "description": "Library-wide aggregate health metrics. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/search": {
       "get": {
         "tags": [
@@ -222,6 +318,60 @@
           },
           "422": {
             "description": "Empty, missing, or over-length query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/series/{id}": {
+      "get": {
+        "tags": [
+          "series"
+        ],
+        "summary": "`GET /api/v1/series/{id}` — series + ordered works with visible\nmanifestations per work.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing or every\n  work in the series has zero visible manifestations under the\n  caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "detail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Series id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Series identity + ordered works with visible manifestations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Series not found, or no work has a visible manifestation (existence-not-leaked)",
             "content": {
               "application/json": {
                 "schema": {
@@ -341,6 +491,71 @@
   },
   "components": {
     "schemas": {
+      "ActivityResponse": {
+        "type": "object",
+        "description": "Response shape for `GET /api/v1/dashboard/activity`.",
+        "required": [
+          "batches"
+        ],
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchRow"
+            }
+          }
+        }
+      },
+      "BatchRow": {
+        "type": "object",
+        "description": "One recent ingestion batch. Invariant:\n`completed + failed + skipped + in_progress == total`. `ended_at` is null\nwhile the batch is still in flight (any `queued`/`running` job).",
+        "required": [
+          "batch_id",
+          "started_at",
+          "total",
+          "completed",
+          "failed",
+          "skipped",
+          "in_progress"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "completed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "in_progress": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "BookDetail": {
         "type": "object",
         "description": "`/api/v1/books/{id}` response. Carries the [`BookListRow`] fields\nplus the work-level prose and metadata-version summary surfaced\nin the book-detail UI.",
@@ -583,6 +798,28 @@
           "skipped"
         ]
       },
+      "FormatBucket": {
+        "type": "object",
+        "description": "One per-format storage bucket (`GROUP BY format`).",
+        "required": [
+          "format",
+          "count",
+          "bytes"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "format": {
+            "type": "string"
+          }
+        }
+      },
       "IngestionStatus": {
         "type": "string",
         "description": "Lifecycle state of a single manifestation's ingestion pipeline run.\n\nWire-format invariant: variants serialise to the lowercase forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes; unknown DB\nvariants fail decode loudly instead of coercing into a string.",
@@ -593,6 +830,39 @@
           "failed",
           "skipped"
         ]
+      },
+      "MetadataCoverage": {
+        "type": "object",
+        "description": "Metadata-coverage numerators (denominator is `total`). The frontend\nderives percentages so the wire stays integer-only.",
+        "required": [
+          "total",
+          "has_description",
+          "has_language",
+          "has_isbn_13",
+          "has_cover"
+        ],
+        "properties": {
+          "has_cover": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "has_description": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "has_isbn_13": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "has_language": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "MetadataVersionRow": {
         "type": "object",
@@ -782,6 +1052,38 @@
           }
         }
       },
+      "SeriesDetail": {
+        "type": "object",
+        "description": "`/api/v1/series/{id}` response. Carries the series identity plus an\nordered list of works; each work surfaces only the manifestations\nthe caller can see, so the frontend can render a completeness\nindicator (`own = works with len(manifestations) > 0`, `total =\nworks.len()`).",
+        "required": [
+          "id",
+          "name",
+          "sort_name",
+          "works"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`series.id`."
+          },
+          "name": {
+            "type": "string",
+            "description": "`series.name` (display)."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "`series.sort_name` (collation key — surfaced so the UI can\nalpha-sort a list of series without a follow-up request)."
+          },
+          "works": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeriesWork"
+            },
+            "description": "Works in the series, ordered by `series_works.position` (NULLS\nLAST) then `works.id` for tiebreaking determinism."
+          }
+        }
+      },
       "SeriesRef": {
         "type": "object",
         "description": "Series membership for a manifestation. Embedded into both\n[`BookListRow`] and [`BookDetail`]; `None` when the work isn't on\nany series.",
@@ -809,6 +1111,49 @@
           }
         }
       },
+      "SeriesWork": {
+        "type": "object",
+        "description": "One work within a series. Includes every manifestation of the work\nthe caller can see; an empty `manifestations` list means the user\ndoes not yet own a copy (\"gap\" in the series).",
+        "required": [
+          "id",
+          "title",
+          "authors",
+          "manifestations"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author display names ordered by `work_authors.position`."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`works.id`."
+          },
+          "manifestations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkManifestation"
+            },
+            "description": "Manifestations of this work visible to the caller. Empty when\nthe user owns no copy."
+          },
+          "position": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`series_works.position`; `None` when the membership row has a\nnull position."
+          },
+          "title": {
+            "type": "string",
+            "description": "`works.title`."
+          }
+        }
+      },
       "SortMode": {
         "type": "string",
         "description": "Sort axis selectable via `?sort=...` on `/api/v1/books`.",
@@ -817,6 +1162,82 @@
           "title",
           "author"
         ]
+      },
+      "StatsResponse": {
+        "type": "object",
+        "description": "Response shape for `GET /api/v1/dashboard/stats`.",
+        "required": [
+          "total_manifestations",
+          "total_works",
+          "storage_total_bytes",
+          "storage_cover_bytes",
+          "storage_by_format",
+          "validation_breakdown",
+          "clean_non_epub_count",
+          "enrichment_breakdown",
+          "metadata_coverage"
+        ],
+        "properties": {
+          "clean_non_epub_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of `clean` rows that are non-EPUB formats. UNK-313: non-EPUB\nfiles carry `validation_status='clean'` despite never being\nstructurally validated — surfaced so the UI can footnote the bucket."
+          },
+          "enrichment_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusCount"
+            }
+          },
+          "metadata_coverage": {
+            "$ref": "#/components/schemas/MetadataCoverage"
+          },
+          "storage_by_format": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormatBucket"
+            }
+          },
+          "storage_cover_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "storage_total_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_manifestations": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_works": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "validation_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusCount"
+            }
+          }
+        }
+      },
+      "StatusCount": {
+        "type": "object",
+        "description": "One `{ status, count }` bucket in a breakdown array. `status` is the\ncanonical wire label of a [`ValidationStatus`] / [`EnrichmentStatus`]\nvariant, so the closed enum set is reflected on the wire even for zero\ncounts.",
+        "required": [
+          "status",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
       },
       "ValidationStatus": {
         "type": "string",
@@ -970,6 +1391,14 @@
     {
       "name": "library",
       "description": "Books, works, and full-text search."
+    },
+    {
+      "name": "series",
+      "description": "Series and their ordered works."
+    },
+    {
+      "name": "dashboard",
+      "description": "Admin-only library-health aggregates."
     }
   ]
 }

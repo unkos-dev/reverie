@@ -24,7 +24,7 @@ use crate::models::library::WorkManifestation;
 /// the caller can see, so the frontend can render a completeness
 /// indicator (`own = works with len(manifestations) > 0`, `total =
 /// works.len()`).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SeriesDetail {
     /// `series.id`.
@@ -42,7 +42,7 @@ pub struct SeriesDetail {
 /// One work within a series. Includes every manifestation of the work
 /// the caller can see; an empty `manifestations` list means the user
 /// does not yet own a copy ("gap" in the series).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SeriesWork {
     /// `works.id`.
