@@ -1,7 +1,10 @@
 ---
 status: accepted
 date: 2026-05-04
-decision-makers: john
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Greptile AI code review: 4-week trial

@@ -1,7 +1,10 @@
 ---
 status: accepted
 date: 2026-05-22
-decision-makers: john
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Frontend data-layer dependencies for Step 11
@@ -238,57 +241,6 @@ self-hosted OSS UI; we adopt it once and reuse it forever.
 ### TanStack Table v9 / future major
 
 v8 is the current stable. v9 is not released. No reason to wait.
-
-## Implementation Plan
-
-**Sub-phase 11a Task 9** — install react-query + devtools.
-
-- `npm --prefix frontend install @tanstack/react-query@^5`
-- `npm --prefix frontend install --save-dev @tanstack/react-query-devtools@^5`
-- Per
-  [`feedback_reverie_frontend_is_npm`](../.claude/projects/-home-coder-reverie/memory/feedback_reverie_frontend_is_npm.md)
-  this is `npm` only — never `pnpm` / `yarn` / `bun`.
-
-**Sub-phase 11a Task 12** — wire `QueryClient` singleton + dev-only
-devtools mount per the
-[`REACT_QUERY_SETUP`](../.claude/PRPs/plans/library-ui.plan.md)
-pattern in the plan.
-
-**Sub-phase 11b** — decide on react-table; if `LibraryPage` in
-11a shipped a working list view, defer landing the package.
-Otherwise:
-`npm --prefix frontend install @tanstack/react-table@^8`. First
-consumer is `src/pages/library/BookList.tsx`.
-
-**Sub-phase 11d** —
-`npm --prefix frontend install @dnd-kit/sortable@^8`. First
-consumer is the shelf-item reorder component (TBD path; the 11d
-plan carves it).
-
-## Verification
-
-- [ ] ADR status → `accepted`; entry added to `adr/README.md`.
-- [ ] `@tanstack/react-query@^5` pinned in
-      `frontend/package.json` `dependencies`.
-- [ ] `@tanstack/react-query-devtools@^5` pinned in
-      `frontend/package.json` `devDependencies`.
-- [ ] `frontend/src/lib/query/client.ts` exports a
-      `queryClient` singleton plus `setUnauthenticatedHandler`.
-- [ ] `frontend/src/main.tsx` wraps the router in
-      `<QueryClientProvider client={queryClient}>` and gates a
-      `import.meta.env.DEV` dynamic import of the devtools
-      `ReactQueryDevtools` component.
-- [ ] On 11b adoption gate: `@tanstack/react-table@^8` lands
-      with a Tier 1 JSDoc on the first consumer's table options
-      object spelling out `manualPagination: true`.
-- [ ] On 11d adoption: `@dnd-kit/sortable@^8` lands with
-      keyboard operability tested end-to-end (project memory
-      `feedback_use_browser_for_design_critique` — use
-      agent-browser to keyboard-drive the reorder).
-- [ ] `npm audit` passes for each addition (project memory
-      `feedback_audit_ignores`: never use `--ignore` lightly).
-- [ ] No `pnpm-lock.yaml` / `yarn.lock` / `bun.lockb` produced;
-      `frontend/package-lock.json` is the only lockfile.
 
 ## More Information
 

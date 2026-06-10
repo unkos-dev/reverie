@@ -2,9 +2,9 @@
 status: "accepted"
 date: 2026-06-02
 supersedes: ["superseded/2026-05-26-auto-migration-on-startup.md"]
-decision-makers: junkovich
-consulted: []
-informed: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Database migration model: hybrid entrypoints, least-privilege role, all-or-nothing batch

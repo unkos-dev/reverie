@@ -1,7 +1,10 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-18
-decision-makers: john
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Outbound HTTP clients in Reverie must send an explicit `User-Agent`
@@ -137,12 +140,6 @@ without requiring them to find this ADR first.
 
 - Bumping the crate version automatically rolls the UA. No
   separate version pin to maintain.
-
-## Pros and Cons of the Options (deferred)
-
-See "Considered Options" above. Option A wins on cost/benefit at
-the current scale; Option B / Option C remain viable escalation
-paths if Option A proves insufficient under code review.
 
 ## Validation
 

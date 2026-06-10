@@ -1,10 +1,17 @@
 ---
 status: accepted
 date: 2026-05-22
-decision-makers: john
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # JSON API conventions for Reverie's browser-facing REST surface
+
+> **Path prefix note:** [`2026-06-08-api-versioning-openapi.md`](2026-06-08-api-versioning-openapi.md)
+> renames the `/api/` prefix to `/api/v1/` for all endpoints in this document.
+> All paths below should be read as `/api/v1/<path>` (e.g. `/api/books` → `/api/v1/books`).
 
 ## Context and Problem Statement
 
@@ -416,80 +423,6 @@ because nothing today depends on the URI resolving. When the OSS
 release lands a canonical project URL, a single sed pass through
 `error/problems.rs` swaps the prefix; the URIs are stable in
 their slugs.
-
-## Implementation Plan
-
-This ADR's conventions land across multiple sub-phases of Step 11.
-
-**Sub-phase 11a (foundations PR)** — this ADR's
-contract-cutting decisions land here:
-
-- Task 1b: rewrite `backend/src/error.rs::IntoResponse` to emit
-  RFC 7807 `application/problem+json`. Add `CsrfMissing`,
-  `CsrfMismatch`, `IfMatchRequired`, `IfMatchMismatch` variants.
-  Create `backend/src/error/problems.rs` (problem-type URI
-  registry) and `backend/src/error/instance.rs` (request-path
-  capture middleware + task-local). Update every existing test
-  asserting `body["error"]` via a new `test_support::assert_problem`
-  helper.
-- Task 1c (Phase 1, this PR scope): generate the CSRF token in
-  `routes/auth.rs::callback`; add `csrf_token` field to
-  `/auth/me`; ship the frontend `src/api/csrf.ts` reader hooked
-  into `apiFetch` for `X-CSRF-Token` injection.
-- Task 1c (Phase 2, next 11a sub-PR): mount `csrf_required`
-  tower middleware on `/api/*` non-safe verbs. The middleware
-  ships once token issuance + frontend reader have shipped
-  separately, so existing cookie-authed mutating endpoints never
-  see a 428 they didn't expect.
-
-**Sub-phase 11a (endpoints PR)** — first cursor pagination
-(RFC 8288 Link + `next_cursor` body), first 404-on-RLS-hidden
-case (`GET /api/books/{id}`), first existence-not-leaked work
-gate (`GET /api/works/{id}` Task 7).
-
-**Sub-phase 11b** — `?tag=a&tag=b` multi-value filters land via
-`axum_extra::extract::Query` (the standard library `axum::Query`
-cannot decode repeated keys). No new convention.
-
-**Sub-phase 11c** — first `PATCH` endpoint emits RFC 7396 JSON
-Merge Patch via `serde_with::rust::double_option`. This ADR's
-mutating-verb convention is reused.
-
-**Sub-phase 11d** — first `If-Match` precondition (shelf reorder).
-This ADR's precondition convention is reused.
-
-## Verification
-
-- [ ] ADR status → `accepted`; entry added to `adr/README.md`.
-- [ ] `backend/src/error/problems.rs` exists with one `const` URI
-      per `AppError` variant.
-- [ ] `backend/src/error/instance.rs` exists with the
-      `problem_instance_layer` middleware and a `current_request_uri()`
-      task-local reader.
-- [ ] `backend/src/error.rs::IntoResponse` emits
-      `application/problem+json` with `type`/`title`/`status`/
-      `detail`/`instance` fields.
-- [ ] `rg '"error":' backend/src` matches only the migration-grep
-      command line itself, no handler bodies.
-- [ ] `test_support::assert_problem(response, type_slug, status)`
-      helper exists and is used in every test that previously
-      asserted `body["error"]`.
-- [ ] `/auth/me` response includes `csrf_token: String`.
-- [ ] `backend/src/security/csrf.rs` exists with the
-      `csrf_required` middleware and is wired into
-      `build_router_with_session_store` on `/api/*` for non-safe
-      verbs (lands in the second 11a sub-PR per the order-of-
-      operations note above).
-- [ ] `frontend/src/api/csrf.ts` reads `csrf_token` from
-      `/auth/me`; `frontend/src/api/fetch.ts` injects
-      `X-CSRF-Token` on mutating verbs and retries once on a
-      `csrf-mismatch` 403.
-- [ ] `frontend/src/api/errors.ts` defines `ApiError` with
-      `status`/`type`/`title`/`detail` fields + `problemSlug`
-      getter.
-- [ ] First paginated response (`GET /api/books`) carries an RFC
-      8288 `Link: <...>; rel="next"` header and a `next_cursor`
-      body field.
 
 ## More Information
 

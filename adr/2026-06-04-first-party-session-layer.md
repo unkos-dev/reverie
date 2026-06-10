@@ -2,7 +2,9 @@
 status: accepted
 date: 2026-06-04
 supersedes: ["superseded/2026-05-08-tower-sessions-sqlx-store.md"]
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # First-party session layer on tower-sessions core; drop axum-login and tower-sessions-sqlx-store

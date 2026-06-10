@@ -24,6 +24,12 @@ sections.
 
 Front matter: `status`, `date`, `supersedes` (paths replaced; `[]` if none), `decision-makers`, `consulted`, `informed`. A superseded ADR also carries `superseded-by` and moves to `superseded/`.
 
+Canonical field values:
+
+- `decision-makers: "John Unkovich"` — always quoted full name, no variations (`john`, `junkovich`)
+- `consulted: "—"` — em dash, not empty array `[]`
+- `informed: "Reverie contributors"` — or a named list when relevant
+
 1. `## Context and Problem Statement`
 2. `## Decision Drivers` (optional)
 3. `## Considered Options`
@@ -32,3 +38,6 @@ Front matter: `status`, `date`, `supersedes` (paths replaced; `[]` if none), `de
 6. `## More Information` (optional)
 
 Statuses: `proposed`, `accepted`, `rejected`, `deprecated`, `superseded`.
+
+**Status lifecycle:** an ADR shipping with its implementation PR flips `proposed → accepted`
+in that same PR; the README index entry updates in lockstep.

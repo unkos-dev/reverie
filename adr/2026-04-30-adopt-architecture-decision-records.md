@@ -1,7 +1,10 @@
 ---
 status: accepted
 date: 2026-04-30
-decision-makers:
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Adopt architecture decision records

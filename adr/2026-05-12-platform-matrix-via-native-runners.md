@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-12
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 supersedes:
   - "superseded/2026-05-12-decouple-staging-image-from-semver-releases.md"
 ---
@@ -190,43 +192,6 @@ Open a superseding ADR if any of the following happen:
   the manifest list. If a future buildx version changes that
   behaviour, signing-flow plans break and the merge step needs
   alternative handling (e.g. explicit `cosign sign` on the manifest).
-
-## Implementation Plan
-
-- **Affected paths**: `.github/workflows/docker-publish.yml` only;
-  Dockerfile and app code unchanged. ADR work: this file plus a
-  `status: superseded` flip and `superseded-by:` cross-reference on
-  the predecessor, plus a one-line update in `adr/README.md`.
-- **No new dependencies**. `docker/build-push-action@v7`,
-  `docker/metadata-action@v6`, `docker/login-action@v4`,
-  `docker/setup-buildx-action@v3`, `actions/upload-artifact@v4`, and
-  `actions/download-artifact@v4` are all already used in this
-  repository or are the canonical companions of actions already used.
-  `docker/setup-qemu-action` is removed.
-- **Verification** (lifted from `UNK-244` acceptance criteria):
-  - [ ] Tag-push (`v*`) produces a multi-arch manifest list
-        (`linux/amd64`, `linux/arm64`) where each per-arch image was
-        built on a native runner (not via QEMU).
-  - [ ] Main-push produces a single-platform manifest (`linux/arm64`
-        only) where the arm64 image was built on `ubuntu-24.04-arm`.
-  - [ ] Main-push wall-clock runtime drops materially vs current state
-        (target: well under 30 min for the arm64 leg; baseline run
-        [25731891335](https://github.com/unkos-dev/reverie/actions/runs/25731891335)).
-  - [ ] Tag-push wall-clock ≈ `max(amd64-native, arm64-native)`, down
-        from `amd64 + arm64-via-QEMU`.
-  - [ ] `docker pull && docker run` on `oci-compute-1` continues to
-        succeed without `--platform`.
-  - [ ] Attestation/provenance present on the final manifest list
-        (verify via `docker buildx imagetools inspect --raw`).
-  - [ ] OCI labels (`org.opencontainers.image.revision`,
-        `org.opencontainers.image.created`,
-        `org.opencontainers.image.version`) present on per-arch
-        image configs; verify via `docker buildx imagetools inspect
---raw <ref>` and inspect each entry under `manifests[]`.
-  - [ ] `concurrency` cancel-in-progress + `sha-` prefix gating
-        behaviour preserved.
-  - [ ] No `docker/setup-qemu-action` reference remains in the
-        workflow.
 
 ## More Information
 

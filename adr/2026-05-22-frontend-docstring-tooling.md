@@ -1,7 +1,10 @@
 ---
 status: accepted
 date: 2026-05-22
-decision-makers: john
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Frontend docstring linting via `eslint-plugin-jsdoc`
@@ -217,117 +220,6 @@ Rejected — no ratchet means no monotonic guarantee. The
 OSS-audience case in the parent ADR rests on the ratchet:
 documentation is a property the codebase preserves under change,
 not a property reviewers happen to catch on the day.
-
-## Implementation Plan
-
-**Stage A — this ADR.** After review, status flips to `accepted`;
-indexed in `adr/README.md`.
-
-**Stage B — plugin install + flat-config registration.**
-
-- **Affected paths**: `frontend/package.json`,
-  `frontend/package-lock.json`, `frontend/eslint.config.js`.
-- **Pattern**: mirror the existing `reactHooks` /
-  `reactX` registration block in `frontend/eslint.config.js`.
-  Add an `eslint-plugin-jsdoc` block scoped to in-scope files,
-  with the two carve-out overrides for `components/ui/**` and
-  test files.
-- **Rule level**: `warn` for both rules.
-- **Validation**:
-
-  ```bash
-  cd frontend
-  npm run lint            # exit 0; warnings allowed
-  npm run build           # tsc -b && vite build
-  npm test                # vitest run
-  ```
-
-- **Census**: capture `npm run lint` output to PR body. Tally
-  warnings per in-scope directory. The census drives Stage C
-  grouping subdivisions if any one directory's warning count
-  materially exceeds the file-count estimate.
-- **PR**: `chore(frontend): install eslint-plugin-jsdoc + flat-config
-wiring (UNK-236)`.
-
-**Stage C — per-grouping authoring, rule level stays at warn.**
-
-- **Affected paths**: the 18 in-scope files documented in
-  `.claude/PRPs/plans/unk-236-frontend-jsdoc.plan.md`.
-- **Pattern**: Tier 1 `/** */` block above every public export
-  carrying purpose + invariants + non-obvious WHY. Tier 2
-  surfaces (`vite-plugins/csp-hash.ts`,
-  `vite-plugins/allowed-hosts.ts`, `src/fouc/fouc.js`) add a
-  one-line threat statement near the top of the JSDoc block,
-  inline `// THREAT:` annotations at non-obvious mitigations, and
-  a relative-path cross-reference to this ADR plus
-  `adr/2026-05-08-tiered-comment-policy.md`.
-- **Anti-patterns** (REFUSE): `/** Returns the value */` signature
-  restatement, `@param x - the x parameter` boilerplate, clipping
-  or replacing pre-existing leading `//` comments (the new `/** */`
-  block goes above any existing comment block, never replaces it
-  — PR #178's `hmr-config.ts` clipped-comment incident is the
-  canonical negative).
-- **Grouping** (one PR per row):
-  1. `vite-plugins/**` + `src/fouc/fouc.js` (4 files; T2 + T1).
-  2. `src/lib/**` (4 files; T1).
-  3. `src/components/**` excl. UI (2 files; T1).
-  4. `src/pages/design/**` (5 files; T1).
-  5. `src/routes/` + `src/App.tsx` + `src/main.tsx` (3 files; T1).
-- **Validation per PR**:
-
-  ```bash
-  cd frontend
-  npm run lint            # exit 0; warnings in scope acceptable until flip
-  npm run build
-  npm test
-  ```
-
-**Stage D — ratchet flip + CI enforcement.**
-
-- **Affected paths**: `frontend/eslint.config.js`.
-- **Change**: flip `jsdoc/require-jsdoc` and
-  `jsdoc/require-description` from `warn` to `error` in the
-  in-scope block. Carve-out overrides remain.
-- **CI**: `npm run lint` invocation in CI gets `-- --max-warnings 0`
-  appended (i.e. `npm run lint -- --max-warnings 0` — the `--`
-  separator is required so npm forwards the flag to ESLint instead
-  of treating it as an npm config flag), or the `lint` script in
-  `frontend/package.json` is updated to embed `--max-warnings 0`
-  directly.
-- **Validation**:
-
-  ```bash
-  cd frontend
-  npx eslint . --max-warnings 0
-  npm run build
-  npm test
-  ```
-
-- **PR**: `feat(frontend): graduate JSDoc lint to error
-(UNK-236)`. Body confirms zero warnings + zero errors on all
-  in-scope paths.
-
-## Verification
-
-- [ ] ADR status → `accepted`; entry added to `adr/README.md`.
-- [ ] `eslint-plugin-jsdoc` pinned in `frontend/package.json`
-      under `devDependencies`.
-- [ ] `frontend/eslint.config.js` registers the plugin via flat
-      config, scoped to `frontend/src/**/*.{ts,tsx,js}` +
-      `frontend/vite-plugins/**/*.ts`.
-- [ ] Carve-out overrides disable both rules on
-      `frontend/src/components/ui/**` and all test paths.
-- [ ] Rules at `warn` during Stage B and Stage C; at `error`
-      after Stage D.
-- [ ] CI runs `npm run lint -- --max-warnings 0` (or
-      `npx eslint . --max-warnings 0`) after Stage D — the `--`
-      separator is required for the flag to reach ESLint.
-- [ ] At Stage D acceptance, all 18 in-scope files carry Tier 1
-      (or Tier 1+2) JSDoc; `npx eslint . --max-warnings 0` exits
-      0 on the frontend tree.
-- [ ] No `// removed`, no clipped existing comments — pre-existing
-      leading comments preserved verbatim on every in-scope file
-      (manual diff audit per Stage C PR).
 
 ## More Information
 

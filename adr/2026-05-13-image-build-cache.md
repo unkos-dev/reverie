@@ -1,7 +1,10 @@
 ---
 status: accepted
 date: 2026-05-13
-decision-makers: john
+supersedes: []
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # GHA build cache + cargo-chef Dockerfile layering for Docker publish
@@ -204,53 +207,6 @@ Open a superseding or amending ADR if any of the following happen:
 - **Image signing / SLSA attestation changes pipeline shape.** If
   signing introduces steps that change which layers benefit from cache
   reuse, revisit cooker layer composition.
-
-## Implementation Plan
-
-- **Affected paths**:
-  - `Dockerfile` — refactored to cargo-chef chef/planner/cooker/
-    backend-builder split, frontend npm cache mount added; runtime
-    stage unchanged
-  - `.github/workflows/docker-publish.yml` — `cache-from` /
-    `cache-to` inputs added to `docker/build-push-action@v7` step,
-    two Tier 1 obs steps appended post-build, `workflow_dispatch`
-    trigger added to `on:`
-  - `.claude/PRPs/plans/image-build-cache.plan.md` — implementation
-    plan committed alongside the change per project convention
-- **No new dependencies in the deployed runtime image.** The only
-  new piece is `cargo-chef@0.1.77` installed in the `chef` build
-  stage; it never ships in the runtime image.
-- **Verification** (lifted from the implementation PR's empirical
-  results):
-  - [x] Cold build on feature branch is green
-        ([run 25771083286](https://github.com/unkos-dev/reverie/actions/runs/25771083286),
-        6m32s)
-  - [x] Warm build (whitespace src edit, same branch) shows
-        `importing cache manifest from gha` + 11+ `CACHED` lines
-        across cooker + dep layers
-        ([run 25771327467](https://github.com/unkos-dev/reverie/actions/runs/25771327467),
-        2m38s)
-  - [x] `gh api /repos/unkos-dev/reverie/actions/caches` shows
-        populated `buildcache-arm64` scope under
-        `refs/heads/feat/unk-246-image-build-cache` (~1 GB,
-        index + ~30 blob entries)
-  - [x] Step summary renders with cache report markdown on every
-        build job
-  - [x] actionlint clean on `docker-publish.yml`
-  - [x] **First main-push after merge** — cold as predicted.
-        [run 25774336055](https://github.com/unkos-dev/reverie/actions/runs/25774336055),
-        commit `2f62f65`, **6m34s** wall-clock. `cache-from` missed
-        under fresh `refs/heads/main` namespace; `cache-to` populated
-        ~943 MB across 24 entries (index + buildkit blobs).
-  - [x] **Second main-push after merge** — warm.
-        [run 25774704425](https://github.com/unkos-dev/reverie/actions/runs/25774704425),
-        commit `267eb8f` (UNK-245 merge — `Cargo.lock` + `Dockerfile`
-        unchanged), **1m02s** wall-clock (84 % reduction vs cold).
-        Build log shows `importing cache manifest from gha:...`
-        (cache-from hit) and 14+ `CACHED` lines across cooker + dep +
-        runtime layers.
-  - [ ] **First tag-push after merge** — record actual wall-clock on
-        both arches. Note in `debt/` if consistently cold.
 
 ## More Information
 
