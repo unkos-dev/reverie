@@ -12,7 +12,7 @@
 //! compile error, which is the coverage mechanism the remaining route modules
 //! adopt module-by-module in phase 2.
 
-use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 
@@ -46,6 +46,12 @@ const API_VERSION: &str = "0.1.0";
 ///   does not override via `.with_name`). Covers the JSON data API.
 /// - `opds_basic` — HTTP Basic, for the OPDS feeds' Basic-auth path.
 ///
+/// Both schemes carry a `description` documenting that HTTPS is mandatory in
+/// production — Basic credentials and session cookies are otherwise exposed in
+/// cleartext. Transport is enforced operationally (reverse-proxy TLS; the
+/// session cookie is `Secure` when `behind_https`), not by the spec, so the
+/// residual Checkov `CKV_OPENAPI_3` finding on `opds_basic` is a justified skip.
+///
 /// See `adr/2026-06-08-api-versioning-openapi.md`.
 struct SecurityAddon;
 
@@ -56,11 +62,25 @@ impl Modify for SecurityAddon {
             .get_or_insert_with(utoipa::openapi::Components::default);
         components.add_security_scheme(
             "session_cookie",
-            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("id"))),
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
+                "id",
+                "Session cookie issued by the server's session layer. Set with the Secure \
+                 attribute when `behind_https` is enabled; MUST be served over HTTPS in \
+                 production to prevent session hijacking.",
+            ))),
         );
         components.add_security_scheme(
             "opds_basic",
-            SecurityScheme::Http(Http::new(HttpAuthScheme::Basic)),
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Basic)
+                    .description(Some(
+                        "HTTP Basic authentication for the OPDS feeds. MUST be used over \
+                         HTTPS in production — Basic credentials are otherwise exposed in \
+                         transit (Checkov CKV_OPENAPI_3).",
+                    ))
+                    .build(),
+            ),
         );
     }
 }

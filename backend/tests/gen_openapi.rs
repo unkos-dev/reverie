@@ -100,6 +100,16 @@ fn spec_declares_security_model() {
     );
     assert_eq!(schemes["opds_basic"]["scheme"], "basic");
 
+    // Hard-rule-6: both schemes must document the HTTPS-in-production requirement
+    // (Basic credentials / session cookies are cleartext-exposed otherwise).
+    for scheme in ["session_cookie", "opds_basic"] {
+        let description = schemes[scheme]["description"].as_str().unwrap_or("");
+        assert!(
+            description.contains("HTTPS"),
+            "{scheme} must document the HTTPS requirement, got {description:?}"
+        );
+    }
+
     // Document-level default: every operation requires the session cookie unless
     // it overrides (deny-by-default; OWASP fail-safe). A forgotten per-op
     // annotation therefore documents-as-authed, never as-public.
