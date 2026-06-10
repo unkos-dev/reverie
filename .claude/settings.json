@@ -23,17 +23,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/hooks/redact-secrets-output.sh"
-          }
-        ]
-      }
     ]
   }
 }
