@@ -1,8 +1,8 @@
-//! Request-path capture for the RFC 7807 `instance` field.
+//! Request-path capture for the RFC 9457 `instance` field.
 //!
 //! The `IntoResponse` impl on [`crate::error::AppError`] is a
 //! value-level conversion with no access to the originating HTTP
-//! request. RFC 7807 §3.1 recommends a problem document carry an
+//! request. RFC 9457 §3.1 recommends a problem document carry an
 //! `instance` field identifying the specific occurrence — for our
 //! API, the request path is the natural choice. We bridge the gap
 //! with a tokio task-local: the [`problem_instance_layer`]
@@ -13,7 +13,7 @@
 //! Outside an HTTP request (unit-tests calling `.into_response()`
 //! directly, background tasks) the task-local is unset and
 //! [`current_request_uri`] returns `None`. The problem body simply
-//! omits the `instance` field in that case — RFC 7807 §3.1 permits
+//! omits the `instance` field in that case — RFC 9457 §3.1 permits
 //! omission.
 
 use axum::extract::Request;
@@ -41,7 +41,7 @@ pub async fn problem_instance_layer(req: Request, next: Next) -> Response {
 /// Returns `None` when called outside an HTTP request (e.g. a unit
 /// test invoking `AppError::Validation(...).into_response()`
 /// directly). The Problem Details body omits the `instance` field in
-/// that case, which RFC 7807 §3.1 permits.
+/// that case, which RFC 9457 §3.1 permits.
 #[must_use]
 pub fn current_request_uri() -> Option<String> {
     CURRENT_URI.try_with(String::clone).ok()
