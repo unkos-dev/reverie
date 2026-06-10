@@ -10,7 +10,7 @@
 //! the API response item. The `created_at` field is decoded for use
 //! as a cursor key but is `#[serde(skip)]`-elided from the wire to
 //! keep the response payload aligned with the frontend
-//! `BookListItem` interface in `frontend/src/api/v1/books.ts`.
+//! `BookListItem` interface in `frontend/src/api/books.ts`.
 //!
 //! `authors` is loaded via a separate batch query (`ANY($1::uuid[])`)
 //! after the page rows arrive — the join cannot be expressed in a

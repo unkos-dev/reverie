@@ -1,5 +1,5 @@
 /**
- * Barrel for the `src/api/v1/` module. Re-exports the public surface so
+ * Barrel for the `src/api/` module. Re-exports the public surface so
  * consumers can write `import { listBooks } from "@/api"` without
  * naming the submodule. Internal helpers (request building, CSRF
  * cache mutation) stay private to their own files.
