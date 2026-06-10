@@ -4,7 +4,7 @@
  * Wraps the existing
  * `POST /api/v1/manifestations/{id}/metadata/{accept,reject,revert}`
  * endpoints (shipped in earlier sub-phases) with typed call sites and
- * the central `apiFetch` wrapper so the CSRF token + RFC 7807 parsing
+ * the central `apiFetch` wrapper so the CSRF token + RFC 9457 parsing
  * apply uniformly.
  *
  * The accept/reject/revert URLs use `/api/v1/manifestations/` (the legacy
