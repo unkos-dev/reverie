@@ -24,6 +24,13 @@ docker pull ghcr.io/unkos-dev/reverie:main
 docker run -p 3000:3000 ghcr.io/unkos-dev/reverie:main
 ```
 
+> **Note:** the server checks the database schema at startup and **refuses to
+> start** against an uninitialized or out-of-date database. Before the
+> `docker run` above you need a Postgres database, the connection environment
+> variables, and a one-shot `migrate` step — see
+> [Database migrations](https://github.com/unkos-dev/reverie/blob/main/docs/deployment/database-migrations.md)
+> for the full startup sequence.
+>
 > **Note:** Reverie is in pre-alpha. These instructions will be expanded as the project matures.
 
 ## Documentation is part of done
