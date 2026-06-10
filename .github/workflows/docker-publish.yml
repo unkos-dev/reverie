@@ -270,3 +270,92 @@ jobs:
           [[ -n "$digest" ]] || { echo "::error::Failed to capture manifest digest for ${IMAGE_REF}:${VERSION}"; exit 1; }
           echo "Signing ${IMAGE_REF}@${digest}"
           cosign sign --yes "${IMAGE_REF}@${digest}"
+
+  # Surface the image SBOM where release-page consumers expect it (UNK-329).
+  # The buildkit-generated SBOM attestation on the published image stays the
+  # authoritative copy (sbom: true above; verifiable via imagetools/cosign);
+  # this job re-exports that same attestation — no second SBOM generation,
+  # so the release asset cannot drift from the image. Runs on `v*` tags
+  # (attach to the release-please GitHub Release) and on workflow_dispatch
+  # (upload as a workflow artifact only — feature-branch verification with
+  # no release to attach to). Skipped on plain main pushes: no release
+  # exists there and the in-registry attestation already covers staging.
+  release-sbom:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - merge
+    # contents: write only to upload the release asset; packages: read to
+    # pull the attestation from GHCR. No id-token — nothing is signed here.
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      # Same version derivation as the merge job: semver on a tag push,
+      # branch slug on workflow_dispatch — keeps the inspected ref identical
+      # to what merge just pushed.
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+
+      - name: Export SBOM from image attestation
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p sbom-out
+          docker buildx imagetools inspect "${IMAGE_REF}:${IMAGE_VERSION}" \
+            --format '{{ json .SBOM }}' > sbom-raw.json
+          # Single-platform inspect yields {"SPDX": …}; a multi-platform
+          # index yields a platform-keyed map {"linux/amd64": {"SPDX": …}, …}.
+          # Handle both so the job works for the single-arch staging shape
+          # and the multi-arch release shape alike.
+          if jq -e '.SPDX' sbom-raw.json > /dev/null; then
+            jq '.SPDX' sbom-raw.json > "sbom-out/reverie-${IMAGE_VERSION}.spdx.json"
+          else
+            jq -r 'keys[]' sbom-raw.json | while read -r platform; do
+              safe=${platform//\//-}
+              jq --arg p "$platform" '.[$p].SPDX' sbom-raw.json \
+                > "sbom-out/reverie-${IMAGE_VERSION}-${safe}.spdx.json"
+            done
+          fi
+          # Empty or SPDX-less attestation output must fail loudly, not
+          # publish an empty asset.
+          for f in sbom-out/*.spdx.json; do
+            jq -e '.spdxVersion' "$f" > /dev/null \
+              || { echo "::error::$f is not a valid SPDX document"; exit 1; }
+          done
+          ls -l sbom-out
+
+      - name: Attach SBOM to GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$TAG" sbom-out/*.spdx.json --clobber --repo "$REPO"
+
+      # workflow_dispatch verification path: no release exists; surface the
+      # exported SBOM as a downloadable artifact instead.
+      - name: Upload SBOM as workflow artifact
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sbom
+          path: sbom-out/*.spdx.json
+          if-no-files-found: error
