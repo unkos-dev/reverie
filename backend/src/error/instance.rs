@@ -1,4 +1,5 @@
-//! Request-path capture for the RFC 9457 `instance` field.
+//! Request-path capture for the RFC 9457 (obsoletes RFC 7807)
+//! `instance` field.
 //!
 //! The `IntoResponse` impl on [`crate::error::AppError`] is a
 //! value-level conversion with no access to the originating HTTP
