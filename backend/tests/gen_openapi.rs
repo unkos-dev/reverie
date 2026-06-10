@@ -65,11 +65,12 @@ fn spec_is_openapi_31_with_pilot_paths() {
     );
 }
 
-/// A security requirement list is "public" when it requires no scheme: either an
-/// empty array (`[]`) or a single empty requirement object (`[{}]`). Both are
-/// valid OAS spellings of "no authentication", and utoipa's exact emission is
-/// pinned by the byte-for-byte drift gate above — this semantic check stays
-/// tolerant of which one it is.
+/// Returns `true` when the operation declares no authentication requirement.
+/// OAS 3.1's canonical opt-out is `[{}]` — a single empty requirement object —
+/// which is what utoipa emits (pinned exactly by the byte-for-byte drift gate
+/// above). A bare `[]` also passes here, via the vacuous `all(…)` on an empty
+/// array — an implementation tolerance against emitter changes, not an OAS
+/// equivalence.
 fn requires_no_auth(security: &serde_json::Value) -> bool {
     security.as_array().is_some_and(|reqs| {
         reqs.iter()

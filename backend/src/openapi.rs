@@ -12,7 +12,7 @@
 //! compile error, which is the coverage mechanism the remaining route modules
 //! adopt module-by-module in phase 2.
 
-use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 
@@ -32,12 +32,13 @@ const API_VERSION: &str = "0.1.0";
 /// deny-by-default authentication contract: every operation requires the
 /// `session_cookie` scheme unless it explicitly opts out with `security(())`.
 ///
-/// THREAT: documentation-time fail-safe. A handler that forgets a per-operation
-/// `security` annotation inherits the global requirement and documents-as-authed
-/// — never as-public — so an undocumented-public endpoint cannot silently enter
-/// the contract (OWASP fail-safe defaults; satisfies Checkov `CKV_OPENAPI_4`). The
-/// schemes are descriptive only: enforcement lives in `auth/` middleware, not in
-/// the generated spec.
+/// THREAT: documentation-time fail-safe for the documented surface. A handler
+/// wired through `pilot_router` that omits a per-operation `security` annotation
+/// inherits the global requirement and documents-as-authed — never as-public —
+/// so an undocumented-public endpoint cannot silently enter the contract (OWASP
+/// fail-safe defaults; matches the Checkov `CKV_OPENAPI_4` shape). Routes outside
+/// `pilot_router` are not in the spec at all; runtime enforcement for every route
+/// lives in `auth/` middleware — the spec is a contract signal, not a gate.
 ///
 /// Schemes:
 /// - `session_cookie` — `apiKey` in cookie `id`, the session cookie set by the
@@ -59,7 +60,7 @@ impl Modify for SecurityAddon {
         );
         components.add_security_scheme(
             "opds_basic",
-            SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Basic).build()),
+            SecurityScheme::Http(Http::new(HttpAuthScheme::Basic)),
         );
     }
 }
@@ -67,7 +68,7 @@ impl Modify for SecurityAddon {
 /// Top-level OpenAPI document: metadata, shared schemas, security model, and
 /// tags. Paths are contributed by each module's [`OpenApiRouter`] and merged in
 /// `pilot_router`. The document-level `security` is the deny-by-default
-/// requirement (see [`SecurityAddon`]); operational probes opt out per-operation.
+/// requirement (see `SecurityAddon`); operational probes opt out per-operation.
 #[derive(OpenApi)]
 #[openapi(
     info(
