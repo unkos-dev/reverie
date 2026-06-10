@@ -57,11 +57,13 @@ describe("listShelves", () => {
         item_count: 3,
       },
     ];
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
     const result = await listShelves();
     expect(result).toHaveLength(1);
     expect(result[0]?.name).toBe("Currently reading");
     expect(result[0]?.item_count).toBe(3);
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/v1/shelves");
   });
 });
 
@@ -98,6 +100,8 @@ describe("createShelf", () => {
       .mockResolvedValueOnce(jsonResponse(body, { status: 201 }));
     const result = await createShelf("Wishlist");
     expect(result.id).toBe("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/v1/shelves");
     const init = fetchSpy.mock.calls[0]?.[1];
     expect(init?.method).toBe("POST");
     expect(parseJsonBody(init?.body)).toEqual({ name: "Wishlist" });
@@ -133,6 +137,8 @@ describe("deleteShelf", () => {
   test("issues DELETE and resolves on 204", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
     await deleteShelf("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/v1/shelves/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
     const init = fetchSpy.mock.calls[0]?.[1];
     expect(init?.method).toBe("DELETE");
   });

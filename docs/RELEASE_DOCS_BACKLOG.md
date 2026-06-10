@@ -75,3 +75,21 @@ user id/role/`is_child`), so no active session needs invalidating.
 
 Write an operator-facing Starlight page documenting these constraints when
 the admin user-management UI lands.
+
+### `/api/v1` URL versioning and the breaking move from `/api/*`
+
+**Source:** [`adr/2026-06-08-api-versioning-openapi.md`](../adr/2026-06-08-api-versioning-openapi.md) (UNK-376)
+
+The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and
+`/opds` are deliberately unversioned (operational / standard-protocol
+paths exempt from the URL-path major-version rule). The data routes moved
+from `/api/*` to `/api/v1/*` — a breaking change. Old `/api/*` paths now
+return a JSON Problem `404`.
+
+Deferred on purpose: pre-v0.1.0 there are no released API consumers, so no
+migration guide is owed yet, and full `#[utoipa::path]` coverage of the
+versioned surface lands across UNK-376 PR2..N rather than this mount-move
+PR. Write a user-facing "API versioning and breaking-change migration"
+Starlight page (the `/api/v1` contract, what's unversioned and why, the
+deprecation policy for a future `/api/v2`) once the generated API
+reference covers the full route set.

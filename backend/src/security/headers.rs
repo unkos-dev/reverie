@@ -43,6 +43,15 @@ use crate::state::AppState;
 const PERMISSIONS_POLICY_VALUE: &str = "camera=(), microphone=(), geolocation=(), \
      payment=(), usb=(), midi=(), magnetometer=(), accelerometer=(), gyroscope=()";
 
+/// Path prefixes that must never fall through to the SPA `index.html`. An
+/// unmatched request under one of these gets a JSON Problem `404` (via
+/// [`composite_fallback`]) instead of an HTML `200`, so stale/typo'd API
+/// clients receive a machine-readable error.
+///
+/// Matched by prefix, so the bare `/api` entry also covers the versioned
+/// `/api/v1/*` routes — it MUST stay `/api` (not be narrowed to `/api/v1`)
+/// even though the data routes moved under `/api/v1` (UNK-376): it is what
+/// keeps the now-gone `/api/*` paths returning a Problem instead of the SPA.
 const RESERVED_PREFIXES: &[&str] = &["/api", "/auth", "/health", "/opds"];
 
 /// Uniform security-headers middleware applied to every response from the
