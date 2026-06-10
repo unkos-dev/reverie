@@ -321,7 +321,7 @@
       ]
     },
     "OpdsConfig": {
-      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set — feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI (Step 10) needs them\nregardless of OPDS availability.",
+      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set — feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI (Step 10) needs them\nregardless of OPDS availability.",
       "type": "object",
       "properties": {
         "enabled": {
