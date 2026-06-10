@@ -19,7 +19,16 @@
 /// declared in the `#[serde]` and `#[sqlx]` attributes; unknown DB
 /// variants fail decode loudly instead of coercing into a string.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    sqlx::Type,
+    utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "ingestion_status", rename_all = "lowercase")]

@@ -130,3 +130,77 @@ fn spec_declares_security_model() {
         );
     }
 }
+
+#[test]
+fn spec_covers_library_routes() {
+    let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
+    let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+
+    // All four library data routes are documented.
+    let paths = doc["paths"].as_object().expect("paths object");
+    for path in [
+        "/api/v1/books",
+        "/api/v1/books/{id}",
+        "/api/v1/works/{id}",
+        "/api/v1/search",
+    ] {
+        assert!(paths.contains_key(path), "{path} documented");
+    }
+
+    // Authed routes inherit the document-level session_cookie default — they must
+    // NOT carry an operation-level `security` key (inherit-by-omission, the
+    // deny-by-default contract; only public ops opt out). See `SecurityAddon`.
+    assert!(
+        doc["paths"]["/api/v1/books"]["get"]
+            .get("security")
+            .is_none(),
+        "GET /api/v1/books must inherit the global security default (no op-level security)"
+    );
+
+    // Response DTO schemas are registered as components (auto-collected via routes!).
+    let schemas = &doc["components"]["schemas"];
+    for schema in [
+        "BookListResponse",
+        // BookListRow must be a standalone component for the `created_at` guard
+        // below to be non-vacuous: if utoipa stopped emitting it, `schemas["BookListRow"]`
+        // would be null and the guard would pass against nothing. Assert presence here
+        // so that regression fails loudly first.
+        "BookListRow",
+        "BookDetail",
+        "WorkDetail",
+        "SearchResponse",
+        // SortMode is referenced by the list `?sort=` param via `$ref`; it must be
+        // registered as a component or the docs-site `$ref` parse fails (the
+        // byte-drift gate does not catch a dangling-but-consistent ref).
+        "SortMode",
+    ] {
+        assert!(
+            schemas.get(schema).is_some(),
+            "{schema} schema component present"
+        );
+    }
+
+    // The detail route documents its 404 (RLS-hidden / missing) against ProblemDetails.
+    assert!(
+        doc["paths"]["/api/v1/books/{id}"]["get"]["responses"]
+            .get("404")
+            .is_some(),
+        "GET /api/v1/books/{{id}} documents a 404 response"
+    );
+
+    // Edge guard (a): `created_at` is `#[serde(skip)]`/`#[schema(ignore)]` on
+    // BookListRow — it must not leak into the documented schema.
+    let book_list_row_props = &schemas["BookListRow"]["properties"];
+    assert!(
+        book_list_row_props.get("created_at").is_none(),
+        "BookListRow schema must not expose created_at (serde-skipped cursor key)"
+    );
+
+    // Edge guard (b): the list 200 response documents the RFC 8288 Link header.
+    assert!(
+        doc["paths"]["/api/v1/books"]["get"]["responses"]["200"]["headers"]
+            .get("Link")
+            .is_some(),
+        "GET /api/v1/books 200 must document the Link pagination header"
+    );
+}

@@ -41,6 +41,8 @@ use axum::Json;
 use axum::extract::State;
 use axum_extra::extract::Query;
 use serde::Deserialize;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -48,6 +50,13 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::library::{SearchHit, SearchHitKind, SearchResponse};
 use crate::state::AppState;
+
+/// Build the `/api/v1/search` router as an [`OpenApiRouter`] so the handler's
+/// `#[utoipa::path]` contributes to the generated spec. Merged by the parent
+/// `library::router` (the macro resolves `search` in the module that defines it).
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(search))
+}
 
 /// Maximum input length for `q`. Exceeding this returns a 422
 /// `validation` problem before any DB work — bounds the worst-case
@@ -78,7 +87,8 @@ const SNIPPET_HL_START: &str = "\u{0002}";
 const SNIPPET_HL_END: &str = "\u{0003}";
 
 /// `?q=` query parameter for `GET /api/v1/search`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub(super) struct SearchParams {
     /// Free-form query text. Empty / whitespace-only → 422; over
     /// [`MAX_Q_LEN`] chars → 422.
@@ -96,6 +106,17 @@ pub(super) struct SearchParams {
 #[allow(
     clippy::too_many_lines,
     reason = "single hybrid CTE assembly; splitting hurts readability of the SQL flow"
+)]
+#[utoipa::path(
+    get,
+    path = "/api/v1/search",
+    tag = "library",
+    params(SearchParams),
+    responses(
+        (status = 200, description = "Top hybrid-ranked search results", body = SearchResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Empty, missing, or over-length query", body = crate::openapi::ProblemDetails)
+    )
 )]
 pub(super) async fn search(
     current_user: CurrentUser,
