@@ -378,7 +378,11 @@ async fn process_file(
     };
 
     // Step 4.5: EPUB structural validation and auto-repair.
-    // Only applies to EPUB files; other formats pass through as 'clean'.
+    // Only EPUB has a structural validator; other formats keep the
+    // 'pending' column default — "validation has not run" — rather than
+    // claiming 'clean' for a check that never happened (UNK-313). If a
+    // validator for another format ships later, its files are already in
+    // the truthful pre-validation state.
     let (validation_status, accessibility_metadata, opf_data): (
         ValidationStatus,
         Option<serde_json::Value>,
@@ -437,7 +441,7 @@ async fn process_file(
             Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
-        (ValidationStatus::Clean, None, None)
+        (ValidationStatus::Pending, None, None)
     };
 
     // Step 5: Extract metadata and create work + manifestation
@@ -848,9 +852,9 @@ mod tests {
         .unwrap();
         assert_eq!(count, 1, "expected 1 manifestation row");
 
-        // Non-EPUB formats skip structural validation and pass through as
-        // Clean — assert the value so the orchestrator's non-EPUB fallback
-        // stays covered.
+        // Non-EPUB formats have no structural validator, so the row must
+        // stay Pending ("validation has not run") — not claim Clean for a
+        // check that never happened (UNK-313).
         use crate::models::validation_status::ValidationStatus;
         let status = sqlx::query_scalar!(
             "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
@@ -861,8 +865,8 @@ mod tests {
         .unwrap();
         assert_eq!(
             status,
-            ValidationStatus::Clean,
-            "expected validation_status=clean for non-EPUB"
+            ValidationStatus::Pending,
+            "expected validation_status=pending for never-validated non-EPUB"
         );
     }
 
