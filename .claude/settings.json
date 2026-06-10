@@ -23,17 +23,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/scripts/hooks/redact-secrets-output.sh\"; if [ -f \"$H\" ]; then bash \"$H\"; fi"
-          }
-        ]
-      }
     ]
   }
 }
