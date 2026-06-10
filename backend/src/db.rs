@@ -1111,6 +1111,7 @@ mod tests {
                   AND rel.relname = c.table_name
                   AND pg_get_constraintdef(con.oid) LIKE '%' || c.column_name || '%'
                   AND pg_get_constraintdef(con.oid) LIKE '%10000-01-01%'
+                  AND pg_get_constraintdef(con.oid) LIKE '%0001-01-01%'
               )
             ORDER BY 1
             ",

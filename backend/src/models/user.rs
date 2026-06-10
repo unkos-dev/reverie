@@ -481,6 +481,28 @@ mod tests {
         );
     }
 
+    // `infinity` is undecodable like any year-10000+ value; the finite
+    // upper bound rejects the special value too.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn timestamptz_check_rejects_positive_infinity(pool: PgPool) {
+        let subject = format!("ts-posinf-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsPosInf", None)
+            .await
+            .expect("create user");
+
+        let err = sqlx::query("UPDATE users SET created_at = TIMESTAMPTZ 'infinity' WHERE id = $1")
+            .bind(user.id)
+            .execute(&pool)
+            .await
+            .expect_err("infinity must violate the decode-range CHECK");
+
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("users_created_at_ts_decode_range"),
+            "violation must be the created_at decode-range CHECK: {err}"
+        );
+    }
+
     // `-infinity` (and any pre-CE date) is equally undecodable; the finite
     // lower bound rejects it at write time.
     #[sqlx::test(migrations = "./migrations")]
