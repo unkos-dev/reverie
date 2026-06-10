@@ -12,7 +12,8 @@
 //! compile error, which is the coverage mechanism the remaining route modules
 //! adopt module-by-module in phase 2.
 
-use utoipa::OpenApi;
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 
 use crate::state::AppState;
@@ -26,8 +27,47 @@ use crate::state::AppState;
 /// URL-path major version (`/api/v1`, phase 2) is the unit of breaking change.
 const API_VERSION: &str = "0.1.0";
 
-/// Top-level OpenAPI document: metadata, shared schemas, and tags. Paths are
-/// contributed by each module's [`OpenApiRouter`] and merged in `pilot_router`.
+/// Injects the API's `securitySchemes` into the generated OpenAPI document.
+/// Paired with the document-level `security` default on [`ApiDoc`], it encodes a
+/// deny-by-default authentication contract: every operation requires the
+/// `session_cookie` scheme unless it explicitly opts out with `security(())`.
+///
+/// THREAT: documentation-time fail-safe. A handler that forgets a per-operation
+/// `security` annotation inherits the global requirement and documents-as-authed
+/// — never as-public — so an undocumented-public endpoint cannot silently enter
+/// the contract (OWASP fail-safe defaults; satisfies Checkov `CKV_OPENAPI_4`). The
+/// schemes are descriptive only: enforcement lives in `auth/` middleware, not in
+/// the generated spec.
+///
+/// Schemes:
+/// - `session_cookie` — `apiKey` in cookie `id`, the session cookie set by the
+///   `SessionManagerLayer` (tracks tower-sessions' default name, which the layer
+///   does not override via `.with_name`). Covers the JSON data API.
+/// - `opds_basic` — HTTP Basic, for the OPDS feeds' Basic-auth path.
+///
+/// See `adr/2026-06-08-api-versioning-openapi.md`.
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi
+            .components
+            .get_or_insert_with(utoipa::openapi::Components::default);
+        components.add_security_scheme(
+            "session_cookie",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("id"))),
+        );
+        components.add_security_scheme(
+            "opds_basic",
+            SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Basic).build()),
+        );
+    }
+}
+
+/// Top-level OpenAPI document: metadata, shared schemas, security model, and
+/// tags. Paths are contributed by each module's [`OpenApiRouter`] and merged in
+/// `pilot_router`. The document-level `security` is the deny-by-default
+/// requirement (see [`SecurityAddon`]); operational probes opt out per-operation.
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -36,6 +76,8 @@ const API_VERSION: &str = "0.1.0";
         description = "HTTP API for Reverie, a self-hosted ebook library manager. \
                        Generated from the server handlers; do not edit by hand."
     ),
+    modifiers(&SecurityAddon),
+    security(("session_cookie" = [])),
     components(schemas(ProblemDetails)),
     tags((name = "health", description = "Liveness and readiness probes."))
 )]

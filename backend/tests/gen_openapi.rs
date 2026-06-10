@@ -64,3 +64,58 @@ fn spec_is_openapi_31_with_pilot_paths() {
         "ProblemDetails schema present"
     );
 }
+
+/// A security requirement list is "public" when it requires no scheme: either an
+/// empty array (`[]`) or a single empty requirement object (`[{}]`). Both are
+/// valid OAS spellings of "no authentication", and utoipa's exact emission is
+/// pinned by the byte-for-byte drift gate above — this semantic check stays
+/// tolerant of which one it is.
+fn requires_no_auth(security: &serde_json::Value) -> bool {
+    security.as_array().is_some_and(|reqs| {
+        reqs.iter()
+            .all(|req| req.as_object().is_some_and(serde_json::Map::is_empty))
+    })
+}
+
+#[test]
+fn spec_declares_security_model() {
+    let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
+    let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+
+    // securitySchemes: session cookie (JSON data API) + HTTP Basic (OPDS).
+    let schemes = &doc["components"]["securitySchemes"];
+    assert_eq!(
+        schemes["session_cookie"]["type"], "apiKey",
+        "session_cookie is an apiKey scheme"
+    );
+    assert_eq!(schemes["session_cookie"]["in"], "cookie");
+    assert_eq!(
+        schemes["session_cookie"]["name"], "id",
+        "cookie name matches the tower-sessions default"
+    );
+    assert_eq!(
+        schemes["opds_basic"]["type"], "http",
+        "opds_basic is an http scheme"
+    );
+    assert_eq!(schemes["opds_basic"]["scheme"], "basic");
+
+    // Document-level default: every operation requires the session cookie unless
+    // it overrides (deny-by-default; OWASP fail-safe). A forgotten per-op
+    // annotation therefore documents-as-authed, never as-public.
+    let global = doc["security"]
+        .as_array()
+        .expect("document-level security array");
+    assert!(
+        global.iter().any(|req| req.get("session_cookie").is_some()),
+        "document default requires session_cookie, got {global:?}"
+    );
+
+    // The operational probes are the explicit public opt-out.
+    for path in ["/health", "/health/ready"] {
+        let security = &doc["paths"][path]["get"]["security"];
+        assert!(
+            requires_no_auth(security),
+            "{path} GET must opt out of the global default (security: [] / [{{}}]), got {security:?}"
+        );
+    }
+}

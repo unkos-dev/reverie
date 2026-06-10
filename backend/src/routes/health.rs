@@ -31,6 +31,9 @@ pub fn router() -> OpenApiRouter<AppState> {
     get,
     path = "/health",
     tag = "health",
+    // Explicitly public: opt out of the document-level session_cookie default
+    // (operational probe, ADR-exempt and unauthenticated by design).
+    security(()),
     responses((status = 200, description = "Process is live", body = String, content_type = "text/plain"))
 )]
 pub async fn health() -> &'static str {
@@ -43,6 +46,9 @@ pub async fn health() -> &'static str {
     get,
     path = "/health/ready",
     tag = "health",
+    // Explicitly public: opt out of the document-level session_cookie default
+    // (operational probe, ADR-exempt and unauthenticated by design).
+    security(()),
     responses(
         (status = 200, description = "Ready — database reachable", body = String, content_type = "text/plain"),
         // No body at runtime: the handler returns a bare 503 (empty body). The

@@ -28,7 +28,10 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/health/ready": {
@@ -52,7 +55,10 @@
           "503": {
             "description": "Database unreachable"
           }
-        }
+        },
+        "security": [
+          {}
+        ]
       }
     }
   },
@@ -97,8 +103,24 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "opds_basic": {
+        "type": "http",
+        "scheme": "basic"
+      },
+      "session_cookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "id"
+      }
     }
   },
+  "security": [
+    {
+      "session_cookie": []
+    }
+  ],
   "tags": [
     {
       "name": "health",
