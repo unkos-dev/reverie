@@ -67,12 +67,13 @@ run_test \
   "stdout" \
   "testvalue123"
 
-# Pattern 1b: KEY: "VALUE" (JSON/YAML colon form)
+# Pattern 1b: KEY: "VALUE" (JSON/YAML colon form) — separator and quotes must
+# survive redaction so JSON output stays parseable (no orphan quotes).
 run_test \
-  "Pattern 1b: JSON colon form" \
-  '"DB_SECRET": "hunter2secretvalue"' \
+  "Pattern 1b: JSON colon form preserves structure" \
+  '{"DB_SECRET": "hunter2secretvalue"}' \
   "" \
-  'DB_SECRET=\[REDACTED\]' \
+  '\{"DB_SECRET": "\[REDACTED\]"\}' \
   "yes" \
   "stdout" \
   "hunter2secretvalue"
@@ -82,7 +83,7 @@ run_test \
   "Pattern 1b: secret-shaped generic token in JSON" \
   '"api_token": "hunter2tokenvalue"' \
   "" \
-  'api_token=\[REDACTED\]' \
+  '"api_token": "\[REDACTED\]"' \
   "yes" \
   "stdout" \
   "hunter2tokenvalue"
@@ -114,15 +115,26 @@ run_test \
   "no" \
   "stdout"
 
-# Pattern 2: URL-embedded credentials
+# Pattern 2: URL-embedded credentials — username is identity (role/DSN debugging
+# signal), not a secret; only the password is redacted.
 run_test \
   "Pattern 2: URL credentials" \
   'postgres://admin:hunter2secret@db.example.com:5432/reverie' \
   "" \
-  '\[REDACTED:url-creds\]' \
+  '://admin:\[REDACTED:url-creds\]@db\.example\.com' \
   "yes" \
   "stdout" \
   "hunter2secret"
+
+# False positive: URL with port followed by an email later on the same line must
+# not be chomped (password class must not span spaces or path slashes)
+run_test \
+  "False positive: URL port + later email on same line" \
+  'release https://github.com:443/repo notify author@users.noreply.github.com' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
 
 # Pattern 3: Bearer token
 run_test \
@@ -215,6 +227,44 @@ run_test \
 run_test \
   "False positive: empty TOKEN=" \
   'SOME_TOKEN=' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
+# False positive: env-var reference (no secret present) must pass through
+# shellcheck disable=SC2016  # literal ${...} is the test fixture, not an expansion
+run_test \
+  "False positive: variable reference value" \
+  'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
+# False positive: short flag-like value under TOKEN-suffixed env key (<8 chars)
+run_test \
+  "False positive: short env value under secret key" \
+  'USE_TOKEN=true' \
+  "" \
+  "" \
+  "no" \
+  "stdout"
+
+# Boundary: exactly 8-char env value under secret key must still redact
+run_test \
+  "Boundary: 8-char env value redacts" \
+  'API_TOKEN=abcd1234' \
+  "" \
+  'API_TOKEN=\[REDACTED\]' \
+  "yes" \
+  "stdout" \
+  "abcd1234"
+
+# Idempotency: already-redacted output must pass through unchanged (no stray ])
+run_test \
+  "Idempotency: already-redacted value" \
+  'API_TOKEN=[REDACTED] and postgres://admin:[REDACTED:url-creds]@db/x' \
   "" \
   "" \
   "no" \

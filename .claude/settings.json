@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/hooks/redact-secrets-output.sh"
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/scripts/hooks/redact-secrets-output.sh\"; if [ -f \"$H\" ]; then bash \"$H\"; fi"
           }
         ]
       }

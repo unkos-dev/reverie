@@ -46,26 +46,38 @@ STDERR="$(printf '%s' "$INPUT" | jq -r '.tool_response.stderr // empty' 2>/dev/n
 CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // "unknown"' 2>/dev/null)" || CMD="[extraction-failed]"
 TOOL_USE_ID="$(printf '%s' "$INPUT" | jq -r '.tool_use_id // "unknown"' 2>/dev/null)" || TOOL_USE_ID="[extraction-failed]"
 
+# All value patterns share an 8-char minimum floor (UNK-326): shorter values
+# under secret-named keys are overwhelmingly booleans, enums, ports, flags —
+# redacting them mangles legitimate output (gh api JSON, compose files, test
+# logs) without protecting anything real. Residual: a 1–7 char secret passes
+# through; a value indistinguishable from a real secret (≥8 token-charset
+# chars) is still redacted — fail-safe preserved for the cases that matter.
+#
 # Pattern 1 (KEY=VALUE) uses a NEGATED class [^] \t"',}]+ excluding ], space,
 #   tab, quotes, comma, } — the POSIX rule "] immediately after [^ is literal"
-#   keeps ] inside the class; do NOT move it from first position.
+#   keeps ] inside the class; do NOT move it from first position. The FIRST
+#   value char additionally excludes $ and [ : $ lets shell/compose variable
+#   REFERENCES (PASSWORD=${POSTGRES_PASSWORD}) pass through — a reference is
+#   a pointer, not a value — and [ makes the pattern idempotent on its own
+#   output (KEY=[REDACTED] re-matched as KEY=[REDACTED]] before). Real
+#   secrets are token-charset and never start with either.
 # Pattern 2 (KEY:"val", JSON/YAML) uses a POSITIVE "secret-shaped" class:
-#   [A-Za-z0-9._/+=~-]{8,} — a base64/token charset, no whitespace, min 8 chars.
-#   THREAT/tradeoff (UNK-326): redacting only secret-shaped values stops the
-#   PostToolUse scanner from blanking non-secret values that sit under keys
-#   literally named *TOKEN/SECRET/etc in legitimate JSON (e.g. `gh api`
-#   responses) — booleans, numbers, short enum strings, prose. The {8,} floor
-#   mirrors the URL-cred pattern below (line for ://creds requires {8,}); the
-#   no-whitespace class mirrors Pattern 1. Residual: a 1–7 char JSON secret
-#   value passes through, consistent with the hook's existing 8-char floor. A
-#   value indistinguishable from a real secret (≥8 no-space token charset) is
-#   still redacted — fail-safe is preserved for the cases that matter.
+#   [A-Za-z0-9._/+=~-]{8,} — a base64/token charset, no whitespace.
+#   The capture group keeps the key AND its separator (quote/colon/quote)
+#   so `{"k": "v"}` redacts to `{"k": "[REDACTED]"}` — structure-preserving;
+#   the earlier `\1=[REDACTED]` rewrite orphaned quotes and broke JSON that
+#   downstream consumers (the model itself) then misread.
 #   The / inside the class is escaped (\/) because it is the sed s/// delimiter.
+# Pattern 3 (URL creds) excludes whitespace and / from both userinfo classes:
+#   RFC 3986 forbids raw / in userinfo, and the old [^@]{8,} class greedily
+#   spanned spaces — a URL-with-port followed by any later @ on the same line
+#   (email, scp target) chomped half the line. Username is kept: it is
+#   identity (DSN role), not a secret, and losing it mangles debugging output.
 apply_redactions() {
   /bin/sed -E \
-    -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE))=[^] \t"'"'"',}]+/\1=[REDACTED]/gI' \
-    -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE))"?:[ \t]*"?[A-Za-z0-9._\/+=~-]{8,}/\1=[REDACTED]/gI' \
-    -e 's|://[^/:@]+:[^@]{8,}@|://[REDACTED:url-creds]@|g' \
+    -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE))=[^]$[ \t"'"'"',}][^] \t"'"'"',}]{7,}/\1=[REDACTED]/gI' \
+    -e 's/([A-Z_]*(PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|PASSPHRASE)"?:[ \t]*"?)[A-Za-z0-9._\/+=~-]{8,}/\1[REDACTED]/gI' \
+    -e 's|://([^/:@[:space:]]+):[^/@[:space:]]{8,}@|://\1:[REDACTED:url-creds]@|g' \
     -e 's/Bearer [A-Za-z0-9._-]{20,}/Bearer [REDACTED]/gI' \
     -e 's/gh[pousr]_[A-Za-z0-9]{20,}/[REDACTED:github-pat]/g' \
     -e 's/github_pat_[A-Za-z0-9_]{20,}/[REDACTED:github-pat]/g' \
