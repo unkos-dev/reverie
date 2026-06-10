@@ -443,10 +443,30 @@ async fn drain_workers(
                     worker = name,
                     "background worker did not exit within the drain budget; aborted"
                 );
+                // Confirm the cancellation actually lands before returning —
+                // abort() only takes effect at the task's next await point,
+                // and returning earlier would hand the still-unwinding task
+                // back to the runtime drop. Bounded by a short fixed grace:
+                // a task stuck in a blocking section never reaches an await
+                // point, and shutdown must not hang on it.
+                if tokio::time::timeout(ABORT_GRACE, &mut handle)
+                    .await
+                    .is_err()
+                {
+                    tracing::error!(
+                        worker = name,
+                        "aborted worker still running after grace period; leaving to runtime teardown"
+                    );
+                }
             }
         }
     }
 }
+
+/// Post-`abort()` wait for the cancellation to take effect (see
+/// [`drain_workers`]). Short and fixed: it only covers the gap between
+/// `abort()` and the task's next await point.
+const ABORT_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Startup schema step: apply pending migrations in-process when
 /// `config.auto_migrate` is set, otherwise verify the schema is current via
@@ -679,6 +699,11 @@ mod tests {
             std::time::Duration::from_millis(100),
         )
         .await;
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(100),
+            "drain must actually wait out the budget before giving up: {:?}",
+            started.elapsed()
+        );
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
             "drain must give up at the deadline, not hang on a stuck worker"
