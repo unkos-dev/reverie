@@ -2,10 +2,31 @@
 
 ## Dev Database
 
-Start dev postgres: `docker compose up -d` from repo root.
-Port 5433 (5432 taken by host's shared-postgres).
+**DB-backed tests are CI-first.** CI provisions its own postgres:18 service
+container, seeds roles via `docker/init-roles.sql`, and points `DATABASE_URL`
+at the schema owner (see `.github/workflows/ci.yml`) — that is the
+authoritative runtime for the `#[sqlx::test]` suite. Run it locally only when
+a provisioning-capable (schema-owner) Postgres cluster is reachable from your
+shell. When none is reachable, local verification deliberately stops at
+`cargo fmt --check`, `cargo clippy`, `SQLX_OFFLINE=true cargo check --tests`,
+and the generated-artifact drift tests — push and let CI run the tests.
 
-**Roles** (created by `docker/init-roles.sql` on first start):
+**Symptom key:** every DB-backed test failing identically with
+`failed to connect to setup test database: PoolTimedOut` means the harness
+cannot reach a cluster it can create per-test databases on. Environment
+condition, not a code regression — fix reachability or defer to CI; don't
+debug the tests.
+
+**Optional local cluster:** `docker compose up -d` from repo root stands up a
+dev postgres on host port 5433 (see `debt/2026-05-05-dev-postgres-port-5433.md`
+for the port choice). This only helps where the Docker daemon shares your
+machine's network namespace. With a remote or Docker-out-of-Docker daemon the
+published port binds on the daemon's host — `localhost:5433` is unreachable
+from your shell and the container's "healthy" status is a red herring; treat
+the suite as CI-first per above.
+
+**Roles** (created by `docker/init-roles.sql` on first start of the compose
+cluster; DSNs below are the compose cluster's):
 
 | Role                | Connection                                                                  | Purpose                                                                        |
 | ------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -71,20 +92,13 @@ docker compose up -d
 # Re-apply migrations on the fresh volume: `cargo run -- migrate`
 ```
 
-### Coder workspace caveat
+### Remote-daemon (DooD) caveat
 
-Inside Coder workspace (DooD), bind-mounts of files at workspace paths
-don't resolve on host docker daemon — `init-roles.sql` mounted as
-directory, entrypoint init silently fails to seed runtime roles. Seed
-manually after `docker compose up -d`:
-
-```bash
-docker cp docker/init-roles.sql reverie-postgres:/tmp/init-roles.sql
-docker exec reverie-postgres psql -U reverie -d reverie_dev -f /tmp/init-roles.sql
-```
-
-Real LXC hosts don't have this constraint — staging deploy needs no
-workaround.
+With a Docker-out-of-Docker setup the compose cluster is doubly broken as a
+test target: published ports bind on the daemon host (not `localhost`), and
+file bind-mounts don't resolve (`init-roles.sql` mounts as a directory, so
+role seeding silently fails). Don't work around either — that environment is
+exactly the CI-first case above.
 
 ## Conventions
 
@@ -135,8 +149,11 @@ workaround.
     with macros. Inline columns at each call site; macro validation
     catches column drift independently per site.
 
-  Cache regeneration: `DATABASE_URL=postgres://reverie:reverie@localhost:5433/reverie_dev cargo sqlx prepare -- --tests`
-  from `backend/`. CI guards against stale cache via
+  Cache regeneration: `DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests`
+  from `backend/`, against a reachable cluster with current schema — same
+  reachability rule as `#[sqlx::test]` (see Dev Database). With the compose
+  cluster: `postgres://reverie:reverie@localhost:5433/reverie_dev`.
+  CI guards against stale cache via
   `cargo sqlx prepare --check -- --tests`. Migrations in
   `backend/migrations/`.
 
@@ -150,8 +167,9 @@ workaround.
   via `crate::test_support::db::{app_pool_for, ingestion_pool_for}`.
   Tests run parallel via database isolation; no manual fixture cleanup
   required. `DATABASE_URL` must point at schema owner so `sqlx::test`
-  can create per-test databases (locally:
-  `postgres://reverie:reverie@localhost:5433/reverie_dev`).
+  can create per-test databases (compose cluster:
+  `postgres://reverie:reverie@localhost:5433/reverie_dev`; reachability
+  caveats under Dev Database).
 - **OIDC integration tests use `crate::test_support::oidc_mock`.**
   Spins up `wiremock` server with `/jwks` + `/token` endpoints,
   generates per-test 2048-bit RSA keypair, exposes `OidcClient` with
