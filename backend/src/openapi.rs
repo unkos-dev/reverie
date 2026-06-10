@@ -12,7 +12,8 @@
 //! compile error, which is the coverage mechanism the remaining route modules
 //! adopt module-by-module in phase 2.
 
-use utoipa::OpenApi;
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 
 use crate::state::AppState;
@@ -26,8 +27,68 @@ use crate::state::AppState;
 /// URL-path major version (`/api/v1`, phase 2) is the unit of breaking change.
 const API_VERSION: &str = "0.1.0";
 
-/// Top-level OpenAPI document: metadata, shared schemas, and tags. Paths are
-/// contributed by each module's [`OpenApiRouter`] and merged in `pilot_router`.
+/// Injects the API's `securitySchemes` into the generated OpenAPI document.
+/// Paired with the document-level `security` default on [`ApiDoc`], it encodes a
+/// deny-by-default authentication contract: every operation requires the
+/// `session_cookie` scheme unless it explicitly opts out with `security(())`.
+///
+/// THREAT: documentation-time fail-safe for the documented surface. A handler
+/// wired through `pilot_router` that omits a per-operation `security` annotation
+/// inherits the global requirement and documents-as-authed — never as-public —
+/// so an undocumented-public endpoint cannot silently enter the contract (OWASP
+/// fail-safe defaults; matches the Checkov `CKV_OPENAPI_4` shape). Routes outside
+/// `pilot_router` are not in the spec at all; runtime enforcement for every route
+/// lives in `auth/` middleware — the spec is a contract signal, not a gate.
+///
+/// Schemes:
+/// - `session_cookie` — `apiKey` in cookie `id`, the session cookie set by the
+///   `SessionManagerLayer` (tracks tower-sessions' default name, which the layer
+///   does not override via `.with_name`). Covers the JSON data API.
+/// - `opds_basic` — HTTP Basic, for the OPDS feeds' Basic-auth path.
+///
+/// Both schemes carry a `description` documenting that HTTPS is mandatory in
+/// production — Basic credentials and session cookies are otherwise exposed in
+/// cleartext. Transport is enforced operationally (reverse-proxy TLS; the
+/// session cookie is `Secure` when `behind_https`), not by the spec, so the
+/// residual Checkov `CKV_OPENAPI_3` finding on `opds_basic` is a justified skip.
+///
+/// See `adr/2026-06-08-api-versioning-openapi.md`.
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi
+            .components
+            .get_or_insert_with(utoipa::openapi::Components::default);
+        components.add_security_scheme(
+            "session_cookie",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
+                "id",
+                "Session cookie issued by the server's session layer. Set with the Secure \
+                 attribute when `behind_https` is enabled; MUST be served over HTTPS in \
+                 production to prevent session hijacking.",
+            ))),
+        );
+        components.add_security_scheme(
+            "opds_basic",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Basic)
+                    .description(Some(
+                        "HTTP Basic authentication for the OPDS feeds. MUST be used over \
+                         HTTPS in production — Basic credentials are otherwise exposed in \
+                         transit (Checkov CKV_OPENAPI_3).",
+                    ))
+                    .build(),
+            ),
+        );
+    }
+}
+
+/// Top-level OpenAPI document: metadata, shared schemas, security model, and
+/// tags. Paths are contributed by each module's [`OpenApiRouter`] and merged in
+/// `pilot_router`. The document-level `security` is the deny-by-default
+/// requirement (see `SecurityAddon`); operational probes opt out per-operation.
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -36,6 +97,8 @@ const API_VERSION: &str = "0.1.0";
         description = "HTTP API for Reverie, a self-hosted ebook library manager. \
                        Generated from the server handlers; do not edit by hand."
     ),
+    modifiers(&SecurityAddon),
+    security(("session_cookie" = [])),
     components(schemas(ProblemDetails)),
     tags((name = "health", description = "Liveness and readiness probes."))
 )]

@@ -28,7 +28,10 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/health/ready": {
@@ -52,7 +55,10 @@
           "503": {
             "description": "Database unreachable"
           }
-        }
+        },
+        "security": [
+          {}
+        ]
       }
     }
   },
@@ -97,8 +103,26 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "opds_basic": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production — Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
+      },
+      "session_cookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "id",
+        "description": "Session cookie issued by the server's session layer. Set with the Secure attribute when `behind_https` is enabled; MUST be served over HTTPS in production to prevent session hijacking."
+      }
     }
   },
+  "security": [
+    {
+      "session_cookie": []
+    }
+  ],
   "tags": [
     {
       "name": "health",
