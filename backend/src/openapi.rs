@@ -106,7 +106,9 @@ impl Modify for SecurityAddon {
     components(schemas(ProblemDetails, crate::routes::cursor::SortMode)),
     tags(
         (name = "health", description = "Liveness and readiness probes."),
-        (name = "library", description = "Books, works, and full-text search.")
+        (name = "library", description = "Books, works, and full-text search."),
+        (name = "series", description = "Series and their ordered works."),
+        (name = "dashboard", description = "Admin-only library-health aggregates.")
     )
 )]
 pub struct ApiDoc;
@@ -140,6 +142,8 @@ fn pilot_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .merge(crate::routes::health::router())
         .merge(crate::routes::library::router())
+        .merge(crate::routes::series::router())
+        .merge(crate::routes::dashboard::router())
 }
 
 /// Runtime router for the OpenAPI-documented modules, ready to merge into the

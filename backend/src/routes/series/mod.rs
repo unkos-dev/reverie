@@ -8,10 +8,10 @@
 //! short-circuits to 404 to avoid leaking series existence to child
 //! accounts or across adult isolation boundaries.
 
-use axum::Router;
 use axum::extract::{Path, State};
-use axum::routing::get;
 use std::collections::HashMap;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -26,19 +26,33 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/v1/series/{id}` router.
-pub fn router() -> Router<AppState> {
-    Router::new().route("/api/v1/series/{id}", get(detail))
+/// Build the `/api/v1/series/{id}` router as an [`OpenApiRouter`] so the
+/// handler's `#[utoipa::path]` contributes to the generated spec (a missing
+/// annotation fails to compile). Merged into `crate::openapi::pilot_router` and
+/// split into its runtime and spec halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(detail))
 }
 
 /// `GET /api/v1/series/{id}` — series + ordered works with visible
 /// manifestations per work.
 ///
 /// # Errors
-/// - [`AppError::NotFound`] when the series row is missing or every
-///   work in the series has zero visible manifestations under the
-///   caller's RLS context (existence-not-leaked).
+/// - [`AppError::NotFound`] when the series row is missing, the series
+///   has no linked works, or every work in the series has zero visible
+///   manifestations under the caller's RLS context (existence-not-leaked).
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/series/{id}",
+    tag = "series",
+    params(("id" = Uuid, Path, description = "Series id")),
+    responses(
+        (status = 200, description = "Series identity + ordered works with visible manifestations", body = SeriesDetail),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn detail(
     current_user: CurrentUser,
     State(state): State<AppState>,

@@ -18,10 +18,11 @@
 //! return zero. The other tables read here (`works`, `ingestion_jobs`) carry
 //! no RLS and are `SELECT`-granted to `reverie_app` directly.
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
-use axum::routing::get;
-use axum::{Json, Router};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use crate::auth::middleware::CurrentUser;
 use crate::db;
@@ -39,25 +40,28 @@ const DEFAULT_ACTIVITY_LIMIT: i64 = 20;
 /// of caller input.
 const MAX_ACTIVITY_LIMIT: i64 = 100;
 
-/// Build the `/api/v1/dashboard/*` router (admin-only).
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/dashboard/stats", get(stats))
-        .route("/api/v1/dashboard/activity", get(activity))
+/// Build the `/api/v1/dashboard/*` router (admin-only) as an [`OpenApiRouter`]
+/// so each handler's `#[utoipa::path]` contributes to the generated spec (a
+/// missing annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// and split into its runtime and spec halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(stats))
+        .routes(routes!(activity))
 }
 
 /// One `{ status, count }` bucket in a breakdown array. `status` is the
 /// canonical wire label of a [`ValidationStatus`] / [`EnrichmentStatus`]
 /// variant, so the closed enum set is reflected on the wire even for zero
 /// counts.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct StatusCount {
     status: &'static str,
     count: i64,
 }
 
 /// One per-format storage bucket (`GROUP BY format`).
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct FormatBucket {
     format: String,
     count: i64,
@@ -66,7 +70,7 @@ struct FormatBucket {
 
 /// Metadata-coverage numerators (denominator is `total`). The frontend
 /// derives percentages so the wire stays integer-only.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct MetadataCoverage {
     total: i64,
     has_description: i64,
@@ -76,7 +80,7 @@ struct MetadataCoverage {
 }
 
 /// Response shape for `GET /api/v1/dashboard/stats`.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct StatsResponse {
     total_manifestations: i64,
     total_works: i64,
@@ -103,6 +107,16 @@ struct StatsResponse {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/dashboard/stats",
+    tag = "dashboard",
+    responses(
+        (status = 200, description = "Library-wide aggregate health metrics. Admin only.", body = StatsResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+    )
+)]
 #[allow(
     clippy::too_many_lines,
     reason = "single aggregate-query assembly + DTO mapping; splitting hurts readability"
@@ -233,15 +247,17 @@ async fn stats(
 /// `?limit=` query parameter for `GET /api/v1/dashboard/activity`. Absent →
 /// [`DEFAULT_ACTIVITY_LIMIT`]; the value is clamped to `1..=MAX_ACTIVITY_LIMIT`
 /// in the handler before binding.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 struct ActivityParams {
+    /// Max recent batches to return; clamped to 1..=100, default 20.
     limit: Option<i64>,
 }
 
 /// One recent ingestion batch. Invariant:
 /// `completed + failed + skipped + in_progress == total`. `ended_at` is null
 /// while the batch is still in flight (any `queued`/`running` job).
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct BatchRow {
     batch_id: uuid::Uuid,
     #[serde(with = "time::serde::rfc3339")]
@@ -256,7 +272,7 @@ struct BatchRow {
 }
 
 /// Response shape for `GET /api/v1/dashboard/activity`.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct ActivityResponse {
     batches: Vec<BatchRow>,
 }
@@ -271,6 +287,17 @@ struct ActivityResponse {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/dashboard/activity",
+    tag = "dashboard",
+    params(ActivityParams),
+    responses(
+        (status = 200, description = "Most-recent ingestion batches, newest first. Admin only.", body = ActivityResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn activity(
     current_user: CurrentUser,
     State(state): State<AppState>,

@@ -117,8 +117,6 @@ where
         .merge(routes::ingestion::router())
         .merge(routes::enrichment::router())
         .merge(routes::metadata::router())
-        .merge(routes::dashboard::router())
-        .merge(routes::series::router())
         .merge(routes::shelves::router())
         .merge(routes::users::router())
         .merge(routes::settings::router())
