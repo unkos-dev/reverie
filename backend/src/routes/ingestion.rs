@@ -1,4 +1,4 @@
-//! Library-scan trigger (`POST /api/ingestion/scan`); admin-only.
+//! Library-scan trigger (`POST /api/v1/ingestion/scan`); admin-only.
 
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -10,7 +10,7 @@ use crate::error::AppError;
 use crate::services;
 use crate::state::AppState;
 
-/// Build the ingestion-control router for `POST /api/ingestion/scan`.
+/// Build the ingestion-control router for `POST /api/v1/ingestion/scan`.
 ///
 /// # Invariants
 /// - Admin-only: the `scan` handler enforces `CurrentUser::require_admin`
@@ -20,7 +20,7 @@ use crate::state::AppState;
 /// expensive enough to warrant being kept off regular user flows; the
 /// admin gate is the single trust boundary for triggering it via HTTP.
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/ingestion/scan", post(scan))
+    Router::new().route("/api/v1/ingestion/scan", post(scan))
 }
 
 async fn scan(
@@ -49,7 +49,7 @@ mod tests {
     #[tokio::test]
     async fn scan_returns_401_without_auth() {
         let server = test_support::test_server();
-        let response = server.post("/api/ingestion/scan").await;
+        let response = server.post("/api/v1/ingestion/scan").await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
 }

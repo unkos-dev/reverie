@@ -21,14 +21,14 @@ afterEach(() => {
 });
 
 describe("searchLibrary", () => {
-  test("calls GET /api/search with the q param", async () => {
+  test("calls GET /api/v1/search with the q param", async () => {
     const body = { items: [] };
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
 
     await searchLibrary("galaxy");
 
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
-    expect(url.pathname).toBe("/api/search");
+    expect(url.pathname).toBe("/api/v1/search");
     expect(url.searchParams.get("q")).toBe("galaxy");
   });
 
@@ -54,7 +54,7 @@ describe("searchLibrary", () => {
           title: "Stoner",
           authors: ["John Williams"],
           snippet: "the galaxy awaits",
-          cover_url: "/api/books/.../cover/thumb",
+          cover_url: "/api/v1/books/.../cover/thumb",
         },
       ],
     };

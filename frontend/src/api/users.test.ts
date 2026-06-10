@@ -37,6 +37,7 @@ describe("listUsers", () => {
     expect(result).toHaveLength(1);
     expect(result[0].display_name).toBe("Alice");
     expect(result[0].role).toBe("admin");
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/v1/users");
   });
 
   test("throws on non-2xx", async () => {
@@ -62,7 +63,7 @@ describe("updateUserRole", () => {
     const result = await updateUserRole(STUB_USER.id, "adult");
     expect(result.role).toBe("adult");
     const call = vi.mocked(fetch).mock.calls[0];
-    expect(call[0]).toBe(`/api/users/${STUB_USER.id}/role`);
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/role`);
     expect(call[1]?.method).toBe("PUT");
   });
 
@@ -89,6 +90,9 @@ describe("updateUserChildStatus", () => {
     const result = await updateUserChildStatus(STUB_USER.id, true);
     expect(result.is_child).toBe(true);
     expect(result.role).toBe("child");
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/child-status`);
+    expect(call[1]?.method).toBe("PUT");
   });
 
   test("throws on non-2xx", async () => {
@@ -114,7 +118,7 @@ describe("updateUser", () => {
     const result = await updateUser(STUB_USER.id, { display_name: "Bob" });
     expect(result.display_name).toBe("Bob");
     const call = vi.mocked(fetch).mock.calls[0];
-    expect(call[0]).toBe(`/api/users/${STUB_USER.id}`);
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}`);
     expect(call[1]?.method).toBe("PATCH");
   });
 

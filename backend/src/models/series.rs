@@ -1,4 +1,4 @@
-//! Response DTOs for `/api/series/{id}`.
+//! Response DTOs for `/api/v1/series/{id}`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::models::library::WorkManifestation;
 
-/// `/api/series/{id}` response. Carries the series identity plus an
+/// `/api/v1/series/{id}` response. Carries the series identity plus an
 /// ordered list of works; each work surfaces only the manifestations
 /// the caller can see, so the frontend can render a completeness
 /// indicator (`own = works with len(manifestations) > 0`, `total =

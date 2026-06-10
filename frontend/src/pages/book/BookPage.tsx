@@ -2,12 +2,12 @@
  * Production `/b/:id` page.
  *
  * Sticky cover aside + Tabs layout, mirroring the dev hero
- * (`/design/hero/book`). Data sourced from `GET /api/books/{id}` via
+ * (`/design/hero/book`). Data sourced from `GET /api/v1/books/{id}` via
  * `useSuspenseQuery`; the loader has already primed the cache.
  *
  * The Versions tab is implemented in [`VersionsTab`] (sub-phase 11c):
  * per-field pending rows with accept / reject / revert affordances
- * plus a manual edit form (`PATCH /api/books/{id}/metadata`).
+ * plus a manual edit form (`PATCH /api/v1/books/{id}/metadata`).
  */
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, type ReactElement } from "react";

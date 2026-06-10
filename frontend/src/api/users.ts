@@ -1,5 +1,5 @@
 /**
- * Admin user-management API client (`/api/users*`).
+ * Admin user-management API client (`/api/v1/users*`).
  *
  * All endpoints require `role = admin`; non-admin callers receive
  * 403 Forbidden.
@@ -25,15 +25,15 @@ type User = z.infer<typeof UserSchema>;
 
 const UsersListSchema = z.array(UserSchema);
 
-/** `GET /api/users` — list all users (admin only). */
+/** `GET /api/v1/users` — list all users (admin only). */
 async function listUsers(signal?: AbortSignal): Promise<User[]> {
-  const raw = await apiFetch("/api/users", { signal });
+  const raw = await apiFetch("/api/v1/users", { signal });
   return UsersListSchema.parse(raw);
 }
 
-/** `PUT /api/users/{id}/role` — change a user's role (admin only). */
+/** `PUT /api/v1/users/{id}/role` — change a user's role (admin only). */
 async function updateUserRole(id: string, role: Role, signal?: AbortSignal): Promise<User> {
-  const raw = await apiFetch(`/api/users/${id}/role`, {
+  const raw = await apiFetch(`/api/v1/users/${id}/role`, {
     method: "PUT",
     body: JSON.stringify({ role }),
     signal,
@@ -41,13 +41,13 @@ async function updateUserRole(id: string, role: Role, signal?: AbortSignal): Pro
   return UserSchema.parse(raw);
 }
 
-/** `PUT /api/users/{id}/child-status` — toggle child status (admin only). */
+/** `PUT /api/v1/users/{id}/child-status` — toggle child status (admin only). */
 async function updateUserChildStatus(
   id: string,
   isChild: boolean,
   signal?: AbortSignal,
 ): Promise<User> {
-  const raw = await apiFetch(`/api/users/${id}/child-status`, {
+  const raw = await apiFetch(`/api/v1/users/${id}/child-status`, {
     method: "PUT",
     body: JSON.stringify({ is_child: isChild }),
     signal,
@@ -55,19 +55,19 @@ async function updateUserChildStatus(
   return UserSchema.parse(raw);
 }
 
-/** Fields accepted by `PATCH /api/users/{id}`. */
+/** Fields accepted by `PATCH /api/v1/users/{id}`. */
 interface UpdateUserFields {
   display_name?: string | null;
   email?: string | null;
 }
 
-/** `PATCH /api/users/{id}` — update display name / email (admin only). */
+/** `PATCH /api/v1/users/{id}` — update display name / email (admin only). */
 async function updateUser(
   id: string,
   fields: UpdateUserFields,
   signal?: AbortSignal,
 ): Promise<User> {
-  const raw = await apiFetch(`/api/users/${id}`, {
+  const raw = await apiFetch(`/api/v1/users/${id}`, {
     method: "PATCH",
     body: JSON.stringify(fields),
     signal,

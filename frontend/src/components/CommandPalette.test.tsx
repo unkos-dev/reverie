@@ -99,7 +99,7 @@ describe("CommandPalette — search flow", () => {
       expect(fetchSpy).toHaveBeenCalled();
     });
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
-    expect(url.pathname).toBe("/api/search");
+    expect(url.pathname).toBe("/api/v1/search");
     expect(url.searchParams.get("q")).toBe("war");
   });
 

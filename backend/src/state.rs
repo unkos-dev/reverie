@@ -50,7 +50,7 @@ pub struct AppState {
     /// Timestamp of last successful background reload of the settings
     /// cache. `None` until the first LISTEN/NOTIFY refresh completes;
     /// the initial `load()` at startup does not count. Exposed in
-    /// `GET /api/settings` so operators can verify the live-reload
+    /// `GET /api/v1/settings` so operators can verify the live-reload
     /// mechanism is healthy.
     pub last_settings_reload: Arc<RwLock<Option<OffsetDateTime>>>,
 }

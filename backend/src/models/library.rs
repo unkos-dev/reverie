@@ -1,4 +1,4 @@
-//! Response DTOs for `/api/books`, `/api/books/{id}`, `/api/works/{id}`.
+//! Response DTOs for `/api/v1/books`, `/api/v1/books/{id}`, `/api/v1/works/{id}`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names
@@ -50,7 +50,7 @@ pub struct BookListRow {
     /// `manifestations.id` — the canonical book id on the wire.
     pub id: Uuid,
     /// `works.id` of the parent work. Lets the client navigate to
-    /// `/api/works/{work_id}` from a list row without an extra fetch.
+    /// `/api/v1/works/{work_id}` from a list row without an extra fetch.
     pub work_id: Uuid,
     /// `works.title` of the parent work.
     pub title: String,
@@ -62,7 +62,7 @@ pub struct BookListRow {
     /// `manifestations.isbn_13`, when known.
     pub isbn_13: Option<String>,
     /// Cover thumbnail URL — relative path served by the
-    /// `/api/books/{id}/cover/thumb` handler under the caller's
+    /// `/api/v1/books/{id}/cover/thumb` handler under the caller's
     /// session. Not pre-signed; access is gated by the session cookie.
     /// Backend constructs it so the frontend has a single source of
     /// truth for the cover surface.
@@ -79,7 +79,7 @@ pub struct BookListRow {
     pub created_at: OffsetDateTime,
 }
 
-/// `/api/books/{id}` response. Carries the [`BookListRow`] fields
+/// `/api/v1/books/{id}` response. Carries the [`BookListRow`] fields
 /// plus the work-level prose and metadata-version summary surfaced
 /// in the book-detail UI.
 #[derive(Debug, Clone, Serialize)]
@@ -111,7 +111,7 @@ pub struct BookDetail {
     /// Surfaced for the manual-edit dialog's clear-confirmation flow.
     pub pub_date: Option<String>,
     /// Cover thumbnail URL — relative path under
-    /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
+    /// `/api/v1/books/{id}/cover/thumb`, session-cookie gated. See
     /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Tag names attached to the manifestation.
@@ -138,7 +138,7 @@ pub struct BookDetail {
 }
 
 /// One pending draft row surfaced on the Versions tab. Serialised as
-/// JSON in the `metadata_versions` array of `GET /api/books/{id}`;
+/// JSON in the `metadata_versions` array of `GET /api/v1/books/{id}`;
 /// the row shape is decoded from the [`metadata_versions`] table with
 /// the canonical columns plus a stringified enum.
 ///
@@ -182,7 +182,7 @@ pub struct MetadataVersionSummary {
     pub accepted: u32,
 }
 
-/// `/api/works/{id}` response. Lists every manifestation the user
+/// `/api/v1/works/{id}` response. Lists every manifestation the user
 /// can see for a given work, grouped under the work-level prose.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
@@ -203,7 +203,7 @@ pub struct WorkDetail {
     pub manifestations: Vec<WorkManifestation>,
 }
 
-/// `GET /api/search` envelope (11b). Wraps a flat result list — the
+/// `GET /api/v1/search` envelope (11b). Wraps a flat result list — the
 /// frontend groups by [`SearchHit::kind`] client-side. No cursor:
 /// search is bounded by `LIMIT` server-side; pagination is a follow-up
 /// if user-research warrants it.
@@ -214,7 +214,7 @@ pub struct SearchResponse {
     pub items: Vec<SearchHit>,
 }
 
-/// One result row of `GET /api/search`. Carries the bare minimum the
+/// One result row of `GET /api/v1/search`. Carries the bare minimum the
 /// command-palette UI needs: a kind tag for grouping, identifiers for
 /// navigation, a short display label, and an optional `ts_headline`
 /// snippet with non-HTML ASCII STX (`\u{0002}`) / ETX (`\u{0003}`)
@@ -243,7 +243,7 @@ pub struct SearchHit {
     /// raw text without highlighting).
     pub snippet: Option<String>,
     /// Cover thumbnail URL for `book` results — relative path under
-    /// `/api/books/{id}/cover/thumb`, session-cookie gated. `None`
+    /// `/api/v1/books/{id}/cover/thumb`, session-cookie gated. `None`
     /// when the hit kind has no cover surface (future author/series
     /// variants).
     pub cover_url: Option<String>,
@@ -270,7 +270,7 @@ pub struct WorkManifestation {
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
     /// Cover thumbnail URL — relative path under
-    /// `/api/books/{id}/cover/thumb`, session-cookie gated. See
+    /// `/api/v1/books/{id}/cover/thumb`, session-cookie gated. See
     /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Ingestion lifecycle state.

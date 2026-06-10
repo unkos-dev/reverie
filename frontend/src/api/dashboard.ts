@@ -1,5 +1,5 @@
 /**
- * Admin-only library-health dashboard API client (`/api/dashboard/*`).
+ * Admin-only library-health dashboard API client (`/api/v1/dashboard/*`).
  *
  * Both endpoints require `role = admin`; non-admin callers receive 403.
  * Response bodies are parsed through Zod schemas at the boundary (per
@@ -62,14 +62,14 @@ const DashboardActivitySchema = z.object({
 /** Recent ingestion activity. Mirrors `ActivityResponse` on the wire. */
 export type DashboardActivity = z.infer<typeof DashboardActivitySchema>;
 
-/** `GET /api/dashboard/stats` — library-wide aggregate metrics (admin only). */
+/** `GET /api/v1/dashboard/stats` — library-wide aggregate metrics (admin only). */
 async function getDashboardStats(signal?: AbortSignal): Promise<DashboardStats> {
-  const raw = await apiFetch("/api/dashboard/stats", signal ? { signal } : {});
+  const raw = await apiFetch("/api/v1/dashboard/stats", signal ? { signal } : {});
   return DashboardStatsSchema.parse(raw);
 }
 
 /**
- * `GET /api/dashboard/activity?limit=N` — most-recent ingestion batches
+ * `GET /api/v1/dashboard/activity?limit=N` — most-recent ingestion batches
  * (admin only). `limit` is clamped server-side to `1..=100` (default 20).
  */
 async function getDashboardActivity(
@@ -78,8 +78,8 @@ async function getDashboardActivity(
 ): Promise<DashboardActivity> {
   const path =
     limit === undefined
-      ? "/api/dashboard/activity"
-      : `/api/dashboard/activity?limit=${String(limit)}`;
+      ? "/api/v1/dashboard/activity"
+      : `/api/v1/dashboard/activity?limit=${String(limit)}`;
   const raw = await apiFetch(path, signal ? { signal } : {});
   return DashboardActivitySchema.parse(raw);
 }

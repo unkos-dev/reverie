@@ -549,6 +549,49 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     assert_eq!(response.status_code(), StatusCode::OK);
 }
 
+// ── Regression: cover dual-mount asymmetry (UNK-376 PR1) ─────────────────
+
+/// PR1 (`/api`→`/api/v1`, UNK-376): the cover handler is dual-mounted and the
+/// move is *asymmetric* — only the API mount shifted to `/api/v1`; the OPDS
+/// mount stayed at `/opds`. Both must keep serving the shared handler. A
+/// router-wiring slip (API mount left at the old prefix, or the OPDS mount
+/// moved too) would slip past the single-route `/api/v1/books` move test.
+#[sqlx::test(migrations = "./migrations")]
+async fn cover_dual_mount_serves_api_v1_and_opds(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let library_root = std::fs::canonicalize(tmp.path()).unwrap();
+
+    let (_w, m, _, _) =
+        insert_epub_manifestation(&ingestion_pool, &library_root, "dual", "Dual Mounted").await;
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+
+    // API mount moved to /api/v1 (CurrentUser accepts Basic credentials).
+    let api = server
+        .get(&format!("/api/v1/books/{m}/cover"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(api.status_code(), StatusCode::OK);
+
+    // OPDS mount stayed put and still serves the same handler alongside it.
+    let opds = server
+        .get(&format!("/opds/books/{m}/cover"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(opds.status_code(), StatusCode::OK);
+
+    // Old unversioned API path is gone (reserved-prefix fallback → 404).
+    let gone = server
+        .get(&format!("/api/books/{m}/cover"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(gone.status_code(), StatusCode::NOT_FOUND);
+}
+
 // ── Regression: series feed renders every manifestation in one page ─────
 
 #[sqlx::test(migrations = "./migrations")]

@@ -88,7 +88,7 @@ pub enum AppError {
     #[error("validation error: {0}")]
     Validation(String),
     /// `X-CSRF-Token` header missing on a mutating-verb request
-    /// under `/api/*`. RFC 7807 `type` [`problems::CSRF_MISSING`].
+    /// under `/api/v1/*`. RFC 7807 `type` [`problems::CSRF_MISSING`].
     /// HTTP 428 Precondition Required.
     #[error("CSRF token required")]
     CsrfMissing,

@@ -12,7 +12,7 @@ pub mod enrichment_status;
 pub mod ingestion_job;
 /// Closed value set for the `ingestion_status` Postgres `ENUM`.
 pub mod ingestion_status;
-/// Response DTOs for the JSON library API (`/api/books`, `/api/works`).
+/// Response DTOs for the JSON library API (`/api/v1/books`, `/api/v1/works`).
 pub mod library;
 /// Closed value set for the `manifestation_format` Postgres `ENUM`.
 pub mod manifestation_format;
@@ -20,11 +20,11 @@ pub mod manifestation_format;
 pub mod reading_state;
 /// Closed value set for the `user_role` Postgres `ENUM`.
 pub mod role;
-/// Response DTOs for the series API (`/api/series/{id}`).
+/// Response DTOs for the series API (`/api/v1/series/{id}`).
 pub mod series;
 /// Persisted operator-tunable settings (single-row `settings` table).
 pub mod settings;
-/// Response DTOs for the shelves CRUD API (`/api/shelves*`).
+/// Response DTOs for the shelves CRUD API (`/api/v1/shelves*`).
 pub mod shelf;
 /// Closed value set for the `theme_preference` Postgres `ENUM`.
 pub mod theme_preference;

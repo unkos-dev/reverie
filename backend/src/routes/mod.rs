@@ -8,10 +8,10 @@
 /// Authentication endpoints (OIDC login / callback / logout, session
 /// `/auth/me` + theme update).
 pub mod auth;
-/// Sort-aware base64url pagination cursor (shared across `/api/*`
+/// Sort-aware base64url pagination cursor (shared across `/api/v1/*`
 /// list endpoints).
 pub mod cursor;
-/// Admin-only library-health dashboard (`/api/dashboard/*`).
+/// Admin-only library-health dashboard (`/api/v1/dashboard/*`).
 pub mod dashboard;
 /// Manifestation enrichment trigger / dry-run / status endpoints.
 pub mod enrichment;
@@ -19,21 +19,21 @@ pub mod enrichment;
 pub mod health;
 /// Library-scan trigger endpoint.
 pub mod ingestion;
-/// Library JSON API (`/api/books`, `/api/books/{id}`, `/api/works/{id}`).
+/// Library JSON API (`/api/v1/books`, `/api/v1/books/{id}`, `/api/v1/works/{id}`).
 pub mod library;
 /// Metadata-version review endpoints (accept / reject / revert / lock).
 pub mod metadata;
 /// OPDS 1.2 catalog routes (feeds, downloads, cover dual-mount).
 pub mod opds;
-/// Series JSON API (`/api/series/{id}`).
+/// Series JSON API (`/api/v1/series/{id}`).
 pub mod series;
-/// Admin-only persisted settings (`/api/settings`).
+/// Admin-only persisted settings (`/api/v1/settings`).
 pub mod settings;
-/// Shelves CRUD JSON API (`/api/shelves*`).
+/// Shelves CRUD JSON API (`/api/v1/shelves*`).
 pub mod shelves;
 /// Single-page-app asset-serving router (`/assets/*` mount).
 pub mod spa;
 /// Per-user device-token issue / list / revoke endpoints.
 pub mod tokens;
-/// Admin-only user management (`/api/users*`).
+/// Admin-only user management (`/api/v1/users*`).
 pub mod users;

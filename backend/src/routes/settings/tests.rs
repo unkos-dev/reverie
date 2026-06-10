@@ -10,7 +10,7 @@ fn server(app_pool: &PgPool, ingestion_pool: &PgPool) -> axum_test::TestServer {
 #[tokio::test]
 async fn get_settings_unauthenticated_returns_401() {
     let server = test_support::test_server();
-    let r = server.get("/api/settings").await;
+    let r = server.get("/api/v1/settings").await;
     assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
 }
 
@@ -18,7 +18,7 @@ async fn get_settings_unauthenticated_returns_401() {
 async fn put_settings_unauthenticated_returns_401() {
     let server = test_support::test_server();
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .json(&serde_json::json!({"enrichment_concurrency": 5}))
         .await;
     assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
@@ -32,7 +32,7 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .get("/api/settings")
+        .get("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -63,7 +63,7 @@ async fn get_settings_as_non_admin_returns_403(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .get("/api/settings")
+        .get("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, adult_basic)
         .await;
     assert_eq!(r.status_code(), StatusCode::FORBIDDEN);
@@ -84,7 +84,7 @@ async fn put_settings_updates_enrichment_concurrency(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
         .json(&serde_json::json!({"enrichment_concurrency": 7}))
         .await;
@@ -95,7 +95,7 @@ async fn put_settings_updates_enrichment_concurrency(pool: PgPool) {
     assert_eq!(body["restart_required"], false);
 
     let r2 = server
-        .get("/api/settings")
+        .get("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .await;
     let body2: serde_json::Value = r2.json();
@@ -111,7 +111,7 @@ async fn put_settings_as_non_admin_returns_403(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, adult_basic)
         .json(&serde_json::json!({"enrichment_concurrency": 5}))
         .await;
@@ -126,7 +126,7 @@ async fn put_settings_invalid_concurrency_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"enrichment_concurrency": -1}))
         .await;
@@ -148,7 +148,7 @@ async fn put_settings_empty_body_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({}))
         .await;
@@ -163,7 +163,7 @@ async fn put_settings_invalid_format_priority_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"format_priority": ["epub", "banana"]}))
         .await;
@@ -185,14 +185,14 @@ async fn put_settings_valid_format_priority_persists(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
         .json(&serde_json::json!({"format_priority": ["pdf", "epub"]}))
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 
     let r2 = server
-        .get("/api/settings")
+        .get("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .await;
     let body: serde_json::Value = r2.json();
@@ -213,7 +213,7 @@ async fn put_settings_invalid_cleanup_mode_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"cleanup_mode": "yeet"}))
         .await;
@@ -228,7 +228,7 @@ async fn put_settings_multiple_fields_at_once(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
         .json(&serde_json::json!({
             "enrichment_concurrency": 5,
@@ -252,7 +252,7 @@ async fn put_settings_duplicate_format_priority_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"format_priority": ["epub", "epub", "pdf"]}))
         .await;
@@ -274,7 +274,7 @@ async fn put_settings_empty_format_priority_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"format_priority": []}))
         .await;
@@ -289,7 +289,7 @@ async fn put_settings_invalid_url_scheme_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"openlibrary_base_url": "file:///etc/passwd"}))
         .await;
@@ -311,14 +311,14 @@ async fn put_settings_valid_url_persists(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
         .json(&serde_json::json!({"openlibrary_base_url": "https://custom.example.com"}))
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 
     let r2 = server
-        .get("/api/settings")
+        .get("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .await;
     let body: serde_json::Value = r2.json();
@@ -333,7 +333,7 @@ async fn put_settings_unknown_field_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"enrichment_concurency": 5}))
         .await;
@@ -348,7 +348,7 @@ async fn put_settings_zero_cover_max_bytes_returns_422(pool: PgPool) {
     let server = server(&app_pool, &ingestion_pool);
 
     let r = server
-        .put("/api/settings")
+        .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"cover_max_bytes": 0}))
         .await;

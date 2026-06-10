@@ -1,5 +1,5 @@
 /**
- * Read-only client for `/api/series/{id}`.
+ * Read-only client for `/api/v1/series/{id}`.
  *
  * Mirrors the response DTO in `backend/src/models/series.rs`. Snake_case
  * field names match the wire shape; the Zod schema is the boundary
@@ -43,7 +43,7 @@ const SeriesDetailSchema = z.object({
   sort_name: z.string(),
   works: z.array(SeriesWorkSchema),
 });
-/** `GET /api/series/{id}` response envelope. */
+/** `GET /api/v1/series/{id}` response envelope. */
 export type SeriesDetail = z.infer<typeof SeriesDetailSchema>;
 
 /**
@@ -52,7 +52,7 @@ export type SeriesDetail = z.infer<typeof SeriesDetailSchema>;
  */
 export async function getSeries(id: string, signal?: AbortSignal): Promise<SeriesDetail> {
   const body = await apiFetch(
-    `/api/series/${encodeURIComponent(id)}`,
+    `/api/v1/series/${encodeURIComponent(id)}`,
     signal ? { method: "GET", signal } : { method: "GET" },
   );
   return SeriesDetailSchema.parse(body);

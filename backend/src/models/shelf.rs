@@ -1,4 +1,4 @@
-//! Response DTOs for `/api/shelves*`.
+//! Response DTOs for `/api/v1/shelves*`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
@@ -7,7 +7,7 @@
 //! # `ETag` + If-Match contract
 //!
 //! Every shelf read endpoint emits ``ETag`: "<updated_at RFC3339>"`.
-//! The `PUT /api/shelves/{id}/items` reorder endpoint requires the
+//! The `PUT /api/v1/shelves/{id}/items` reorder endpoint requires the
 //! caller to echo that value as `If-Match`; mutation handlers issue
 //! an `UPDATE shelves SET updated_at = now() WHERE id = $1` in the
 //! same transaction so item-mutation events also move the `ETag`.
@@ -42,10 +42,10 @@ pub struct Shelf {
     pub item_count: i64,
 }
 
-/// One row of the shelf-items list (`GET /api/shelves/{id}`).
+/// One row of the shelf-items list (`GET /api/v1/shelves/{id}`).
 ///
 /// Carries the position so the frontend can render in stored order
-/// and round-trip back as `PUT /api/shelves/{id}/items` with the
+/// and round-trip back as `PUT /api/v1/shelves/{id}/items` with the
 /// re-arranged list.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
@@ -59,7 +59,7 @@ pub struct ShelfItem {
     pub added_at: OffsetDateTime,
 }
 
-/// `GET /api/shelves/{id}` response: shelf identity + ordered items.
+/// `GET /api/v1/shelves/{id}` response: shelf identity + ordered items.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
 pub struct ShelfWithItems {

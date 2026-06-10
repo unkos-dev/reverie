@@ -1,5 +1,5 @@
 /**
- * Client for the `/api/shelves*` CRUD surface.
+ * Client for the `/api/v1/shelves*` CRUD surface.
  *
  * Mirrors the response DTOs in `backend/src/models/shelf.rs`.
  *
@@ -29,7 +29,7 @@ const ShelfSchema = z.object({
   updated_at: z.string(),
   item_count: z.number().int().nonnegative(),
 });
-/** One shelf in `GET /api/shelves` (and create/rename round-trips). */
+/** One shelf in `GET /api/v1/shelves` (and create/rename round-trips). */
 export type Shelf = z.infer<typeof ShelfSchema>;
 
 const ShelfItemSchema = z.object({
@@ -37,7 +37,7 @@ const ShelfItemSchema = z.object({
   position: z.number().int(),
   added_at: z.string(),
 });
-/** One item row in `GET /api/shelves/{id}`. */
+/** One item row in `GET /api/v1/shelves/{id}`. */
 export type ShelfItem = z.infer<typeof ShelfItemSchema>;
 
 const ShelfWithItemsSchema = z.object({
@@ -48,7 +48,7 @@ const ShelfWithItemsSchema = z.object({
   updated_at: z.string(),
   items: z.array(ShelfItemSchema),
 });
-/** `GET /api/shelves/{id}` response envelope. */
+/** `GET /api/v1/shelves/{id}` response envelope. */
 export type ShelfWithItems = z.infer<typeof ShelfWithItemsSchema>;
 
 /** Derive an RFC 9110 quoted entity-tag from an RFC 3339 `updated_at`. */
@@ -59,7 +59,7 @@ export function buildEtag(updatedAt: string): string {
 /** List the caller's shelves. */
 export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
   const body = await apiFetch(
-    "/api/shelves",
+    "/api/v1/shelves",
     signal ? { method: "GET", signal } : { method: "GET" },
   );
   return z.array(ShelfSchema).parse(body);
@@ -68,7 +68,7 @@ export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
 /** Fetch a shelf and its items. */
 export async function getShelf(id: string, signal?: AbortSignal): Promise<ShelfWithItems> {
   const body = await apiFetch(
-    `/api/shelves/${encodeURIComponent(id)}`,
+    `/api/v1/shelves/${encodeURIComponent(id)}`,
     signal ? { method: "GET", signal } : { method: "GET" },
   );
   return ShelfWithItemsSchema.parse(body);
@@ -76,7 +76,7 @@ export async function getShelf(id: string, signal?: AbortSignal): Promise<ShelfW
 
 /** Create a new shelf. Returns the freshly minted row (mirrors POST 201). */
 export async function createShelf(name: string, signal?: AbortSignal): Promise<Shelf> {
-  const body = await apiFetch("/api/shelves", {
+  const body = await apiFetch("/api/v1/shelves", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -91,7 +91,7 @@ export async function createShelf(name: string, signal?: AbortSignal): Promise<S
  * `is_system = true`.
  */
 export async function renameShelf(id: string, name: string, signal?: AbortSignal): Promise<Shelf> {
-  const body = await apiFetch(`/api/shelves/${encodeURIComponent(id)}`, {
+  const body = await apiFetch(`/api/v1/shelves/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -106,7 +106,7 @@ export async function renameShelf(id: string, name: string, signal?: AbortSignal
  * shelf.
  */
 export async function deleteShelf(id: string, signal?: AbortSignal): Promise<void> {
-  await apiFetch(`/api/shelves/${encodeURIComponent(id)}`, {
+  await apiFetch(`/api/v1/shelves/${encodeURIComponent(id)}`, {
     method: "DELETE",
     ...(signal ? { signal } : {}),
   });
@@ -118,7 +118,7 @@ export async function addShelfItem(
   manifestationId: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await apiFetch(`/api/shelves/${encodeURIComponent(shelfId)}/items`, {
+  await apiFetch(`/api/v1/shelves/${encodeURIComponent(shelfId)}/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ manifestation_id: manifestationId }),
@@ -133,7 +133,7 @@ export async function removeShelfItem(
   signal?: AbortSignal,
 ): Promise<void> {
   await apiFetch(
-    `/api/shelves/${encodeURIComponent(shelfId)}/items/${encodeURIComponent(manifestationId)}`,
+    `/api/v1/shelves/${encodeURIComponent(shelfId)}/items/${encodeURIComponent(manifestationId)}`,
     {
       method: "DELETE",
       ...(signal ? { signal } : {}),
@@ -155,7 +155,7 @@ export async function reorderShelfItems(
   ifMatch: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await apiFetch(`/api/shelves/${encodeURIComponent(shelfId)}/items`, {
+  await apiFetch(`/api/v1/shelves/${encodeURIComponent(shelfId)}/items`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",

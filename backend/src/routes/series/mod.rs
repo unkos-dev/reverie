@@ -1,4 +1,4 @@
-//! `/api/series/{id}` JSON route.
+//! `/api/v1/series/{id}` JSON route.
 //!
 //! Returns the series identity plus an ordered list of its works,
 //! each with the manifestations the caller can see. Mirrors the
@@ -26,12 +26,12 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/series/{id}` router.
+/// Build the `/api/v1/series/{id}` router.
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/series/{id}", get(detail))
+    Router::new().route("/api/v1/series/{id}", get(detail))
 }
 
-/// `GET /api/series/{id}` — series + ordered works with visible
+/// `GET /api/v1/series/{id}` — series + ordered works with visible
 /// manifestations per work.
 ///
 /// # Errors
@@ -121,7 +121,7 @@ async fn detail(
                 id: r.id,
                 isbn_13: r.isbn_13,
                 isbn_10: r.isbn_10,
-                cover_url: format!("/api/books/{}/cover/thumb", r.id),
+                cover_url: format!("/api/v1/books/{}/cover/thumb", r.id),
                 ingestion_status: parse_ingestion(&r.ingestion_status)?,
                 validation_status: r.validation_status,
                 enrichment_status: parse_enrichment(&r.enrichment_status)?,

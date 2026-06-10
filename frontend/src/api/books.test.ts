@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("listBooks", () => {
-  test("calls GET /api/books and returns the envelope", async () => {
+  test("calls GET /api/v1/books and returns the envelope", async () => {
     const body = {
       items: [
         {
@@ -37,7 +37,7 @@ describe("listBooks", () => {
           authors: ["John Williams"],
           series: null,
           isbn_13: "9781590171998",
-          cover_url: "/api/books/.../cover/thumb",
+          cover_url: "/api/v1/books/.../cover/thumb",
           ingestion_status: "complete",
           validation_status: "clean",
           enrichment_status: "complete",
@@ -52,7 +52,7 @@ describe("listBooks", () => {
     expect(result.items).toHaveLength(1);
     expect(result.next_cursor).toBeNull();
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
-    expect(url.pathname).toBe("/api/books");
+    expect(url.pathname).toBe("/api/v1/books");
     expect(url.search).toBe("");
   });
 
@@ -118,7 +118,7 @@ describe("getBook", () => {
     await expect(getBook("ghost")).rejects.toBeInstanceOf(ApiError);
   });
 
-  test("calls GET /api/books/{id} with the id percent-encoded", async () => {
+  test("calls GET /api/v1/books/{id} with the id percent-encoded", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({
         id: "abc",
@@ -147,12 +147,12 @@ describe("getBook", () => {
     await getBook("abc/with-slash");
 
     const url = fetchSpy.mock.calls[0]?.[0] as string;
-    expect(url).toBe("/api/books/abc%2Fwith-slash");
+    expect(url).toBe("/api/v1/books/abc%2Fwith-slash");
   });
 });
 
 describe("getWork", () => {
-  test("calls GET /api/works/{id}", async () => {
+  test("calls GET /api/v1/works/{id}", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({
         id: "w-1",
@@ -168,7 +168,7 @@ describe("getWork", () => {
     await getWork("w-1");
 
     const url = fetchSpy.mock.calls[0]?.[0] as string;
-    expect(url).toBe("/api/works/w-1");
+    expect(url).toBe("/api/v1/works/w-1");
   });
 
   test("percent-encodes the id (defensive against malformed input)", async () => {
@@ -187,7 +187,7 @@ describe("getWork", () => {
     await getWork("work/with-slash");
 
     const url = fetchSpy.mock.calls[0]?.[0] as string;
-    expect(url).toBe("/api/works/work%2Fwith-slash");
+    expect(url).toBe("/api/v1/works/work%2Fwith-slash");
   });
 });
 
@@ -274,7 +274,7 @@ describe("response schema validation (zod boundary)", () => {
 });
 
 describe("updateBookMetadata", () => {
-  test("PATCHes /api/books/{id}/metadata with the fields envelope", async () => {
+  test("PATCHes /api/v1/books/{id}/metadata with the fields envelope", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
@@ -282,7 +282,7 @@ describe("updateBookMetadata", () => {
     await updateBookMetadata("abc-123", { title: "New", description: null });
 
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
-    expect(input).toBe("/api/books/abc-123/metadata");
+    expect(input).toBe("/api/v1/books/abc-123/metadata");
     expect(init?.method).toBe("PATCH");
     expect(parseJsonBody(init?.body)).toEqual({
       fields: { title: "New", description: null },

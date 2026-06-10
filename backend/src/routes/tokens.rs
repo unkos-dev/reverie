@@ -1,6 +1,6 @@
 //! Per-user device-token issue / list / revoke endpoints.
 //!
-//! Token plaintext is returned exactly once on `POST /api/tokens` — it
+//! Token plaintext is returned exactly once on `POST /api/v1/tokens` — it
 //! is never persisted, only its SHA-256 hash. Subsequent `GET` and
 //! `DELETE` operate on the row id; the plaintext cannot be recovered.
 
@@ -20,9 +20,9 @@ use crate::state::AppState;
 /// Build the device-token management router.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/tokens", post(create_token))
-        .route("/api/tokens", get(list_tokens))
-        .route("/api/tokens/{id}", delete(revoke_token))
+        .route("/api/v1/tokens", post(create_token))
+        .route("/api/v1/tokens", get(list_tokens))
+        .route("/api/v1/tokens/{id}", delete(revoke_token))
 }
 
 #[derive(serde::Deserialize)]
@@ -120,7 +120,7 @@ mod tests {
     async fn create_token_returns_401_without_auth() {
         let server = test_support::test_server();
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .json(&serde_json::json!({"name": "My Kindle"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
@@ -129,7 +129,7 @@ mod tests {
     #[tokio::test]
     async fn list_tokens_returns_401_without_auth() {
         let server = test_support::test_server();
-        let response = server.get("/api/tokens").await;
+        let response = server.get("/api/v1/tokens").await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
 
@@ -137,7 +137,7 @@ mod tests {
     async fn revoke_token_returns_401_without_auth() {
         let server = test_support::test_server();
         let response = server
-            .delete(&format!("/api/tokens/{}", uuid::Uuid::new_v4()))
+            .delete(&format!("/api/v1/tokens/{}", uuid::Uuid::new_v4()))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
@@ -188,7 +188,7 @@ mod tests {
 
         // Empty name
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": ""}))
             .await;
@@ -197,7 +197,7 @@ mod tests {
         // Name too long
         let long_name = "x".repeat(256);
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": long_name}))
             .await;
@@ -207,7 +207,7 @@ mod tests {
         // `> 255` comparison against a `>= 255` off-by-one regression.
         let max_name = "x".repeat(255);
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": max_name}))
             .await;
@@ -217,7 +217,7 @@ mod tests {
         // bytes) is accepted, matching the "1-255 characters" message.
         let multibyte = "é".repeat(255);
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": multibyte}))
             .await;
@@ -230,7 +230,7 @@ mod tests {
 
         // Whitespace-only rejects as empty-after-trim, not as a length pass.
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": "   "}))
             .await;
@@ -239,7 +239,7 @@ mod tests {
         // 256 spaces is empty after trim — must reject as empty, not run the
         // pre-trim length branch.
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": " ".repeat(256)}))
             .await;
@@ -250,7 +250,7 @@ mod tests {
         // is the case that distinguishes the length-half of the bug.
         let padded = format!("  {}  ", "a".repeat(254));
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": padded}))
             .await;
@@ -262,7 +262,7 @@ mod tests {
 
         // Surrounding whitespace is accepted and stripped before persistence.
         let response = server
-            .post("/api/tokens")
+            .post("/api/v1/tokens")
             .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
             .json(&serde_json::json!({"name": "   abc   "}))
             .await;

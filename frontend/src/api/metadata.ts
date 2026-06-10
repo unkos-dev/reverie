@@ -2,13 +2,13 @@
  * Per-version metadata mutators for the book detail Versions tab.
  *
  * Wraps the existing
- * `POST /api/manifestations/{id}/metadata/{accept,reject,revert}`
+ * `POST /api/v1/manifestations/{id}/metadata/{accept,reject,revert}`
  * endpoints (shipped in earlier sub-phases) with typed call sites and
  * the central `apiFetch` wrapper so the CSRF token + RFC 7807 parsing
  * apply uniformly.
  *
- * The accept/reject/revert URLs use `/api/manifestations/` (the legacy
- * shape) while the new manual-edit endpoint uses `/api/books/` (per
+ * The accept/reject/revert URLs use `/api/v1/manifestations/` (the legacy
+ * shape) while the new manual-edit endpoint uses `/api/v1/books/` (per
  * the JSON-API ADR). Both refer to the same `manifestations.id` UUID —
  * the URL prefix is a historical artefact of the pre-Step-11 metadata
  * review surface and not a separate identifier space.
@@ -24,7 +24,7 @@ export async function acceptVersion(
   versionId: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await apiFetch(`/api/manifestations/${encodeURIComponent(manifestationId)}/metadata/accept`, {
+  await apiFetch(`/api/v1/manifestations/${encodeURIComponent(manifestationId)}/metadata/accept`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version_id: versionId }),
@@ -42,7 +42,7 @@ export async function rejectVersion(
   versionId: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await apiFetch(`/api/manifestations/${encodeURIComponent(manifestationId)}/metadata/reject`, {
+  await apiFetch(`/api/v1/manifestations/${encodeURIComponent(manifestationId)}/metadata/reject`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version_id: versionId }),
@@ -67,7 +67,7 @@ export async function revertField(
   versionId: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
-  await apiFetch(`/api/manifestations/${encodeURIComponent(manifestationId)}/metadata/revert`, {
+  await apiFetch(`/api/v1/manifestations/${encodeURIComponent(manifestationId)}/metadata/revert`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ field_name: fieldName, version_id: versionId }),

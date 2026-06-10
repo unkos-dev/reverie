@@ -14,7 +14,7 @@ import { UsersPage } from "@/pages/admin/UsersPage";
  * The prefetch is gated on the cached `me` identity: if the cache already
  * shows a non-admin role (or is cold/absent), we skip the prefetch and let
  * the component's `enabled: me?.role === "admin"` guard handle fetching.
- * This avoids firing a guaranteed-to-fail GET /api/users for non-admin
+ * This avoids firing a guaranteed-to-fail GET /api/v1/users for non-admin
  * visitors who navigate directly to this URL.
  */
 export async function loader(): Promise<null> {

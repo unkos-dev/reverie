@@ -128,7 +128,7 @@ pub async fn find_by_oidc_subject(
 /// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and
 /// would store those angle/bracket-bearing strings raw in `users.email`. This
 /// helper disables both options, so every write path to that column (OIDC upsert
-/// + admin `PATCH /api/users/{id}`) rejects those two shapes (UNK-309).
+/// + admin `PATCH /api/v1/users/{id}`) rejects those two shapes (UNK-309).
 ///
 /// This is *not* full normalisation. A quoted local-part
 /// (`"john doe"@example.com`) is a valid addr-spec and is still accepted, so the
@@ -156,7 +156,7 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
 /// is signature-verified, but the `email` *string* is not format-checked upstream,
 /// so a misconfigured or non-standard `IdP` could release a malformed value that
 /// violates the column invariant. Both write paths to this column (here and the
-/// admin `PATCH /api/users/{id}` path) guard with [`is_addr_spec`], so both uphold
+/// admin `PATCH /api/v1/users/{id}` path) guard with [`is_addr_spec`], so both uphold
 /// the RFC-5322 addr-spec invariant (UNK-309). Per
 /// OIDC Core §5.7 the `email` claim is optional and non-identifying, so an invalid
 /// claim degrades to `NULL` rather than failing authentication — login never depends

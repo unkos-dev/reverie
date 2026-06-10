@@ -1,10 +1,10 @@
 //! Enrichment control endpoints.
 //!
-//! * `POST /api/manifestations/:id/enrichment/trigger` — re-queue this
+//! * `POST /api/v1/manifestations/:id/enrichment/trigger` — re-queue this
 //!   manifestation for a fresh enrichment pass.
-//! * `POST /api/manifestations/:id/enrichment/dry-run`  — synchronous preview
+//! * `POST /api/v1/manifestations/:id/enrichment/dry-run`  — synchronous preview
 //!   of what the pipeline would change.
-//! * `GET  /api/enrichment/status` — aggregate queue counters.
+//! * `GET  /api/v1/enrichment/status` — aggregate queue counters.
 
 use axum::Router;
 use axum::extract::{Path, State};
@@ -23,8 +23,8 @@ use crate::state::AppState;
 
 /// Build the enrichment-control router.
 ///
-/// Mounts `POST /api/manifestations/{id}/enrichment/{trigger,dry-run}` and
-/// `GET /api/enrichment/status` on the application `AppState`.
+/// Mounts `POST /api/v1/manifestations/{id}/enrichment/{trigger,dry-run}` and
+/// `GET /api/v1/enrichment/status` on the application `AppState`.
 ///
 /// # Invariants
 /// - Handlers require an authenticated non-child user
@@ -38,9 +38,15 @@ use crate::state::AppState;
 /// must run first on the user's pool before crossing the pool boundary.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/manifestations/{id}/enrichment/trigger", post(trigger))
-        .route("/api/manifestations/{id}/enrichment/dry-run", post(dry_run))
-        .route("/api/enrichment/status", get(status))
+        .route(
+            "/api/v1/manifestations/{id}/enrichment/trigger",
+            post(trigger),
+        )
+        .route(
+            "/api/v1/manifestations/{id}/enrichment/dry-run",
+            post(dry_run),
+        )
+        .route("/api/v1/enrichment/status", get(status))
 }
 
 async fn trigger(
@@ -165,7 +171,7 @@ mod tests {
         let server = test_support::test_server();
         let id = Uuid::new_v4();
         let response = server
-            .post(&format!("/api/manifestations/{id}/enrichment/trigger"))
+            .post(&format!("/api/v1/manifestations/{id}/enrichment/trigger"))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
@@ -173,7 +179,7 @@ mod tests {
     #[tokio::test]
     async fn status_requires_auth() {
         let server = test_support::test_server();
-        let response = server.get("/api/enrichment/status").await;
+        let response = server.get("/api/v1/enrichment/status").await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
 
@@ -182,7 +188,7 @@ mod tests {
         let server = test_support::test_server();
         let id = Uuid::new_v4();
         let response = server
-            .post(&format!("/api/manifestations/{id}/enrichment/dry-run"))
+            .post(&format!("/api/v1/manifestations/{id}/enrichment/dry-run"))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
@@ -216,7 +222,7 @@ mod tests {
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
-            .post(&format!("/api/manifestations/{m_id}/enrichment/trigger"))
+            .post(&format!("/api/v1/manifestations/{m_id}/enrichment/trigger"))
             .add_header(AUTHORIZATION, basic)
             .await;
         assert_eq!(

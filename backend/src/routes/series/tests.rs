@@ -1,4 +1,4 @@
-//! Integration tests for `/api/series/{id}`.
+//! Integration tests for `/api/v1/series/{id}`.
 //!
 //! Existence gate, RLS isolation, child visibility, and the
 //! ordering invariant from the route's docstring.
@@ -53,7 +53,9 @@ async fn detail_requires_auth(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    let r = server.get(&format!("/api/series/{}", Uuid::new_v4())).await;
+    let r = server
+        .get(&format!("/api/v1/series/{}", Uuid::new_v4()))
+        .await;
     assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
 }
 
@@ -65,7 +67,7 @@ async fn detail_missing_series_returns_404_problem(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let r = server
-        .get(&format!("/api/series/{}", Uuid::new_v4()))
+        .get(&format!("/api/v1/series/{}", Uuid::new_v4()))
         .add_header(auth(&basic).0, auth(&basic).1)
         .await;
     test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
@@ -100,7 +102,7 @@ async fn detail_happy_path_returns_ordered_works(pool: PgPool) {
     .unwrap();
 
     let r = server
-        .get(&format!("/api/series/{series_id}"))
+        .get(&format!("/api/v1/series/{series_id}"))
         .add_header(auth(&basic).0, auth(&basic).1)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
@@ -129,7 +131,7 @@ async fn detail_404_when_no_manifestation_in_series_visible(pool: PgPool) {
     let (series_id, _w, _m) =
         insert_series_with_one_work(&pool, &ingestion_pool, "Wheel of Time", 1.0, "wot").await;
     let r = server
-        .get(&format!("/api/series/{series_id}"))
+        .get(&format!("/api/v1/series/{series_id}"))
         .add_header(auth(&basic).0, auth(&basic).1)
         .await;
     test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
@@ -179,7 +181,7 @@ async fn detail_child_sees_visible_works_with_gap_for_hidden_ones(pool: PgPool) 
     test_support::db::add_to_shelf(&app_pool, shelf_id, m_a).await;
 
     let r = server
-        .get(&format!("/api/series/{series_id}"))
+        .get(&format!("/api/v1/series/{series_id}"))
         .add_header(auth(&basic).0, auth(&basic).1)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -223,7 +225,7 @@ async fn detail_child_sees_series_when_at_least_one_shelf_assignment(pool: PgPoo
     test_support::db::add_to_shelf(&app_pool, shelf_id, manifestation_id).await;
 
     let r = server
-        .get(&format!("/api/series/{series_id}"))
+        .get(&format!("/api/v1/series/{series_id}"))
         .add_header(auth(&basic).0, auth(&basic).1)
         .await;
     assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());

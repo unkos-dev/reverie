@@ -60,11 +60,11 @@ persisting. Two operator-visible behaviours:
 Write an operator-facing Starlight page covering email-claim validation
 behaviour when the admin user-management surface lands.
 
-### Admin `PATCH /api/users/{id}`: addr-spec email validation
+### Admin `PATCH /api/v1/users/{id}`: addr-spec email validation
 
 **Source:** `backend/src/routes/users/mod.rs` — UNK-309
 
-The admin `PATCH /api/users/{id}` endpoint validates the email field
+The admin `PATCH /api/v1/users/{id}` endpoint validates the email field
 against the same RFC 5322 _addr-spec_ rules as the OIDC path
 (`is_addr_spec`). This tightens the prior `EmailAddress::is_valid` check,
 which accepted display-name (`Alice <alice@example.com>`) and
@@ -75,3 +75,21 @@ user id/role/`is_child`), so no active session needs invalidating.
 
 Write an operator-facing Starlight page documenting these constraints when
 the admin user-management UI lands.
+
+### `/api/v1` URL versioning and the breaking move from `/api/*`
+
+**Source:** [`adr/2026-06-08-api-versioning-openapi.md`](../adr/2026-06-08-api-versioning-openapi.md) (UNK-376)
+
+The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and
+`/opds` are deliberately unversioned (operational / standard-protocol
+paths exempt from the URL-path major-version rule). The data routes moved
+from `/api/*` to `/api/v1/*` — a breaking change. Old `/api/*` paths now
+return a JSON Problem `404`.
+
+Deferred on purpose: pre-v0.1.0 there are no released API consumers, so no
+migration guide is owed yet, and full `#[utoipa::path]` coverage of the
+versioned surface lands across UNK-376 PR2..N rather than this mount-move
+PR. Write a user-facing "API versioning and breaking-change migration"
+Starlight page (the `/api/v1` contract, what's unversioned and why, the
+deprecation policy for a future `/api/v2`) once the generated API
+reference covers the full route set.

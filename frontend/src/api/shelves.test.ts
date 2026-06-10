@@ -57,16 +57,18 @@ describe("listShelves", () => {
         item_count: 3,
       },
     ];
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(body));
     const result = await listShelves();
     expect(result).toHaveLength(1);
     expect(result[0]?.name).toBe("Currently reading");
     expect(result[0]?.item_count).toBe(3);
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/v1/shelves");
   });
 });
 
 describe("getShelf", () => {
-  test("calls GET /api/shelves/{id}", async () => {
+  test("calls GET /api/v1/shelves/{id}", async () => {
     const body = {
       id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
       name: "Holiday",
@@ -79,7 +81,7 @@ describe("getShelf", () => {
     const result = await getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     expect(result.name).toBe("Holiday");
     const url = fetchSpy.mock.calls[0]?.[0] as string;
-    expect(url).toBe("/api/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    expect(url).toBe("/api/v1/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
   });
 });
 
@@ -98,6 +100,8 @@ describe("createShelf", () => {
       .mockResolvedValueOnce(jsonResponse(body, { status: 201 }));
     const result = await createShelf("Wishlist");
     expect(result.id).toBe("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/v1/shelves");
     const init = fetchSpy.mock.calls[0]?.[1];
     expect(init?.method).toBe("POST");
     expect(parseJsonBody(init?.body)).toEqual({ name: "Wishlist" });
@@ -133,6 +137,8 @@ describe("deleteShelf", () => {
   test("issues DELETE and resolves on 204", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
     await deleteShelf("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    expect(url).toBe("/api/v1/shelves/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
     const init = fetchSpy.mock.calls[0]?.[1];
     expect(init?.method).toBe("DELETE");
   });
@@ -160,7 +166,7 @@ describe("shelf items", () => {
     );
     const url = fetchSpy.mock.calls[0]?.[0] as string;
     expect(url).toBe(
-      "/api/shelves/ffffffff-ffff-ffff-ffff-ffffffffffff/items/00000000-0000-0000-0000-000000000002",
+      "/api/v1/shelves/ffffffff-ffff-ffff-ffff-ffffffffffff/items/00000000-0000-0000-0000-000000000002",
     );
   });
 

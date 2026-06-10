@@ -43,6 +43,15 @@ use crate::state::AppState;
 const PERMISSIONS_POLICY_VALUE: &str = "camera=(), microphone=(), geolocation=(), \
      payment=(), usb=(), midi=(), magnetometer=(), accelerometer=(), gyroscope=()";
 
+/// Path prefixes that must never fall through to the SPA `index.html`. An
+/// unmatched request under one of these gets a JSON Problem `404` (via
+/// [`composite_fallback`]) instead of an HTML `200`, so stale/typo'd API
+/// clients receive a machine-readable error.
+///
+/// Matched by prefix, so the bare `/api` entry also covers the versioned
+/// `/api/v1/*` routes — it MUST stay `/api` (not be narrowed to `/api/v1`)
+/// even though the data routes moved under `/api/v1` (UNK-376): it is what
+/// keeps the now-gone `/api/*` paths returning a Problem instead of the SPA.
 const RESERVED_PREFIXES: &[&str] = &["/api", "/auth", "/health", "/opds"];
 
 /// Uniform security-headers middleware applied to every response from the
@@ -163,7 +172,7 @@ pub async fn composite_fallback(State(state): State<AppState>, uri: Uri) -> Resp
 ///
 /// Threat: reserved-prefix typos must stay on the API problem-details
 /// contract and API CSP. A drift into the SPA fallback would serve
-/// `index.html` with HTML CSP on an `/api/*` URL, downgrading the
+/// `index.html` with HTML CSP on an `/api/v1/*` URL, downgrading the
 /// response-class differentiation that motivates having two CSP
 /// policies. See `adr/2026-05-22-json-api-conventions.md` for the
 /// fallback contract.
@@ -254,9 +263,9 @@ mod tests {
     #[test]
     fn is_reserved_prefix_matches_bare_and_subpaths() {
         assert!(is_reserved_prefix("/api"));
-        assert!(is_reserved_prefix("/api/"));
-        assert!(is_reserved_prefix("/api/books"));
-        assert!(is_reserved_prefix("/api/books/9999/covr"));
+        assert!(is_reserved_prefix("/api/v1/"));
+        assert!(is_reserved_prefix("/api/v1/books"));
+        assert!(is_reserved_prefix("/api/v1/books/9999/covr"));
         assert!(is_reserved_prefix("/auth"));
         assert!(is_reserved_prefix("/auth/callback"));
         assert!(is_reserved_prefix("/health"));
@@ -272,7 +281,7 @@ mod tests {
         assert!(!is_reserved_prefix("/library/book/1"));
         assert!(!is_reserved_prefix("/settings"));
         assert!(!is_reserved_prefix("/apis-nothing-to-see-here")); // not `/api` prefix
-        assert!(!is_reserved_prefix("/apiology")); // not `/api/`
+        assert!(!is_reserved_prefix("/apiology")); // not `/api/v1/`
         assert!(!is_reserved_prefix("/authed")); // not `/auth/`
     }
 
@@ -291,7 +300,7 @@ mod tests {
     // These exercise the full composite router via `test_support::test_server()`
     // and a sibling `test_server_with_security()` helper that injects a custom
     // `SecurityConfig`. No DB is required for any of these — they hit /health,
-    // /api/__nope__, and SPA paths.
+    // /api/v1/__nope__, and SPA paths.
     use crate::build_router_with_session_store;
     use crate::config::SecurityConfig;
     use crate::test_support;
@@ -398,7 +407,7 @@ mod tests {
             "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
         ));
         let server = test_server_with_security(security);
-        let r = server.get("/api/__nope__").await;
+        let r = server.get("/api/v1/__nope__").await;
         let body = crate::test_support::assert_problem(
             &r,
             crate::error::problems::NOT_FOUND,
@@ -409,7 +418,7 @@ mod tests {
         // composite-fallback responses too (not only matched routes).
         // A layer-order regression that drops it from the fallback path
         // breaks this assertion.
-        assert_eq!(body["instance"].as_str(), Some("/api/__nope__"));
+        assert_eq!(body["instance"].as_str(), Some("/api/v1/__nope__"));
         let csp = r
             .headers()
             .get("content-security-policy")
@@ -428,7 +437,7 @@ mod tests {
             )),
             ..crate::test_support::test_config().security
         });
-        let r = server.get("/api/books/9999/covr").await;
+        let r = server.get("/api/v1/books/9999/covr").await;
         r.assert_status(axum::http::StatusCode::NOT_FOUND);
         assert!(
             r.headers()

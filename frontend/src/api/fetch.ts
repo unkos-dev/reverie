@@ -1,5 +1,5 @@
 /**
- * Centralised fetch wrapper for the `/api/*` surface.
+ * Centralised fetch wrapper for the `/api/v1/*` surface.
  *
  * Owns three concerns the rest of the frontend would otherwise repeat:
  *
@@ -46,7 +46,7 @@ const ProblemDetailsSchema = z.object({
 type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
 
 /**
- * Issue a JSON request to a same-origin `/api/*` endpoint and parse the
+ * Issue a JSON request to a same-origin `/api/v1/*` endpoint and parse the
  * response. The wrapper is intentionally narrow — it accepts the same
  * `init` shape as `fetch()` plus an optional override of the
  * authentication-failure handling.
@@ -100,7 +100,7 @@ async function decodeSuccess(response: Response): Promise<unknown> {
     return undefined;
   }
   // Other 2xx may also carry an empty body — e.g. the legacy
-  // `/api/manifestations/{id}/metadata/{accept,reject,revert}` mutators
+  // `/api/v1/manifestations/{id}/metadata/{accept,reject,revert}` mutators
   // emit `200 OK` with no payload. `Response.json()` on an empty body
   // throws SyntaxError, so route through `.text()` and short-circuit
   // empties.

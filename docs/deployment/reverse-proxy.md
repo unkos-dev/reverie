@@ -1,7 +1,7 @@
 # Reverse proxy topology
 
 Reverie ships as a single container that serves both the HTML frontend
-(`/` and SPA deep links) and the API (`/api`, `/auth`, `/health`, `/opds`)
+(`/` and SPA deep links) and the API (`/api/v1`, `/auth`, `/health`, `/opds`)
 from a single port (default 3000). There is no separate frontend container.
 
 This page covers the two deployment topologies most operators choose.

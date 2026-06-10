@@ -1,4 +1,4 @@
-//! `/api/shelves*` CRUD JSON routes.
+//! `/api/v1/shelves*` CRUD JSON routes.
 //!
 //! Shelves are user-scoped curation buckets. The shelves and
 //! shelf_items tables ship without RLS — the runtime role
@@ -19,7 +19,7 @@
 //! # ETag / If-Match contract
 //!
 //! Every shelf read endpoint emits `ETag: "<updated_at RFC3339>"`.
-//! The reorder endpoint (`PUT /api/shelves/{id}/items`) requires the
+//! The reorder endpoint (`PUT /api/v1/shelves/{id}/items`) requires the
 //! caller to echo that value as `If-Match`; the handler runs
 //! `SELECT updated_at FROM shelves WHERE id = $1 FOR UPDATE` inside
 //! the transaction and refuses the write with 412 if the value
@@ -47,22 +47,22 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/shelves*` router.
+/// Build the `/api/v1/shelves*` router.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/shelves", get(list_shelves).post(create_shelf))
+        .route("/api/v1/shelves", get(list_shelves).post(create_shelf))
         .route(
-            "/api/shelves/{id}",
+            "/api/v1/shelves/{id}",
             patch(rename_shelf)
                 .delete(delete_shelf)
                 .get(get_shelf_with_items),
         )
         .route(
-            "/api/shelves/{id}/items",
+            "/api/v1/shelves/{id}/items",
             post(add_shelf_item).put(reorder_shelf_items),
         )
         .route(
-            "/api/shelves/{id}/items/{manifestation_id}",
+            "/api/v1/shelves/{id}/items/{manifestation_id}",
             delete(remove_shelf_item),
         )
 }
@@ -116,7 +116,7 @@ fn parse_if_match(headers: &HeaderMap) -> Result<Option<OffsetDateTime>, AppErro
     Ok(Some(ts))
 }
 
-/// `GET /api/shelves` — list the caller's shelves.
+/// `GET /api/v1/shelves` — list the caller's shelves.
 ///
 /// # Errors
 /// - [`AppError::Internal`] on database errors.
@@ -158,13 +158,13 @@ async fn list_shelves(
     Ok(axum::Json(shelves))
 }
 
-/// Body for `POST /api/shelves`.
+/// Body for `POST /api/v1/shelves`.
 #[derive(Debug, Deserialize)]
 struct CreateShelfRequest {
     name: String,
 }
 
-/// `POST /api/shelves` — create a new (non-system) shelf for the
+/// `POST /api/v1/shelves` — create a new (non-system) shelf for the
 /// caller.
 ///
 /// # Errors
@@ -215,13 +215,13 @@ async fn create_shelf(
     Ok((StatusCode::CREATED, headers, axum::Json(shelf)))
 }
 
-/// Body for `PATCH /api/shelves/{id}`.
+/// Body for `PATCH /api/v1/shelves/{id}`.
 #[derive(Debug, Deserialize)]
 struct RenameShelfRequest {
     name: String,
 }
 
-/// `PATCH /api/shelves/{id}` — rename a non-system shelf owned by
+/// `PATCH /api/v1/shelves/{id}` — rename a non-system shelf owned by
 /// the caller.
 ///
 /// # Errors
@@ -305,7 +305,7 @@ async fn rename_shelf(
     Ok((headers, axum::Json(shelf)))
 }
 
-/// `DELETE /api/shelves/{id}` — delete a non-system shelf.
+/// `DELETE /api/v1/shelves/{id}` — delete a non-system shelf.
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
@@ -347,7 +347,7 @@ async fn delete_shelf(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /api/shelves/{id}` — shelf identity plus ordered items.
+/// `GET /api/v1/shelves/{id}` — shelf identity plus ordered items.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when missing or not owned by caller.
@@ -409,13 +409,13 @@ async fn get_shelf_with_items(
     Ok((headers, axum::Json(body)))
 }
 
-/// Body for `POST /api/shelves/{id}/items`.
+/// Body for `POST /api/v1/shelves/{id}/items`.
 #[derive(Debug, Deserialize)]
 struct AddItemRequest {
     manifestation_id: Uuid,
 }
 
-/// `POST /api/shelves/{id}/items` — append a manifestation at
+/// `POST /api/v1/shelves/{id}/items` — append a manifestation at
 /// `max(position) + 1`. Bumps the shelf's `updated_at` (`ETag`).
 ///
 /// # Errors
@@ -506,7 +506,7 @@ async fn add_shelf_item(
     Ok((StatusCode::NO_CONTENT, headers))
 }
 
-/// `DELETE /api/shelves/{id}/items/{manifestation_id}` — remove a
+/// `DELETE /api/v1/shelves/{id}/items/{manifestation_id}` — remove a
 /// shelf item. Bumps the shelf's `updated_at` (`ETag`).
 ///
 /// # Errors
@@ -564,13 +564,13 @@ async fn remove_shelf_item(
     Ok((StatusCode::NO_CONTENT, headers))
 }
 
-/// Body for `PUT /api/shelves/{id}/items` — full ordered manifestation list.
+/// Body for `PUT /api/v1/shelves/{id}/items` — full ordered manifestation list.
 #[derive(Debug, Deserialize)]
 struct ReorderItemsRequest {
     items: Vec<Uuid>,
 }
 
-/// `PUT /api/shelves/{id}/items` — transactionally rewrite
+/// `PUT /api/v1/shelves/{id}/items` — transactionally rewrite
 /// `shelf_items.position` based on the supplied order.
 ///
 /// Optimistic-concurrency: requires `If-Match: "<updated_at>"`
