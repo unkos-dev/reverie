@@ -335,7 +335,7 @@
           "series"
         ],
         "summary": "`GET /api/v1/series/{id}` — series + ordered works with visible\nmanifestations per work.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing or every\n  work in the series has zero visible manifestations under the\n  caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing, the series\n  has no linked works, or every work in the series has zero visible\n  manifestations under the caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "detail",
         "parameters": [
           {
@@ -371,7 +371,7 @@
             }
           },
           "404": {
-            "description": "Series not found, or no work has a visible manifestation (existence-not-leaked)",
+            "description": "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)",
             "content": {
               "application/json": {
                 "schema": {

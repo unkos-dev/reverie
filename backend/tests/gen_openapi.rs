@@ -210,13 +210,15 @@ fn spec_covers_series_dashboard_routes() {
     let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
     let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
 
-    // The three series + dashboard data routes are documented.
-    let paths = doc["paths"].as_object().expect("paths object");
-    for path in [
+    let data_routes = [
         "/api/v1/series/{id}",
         "/api/v1/dashboard/stats",
         "/api/v1/dashboard/activity",
-    ] {
+    ];
+
+    // The three series + dashboard data routes are documented.
+    let paths = doc["paths"].as_object().expect("paths object");
+    for path in data_routes {
         assert!(paths.contains_key(path), "{path} documented");
     }
 
@@ -225,11 +227,7 @@ fn spec_covers_series_dashboard_routes() {
     // omission, the deny-by-default contract; only public ops opt out). The admin
     // gate on dashboard is an authorization layer documented as a 403 below — not a
     // separate security scheme.
-    for path in [
-        "/api/v1/series/{id}",
-        "/api/v1/dashboard/stats",
-        "/api/v1/dashboard/activity",
-    ] {
+    for path in data_routes {
         assert!(
             doc["paths"][path]["get"].get("security").is_none(),
             "GET {path} must inherit the global security default (no op-level security)"
@@ -256,8 +254,25 @@ fn spec_covers_series_dashboard_routes() {
         );
     }
 
-    // series/{id} documents its 404 (missing / no-visible-manifestation, existence-
-    // not-leaked) against ProblemDetails.
+    // Each 200 response body references its own DTO — pins the operation→schema
+    // wiring so a copy-paste swap between the two adjacent dashboard handlers
+    // (body = StatsResponse <-> ActivityResponse) is caught here, not only by the
+    // byte-drift gate against a possibly-regenerated artifact.
+    for (path, dto) in [
+        ("/api/v1/series/{id}", "SeriesDetail"),
+        ("/api/v1/dashboard/stats", "StatsResponse"),
+        ("/api/v1/dashboard/activity", "ActivityResponse"),
+    ] {
+        assert_eq!(
+            doc["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+                ["$ref"],
+            serde_json::json!(format!("#/components/schemas/{dto}")),
+            "GET {path} 200 body must reference {dto}"
+        );
+    }
+
+    // series/{id} documents its 404 (missing / no-linked-works / no-visible-
+    // manifestation, existence-not-leaked) against ProblemDetails.
     assert!(
         doc["paths"]["/api/v1/series/{id}"]["get"]["responses"]
             .get("404")
