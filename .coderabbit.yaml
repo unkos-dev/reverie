@@ -20,16 +20,16 @@ reviews:
   high_level_summary: false
   poem: false
   in_progress_fortune: false
-  review_status: true
-  review_details: true
-  commit_status: true
-  collapse_walkthrough: false
-  changed_files_summary: true
-  sequence_diagram: true
+  review_status: false
+  review_details: false
+  commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
   estimate_code_review_effort: false
   assess_linked_issues: false
   related_issues: false
-  related_prs: true
+  related_prs: false
   suggested_reviewers: false
   suggested_labels: false
   enable_prompt_for_ai_agents: false
@@ -92,11 +92,14 @@ reviews:
       enabled: false
   tools:
     # CI duplicates — explicitly disabled. CI is the authoritative lint
-    # surface (cargo clippy --deny warnings, eslint strictTypeChecked,
-    # prettier, stylelint, markdownlint-cli2 with the repo's config).
-    # CodeRabbit's bundled wrappers either duplicate the same diagnostics
-    # or run against a different (default / weaker) ruleset, both of
-    # which produce noise without signal.
+    # surface: the `lint`, `Workflow lint`, and `Repo lint` jobs in
+    # ci.yml run on every pull_request — cargo clippy --deny warnings,
+    # eslint strictTypeChecked, prettier, stylelint, markdownlint-cli2,
+    # actionlint, shellcheck, hadolint, and yamllint — each scoped to
+    # git-tracked files with the repo's own pinned config. CodeRabbit's
+    # bundled wrappers either duplicate the same diagnostics or run
+    # against a different (default / weaker) ruleset, both of which
+    # produce noise without signal.
     markdownlint:
       enabled: false
     biome:
@@ -109,6 +112,14 @@ reviews:
       enabled: false
     stylelint:
       enabled: false
+    shellcheck:
+      enabled: false
+    yamllint:
+      enabled: false
+    actionlint:
+      enabled: false
+    hadolint:
+      enabled: false
     # Structural pattern matching — net-new signal. `essential_rules`
     # turns on CodeRabbit's built-in anti-pattern set. Repo-specific
     # convention rules (the `chrono`, `as`/`!`, raw-hex, and runtime
@@ -120,17 +131,6 @@ reviews:
       essential_rules: true
       rule_dirs:
         - ".coderabbit/ast-grep-rules"
-    # Net-new signal vs CI — explicitly enabled. (Default is also true;
-    # explicit declaration insulates the config from CodeRabbit default
-    # changes.)
-    shellcheck:
-      enabled: true
-    yamllint:
-      enabled: true
-    actionlint:
-      enabled: true
-    hadolint:
-      enabled: true
     # Secret scanning. Reverie has no secrets in tree, but Renovate and
     # contributor PRs touch generated configs where leakage is plausible.
     gitleaks:
