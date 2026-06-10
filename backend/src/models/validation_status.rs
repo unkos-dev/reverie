@@ -47,7 +47,16 @@
 /// [`ValidationOutcome`](crate::services::epub::ValidationOutcome) variant is
 /// added without a matching arm — `non_exhaustive` would suppress exactly that.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    sqlx::Type,
+    utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "validation_status", rename_all = "lowercase")]

@@ -10,6 +10,283 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/books": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort axis.",
+        "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (e.g. a malformed UUID in `?author=`/`?series=`/\n  `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the\n  `From<QueryRejection>` impl.\n- [`AppError::Validation`] when the cursor is malformed, the sort\n  tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortMode"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "series",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "shelf",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of visible books",
+            "headers": {
+              "Link": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor or too many tag filters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/{id}": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "`GET /api/v1/books/{id}` — single-manifestation detail with the\nwork-level prose, tags, and a metadata-version summary used by the\nbook-detail Versions tab.",
+        "description": "RLS hides manifestations the current user cannot see; the handler\nreports those as 404 rather than 403 so existence is not leaked.\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "detail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "`GET /api/v1/search` — return the top hybrid-ranked manifestations\nmatching `q`, snippet-highlighted via `ts_headline`.",
+        "description": "# Errors\n- [`AppError::Validation`] when `q` is missing, empty, or longer\n  than [`MAX_Q_LEN`] characters.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form query text. Empty / whitespace-only → 422; over\n[`MAX_Q_LEN`] chars → 422.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Top hybrid-ranked search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty, missing, or over-length query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/works/{id}": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "`GET /api/v1/works/{id}` — work-level prose with every manifestation\nof that work the current user can see.",
+        "description": "`works` carries no RLS policy on its own; RLS lives on\n`manifestations`. The handler fetches the manifestations first\nunder the RLS transaction and treats an empty result as 404 — the\nsame row set drives both visibility gating and the response body,\nso an interleaved shelf-revoke or manifestation-delete between\nstatements (`PostgreSQL` `READ COMMITTED` per-statement snapshots)\ncannot leave the existence-not-leaked invariant in an \"EXISTS=true,\nrows=[]\" half-state. Without this, the handler could return 200\nwith `manifestations: []`, leaking the existence of the work row.\n\n# Errors\n- [`AppError::NotFound`] when the work is missing or every\n  manifestation is RLS-hidden (or the work row was deleted between\n  the manifestations fetch and the work fetch).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "work_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Work id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work detail with visible manifestations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -64,6 +341,331 @@
   },
   "components": {
     "schemas": {
+      "BookDetail": {
+        "type": "object",
+        "description": "`/api/v1/books/{id}` response. Carries the [`BookListRow`] fields\nplus the work-level prose and metadata-version summary surfaced\nin the book-detail UI.",
+        "required": [
+          "id",
+          "work_id",
+          "title",
+          "authors",
+          "cover_url",
+          "tags",
+          "ingestion_status",
+          "validation_status",
+          "enrichment_status",
+          "metadata_version_summary",
+          "metadata_versions",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author display names ordered by `work_authors.position`."
+          },
+          "cover_url": {
+            "type": "string",
+            "description": "Cover thumbnail URL — relative path under\n`/api/v1/books/{id}/cover/thumb`, session-cookie gated. See\n[`BookListRow::cover_url`]."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`manifestations.created_at`."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Long-form description (`works.description`)."
+          },
+          "enrichment_status": {
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "Enrichment lifecycle state."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`manifestations.id`."
+          },
+          "ingestion_status": {
+            "$ref": "#/components/schemas/IngestionStatus",
+            "description": "Ingestion lifecycle state."
+          },
+          "isbn_10": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.isbn_10`."
+          },
+          "isbn_13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.isbn_13`."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "BCP-47 language tag (`works.language`)."
+          },
+          "metadata_version_summary": {
+            "$ref": "#/components/schemas/MetadataVersionSummary",
+            "description": "Metadata-version counts for the Versions tab."
+          },
+          "metadata_versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataVersionRow"
+            },
+            "description": "Pending `metadata_versions` rows for this manifestation. Filtered\nto `status = 'pending'` AND not currently promoted as a canonical\npointer. Ordered by `last_seen_at DESC`. Empty when the operator\nhas no drafts to review. Surfaced for the Versions-tab UI; the\nsummary counts above remain so clients can render the tab badge\nwithout parsing the full list."
+          },
+          "pub_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.pub_date` formatted as an ISO 8601 calendar date.\nSurfaced for the manual-edit dialog's clear-confirmation flow."
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.publisher` — canonical publisher string. Surfaced\non `BookDetail` so the manual-edit dialog can confirm clears\n(`EditMetadataDialog.canonicalEditableFields`)."
+          },
+          "series": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesRef",
+                "description": "Series membership; `None` when the work isn't on a series."
+              }
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names attached to the manifestation."
+          },
+          "title": {
+            "type": "string",
+            "description": "`works.title`."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`manifestations.updated_at`."
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/ValidationStatus",
+            "description": "Validation lifecycle state."
+          },
+          "work_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`works.id`."
+          }
+        }
+      },
+      "BookListResponse": {
+        "type": "object",
+        "description": "`GET /api/v1/books` response envelope. Carries the page rows plus\nthe opaque cursor for the following page; pagination is also\nsignalled via the RFC 8288 `Link` header on the response.\n\nPrivate to the route module — handler-internal wire shape.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookListRow"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BookListRow": {
+        "type": "object",
+        "description": "One row of a paginated book list. Decoded via [`sqlx::FromRow`]\nagainst the query in `routes/library::list`, then enriched with\nthe batch-loaded `authors` slot and serialised straight to JSON.",
+        "required": [
+          "id",
+          "work_id",
+          "title",
+          "authors",
+          "cover_url",
+          "ingestion_status",
+          "validation_status",
+          "enrichment_status"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author display names ordered by `work_authors.position`. Empty\nwhen the work has no authors yet (pre-enrichment stub)."
+          },
+          "cover_url": {
+            "type": "string",
+            "description": "Cover thumbnail URL — relative path served by the\n`/api/v1/books/{id}/cover/thumb` handler under the caller's\nsession. Not pre-signed; access is gated by the session cookie.\nBackend constructs it so the frontend has a single source of\ntruth for the cover surface."
+          },
+          "enrichment_status": {
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "Enrichment lifecycle state."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`manifestations.id` — the canonical book id on the wire."
+          },
+          "ingestion_status": {
+            "$ref": "#/components/schemas/IngestionStatus",
+            "description": "Ingestion lifecycle state."
+          },
+          "isbn_13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.isbn_13`, when known."
+          },
+          "series": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesRef",
+                "description": "Series membership; `None` when the work isn't on a series."
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "`works.title` of the parent work."
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/ValidationStatus",
+            "description": "Validation lifecycle state."
+          },
+          "work_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`works.id` of the parent work. Lets the client navigate to\n`/api/v1/works/{work_id}` from a list row without an extra fetch."
+          }
+        }
+      },
+      "EnrichmentStatus": {
+        "type": "string",
+        "description": "Lifecycle state of metadata enrichment for a single manifestation.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Drift from\neither side surfaces as a decode error at the boundary, never as a\nsilently coerced unknown value.",
+        "enum": [
+          "pending",
+          "in_progress",
+          "complete",
+          "failed",
+          "skipped"
+        ]
+      },
+      "IngestionStatus": {
+        "type": "string",
+        "description": "Lifecycle state of a single manifestation's ingestion pipeline run.\n\nWire-format invariant: variants serialise to the lowercase forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes; unknown DB\nvariants fail decode loudly instead of coercing into a string.",
+        "enum": [
+          "pending",
+          "processing",
+          "complete",
+          "failed",
+          "skipped"
+        ]
+      },
+      "MetadataVersionRow": {
+        "type": "object",
+        "description": "One pending draft row surfaced on the Versions tab. Serialised as\nJSON in the `metadata_versions` array of `GET /api/v1/books/{id}`;\nthe row shape is decoded from the `metadata_versions` table\n(migration `20260412150003_series_and_metadata`) with the canonical\ncolumns plus a stringified enum.",
+        "required": [
+          "id",
+          "field_name",
+          "source",
+          "new_value",
+          "status",
+          "confidence_score",
+          "match_type",
+          "observation_count"
+        ],
+        "properties": {
+          "confidence_score": {
+            "type": "number",
+            "format": "float",
+            "description": "Confidence in `[0.0, 1.0]` from the enrichment pipeline."
+          },
+          "field_name": {
+            "type": "string",
+            "description": "Canonical field name (`title`, `description`, `language`,\n`publisher`, `pub_date`, `isbn_10`, `isbn_13`, `cover`)."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`metadata_versions.id` — primary key for accept/reject calls."
+          },
+          "match_type": {
+            "type": "string",
+            "description": "Match-type tag from the enrichment pipeline (`isbn`, `title`, …)."
+          },
+          "new_value": {
+            "description": "Proposed value, untyped JSON; field-specific shape (string for\ntitle/description, ISO date for `pub_date`, …)."
+          },
+          "observation_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of times the pipeline has observed this exact value."
+          },
+          "source": {
+            "type": "string",
+            "description": "Source identifier — `openlibrary`, `google_books`, `manual`, etc."
+          },
+          "status": {
+            "type": "string",
+            "description": "Always `pending` for rows surfaced here; promotion lives on\ncanonical pointer columns, not this enum."
+          }
+        }
+      },
+      "MetadataVersionSummary": {
+        "type": "object",
+        "description": "Counts surfaced on the book-detail Versions tab.",
+        "required": [
+          "pending",
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of fields whose canonical pointer is currently set on\nthis manifestation or its work — one entry per non-NULL\n`*_version_id` slot. Each slot binds a single\n`metadata_versions` row, so this also counts distinct\n\"accepted\" versions in play.",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of `metadata_versions` rows with `status = 'pending'`\nfor this manifestation — i.e. unresolved drafts in the journal.",
+            "minimum": 0
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "description": "RFC 7807 `application/problem+json` error body, as emitted by the server's\n`AppError` type. Documentation-only: it mirrors the response shape and is\nnever constructed or serialized at runtime. Registered as a shared component\ndescribing the standard error envelope; the data routes that actually return\nit are annotated to reference it in phase 2 (UNK-376).",
@@ -102,6 +704,243 @@
             "example": "https://reverie.example/probs/not-found"
           }
         }
+      },
+      "SearchHit": {
+        "type": "object",
+        "description": "One result row of `GET /api/v1/search`. Carries the bare minimum the\ncommand-palette UI needs: a kind tag for grouping, identifiers for\nnavigation, a short display label, and an optional `ts_headline`\nsnippet with non-HTML ASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`)\nmarkers so the React renderer can avoid `dangerouslySetInnerHTML`.",
+        "required": [
+          "kind",
+          "id",
+          "title",
+          "authors"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author display names for `book` results."
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cover thumbnail URL for `book` results — relative path under\n`/api/v1/books/{id}/cover/thumb`, session-cookie gated. `None`\nwhen the hit kind has no cover surface (future author/series\nvariants)."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary id — `manifestations.id` for `book`, `authors.id` for\n`author`, `series.id` for `series`."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SearchHitKind",
+            "description": "Result kind. Currently always `\"book\"`; `\"author\"` and\n`\"series\"` ship in a follow-up that fans the hybrid CTE over\nthe existing `authors.name` / `series.name` trigram indexes."
+          },
+          "snippet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`ts_headline` snippet from the work's title+description with\nASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`) start/stop markers\naround matched terms. Control codepoints, not valid UTF-8 text,\nso they cannot collide with user typography. `None` when the\nhit was trigram-only (no tsquery match → headline would be the\nraw text without highlighting)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Display label — work title for `book`."
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Parent work id when `kind = \"book\"`, else `None`."
+          }
+        }
+      },
+      "SearchHitKind": {
+        "type": "string",
+        "description": "Tag identifying which entity a [`SearchHit`] points at. Serialised\nin `snake_case` to match the rest of the JSON API conventions.",
+        "enum": [
+          "book"
+        ]
+      },
+      "SearchResponse": {
+        "type": "object",
+        "description": "`GET /api/v1/search` envelope (11b). Wraps a flat result list — the\nfrontend groups by [`SearchHit::kind`] client-side. No cursor:\nsearch is bounded by `LIMIT` server-side; pagination is a follow-up\nif user-research warrants it.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "description": "Result rows, ranked DESC by hybrid `ts_rank_cd + similarity`."
+          }
+        }
+      },
+      "SeriesRef": {
+        "type": "object",
+        "description": "Series membership for a manifestation. Embedded into both\n[`BookListRow`] and [`BookDetail`]; `None` when the work isn't on\nany series.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Series primary key."
+          },
+          "name": {
+            "type": "string",
+            "description": "Series display name."
+          },
+          "position": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Position within the series (`series_works.position`), `None`\nwhen the membership row has a null position."
+          }
+        }
+      },
+      "SortMode": {
+        "type": "string",
+        "description": "Sort axis selectable via `?sort=...` on `/api/v1/books`.",
+        "enum": [
+          "recent",
+          "title",
+          "author"
+        ]
+      },
+      "ValidationStatus": {
+        "type": "string",
+        "description": "Outcome of structural validation for a single manifestation.\n\nWire-format invariant: variants serialise to the lowercase forms declared\nin the `#[serde]` and `#[sqlx]` attributes. `clean`, `repaired`, and\n`degraded` are all stored-and-served outcomes on one quality tier — `clean`\nmeans *no issues found*, not *the only valid state*. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string.\n\n`#[non_exhaustive]` is deliberately absent: `reverie_api` is a single\nlib+bin crate with no foreign downstream matching on this enum, and the\nloud-decode-failure design *wants* the compile error when a\n[`ValidationOutcome`](crate::services::epub::ValidationOutcome) variant is\nadded without a matching arm — `non_exhaustive` would suppress exactly that.",
+        "enum": [
+          "pending",
+          "clean",
+          "repaired",
+          "degraded"
+        ]
+      },
+      "WorkDetail": {
+        "type": "object",
+        "description": "`/api/v1/works/{id}` response. Lists every manifestation the user\ncan see for a given work, grouped under the work-level prose.",
+        "required": [
+          "id",
+          "title",
+          "authors",
+          "manifestations"
+        ],
+        "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author display names ordered by `work_authors.position`."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Long-form description (`works.description`)."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`works.id`."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "BCP-47 language tag (`works.language`)."
+          },
+          "manifestations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkManifestation"
+            },
+            "description": "Manifestations of this work visible to the requesting user."
+          },
+          "series": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SeriesRef",
+                "description": "Series membership; `None` when the work isn't on a series."
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "`works.title`."
+          }
+        }
+      },
+      "WorkManifestation": {
+        "type": "object",
+        "description": "One manifestation row embedded in a [`WorkDetail`] response.",
+        "required": [
+          "id",
+          "cover_url",
+          "ingestion_status",
+          "validation_status",
+          "enrichment_status",
+          "created_at"
+        ],
+        "properties": {
+          "cover_url": {
+            "type": "string",
+            "description": "Cover thumbnail URL — relative path under\n`/api/v1/books/{id}/cover/thumb`, session-cookie gated. See\n[`BookListRow::cover_url`]."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`manifestations.created_at`."
+          },
+          "enrichment_status": {
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "Enrichment lifecycle state."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`manifestations.id`."
+          },
+          "ingestion_status": {
+            "$ref": "#/components/schemas/IngestionStatus",
+            "description": "Ingestion lifecycle state."
+          },
+          "isbn_10": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.isbn_10`."
+          },
+          "isbn_13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`manifestations.isbn_13`."
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/ValidationStatus",
+            "description": "Validation lifecycle state."
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -127,6 +966,10 @@
     {
       "name": "health",
       "description": "Liveness and readiness probes."
+    },
+    {
+      "name": "library",
+      "description": "Books, works, and full-text search."
     }
   ]
 }

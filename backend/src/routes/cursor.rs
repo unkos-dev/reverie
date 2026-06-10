@@ -39,7 +39,7 @@ use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 /// Sort axis selectable via `?sort=...` on `/api/v1/books`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum SortMode {

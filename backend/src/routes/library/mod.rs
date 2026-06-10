@@ -22,15 +22,15 @@
 //!   a cursor minted for one sort cannot be replayed against
 //!   another (see [`crate::routes::cursor::CursorKey::parse_for`]).
 
-use axum::Router;
 use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
 use axum::response::IntoResponse;
-use axum::routing::get;
 use axum_extra::extract::{Query, QueryRejection};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -52,13 +52,17 @@ mod search;
 mod tests;
 
 /// Build the `/api/v1/books*`, `/api/v1/works/{id}`, and `/api/v1/search`
-/// router.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/books", get(list))
-        .route("/api/v1/books/{id}", get(detail))
-        .route("/api/v1/works/{id}", get(work_detail))
-        .route("/api/v1/search", get(search::search))
+/// router as an [`OpenApiRouter`] so each handler's `#[utoipa::path]`
+/// contributes to the generated spec (a missing annotation fails to compile).
+/// Merged into `crate::openapi::pilot_router` and split into its runtime and
+/// spec halves there. `search` is contributed by its own submodule router so
+/// the `routes!` macro resolves the handler in the module that defines it.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list))
+        .routes(routes!(detail))
+        .routes(routes!(work_detail))
+        .merge(search::router())
 }
 
 /// Upper bound on `?tag=` repetitions accepted by `GET /api/v1/books`.
@@ -85,7 +89,8 @@ const MAX_TAG_FILTERS: usize = 20;
 /// - `shelf` filter is RLS-aware via the join on `shelves.user_id =
 ///   current_setting('app.current_user_id', true)::uuid` so a caller
 ///   cannot probe another user's shelf membership.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 struct ListParams {
     #[serde(default)]
     cursor: Option<String>,
@@ -106,7 +111,7 @@ struct ListParams {
 /// signalled via the RFC 8288 `Link` header on the response.
 ///
 /// Private to the route module — handler-internal wire shape.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 struct BookListResponse {
     items: Vec<BookListRow>,
     next_cursor: Option<String>,
@@ -126,6 +131,19 @@ struct BookListResponse {
 #[allow(
     clippy::too_many_lines,
     reason = "single dynamic-query assembly; splitting hurts readability of the QueryBuilder flow"
+)]
+#[utoipa::path(
+    get,
+    path = "/api/v1/books",
+    tag = "library",
+    params(ListParams),
+    responses(
+        (status = 200, description = "Paginated list of visible books", body = BookListResponse,
+            headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Invalid cursor or too many tag filters", body = crate::openapi::ProblemDetails)
+    )
 )]
 async fn list(
     current_user: CurrentUser,
@@ -581,6 +599,17 @@ pub(crate) async fn load_authors_for_works(
 /// - [`AppError::NotFound`] when the manifestation is missing or
 ///   RLS-hidden.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/books/{id}",
+    tag = "library",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Book detail", body = BookDetail),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn detail(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -915,6 +944,17 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
 ///   manifestation is RLS-hidden (or the work row was deleted between
 ///   the manifestations fetch and the work fetch).
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/works/{id}",
+    tag = "library",
+    params(("id" = Uuid, Path, description = "Work id")),
+    responses(
+        (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn work_detail(
     current_user: CurrentUser,
     State(state): State<AppState>,

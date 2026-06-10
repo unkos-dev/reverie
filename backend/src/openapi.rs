@@ -99,8 +99,15 @@ impl Modify for SecurityAddon {
     ),
     modifiers(&SecurityAddon),
     security(("session_cookie" = [])),
-    components(schemas(ProblemDetails)),
-    tags((name = "health", description = "Liveness and readiness probes."))
+    // `SortMode` is referenced only by the `library` list `IntoParams` (`?sort=`),
+    // which utoipa does NOT auto-collect into components the way `routes!` collects
+    // response-body schemas — register it explicitly so the `$ref` resolves (a
+    // dangling ref passes the byte-drift gate but fails the docs-site `$ref` parse).
+    components(schemas(ProblemDetails, crate::routes::cursor::SortMode)),
+    tags(
+        (name = "health", description = "Liveness and readiness probes."),
+        (name = "library", description = "Books, works, and full-text search.")
+    )
 )]
 pub struct ApiDoc;
 
@@ -130,7 +137,9 @@ pub struct ProblemDetails {
 /// [`axum::Router`] half, [`spec_json()`] takes its [`OpenApi`] half — so the
 /// served routes and the generated spec are always the same registration.
 fn pilot_router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::with_openapi(ApiDoc::openapi()).merge(crate::routes::health::router())
+    OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .merge(crate::routes::health::router())
+        .merge(crate::routes::library::router())
 }
 
 /// Runtime router for the OpenAPI-documented modules, ready to merge into the

@@ -29,7 +29,7 @@ use crate::models::validation_status::ValidationStatus;
 /// Series membership for a manifestation. Embedded into both
 /// [`BookListRow`] and [`BookDetail`]; `None` when the work isn't on
 /// any series.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SeriesRef {
     /// Series primary key.
@@ -44,7 +44,7 @@ pub struct SeriesRef {
 /// One row of a paginated book list. Decoded via [`sqlx::FromRow`]
 /// against the query in `routes/library::list`, then enriched with
 /// the batch-loaded `authors` slot and serialised straight to JSON.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct BookListRow {
     /// `manifestations.id` — the canonical book id on the wire.
@@ -76,13 +76,14 @@ pub struct BookListRow {
     /// `manifestations.created_at`; used as the recent-sort cursor
     /// key and elided from the JSON wire shape.
     #[serde(skip)]
+    #[schema(ignore)]
     pub created_at: OffsetDateTime,
 }
 
 /// `/api/v1/books/{id}` response. Carries the [`BookListRow`] fields
 /// plus the work-level prose and metadata-version summary surfaced
 /// in the book-detail UI.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct BookDetail {
     /// `manifestations.id`.
@@ -139,11 +140,10 @@ pub struct BookDetail {
 
 /// One pending draft row surfaced on the Versions tab. Serialised as
 /// JSON in the `metadata_versions` array of `GET /api/v1/books/{id}`;
-/// the row shape is decoded from the [`metadata_versions`] table with
-/// the canonical columns plus a stringified enum.
-///
-/// [`metadata_versions`]: ../../migrations/20260412150003_series_and_metadata.up.sql
-#[derive(Debug, Clone, Serialize)]
+/// the row shape is decoded from the `metadata_versions` table
+/// (migration `20260412150003_series_and_metadata`) with the canonical
+/// columns plus a stringified enum.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct MetadataVersionRow {
     /// `metadata_versions.id` — primary key for accept/reject calls.
@@ -168,7 +168,7 @@ pub struct MetadataVersionRow {
 }
 
 /// Counts surfaced on the book-detail Versions tab.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct MetadataVersionSummary {
     /// Number of `metadata_versions` rows with `status = 'pending'`
@@ -184,7 +184,7 @@ pub struct MetadataVersionSummary {
 
 /// `/api/v1/works/{id}` response. Lists every manifestation the user
 /// can see for a given work, grouped under the work-level prose.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct WorkDetail {
     /// `works.id`.
@@ -207,7 +207,7 @@ pub struct WorkDetail {
 /// frontend groups by [`SearchHit::kind`] client-side. No cursor:
 /// search is bounded by `LIMIT` server-side; pagination is a follow-up
 /// if user-research warrants it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SearchResponse {
     /// Result rows, ranked DESC by hybrid `ts_rank_cd + similarity`.
@@ -219,7 +219,7 @@ pub struct SearchResponse {
 /// navigation, a short display label, and an optional `ts_headline`
 /// snippet with non-HTML ASCII STX (`\u{0002}`) / ETX (`\u{0003}`)
 /// markers so the React renderer can avoid `dangerouslySetInnerHTML`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct SearchHit {
     /// Result kind. Currently always `"book"`; `"author"` and
@@ -251,7 +251,7 @@ pub struct SearchHit {
 
 /// Tag identifying which entity a [`SearchHit`] points at. Serialised
 /// in `snake_case` to match the rest of the JSON API conventions.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum SearchHitKind {
@@ -260,7 +260,7 @@ pub enum SearchHitKind {
 }
 
 /// One manifestation row embedded in a [`WorkDetail`] response.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct WorkManifestation {
     /// `manifestations.id`.
