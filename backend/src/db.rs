@@ -1084,4 +1084,45 @@ mod tests {
             .expect("reverie_migrator must apply the full migration set as a non-superuser");
         assert!(report.applied > 0, "should have applied migrations");
     }
+
+    // Migration 20260610165400 guards every first-party TIMESTAMPTZ column
+    // with a decode-range CHECK (`time` without `large-dates` only decodes
+    // years -9999..=9999; an out-of-range row panics at `row.get`). This
+    // catalog probe enforces coverage going forward: a new TIMESTAMPTZ
+    // column added without a matching range CHECK fails here, instead of
+    // shipping a column whose out-of-band corruption panics read paths.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn every_timestamptz_column_has_decode_range_check(pool: PgPool) {
+        let unguarded: Vec<String> = sqlx::query_scalar(
+            r"
+            SELECT c.table_schema || '.' || c.table_name || '.' || c.column_name
+            FROM information_schema.columns c
+            WHERE c.data_type = 'timestamp with time zone'
+              AND c.table_schema IN ('public', 'tower_sessions')
+              -- sqlx-managed tracking table; only ever written with now()
+              AND c.table_name <> '_sqlx_migrations'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+                WHERE con.contype = 'c'
+                  AND nsp.nspname = c.table_schema
+                  AND rel.relname = c.table_name
+                  AND pg_get_constraintdef(con.oid) LIKE '%' || c.column_name || '%'
+                  AND pg_get_constraintdef(con.oid) LIKE '%10000-01-01%'
+              )
+            ORDER BY 1
+            ",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            unguarded.is_empty(),
+            "TIMESTAMPTZ columns without a decode-range CHECK constraint \
+             (add them to a migration like 20260610165400): {unguarded:?}"
+        );
+    }
 }

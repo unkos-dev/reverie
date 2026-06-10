@@ -453,4 +453,78 @@ mod tests {
             "violation must be the session_version CHECK: {err}"
         );
     }
+
+    // Migration 20260610165400 adds decode-range CHECK constraints on TIMESTAMPTZ
+    // columns: `time` without `large-dates` only decodes years -9999..=9999,
+    // so a year-10000+ row (out-of-band mutation only) would panic at
+    // `row.get::<OffsetDateTime>` on every read path. The write must be
+    // rejected at the schema boundary instead (UNK-310).
+    #[sqlx::test(migrations = "./migrations")]
+    async fn timestamptz_check_rejects_beyond_decode_upper_bound(pool: PgPool) {
+        let subject = format!("ts-upper-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsUpper", None)
+            .await
+            .expect("create user");
+
+        let err = sqlx::query(
+            "UPDATE users SET created_at = TIMESTAMPTZ '10000-01-01 00:00:00+00' WHERE id = $1",
+        )
+        .bind(user.id)
+        .execute(&pool)
+        .await
+        .expect_err("year 10000 must violate the decode-range CHECK");
+
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("users_created_at_ts_decode_range"),
+            "violation must be the created_at decode-range CHECK: {err}"
+        );
+    }
+
+    // `-infinity` (and any pre-CE date) is equally undecodable; the finite
+    // lower bound rejects it at write time.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn timestamptz_check_rejects_negative_infinity(pool: PgPool) {
+        let subject = format!("ts-lower-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsLower", None)
+            .await
+            .expect("create user");
+
+        let err =
+            sqlx::query("UPDATE users SET created_at = TIMESTAMPTZ '-infinity' WHERE id = $1")
+                .bind(user.id)
+                .execute(&pool)
+                .await
+                .expect_err("-infinity must violate the decode-range CHECK");
+
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("users_created_at_ts_decode_range"),
+            "violation must be the created_at decode-range CHECK: {err}"
+        );
+    }
+
+    // The full decodable range stays writable: year 9999 passes the CHECK
+    // and round-trips through OffsetDateTime decode.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn timestamptz_check_accepts_max_decodable_year(pool: PgPool) {
+        let subject = format!("ts-max-{}", Uuid::new_v4());
+        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsMax", None)
+            .await
+            .expect("create user");
+
+        sqlx::query(
+            "UPDATE users SET created_at = TIMESTAMPTZ '9999-12-31 23:59:59+00' WHERE id = $1",
+        )
+        .bind(user.id)
+        .execute(&pool)
+        .await
+        .expect("max decodable year must pass the CHECK");
+
+        let reloaded = find_by_id(&pool, user.id)
+            .await
+            .expect("decode of max in-range created_at must succeed")
+            .expect("user still present");
+        assert_eq!(reloaded.created_at.year(), 9999);
+    }
 }
