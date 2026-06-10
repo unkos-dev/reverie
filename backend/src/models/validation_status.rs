@@ -31,7 +31,9 @@
 //!   renames the value first created in
 //!   `20260526000000_initial_schema.up.sql`).
 //! - JSON: lowercase string —
-//!   `"pending"` | `"clean"` | `"repaired"` | `"degraded"`.
+//!   `"pending"` | `"clean"` | `"repaired"` | `"degraded"` | `"failed"`
+//!   (`failed` added by migration
+//!   `20260610180000_validation_status_add_failed.up.sql`, UNK-312).
 
 /// Outcome of structural validation for a single manifestation.
 ///
@@ -69,6 +71,13 @@ pub enum ValidationStatus {
     Repaired,
     /// Validation found issues that are tolerated; the file is still served.
     Degraded,
+    /// The validator itself could not run to completion (internal error —
+    /// IO failure, crash), so nothing is known about the file's structural
+    /// quality. Distinct from [`Self::Degraded`] (validator ran, found
+    /// tolerable issues) and from [`Self::Pending`] (validator never
+    /// attempted) so operators can monitor validator failures directly
+    /// (UNK-312). The file is still ingested and served.
+    Failed,
 }
 
 impl ValidationStatus {
@@ -83,6 +92,7 @@ impl ValidationStatus {
             Self::Clean => "clean",
             Self::Repaired => "repaired",
             Self::Degraded => "degraded",
+            Self::Failed => "failed",
         }
     }
 }
@@ -104,6 +114,7 @@ mod tests {
             (ValidationStatus::Clean, "clean"),
             (ValidationStatus::Repaired, "repaired"),
             (ValidationStatus::Degraded, "degraded"),
+            (ValidationStatus::Failed, "failed"),
         ] {
             assert_eq!(variant.as_str(), wire);
             assert_eq!(format!("{variant}"), wire);

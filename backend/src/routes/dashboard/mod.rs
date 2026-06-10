@@ -145,6 +145,7 @@ async fn stats(
               COUNT(*) FILTER (WHERE m.validation_status = 'clean')    AS "val_clean!",
               COUNT(*) FILTER (WHERE m.validation_status = 'repaired') AS "val_repaired!",
               COUNT(*) FILTER (WHERE m.validation_status = 'degraded') AS "val_degraded!",
+              COUNT(*) FILTER (WHERE m.validation_status = 'failed')   AS "val_failed!",
               COUNT(*) FILTER (WHERE m.validation_status = 'clean' AND m.format <> 'epub') AS "clean_non_epub!",
               COUNT(*) FILTER (WHERE m.enrichment_status = 'pending')     AS "enr_pending!",
               COUNT(*) FILTER (WHERE m.enrichment_status = 'in_progress') AS "enr_in_progress!",
@@ -192,6 +193,10 @@ async fn stats(
         StatusCount {
             status: ValidationStatus::Degraded.as_str(),
             count: agg.val_degraded,
+        },
+        StatusCount {
+            status: ValidationStatus::Failed.as_str(),
+            count: agg.val_failed,
         },
     ];
     let enrichment_breakdown = vec![
