@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-03
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Strict lint policy: clippy pedantic + ESLint strict-tier

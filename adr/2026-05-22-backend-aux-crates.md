@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-22
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Backend auxiliary crates for Step 11
@@ -224,59 +226,6 @@ Various community crates exist for repeated-key decode.
 
 Rejected on "already in tree" grounds — `axum-extra` `"query"`
 is the path of least resistance.
-
-## Implementation Plan
-
-**Sub-phase 11a Task 4** — `axum-extra` feature flip.
-
-- EDIT existing `axum-extra` line in `backend/Cargo.toml`:
-  `axum-extra = { version = "0.12.6", features = ["cookie", "query"] }`.
-- `cargo build -p reverie` to verify the new feature compiles.
-- First consumer:
-  `backend/src/routes/library.rs::list` (sub-phase 11a's
-  cursor-pagination handler).
-
-**Sub-phase 11a Task 1c** — `subtle` second-consumer pattern.
-
-- IMPORT `subtle::ConstantTimeEq` in the new
-  `backend/src/security/csrf.rs`.
-- Verify against
-  [`backend/src/auth/token.rs:50-56`](../backend/src/auth/token.rs)
-  precedent (the established constant-time-compare pattern in
-  the codebase).
-
-**Sub-phase 11c (separate PR)** — `serde_with` adoption.
-
-- ADD
-  `serde_with = { version = "3", default-features = false, features = ["std"] }`
-  to `backend/Cargo.toml` `[dependencies]`. Omits the default
-  `macros` feature; `double_option` does not require it.
-- First consumer:
-  `backend/src/routes/manifestations.rs::update_metadata`
-  (PATCH handler with RFC 7396 Merge Patch decode).
-- Verify `cargo build -p reverie` + the existing test suite
-  stays green.
-
-## Verification
-
-- [ ] ADR status → `accepted`; entry added to `adr/README.md`.
-- [ ] `backend/Cargo.toml` `axum-extra` entry edited to
-      `features = ["cookie", "query"]` at version `0.12.6`. No
-      duplicate entry.
-- [ ] On 11c adoption: `backend/Cargo.toml` includes
-      `serde_with = { version = "3", default-features = false, features = ["std"] }`
-      in `[dependencies]`. `macros` deliberately omitted (not
-      needed by `double_option`).
-- [ ] `backend/src/security/csrf.rs` imports
-      `subtle::ConstantTimeEq` and uses it for the
-      `X-CSRF-Token` compare; tested against
-      [`backend/src/auth/token.rs::verify_device_token`](../backend/src/auth/token.rs)
-      style.
-- [ ] `cargo build -p reverie` passes after each Cargo.toml
-      change.
-- [ ] `cargo audit -p reverie` passes; if it does not, project
-      memory `feedback_audit_ignores` applies: verify upstream
-      fix doesn't exist before adding `--ignore`.
 
 ## More Information
 

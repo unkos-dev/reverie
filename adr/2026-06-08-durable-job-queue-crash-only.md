@@ -143,11 +143,16 @@ startup-revert parity gap is tracked in
 ### Confirmation
 
 Jobs are claimed with `FOR UPDATE SKIP LOCKED`, one `in_progress` row per
-work-unit; orphaned `in_progress` rows are reverted at instance startup (before the worker pool claims); every job
-is bounded by a timeout and guarded against task panic; handlers are idempotent
-and file-mutating handlers document re-run safety. No external message broker
-appears in the deployment, and no code path depends on a graceful shutdown for
-correctness.
+work-unit; every job is bounded by a timeout and guarded against task panic;
+handlers are idempotent and file-mutating handlers document re-run safety.
+No external message broker appears in the deployment.
+
+**Current state:** writeback reverts orphaned `in_progress` rows at instance
+startup (before the worker pool claims) — this invariant holds today.
+Enrichment currently reverts only on graceful shutdown; startup-revert parity
+for enrichment is tracked in [UNK-373](https://linear.app/unkos/issue/UNK-373)
+and is not yet implemented. No code path in the conformant subsystems depends
+on a graceful shutdown for correctness.
 
 ## Pros and Cons of the Options
 

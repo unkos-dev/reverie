@@ -1,7 +1,9 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-05
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Single-image distribution with backend-served frontend and central CSP enforcement

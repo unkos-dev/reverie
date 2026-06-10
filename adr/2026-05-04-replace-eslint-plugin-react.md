@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-04
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Replace `eslint-plugin-react` with `@eslint-react/eslint-plugin`
@@ -150,108 +152,6 @@ range, and are not part of this decision's scope.
   swapping the linter is a different and larger architectural
   change with its own ADR-level scope. `@eslint-react` is the
   smallest swap that resolves the immediate blocker
-
-## Implementation Plan
-
-Single PR scope. All work in `frontend/`:
-
-1. **Dependency swap.** In `frontend/package.json`:
-   - Remove `eslint-plugin-react` from `devDependencies`
-   - Add `@eslint-react/eslint-plugin` to `devDependencies`
-   - Add `eslint@^10` and `@eslint/js@^10` (the bumps held back by
-     the pin)
-   - Run `npm install` — confirm `package-lock.json` regenerates
-     without `ERESOLVE`
-
-2. **Config swap.** In `frontend/eslint.config.js`:
-   - Replace `import react from 'eslint-plugin-react'` with
-     `import reactX from '@eslint-react/eslint-plugin'`
-   - In the main `extends` array, replace
-     `react.configs.flat.recommended` and
-     `react.configs.flat['jsx-runtime']` with
-     `reactX.configs['recommended-typescript']` (one entry, not
-     two)
-   - Drop the `settings.react` block (no longer required by
-     `@eslint-react`'s plugin discovery)
-   - Update the explicit rule names:
-     `'react/jsx-key': 'error'` → `'@eslint-react/no-missing-key': 'error'`,
-     `'react/no-array-index-key': 'error'` → `'@eslint-react/no-array-index-key': 'error'`
-   - Re-verify the `Lockup.tsx` and `src/components/ui/**` carve-out
-     blocks still target the right rules — both currently disable
-     project-local rules (`no-restricted-syntax`,
-     `@typescript-eslint/consistent-type-assertions`), neither of
-     which is touched by this swap
-
-3. **Migrate any `eslint-disable` comments referencing the old
-   rule names** (`react/jsx-key`, `react/no-array-index-key`,
-   anything else in the `react/*` namespace). Grep with
-   `rg "react/" frontend/` (scope covers `frontend/src/**` AND
-   `frontend/eslint.config.js` itself — the config file is the most
-   likely place stale rule names hide after Step 2's swap). Likely
-   zero matches outside the config given the strict-lint policy
-
-4. **Run `npm run lint` and triage the wave of new findings.** The
-   `recommended-typescript` preset is stricter than
-   `eslint-plugin-react`'s `recommended`. For each new finding:
-   either fix the code, suppress with an inline disable + comment
-   reason, or add a `rules:` override in `eslint.config.js` with
-   rationale (project-wide overrides should be rare and justified)
-
-5. **Remove the Renovate eslint pin in the same PR.** In
-   `.github/renovate.json`, delete the `packageRule` whose
-   `description` starts with "Hold eslint and @eslint/js at v9".
-   Renovate will subsequently raise eslint v10 + @eslint/js v10
-   PRs naturally on the next poll
-
-6. **Verify CI.** Frontend job runs `npm ci`, `npm run lint`,
-   `npm test`, `npx stylelint`, and `npm run build`. All five must
-   pass. The lint step is the one that surfaces any preset-driven
-   regressions
-
-**Affected paths (exhaustive):**
-
-- `frontend/package.json`
-- `frontend/package-lock.json`
-- `frontend/eslint.config.js`
-- `frontend/src/**/*.{ts,tsx}` — only the files where new lint
-  errors surface; expected to be a small subset
-- `.github/renovate.json` — remove the eslint pin
-- `frontend/CLAUDE.md` — no expected change; reverify the React
-  conventions section does not name `eslint-plugin-react`
-
-**Not in scope (do not touch):**
-
-- `eslint-plugin-react-hooks` — independently maintained
-- `eslint-plugin-react-refresh` — independently maintained
-- `typescript-eslint` configuration — separate concern
-- `frontend/vite-plugins/csp-hash.ts` — separate concern
-- `backend/` — Rust, unrelated
-- `docs/` — Astro/Starlight, separate eslint config (if any)
-
-## Verification
-
-Walk through these after the migration PR lands:
-
-- [x] `npm run lint` exits 0 against the migrated config
-- [x] CI Frontend job passes end-to-end (lint, test, stylelint,
-      font integrity, build)
-- [ ] Renovate raises eslint v10 + @eslint/js v10 PRs on next
-      poll (proves the pin removal is honoured by Renovate) —
-      pending next Renovate poll cycle post-merge
-- [x] Manual sanity test: introduce a deliberate `<ul>{items.map(i => <li>{i}</li>)}</ul>` (no `key`), confirm
-      `@eslint-react/no-missing-key` flags it, revert
-- [x] Manual sanity test: introduce
-      `items.map((i, idx) => <li key={idx}>{i}</li>)`, confirm
-      `@eslint-react/no-array-index-key` flags it, revert
-- [x] `Lockup.tsx` and `Lockup.test.tsx` still lint-clean (carve-out
-      block still works)
-- [x] `src/components/ui/**` files still lint-clean (shadcn carve-out
-      still works)
-- [x] `rg "react/jsx-key|react/no-array-index-key|eslint-plugin-react" frontend/` returns zero matches outside this ADR (verified with
-      word-boundary regex `rg -P "(?<!-)react/(jsx-key|no-array-index-key)|eslint-plugin-react(?!-)"`
-      to exclude substring false positives from the new
-      `@eslint-react/...` rule names and the unrelated
-      `eslint-plugin-react-{hooks,refresh,dom}` packages)
 
 ## Revisit Conditions
 

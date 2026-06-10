@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-08
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Tiered comment policy for an OSS-released codebase

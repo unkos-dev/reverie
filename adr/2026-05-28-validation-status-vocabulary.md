@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-28
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # Reconcile `validation_status` vocabulary and introduce a typed `ValidationStatus` enum

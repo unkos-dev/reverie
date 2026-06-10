@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-05-07
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: "—"
+informed: "Reverie contributors"
 ---
 
 # CodeRabbit AI code review: parallel trial alongside Greptile
