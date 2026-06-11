@@ -15,7 +15,7 @@ services:
       # mount-boundary safety. Mounting the legacy `…/data` child path
       # errors out at first init — mount the parent.
       - pgdata:/var/lib/postgresql
-      - ./docker/init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql:ro
+      - ./init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U reverie -d reverie_dev"]
       interval: 5s
