@@ -71,14 +71,23 @@ first, then start the server:
 > `:main` for `:vX.Y.Z`.
 
 ```bash
-docker run --rm --env-file .env ghcr.io/unkos-dev/reverie:main migrate
+docker run --rm --env-file .env.migrate ghcr.io/unkos-dev/reverie:main migrate
 ```
 
 ```bash
-docker run -d --env-file .env -p 3000:3000 ghcr.io/unkos-dev/reverie:main
+docker run -d --env-file .env.runtime -p 3000:3000 ghcr.io/unkos-dev/reverie:main
 ```
 
 The second command starts the server, which verifies the schema and serves.
+
+The two steps deliberately use **separate env files**, mirroring the compose
+split (`.env.migrate` / `.env.runtime`): `.env.migrate` carries only
+`DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN), and `.env.runtime`
+carries the application configuration (`DATABASE_URL`, OIDC settings, …)
+without the migration DSN. A single combined `.env` passed to both commands
+works, but it hands the long-lived server the `reverie_migrator` credential
+for its entire lifetime — exactly the exposure the two-identity model above
+exists to avoid.
 
 ## Opt-in: in-process migration on startup
 

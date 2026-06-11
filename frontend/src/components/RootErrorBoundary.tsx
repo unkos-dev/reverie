@@ -11,7 +11,7 @@
  * 1. Route response (`isRouteErrorResponse`) — surfaces the HTTP
  *    status the loader threw, with a 404-specific copy variant.
  * 2. `ApiError` — propagated from a `useSuspenseQuery` failure;
- *    surfaces the parsed RFC 7807 `title` / `detail`.
+ *    surfaces the parsed RFC 9457 `title` / `detail`.
  * 3. Anything else — a generic "something went wrong" surface; the
  *    raw error is `console.error`-logged for debugging.
  */
