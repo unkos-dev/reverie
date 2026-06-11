@@ -59,21 +59,6 @@ pub struct ShelfItem {
     pub added_at: OffsetDateTime,
 }
 
-/// `GET /api/v1/shelves/{id}` response: shelf identity + ordered items.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-#[non_exhaustive]
-pub struct ShelfWithItems {
-    /// `shelves.id`.
-    pub id: Uuid,
-    /// `shelves.name`.
-    pub name: String,
-    /// `shelves.is_system`.
-    pub is_system: bool,
-    /// `shelves.created_at`.
-    pub created_at: OffsetDateTime,
-    /// `shelves.updated_at` — the `ETag` value.
-    pub updated_at: OffsetDateTime,
-    /// Items ordered by `shelf_items.position` ASC, `added_at` ASC
-    /// for tiebreaking determinism.
-    pub items: Vec<ShelfItem>,
-}
+// `GET /api/v1/shelves/{id}`'s envelope (`ShelfDetailResponse`) lives in
+// `routes::shelves` — pagination is a wire concern, so the paged response
+// shape stays route-local like the books `BookListResponse` (UNK-374).

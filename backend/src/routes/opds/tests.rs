@@ -924,3 +924,169 @@ async fn opds_disabled_returns_404() {
     let response = server.get("/opds").await;
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
 }
+
+// ── UNK-374: navigation feeds (authors / series) are keyset-paginated ──
+
+/// Seed an author with one visible manifestation so the navigation
+/// feeds surface it.
+async fn insert_author_with_book(
+    ingestion_pool: &PgPool,
+    library_root: &StdPath,
+    marker: &str,
+    author_name: &str,
+) {
+    let (work_id, _m, _, _) =
+        insert_epub_manifestation(ingestion_pool, library_root, marker, marker).await;
+    let author_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO authors (name, sort_name) VALUES ($1, $1) RETURNING id",
+        author_name,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert author");
+    sqlx::query!(
+        "INSERT INTO work_authors (work_id, author_id, position) VALUES ($1, $2, 0)",
+        work_id,
+        author_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("insert work_authors");
+}
+
+/// Walk a navigation feed via `rel="next"`, asserting each of `names`
+/// appears exactly once across the walk; returns the page count.
+async fn walk_navigation_feed(
+    server: &axum_test::TestServer,
+    basic: &str,
+    start: &str,
+    names: &[&str],
+) -> u32 {
+    let basic = basic.to_owned();
+    let mut seen: Vec<String> = Vec::new();
+    let mut url = start.to_string();
+    let mut pages = 0u32;
+    loop {
+        let path = if let Some(idx) = url.find("/opds") {
+            url[idx..].to_string()
+        } else {
+            url.clone()
+        };
+        let response = server
+            .get(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let body = std::str::from_utf8(response.as_bytes()).unwrap().to_owned();
+        for name in names {
+            if body.contains(name) {
+                assert!(
+                    !seen.contains(&(*name).to_string()),
+                    "{name} duplicated on page {pages}"
+                );
+                seen.push((*name).to_string());
+            }
+        }
+        pages += 1;
+        assert!(pages < 10, "runaway pagination");
+        match extract_next_href(&body) {
+            Some(next) => url = next,
+            None => break,
+        }
+    }
+    assert_eq!(
+        seen.len(),
+        names.len(),
+        "every entry exactly once: {seen:?}"
+    );
+    pages
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn authors_navigation_feed_paginates(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    let authors = ["Alder, Quinn", "Birch, Rowan", "Cedar, Sage"];
+    for (i, name) in authors.iter().enumerate() {
+        insert_author_with_book(&ingestion_pool, tmp.path(), &format!("nav-a{i}"), name).await;
+    }
+
+    let server =
+        test_support::db::server_with_opds_page_size(&app_pool, &ingestion_pool, tmp.path(), 2);
+
+    let pages = walk_navigation_feed(&server, &basic, "/opds/library/authors", &authors).await;
+    assert_eq!(
+        pages, 2,
+        "3 authors at page_size=2 must take exactly 2 pages"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn series_navigation_feed_paginates(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    let series_names = ["Amber Cycle", "Borealis Saga", "Cinder Sequence"];
+    for (i, name) in series_names.iter().enumerate() {
+        let (work_id, _m, _, _) = insert_epub_manifestation(
+            &ingestion_pool,
+            tmp.path(),
+            &format!("nav-s{i}"),
+            &format!("nav-s{i}"),
+        )
+        .await;
+        let series_id: Uuid = sqlx::query_scalar!(
+            "INSERT INTO series (name, sort_name) VALUES ($1, $1) RETURNING id",
+            name,
+        )
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("insert series");
+        sqlx::query!(
+            "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, 1)",
+            series_id,
+            work_id,
+        )
+        .execute(&ingestion_pool)
+        .await
+        .expect("insert series_works");
+    }
+
+    let server =
+        test_support::db::server_with_opds_page_size(&app_pool, &ingestion_pool, tmp.path(), 2);
+
+    let pages = walk_navigation_feed(&server, &basic, "/opds/library/series", &series_names).await;
+    assert_eq!(
+        pages, 2,
+        "3 series at page_size=2 must take exactly 2 pages"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn navigation_feeds_reject_malformed_cursor(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    for path in [
+        "/opds/library/authors?cursor=!!!garbage!!!",
+        "/opds/library/series?cursor=!!!garbage!!!",
+    ] {
+        let response = server
+            .get(path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "expected 422 at {path}"
+        );
+    }
+}

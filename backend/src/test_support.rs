@@ -421,6 +421,61 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
+    /// Same as [`server_with_real_pools`] but with a caller-chosen
+    /// `opds.page_size` (shared page-size knob for every paginated list).
+    /// Pagination-walk tests use a tiny page size so two-page walks need
+    /// only a handful of fixture rows.
+    pub fn server_with_real_pools_page_size(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        page_size: u32,
+    ) -> axum_test::TestServer {
+        use crate::state::AppState;
+        let mut config = super::test_config();
+        config.opds.page_size = page_size;
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
+            oidc_client: super::test_oidc_client(),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
+    /// Same as [`server_with_opds_enabled`] but with a caller-chosen
+    /// `opds.page_size` for navigation-feed pagination-walk tests.
+    pub fn server_with_opds_page_size(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        library_path: &std::path::Path,
+        page_size: u32,
+    ) -> axum_test::TestServer {
+        use crate::config::OpdsConfig;
+        use crate::state::AppState;
+
+        let mut config = super::test_config();
+        config.library_path = library_path.to_string_lossy().into_owned();
+        config.opds = OpdsConfig {
+            enabled: true,
+            page_size,
+            realm: "Reverie OPDS".into(),
+            public_url: Some(url::Url::parse("http://host.example/").unwrap()),
+        };
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
+            oidc_client: super::test_oidc_client(),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
     /// Insert (work, manifestation) via `reverie_ingestion` for use as
     /// fixture data in route tests.  Returns `(work_id, manifestation_id)`.
     pub async fn insert_work_and_manifestation(

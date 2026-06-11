@@ -93,3 +93,14 @@ PR. Write a user-facing "API versioning and breaking-change migration"
 Starlight page (the `/api/v1` contract, what's unversioned and why, the
 deprecation policy for a future `/api/v2`) once the generated API
 reference covers the full route set.
+
+### Shelves list/detail pagination envelopes
+
+**Source:** [`adr/2026-06-08-keyset-pagination-list-contract.md`](../adr/2026-06-08-keyset-pagination-list-contract.md) (UNK-374, PR #465)
+
+Pre-release breaking wire change to capture in the eventual `/api/v1`
+migration guide: `GET /api/v1/shelves` moved from a bare JSON array to a
+`{items, next_cursor}` envelope, and `GET /api/v1/shelves/{id}` pages its
+`items` with a `next_cursor` field plus a `?cursor` query parameter. The
+OPDS authors/series navigation feeds also gained RFC 5005 `rel="next"`
+paging, and `GET /api/v1/users` carries a defensive 500-row cap.

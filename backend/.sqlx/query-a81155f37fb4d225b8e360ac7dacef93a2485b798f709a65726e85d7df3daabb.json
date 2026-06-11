@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO shelves (user_id, name, is_system) VALUES ($1, 'Zys', TRUE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a81155f37fb4d225b8e360ac7dacef93a2485b798f709a65726e85d7df3daabb"
+}

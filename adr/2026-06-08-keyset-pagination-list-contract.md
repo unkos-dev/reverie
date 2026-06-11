@@ -113,10 +113,11 @@ Enforced as the `backend/CLAUDE.md` **"No unbounded queries"** invariant: every
 list is keyset-paginated or single-page with a hard `LIMIT`; no `LIMIT`-less
 scans; total-count is a separate approximate/cached query, never an exact
 `COUNT(*)` on the hot path. Verified at scale by the synthetic large-library
-perf fixture ([UNK-369](https://linear.app/unkos/issue/UNK-369)). The currently
-non-compliant cases — `/api/shelves`, `/api/users`, `GET /api/shelves/{id}`
-items, and the OPDS authors- and series-navigation feeds (all `LIMIT`-less) —
-are tracked in [UNK-374](https://linear.app/unkos/issue/UNK-374).
+perf fixture ([UNK-369](https://linear.app/unkos/issue/UNK-369)). The five
+cases non-compliant at decision time — `/api/v1/shelves`, `/api/v1/users`,
+`GET /api/v1/shelves/{id}` items, and the OPDS authors- and series-navigation
+feeds — were brought to compliance in
+[UNK-374](https://linear.app/unkos/issue/UNK-374).
 
 ## Pros and Cons of the Options
 

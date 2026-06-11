@@ -503,7 +503,10 @@ fn push_order_by(qb: &mut QueryBuilder<Postgres>, sort: SortMode) {
     }
 }
 
-fn split_page(rows: &[sqlx::postgres::PgRow], page_size: i64) -> (&[sqlx::postgres::PgRow], bool) {
+pub(crate) fn split_page(
+    rows: &[sqlx::postgres::PgRow],
+    page_size: i64,
+) -> (&[sqlx::postgres::PgRow], bool) {
     let page_size_usize = usize::try_from(page_size).unwrap_or(usize::MAX);
     let has_more = rows.len() > page_size_usize;
     let page_rows = if has_more {
@@ -536,7 +539,7 @@ fn next_cursor_for_row(row: &sqlx::postgres::PgRow, sort: SortMode) -> CursorKey
     }
 }
 
-fn build_next_url(uri: &axum::http::Uri, next_cursor: &str) -> String {
+pub(crate) fn build_next_url(uri: &axum::http::Uri, next_cursor: &str) -> String {
     let path = uri.path();
     let mut pairs: Vec<(String, String)> = Vec::new();
     let mut saw_cursor = false;

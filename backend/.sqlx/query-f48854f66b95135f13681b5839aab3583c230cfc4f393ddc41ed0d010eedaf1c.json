@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO shelf_items (shelf_id, manifestation_id, position, added_at) VALUES ($1, $2, 0, '2026-01-01T00:00:00Z')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f48854f66b95135f13681b5839aab3583c230cfc4f393ddc41ed0d010eedaf1c"
+}

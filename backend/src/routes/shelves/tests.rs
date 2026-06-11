@@ -40,7 +40,7 @@ async fn list_shelves_returns_only_callers_shelves(pool: PgPool) {
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
     let body: serde_json::Value = r.json();
-    let names: Vec<&str> = body
+    let names: Vec<&str> = body["items"]
         .as_array()
         .unwrap()
         .iter()
@@ -48,6 +48,7 @@ async fn list_shelves_returns_only_callers_shelves(pool: PgPool) {
         .collect();
     assert!(names.contains(&"Alpha private"));
     assert!(!names.iter().any(|n| n.contains("beta")));
+    assert!(body["next_cursor"].is_null());
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -84,7 +85,8 @@ async fn create_shelf_round_trips(pool: PgPool) {
     assert_eq!(listed.status_code(), StatusCode::OK);
     let arr: serde_json::Value = listed.json();
     assert!(
-        arr.as_array()
+        arr["items"]
+            .as_array()
             .unwrap()
             .iter()
             .any(|v| v["name"].as_str() == Some("Currently reading"))
@@ -752,9 +754,231 @@ async fn child_can_view_own_shelves(pool: PgPool) {
     assert_eq!(r.status_code(), StatusCode::OK);
     let arr: serde_json::Value = r.json();
     assert!(
-        arr.as_array()
+        arr["items"]
+            .as_array()
             .unwrap()
             .iter()
             .any(|v| v["name"].as_str() == Some("Kid's books"))
     );
+}
+
+// ── UNK-374: keyset pagination on the shelves list + items page ─────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_shelves_pagination_walks_across_system_boundary(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "page-walk").await;
+    // One system shelf + two user shelves; sort order is
+    // (is_system DESC, name ASC, id ASC) → [system, Alpha, Bravo].
+    sqlx::query!(
+        "INSERT INTO shelves (user_id, name, is_system) VALUES ($1, 'Zys', TRUE)",
+        a_id,
+    )
+    .execute(&app_pool)
+    .await
+    .expect("insert system shelf");
+    test_support::db::create_shelf(&app_pool, a_id, "Alpha").await;
+    test_support::db::create_shelf(&app_pool, a_id, "Bravo").await;
+
+    // page_size = 1 forces a page boundary exactly at the
+    // is_system DESC → name ASC transition (the mixed-direction OR arm).
+    let server = test_support::db::server_with_real_pools_page_size(&app_pool, &ingestion_pool, 1);
+
+    let mut names: Vec<String> = Vec::new();
+    let mut url = "/api/v1/shelves".to_string();
+    let mut pages = 0u32;
+    loop {
+        let r = server
+            .get(&url)
+            .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        let body: serde_json::Value = r.json();
+        for v in body["items"].as_array().unwrap() {
+            names.push(v["name"].as_str().unwrap().to_owned());
+        }
+        pages += 1;
+        assert!(pages < 10, "runaway pagination");
+        if let Some(nc) = body["next_cursor"].as_str() {
+            // The Link header mirrors the body cursor.
+            let link = r
+                .headers()
+                .get(header::LINK)
+                .expect("Link header on overflow page")
+                .to_str()
+                .unwrap();
+            assert!(link.contains(r#"rel="next""#), "Link header: {link}");
+            url = format!("/api/v1/shelves?cursor={nc}");
+        } else {
+            assert!(
+                r.headers().get(header::LINK).is_none(),
+                "final page must not carry a Link rel=next header"
+            );
+            break;
+        }
+    }
+    assert_eq!(names, ["Zys", "Alpha", "Bravo"], "walked {pages} pages");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_shelves_rejects_malformed_cursor(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "bad-cursor").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/shelves?cursor=!!!not-base64url!!!")
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_items_pagination_total_under_identical_sort_keys(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "items-walk").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Walk shelf").await;
+
+    // Three items sharing position AND added_at — only the
+    // manifestation_id tiebreaker keeps the walk total. A page boundary
+    // between two of them must not drop or duplicate a row.
+    let mut expected: Vec<Uuid> = Vec::new();
+    for marker in ["walk-zebra", "walk-quill", "walk-marsh"] {
+        let (_w, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, marker).await;
+        sqlx::query!(
+            "INSERT INTO shelf_items (shelf_id, manifestation_id, position, added_at) \
+             VALUES ($1, $2, 0, '2026-01-01T00:00:00Z')",
+            shelf_id,
+            m_id,
+        )
+        .execute(&app_pool)
+        .await
+        .expect("insert shelf item");
+        expected.push(m_id);
+    }
+    expected.sort();
+
+    let server = test_support::db::server_with_real_pools_page_size(&app_pool, &ingestion_pool, 2);
+
+    let mut seen: Vec<Uuid> = Vec::new();
+    let mut url = format!("/api/v1/shelves/{shelf_id}");
+    let mut pages = 0u32;
+    loop {
+        let r = server
+            .get(&url)
+            .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        // ETag rides on every items page, not just the first.
+        assert!(
+            r.headers().get(header::ETAG).is_some(),
+            "ETag on page {pages}"
+        );
+        let body: serde_json::Value = r.json();
+        for v in body["items"].as_array().unwrap() {
+            let id: Uuid = v["manifestation_id"].as_str().unwrap().parse().unwrap();
+            assert!(!seen.contains(&id), "duplicate item {id} on page {pages}");
+            seen.push(id);
+        }
+        pages += 1;
+        assert!(pages < 10, "runaway pagination");
+        match body["next_cursor"].as_str() {
+            Some(nc) => url = format!("/api/v1/shelves/{shelf_id}?cursor={nc}"),
+            None => break,
+        }
+    }
+    assert_eq!(pages, 2, "3 items at page_size=2 must take exactly 2 pages");
+    seen.sort();
+    assert_eq!(seen, expected, "every item exactly once");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_shelves_id_tiebreaker_under_identical_names(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "dup-names").await;
+    // Two shelves with the SAME name: only the id column in the keyset
+    // predicate separates them. page_size = 1 forces the boundary
+    // between the duplicates.
+    let s1 = test_support::db::create_shelf(&app_pool, a_id, "Duplicate").await;
+    let s2 = test_support::db::create_shelf(&app_pool, a_id, "Duplicate").await;
+    let mut expected = [s1, s2];
+    expected.sort();
+
+    let server = test_support::db::server_with_real_pools_page_size(&app_pool, &ingestion_pool, 1);
+
+    let mut seen: Vec<Uuid> = Vec::new();
+    let mut url = "/api/v1/shelves".to_string();
+    let mut pages = 0u32;
+    loop {
+        let r = server
+            .get(&url)
+            .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        let body: serde_json::Value = r.json();
+        for v in body["items"].as_array().unwrap() {
+            let id: Uuid = v["id"].as_str().unwrap().parse().unwrap();
+            assert!(!seen.contains(&id), "duplicate shelf {id} on page {pages}");
+            seen.push(id);
+        }
+        pages += 1;
+        assert!(pages < 10, "runaway pagination");
+        match body["next_cursor"].as_str() {
+            Some(nc) => url = format!("/api/v1/shelves?cursor={nc}"),
+            None => break,
+        }
+    }
+    seen.sort();
+    assert_eq!(
+        seen, expected,
+        "both same-name shelves exactly once over {pages} pages"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_items_rejects_cross_endpoint_cursor_replay(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "cross-tag").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Replay shelf").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // A structurally valid shelves-LIST cursor fed to the items
+    // endpoint must surface the codec's UnknownTag as a 422, not a 500
+    // or a silently wrong page.
+    let foreign = crate::routes::cursor::ShelfCursor {
+        is_system: false,
+        name: "Replay shelf".into(),
+        id: shelf_id,
+    }
+    .encode();
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}?cursor={foreign}"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_items_rejects_malformed_cursor(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "items-bad-cursor").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Cursor shelf").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}?cursor=!!!garbage!!!"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
