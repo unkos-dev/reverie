@@ -899,7 +899,7 @@ impl UpdateMetadataFields {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body(content = UpdateMetadataRequest, description = "RFC 7396 JSON Merge Patch under a `fields` envelope: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
-        (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"),
+        (status = 204, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),

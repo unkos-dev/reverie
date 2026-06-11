@@ -212,7 +212,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "204": {
             "description": "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"
           },
           "401": {
