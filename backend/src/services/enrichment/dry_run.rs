@@ -23,7 +23,7 @@ use super::value_hash;
 /// immediately, changes that would be staged for review, and fields that
 /// are locked (silently skipped).  Source failures are surfaced separately
 /// so callers can distinguish data results from infrastructure issues.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct DryRunDiff {
     /// Manifestation that was evaluated.
     pub manifestation_id: Uuid,
@@ -40,7 +40,7 @@ pub struct DryRunDiff {
 }
 
 /// One proposed change to a single field from a single source.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct FieldChange {
     /// Canonical field name (e.g. `"title"`, `"isbn_13"`).
     pub field_name: String,
@@ -53,7 +53,7 @@ pub struct FieldChange {
 }
 
 /// A brief summary of a source-level failure during a dry-run pass.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct SourceFailureSummary {
     /// Source that failed (e.g. `"hardcover"`).
     pub source_id: String,

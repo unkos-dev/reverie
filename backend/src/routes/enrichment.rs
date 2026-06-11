@@ -6,12 +6,12 @@
 //!   of what the pipeline would change.
 //! * `GET  /api/v1/enrichment/status` — aggregate queue counters.
 
-use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
 use serde::Serialize;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -36,19 +36,33 @@ use crate::state::AppState;
 /// Why: `dry_run` fans out onto `state.ingestion_pool` (the queue's
 /// pool, no RLS) for the joined-table read, so the RLS visibility check
 /// must run first on the user's pool before crossing the pool boundary.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/v1/manifestations/{id}/enrichment/trigger",
-            post(trigger),
-        )
-        .route(
-            "/api/v1/manifestations/{id}/enrichment/dry-run",
-            post(dry_run),
-        )
-        .route("/api/v1/enrichment/status", get(status))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(trigger))
+        .routes(routes!(dry_run))
+        .routes(routes!(status))
 }
 
+/// `POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the
+/// manifestation for a fresh enrichment pass.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the manifestation is missing or
+///   RLS-hidden (existence-not-leaked).
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/enrichment/trigger",
+    tag = "enrichment",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 202, description = "Enrichment state reset to pending; the background worker picks the manifestation up on its next poll"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn trigger(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -83,6 +97,28 @@ async fn trigger(
     Ok(StatusCode::ACCEPTED)
 }
 
+/// `POST /api/v1/manifestations/{id}/enrichment/dry-run` — synchronous
+/// preview of what an enrichment pass would change. No side effects
+/// beyond the source cache.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the manifestation is missing or
+///   RLS-hidden (existence-not-leaked).
+/// - [`AppError::Internal`] on database errors or fan-out infrastructure
+///   failure.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/enrichment/dry-run",
+    tag = "enrichment",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Diff of changes an enrichment pass would make; per-source failures are listed, not fatal", body = crate::services::enrichment::dry_run::DryRunDiff),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn dry_run(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -113,15 +149,37 @@ async fn dry_run(
     Ok(axum::Json(diff))
 }
 
-#[derive(Debug, Serialize)]
+/// Aggregate per-status manifestation counts for the enrichment queue.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 struct StatusSummary {
+    /// Manifestations awaiting enrichment.
     pending: i64,
+    /// Manifestations currently being enriched.
     in_progress: i64,
+    /// Manifestations enriched successfully.
     complete: i64,
+    /// Manifestations whose last attempt failed (retryable).
     failed: i64,
+    /// Manifestations skipped terminally.
     skipped: i64,
 }
 
+/// `GET /api/v1/enrichment/status` — aggregate queue counters over the
+/// manifestations visible to the caller.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/enrichment/status",
+    tag = "enrichment",
+    responses(
+        (status = 200, description = "Per-status manifestation counts under the caller's RLS context", body = StatusSummary),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn status(
     current_user: CurrentUser,
     State(state): State<AppState>,
