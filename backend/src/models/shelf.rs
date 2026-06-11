@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 /// One shelf in the shelves-list response, plus the read shape for
 /// create/rename round-trips.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct Shelf {
     /// `shelves.id`.
@@ -47,7 +47,7 @@ pub struct Shelf {
 /// Carries the position so the frontend can render in stored order
 /// and round-trip back as `PUT /api/v1/shelves/{id}/items` with the
 /// re-arranged list.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct ShelfItem {
     /// `shelf_items.manifestation_id`.
@@ -60,7 +60,7 @@ pub struct ShelfItem {
 }
 
 /// `GET /api/v1/shelves/{id}` response: shelf identity + ordered items.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct ShelfWithItems {
     /// `shelves.id`.

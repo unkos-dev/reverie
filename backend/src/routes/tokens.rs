@@ -4,10 +4,10 @@
 //! is never persisted, only its SHA-256 hash. Subsequent `GET` and
 //! `DELETE` operate on the row id; the plaintext cannot be recovered.
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use time::OffsetDateTime;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;

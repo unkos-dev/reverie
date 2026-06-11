@@ -108,7 +108,11 @@ impl Modify for SecurityAddon {
         (name = "health", description = "Liveness and readiness probes."),
         (name = "library", description = "Books, works, and full-text search."),
         (name = "series", description = "Series and their ordered works."),
-        (name = "dashboard", description = "Admin-only library-health aggregates.")
+        (name = "dashboard", description = "Admin-only library-health aggregates."),
+        (name = "shelves", description = "User-scoped curation shelves and their ordered items."),
+        (name = "users", description = "Admin-only user management."),
+        (name = "settings", description = "Admin-only runtime settings."),
+        (name = "tokens", description = "Per-user device tokens for OPDS / Basic-auth clients.")
     )
 )]
 pub struct ApiDoc;
@@ -144,6 +148,10 @@ fn pilot_router() -> OpenApiRouter<AppState> {
         .merge(crate::routes::library::router())
         .merge(crate::routes::series::router())
         .merge(crate::routes::dashboard::router())
+        .merge(crate::routes::shelves::router())
+        .merge(crate::routes::users::router())
+        .merge(crate::routes::settings::router())
+        .merge(crate::routes::tokens::router())
 }
 
 /// Runtime router for the OpenAPI-documented modules, ready to merge into the

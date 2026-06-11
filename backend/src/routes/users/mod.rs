@@ -26,12 +26,12 @@
 //! the second transaction sees the first's committed state and rejects
 //! with 422 "would leave zero admins".
 
-use axum::Router;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use axum::routing::{get, patch, put};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -43,24 +43,34 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/v1/users*` router.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/users", get(list_users))
-        .route("/api/v1/users/{id}/role", put(update_role))
-        .route("/api/v1/users/{id}/child-status", put(update_child_status))
-        .route("/api/v1/users/{id}", patch(update_user))
+/// Build the `/api/v1/users*` router as an [`OpenApiRouter`] so each
+/// handler's `#[utoipa::path]` contributes to the generated spec (a missing
+/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// and split into its runtime and spec halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_users))
+        .routes(routes!(update_role))
+        .routes(routes!(update_child_status))
+        .routes(routes!(update_user))
 }
 
 /// Wire-format user row returned by list and mutation endpoints.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 struct UserResponse {
+    /// User id.
     id: Uuid,
+    /// Human-readable display name.
     display_name: String,
+    /// Email address; `null` when the user has none on file.
     email: Option<String>,
+    /// Access-control role.
     role: Role,
+    /// Whether child content-visibility rules apply to this user.
     is_child: bool,
+    /// Row creation timestamp.
     created_at: OffsetDateTime,
+    /// Last mutation timestamp.
     updated_at: OffsetDateTime,
 }
 
@@ -69,6 +79,16 @@ struct UserResponse {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/users",
+    tag = "users",
+    responses(
+        (status = 200, description = "All users, oldest first. Admin only.", body = [UserResponse]),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn list_users(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -95,8 +115,9 @@ async fn list_users(
 }
 
 /// Body for `PUT /api/v1/users/{id}/role`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateRoleRequest {
+    /// New role for the target user.
     role: Role,
 }
 
@@ -118,6 +139,20 @@ struct UpdateRoleRequest {
 ///   user, or "cannot change role from child without disabling child status
 ///   first" when setting a non-child role on an `is_child = true` user.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    put,
+    path = "/api/v1/users/{id}/role",
+    tag = "users",
+    params(("id" = Uuid, Path, description = "Target user id")),
+    request_body = UpdateRoleRequest,
+    responses(
+        (status = 200, description = "Updated user. The target's active sessions are invalidated. Admin only.", body = UserResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Demotion would leave zero admins, or the role change conflicts with the target's child status", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn update_role(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -201,8 +236,9 @@ async fn update_role(
 }
 
 /// Body for `PUT /api/v1/users/{id}/child-status`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateChildStatusRequest {
+    /// New child status for the target user.
     is_child: bool,
 }
 
@@ -223,6 +259,20 @@ struct UpdateChildStatusRequest {
 /// - [`AppError::Validation`] with detail "would leave zero admins"
 ///   when marking an admin as child would remove the last admin.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    put,
+    path = "/api/v1/users/{id}/child-status",
+    tag = "users",
+    params(("id" = Uuid, Path, description = "Target user id")),
+    request_body = UpdateChildStatusRequest,
+    responses(
+        (status = 200, description = "Updated user. Enabling child status also sets role to `child`; disabling reverts `child` to `adult` (other roles unchanged). The target's active sessions are invalidated. Admin only.", body = UserResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Marking the last admin as child would leave zero admins", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn update_child_status(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -306,12 +356,18 @@ async fn update_child_status(
 /// RFC 7396 JSON Merge Patch: absent keys are untouched; explicit
 /// `null` on `email` clears; `null` on `display_name` is rejected
 /// (NOT NULL column).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::option_option)] // RFC 7396: None = absent, Some(None) = null, Some(Some) = value
 struct UpdateUserRequest {
+    /// New display name. Absent = unchanged; explicit `null` is rejected
+    /// (NOT NULL column).
     #[serde(default, deserialize_with = "deserialize_optional_string")]
+    #[schema(value_type = Option<String>)]
     display_name: Option<Option<String>>,
+    /// New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`
+    /// clears the stored address.
     #[serde(default, deserialize_with = "deserialize_optional_string")]
+    #[schema(value_type = Option<String>)]
     email: Option<Option<String>>,
 }
 
@@ -376,6 +432,20 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
 ///   `email` is not a valid RFC 5322 addr-spec (display-name and domain-literal
 ///   forms are rejected), or when `email` is already in use by another user.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/users/{id}",
+    tag = "users",
+    params(("id" = Uuid, Path, description = "Target user id")),
+    request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
+    responses(
+        (status = 200, description = "Updated user. Does not invalidate the target's sessions (neither field gates access). Admin only.", body = UserResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Null/empty display_name, malformed email, or email already in use", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn update_user(
     current_user: CurrentUser,
     State(state): State<AppState>,

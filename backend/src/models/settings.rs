@@ -14,7 +14,7 @@ use crate::models::manifestation_format::ManifestationFormat;
 /// Fields map 1:1 to the singleton row columns. The struct is held in
 /// `AppState` behind an `Arc<RwLock<Settings>>` and refreshed via
 /// LISTEN/NOTIFY + 60-second fallback poll.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Settings {
     /// Whether the enrichment pipeline is active.
     pub enrichment_enabled: bool,
@@ -110,7 +110,7 @@ impl Settings {
 /// `ManifestationFormat` are validated at deserialization time by serde;
 /// collection invariants (non-empty, no duplicates) are checked by
 /// [`validate_update`].
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateSettings {
     /// Whether the enrichment pipeline is active.

@@ -109,17 +109,14 @@ where
     // matched responses; unmatched paths flow into the composite fallback
     // below which attaches API CSP manually for reserved-prefix 404s.
     let mut api_like = Router::new()
-        // /health{,/ready} — OpenAPI pilot: the documented router is split into
-        // its runtime half here and its spec half in `openapi::spec_json`.
+        // OpenAPI-documented modules (health, library, series, dashboard,
+        // shelves, users, settings, tokens): the documented router is split
+        // into its runtime half here and its spec half in `openapi::spec_json`.
         .merge(openapi::router())
         .merge(routes::auth::router())
-        .merge(routes::tokens::router())
         .merge(routes::ingestion::router())
         .merge(routes::enrichment::router())
         .merge(routes::metadata::router())
-        .merge(routes::shelves::router())
-        .merge(routes::users::router())
-        .merge(routes::settings::router())
         // /api/v1/books/:id/cover{,/thumb} — always mounted (Step 10 consumes it
         // with a session cookie regardless of OPDS availability).
         .merge(routes::opds::covers_router());

@@ -6,12 +6,12 @@
 //! Settings are persisted to the `settings` table (single-row). Changes
 //! propagate to the running process via LISTEN/NOTIFY + RwLock.
 
-use axum::Router;
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
 use axum::response::IntoResponse;
-use axum::routing::get;
 use time::OffsetDateTime;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
@@ -23,17 +23,25 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/v1/settings` router.
-pub fn router() -> Router<AppState> {
-    Router::new().route("/api/v1/settings", get(get_settings).put(put_settings))
+/// Build the `/api/v1/settings` router as an [`OpenApiRouter`] so each
+/// handler's `#[utoipa::path]` contributes to the generated spec (a missing
+/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// and split into its runtime and spec halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(get_settings, put_settings))
 }
 
 /// Response shape for `GET /api/v1/settings`.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct SettingsResponse {
     #[serde(flatten)]
     settings: Settings,
+    /// Settings fields whose changes only take effect after a process
+    /// restart.
+    #[schema(value_type = Vec<String>)]
     restart_required_fields: &'static [&'static str],
+    /// Timestamp of the last successful LISTEN/NOTIFY settings reload in
+    /// this process; `null` until the first reload.
     #[serde(with = "time::serde::rfc3339::option")]
     last_successful_reload_at: Option<OffsetDateTime>,
 }
@@ -52,6 +60,16 @@ struct SettingsResponse {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/settings",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn get_settings(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -70,10 +88,12 @@ async fn get_settings(
 }
 
 /// Response shape for `PUT /api/v1/settings`.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct PutSettingsResponse {
     #[serde(flatten)]
     settings: Settings,
+    /// `true` when the patch touched at least one field that only takes
+    /// effect after a process restart.
     restart_required: bool,
 }
 
@@ -90,6 +110,18 @@ struct PutSettingsResponse {
 /// - [`AppError::Validation`] when the body is empty or contains
 ///   invalid field values.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    put,
+    path = "/api/v1/settings",
+    tag = "settings",
+    request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
+    responses(
+        (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Empty patch, malformed body, or invalid field values", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn put_settings(
     current_user: CurrentUser,
     State(state): State<AppState>,

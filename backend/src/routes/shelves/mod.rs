@@ -28,15 +28,15 @@
 //! transaction so add/remove also bump the ETag — without that, a
 //! follow-up reorder PUT would 412 spuriously.
 
-use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::header::{ETAG, IF_MATCH};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, patch, post};
 use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -47,24 +47,16 @@ use crate::state::AppState;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/v1/shelves*` router.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/shelves", get(list_shelves).post(create_shelf))
-        .route(
-            "/api/v1/shelves/{id}",
-            patch(rename_shelf)
-                .delete(delete_shelf)
-                .get(get_shelf_with_items),
-        )
-        .route(
-            "/api/v1/shelves/{id}/items",
-            post(add_shelf_item).put(reorder_shelf_items),
-        )
-        .route(
-            "/api/v1/shelves/{id}/items/{manifestation_id}",
-            delete(remove_shelf_item),
-        )
+/// Build the `/api/v1/shelves*` router as an [`OpenApiRouter`] so each
+/// handler's `#[utoipa::path]` contributes to the generated spec (a missing
+/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// and split into its runtime and spec halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_shelves, create_shelf))
+        .routes(routes!(rename_shelf, delete_shelf, get_shelf_with_items))
+        .routes(routes!(add_shelf_item, reorder_shelf_items))
+        .routes(routes!(remove_shelf_item))
 }
 
 /// Format the `updated_at` timestamp as an RFC 9110 entity-tag (the
@@ -120,6 +112,15 @@ fn parse_if_match(headers: &HeaderMap) -> Result<Option<OffsetDateTime>, AppErro
 ///
 /// # Errors
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/shelves",
+    tag = "shelves",
+    responses(
+        (status = 200, description = "The caller's shelves, system shelves first then by name", body = [Shelf]),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn list_shelves(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -159,8 +160,9 @@ async fn list_shelves(
 }
 
 /// Body for `POST /api/v1/shelves`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct CreateShelfRequest {
+    /// Shelf display name (non-empty after trim).
     name: String,
 }
 
@@ -172,6 +174,19 @@ struct CreateShelfRequest {
 /// - [`AppError::Validation`] when the body is missing or `name` is
 ///   empty / whitespace-only.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/shelves",
+    tag = "shelves",
+    request_body = CreateShelfRequest,
+    responses(
+        (status = 201, description = "Shelf created", body = Shelf,
+         headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn create_shelf(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -216,8 +231,9 @@ async fn create_shelf(
 }
 
 /// Body for `PATCH /api/v1/shelves/{id}`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct RenameShelfRequest {
+    /// New shelf display name (non-empty after trim).
     name: String,
 }
 
@@ -233,6 +249,22 @@ struct RenameShelfRequest {
 /// - [`AppError::Validation`] when `name` is missing or
 ///   whitespace-only.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/shelves/{id}",
+    tag = "shelves",
+    params(("id" = Uuid, Path, description = "Shelf id")),
+    request_body = RenameShelfRequest,
+    responses(
+        (status = 200, description = "Renamed shelf", body = Shelf,
+         headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = 409, description = "System shelves cannot be renamed", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn rename_shelf(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -313,6 +345,19 @@ async fn rename_shelf(
 ///   the caller.
 /// - [`AppError::SystemShelfImmutable`] when `is_system = TRUE`.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/shelves/{id}",
+    tag = "shelves",
+    params(("id" = Uuid, Path, description = "Shelf id")),
+    responses(
+        (status = 204, description = "Shelf deleted"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = 409, description = "System shelves cannot be deleted", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn delete_shelf(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -352,6 +397,18 @@ async fn delete_shelf(
 /// # Errors
 /// - [`AppError::NotFound`] when missing or not owned by caller.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/shelves/{id}",
+    tag = "shelves",
+    params(("id" = Uuid, Path, description = "Shelf id")),
+    responses(
+        (status = 200, description = "Shelf identity plus ordered items", body = ShelfWithItems,
+         headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn get_shelf_with_items(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -410,8 +467,9 @@ async fn get_shelf_with_items(
 }
 
 /// Body for `POST /api/v1/shelves/{id}/items`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct AddItemRequest {
+    /// Manifestation to append; must be visible to the caller.
     manifestation_id: Uuid,
 }
 
@@ -426,6 +484,20 @@ struct AddItemRequest {
 ///   via an RLS-scoped existence probe to prevent shelf-existence
 ///   probing of arbitrary manifestation ids).
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/shelves/{id}/items",
+    tag = "shelves",
+    params(("id" = Uuid, Path, description = "Shelf id")),
+    request_body = AddItemRequest,
+    responses(
+        (status = 204, description = "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
+         headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Missing or malformed body", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn add_shelf_item(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -516,6 +588,21 @@ async fn add_shelf_item(
 ///   `updated_at` on zero `rows_affected` would invalidate a
 ///   correctly-held client `If-Match` for the next reorder).
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/shelves/{id}/items/{manifestation_id}",
+    tag = "shelves",
+    params(
+        ("id" = Uuid, Path, description = "Shelf id"),
+        ("manifestation_id" = Uuid, Path, description = "Manifestation to remove")
+    ),
+    responses(
+        (status = 204, description = "Item removed; shelf ETag bumped",
+         headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Shelf missing / not owned, or item not on the shelf", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn remove_shelf_item(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -565,8 +652,10 @@ async fn remove_shelf_item(
 }
 
 /// Body for `PUT /api/v1/shelves/{id}/items` — full ordered manifestation list.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct ReorderItemsRequest {
+    /// Complete new ordering: every manifestation currently on the shelf,
+    /// exactly once. Partial reorders are rejected.
     items: Vec<Uuid>,
 }
 
@@ -584,6 +673,25 @@ struct ReorderItemsRequest {
 /// - [`AppError::NotFound`] when the shelf is missing / not owned.
 /// - [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    put,
+    path = "/api/v1/shelves/{id}/items",
+    tag = "shelves",
+    params(
+        ("id" = Uuid, Path, description = "Shelf id"),
+        ("If-Match" = String, Header, description = "Strong entity-tag from a prior shelf response; weak validators (W/\"...\") are rejected")
+    ),
+    request_body = ReorderItemsRequest,
+    responses(
+        (status = 204, description = "Positions rewritten; shelf ETag bumped",
+         headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = 412, description = "If-Match does not match the shelf's current updated_at", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed If-Match, or items list does not exactly cover the shelf", body = crate::openapi::ProblemDetails),
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn reorder_shelf_items(
     current_user: CurrentUser,
     State(state): State<AppState>,
