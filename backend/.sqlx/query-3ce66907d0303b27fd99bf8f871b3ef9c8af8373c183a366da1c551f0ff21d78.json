@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webhook_event_dedupe WHERE event_id IN (SELECT event_id FROM webhook_event_dedupe WHERE seen_at <= now() - ($1::double precision * interval '1 second') LIMIT 100)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ce66907d0303b27fd99bf8f871b3ef9c8af8373c183a366da1c551f0ff21d78"
+}

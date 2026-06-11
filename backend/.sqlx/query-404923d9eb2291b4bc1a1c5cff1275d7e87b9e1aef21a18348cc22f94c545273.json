@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT seen_at FROM webhook_event_dedupe WHERE event_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webhook_event_dedupe",
+            "name": "seen_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "404923d9eb2291b4bc1a1c5cff1275d7e87b9e1aef21a18348cc22f94c545273"
+}
