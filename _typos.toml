@@ -13,6 +13,9 @@ extend-ignore-re = [
 # Domain vocabulary (FRBR cataloguing model)
 frbr = "frbr"
 
+# Vendored codeguard files use "criticals" as a severity noun
+criticals = "criticals"
+
 # Intentional typo in settings test (deny_unknown_fields coverage)
 concurency = "concurency"
 
@@ -36,6 +39,9 @@ extend-exclude = [
   "frontend/dist/",
   "frontend/public/brand/",
   "graphify-out/",
+  # Vendored codeguard security context — frozen as authored (see
+  # docs/security/codeguard/README.md governance note).
+  "docs/security/codeguard/",
   "*.lock",
   "package-lock.json",
 ]

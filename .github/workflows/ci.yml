@@ -51,7 +51,7 @@ jobs:
             backend:
               - 'backend/**'
               - 'docker/init-roles.sql'
-              - 'docker-compose.yml'
+              - 'docker/compose.dev.yml'
               - 'Dockerfile'
               - '.github/workflows/ci.yml'
             audit:

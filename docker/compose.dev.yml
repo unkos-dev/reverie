@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:18@sha256:8ff36f3c66371cba71d20ceedccfc3de9669a68737607888c4ef0af93abe8e39
+    container_name: reverie-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reverie
+      POSTGRES_PASSWORD: reverie
+      POSTGRES_DB: reverie_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      # postgres:18+ stores data in a major-version subdirectory
+      # (`/var/lib/postgresql/<major>/<cluster>/`) for `pg_upgrade --link`
+      # mount-boundary safety. Mounting the legacy `…/data` child path
+      # errors out at first init — mount the parent.
+      - pgdata:/var/lib/postgresql
+      - ./init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reverie -d reverie_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

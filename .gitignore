@@ -27,9 +27,9 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-# Claude Code runtime locks + per-user local settings
-.claude/*.lock
-.claude/settings.local.json
+# Private agent workspace — symlink into the operator's dotfiles repo
+# (plans, reports, settings, runtime locks). Not project-shared.
+.claude
 
 # Docs build output
 docs/.astro/
@@ -39,7 +39,7 @@ coverage/
 *.lcov
 /plans/
 
-# Dev library seed target (populated by dev/seed-library.sh when
+# Dev library seed target (populated by scripts/seed-library.sh when
 # REVERIE_LIBRARY_PATH is unset)
 backend/tests/fixtures/library/
 

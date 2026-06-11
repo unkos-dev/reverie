@@ -17,7 +17,8 @@ cannot reach a cluster it can create per-test databases on. Environment
 condition, not a code regression — fix reachability or defer to CI; don't
 debug the tests.
 
-**Optional local cluster:** `docker compose up -d` from repo root stands up a
+**Optional local cluster:** `docker compose -f docker/compose.dev.yml up -d`
+from the repo root stands up a
 dev postgres on host port 5433 (see `debt/2026-05-05-dev-postgres-port-5433.md`
 for the port choice). This only helps where the Docker daemon shares your
 machine's network namespace. With a remote or Docker-out-of-Docker daemon the
@@ -86,9 +87,9 @@ subdirectory layout. Existing dev volumes from before change must be
 dropped:
 
 ```bash
-docker compose down
+docker compose -f docker/compose.dev.yml down
 docker volume rm reverie_pgdata
-docker compose up -d
+docker compose -f docker/compose.dev.yml up -d
 # Re-apply migrations on the fresh volume: `cargo run -- migrate`
 ```
 
