@@ -283,13 +283,12 @@ mod tests {
         assert!(reader["last_used_at"].is_null());
         assert!(!reader["created_at"].is_null());
 
-        // The helper token authenticated these requests, so its
-        // last_used_at is populated.
-        let auth = items
-            .iter()
-            .find(|t| t["name"] == "auth-token")
-            .expect("auth token present in list");
-        assert!(!auth["last_used_at"].is_null());
+        // The helper's auth token is also listed. Its last_used_at is NOT
+        // asserted non-null here: verify_basic schedules the
+        // update_last_used write on a detached tokio::spawn, so the value
+        // is racy from the response's point of view. The debounced-touch
+        // behaviour has its own tests in models::device_token.
+        assert!(items.iter().any(|t| t["name"] == "auth-token"));
 
         // Exactly the documented TokenListItem fields — neither the token
         // plaintext nor its stored hash may appear in the list shape.
