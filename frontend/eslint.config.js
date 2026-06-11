@@ -78,6 +78,26 @@ export default defineConfig([
             "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised.",
         },
       ],
+      // The bare-identifier ban above misses the property-access forms
+      // `window.fetch(...)` / `globalThis.fetch(...)`, which resolve to the
+      // same global. Ban both so the centralisation convention can't be
+      // sidestepped with an unusual-but-valid spelling. Carved out in the
+      // same three override blocks as `no-restricted-globals`.
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "window",
+          property: "fetch",
+          message:
+            "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised.",
+        },
+        {
+          object: "globalThis",
+          property: "fetch",
+          message:
+            "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised.",
+        },
+      ],
       // Machine-enforces the frontend/CLAUDE.md ban on `as` casts against
       // object literals (`{ ... } as X`). The chained-through-`unknown`
       // form (`{ ... } as unknown as X`) — the documented escape hatch —
@@ -148,6 +168,7 @@ export default defineConfig([
     files: ["src/api/**"],
     rules: {
       "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
     },
   },
   // The /auth/* cookie-session surface predates apiFetch and deliberately
@@ -161,14 +182,16 @@ export default defineConfig([
     files: ["src/lib/theme/api.ts", "src/hooks/useAuthMe.ts"],
     rules: {
       "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
     },
   },
   // Tests stub and assert on the global (vi.stubGlobal("fetch", ...),
   // mock dispatch helpers) — the ban targets production call sites.
   {
-    files: ["**/*.test.{ts,tsx}", "tests/**"],
+    files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "tests/**"],
     rules: {
       "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
     },
   },
   // ADR: docstring linting for the tiered comment policy (UNK-236).
