@@ -846,7 +846,6 @@ jobs:
           opengrep scan \
             --config .opengrep-rules/rust \
             --config .opengrep-rules/typescript \
-            --metrics=off \
             --error \
             --exclude '*_test.rs' \
             --exclude '*.test.ts' \
