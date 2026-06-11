@@ -248,9 +248,17 @@ jobs:
       # package available upstream) are excluded from the gate — they would
       # block every publish until a distro fix ships, with no action
       # available to us. trivy reads the registry credential from the
-      # docker login above. Every per-arch digest is scanned (x-platform
+      # docker login above. Every per-arch image is scanned (x-platform
       # scanning is layer analysis, not execution, so the amd64 runner
       # scans arm64 images fine).
+      #
+      # Indirection: buildx with `provenance`/`sbom` pushes each per-arch
+      # "digest" as an OCI image *index* whose children are the real image
+      # manifest plus an attestation manifest. trivy's remote backend
+      # resolves an index via the *scanner host's* platform (linux/amd64),
+      # which an arm64-only index doesn't carry — so enumerate the
+      # non-attestation children and scan each child manifest digest
+      # directly (a plain manifest needs no platform resolution).
       - name: Scan image for vulnerabilities (gating)
         working-directory: ${{ runner.temp }}/digests
         env:
@@ -258,14 +266,30 @@ jobs:
         run: |
           set -euo pipefail
           for digest in *; do
-            echo "::group::trivy scan ${IMAGE_REF}@sha256:${digest}"
-            trivy image \
-              --severity HIGH,CRITICAL \
-              --ignore-unfixed \
-              --exit-code 1 \
-              --no-progress \
-              "${IMAGE_REF}@sha256:${digest}"
-            echo "::endgroup::"
+            raw=$(docker buildx imagetools inspect --raw "${IMAGE_REF}@sha256:${digest}")
+            # Index → scan every non-attestation child; bare manifest
+            # (no .manifests) → scan the digest itself.
+            children=$(jq -r '
+              if .manifests then
+                .manifests[]
+                | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")
+                | .digest
+              else
+                empty
+              end' <<<"$raw")
+            if [ -z "$children" ]; then
+              children="sha256:${digest}"
+            fi
+            for child in $children; do
+              echo "::group::trivy scan ${IMAGE_REF}@${child}"
+              trivy image \
+                --severity HIGH,CRITICAL \
+                --ignore-unfixed \
+                --exit-code 1 \
+                --no-progress \
+                "${IMAGE_REF}@${child}"
+              echo "::endgroup::"
+            done
           done
 
       # imagetools create assembles a manifest list from the per-arch
