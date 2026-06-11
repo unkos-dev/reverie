@@ -15,7 +15,11 @@
 -- while their terminal event must still dedupe.
 CREATE TABLE public.webhook_event_dedupe (
     event_id text PRIMARY KEY,
-    seen_at timestamptz DEFAULT now() NOT NULL
+    seen_at timestamptz DEFAULT now() NOT NULL,
+    -- Decode-range guard, mandated for every first-party TIMESTAMPTZ column
+    -- (see 20260610165400 and db::tests::every_timestamptz_column_has_decode_range_check).
+    CONSTRAINT webhook_event_dedupe_seen_at_ts_decode_range
+        CHECK (seen_at >= '0001-01-01 00:00:00+00' AND seen_at < '10000-01-01 00:00:00+00')
 );
 
 COMMENT ON TABLE public.webhook_event_dedupe IS 'Short-TTL dedupe set for terminal webhook events (UNK-98). Keyed by stable event id (writeback:{job_id}:{outcome}). Rows past the TTL are purged opportunistically on dispatch; see services::writeback::events::dispatch.';
