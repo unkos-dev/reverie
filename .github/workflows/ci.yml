@@ -836,16 +836,27 @@ jobs:
           chmod +x "$HOME/.local/bin/opengrep"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # --error exits non-zero on any finding. Scope to first-party source;
-      # tests are excluded from the rust pack's threat surface the same way
-      # the wiremock carve-outs work for clippy — a test hitting an
+      # --error exits non-zero on any finding. Security packs only — the
+      # full language packs bundle best-practice and portability rules
+      # (props-spreading, i18n) that are eslint's remit and produced ~180
+      # baseline findings of pure style noise; this gate is a security
+      # scanner, not a second linter. Tests are excluded the same way the
+      # wiremock carve-outs work for clippy — a test hitting an
       # insecure-hash rule is exercising the API, not shipping it.
+      #
+      # Excluded rule, with justification (zizmor discipline):
+      #   rust.lang.security.args — audit-class rule firing on ANY
+      #   std::env::args use; main.rs reads argv for CLI subcommand
+      #   dispatch (`reverie migrate`), not for security decisions, and
+      #   the rule has no way to tell the difference.
       - name: Scan source (gating)
         run: |
           set -euo pipefail
           opengrep scan \
-            --config .opengrep-rules/rust \
-            --config .opengrep-rules/typescript \
+            --config .opengrep-rules/rust/lang/security \
+            --config .opengrep-rules/typescript/lang/security \
+            --config .opengrep-rules/typescript/react/security \
+            --exclude-rule opengrep-rules.rust.lang.security.args \
             --error \
             --exclude '*_test.rs' \
             --exclude '*.test.ts' \
