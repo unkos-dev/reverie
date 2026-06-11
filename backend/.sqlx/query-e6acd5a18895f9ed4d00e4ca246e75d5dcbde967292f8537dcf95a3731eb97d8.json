@@ -14,7 +14,8 @@
                 "pending",
                 "clean",
                 "repaired",
-                "degraded"
+                "degraded",
+                "failed"
               ]
             }
           }

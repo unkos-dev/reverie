@@ -170,6 +170,11 @@ and the frontend lint/test suite. The closing PR flips
 
 ## More Information
 
+- Value-set extension (2026-06-11,
+  [UNK-312](https://linear.app/unkos/issue/UNK-312)): `failed` added for
+  "the validator itself could not run" — previously that outcome borrowed
+  `degraded`, hiding validator crashes from operators. The four original
+  values and their semantics are unchanged; `quarantined` remains absent.
 - Implementation plan (committed):
   `.claude/PRPs/plans/unk-276-validation-status.plan.md`.
 - Tracked debt:
