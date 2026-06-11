@@ -14,7 +14,7 @@
  *    equality. One retry on `403 csrf-mismatch`: refresh the cache via
  *    `/auth/me`, replay once, then surface the failure.
  *
- * 3. **RFC 7807 Problem Details parsing** — non-2xx responses are
+ * 3. **RFC 9457 Problem Details parsing** — non-2xx responses are
  *    funnelled into {@link ApiError} so callers branch on `.status` /
  *    `.problemSlug` instead of re-parsing JSON.
  *
@@ -31,7 +31,7 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CSRF_MISMATCH_SLUG = "csrf-mismatch";
 
 /**
- * Shape of an RFC 7807 Problem Details body. All fields optional —
+ * Shape of an RFC 9457 Problem Details body. All fields optional —
  * partial responses tolerated. Parsed via Zod so a malformed body
  * surfaces as `null` (from `safeParse`) rather than corrupting the
  * downstream `ApiError`.

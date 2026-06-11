@@ -32,7 +32,7 @@ const EnrichmentStatusSchema = z.enum(["pending", "in_progress", "complete", "fa
 /** Enrichment lifecycle state. Matches `backend/src/models/enrichment_status.rs`. */
 export type EnrichmentStatus = z.infer<typeof EnrichmentStatusSchema>;
 
-const ValidationStatusSchema = z.enum(["pending", "clean", "repaired", "degraded"]);
+const ValidationStatusSchema = z.enum(["pending", "clean", "repaired", "degraded", "failed"]);
 /** Validation lifecycle state. Matches `backend/src/models/validation_status.rs`. */
 export type ValidationStatus = z.infer<typeof ValidationStatusSchema>;
 

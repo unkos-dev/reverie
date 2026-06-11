@@ -1,7 +1,7 @@
 /**
  * Typed error class for failed API requests.
  *
- * Parses RFC 7807 Problem Details responses (`application/problem+json`)
+ * Parses RFC 9457 Problem Details responses (`application/problem+json`)
  * emitted by the backend per `adr/2026-05-22-json-api-conventions.md`.
  * Every non-2xx response from `apiFetch` lands here, regardless of
  * envelope shape — if the body is not a Problem Details document the
@@ -15,23 +15,23 @@
 export class ApiError extends Error {
   /** HTTP status code from the response. */
   readonly status: number;
-  /** Problem-type URI from the RFC 7807 body, or `null` when the body was not Problem Details. */
+  /** Problem-type URI from the RFC 9457 body, or `null` when the body was not Problem Details. */
   readonly type: string | null;
-  /** RFC 7807 `title` field; falls back to `response.statusText` when absent. */
+  /** RFC 9457 `title` field; falls back to `response.statusText` when absent. */
   readonly title: string;
-  /** RFC 7807 `detail` field; empty string when absent. */
+  /** RFC 9457 `detail` field; empty string when absent. */
   readonly detail: string;
 
   /**
    * @param status - HTTP status code from the response.
-   * @param type - Problem-type URI from the RFC 7807 body, or `null`
+   * @param type - Problem-type URI from the RFC 9457 body, or `null`
    *   when the body was not a Problem Details document.
-   * @param title - RFC 7807 `title` field; falls back to
+   * @param title - RFC 9457 `title` field; falls back to
    *   `response.statusText` when absent.
-   * @param detail - RFC 7807 `detail` field; empty string when absent.
+   * @param detail - RFC 9457 `detail` field; empty string when absent.
    */
   /**
-   * Wrap an RFC 7807 Problem Details response into a typed error.
+   * Wrap an RFC 9457 Problem Details response into a typed error.
    * Falls back to status-text / empty strings when the response body
    * was not a Problem Details document.
    */

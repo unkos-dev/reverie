@@ -119,7 +119,7 @@ describe("apiFetch — CSRF header injection", () => {
   });
 });
 
-describe("apiFetch — RFC 7807 error parsing", () => {
+describe("apiFetch — RFC 9457 error parsing", () => {
   test("401 unauthorized → ApiError with parsed type/title/detail", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       problemResponse({

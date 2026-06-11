@@ -1,8 +1,8 @@
-//! RFC 7807 problem-type URI registry.
+//! RFC 9457 (obsoletes RFC 7807) problem-type URI registry.
 //!
 //! One `const` per [`crate::error::AppError`] variant. URIs are stable
 //! identifiers — they do not need to dereference at first
-//! (RFC 7807 §3.1). The host portion uses the placeholder
+//! (RFC 9457 §3.1). The host portion uses the placeholder
 //! `reverie.example` until the OSS release pins a canonical project
 //! URL; the slugs are the load-bearing part and stay frozen across
 //! that swap.

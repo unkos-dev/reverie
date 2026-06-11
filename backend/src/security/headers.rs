@@ -167,7 +167,7 @@ pub async fn composite_fallback(State(state): State<AppState>, uri: Uri) -> Resp
     }
 }
 
-/// 404 RFC 7807 Problem Details + API CSP for reserved-prefix
+/// 404 RFC 9457 Problem Details + API CSP for reserved-prefix
 /// fallback paths (`/api`, `/auth`, `/health`, `/opds`).
 ///
 /// Threat: reserved-prefix typos must stay on the API problem-details
@@ -184,10 +184,10 @@ pub async fn composite_fallback(State(state): State<AppState>, uri: Uri) -> Resp
 /// when the [`crate::error::instance::problem_instance_layer`]
 /// middleware is active on the request (production wiring in
 /// `lib.rs`); when the task-local is unset (some test paths),
-/// `instance` is omitted per RFC 7807 §3.1.
+/// `instance` is omitted per RFC 9457 §3.1.
 pub fn api_404_with_csp(state: &AppState) -> Response {
     // THREAT: reserved-prefix fallback responses must carry both the
-    // RFC 7807 body shape AND the API CSP; either drift weakens the
+    // RFC 9457 body shape AND the API CSP; either drift weakens the
     // route-class boundary `composite_fallback` enforces.
     let mut resp = crate::error::AppError::NotFound.into_response();
     attach_api_csp(&mut resp, state);
