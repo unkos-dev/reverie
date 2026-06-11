@@ -7,8 +7,10 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post};
-use axum::{Json, Router};
+use axum::Json;
+use time::OffsetDateTime;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -17,26 +19,66 @@ use crate::error::AppError;
 use crate::models::device_token;
 use crate::state::AppState;
 
-/// Build the device-token management router.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/tokens", post(create_token))
-        .route("/api/v1/tokens", get(list_tokens))
-        .route("/api/v1/tokens/{id}", delete(revoke_token))
+/// Build the device-token management router as an [`OpenApiRouter`] so each
+/// handler's `#[utoipa::path]` contributes to the generated spec (a missing
+/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// and split into its runtime and spec halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(create_token, list_tokens))
+        .routes(routes!(revoke_token))
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
 struct CreateTokenRequest {
+    /// User-supplied label for the device (1-255 characters after trim).
+    #[schema(example = "My Kindle")]
     name: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct CreateTokenResponse {
+    /// Token row id — the handle for later revocation.
     id: Uuid,
+    /// The label the token was created with (trimmed).
     name: String,
+    /// Token plaintext. Returned exactly once, here; only its SHA-256 hash
+    /// is persisted, so the plaintext cannot be recovered later.
     token: String,
 }
 
+/// One active device token in the list view. The token plaintext and its
+/// stored hash are never part of this shape.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct TokenListItem {
+    /// Token row id.
+    id: Uuid,
+    /// User-supplied label.
+    name: String,
+    /// Timestamp of the last successful auth with this token; `null` if
+    /// the token has never been used.
+    last_used_at: Option<OffsetDateTime>,
+    /// Token creation timestamp.
+    created_at: OffsetDateTime,
+}
+
+/// `POST /api/v1/tokens` — issue a new device token for the caller.
+///
+/// # Errors
+/// - [`AppError::Validation`] when the trimmed name is empty or longer than
+///   255 characters, or the caller already has 10 active tokens.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/tokens",
+    tag = "tokens",
+    request_body = CreateTokenRequest,
+    responses(
+        (status = 201, description = "Token created. The `token` field is the plaintext, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Name empty / longer than 255 characters after trim, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn create_token(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -67,29 +109,57 @@ async fn create_token(
     ))
 }
 
+/// `GET /api/v1/tokens` — list the caller's active (non-revoked) tokens.
+///
+/// # Errors
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/tokens",
+    tag = "tokens",
+    responses(
+        (status = 200, description = "The caller's active device tokens, hash and plaintext elided", body = [TokenListItem]),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn list_tokens(
     current_user: CurrentUser,
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<Vec<TokenListItem>>, AppError> {
     let tokens = device_token::list_for_user(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let items: Vec<serde_json::Value> = tokens
-        .iter()
-        .map(|t| {
-            serde_json::json!({
-                "id": t.id,
-                "name": t.name,
-                "last_used_at": t.last_used_at,
-                "created_at": t.created_at,
-            })
+    let items: Vec<TokenListItem> = tokens
+        .into_iter()
+        .map(|t| TokenListItem {
+            id: t.id,
+            name: t.name,
+            last_used_at: t.last_used_at,
+            created_at: t.created_at,
         })
         .collect();
 
-    Ok(Json(serde_json::json!(items)))
+    Ok(Json(items))
 }
 
+/// `DELETE /api/v1/tokens/{id}` — revoke one of the caller's tokens.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the id does not exist, belongs to another
+///   user, or is already revoked (ownership is not leaked).
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/tokens/{id}",
+    tag = "tokens",
+    params(("id" = Uuid, Path, description = "Token row id")),
+    responses(
+        (status = 204, description = "Token revoked"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Token does not exist, belongs to another user, or is already revoked", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn revoke_token(
     current_user: CurrentUser,
     State(state): State<AppState>,
