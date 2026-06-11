@@ -14,7 +14,8 @@
 pub mod cover_embed;
 /// Module-boundary error type for the writeback pipeline.
 pub mod error;
-/// Webhook event emission stubs (Step 12 placeholder).
+/// Webhook terminal-event dispatch: stable event ids + dedupe (delivery
+/// stub until Step 12).
 pub mod events;
 /// Pure-function `OPF` XML metadata rewriter.
 pub mod opf_rewrite;
