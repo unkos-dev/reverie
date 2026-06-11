@@ -4,14 +4,14 @@
 //! under `CurrentUser` (cookie-or-Basic) for the web UI. Handler body is
 //! shared; the two mounts differ only in extractor wrapping.
 
-use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::routing::get;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::basic_only::BasicOnly;
@@ -23,55 +23,115 @@ use crate::state::AppState;
 /// Build the OPDS-mount cover router (`/opds/books/:id/cover{,/thumb}`)
 /// gated by [`BasicOnly`] so OPDS clients' Basic credentials remain
 /// inside the RFC 7617 paired protection space.
-pub fn opds_router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/opds/books/{id}/cover",
-            get(
-                |BasicOnly(user): BasicOnly,
-                 State(state): State<AppState>,
-                 Path(id): Path<Uuid>| async move {
-                    serve_cover(&state, user.user_id, id, CoverSize::Full).await
-                },
-            ),
-        )
-        .route(
-            "/opds/books/{id}/cover/thumb",
-            get(
-                |BasicOnly(user): BasicOnly,
-                 State(state): State<AppState>,
-                 Path(id): Path<Uuid>| async move {
-                    serve_cover(&state, user.user_id, id, CoverSize::Thumb).await
-                },
-            ),
-        )
+pub fn opds_router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(opds_cover))
+        .routes(routes!(opds_cover_thumb))
 }
 
 /// Build the API-mount cover router (`/api/v1/books/:id/cover{,/thumb}`)
 /// gated by [`CurrentUser`] so the web UI can load covers with a
 /// session cookie. Always mounted independent of `config.opds.enabled`.
-pub fn api_router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/v1/books/{id}/cover",
-            get(
-                |user: CurrentUser,
-                 State(state): State<AppState>,
-                 Path(id): Path<Uuid>| async move {
-                    serve_cover(&state, user.user_id, id, CoverSize::Full).await
-                },
-            ),
-        )
-        .route(
-            "/api/v1/books/{id}/cover/thumb",
-            get(
-                |user: CurrentUser,
-                 State(state): State<AppState>,
-                 Path(id): Path<Uuid>| async move {
-                    serve_cover(&state, user.user_id, id, CoverSize::Thumb).await
-                },
-            ),
-        )
+pub fn api_router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(api_cover))
+        .routes(routes!(api_cover_thumb))
+}
+
+/// `GET /opds/books/{id}/cover` — full-size cover, Basic auth.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,
+///   or has no cover.
+/// - [`AppError::Internal`] on cover-generation or file IO errors.
+#[utoipa::path(
+    get,
+    path = "/opds/books/{id}/cover",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: no-store"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn opds_cover(
+    BasicOnly(user): BasicOnly,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    serve_cover(&state, user.user_id, id, CoverSize::Full).await
+}
+
+/// `GET /opds/books/{id}/cover/thumb` — thumbnail cover, Basic auth.
+///
+/// # Errors
+/// See [`opds_cover`].
+#[utoipa::path(
+    get,
+    path = "/opds/books/{id}/cover/thumb",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Thumbnail image stream; Cache-Control: no-store"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn opds_cover_thumb(
+    BasicOnly(user): BasicOnly,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    serve_cover(&state, user.user_id, id, CoverSize::Thumb).await
+}
+
+/// `GET /api/v1/books/{id}/cover` — full-size cover for the web UI.
+///
+/// # Errors
+/// See [`opds_cover`].
+#[utoipa::path(
+    get,
+    path = "/api/v1/books/{id}/cover",
+    tag = "library",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: no-store"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn api_cover(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    serve_cover(&state, user.user_id, id, CoverSize::Full).await
+}
+
+/// `GET /api/v1/books/{id}/cover/thumb` — thumbnail cover for the web UI.
+///
+/// # Errors
+/// See [`opds_cover`].
+#[utoipa::path(
+    get,
+    path = "/api/v1/books/{id}/cover/thumb",
+    tag = "library",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Thumbnail image stream; Cache-Control: no-store"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn api_cover_thumb(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    serve_cover(&state, user.user_id, id, CoverSize::Thumb).await
 }
 
 async fn serve_cover(

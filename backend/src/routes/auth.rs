@@ -1,11 +1,13 @@
 //! Authentication routes — OIDC login / callback, session logout, and the
 //! cookie-authenticated `/auth/me` profile + theme-preference endpoints.
 
+use axum::Json;
 use axum::extract::State;
 use axum::response::{IntoResponse, Redirect};
-use axum::routing::{get, patch, post};
-use axum::{Json, Router};
 use axum_extra::extract::cookie::CookieJar;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
+use uuid::Uuid;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use openidconnect::core::CoreResponseType;
 use openidconnect::{
@@ -23,24 +25,44 @@ use crate::models::theme_preference::ThemePreference;
 use crate::models::user;
 use crate::state::AppState;
 
-/// Build the `/auth/*` router (login / callback / logout / me / theme).
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/auth/login", get(login))
-        .route("/auth/callback", get(callback))
-        .route("/auth/logout", post(logout))
-        .route("/auth/me", get(me))
-        .route("/auth/me/theme", patch(update_theme))
+/// Build the `/auth/*` router (login / callback / logout / me / theme) as
+/// an [`OpenApiRouter`] so each handler's `#[utoipa::path]` contributes to
+/// the generated spec (a missing annotation fails to compile). Merged into
+/// `crate::openapi::pilot_router` and split into its runtime and spec
+/// halves there.
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(login))
+        .routes(routes!(callback))
+        .routes(routes!(logout))
+        .routes(routes!(me))
+        .routes(routes!(update_theme))
 }
 
 /// `/auth/callback` query-string parameters returned by the OIDC issuer
 /// after the user authenticates.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct CallbackParams {
+    /// Authorization code minted by the IdP.
     code: String,
+    /// OIDC anti-forgery state echoed back by the IdP; must match the
+    /// value `/auth/login` stored in the session.
     state: String,
 }
 
+/// `GET /auth/login` — start the OIDC authorization-code + PKCE flow.
+///
+/// # Errors
+/// - [`AppError::Internal`] when session storage fails.
+#[utoipa::path(
+    get,
+    path = "/auth/login",
+    tag = "auth",
+    security(()),
+    responses(
+        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session")
+    )
+)]
 async fn login(
     State(state): State<AppState>,
     session: Session,
@@ -81,6 +103,24 @@ async fn login(
     Ok(Redirect::temporary(auth_url.as_str()))
 }
 
+/// `GET /auth/callback` — OIDC redirect target: validate state, exchange
+/// the code, establish the session, and issue the CSRF synchronizer token.
+///
+/// # Errors
+/// - [`AppError::Unauthorized`] when the anti-forgery state is missing or
+///   mismatched, or the ID token fails validation.
+/// - [`AppError::Internal`] on token-exchange or session-storage failure.
+#[utoipa::path(
+    get,
+    path = "/auth/callback",
+    tag = "auth",
+    security(()),
+    params(CallbackParams),
+    responses(
+        (status = 307, description = "Login complete; session established, theme cookie seeded, redirect to /"),
+        (status = 401, description = "Anti-forgery state missing/mismatched or ID-token validation failed", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn callback(
     State(state): State<AppState>,
     session: Session,
@@ -205,6 +245,19 @@ async fn callback(
     Ok((jar, Redirect::temporary("/")))
 }
 
+/// `POST /auth/logout` — destroy the current session (idempotent).
+///
+/// # Errors
+/// - [`AppError::Internal`] when session deletion fails at the store.
+#[utoipa::path(
+    post,
+    path = "/auth/logout",
+    tag = "auth",
+    security(()),
+    responses(
+        (status = 204, description = "Session destroyed (no-op without one)")
+    )
+)]
 async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {
     crate::auth::session::logout(&session)
         .await
@@ -212,11 +265,46 @@ async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+/// Profile payload for `GET /auth/me`.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct MeResponse {
+    /// User id.
+    id: Uuid,
+    /// Human-readable display name.
+    display_name: String,
+    /// Email address; `null` when none on file.
+    email: Option<String>,
+    /// Access-control role.
+    role: crate::models::role::Role,
+    /// Whether child content-visibility rules apply.
+    is_child: bool,
+    /// Persisted UI theme preference.
+    theme_preference: ThemePreference,
+    /// Session-bound CSRF synchronizer token to echo as `X-CSRF-Token` on
+    /// unsafe verbs; `null` for sessions that never completed
+    /// `/auth/callback` (e.g. Basic-auth OPDS callers).
+    csrf_token: Option<String>,
+}
+
+/// `GET /auth/me` — the authenticated caller's profile + CSRF token.
+///
+/// # Errors
+/// - [`AppError::Unauthorized`] when the session user no longer exists.
+/// - [`AppError::Internal`] on database or session-store errors.
+#[utoipa::path(
+    get,
+    path = "/auth/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Caller profile; `csrf_token` is the synchronizer token for unsafe verbs (null for Basic-auth sessions)", body = MeResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn me(
     current_user: CurrentUser,
     session: Session,
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<MeResponse>, AppError> {
     let u = user::find_by_id(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
@@ -234,19 +322,29 @@ async fn me(
         .get("csrf_token")
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    Ok(Json(serde_json::json!({
-        "id": u.id,
-        "display_name": u.display_name,
-        "email": u.email,
-        "role": u.role,
-        "is_child": u.is_child,
-        "theme_preference": u.theme_preference,
-        "csrf_token": csrf_token,
-    })))
+    Ok(Json(MeResponse {
+        id: u.id,
+        display_name: u.display_name,
+        email: u.email,
+        role: u.role,
+        is_child: u.is_child,
+        theme_preference: u.theme_preference,
+        csrf_token,
+    }))
 }
 
-#[derive(serde::Deserialize)]
+/// Body for `PATCH /auth/me/theme`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
 struct UpdateThemeRequest {
+    /// New theme preference; invalid values are rejected at
+    /// deserialization (422).
+    theme_preference: ThemePreference,
+}
+
+/// Echo payload for `PATCH /auth/me/theme`.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct ThemeResponse {
+    /// The persisted theme preference.
     theme_preference: ThemePreference,
 }
 
@@ -255,12 +353,28 @@ struct UpdateThemeRequest {
 // is the wire-boundary validation gate. If a future axum upgrade changes
 // the default rejection status, the `patch_theme_rejects_invalid_value`
 // test in this module will fail and surface the regression.
+/// `PATCH /auth/me/theme` — persist the caller's theme preference and
+/// refresh the FOUC theme cookie.
+///
+/// # Errors
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    patch,
+    path = "/auth/me/theme",
+    tag = "auth",
+    request_body = UpdateThemeRequest,
+    responses(
+        (status = 200, description = "Preference persisted; `reverie_theme` cookie refreshed", body = ThemeResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Unknown theme_preference value", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn update_theme(
     current_user: CurrentUser,
     State(state): State<AppState>,
     jar: CookieJar,
     Json(body): Json<UpdateThemeRequest>,
-) -> Result<(CookieJar, Json<serde_json::Value>), AppError> {
+) -> Result<(CookieJar, Json<ThemeResponse>), AppError> {
     sqlx::query!(
         "UPDATE users SET theme_preference = $1, updated_at = now() WHERE id = $2",
         body.theme_preference as ThemePreference,
@@ -272,7 +386,9 @@ async fn update_theme(
     let jar = set_theme_cookie(jar, body.theme_preference);
     Ok((
         jar,
-        Json(serde_json::json!({ "theme_preference": body.theme_preference })),
+        Json(ThemeResponse {
+            theme_preference: body.theme_preference,
+        }),
     ))
 }
 
