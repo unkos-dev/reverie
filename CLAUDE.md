@@ -83,7 +83,7 @@ Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` �
 
    PR with untested code not approved.
 
-6. **Security scrutiny continuous, not terminal.** Reverie open-source + self-hosted — threat model = multi-user exposed instance, not private deploy. For any change touching user input, auth, sessions, secrets, file I/O, XML parsing, outbound HTTP, response headers: consult relevant file in `.claude/security/` and explicitly answer "will this stand up to security review?" in task summary before done.
+6. **Security scrutiny continuous, not terminal.** Reverie open-source + self-hosted — threat model = multi-user exposed instance, not private deploy. For any change touching user input, auth, sessions, secrets, file I/O, XML parsing, outbound HTTP, response headers: consult relevant file in `docs/security/codeguard/` and explicitly answer "will this stand up to security review?" in task summary before done.
 7. **Never surface decrypted secret values.** Reporting secrets (env vars, API keys, session cookies, DB passwords, OIDC client secrets): describe presence + shape only (source, length, format) — never value. No `grep`/`rg`/`cat` on env files or key material, even when user appears to ask for value.
 
    **Enforcement:** operator-level, not in-repo — a PostToolUse output-scanner hook deployed via the operator's dotfiles to `~/.claude/scripts/hooks/redact-secrets-output.sh` scans every Bash tool result for high-confidence secret patterns (KEY=VALUE and KEY: "value" forms with sensitive suffixes, URL-embedded credentials, Bearer tokens, GitHub PATs, workspace API key shapes) and replaces matched spans with `[REDACTED]` before transcript ingestion. Fail-closed: extraction or assembly errors blank output rather than leaking. Original output logged to `~/.claude/hooks/secret-redaction.log`. **The log file contains plaintext secrets by design** — never `cat`/`bat`/`Read` the log into chat; use `rg -c '^=== END ===$'` for event counts only.
@@ -145,12 +145,12 @@ Two artifact types, two locations:
   - Project-wide reference docs (BLUEPRINT.md, DESIGN_BRIEF.md)
   - Design specs + brainstorming outputs (pre-implementation decisions + rationale)
   - `superpowers:brainstorming` skill MUST write spec output here as `YYYY-MM-DD-<topic>-design.md`. Overrides skill's documented default of `docs/superpowers/specs/` (skill invites override via "User preferences for spec location override this default").
-- **`.claude/PRPs/plans/`** (committed):
+- **`.claude/PRPs/plans/`** (private — gitignored symlink into operator dotfiles, dotfiles-tracked for durability):
   - Implementation plans, one per feature/PR
   - Output from `prp-core:prp-plan` and related planning skills
   - Filename: `<topic>.plan.md` (matching feature branch name)
 
-**Workflow:** `superpowers:brainstorming` → spec lands in `/plans/` → ingested by `prp-core:prp-plan` → implementation plan committed to `.claude/PRPs/plans/`.
+**Workflow:** `superpowers:brainstorming` → spec lands in `/plans/` → ingested by `prp-core:prp-plan` → implementation plan saved to `.claude/PRPs/plans/` (dotfiles-tracked).
 
 When invoking `superpowers:brainstorming`, explicitly pass spec location alongside topic (belt-and-suspenders) — agents reading CLAUDE.md honor this section, but SKILL.md default not auto-enforced.
 
