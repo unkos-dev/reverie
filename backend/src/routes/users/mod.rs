@@ -150,7 +150,7 @@ struct UpdateRoleRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Demotion would leave zero admins, or the role change conflicts with the target's child status", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_role(
@@ -270,7 +270,7 @@ struct UpdateChildStatusRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Marking the last admin as child would leave zero admins", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Marking the last admin as child would leave zero admins, or the request body is malformed", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_child_status(
@@ -361,8 +361,11 @@ async fn update_child_status(
 struct UpdateUserRequest {
     /// New display name. Absent = unchanged; explicit `null` is rejected
     /// (NOT NULL column).
+    // value_type = String (not Option<String>): the schema must NOT say
+    // nullable — the runtime 422s an explicit null. Optionality (absent =
+    // unchanged) is carried by the field not being required.
     #[serde(default, deserialize_with = "deserialize_optional_string")]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = String)]
     display_name: Option<Option<String>>,
     /// New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`
     /// clears the stored address.
