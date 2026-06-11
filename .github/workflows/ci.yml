@@ -34,6 +34,7 @@ jobs:
       workflows: ${{ steps.filter.outputs.workflows }}
       iac: ${{ steps.filter.outputs.iac }}
       openapi: ${{ steps.filter.outputs.openapi }}
+      npm: ${{ steps.filter.outputs.npm }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -92,6 +93,19 @@ jobs:
               # rationale as the zizmor.yml entry above).
               - 'docs/openapi.json'
               - '.checkov.yaml'
+              - '.github/workflows/ci.yml'
+            npm:
+              # npm license gate inputs: any of the three npm trees'
+              # manifests or lockfiles. Licenses only change when the
+              # dependency tree changes, so PR-time gating here is
+              # complete — no cron needed (unlike advisories, which have
+              # temporal drift; see scheduled-audit.yml).
+              - 'package.json'
+              - 'package-lock.json'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'docs/package.json'
+              - 'docs/package-lock.json'
               - '.github/workflows/ci.yml'
             docs:
               # The generated reference artifacts (docs/openapi.json,
@@ -719,6 +733,60 @@ jobs:
       # in .checkov.yaml carries a justification and lift condition.
       - name: Scan OpenAPI spec (gating)
         run: checkov -f docs/openapi.json --framework openapi --compact --config-file .checkov.yaml
+
+  # UNK-378: npm license-policy gate — the counterpart of cargo-deny's
+  # [licenses] allowlist (backend/deny.toml), which covers only the Rust
+  # tree. Without this, a copyleft npm dependency can enter any of the
+  # three npm trees unreviewed (dependency-review-action gates only
+  # *vulnerabilities* on PR-introduced deps, not licenses).
+  #
+  # Scope: --production of each tree. The licensing surface that matters
+  # is what we *distribute* (the frontend bundle, the published docs
+  # site); dev tooling is not redistributed, so even a GPL dev tool is
+  # fine. The root tree has no production deps today — included anyway so
+  # one added later is gated from day one.
+  #
+  # Allowlist mirrors deny.toml's permissive-only set, extended with the
+  # permissive licenses actually present in the npm trees (BlueOak-1.0.0,
+  # Python-2.0). The one exception: sharp's platform-specific libvips
+  # prebuilts (@img/sharp-libvips-*) are LGPL-3.0 — build-time-only
+  # Astro image tooling, never shipped in the site output, and the
+  # package name varies by runner arch, hence the prefix exclude.
+  npm-license:
+    name: npm license policy
+    needs: changes
+    if: needs.changes.outputs.npm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.16.0
+
+      # license-checker reads node_modules, so each tree needs a real
+      # install. npx pin (-y, exact version) keeps the scanner itself
+      # deterministic; bump deliberately.
+      - name: Check npm licenses (gating)
+        run: |
+          set -euo pipefail
+          allow="MIT;Apache-2.0;ISC;0BSD;BSD-2-Clause;BSD-3-Clause;BlueOak-1.0.0;CC0-1.0;Python-2.0;Unlicense"
+          for tree in . frontend docs; do
+            echo "::group::npm ci + license check (${tree})"
+            (
+              cd "$tree"
+              npm ci
+              npx -y license-checker-rseidelsohn@5.0.1 \
+                --production \
+                --excludePrivatePackages \
+                --excludePackagesStartingWith "@img/sharp-libvips" \
+                --onlyAllow "$allow"
+            )
+            echo "::endgroup::"
+          done
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
@@ -1418,6 +1486,7 @@ jobs:
       - secret-scan
       - iac-scan
       - openapi-policy
+      - npm-license
       - docs
       - commitlint
       - pr-linear-ref

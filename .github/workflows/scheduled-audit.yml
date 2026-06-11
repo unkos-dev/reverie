@@ -53,3 +53,40 @@ jobs:
       # a new advisory, not a policy edit.
       - name: Check advisories
         run: cargo deny check advisories
+
+  # UNK-378: npm counterpart of the cargo-deny advisory cron above. A newly
+  # disclosed npm advisory against an unchanged lockfile is invisible to
+  # PR-time checks (dependency-review-action only diffs PR-introduced deps),
+  # so this scans all three committed npm lockfiles daily. `npm audit`
+  # queries the registry's bulk-advisory endpoint from the lockfile alone —
+  # no install needed. Full tree including devDependencies: a compromised
+  # dev tool runs with repo write access locally and in CI, so its
+  # advisories matter as much as runtime ones. --audit-level=high keeps the
+  # red-run signal meaningful in npm's noisier advisory ecosystem (the
+  # license policy is PR-time in ci.yml's npm-license job — licenses have
+  # no temporal drift).
+  npm-advisories:
+    name: Advisory scan (npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.16.0
+
+      - name: Audit npm lockfiles
+        run: |
+          set -euo pipefail
+          rc=0
+          for tree in . frontend docs; do
+            echo "::group::npm audit (${tree})"
+            # Audit every tree before failing so one finding doesn't mask
+            # another tree's report.
+            (cd "$tree" && npm audit --audit-level=high) || rc=1
+            echo "::endgroup::"
+          done
+          exit "$rc"
