@@ -4,5 +4,5 @@
     "MD013": false,
     "MD033": false,
   },
-  "ignores": ["node_modules", "target", "CHANGELOG.md", ".claude/**"],
+  "ignores": ["node_modules", "target", "CHANGELOG.md", ".claude/**", "docs/security/codeguard/**"],
 }

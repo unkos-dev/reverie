@@ -13,7 +13,7 @@ lift-when: UNK-169 (revert to OSS-convention 5432) merged to main
 
 The Coder workspace where the project was originally developed runs a
 `shared-postgres` container that maps the postgres protocol to host
-port `5432`. When `docker-compose.yml` was written for the project's
+port `5432`. When `docker/compose.dev.yml` was written for the project's
 own dev postgres, mapping to `5432` would have collided with the
 workspace's existing service. `5433` was chosen to coexist.
 
@@ -22,7 +22,7 @@ running Reverie outside that specific Coder workspace setup.
 
 ## Workaround
 
-`docker-compose.yml`:
+`docker/compose.dev.yml`:
 
 ```yaml
 services:
@@ -55,7 +55,7 @@ The right shape:
   project working tree. The Coder workspace template can generate a
   `~/.config/coder/reverie-compose-override.yml` mapping the host
   port to whatever it wants and export
-  `COMPOSE_FILE=docker-compose.yml:~/.config/coder/reverie-compose-override.yml`
+  `COMPOSE_FILE=docker/compose.dev.yml:~/.config/coder/reverie-compose-override.yml`
   in the shell init. Project repo never sees the override.
 
 ## Lift conditions
@@ -77,6 +77,6 @@ When that PR merges:
 
 - [UNK-169](https://linear.app/unkos/issue/UNK-169) — the revert
   ticket (lift trigger)
-- `docker-compose.yml` — workaround site
+- `docker/compose.dev.yml` — workaround site
 - `backend/CLAUDE.md` — connection-string examples that will need
   updating to `5432`

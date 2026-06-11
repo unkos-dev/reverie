@@ -38,13 +38,13 @@ cd frontend && npm install && npm run dev
 
 ```bash
 # Docker (full stack)
-docker compose up
+docker compose -f docker/compose.dev.yml up
 ```
 
 > **Upgrading from before postgres:18 mount-layout fix?** The dev volume
 > path changed from `pgdata:/var/lib/postgresql/data` to
 > `pgdata:/var/lib/postgresql`. Drop the old volume first:
-> `docker compose down && docker volume rm reverie_pgdata` (Compose
+> `docker compose -f docker/compose.dev.yml down && docker volume rm reverie_pgdata` (Compose
 > prefixes volume names with the project name, which defaults to the
 > repo directory; if your checkout is named differently, run
 > `docker volume ls | grep pgdata` to find the actual name).
