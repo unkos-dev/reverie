@@ -59,7 +59,7 @@ pub const REL_IMAGE: &str = "http://opds-spec.org/image";
 pub const REL_IMAGE_THUMBNAIL: &str = "http://opds-spec.org/image/thumbnail";
 /// `rel` value for the `OpenSearch` descriptor link.
 pub const REL_SEARCH: &str = "search";
-/// `rel` value for the next-page link on acquisition feeds.
+/// `rel` value for the next-page link (RFC 5005 — both feed kinds).
 pub const REL_NEXT: &str = "next";
 /// `rel` value for the self link on every feed.
 pub const REL_SELF: &str = "self";

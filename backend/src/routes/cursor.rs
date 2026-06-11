@@ -10,9 +10,9 @@
 //! they expected.
 //!
 //! Wire encoding: base64url(unpadded) over `<tag>|<key>`, where
-//! `<tag>` is a single byte (`r` | `t` | `a`) identifying the
-//! [`crate::routes::cursor::CursorKey`] variant and `<key>` is the
-//! variant's textual key:
+//! `<tag>` is a short ASCII tag identifying the cursor type and
+//! `<key>` is its textual key. [`crate::routes::cursor::CursorKey`]
+//! uses the single-byte tags `r` | `t` | `a`:
 //!
 //! - `Recent`: `<rfc3339>|<manifestation_id>`
 //! - `Title`:  `<sort_title>|<work_id>|<manifestation_id>`
@@ -305,6 +305,17 @@ impl CursorKey {
 /// fixed-shape head (`sh`, the `is_system` flag) with `split_once` and
 /// the trailing uuid with `rsplit_once`, so pipes inside the name
 /// survive the round-trip (same strategy as [`CursorKey::Title`]).
+///
+/// # Keyset predicate
+///
+/// The sort is mixed-direction (`is_system` DESC, the rest ASC), so a
+/// single row-tuple comparison against this cursor is WRONG — it would
+/// silently return rows from the wrong side of the `is_system` flip.
+/// Consumers must expand into the two-arm OR:
+///
+/// ```sql
+/// (is_system < $1 OR (is_system = $1 AND (name, id) > ($2, $3)))
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShelfCursor {
     /// Boundary shelf's `is_system` flag (sorted DESC: system first).

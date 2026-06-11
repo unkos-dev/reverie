@@ -74,8 +74,8 @@ struct UserResponse {
     updated_at: OffsetDateTime,
 }
 
-/// Defensive bound on the users list (UNK-374, ADR-7's justified
-/// single-page exception). A household/self-hosted instance's user
+/// Defensive bound on the users list (UNK-374, the justified
+/// single-page exception of `adr/2026-06-08-keyset-pagination-list-contract.md`). A household/self-hosted instance's user
 /// table has a genuinely small natural ceiling — a multi-hundred-user
 /// deployment is outside Reverie's design scope — so a hard `LIMIT`
 /// beats paginating an endpoint whose realistic cardinality is single

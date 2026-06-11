@@ -352,7 +352,7 @@ fn parse_cursor(raw: Option<&str>) -> Result<Option<super::cursor::Cursor>, AppE
 fn parse_name_cursor(raw: Option<&str>) -> Result<Option<super::cursor::NameCursor>, AppError> {
     raw.map(super::cursor::NameCursor::parse)
         .transpose()
-        .map_err(|_| AppError::Validation("invalid cursor".into()))
+        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))
 }
 
 fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, cursor: Option<&super::cursor::Cursor>) {

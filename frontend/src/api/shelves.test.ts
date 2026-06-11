@@ -137,6 +137,64 @@ describe("getShelf", () => {
     const secondUrl = fetchSpy.mock.calls[1]?.[0] as string;
     expect(secondUrl).toBe("/api/v1/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb?cursor=bmV4dA");
   });
+
+  test("pins identity (incl. updated_at) from the first page", async () => {
+    const identity = {
+      id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      name: "Holiday",
+      is_system: false,
+      created_at: "2026-05-24T01:00:00Z",
+    };
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...identity,
+          updated_at: "2026-05-24T01:00:00Z",
+          items: [],
+          next_cursor: "bmV4dA",
+        }),
+      )
+      // A concurrent mutation bumped updated_at between pages — the
+      // assembled result must keep page 1's ETag value.
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...identity,
+          updated_at: "2026-05-24T09:00:00Z",
+          items: [],
+          next_cursor: null,
+        }),
+      );
+    const result = await getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    expect(result.updated_at).toBe("2026-05-24T01:00:00Z");
+  });
+
+  test("throws loudly when pagination never terminates", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          name: "Endless",
+          is_system: false,
+          created_at: "2026-05-24T01:00:00Z",
+          updated_at: "2026-05-24T01:00:00Z",
+          items: [],
+          next_cursor: "bmV4dA",
+        }),
+      ),
+    );
+    await expect(getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow(
+      "did not terminate",
+    );
+  });
+});
+
+describe("listShelves walk bound", () => {
+  test("throws loudly when pagination never terminates", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(jsonResponse({ items: [], next_cursor: "bmV4dA" })),
+    );
+    await expect(listShelves()).rejects.toThrow("did not terminate");
+  });
 });
 
 describe("createShelf", () => {

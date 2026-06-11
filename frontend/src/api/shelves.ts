@@ -97,22 +97,29 @@ export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
 export async function getShelf(id: string, signal?: AbortSignal): Promise<ShelfWithItems> {
   const base = `/api/v1/shelves/${encodeURIComponent(id)}`;
   const items: ShelfItem[] = [];
+  // Identity (incl. the ETag-bearing updated_at) comes from the FIRST
+  // page: under a concurrent shelf mutation mid-walk, later pages can
+  // carry a newer updated_at than the items being assembled — pinning
+  // page 1's identity keeps the If-Match value consistent with the
+  // snapshot the caller actually received (a stale tag fails safe with
+  // 412; a too-new tag could let a reorder clobber the unseen change).
+  let identity: Omit<ShelfWithItems, "items"> | null = null;
   let cursor: string | null = null;
   for (let walked = 0; walked < MAX_PAGE_WALK; walked++) {
     const path = cursor === null ? base : `${base}?cursor=${encodeURIComponent(cursor)}`;
     const body = await apiFetch(path, signal ? { method: "GET", signal } : { method: "GET" });
     const page = ShelfDetailPageSchema.parse(body);
+    identity ??= {
+      id: page.id,
+      name: page.name,
+      is_system: page.is_system,
+      created_at: page.created_at,
+      updated_at: page.updated_at,
+    };
     items.push(...page.items);
     cursor = page.next_cursor;
     if (cursor === null) {
-      return {
-        id: page.id,
-        name: page.name,
-        is_system: page.is_system,
-        created_at: page.created_at,
-        updated_at: page.updated_at,
-        items,
-      };
+      return { ...identity, items };
     }
   }
   throw new Error("shelf items pagination did not terminate");

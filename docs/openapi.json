@@ -5063,17 +5063,14 @@
         "properties": {
           "created_at": {
             "type": "string",
-            "format": "date-time",
-            "description": "`shelves.created_at`."
+            "format": "date-time"
           },
           "id": {
             "type": "string",
-            "format": "uuid",
-            "description": "`shelves.id`."
+            "format": "uuid"
           },
           "is_system": {
-            "type": "boolean",
-            "description": "`shelves.is_system`."
+            "type": "boolean"
           },
           "items": {
             "type": "array",
@@ -5083,8 +5080,7 @@
             "description": "One page of items ordered by `position ASC, added_at ASC,\nmanifestation_id ASC`."
           },
           "name": {
-            "type": "string",
-            "description": "`shelves.name`."
+            "type": "string"
           },
           "next_cursor": {
             "type": [
@@ -5096,7 +5092,7 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`shelves.updated_at` — the `ETag` value."
+            "description": "`shelves.updated_at` — the `ETag` value the client echoes as\n`If-Match` on the reorder PUT."
           }
         }
       },

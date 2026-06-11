@@ -223,8 +223,13 @@ async fn list_shelves(
     let mut headers = HeaderMap::new();
     if let Some(ref nc) = next_cursor {
         let next_url = build_next_url(&uri, nc);
-        if let Ok(value) = HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
-            headers.insert(LINK, value);
+        match HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
+            Ok(value) => {
+                headers.insert(LINK, value);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, %next_url, "could not encode Link rel=next header");
+            }
         }
     }
 
@@ -486,15 +491,12 @@ struct ShelfItemsParams {
 /// transport-free).
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 struct ShelfDetailResponse {
-    /// `shelves.id`.
     id: Uuid,
-    /// `shelves.name`.
     name: String,
-    /// `shelves.is_system`.
     is_system: bool,
-    /// `shelves.created_at`.
     created_at: OffsetDateTime,
-    /// `shelves.updated_at` — the `ETag` value.
+    /// `shelves.updated_at` — the `ETag` value the client echoes as
+    /// `If-Match` on the reorder PUT.
     updated_at: OffsetDateTime,
     /// One page of items ordered by `position ASC, added_at ASC,
     /// manifestation_id ASC`.
@@ -630,8 +632,13 @@ async fn get_shelf_with_items(
     headers.insert(ETAG, etag_header(body.updated_at)?);
     if let Some(ref nc) = body.next_cursor {
         let next_url = build_next_url(&uri, nc);
-        if let Ok(value) = HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
-            headers.insert(LINK, value);
+        match HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
+            Ok(value) => {
+                headers.insert(LINK, value);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, %next_url, "could not encode Link rel=next header");
+            }
         }
     }
     Ok((headers, axum::Json(body)))
