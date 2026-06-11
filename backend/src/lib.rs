@@ -316,6 +316,24 @@ pub async fn run() -> anyhow::Result<()> {
     };
     let app = build_router(state.clone());
 
+    // All fallible setup happens BEFORE any worker is spawned, so an early
+    // `?` return cannot leak already-running background tasks (they would
+    // be neither cancelled nor drained). The writeback pool sets
+    // `app.system_context = 'writeback'` per-connection; the
+    // `manifestations_*_system` RLS policies match only when that GUC is
+    // set, so user-facing handlers (which never set it) cannot reach the
+    // system policies even if they forget `SET LOCAL app.current_user_id`.
+    let writeback_pool = db::init_writeback_pool(&config.database_url, config.db_max_connections)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to build writeback pool: {e}"))?;
+
+    let addr = format!("0.0.0.0:{}", config.port);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to bind to {addr}: {e}"))?;
+
+    tracing::info!("listening on {}", listener.local_addr()?);
+
     // Spawn ingestion watcher with a cancellation token for graceful shutdown
     let cancel_token = tokio_util::sync::CancellationToken::new();
 
@@ -324,7 +342,7 @@ pub async fn run() -> anyhow::Result<()> {
     let settings_pool = state.pool.clone();
     let settings_handle = state.settings.clone();
     let settings_reload = state.last_settings_reload.clone();
-    tokio::spawn(async move {
+    let settings_worker = tokio::spawn(async move {
         services::settings::spawn_listener(
             settings_pool,
             settings_handle,
@@ -336,7 +354,7 @@ pub async fn run() -> anyhow::Result<()> {
     let watcher_token = cancel_token.clone();
     let watcher_config = config.clone();
     let watcher_pool = state.ingestion_pool.clone();
-    tokio::spawn(async move {
+    let watcher_worker = tokio::spawn(async move {
         if let Err(e) =
             services::ingestion::run_watcher(watcher_config, watcher_pool, watcher_token).await
         {
@@ -347,7 +365,7 @@ pub async fn run() -> anyhow::Result<()> {
     let enrich_token = cancel_token.clone();
     let enrich_config = config.clone();
     let enrich_pool = state.ingestion_pool.clone();
-    tokio::spawn(async move {
+    let enrich_worker = tokio::spawn(async move {
         if let Err(e) =
             services::enrichment::spawn_queue(enrich_pool, enrich_config, enrich_token).await
         {
@@ -360,19 +378,13 @@ pub async fn run() -> anyhow::Result<()> {
     // cancellation token so SIGTERM drains it like the other workers.
     let sweep_token = cancel_token.clone();
     let sweep_store = PostgresStore::new(state.pool.clone());
-    tokio::spawn(services::session_sweep::run_sweep(sweep_store, sweep_token));
+    let sweep_worker = tokio::spawn(services::session_sweep::run_sweep(sweep_store, sweep_token));
 
-    // Writeback worker runs on a dedicated reverie_app pool that sets
-    // `app.system_context = 'writeback'` per-connection.  The
-    // `manifestations_*_system` RLS policies match only when that GUC is
-    // set, so user-facing handlers (which never set it) cannot reach the
-    // system policies even if they forget `SET LOCAL app.current_user_id`.
+    // Writeback worker runs on the dedicated system-context pool built
+    // above, before any spawn.
     let writeback_token = cancel_token.clone();
     let writeback_config = config.clone();
-    let writeback_pool = db::init_writeback_pool(&config.database_url, config.db_max_connections)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to build writeback pool: {e}"))?;
-    tokio::spawn(async move {
+    let writeback_worker = tokio::spawn(async move {
         if let Err(e) =
             services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)
                 .await
@@ -381,20 +393,87 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    let addr = format!("0.0.0.0:{}", config.port);
-    let listener = tokio::net::TcpListener::bind(&addr)
+    // Defer the `?` on the serve result until after the drain: on a serve
+    // error the graceful-shutdown future never fires, so the token must be
+    // cancelled here (idempotent on the clean path, where shutdown_signal
+    // already cancelled it) and the workers drained before run() returns —
+    // otherwise the error path leaks live tasks for the runtime to abort
+    // mid-IO, the exact unclean exit UNK-194 closes.
+    let serve_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(cancel_token.clone()))
         .await
-        .map_err(|e| anyhow::anyhow!("failed to bind to {addr}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("server error: {e}"));
 
-    tracing::info!("listening on {}", listener.local_addr()?);
+    cancel_token.cancel();
+    drain_workers(
+        vec![
+            ("settings-listener", settings_worker),
+            ("ingestion-watcher", watcher_worker),
+            ("enrichment-queue", enrich_worker),
+            ("session-sweep", sweep_worker),
+            ("writeback-worker", writeback_worker),
+        ],
+        WORKER_DRAIN_TIMEOUT,
+    )
+    .await;
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(cancel_token))
-        .await
-        .map_err(|e| anyhow::anyhow!("server error: {e}"))?;
-
-    Ok(())
+    serve_result
 }
+
+/// Total wall-clock budget for draining all background workers after the
+/// HTTP server stops. Shared across workers (one deadline, not per-worker)
+/// so shutdown latency stays bounded regardless of worker count; well under
+/// systemd's default 90s stop budget.
+const WORKER_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Await every spawned worker after the server stops, bounded by one shared
+/// `budget` deadline. A worker that does not exit in time is aborted (a
+/// dropped `JoinHandle` would merely detach it, leaving the runtime to
+/// abort it at an arbitrary point); a worker that panicked surfaces here as
+/// a `JoinError` and is logged at `error` level.
+async fn drain_workers(
+    workers: Vec<(&'static str, tokio::task::JoinHandle<()>)>,
+    budget: std::time::Duration,
+) {
+    let deadline = tokio::time::Instant::now() + budget;
+    for (name, mut handle) in workers {
+        // `&mut handle` keeps ownership so the timeout arm can abort();
+        // tokio::time::timeout would consume (and on expiry detach) it.
+        match tokio::time::timeout_at(deadline, &mut handle).await {
+            Ok(Ok(())) => tracing::info!(worker = name, "background worker drained"),
+            Ok(Err(join_err)) => {
+                tracing::error!(worker = name, error = %join_err, "background task join failed");
+            }
+            Err(_elapsed) => {
+                handle.abort();
+                tracing::error!(
+                    worker = name,
+                    "background worker did not exit within the drain budget; aborted"
+                );
+                // Confirm the cancellation actually lands before returning —
+                // abort() only takes effect at the task's next await point,
+                // and returning earlier would hand the still-unwinding task
+                // back to the runtime drop. Bounded by a short fixed grace:
+                // a task stuck in a blocking section never reaches an await
+                // point, and shutdown must not hang on it.
+                if tokio::time::timeout(ABORT_GRACE, &mut handle)
+                    .await
+                    .is_err()
+                {
+                    tracing::error!(
+                        worker = name,
+                        "aborted worker still running after grace period; leaving to runtime teardown"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Post-`abort()` wait for the cancellation to take effect (see
+/// [`drain_workers`]). Short and fixed: it only covers the gap between
+/// `abort()` and the task's next await point.
+const ABORT_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Startup schema step: apply pending migrations in-process when
 /// `config.auto_migrate` is set, otherwise verify the schema is current via
@@ -602,9 +681,72 @@ async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, apply_or_verify_schema, parse_command, resolve_log_filter, resolve_migration_dsn,
+        Command, apply_or_verify_schema, drain_workers, parse_command, resolve_log_filter,
+        resolve_migration_dsn,
     };
     use crate::test_support;
+
+    #[tokio::test]
+    async fn drain_workers_awaits_clean_exit() {
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        let worker = tokio::spawn(async move {
+            rx.await.expect("release signal");
+        });
+        tx.send(()).unwrap();
+        // Returns once the worker has actually unwound — well inside budget.
+        drain_workers(vec![("clean", worker)], std::time::Duration::from_secs(5)).await;
+    }
+
+    #[tokio::test]
+    async fn drain_workers_aborts_stuck_worker_at_deadline() {
+        let stuck = tokio::spawn(std::future::pending::<()>());
+        let started = std::time::Instant::now();
+        drain_workers(
+            vec![("stuck", stuck)],
+            std::time::Duration::from_millis(100),
+        )
+        .await;
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(100),
+            "drain must actually wait out the budget before giving up: {:?}",
+            started.elapsed()
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "drain must give up at the deadline, not hang on a stuck worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_workers_survives_panicked_worker() {
+        let panicker = tokio::spawn(async {
+            panic!("worker panic must surface as a logged JoinError, not propagate");
+        });
+        let after = tokio::spawn(async {});
+        // Must not propagate the panic, and must still drain later workers.
+        drain_workers(
+            vec![("panicker", panicker), ("after", after)],
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn drain_workers_shares_one_deadline_across_workers() {
+        let stuck_a = tokio::spawn(std::future::pending::<()>());
+        let stuck_b = tokio::spawn(std::future::pending::<()>());
+        let started = std::time::Instant::now();
+        drain_workers(
+            vec![("stuck-a", stuck_a), ("stuck-b", stuck_b)],
+            std::time::Duration::from_millis(200),
+        )
+        .await;
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "budget is one shared deadline, not per-worker: {:?}",
+            started.elapsed()
+        );
+    }
 
     #[test]
     fn parse_command_maps_args_rejects_unknown_and_trailing() {
