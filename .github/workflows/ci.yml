@@ -790,6 +790,70 @@ jobs:
           done
           exit "$rc"
 
+  # UNK-378: rule-based SAST. Primary motivation is backfilling Rust,
+  # where CodeQL's extractor resolves only ~47% of call targets (UNK-109)
+  # — pattern-matching rules don't depend on call-graph resolution, so
+  # they catch what CodeQL structurally cannot. Engine: opengrep (the
+  # Linux Foundation fork of semgrep) — fully OSS, no telemetry, signed
+  # release binaries, semgrep-compatible rules and CLI. Ruleset: the
+  # rust + typescript packs from opengrep/opengrep-rules, SHA-pinned so
+  # upstream rule additions can't break the gate on an unrelated PR.
+  # Custom repo-specific rules can join later under .opengrep/rules/.
+  sast:
+    name: SAST (opengrep)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # Rules checked out read-only at a pinned commit; bump deliberately
+      # after reviewing upstream rule diffs.
+      - name: Checkout opengrep-rules (pinned)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: opengrep/opengrep-rules
+          ref: f1d2b562b414783763fd02a6ed2736eaed622efa
+          path: .opengrep-rules
+          persist-credentials: false
+
+      # Standalone signed binary; SHA256-pinned like the other scanner
+      # installs (actionlint/shellcheck/gitleaks/trivy pattern).
+      - name: Install opengrep v1.22.0
+        env:
+          # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.+)$
+          OPENGREP_VERSION: "1.22.0"
+          OPENGREP_SHA256: "45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/opengrep" \
+            "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_manylinux_x86"
+          echo "${OPENGREP_SHA256}  $HOME/.local/bin/opengrep" | sha256sum -c -
+          chmod +x "$HOME/.local/bin/opengrep"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # --error exits non-zero on any finding. Scope to first-party source;
+      # tests are excluded from the rust pack's threat surface the same way
+      # the wiremock carve-outs work for clippy — a test hitting an
+      # insecure-hash rule is exercising the API, not shipping it.
+      - name: Scan source (gating)
+        run: |
+          set -euo pipefail
+          opengrep scan \
+            --config .opengrep-rules/rust \
+            --config .opengrep-rules/typescript \
+            --metrics=off \
+            --error \
+            --exclude '*_test.rs' \
+            --exclude '*.test.ts' \
+            --exclude '*.test.tsx' \
+            --exclude 'test_support.rs' \
+            backend/src frontend/src
+
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
   # client-side: it is bypassable (`git commit --no-verify`) and never runs on
@@ -1489,6 +1553,7 @@ jobs:
       - iac-scan
       - openapi-policy
       - npm-license
+      - sast
       - docs
       - commitlint
       - pr-linear-ref
