@@ -2097,7 +2097,7 @@
             }
           },
           "422": {
-            "description": "Marking the last admin as child would leave zero admins",
+            "description": "Marking the last admin as child would leave zero admins, or the request body is malformed",
             "content": {
               "application/json": {
                 "schema": {
@@ -2181,7 +2181,7 @@
             }
           },
           "422": {
-            "description": "Demotion would leave zero admins, or the role change conflicts with the target's child status",
+            "description": "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value",
             "content": {
               "application/json": {
                 "schema": {
@@ -3388,7 +3388,7 @@
         ],
         "properties": {
           "cleanup_mode": {
-            "type": "string",
+            "$ref": "#/components/schemas/CleanupMode",
             "description": "Post-ingestion cleanup mode (`all`, `ingested`, or `none`)."
           },
           "cover_download_timeout_secs": {
@@ -3433,7 +3433,7 @@
           "format_priority": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ManifestationFormat"
             },
             "description": "Ranked format preference for ingestion (`[\"epub\",\"pdf\",…]`)."
           },
@@ -4058,10 +4058,7 @@
         "description": "Body for `PATCH /api/v1/users/{id}`.\n\nRFC 7396 JSON Merge Patch: absent keys are untouched; explicit\n`null` on `email` clears; `null` on `display_name` is rejected\n(NOT NULL column).",
         "properties": {
           "display_name": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "description": "New display name. Absent = unchanged; explicit `null` is rejected\n(NOT NULL column)."
           },
           "email": {
