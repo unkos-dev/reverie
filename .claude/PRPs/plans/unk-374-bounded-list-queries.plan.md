@@ -195,20 +195,20 @@ page 2 has neither.
 
 ## Files to Change
 
-| File                                                                              | Action | Justification                                                                                                       |
-| --------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------- |
-| `backend/migrations/2026MMDDHHMMSS_keyset_list_indexes.up.sql` (+`.down.sql`)     | CREATE | btree indexes for new keyset scans                                                                                  |
-| `backend/src/routes/cursor.rs`                                                    | UPDATE | add `ShelfCursor` + `ShelfItemCursor` (encode/parse, same error taxonomy)                                           |
-| `backend/src/routes/shelves/mod.rs`                                               | UPDATE | paginate `list_shelves` + shelf-items query; new envelope; utoipa                                                   |
-| `backend/src/models/shelf.rs`                                                     | UPDATE | `ShelfWithItems` gains `next_cursor`; new `ShelfListResponse` lives in routes (mirror `BookListResponse` placement) |
-| `backend/src/routes/users/mod.rs`                                                 | UPDATE | hard cap + doc note                                                                                                 |
-| `backend/src/routes/opds/cursor.rs`                                               | UPDATE | add name-keyed cursor (`NameCursor { sort_name, id }`)                                                              |
-| `backend/src/routes/opds/feed.rs`                                                 | UPDATE | allow `add_next_link` on Navigation feeds (relax debug_assert)                                                      |
-| `backend/src/routes/opds/library.rs`                                              | UPDATE | keyset + LIMIT in `emit_authors`/`emit_series`; stop discarding `_cursor`                                           |
-| `backend/src/routes/shelves/tests…` / `users` / `opds/tests.rs` / `library` tests | UPDATE | pagination-walk + cap tests per endpoint                                                                            |
-| `frontend/src/api/shelves.ts`                                                     | UPDATE | envelope schemas; cursor-walk in `listShelves`/`getShelf`                                                           |
-| `docs/openapi.json`                                                               | REGEN  | response-shape changes (`REGEN=1 cargo test --test gen_openapi`)                                                    |
-| `backend/.sqlx/`                                                                  | REGEN  | query text changes (`cargo sqlx prepare -- --tests` — CI-first caveat below)                                        |
+| File                                                                              | Action | Justification                                                                                                                                                       |
+| --------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend/migrations/2026MMDDHHMMSS_keyset_list_indexes.up.sql` (+`.down.sql`)     | CREATE | btree indexes for new keyset scans                                                                                                                                  |
+| `backend/src/routes/cursor.rs`                                                    | UPDATE | add `ShelfCursor` + `ShelfItemCursor` (encode/parse, same error taxonomy)                                                                                           |
+| `backend/src/routes/shelves/mod.rs`                                               | UPDATE | paginate `list_shelves` + shelf-items query; new envelope; utoipa                                                                                                   |
+| `backend/src/models/shelf.rs`                                                     | NONE   | stays transport-free (D2) — both new envelopes (`ShelfListResponse`, `ShelfDetailResponse`) live in `routes/shelves/mod.rs`, mirroring `BookListResponse` placement |
+| `backend/src/routes/users/mod.rs`                                                 | UPDATE | hard cap + doc note                                                                                                                                                 |
+| `backend/src/routes/opds/cursor.rs`                                               | UPDATE | add name-keyed cursor (`NameCursor { sort_name, id }`)                                                                                                              |
+| `backend/src/routes/opds/feed.rs`                                                 | UPDATE | allow `add_next_link` on Navigation feeds (relax debug_assert)                                                                                                      |
+| `backend/src/routes/opds/library.rs`                                              | UPDATE | keyset + LIMIT in `emit_authors`/`emit_series`; stop discarding `_cursor`                                                                                           |
+| `backend/src/routes/shelves/tests…` / `users` / `opds/tests.rs` / `library` tests | UPDATE | pagination-walk + cap tests per endpoint                                                                                                                            |
+| `frontend/src/api/shelves.ts`                                                     | UPDATE | envelope schemas; cursor-walk in `listShelves`/`getShelf`                                                                                                           |
+| `docs/openapi.json`                                                               | REGEN  | response-shape changes (`REGEN=1 cargo test --test gen_openapi`)                                                                                                    |
+| `backend/.sqlx/`                                                                  | REGEN  | query text changes (`cargo sqlx prepare -- --tests` — CI-first caveat below)                                                                                        |
 
 ## NOT Building (Scope Limits)
 
@@ -259,8 +259,8 @@ tests; push for the full `#[sqlx::test]` suite.
 
 ### Task 4: UPDATE `get_shelf_with_items` — paginate items
 
-- **ACTION**: add `?cursor` query param; items query gains keyset predicate `(position, added_at, manifestation_id) > ($p, $a, $m)` (all-ASC → single tuple compare) + `LIMIT page_size + 1`; `ShelfWithItems` gains `next_cursor: Option<String>`; utoipa update
-- **MIRROR**: Task 3 + `models/shelf.rs:63–79`
+- **ACTION**: add `?cursor` query param; items query gains keyset predicate `(position, added_at, manifestation_id) > ($p, $a, $m)` (all-ASC → single tuple compare) + `LIMIT page_size + 1`; NEW route-local response struct `ShelfDetailResponse { #[serde(flatten)]-style shelf fields or explicit fields, items, next_cursor }` in `routes/shelves/mod.rs` — `models/shelf.rs::ShelfWithItems` stays transport-free (pagination is a wire concern; `BookListResponse` precedent lives route-local at `library/mod.rs:114`, review finding D2); utoipa `body` updated to the new struct
+- **MIRROR**: Task 3 + `models/shelf.rs:63–79`; prefer explicit fields over serde flatten if utoipa ToSchema handling of flatten is awkward — check how `BookListResponse` composes first
 - **GOTCHA**: ETag/If-Match contract (`shelves/mod.rs:400–411`) is on shelf `updated_at` — unchanged by item paging; keep header emission identical. PK `(shelf_id, manifestation_id)` is the only unique key — `manifestation_id` MUST be the final tiebreaker (position and added_at are both non-unique, migration analysis confirmed)
 - **TESTS FIRST**: walk test (seed page_size+1 items, two pages, terminates), reorder flow still green (existing PUT items tests untouched)
 - **VALIDATE**: as Task 3
@@ -281,7 +281,7 @@ tests; push for the full `#[sqlx::test]` suite.
 
 ### Task 7: UPDATE `feed.rs` + `emit_authors`/`emit_series` — paginate nav feeds
 
-- **ACTION**: relax `add_next_link`'s `debug_assert_eq!(kind, Acquisition)` (`feed.rs:~363`) to allow Navigation (RFC 5005 Atom paging is feed-kind-agnostic; adjust the assert message/comment accordingly); in both emitters: parse incoming `cursor` (param already plumbed, currently discarded — delete the "load fully per plan decision" comments), add keyset predicate `(sort_name, id) > ($s, $i)` + `LIMIT page_size + 1`, emit `rel="next"` with `NameCursor`
+- **ACTION**: rework `add_next_link` (`feed.rs:361–364`): remove the `debug_assert_eq!(kind, Acquisition)` AND derive the link's `type` attribute from `self.kind` (`NAVIGATION_TYPE` vs `ACQUISITION_TYPE`) — the current body hardcodes `Some(ACQUISITION_TYPE)`, so relaxing the assert alone would emit a wrong content type on navigation feeds (review finding D1); update its doc comment. In both emitters: parse incoming `cursor` (param already plumbed, currently discarded — delete the "load fully per plan decision" comments), ADD `a.sort_name` / `s.sort_name` to the SELECT column list (currently only `id, name` — the cursor encode needs the last row's sort_name; review finding C1), add keyset predicate `(sort_name, id) > ($s, $i)` + `LIMIT page_size + 1`, emit `rel="next"` with `NameCursor`
 - **MIRROR**: `emit_new` (`opds/library.rs:352–360, 452–470`)
 - **GOTCHA**: both emitters serve library-scoped AND shelf-scoped twins (`self_parent` carries the path) — the next link must preserve scope, which `self_path` formatting already does. QueryBuilder + RLS transaction usage stays as-is (`acquire_with_rls`)
 - **TESTS FIRST**: nav-feed walk test mirroring `opds/tests.rs:717–771` — seed page_size+1 authors (distinct names), walk rel=next until exhaustion, assert each author exactly once; repeat for series; shelf-scoped variant smoke
