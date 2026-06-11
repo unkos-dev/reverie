@@ -113,7 +113,7 @@ impl Modify for SecurityAddon {
 )]
 pub struct ApiDoc;
 
-/// RFC 7807 `application/problem+json` error body, as emitted by the server's
+/// RFC 9457 `application/problem+json` error body, as emitted by the server's
 /// `AppError` type. Documentation-only: it mirrors the response shape and is
 /// never constructed or serialized at runtime. Registered as a shared component
 /// describing the standard error envelope; the data routes that actually return
@@ -125,7 +125,7 @@ pub struct ProblemDetails {
     pub r#type: String,
     /// Short, human-readable summary of the problem type.
     pub title: String,
-    /// HTTP status code, repeated in the body per RFC 7807.
+    /// HTTP status code, repeated in the body per RFC 9457.
     #[schema(example = 404)]
     pub status: u16,
     /// Human-readable explanation specific to this occurrence.

@@ -171,12 +171,12 @@ pub fn test_server() -> TestServer {
     TestServer::new(app)
 }
 
-/// Assert that an `axum-test` response carries an RFC 7807 Problem
+/// Assert that an `axum-test` response carries an RFC 9457 Problem
 /// Details body with the expected status, problem-type slug, and
 /// `application/problem+json` Content-Type.
 ///
 /// Use in tests that previously asserted `body["error"] == "..."`
-/// against the pre-7807 envelope. The helper checks the four
+/// against the pre-Problem-Details envelope. The helper checks the four
 /// must-be-present fields (`type`, `title`, `status`, `detail`) and
 /// returns the parsed body so callers can drill into the
 /// caller-supplied `detail` when needed.
@@ -193,7 +193,7 @@ pub fn test_server() -> TestServer {
 ///
 /// # Panics
 ///
-/// Panics when the response does not match the expected RFC 7807
+/// Panics when the response does not match the expected RFC 9457
 /// contract: HTTP status differs from `status`; Content-Type missing
 /// or not `application/problem+json`; body fails to parse as JSON;
 /// required fields (`type`, `title`, `status`, `detail`) absent; or
@@ -223,7 +223,7 @@ pub fn assert_problem(
     let body: serde_json::Value = response.json();
     let typ = body["type"]
         .as_str()
-        .expect("RFC 7807 `type` field present");
+        .expect("RFC 9457 `type` field present");
     assert!(
         typ.ends_with(&format!("/{type_slug}")),
         "expected `type` ending in /{type_slug}, got {typ}",
@@ -231,17 +231,17 @@ pub fn assert_problem(
     assert_eq!(
         body["status"]
             .as_u64()
-            .expect("RFC 7807 `status` field present"),
+            .expect("RFC 9457 `status` field present"),
         u64::from(status.as_u16()),
-        "RFC 7807 `status` field must match HTTP status",
+        "RFC 9457 `status` field must match HTTP status",
     );
     assert!(
         body["title"].as_str().is_some(),
-        "RFC 7807 `title` field present, got: {body}",
+        "RFC 9457 `title` field present, got: {body}",
     );
     assert!(
         body["detail"].as_str().is_some(),
-        "RFC 7807 `detail` field present, got: {body}",
+        "RFC 9457 `detail` field present, got: {body}",
     );
     body
 }

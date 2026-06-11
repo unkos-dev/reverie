@@ -1307,7 +1307,7 @@ async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
 async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
     // `?sort=` decodes into the `SortMode` enum, a structurally
     // distinct decode path from the `Option<Uuid>` filter params: an
-    // unknown variant must still surface as RFC 7807 400, not a silent
+    // unknown variant must still surface as RFC 9457 400, not a silent
     // default-sort fallthrough.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
