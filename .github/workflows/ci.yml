@@ -343,6 +343,47 @@ jobs:
               exit 1
           fi
 
+      # UNK-378: grep-guard against chrono imports creeping back into
+      # runtime code. Reverie standardises on the `time` crate
+      # (backend/CLAUDE.md); chrono exists in Cargo.toml solely for
+      # openidconnect's test-support signature (see the dependency
+      # comment there). Previously enforced only by a CodeRabbit
+      # path_instruction — this is the native equivalent. Same
+      # allowlist shape as the sqlx + .route( guards above.
+      - name: Guard against chrono usage in runtime code
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          # Allowlist must exist and hold at least one active pattern; a
+          # missing file or empty pattern set fails the step here (set -e)
+          # instead of failing open downstream.
+          allow=$(grep -vE '^\s*(#|$)' .github/chrono-allowlist.txt)
+          # grep exit 1 = no chrono imports (clean tree); exit >1 = real
+          # error (e.g. unreadable tree). Capture the code so an error
+          # can't read as "clean".
+          rc=0
+          matches=$(grep -rnE 'use chrono|extern crate chrono' backend/src/) || rc=$?
+          if [ "$rc" -gt 1 ]; then
+              exit "$rc"
+          fi
+          violations=''
+          if [ -n "$matches" ]; then
+              rc=0
+              violations=$(grep -v -F -f <(printf '%s\n' "$allow") <<<"$matches") || rc=$?
+              if [ "$rc" -gt 1 ]; then
+                  exit "$rc"
+              fi
+          fi
+          if [ -n "$violations" ]; then
+              echo "chrono imports detected outside the allowlist." >&2
+              echo "Reverie uses the time crate (backend/CLAUDE.md); chrono is" >&2
+              echo "reserved for the documented openidconnect test-support carve-out." >&2
+              echo "Justify any new entry in .github/chrono-allowlist.txt." >&2
+              echo "" >&2
+              echo "$violations" >&2
+              exit 1
+          fi
+
       # nextest runs each test in its own process — better parallelism
       # than the default thread-per-test runner, and a crashing test
       # can't take down its siblings. Each `#[sqlx::test]` already gets
@@ -1146,6 +1187,107 @@ jobs:
           args: "--offline --no-progress --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
           fail: true
 
+  # UNK-378: server-side Conventional Commits gate. The local commit-msg
+  # hook (UNK-274) is bypassable (`git commit --no-verify`) and never runs
+  # on fork PRs, yet release-please's changelog and linear-close.yml's
+  # UNK-extraction both depend on commit shape. Two surfaces are linted:
+  #
+  #   1. Every commit the PR introduces (base..head) — keeps branch
+  #      history greppable and linear-close's branch/title extraction sane.
+  #   2. The PR title — squash-merge makes the title the subject of the
+  #      commit that actually lands on main, which is the artifact
+  #      release-please consumes. Linting only branch commits would miss
+  #      the one message that matters.
+  #
+  # pull_request-only: push/merge_group events have no PR range or title;
+  # ci-gate treats the skip as a pass (same shape as dependency-review).
+  commitlint:
+    name: Commit message lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Full history so commitlint can walk the whole PR range
+          # (base..head), not just the tip commit.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24.16.0
+          cache: npm
+
+      # Root lockfile carries @commitlint/cli + config-conventional — the
+      # same pinned versions the local commit-msg hook runs.
+      - name: Install commitlint
+        run: npm ci
+
+      # Event-payload SHAs, not refs: base.sha pins the fork point even if
+      # the base branch moves mid-run, and neither value is
+      # attacker-controlled text (zizmor template-injection surface is
+      # refs/titles, handled via env below).
+      - name: Lint PR commit range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npx --no-install commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+      # GitHub appends ` (#N)` to the squash subject; commitlint parses it
+      # as part of the subject, so linting the bare title matches what
+      # release-please will see.
+      - name: Lint PR title (squash-merge subject)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx --no-install commitlint --verbose
+
+  # UNK-378: hard-rule-9 (CLAUDE.md) requires a `Closes UNK-XXX` magic word
+  # in every PR body that has a tracking issue — linear-close.yml's
+  # branch/title extraction is the fallback, and Linear's own
+  # branch-name matching is unreliable against our prefix convention.
+  # Until now nothing enforced the rule pre-merge (UNK-276 shipped without
+  # it and its issue sat stuck in Backlog).
+  #
+  # Advisory for now: emits a workflow warning + step-summary note instead
+  # of failing, so legitimate no-issue PRs (docs/, chore/ without an id)
+  # are never blocked while the convention beds in. Graduation to blocking
+  # = swap the final `exit 0` for `exit 1`.
+  pr-linear-ref:
+    name: PR body Linear reference (advisory)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # PR body and branch name are attacker-controlled text on fork PRs —
+      # both reach the script via env, never template interpolation.
+      - name: Check for Closes UNK-N magic word
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if grep -qiE 'closes UNK-[0-9]+' <<<"${PR_BODY}"; then
+            echo "PR body carries a Closes UNK-N magic word."
+            exit 0
+          fi
+          # Legitimate no-issue class: docs/ or chore/ branch with no
+          # embedded issue id. Everything else should either close its
+          # issue or be renamed into the no-issue convention.
+          if grep -qE '^(docs|chore)/' <<<"${HEAD_REF}" && ! grep -qiE 'unk-[0-9]+' <<<"${HEAD_REF}"; then
+            echo "No-issue branch (${HEAD_REF}) — Closes line not required."
+            exit 0
+          fi
+          msg="PR body lacks a 'Closes UNK-N' line. Hard-rule-9: without the magic word the Linear issue is never auto-closed on merge (branch-name matching is unreliable). Add 'Closes UNK-XXX' to the PR body, or use a docs/ or chore/ branch without an issue id if genuinely untracked."
+          echo "::warning title=Missing Closes UNK-N in PR body::${msg}"
+          {
+            echo "## PR body Linear reference (advisory)"
+            echo ""
+            echo "${msg}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Advisory: never red. Flip to 'exit 1' to graduate to blocking.
+          exit 0
+
   # Single required status check for the branch ruleset. Aggregates every CI
   # job so the ruleset requires only this one context. Path-conditional jobs
   # that legitimately skip on a given PR (docs-only, frontend-only, etc.) no
@@ -1173,6 +1315,8 @@ jobs:
       - staging-smoke
       - secret-scan
       - docs
+      - commitlint
+      - pr-linear-ref
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
