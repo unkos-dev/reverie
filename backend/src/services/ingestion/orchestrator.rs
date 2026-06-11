@@ -260,6 +260,28 @@ enum ProcessResult {
     Failed(String),
 }
 
+// Validator entry point with a test-only fault-injection seam.
+//
+// `epub::validate_and_repair`'s `Err` means the validator itself could not
+// run (IO failure, internal error) — unreachable deterministically through
+// file content, since malformed bytes surface as `Quarantined` issues, not
+// `Err`. In test builds, a library file whose name contains
+// `force-validator-error` short-circuits to `Err` so the validator-crash
+// arm can be exercised end-to-end (UNK-312). Compiled out of non-test
+// builds; no global state, so parallel tests cannot interfere.
+fn run_validator(path: &Path) -> Result<epub::ValidationReport, epub::EpubError> {
+    #[cfg(test)]
+    if path
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().contains("force-validator-error"))
+    {
+        return Err(epub::EpubError::Io(std::io::Error::other(
+            "forced validator error (test seam)",
+        )));
+    }
+    epub::validate_and_repair(path)
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "process_file executes a sequential 8-step ingest pipeline (hash, dedup, copy, validate, rename, DB commit) where each step needs output from the previous; decomposing further requires passing a large context struct between helpers"
@@ -391,7 +413,7 @@ async fn process_file(
         let lib_file = library_path.join(&final_relative);
         let validation = {
             let lib_file = lib_file.clone();
-            tokio::task::spawn_blocking(move || epub::validate_and_repair(&lib_file)).await
+            tokio::task::spawn_blocking(move || run_validator(&lib_file)).await
         };
 
         match validation {
@@ -435,8 +457,14 @@ async fn process_file(
                 }
             }
             Ok(Err(e)) => {
-                tracing::warn!(error = %e, "epub validation error; proceeding as degraded");
-                (ValidationStatus::Degraded, None, None)
+                // The validator itself failed to run (IO error, internal
+                // crash) — nothing is known about the file's structural
+                // quality, so don't borrow `degraded` ("validator ran,
+                // found tolerable issues"). `failed` is the monitorable
+                // validator-crash state (UNK-312); the file is still
+                // ingested and served.
+                tracing::warn!(error = %e, "epub validation error; storing validation_status=failed");
+                (ValidationStatus::Failed, None, None)
             }
             Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
@@ -1258,6 +1286,47 @@ mod tests {
             status,
             ValidationStatus::Degraded,
             "expected validation_status=degraded"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_validator_error_stores_failed_status(pool: PgPool) {
+        // Cover the Ok(Err(_)) validator-crash arm end-to-end via the
+        // run_validator fault-injection seam (filename marker): the file is
+        // still ingested, but the row must record `failed` — not borrow
+        // `degraded`, which means "validator ran, found tolerable issues"
+        // (UNK-312).
+        use crate::models::validation_status::ValidationStatus;
+        let pool = ingestion_pool_for(&pool).await;
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+
+        let source = ingestion.path().join("Probe - force-validator-error.epub");
+        std::fs::write(&source, make_minimal_epub()).unwrap();
+
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+        assert_eq!(result.failed, 0, "validator error must not fail ingestion");
+
+        let dest = library.path().join("Probe/force-validator-error.epub");
+        let dest_str = dest.to_str().unwrap();
+        let status = sqlx::query_scalar!(
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status,
+            ValidationStatus::Failed,
+            "expected validation_status=failed for validator crash"
         );
     }
 
