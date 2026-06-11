@@ -22,6 +22,10 @@ CREATE TABLE public.webhook_event_dedupe (
         CHECK (seen_at >= '0001-01-01 00:00:00+00' AND seen_at < '10000-01-01 00:00:00+00')
 );
 
+-- The dispatcher's opportunistic purge filters and the dedupe check both
+-- predicate on seen_at; keeps the TTL scan off a seq scan as the set grows.
+CREATE INDEX idx_webhook_event_dedupe_seen_at ON public.webhook_event_dedupe USING btree (seen_at);
+
 COMMENT ON TABLE public.webhook_event_dedupe IS 'Short-TTL dedupe set for terminal webhook events (UNK-98). Keyed by stable event id (writeback:{job_id}:{outcome}). Rows past the TTL are purged opportunistically on dispatch; see services::writeback::events::dispatch.';
 
 -- Not user-scoped (no user_id column) — RLS-exempt like tower_sessions;

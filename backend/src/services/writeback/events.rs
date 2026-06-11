@@ -105,6 +105,14 @@ pub enum Dispatch {
 /// Dedupe bookkeeping is fail-open: a dedupe-set read or write error is
 /// logged and delivery proceeds, because the emit-before-bookkeeping
 /// ordering exists precisely so a DB hiccup cannot silently drop an event.
+///
+/// Concurrency: the check → deliver → mark sequence is not atomic, but two
+/// concurrent dispatches of the same event id are structurally impossible —
+/// an event id is keyed by `(job_id, outcome)`, a job only reaches `finish`
+/// while it holds the `in_progress` slot, and the partial UNIQUE index
+/// `idx_writeback_jobs_in_progress_unique` serialises that slot across
+/// workers and replicas.  Re-fires are therefore always sequential, which
+/// is the case this set dedupes.
 pub async fn dispatch(pool: &PgPool, event: &TerminalEvent<'_>) -> Dispatch {
     let event_id = event_id(event.job_id, event.outcome);
 
@@ -154,10 +162,15 @@ pub async fn dispatch(pool: &PgPool, event: &TerminalEvent<'_>) -> Dispatch {
     }
 
     // Opportunistic GC: entries past the TTL can never dedupe again, so
-    // drop them here rather than carrying a scheduled purge job.
+    // drop them here rather than carrying a scheduled purge job.  Bounded
+    // per the no-unbounded-queries invariant: steady-state expiry rate
+    // equals the delivery rate, so a 100-row cap per delivered event keeps
+    // up and caps statement cost even after a backlog.
     if let Err(e) = sqlx::query!(
         "DELETE FROM webhook_event_dedupe \
-         WHERE seen_at <= now() - ($1::double precision * interval '1 second')",
+         WHERE event_id IN (SELECT event_id FROM webhook_event_dedupe \
+         WHERE seen_at <= now() - ($1::double precision * interval '1 second') \
+         LIMIT 100)",
         DEDUPE_TTL_SECS,
     )
     .execute(pool)
