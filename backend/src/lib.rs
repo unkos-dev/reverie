@@ -316,6 +316,24 @@ pub async fn run() -> anyhow::Result<()> {
     };
     let app = build_router(state.clone());
 
+    // All fallible setup happens BEFORE any worker is spawned, so an early
+    // `?` return cannot leak already-running background tasks (they would
+    // be neither cancelled nor drained). The writeback pool sets
+    // `app.system_context = 'writeback'` per-connection; the
+    // `manifestations_*_system` RLS policies match only when that GUC is
+    // set, so user-facing handlers (which never set it) cannot reach the
+    // system policies even if they forget `SET LOCAL app.current_user_id`.
+    let writeback_pool = db::init_writeback_pool(&config.database_url, config.db_max_connections)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to build writeback pool: {e}"))?;
+
+    let addr = format!("0.0.0.0:{}", config.port);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to bind to {addr}: {e}"))?;
+
+    tracing::info!("listening on {}", listener.local_addr()?);
+
     // Spawn ingestion watcher with a cancellation token for graceful shutdown
     let cancel_token = tokio_util::sync::CancellationToken::new();
 
@@ -362,16 +380,10 @@ pub async fn run() -> anyhow::Result<()> {
     let sweep_store = PostgresStore::new(state.pool.clone());
     let sweep_worker = tokio::spawn(services::session_sweep::run_sweep(sweep_store, sweep_token));
 
-    // Writeback worker runs on a dedicated reverie_app pool that sets
-    // `app.system_context = 'writeback'` per-connection.  The
-    // `manifestations_*_system` RLS policies match only when that GUC is
-    // set, so user-facing handlers (which never set it) cannot reach the
-    // system policies even if they forget `SET LOCAL app.current_user_id`.
+    // Writeback worker runs on the dedicated system-context pool built
+    // above, before any spawn.
     let writeback_token = cancel_token.clone();
     let writeback_config = config.clone();
-    let writeback_pool = db::init_writeback_pool(&config.database_url, config.db_max_connections)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to build writeback pool: {e}"))?;
     let writeback_worker = tokio::spawn(async move {
         if let Err(e) =
             services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)
@@ -381,23 +393,18 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    let addr = format!("0.0.0.0:{}", config.port);
-    let listener = tokio::net::TcpListener::bind(&addr)
+    // Defer the `?` on the serve result until after the drain: on a serve
+    // error the graceful-shutdown future never fires, so the token must be
+    // cancelled here (idempotent on the clean path, where shutdown_signal
+    // already cancelled it) and the workers drained before run() returns —
+    // otherwise the error path leaks live tasks for the runtime to abort
+    // mid-IO, the exact unclean exit UNK-194 closes.
+    let serve_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(cancel_token.clone()))
         .await
-        .map_err(|e| anyhow::anyhow!("failed to bind to {addr}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("server error: {e}"));
 
-    tracing::info!("listening on {}", listener.local_addr()?);
-
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(cancel_token))
-        .await
-        .map_err(|e| anyhow::anyhow!("server error: {e}"))?;
-
-    // The graceful-shutdown future has cancelled the shared token by the
-    // time serve() returns; wait for the workers to actually unwind instead
-    // of letting the runtime abort them on drop (UNK-194) — an aborted
-    // writeback/enrichment task mid-IO is exactly the unclean exit the
-    // token exists to avoid.
+    cancel_token.cancel();
     drain_workers(
         vec![
             ("settings-listener", settings_worker),
@@ -410,7 +417,7 @@ pub async fn run() -> anyhow::Result<()> {
     )
     .await;
 
-    Ok(())
+    serve_result
 }
 
 /// Total wall-clock budget for draining all background workers after the
