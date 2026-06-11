@@ -938,7 +938,7 @@
       },
       "ProblemDetails": {
         "type": "object",
-        "description": "RFC 7807 `application/problem+json` error body, as emitted by the server's\n`AppError` type. Documentation-only: it mirrors the response shape and is\nnever constructed or serialized at runtime. Registered as a shared component\ndescribing the standard error envelope; the data routes that actually return\nit are annotated to reference it in phase 2 (UNK-376).",
+        "description": "RFC 9457 `application/problem+json` error body, as emitted by the server's\n`AppError` type. Documentation-only: it mirrors the response shape and is\nnever constructed or serialized at runtime. Registered as a shared component\ndescribing the standard error envelope; the data routes that actually return\nit are annotated to reference it in phase 2 (UNK-376).",
         "required": [
           "type",
           "title",
@@ -960,7 +960,7 @@
           "status": {
             "type": "integer",
             "format": "int32",
-            "description": "HTTP status code, repeated in the body per RFC 7807.",
+            "description": "HTTP status code, repeated in the body per RFC 9457.",
             "example": 404,
             "minimum": 0
           },

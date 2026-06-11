@@ -63,7 +63,9 @@
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "validation_status", rename_all = "lowercase")]
 pub enum ValidationStatus {
-    /// Row exists; validation has not run yet (column default).
+    /// Row exists; validation has not run (column default). Includes
+    /// formats with no structural validator (anything non-EPUB), which
+    /// stay `pending` until a validator for their format exists.
     Pending,
     /// Validation found no issues.
     Clean,

@@ -2,12 +2,13 @@
 //!
 //! [`AppError`] is the single error returned by Axum handlers via
 //! `Result<impl IntoResponse, AppError>`. Its
-//! [`axum::response::IntoResponse`] impl emits RFC 7807 Problem
-//! Details (`application/problem+json`) for every variant except
-//! [`AppError::BasicAuthRequired`], which keeps its pre-7807
+//! [`axum::response::IntoResponse`] impl emits RFC 9457 (obsoletes
+//! RFC 7807) Problem Details (`application/problem+json`) for every
+//! variant except
+//! [`AppError::BasicAuthRequired`], which keeps its pre-Problem-Details
 //! empty-body + `WWW-Authenticate: Basic` shape per RFC 7617 because
 //! it is consumed by OPDS clients (Atom XML feeds, e-readers) that
-//! expect that exact shape — RFC 7807 applies to the JSON API
+//! expect that exact shape — RFC 9457 applies to the JSON API
 //! surface only.
 //!
 //! See `adr/2026-05-22-json-api-conventions.md` for the full
@@ -26,13 +27,13 @@
 //!
 //! # `instance` field
 //!
-//! The `instance` field (RFC 7807 §3.1) carries the request path.
+//! The `instance` field (RFC 9457 §3.1) carries the request path.
 //! It is captured by the [`instance::problem_instance_layer`] tower
 //! middleware mounted on the API router group, stored in a tokio
 //! task-local, and read back by [`AppError::into_response`]. When
 //! called outside an HTTP request (unit tests invoking
 //! `.into_response()` directly), the task-local is unset and the
-//! `instance` field is simply omitted from the body — RFC 7807 §3.1
+//! `instance` field is simply omitted from the body — RFC 9457 §3.1
 //! permits omission.
 
 pub mod instance;
@@ -41,7 +42,7 @@ pub mod problems;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-/// Errors returned from Axum handlers; converted to RFC 7807 Problem
+/// Errors returned from Axum handlers; converted to RFC 9457 Problem
 /// Details JSON responses by the [`IntoResponse`] impl on this type.
 ///
 /// Handlers convert library errors via `?` (using `#[from]` on
@@ -54,20 +55,20 @@ use axum::response::{IntoResponse, Response};
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AppError {
-    /// Resource not found. RFC 7807 `type` slug
+    /// Resource not found. RFC 9457 `type` slug
     /// [`problems::NOT_FOUND`]. HTTP 404. Also the mapping RLS-hidden
     /// rows resolve to — see the json-api-conventions ADR's
     /// "existence-not-leaked" decision.
     #[error("not found")]
     NotFound,
-    /// Caller unauthenticated. RFC 7807 `type`
+    /// Caller unauthenticated. RFC 9457 `type`
     /// [`problems::UNAUTHORIZED`]. HTTP 401, no `WWW-Authenticate`
     /// challenge — use [`Self::BasicAuthRequired`] for the OPDS
     /// Basic-auth challenge variant.
     #[error("unauthorized")]
     Unauthorized,
     /// 401 with `WWW-Authenticate: Basic` challenge (RFC 7617).
-    /// **Not RFC 7807** — emits an EMPTY body for compatibility with
+    /// **Not RFC 9457** — emits an EMPTY body for compatibility with
     /// OPDS Basic-auth clients (`KOReader`, `Foliate`). `realm` is
     /// operator-configured and validated at startup (no embedded
     /// `"` allowed).
@@ -78,43 +79,43 @@ pub enum AppError {
         realm: String,
     },
     /// Caller authenticated but lacks the role / policy to perform
-    /// the action. RFC 7807 `type` [`problems::FORBIDDEN`]. HTTP 403.
+    /// the action. RFC 9457 `type` [`problems::FORBIDDEN`]. HTTP 403.
     #[error("forbidden")]
     Forbidden,
     /// Request validation failed (malformed input, business-rule
-    /// violation). RFC 7807 `type` [`problems::VALIDATION`]. HTTP
+    /// violation). RFC 9457 `type` [`problems::VALIDATION`]. HTTP
     /// 422. The inner string is emitted as the `detail` field, so
     /// callers should keep it free of sensitive context.
     #[error("validation error: {0}")]
     Validation(String),
     /// `X-CSRF-Token` header missing on a mutating-verb request
-    /// under `/api/v1/*`. RFC 7807 `type` [`problems::CSRF_MISSING`].
+    /// under `/api/v1/*`. RFC 9457 `type` [`problems::CSRF_MISSING`].
     /// HTTP 428 Precondition Required.
     #[error("CSRF token required")]
     CsrfMissing,
     /// `X-CSRF-Token` header present but does not match the
-    /// session-stored token. RFC 7807 `type`
+    /// session-stored token. RFC 9457 `type`
     /// [`problems::CSRF_MISMATCH`]. HTTP 403 Forbidden.
     #[error("CSRF token invalid")]
     CsrfMismatch,
     /// `If-Match` header missing on a precondition-protected
-    /// endpoint. RFC 7807 `type` [`problems::IF_MATCH_REQUIRED`].
+    /// endpoint. RFC 9457 `type` [`problems::IF_MATCH_REQUIRED`].
     /// HTTP 428 Precondition Required.
     #[error("If-Match header required")]
     IfMatchRequired,
     /// `If-Match` header present but `ETag` does not match current
-    /// resource state. RFC 7807 `type`
+    /// resource state. RFC 9457 `type`
     /// [`problems::IF_MATCH_MISMATCH`]. HTTP 412 Precondition Failed.
     #[error("If-Match precondition failed")]
     IfMatchMismatch,
     /// Mutation attempt on a system-managed shelf (`is_system =
-    /// TRUE`). RFC 7807 `type` [`problems::SYSTEM_SHELF_IMMUTABLE`].
+    /// TRUE`). RFC 9457 `type` [`problems::SYSTEM_SHELF_IMMUTABLE`].
     /// HTTP 409 Conflict.
     #[error("system shelf cannot be modified")]
     SystemShelfImmutable,
     /// A query-string parameter failed to deserialize at the extractor
     /// boundary (e.g. a malformed UUID in `?author=` / `?series=` /
-    /// `?shelf=`, or an unknown `?sort=` variant). RFC 7807 `type`
+    /// `?shelf=`, or an unknown `?sort=` variant). RFC 9457 `type`
     /// [`problems::MALFORMED_QUERY`]. HTTP 400 Bad Request. Distinct
     /// from [`Self::Validation`] (422): this is a syntactic decode
     /// failure, not a business-rule rejection. The inner string is
@@ -129,7 +130,7 @@ pub enum AppError {
     #[error("{0}")]
     MalformedQuery(String),
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
-    /// 7807 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
+    /// 9457 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
     /// `tracing::error!`-logged with full context.
     #[error(transparent)]
@@ -138,9 +139,9 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // BasicAuthRequired keeps its pre-7807 shape: empty body +
+        // BasicAuthRequired keeps its pre-Problem-Details shape: empty body +
         // WWW-Authenticate per RFC 7617. OPDS clients depend on this
-        // exact contract; the JSON API surface uses 7807 for every
+        // exact contract; the JSON API surface uses 9457 for every
         // other variant.
         if let Self::BasicAuthRequired { realm } = &self {
             let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
@@ -249,8 +250,8 @@ impl IntoResponse for AppError {
 }
 
 /// Route the `axum_extra::extract::Query` rejection through the RFC
-/// 7807 envelope (HTTP 400) instead of the framework default (a
-/// non-RFC-7807 JSON 400 of the form `{"error": "..."}`). Handlers opt
+/// 9457 envelope (HTTP 400) instead of the framework default (a
+/// non-RFC-9457 JSON 400 of the form `{"error": "..."}`). Handlers opt
 /// in by extracting `Result<Query<T>, QueryRejection>` and
 /// `?`-propagating the error.
 impl From<axum_extra::extract::QueryRejection> for AppError {
@@ -409,7 +410,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn basic_auth_required_keeps_pre_7807_shape() {
+    async fn basic_auth_required_keeps_pre_problem_details_shape() {
         let response = AppError::BasicAuthRequired {
             realm: "Reverie OPDS".into(),
         }

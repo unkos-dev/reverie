@@ -156,7 +156,7 @@ where
         ))
         // Capture the request path into a task-local so
         // `AppError::into_response` (called anywhere in the handler
-        // stack below) can emit a populated RFC 7807 `instance`
+        // stack below) can emit a populated RFC 9457 `instance`
         // field. Applies to all routes including the composite
         // fallback so 404s on `/api/v1/*` carry the instance too.
         .layer(axum::middleware::from_fn(
@@ -704,7 +704,7 @@ mod tests {
     /// Regression coverage for the `problem_instance_layer` wiring on
     /// the composite router (see `build_router_with_session_store`).
     /// A future layer-order edit that drops or repositions the
-    /// middleware would silently lose the RFC 7807 `instance` field;
+    /// middleware would silently lose the RFC 9457 `instance` field;
     /// this test fails before that change ships.
     #[tokio::test]
     async fn unmatched_api_route_returns_problem_with_instance() {
