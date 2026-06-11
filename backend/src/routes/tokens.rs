@@ -253,6 +253,56 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn list_tokens_pins_wire_shape(pool: sqlx::PgPool) {
+        let (server, basic) = authenticated_test_server(pool).await;
+
+        // A token created but never used for auth — last_used_at stays null.
+        let created = server
+            .post("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "reader"}))
+            .await;
+        assert_eq!(created.status_code(), StatusCode::CREATED);
+        let created_id = created.json::<serde_json::Value>()["id"].clone();
+
+        let response = server
+            .get("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let body = response.json::<serde_json::Value>();
+        let items = body.as_array().expect("list response is a JSON array");
+        // The helper's auth token plus the one created above.
+        assert_eq!(items.len(), 2);
+
+        let reader = items
+            .iter()
+            .find(|t| t["id"] == created_id)
+            .expect("created token present in list");
+        assert_eq!(reader["name"], "reader");
+        assert!(reader["last_used_at"].is_null());
+        assert!(!reader["created_at"].is_null());
+
+        // The helper token authenticated these requests, so its
+        // last_used_at is populated.
+        let auth = items
+            .iter()
+            .find(|t| t["name"] == "auth-token")
+            .expect("auth token present in list");
+        assert!(!auth["last_used_at"].is_null());
+
+        // Exactly the documented TokenListItem fields — neither the token
+        // plaintext nor its stored hash may appear in the list shape.
+        for item in items {
+            let obj = item.as_object().expect("list item is a JSON object");
+            assert_eq!(obj.len(), 4, "unexpected fields in {obj:?}");
+            for key in ["id", "name", "last_used_at", "created_at"] {
+                assert!(obj.contains_key(key), "missing {key} in {obj:?}");
+            }
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn create_token_validates_name(pool: sqlx::PgPool) {
         let (server, basic) = authenticated_test_server(pool).await;
 
