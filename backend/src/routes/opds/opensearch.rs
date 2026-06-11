@@ -13,14 +13,14 @@
     reason = "all expects write to Cursor<Vec<u8>> (infallible) or build Response from static inputs (cannot fail)"
 )]
 
-use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::routing::get;
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use std::io::Cursor;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::basic_only::BasicOnly;
@@ -34,15 +34,27 @@ use super::root::base_url;
 /// Build the `OpenSearch` descriptor router (one per scope so a reader
 /// paired at `/opds/shelves/:id` gets a search URL scoped to that
 /// shelf).
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/opds/library/opensearch.xml", get(library_opensearch))
-        .route(
-            "/opds/shelves/{shelf_id}/opensearch.xml",
-            get(shelf_opensearch),
-        )
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(library_opensearch))
+        .routes(routes!(shelf_opensearch))
 }
 
+/// `GET /opds/library/opensearch.xml` — `OpenSearch` descriptor whose
+/// search template targets the library-wide `/opds/library/search`.
+///
+/// # Errors
+/// - [`AppError::Internal`] when the OPDS base URL is unconfigured.
+#[utoipa::path(
+    get,
+    path = "/opds/library/opensearch.xml",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    responses(
+        (status = 200, description = "OpenSearch descriptor with the library-scoped search URL template", content_type = "application/opensearchdescription+xml", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)")
+    )
+)]
 async fn library_opensearch(
     BasicOnly(_user): BasicOnly,
     State(state): State<AppState>,
@@ -58,6 +70,25 @@ async fn library_opensearch(
     Ok(build_response(body))
 }
 
+/// `GET /opds/shelves/{shelf_id}/opensearch.xml` — `OpenSearch` descriptor
+/// whose search template is scoped to the shelf.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/opensearch.xml",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("shelf_id" = Uuid, Path, description = "Shelf id")),
+    responses(
+        (status = 200, description = "OpenSearch descriptor with the shelf-scoped search URL template", content_type = "application/opensearchdescription+xml", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_opensearch(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,

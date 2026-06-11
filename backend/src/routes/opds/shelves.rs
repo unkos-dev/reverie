@@ -3,10 +3,10 @@
 //! verifies ownership under `acquire_with_rls` and returns 404 for foreign
 //! shelves to avoid leaking shelf existence.
 
-use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
-use axum::routing::get;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::basic_only::BasicOnly;
@@ -25,21 +25,15 @@ use super::scope::Scope;
 /// Build the `/opds/shelves/:shelf_id/*` router. Every handler verifies
 /// shelf ownership under [`crate::db::acquire_with_rls`] and 404s on
 /// foreign shelves to avoid leaking shelf existence.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/opds/shelves/{shelf_id}", get(shelf_root))
-        .route("/opds/shelves/{shelf_id}/new", get(shelf_new))
-        .route("/opds/shelves/{shelf_id}/authors", get(shelf_authors))
-        .route(
-            "/opds/shelves/{shelf_id}/authors/{author_id}",
-            get(shelf_author_books),
-        )
-        .route("/opds/shelves/{shelf_id}/series", get(shelf_series))
-        .route(
-            "/opds/shelves/{shelf_id}/series/{series_id}",
-            get(shelf_series_books),
-        )
-        .route("/opds/shelves/{shelf_id}/search", get(shelf_search))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(shelf_root))
+        .routes(routes!(shelf_new))
+        .routes(routes!(shelf_authors))
+        .routes(routes!(shelf_author_books))
+        .routes(routes!(shelf_series))
+        .routes(routes!(shelf_series_books))
+        .routes(routes!(shelf_search))
 }
 
 async fn assert_shelf_owned(
@@ -63,6 +57,24 @@ async fn assert_shelf_owned(
     row.ok_or(AppError::NotFound)
 }
 
+/// `GET /opds/shelves/{shelf_id}` — shelf subcatalog navigation root.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("shelf_id" = Uuid, Path, description = "Shelf id")),
+    responses(
+        (status = 200, description = "OPDS navigation feed linking the shelf's New / Authors / Series subcatalogs", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_root(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -75,6 +87,27 @@ async fn shelf_root(
     Ok(atom_response(bytes, FeedKind::Navigation.content_type()))
 }
 
+/// `GET /opds/shelves/{shelf_id}/new` — the shelf's newest books,
+/// cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/new",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of the shelf's newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_new(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -96,6 +129,27 @@ async fn shelf_new(
     Ok(atom_response(bytes, FeedKind::Acquisition.content_type()))
 }
 
+/// `GET /opds/shelves/{shelf_id}/authors` — the shelf's author index,
+/// cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/authors",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
+    responses(
+        (status = 200, description = "OPDS navigation feed of authors with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_authors(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -117,6 +171,31 @@ async fn shelf_authors(
     Ok(atom_response(bytes, FeedKind::Navigation.content_type()))
 }
 
+/// `GET /opds/shelves/{shelf_id}/authors/{author_id}` — one author's books
+/// on the shelf, cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/authors/{author_id}",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(
+        ("shelf_id" = Uuid, Path, description = "Shelf id"),
+        ("author_id" = Uuid, Path, description = "Author id"),
+        PageParams
+    ),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of the author's books on the shelf (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_author_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -139,6 +218,27 @@ async fn shelf_author_books(
     Ok(atom_response(bytes, FeedKind::Acquisition.content_type()))
 }
 
+/// `GET /opds/shelves/{shelf_id}/series` — the shelf's series index,
+/// cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/series",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
+    responses(
+        (status = 200, description = "OPDS navigation feed of series with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_series(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -160,6 +260,31 @@ async fn shelf_series(
     Ok(atom_response(bytes, FeedKind::Navigation.content_type()))
 }
 
+/// `GET /opds/shelves/{shelf_id}/series/{series_id}` — one series' books
+/// on the shelf, in series order, cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/series/{series_id}",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(
+        ("shelf_id" = Uuid, Path, description = "Shelf id"),
+        ("series_id" = Uuid, Path, description = "Series id"),
+        PageParams
+    ),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of the series' books on the shelf (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_series_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -182,6 +307,25 @@ async fn shelf_series_books(
     Ok(atom_response(bytes, FeedKind::Acquisition.content_type()))
 }
 
+/// `GET /opds/shelves/{shelf_id}/search` — full-text search over the
+/// shelf's books.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the shelf is missing or not owned by the
+///   caller (existence not leaked).
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/shelves/{shelf_id}/search",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("shelf_id" = Uuid, Path, description = "Shelf id"), SearchParams),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of search results scoped to the shelf; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn shelf_search(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,

@@ -5,14 +5,14 @@
 
 use std::collections::HashMap;
 
-use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
-use axum::routing::get;
 use serde::Deserialize;
 use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
 use url::Url;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::basic_only::BasicOnly;
@@ -39,19 +39,33 @@ use super::scope::{Scope, push_scope};
 /// `acquire_with_rls` is the authoritative guard — `Scope` shapes
 /// which subset of visible rows the feed surfaces, and an over-broad
 /// or forged scope cannot bypass row-level security.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/opds/library", get(library_root))
-        .route("/opds/library/new", get(library_new))
-        .route("/opds/library/authors", get(library_authors))
-        .route("/opds/library/authors/{id}", get(library_author_books))
-        .route("/opds/library/series", get(library_series))
-        .route("/opds/library/series/{id}", get(library_series_books))
-        .route("/opds/library/search", get(library_search))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(library_root))
+        .routes(routes!(library_new))
+        .routes(routes!(library_authors))
+        .routes(routes!(library_author_books))
+        .routes(routes!(library_series))
+        .routes(routes!(library_series_books))
+        .routes(routes!(library_search))
 }
 
 // ── Library navigation root ──────────────────────────────────────────────
 
+/// `GET /opds/library` — library subcatalog navigation root.
+///
+/// # Errors
+/// - [`AppError::Internal`] when the OPDS base URL is unconfigured.
+#[utoipa::path(
+    get,
+    path = "/opds/library",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    responses(
+        (status = 200, description = "OPDS navigation feed linking the New / Authors / Series subcatalogs", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)")
+    )
+)]
 async fn library_root(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -97,13 +111,30 @@ pub(super) fn build_subcatalog_root(base: &Url, self_path: &str, title: &str) ->
 // ── Subcatalog handlers ──────────────────────────────────────────────────
 
 /// Cursor pagination input shared by every paginated feed handler.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::IntoParams)]
 pub struct PageParams {
     /// Opaque cursor returned in a previous response's `rel="next"` link;
     /// `None` returns the first page.
     pub cursor: Option<String>,
 }
 
+/// `GET /opds/library/new` — newest books, cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/library/new",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(PageParams),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of the newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn library_new(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -122,6 +153,23 @@ async fn library_new(
     Ok(atom_response(bytes, FeedKind::Acquisition.content_type()))
 }
 
+/// `GET /opds/library/authors` — author index, cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/library/authors",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(PageParams),
+    responses(
+        (status = 200, description = "OPDS navigation feed of authors with visible books", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn library_authors(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -140,6 +188,24 @@ async fn library_authors(
     Ok(atom_response(bytes, FeedKind::Navigation.content_type()))
 }
 
+/// `GET /opds/library/authors/{id}` — one author's books,
+/// cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/library/authors/{id}",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("id" = Uuid, Path, description = "Author id"), PageParams),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of the author's visible books (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn library_author_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -160,6 +226,23 @@ async fn library_author_books(
     Ok(atom_response(bytes, FeedKind::Acquisition.content_type()))
 }
 
+/// `GET /opds/library/series` — series index, cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/library/series",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(PageParams),
+    responses(
+        (status = 200, description = "OPDS navigation feed of series with visible books", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn library_series(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -178,6 +261,24 @@ async fn library_series(
     Ok(atom_response(bytes, FeedKind::Navigation.content_type()))
 }
 
+/// `GET /opds/library/series/{id}` — one series' books, in series order,
+/// cursor-paginated.
+///
+/// # Errors
+/// - [`AppError::Validation`] on a malformed cursor.
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/library/series/{id}",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("id" = Uuid, Path, description = "Series id"), PageParams),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of the series' visible books (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn library_series_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
@@ -199,7 +300,7 @@ async fn library_series_books(
 }
 
 /// `OpenSearch` `?q=` query parameter for the search endpoints.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::IntoParams)]
 pub struct SearchParams {
     /// Search term; an empty (or whitespace-only) query short-circuits
     /// to an empty feed without hitting the DB.
@@ -207,6 +308,21 @@ pub struct SearchParams {
     pub q: String,
 }
 
+/// `GET /opds/library/search` — full-text search over visible books.
+///
+/// # Errors
+/// - [`AppError::Internal`] on database errors or unconfigured base URL.
+#[utoipa::path(
+    get,
+    path = "/opds/library/search",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(SearchParams),
+    responses(
+        (status = 200, description = "OPDS acquisition feed of search results; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)")
+    )
+)]
 async fn library_search(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
