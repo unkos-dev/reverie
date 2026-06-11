@@ -1,9 +1,15 @@
-//! base64url-encoded pagination cursor.
+//! base64url-encoded pagination cursors.
 //!
-//! Encodes `(created_at, id)` tuples that the acquisition feeds sort on:
-//! `ORDER BY created_at DESC, id DESC`. The cursor points at the last row of
-//! the previous page — the next SELECT uses it as an inclusive-exclusive
-//! upper bound via `WHERE (created_at, id) < ($1, $2)`.
+//! [`Cursor`] encodes `(created_at, id)` tuples that the acquisition feeds
+//! sort on: `ORDER BY created_at DESC, id DESC`. The cursor points at the
+//! last row of the previous page — the next SELECT uses it as an
+//! inclusive-exclusive upper bound via `WHERE (created_at, id) < ($1, $2)`.
+//!
+//! [`NameCursor`] (UNK-374) encodes `(sort_name, id)` for the authors /
+//! series navigation feeds, which sort `ORDER BY sort_name ASC, id ASC` —
+//! lower bound via `WHERE (sort_name, id) > ($1, $2)`. It carries an `n|`
+//! tag byte so the two cursor families cannot be replayed against each
+//! other's feeds.
 //!
 //! No HMAC: self-hosted trusted-network deployment model. Cursor timestamps
 //! already leak via the feed body, and an attacker flipping a cursor gets a
@@ -46,6 +52,10 @@ pub enum CursorError {
     /// Decoded bytes were not valid UTF-8.
     #[error("invalid utf-8")]
     InvalidUtf8,
+    /// Payload carried a foreign tag byte (e.g. a recency cursor fed
+    /// to a name-sorted feed, or vice versa).
+    #[error("unknown tag byte")]
+    UnknownTag,
     /// `created_at` had a year outside RFC 3339's representable range
     /// (`-9999..=9999`) during encode.
     #[error("timestamp not representable as RFC 3339")]
@@ -89,6 +99,57 @@ impl Cursor {
             OffsetDateTime::parse(ts, &Rfc3339).map_err(|_| CursorError::InvalidTimestamp)?;
         let id = Uuid::parse_str(uuid).map_err(|_| CursorError::InvalidUuid)?;
         Ok(Self { created_at, id })
+    }
+}
+
+/// `(sort_name, id)` tuple identifying the boundary row of a
+/// name-sorted navigation feed page (authors / series, UNK-374).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameCursor {
+    /// Boundary row's `sort_name`.
+    pub sort_name: String,
+    /// Boundary row's id (tie-breaker — `sort_name` carries no
+    /// uniqueness constraint).
+    pub id: Uuid,
+}
+
+impl NameCursor {
+    /// Encode as a base64url `n|<sort_name>|<uuid>` string suitable
+    /// for a feed `?cursor=` query parameter.
+    pub fn encode(&self) -> String {
+        let payload = format!("n|{}|{}", self.sort_name, self.id.as_hyphenated());
+        Base64UrlUnpadded::encode_string(payload.as_bytes())
+    }
+
+    /// Parse a base64url cursor produced by [`Self::encode`].
+    ///
+    /// `sort_name` derives from external metadata and may contain `|`;
+    /// the parser peels the tag with `split_once` and the trailing uuid
+    /// with `rsplit_once`, so pipes inside the name survive the
+    /// round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns the matching [`CursorError`] variant for invalid base64,
+    /// non-UTF-8 bytes, a missing delimiter, a foreign tag byte, or a
+    /// malformed uuid.
+    pub fn parse(s: &str) -> Result<Self, CursorError> {
+        let mut buf = vec![0u8; s.len()];
+        let decoded = Base64UrlUnpadded::decode(s.as_bytes(), &mut buf)
+            .map_err(|_| CursorError::InvalidBase64)?;
+        let decoded_str = std::str::from_utf8(decoded).map_err(|_| CursorError::InvalidUtf8)?;
+        let (tag, rest) = decoded_str
+            .split_once('|')
+            .ok_or(CursorError::MissingDelimiter)?;
+        if tag != "n" {
+            return Err(CursorError::UnknownTag);
+        }
+        let (sort_name, id_str) = rest.rsplit_once('|').ok_or(CursorError::MissingDelimiter)?;
+        let id = Uuid::parse_str(id_str).map_err(|_| CursorError::InvalidUuid)?;
+        Ok(Self {
+            sort_name: sort_name.to_owned(),
+            id,
+        })
     }
 }
 
@@ -141,6 +202,58 @@ mod tests {
         assert!(matches!(
             Cursor::parse(&encoded),
             Err(CursorError::InvalidUuid)
+        ));
+    }
+
+    #[test]
+    fn name_roundtrip() {
+        let c = NameCursor {
+            sort_name: "le guin, ursula k.".into(),
+            id: Uuid::new_v4(),
+        };
+        let parsed = NameCursor::parse(&c.encode()).expect("roundtrip");
+        assert_eq!(parsed, c);
+    }
+
+    #[test]
+    fn name_roundtrip_with_pipe_in_value() {
+        let c = NameCursor {
+            sort_name: "weird|name|with|pipes".into(),
+            id: Uuid::new_v4(),
+        };
+        let parsed = NameCursor::parse(&c.encode()).expect("roundtrip");
+        assert_eq!(parsed, c);
+    }
+
+    #[test]
+    fn name_rejects_recency_cursor() {
+        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let recency = Cursor {
+            created_at: ts,
+            id: Uuid::new_v4(),
+        }
+        .encode()
+        .expect("encode");
+        // A recency cursor's first segment is an RFC 3339 timestamp,
+        // never the literal `n` tag.
+        assert!(matches!(
+            NameCursor::parse(&recency),
+            Err(CursorError::UnknownTag)
+        ));
+    }
+
+    #[test]
+    fn recency_rejects_name_cursor() {
+        let name = NameCursor {
+            sort_name: "x".into(),
+            id: Uuid::new_v4(),
+        }
+        .encode();
+        // `n` is not a parsable timestamp, so the recency parser
+        // refuses the name cursor rather than walking the wrong keyspace.
+        assert!(matches!(
+            Cursor::parse(&name),
+            Err(CursorError::InvalidTimestamp)
         ));
     }
 }

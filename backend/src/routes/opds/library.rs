@@ -349,6 +349,12 @@ fn parse_cursor(raw: Option<&str>) -> Result<Option<super::cursor::Cursor>, AppE
         .map_err(|_| AppError::Validation("invalid cursor".into()))
 }
 
+fn parse_name_cursor(raw: Option<&str>) -> Result<Option<super::cursor::NameCursor>, AppError> {
+    raw.map(super::cursor::NameCursor::parse)
+        .transpose()
+        .map_err(|_| AppError::Validation("invalid cursor".into()))
+}
+
 fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, cursor: Option<&super::cursor::Cursor>) {
     if let Some(c) = cursor {
         qb.push(" AND (m.created_at, m.id) < (");
@@ -478,17 +484,22 @@ pub(super) async fn emit_authors(
     scope: &Scope,
     self_parent: &str,
     base: &Url,
-    _cursor: Option<String>, // navigation feeds load fully per plan decision
+    cursor: Option<String>,
 ) -> Result<Vec<u8>, AppError> {
     let self_path = format!("{self_parent}/authors");
+    let page_size = i64::from(state.config.opds.page_size);
 
     let mut tx = db::acquire_with_rls(&state.pool, user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
+    let cursor = parse_name_cursor(cursor.as_deref())?;
+
     // authors with at least one visible manifestation under scope.
+    // sort_name rides in the SELECT because the page boundary's value
+    // feeds the next-page cursor.
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-        "SELECT a.id, a.name FROM authors a \
+        "SELECT a.id, a.name, a.sort_name FROM authors a \
          WHERE EXISTS (SELECT 1 FROM work_authors wa \
              JOIN manifestations m ON m.work_id = wa.work_id \
              WHERE wa.author_id = a.id",
@@ -497,12 +508,23 @@ pub(super) async fn emit_authors(
         qb.push(" AND ");
         push_scope(&mut qb, scope, "m");
     }
-    qb.push(") ORDER BY a.sort_name ASC");
+    qb.push(")");
+    if let Some(c) = &cursor {
+        qb.push(" AND (a.sort_name, a.id) > (");
+        qb.push_bind(c.sort_name.clone());
+        qb.push(", ");
+        qb.push_bind(c.id);
+        qb.push(")");
+    }
+    qb.push(" ORDER BY a.sort_name ASC, a.id ASC LIMIT ");
+    qb.push_bind(page_size + 1);
     let rows = qb
         .build()
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    let (page_rows, has_more) = split_page(&rows, page_size);
 
     let mut fb = FeedBuilder::new(
         base,
@@ -511,7 +533,7 @@ pub(super) async fn emit_authors(
         "Authors",
         OffsetDateTime::now_utc(),
     );
-    for r in &rows {
+    for r in page_rows {
         let id: Uuid = r.get("id");
         let name: String = r.get("name");
         fb.add_navigation_entry(
@@ -520,6 +542,19 @@ pub(super) async fn emit_authors(
             &format!("{self_parent}/authors/{id}"),
             true,
         );
+    }
+    if has_more {
+        #[allow(
+            clippy::expect_used,
+            reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
+        )]
+        let last = page_rows.last().expect("page non-empty when has_more");
+        let next = super::cursor::NameCursor {
+            sort_name: last.get("sort_name"),
+            id: last.get("id"),
+        }
+        .encode();
+        fb.add_next_link(&format!("{self_path}?cursor={next}"));
     }
     Ok(fb.finish())
 }
@@ -626,16 +661,21 @@ pub(super) async fn emit_series(
     scope: &Scope,
     self_parent: &str,
     base: &Url,
-    _cursor: Option<String>,
+    cursor: Option<String>,
 ) -> Result<Vec<u8>, AppError> {
     let self_path = format!("{self_parent}/series");
+    let page_size = i64::from(state.config.opds.page_size);
 
     let mut tx = db::acquire_with_rls(&state.pool, user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
+    let cursor = parse_name_cursor(cursor.as_deref())?;
+
+    // sort_name rides in the SELECT because the page boundary's value
+    // feeds the next-page cursor.
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-        "SELECT s.id, s.name FROM series s \
+        "SELECT s.id, s.name, s.sort_name FROM series s \
          WHERE EXISTS (SELECT 1 FROM series_works sw \
              JOIN manifestations m ON m.work_id = sw.work_id \
              WHERE sw.series_id = s.id",
@@ -644,12 +684,23 @@ pub(super) async fn emit_series(
         qb.push(" AND ");
         push_scope(&mut qb, scope, "m");
     }
-    qb.push(") ORDER BY s.sort_name ASC");
+    qb.push(")");
+    if let Some(c) = &cursor {
+        qb.push(" AND (s.sort_name, s.id) > (");
+        qb.push_bind(c.sort_name.clone());
+        qb.push(", ");
+        qb.push_bind(c.id);
+        qb.push(")");
+    }
+    qb.push(" ORDER BY s.sort_name ASC, s.id ASC LIMIT ");
+    qb.push_bind(page_size + 1);
     let rows = qb
         .build()
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    let (page_rows, has_more) = split_page(&rows, page_size);
 
     let mut fb = FeedBuilder::new(
         base,
@@ -658,7 +709,7 @@ pub(super) async fn emit_series(
         "Series",
         OffsetDateTime::now_utc(),
     );
-    for r in &rows {
+    for r in page_rows {
         let id: Uuid = r.get("id");
         let name: String = r.get("name");
         fb.add_navigation_entry(
@@ -667,6 +718,19 @@ pub(super) async fn emit_series(
             &format!("{self_parent}/series/{id}"),
             true,
         );
+    }
+    if has_more {
+        #[allow(
+            clippy::expect_used,
+            reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
+        )]
+        let last = page_rows.last().expect("page non-empty when has_more");
+        let next = super::cursor::NameCursor {
+            sort_name: last.get("sort_name"),
+            id: last.get("id"),
+        }
+        .encode();
+        fb.add_next_link(&format!("{self_path}?cursor={next}"));
     }
     Ok(fb.finish())
 }

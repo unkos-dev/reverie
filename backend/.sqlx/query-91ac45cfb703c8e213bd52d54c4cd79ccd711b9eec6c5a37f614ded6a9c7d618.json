@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at\n             FROM users\n            ORDER BY created_at ASC",
+  "query": "SELECT id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at\n             FROM users\n            ORDER BY created_at ASC, id ASC\n            LIMIT $1",
   "describe": {
     "columns": [
       {
@@ -93,7 +93,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8"
+      ]
     },
     "nullable": [
       false,
@@ -105,5 +107,5 @@
       false
     ]
   },
-  "hash": "26170c450efc6d22613dc198d0df5d3916f2eff8a47367743526b5e570a71c01"
+  "hash": "91ac45cfb703c8e213bd52d54c4cd79ccd711b9eec6c5a37f614ded6a9c7d618"
 }

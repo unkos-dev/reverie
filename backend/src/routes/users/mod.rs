@@ -74,6 +74,14 @@ struct UserResponse {
     updated_at: OffsetDateTime,
 }
 
+/// Defensive bound on the users list (UNK-374, ADR-7's justified
+/// single-page exception). A household/self-hosted instance's user
+/// table has a genuinely small natural ceiling — a multi-hundred-user
+/// deployment is outside Reverie's design scope — so a hard `LIMIT`
+/// beats paginating an endpoint whose realistic cardinality is single
+/// digits. Bounded by construction rather than by assumption.
+const MAX_LISTED_USERS: i64 = 500;
+
 /// `GET /api/v1/users` — list all users (admin only).
 ///
 /// # Errors
@@ -84,7 +92,7 @@ struct UserResponse {
     path = "/api/v1/users",
     tag = "users",
     responses(
-        (status = 200, description = "All users, oldest first. Admin only.", body = [UserResponse]),
+        (status = 200, description = "All users, oldest first, defensively capped at 500 rows. Admin only.", body = [UserResponse]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
     )
@@ -105,7 +113,9 @@ async fn list_users(
                   created_at,
                   updated_at
              FROM users
-            ORDER BY created_at ASC"#,
+            ORDER BY created_at ASC, id ASC
+            LIMIT $1"#,
+        MAX_LISTED_USERS,
     )
     .fetch_all(&state.pool)
     .await

@@ -28,11 +28,12 @@
 //! transaction so add/remove also bump the ETag — without that, a
 //! follow-up reorder PUT would 412 spuriously.
 
-use axum::extract::{Path, State};
-use axum::http::header::{ETAG, IF_MATCH};
+use axum::extract::{OriginalUri, Path, Query, State};
+use axum::http::header::{ETAG, IF_MATCH, LINK};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use utoipa_axum::router::OpenApiRouter;
@@ -41,7 +42,9 @@ use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
-use crate::models::shelf::{Shelf, ShelfItem, ShelfWithItems};
+use crate::models::shelf::{Shelf, ShelfItem};
+use crate::routes::cursor::{ShelfCursor, ShelfItemCursor};
+use crate::routes::library::{build_next_url, split_page};
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -108,55 +111,127 @@ fn parse_if_match(headers: &HeaderMap) -> Result<Option<OffsetDateTime>, AppErro
     Ok(Some(ts))
 }
 
-/// `GET /api/v1/shelves` — list the caller's shelves.
+/// Cursor pagination input for `GET /api/v1/shelves`.
+#[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct ShelfListParams {
+    /// Opaque cursor from a previous response's `next_cursor`; absent
+    /// returns the first page.
+    #[serde(default)]
+    cursor: Option<String>,
+}
+
+/// `GET /api/v1/shelves` response envelope. Carries the page rows plus
+/// the opaque cursor for the following page; pagination is also
+/// signalled via the RFC 8288 `Link` header on the response.
+///
+/// Private to the route module — handler-internal wire shape.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct ShelfListResponse {
+    items: Vec<Shelf>,
+    next_cursor: Option<String>,
+}
+
+/// `GET /api/v1/shelves` — list the caller's shelves, keyset-paginated
+/// over `(is_system DESC, name ASC, id ASC)` (UNK-374: every list is
+/// bounded by construction).
 ///
 /// # Errors
+/// - [`AppError::Validation`] when the cursor is malformed.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     get,
     path = "/api/v1/shelves",
     tag = "shelves",
+    params(ShelfListParams),
     responses(
-        (status = 200, description = "The caller's shelves, system shelves first then by name", body = [Shelf]),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
+        (status = 200, description = "One page of the caller's shelves, system shelves first then by name", body = ShelfListResponse,
+            headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn list_shelves(
     current_user: CurrentUser,
     State(state): State<AppState>,
+    Query(params): Query<ShelfListParams>,
+    OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT s.id          AS "id!",
-               s.name        AS "name!",
-               s.is_system   AS "is_system!",
-               s.created_at  AS "created_at!",
-               s.updated_at  AS "updated_at!",
-               (SELECT COUNT(*) FROM shelf_items si WHERE si.shelf_id = s.id)
-                             AS "item_count!"
-          FROM shelves s
-         WHERE s.user_id = $1
-         ORDER BY s.is_system DESC, s.name ASC
-        "#,
-        current_user.user_id,
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
+    let page_size = i64::from(state.config.opds.page_size);
+    let cursor = params
+        .cursor
+        .as_deref()
+        .map(ShelfCursor::parse)
+        .transpose()
+        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
 
-    let shelves: Vec<Shelf> = rows
-        .into_iter()
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT s.id, s.name, s.is_system, s.created_at, s.updated_at, \
+                (SELECT COUNT(*) FROM shelf_items si WHERE si.shelf_id = s.id) AS item_count \
+           FROM shelves s \
+          WHERE s.user_id = ",
+    );
+    qb.push_bind(current_user.user_id);
+    if let Some(c) = &cursor {
+        // Mixed-direction sort (is_system DESC, then name/id ASC) cannot
+        // use a single tuple comparison — expand into the two-arm OR.
+        qb.push(" AND (s.is_system < ");
+        qb.push_bind(c.is_system);
+        qb.push(" OR (s.is_system = ");
+        qb.push_bind(c.is_system);
+        qb.push(" AND (s.name, s.id) > (");
+        qb.push_bind(c.name.clone());
+        qb.push(", ");
+        qb.push_bind(c.id);
+        qb.push(")))");
+    }
+    qb.push(" ORDER BY s.is_system DESC, s.name ASC, s.id ASC LIMIT ");
+    qb.push_bind(page_size + 1);
+
+    let rows = qb
+        .build()
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let (page_rows, has_more) = split_page(&rows, page_size);
+
+    let items: Vec<Shelf> = page_rows
+        .iter()
         .map(|r| Shelf {
-            id: r.id,
-            name: r.name,
-            is_system: r.is_system,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            item_count: r.item_count,
+            id: r.get("id"),
+            name: r.get("name"),
+            is_system: r.get("is_system"),
+            created_at: r.get("created_at"),
+            updated_at: r.get("updated_at"),
+            item_count: r.get("item_count"),
         })
         .collect();
 
-    Ok(axum::Json(shelves))
+    let next_cursor = match page_rows.last() {
+        Some(last) if has_more => Some(
+            ShelfCursor {
+                is_system: last.get("is_system"),
+                name: last.get("name"),
+                id: last.get("id"),
+            }
+            .encode(),
+        ),
+        _ => None,
+    };
+
+    let mut headers = HeaderMap::new();
+    if let Some(ref nc) = next_cursor {
+        let next_url = build_next_url(&uri, nc);
+        if let Ok(value) = HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
+            headers.insert(LINK, value);
+        }
+    }
+
+    Ok((
+        headers,
+        axum::Json(ShelfListResponse { items, next_cursor }),
+    ))
 }
 
 /// Body for `POST /api/v1/shelves`.
@@ -392,28 +467,83 @@ async fn delete_shelf(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /api/v1/shelves/{id}` — shelf identity plus ordered items.
+/// Cursor pagination input for the items page of
+/// `GET /api/v1/shelves/{id}`.
+#[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct ShelfItemsParams {
+    /// Opaque items cursor from a previous response's `next_cursor`;
+    /// absent returns the shelf with its first page of items.
+    #[serde(default)]
+    cursor: Option<String>,
+}
+
+/// `GET /api/v1/shelves/{id}` response envelope: shelf identity plus
+/// one page of ordered items and the cursor for the next page.
+///
+/// Private to the route module — handler-internal wire shape
+/// (pagination is a transport concern; the `models::shelf` DTOs stay
+/// transport-free).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct ShelfDetailResponse {
+    /// `shelves.id`.
+    id: Uuid,
+    /// `shelves.name`.
+    name: String,
+    /// `shelves.is_system`.
+    is_system: bool,
+    /// `shelves.created_at`.
+    created_at: OffsetDateTime,
+    /// `shelves.updated_at` — the `ETag` value.
+    updated_at: OffsetDateTime,
+    /// One page of items ordered by `position ASC, added_at ASC,
+    /// manifestation_id ASC`.
+    items: Vec<ShelfItem>,
+    /// Opaque cursor for the next items page; `null` on the last page.
+    next_cursor: Option<String>,
+}
+
+/// `GET /api/v1/shelves/{id}` — shelf identity plus ordered items,
+/// keyset-paginated over `(position, added_at, manifestation_id)`
+/// (UNK-374). The ETag/If-Match contract is unaffected by item paging:
+/// the entity-tag carries the shelf's `updated_at` regardless of which
+/// items page is requested.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when missing or not owned by caller.
+/// - [`AppError::Validation`] when the cursor is malformed.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     get,
     path = "/api/v1/shelves/{id}",
     tag = "shelves",
-    params(("id" = Uuid, Path, description = "Shelf id")),
+    params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
     responses(
-        (status = 200, description = "Shelf identity plus ordered items", body = ShelfWithItems,
-         headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"))),
+        (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
+         headers(
+            ("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"),
+            ("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain")
+         )),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn get_shelf_with_items(
     current_user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(params): Query<ShelfItemsParams>,
+    OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
+    let page_size = i64::from(state.config.opds.page_size);
+    let cursor = params
+        .cursor
+        .as_deref()
+        .map(ShelfItemCursor::parse)
+        .transpose()
+        .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?;
+
     let shelf = sqlx::query!(
         r#"
         SELECT id          AS "id!",
@@ -431,38 +561,79 @@ async fn get_shelf_with_items(
     .map_err(|e| AppError::Internal(e.into()))?
     .ok_or(AppError::NotFound)?;
 
-    let items = sqlx::query!(
-        r#"
-        SELECT manifestation_id AS "manifestation_id!",
-               position         AS "position!",
-               added_at         AS "added_at!"
-          FROM shelf_items
-         WHERE shelf_id = $1
-         ORDER BY position ASC, added_at ASC
-        "#,
-        id,
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
+    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT manifestation_id, position, added_at \
+           FROM shelf_items WHERE shelf_id = ",
+    );
+    qb.push_bind(id);
+    if let Some(c) = &cursor {
+        // All-ASC sort — a single row-tuple comparison is total. The
+        // manifestation_id tiebreaker is load-bearing: neither position
+        // nor added_at is unique per shelf.
+        qb.push(" AND (position, added_at, manifestation_id) > (");
+        qb.push_bind(c.position);
+        qb.push(", ");
+        qb.push_bind(c.added_at);
+        qb.push(", ");
+        qb.push_bind(c.manifestation_id);
+        qb.push(")");
+    }
+    qb.push(" ORDER BY position ASC, added_at ASC, manifestation_id ASC LIMIT ");
+    qb.push_bind(page_size + 1);
 
-    let body = ShelfWithItems {
+    let rows = qb
+        .build()
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let (page_rows, has_more) = split_page(&rows, page_size);
+
+    let items: Vec<ShelfItem> = page_rows
+        .iter()
+        .map(|r| ShelfItem {
+            manifestation_id: r.get("manifestation_id"),
+            position: r.get("position"),
+            added_at: r.get("added_at"),
+        })
+        .collect();
+
+    let next_cursor = match page_rows.last() {
+        Some(last) if has_more => {
+            let manifestation_id: Uuid = last.get("manifestation_id");
+            Some(
+                ShelfItemCursor {
+                    position: last.get("position"),
+                    added_at: last.get("added_at"),
+                    manifestation_id,
+                }
+                .encode()
+                .map_err(|e| {
+                    tracing::warn!(error = %e, %manifestation_id, "failed to encode shelf-items cursor");
+                    AppError::Internal(e.into())
+                })?,
+            )
+        }
+        _ => None,
+    };
+
+    let body = ShelfDetailResponse {
         id: shelf.id,
         name: shelf.name,
         is_system: shelf.is_system,
         created_at: shelf.created_at,
         updated_at: shelf.updated_at,
-        items: items
-            .into_iter()
-            .map(|r| ShelfItem {
-                manifestation_id: r.manifestation_id,
-                position: r.position,
-                added_at: r.added_at,
-            })
-            .collect(),
+        items,
+        next_cursor,
     };
     let mut headers = HeaderMap::new();
     headers.insert(ETAG, etag_header(body.updated_at)?);
+    if let Some(ref nc) = body.next_cursor {
+        let next_url = build_next_url(&uri, nc);
+        if let Ok(value) = HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
+            headers.insert(LINK, value);
+        }
+    }
     Ok((headers, axum::Json(body)))
 }
 

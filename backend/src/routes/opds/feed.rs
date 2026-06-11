@@ -356,11 +356,13 @@ impl FeedBuilder {
             .expect("entry close");
     }
 
-    /// `rel="next"` on acquisition feeds only. Caller guarantees one page of
-    /// rows is ready.
+    /// `rel="next"` pagination link (RFC 5005 Atom paging — valid on
+    /// both feed kinds; navigation feeds gained pagination in UNK-374).
+    /// The link's `type` attribute follows the feed's own kind. Caller
+    /// guarantees one page of rows is ready.
     pub fn add_next_link(&mut self, href: &str) {
-        debug_assert_eq!(self.kind, FeedKind::Acquisition);
-        self.write_link(REL_NEXT, href, Some(ACQUISITION_TYPE), None);
+        let mime = self.kind.content_type();
+        self.write_link(REL_NEXT, href, Some(mime), None);
     }
 
     /// `rel="search"` pointing at the `OpenSearch` descriptor.
