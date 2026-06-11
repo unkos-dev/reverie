@@ -35,10 +35,11 @@
 //! books cursor cannot be replayed against a shelves endpoint (and
 //! vice versa):
 //!
-//! - [`ShelfCursor`] (`sh` tag): `(is_system, name, id)` boundary for
-//!   `GET /api/v1/shelves`.
-//! - [`ShelfItemCursor`] (`si` tag): `(position, added_at,
-//!   manifestation_id)` boundary for `GET /api/v1/shelves/{id}` items.
+//! - [`crate::routes::cursor::ShelfCursor`] (`sh` tag): `(is_system,
+//!   name, id)` boundary for `GET /api/v1/shelves`.
+//! - [`crate::routes::cursor::ShelfItemCursor`] (`si` tag):
+//!   `(position, added_at, manifestation_id)` boundary for
+//!   `GET /api/v1/shelves/{id}` items.
 //!
 //! No HMAC — same trust model as the OPDS cursor.
 
@@ -301,7 +302,7 @@ impl CursorKey {
 ///
 /// Wire encoding: base64url(unpadded) over `sh|<t/f>|<name>|<uuid>`.
 /// `name` is user-controlled and may contain `|`; the parser peels the
-/// fixed-shape head (`sh`, the is_system flag) with `split_once` and
+/// fixed-shape head (`sh`, the `is_system` flag) with `split_once` and
 /// the trailing uuid with `rsplit_once`, so pipes inside the name
 /// survive the round-trip (same strategy as [`CursorKey::Title`]).
 #[derive(Debug, Clone, PartialEq, Eq)]

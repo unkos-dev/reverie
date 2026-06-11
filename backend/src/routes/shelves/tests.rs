@@ -801,25 +801,22 @@ async fn list_shelves_pagination_walks_across_system_boundary(pool: PgPool) {
         }
         pages += 1;
         assert!(pages < 10, "runaway pagination");
-        match body["next_cursor"].as_str() {
-            Some(nc) => {
-                // The Link header mirrors the body cursor.
-                let link = r
-                    .headers()
-                    .get(header::LINK)
-                    .expect("Link header on overflow page")
-                    .to_str()
-                    .unwrap();
-                assert!(link.contains(r#"rel="next""#), "Link header: {link}");
-                url = format!("/api/v1/shelves?cursor={nc}");
-            }
-            None => {
-                assert!(
-                    r.headers().get(header::LINK).is_none(),
-                    "final page must not carry a Link rel=next header"
-                );
-                break;
-            }
+        if let Some(nc) = body["next_cursor"].as_str() {
+            // The Link header mirrors the body cursor.
+            let link = r
+                .headers()
+                .get(header::LINK)
+                .expect("Link header on overflow page")
+                .to_str()
+                .unwrap();
+            assert!(link.contains(r#"rel="next""#), "Link header: {link}");
+            url = format!("/api/v1/shelves?cursor={nc}");
+        } else {
+            assert!(
+                r.headers().get(header::LINK).is_none(),
+                "final page must not carry a Link rel=next header"
+            );
+            break;
         }
     }
     assert_eq!(names, ["Zys", "Alpha", "Bravo"], "walked {pages} pages");

@@ -1290,25 +1290,51 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`GET /api/v1/shelves` — list the caller's shelves.",
-        "description": "# Errors\n- [`AppError::Internal`] on database errors.",
+        "summary": "`GET /api/v1/shelves` — list the caller's shelves, keyset-paginated\nover `(is_system DESC, name ASC, id ASC)` (UNK-374: every list is\nbounded by construction).",
+        "description": "# Errors\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list_shelves",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from a previous response's `next_cursor`; absent\nreturns the first page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The caller's shelves, system shelves first then by name",
+            "description": "One page of the caller's shelves, system shelves first then by name",
+            "headers": {
+              "Link": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Shelf"
-                  }
+                  "$ref": "#/components/schemas/ShelfListResponse"
                 }
               }
             }
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
             "content": {
               "application/json": {
                 "schema": {
@@ -1393,8 +1419,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items.",
-        "description": "# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Internal`] on database errors.",
+        "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items,\nkeyset-paginated over `(position, added_at, manifestation_id)`\n(UNK-374). The ETag/If-Match contract is unaffected by item paging:\nthe entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.",
+        "description": "# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_shelf_with_items",
         "parameters": [
           {
@@ -1406,23 +1432,38 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque items cursor from a previous response's `next_cursor`;\nabsent returns the shelf with its first page of items.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Shelf identity plus ordered items",
+            "description": "Shelf identity plus one page of ordered items",
             "headers": {
               "ETag": {
                 "schema": {
                   "type": "string"
                 },
                 "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"
+              },
+              "Link": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ShelfWithItems"
+                  "$ref": "#/components/schemas/ShelfDetailResponse"
                 }
               }
             }
@@ -1439,6 +1480,16 @@
           },
           "404": {
             "description": "Shelf missing or owned by another user (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
             "content": {
               "application/json": {
                 "schema": {
@@ -1999,7 +2050,7 @@
         "operationId": "list_users",
         "responses": {
           "200": {
-            "description": "All users, oldest first. Admin only.",
+            "description": "All users, oldest first, defensively capped at 500 rows. Admin only.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4998,35 +5049,9 @@
           }
         }
       },
-      "ShelfItem": {
+      "ShelfDetailResponse": {
         "type": "object",
-        "description": "One row of the shelf-items list (`GET /api/v1/shelves/{id}`).\n\nCarries the position so the frontend can render in stored order\nand round-trip back as `PUT /api/v1/shelves/{id}/items` with the\nre-arranged list.",
-        "required": [
-          "manifestation_id",
-          "position",
-          "added_at"
-        ],
-        "properties": {
-          "added_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "`shelf_items.added_at`."
-          },
-          "manifestation_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "`shelf_items.manifestation_id`."
-          },
-          "position": {
-            "type": "integer",
-            "format": "int32",
-            "description": "`shelf_items.position`. Caller echoes the ordering when sending\nthe reorder PUT."
-          }
-        }
-      },
-      "ShelfWithItems": {
-        "type": "object",
-        "description": "`GET /api/v1/shelves/{id}` response: shelf identity + ordered items.",
+        "description": "`GET /api/v1/shelves/{id}` response envelope: shelf identity plus\none page of ordered items and the cursor for the next page.\n\nPrivate to the route module — handler-internal wire shape\n(pagination is a transport concern; the `models::shelf` DTOs stay\ntransport-free).",
         "required": [
           "id",
           "name",
@@ -5055,16 +5080,70 @@
             "items": {
               "$ref": "#/components/schemas/ShelfItem"
             },
-            "description": "Items ordered by `shelf_items.position` ASC, `added_at` ASC\nfor tiebreaking determinism."
+            "description": "One page of items ordered by `position ASC, added_at ASC,\nmanifestation_id ASC`."
           },
           "name": {
             "type": "string",
             "description": "`shelves.name`."
           },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque cursor for the next items page; `null` on the last page."
+          },
           "updated_at": {
             "type": "string",
             "format": "date-time",
             "description": "`shelves.updated_at` — the `ETag` value."
+          }
+        }
+      },
+      "ShelfItem": {
+        "type": "object",
+        "description": "One row of the shelf-items list (`GET /api/v1/shelves/{id}`).\n\nCarries the position so the frontend can render in stored order\nand round-trip back as `PUT /api/v1/shelves/{id}/items` with the\nre-arranged list.",
+        "required": [
+          "manifestation_id",
+          "position",
+          "added_at"
+        ],
+        "properties": {
+          "added_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`shelf_items.added_at`."
+          },
+          "manifestation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`shelf_items.manifestation_id`."
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`shelf_items.position`. Caller echoes the ordering when sending\nthe reorder PUT."
+          }
+        }
+      },
+      "ShelfListResponse": {
+        "type": "object",
+        "description": "`GET /api/v1/shelves` response envelope. Carries the page rows plus\nthe opaque cursor for the following page; pagination is also\nsignalled via the RFC 8288 `Link` header on the response.\n\nPrivate to the route module — handler-internal wire shape.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Shelf"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

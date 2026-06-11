@@ -40,38 +40,82 @@ const ShelfItemSchema = z.object({
 /** One item row in `GET /api/v1/shelves/{id}`. */
 export type ShelfItem = z.infer<typeof ShelfItemSchema>;
 
-const ShelfWithItemsSchema = z.object({
+/**
+ * Wire page of `GET /api/v1/shelves` (UNK-374): the backend keyset-
+ * paginates every list, so the client walks `next_cursor` internally
+ * and callers keep receiving the fully assembled array.
+ */
+const ShelfListPageSchema = z.object({
+  items: z.array(ShelfSchema),
+  next_cursor: z.string().nullable(),
+});
+
+/** Wire page of `GET /api/v1/shelves/{id}` — items are keyset-paginated. */
+const ShelfDetailPageSchema = z.object({
   id: z.string(),
   name: z.string(),
   is_system: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
   items: z.array(ShelfItemSchema),
+  next_cursor: z.string().nullable(),
 });
-/** `GET /api/v1/shelves/{id}` response envelope. */
-export type ShelfWithItems = z.infer<typeof ShelfWithItemsSchema>;
+
+/** Assembled shelf detail: identity plus the complete items list. */
+export type ShelfWithItems = Omit<z.infer<typeof ShelfDetailPageSchema>, "next_cursor">;
+
+/**
+ * Hard bound on cursor walks. The backend terminates every walk
+ * (`next_cursor` flips to null on the last page); this guard turns a
+ * hypothetical server-side cursor bug into a loud error instead of an
+ * infinite fetch loop.
+ */
+const MAX_PAGE_WALK = 100;
 
 /** Derive an RFC 9110 quoted entity-tag from an RFC 3339 `updated_at`. */
 export function buildEtag(updatedAt: string): string {
   return `"${updatedAt}"`;
 }
 
-/** List the caller's shelves. */
+/** List the caller's shelves (walks all pages). */
 export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
-  const body = await apiFetch(
-    "/api/v1/shelves",
-    signal ? { method: "GET", signal } : { method: "GET" },
-  );
-  return z.array(ShelfSchema).parse(body);
+  const shelves: Shelf[] = [];
+  let cursor: string | null = null;
+  for (let walked = 0; walked < MAX_PAGE_WALK; walked++) {
+    const path =
+      cursor === null ? "/api/v1/shelves" : `/api/v1/shelves?cursor=${encodeURIComponent(cursor)}`;
+    const body = await apiFetch(path, signal ? { method: "GET", signal } : { method: "GET" });
+    const page = ShelfListPageSchema.parse(body);
+    shelves.push(...page.items);
+    cursor = page.next_cursor;
+    if (cursor === null) return shelves;
+  }
+  throw new Error("shelves list pagination did not terminate");
 }
 
-/** Fetch a shelf and its items. */
+/** Fetch a shelf and its complete items list (walks all item pages). */
 export async function getShelf(id: string, signal?: AbortSignal): Promise<ShelfWithItems> {
-  const body = await apiFetch(
-    `/api/v1/shelves/${encodeURIComponent(id)}`,
-    signal ? { method: "GET", signal } : { method: "GET" },
-  );
-  return ShelfWithItemsSchema.parse(body);
+  const base = `/api/v1/shelves/${encodeURIComponent(id)}`;
+  const items: ShelfItem[] = [];
+  let cursor: string | null = null;
+  for (let walked = 0; walked < MAX_PAGE_WALK; walked++) {
+    const path = cursor === null ? base : `${base}?cursor=${encodeURIComponent(cursor)}`;
+    const body = await apiFetch(path, signal ? { method: "GET", signal } : { method: "GET" });
+    const page = ShelfDetailPageSchema.parse(body);
+    items.push(...page.items);
+    cursor = page.next_cursor;
+    if (cursor === null) {
+      return {
+        id: page.id,
+        name: page.name,
+        is_system: page.is_system,
+        created_at: page.created_at,
+        updated_at: page.updated_at,
+        items,
+      };
+    }
+  }
+  throw new Error("shelf items pagination did not terminate");
 }
 
 /** Create a new shelf. Returns the freshly minted row (mirrors POST 201). */

@@ -1,0 +1,147 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n              COUNT(*)                            AS \"total_manifestations!\",\n              COUNT(DISTINCT m.work_id)           AS \"total_works!\",\n              COALESCE(SUM(m.file_size_bytes), 0)::bigint  AS \"storage_total_bytes!\",\n              COALESCE(SUM(m.cover_size_bytes), 0)::bigint AS \"storage_cover_bytes!\",\n              COUNT(*) FILTER (WHERE m.validation_status = 'pending')  AS \"val_pending!\",\n              COUNT(*) FILTER (WHERE m.validation_status = 'clean')    AS \"val_clean!\",\n              COUNT(*) FILTER (WHERE m.validation_status = 'repaired') AS \"val_repaired!\",\n              COUNT(*) FILTER (WHERE m.validation_status = 'degraded') AS \"val_degraded!\",\n              COUNT(*) FILTER (WHERE m.validation_status = 'failed')   AS \"val_failed!\",\n              COUNT(*) FILTER (WHERE m.validation_status = 'clean' AND m.format <> 'epub') AS \"clean_non_epub!\",\n              COUNT(*) FILTER (WHERE m.enrichment_status = 'pending')     AS \"enr_pending!\",\n              COUNT(*) FILTER (WHERE m.enrichment_status = 'in_progress') AS \"enr_in_progress!\",\n              COUNT(*) FILTER (WHERE m.enrichment_status = 'complete')    AS \"enr_complete!\",\n              COUNT(*) FILTER (WHERE m.enrichment_status = 'failed')      AS \"enr_failed!\",\n              COUNT(*) FILTER (WHERE m.enrichment_status = 'skipped')     AS \"enr_skipped!\",\n              COUNT(*) FILTER (WHERE w.description IS NOT NULL AND w.description <> '') AS \"has_description!\",\n              COUNT(*) FILTER (WHERE w.language    IS NOT NULL AND w.language    <> '') AS \"has_language!\",\n              COUNT(*) FILTER (WHERE m.isbn_13     IS NOT NULL) AS \"has_isbn_13!\",\n              COUNT(*) FILTER (WHERE m.cover_path  IS NOT NULL) AS \"has_cover!\"\n           FROM manifestations m\n           JOIN works w ON w.id = m.work_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_manifestations!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "total_works!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "storage_total_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "storage_cover_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "val_pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "val_clean!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "val_repaired!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "val_degraded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "val_failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "clean_non_epub!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "enr_pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "enr_in_progress!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "enr_complete!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "enr_failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "enr_skipped!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "has_description!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "has_language!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "has_isbn_13!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 18,
+        "name": "has_cover!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "07925d4906996ce6526d872b13124d0869bfe1feb6ed15d8509d07101532b0b0"
+}
