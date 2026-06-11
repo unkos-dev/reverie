@@ -276,9 +276,26 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          violations=$(grep -rnE 'sqlx::query[a-z_]*\(' backend/src/ \
-              | grep -v -F -f <(grep -vE '^\s*(#|$)' .github/sqlx-runtime-allowlist.txt) \
-              || true)
+          # Allowlist must exist and hold at least one active pattern; a
+          # missing file or empty pattern set fails the step here (set -e)
+          # instead of failing open downstream.
+          allow=$(grep -vE '^\s*(#|$)' .github/sqlx-runtime-allowlist.txt)
+          # grep exit 1 = no runtime sqlx (clean tree); exit >1 = real
+          # error (e.g. unreadable tree). Capture the code so an error
+          # can't read as "clean". Same shape as the .route( guard below.
+          rc=0
+          matches=$(grep -rnE 'sqlx::query[a-z_]*\(' backend/src/) || rc=$?
+          if [ "$rc" -gt 1 ]; then
+              exit "$rc"
+          fi
+          violations=''
+          if [ -n "$matches" ]; then
+              rc=0
+              violations=$(grep -v -F -f <(printf '%s\n' "$allow") <<<"$matches") || rc=$?
+              if [ "$rc" -gt 1 ]; then
+                  exit "$rc"
+              fi
+          fi
           if [ -n "$violations" ]; then
               echo "Disallowed runtime sqlx::query invocations detected." >&2
               echo "Use compile-time macros (query!, query_as!, query_scalar!)" >&2
