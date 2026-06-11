@@ -302,6 +302,10 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
         clippy::expect_used,
         reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
     )]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "sanctioned UA-setting constructor the clippy.toml ban funnels callers into; .user_agent() is set on the next line"
+    )]
     reqwest::Client::builder()
         .user_agent(user_agent)
         .timeout(Duration::from_secs(10))
@@ -341,6 +345,10 @@ pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) 
     #[allow(
         clippy::expect_used,
         reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
+    )]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "sanctioned UA-setting constructor the clippy.toml ban funnels callers into; .user_agent() is set on the next line"
     )]
     reqwest::Client::builder()
         .user_agent(user_agent)

@@ -92,6 +92,10 @@ fn http_client() -> Result<openidconnect::reqwest::Client> {
     // (Cloudflare, AWS WAF). Set a stable, identifiable UA so OIDC discovery
     // succeeds behind a WAF and upstream IdP operators can trace requests
     // back to a Reverie deployment.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "sanctioned UA-setting constructor the clippy.toml ban funnels callers into; .user_agent() is set on the next line and regression-tested by http_client_sends_reverie_user_agent"
+    )]
     openidconnect::reqwest::ClientBuilder::new()
         .user_agent(concat!("reverie/", env!("CARGO_PKG_VERSION")))
         .build()
