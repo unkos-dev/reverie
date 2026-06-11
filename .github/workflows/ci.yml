@@ -297,9 +297,26 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          violations=$(grep -rnE '\.route\(' backend/src/ \
-              | grep -v -F -f <(grep -vE '^\s*(#|$)' .github/axum-route-allowlist.txt) \
-              || true)
+          # Allowlist must exist and hold at least one active pattern; a
+          # missing file or empty pattern set fails the step here (set -e)
+          # instead of failing open downstream.
+          allow=$(grep -vE '^\s*(#|$)' .github/axum-route-allowlist.txt)
+          # grep exit 1 = no raw routes (clean tree); exit >1 = real error
+          # (e.g. unreadable tree). Capture the code so an error can't
+          # read as "clean".
+          rc=0
+          matches=$(grep -rnE '\.route\(' backend/src/) || rc=$?
+          if [ "$rc" -gt 1 ]; then
+              exit "$rc"
+          fi
+          violations=''
+          if [ -n "$matches" ]; then
+              rc=0
+              violations=$(grep -v -F -f <(printf '%s\n' "$allow") <<<"$matches") || rc=$?
+              if [ "$rc" -gt 1 ]; then
+                  exit "$rc"
+              fi
+          fi
           if [ -n "$violations" ]; then
               echo "Raw .route( registrations detected outside the allowlist." >&2
               echo "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," >&2
