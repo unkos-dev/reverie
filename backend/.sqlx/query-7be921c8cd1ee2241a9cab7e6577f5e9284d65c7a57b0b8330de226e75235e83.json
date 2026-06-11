@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webhook_event_dedupe WHERE seen_at <= now() - ($1::double precision * interval '1 second')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7be921c8cd1ee2241a9cab7e6577f5e9284d65c7a57b0b8330de226e75235e83"
+}
