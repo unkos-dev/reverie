@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhook_event_dedupe SET seen_at = now() - ($1::double precision * interval '1 second') WHERE event_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c9ba7cae3e59e918d7ee27afa8e8eedc81b70e4d1d54971df566571f5dc6e06"
+}

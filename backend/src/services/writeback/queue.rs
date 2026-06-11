@@ -194,6 +194,31 @@ pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
     }
 }
 
+/// Build and dispatch a terminal event for `job_id`; see
+/// `events::dispatch` for the dedupe contract.
+async fn dispatch_terminal(
+    pool: &PgPool,
+    job_id: Uuid,
+    outcome: events::TerminalOutcome,
+    manifestation_id: Uuid,
+    reason: &str,
+    attempt_count: i32,
+    detail: &str,
+) {
+    events::dispatch(
+        pool,
+        &events::TerminalEvent {
+            job_id,
+            outcome,
+            manifestation_id,
+            reason,
+            attempt_count,
+            detail,
+        },
+    )
+    .await;
+}
+
 async fn finish(
     pool: &PgPool,
     config: &Config,
@@ -203,22 +228,25 @@ async fn finish(
 ) -> sqlx::Result<()> {
     // Emit the webhook BEFORE the DB bookkeeping write.  If the DB write
     // fails, the event still fires (a transient DB hiccup on the final
-    // update otherwise silently dropped the webhook forever).  The cost
-    // is that a DB failure followed by crash-recovery retry can emit the
-    // same terminal event twice; Step 12's real dispatcher must dedupe on
-    // event ID.  Tracked in UNK-98.
+    // update otherwise silently dropped the webhook forever).  A DB
+    // failure followed by crash-recovery retry re-fires the same terminal
+    // event; `events::dispatch` dedupes on the stable event id (UNK-98).
     match result {
         Ok(RunOutcome::Success {
             manifestation_id,
             reason,
             current_file_hash,
         }) => {
-            events::emit_writeback_complete(
+            dispatch_terminal(
+                pool,
+                id,
+                events::TerminalOutcome::Complete,
                 manifestation_id,
                 &reason,
                 attempt_count,
                 &current_file_hash,
-            );
+            )
+            .await;
             mark_complete(pool, id).await?;
         }
         Ok(RunOutcome::Skipped {
@@ -226,7 +254,16 @@ async fn finish(
             reason,
             skip_reason,
         }) => {
-            events::emit_writeback_failed(manifestation_id, &reason, attempt_count, &skip_reason);
+            dispatch_terminal(
+                pool,
+                id,
+                events::TerminalOutcome::Skipped,
+                manifestation_id,
+                &reason,
+                attempt_count,
+                &skip_reason,
+            )
+            .await;
             // Terminal skip (e.g. unsupported format): bypass retry path.
             mark_skipped(pool, id, &skip_reason).await?;
         }
@@ -235,7 +272,16 @@ async fn finish(
             reason,
             error,
         }) => {
-            events::emit_writeback_failed(manifestation_id, &reason, attempt_count, &error);
+            dispatch_terminal(
+                pool,
+                id,
+                events::TerminalOutcome::Failed,
+                manifestation_id,
+                &reason,
+                attempt_count,
+                &error,
+            )
+            .await;
             mark_failed(pool, id, attempt_count, config, Some(&error)).await?;
         }
         Err(e) => {
@@ -277,7 +323,12 @@ async fn finish(
                     Uuid::nil()
                 }
             };
-            events::emit_writeback_failed(mid, "unknown", attempt_count, &err_str);
+            let outcome = if is_job_not_found {
+                events::TerminalOutcome::Skipped
+            } else {
+                events::TerminalOutcome::Failed
+            };
+            dispatch_terminal(pool, id, outcome, mid, "unknown", attempt_count, &err_str).await;
 
             if is_job_not_found {
                 mark_skipped(pool, id, &err_str).await?;
@@ -977,6 +1028,85 @@ mod tests {
         .unwrap();
         assert_eq!(row.status, "failed");
         assert_eq!(row.error.as_deref(), Some("regression"));
+    }
+
+    /// Double-dispatch path (UNK-98): a DB failure on the `mark_*` UPDATE
+    /// followed by crash-recovery retry re-runs `finish` for a job whose
+    /// terminal event already fired.  The dispatcher must deliver exactly
+    /// once — `seen_at` is only written on delivery, so an unchanged
+    /// `seen_at` after the second `finish` proves the re-fire was deduped.
+    ///
+    /// Modelling note: this calls `finish` twice sequentially with both
+    /// calls fully succeeding, whereas the real crash shape leaves the job
+    /// row `pending` and re-claims it (the second `finish` then runs against
+    /// a non-`complete` row).  The property under test is identical either
+    /// way — the dedupe lookup keys only on the event id and never consults
+    /// `writeback_jobs` — so the sequential model exercises the same path.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn finish_double_dispatch_delivers_exactly_once(pool: PgPool) {
+        let app_pool = app_pool_for(&pool).await;
+        let ing_pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_fixture(&ing_pool, &marker).await;
+        let job_id = insert_job(&ing_pool, m_id, "metadata").await;
+
+        let outcome = || {
+            Ok(RunOutcome::Success {
+                manifestation_id: m_id,
+                reason: "metadata".into(),
+                current_file_hash: "abc123".into(),
+            })
+        };
+        let eid = events::event_id(job_id, events::TerminalOutcome::Complete);
+        let seen_at_for = |eid: String| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar!(
+                    "SELECT seen_at FROM webhook_event_dedupe WHERE event_id = $1",
+                    eid,
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+
+        finish(
+            &app_pool,
+            &test_config_with_max_attempts(3),
+            job_id,
+            1,
+            outcome(),
+        )
+        .await
+        .unwrap();
+        let first_seen_at = seen_at_for(eid.clone()).await;
+
+        // Simulated crash-recovery re-fire: the re-claim incremented
+        // attempt_count; same job + outcome → same event id.
+        finish(
+            &app_pool,
+            &test_config_with_max_attempts(3),
+            job_id,
+            2,
+            outcome(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            seen_at_for(eid.clone()).await,
+            first_seen_at,
+            "second finish must dedupe, not re-deliver (seen_at refreshes only on delivery)"
+        );
+        let n = sqlx::query_scalar!(
+            "SELECT count(*) AS \"n!\" FROM webhook_event_dedupe WHERE event_id = $1",
+            eid,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
     }
 
     /// RLS system-context policy: a writeback pool (which sets
