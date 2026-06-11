@@ -4,14 +4,14 @@
 //! transaction, `SELECT ... FOR UPDATE` on the owning entity, apply the change,
 //! and commit.
 
-use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, patch, post};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
@@ -39,48 +39,56 @@ use crate::state::AppState;
 /// Why: the row-level lock serialises concurrent reviewers against the
 /// same entity so accept/reject/revert can't race with each other or
 /// with re-enrichment writes that mutate the same metadata row.
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/v1/manifestations/{id}/metadata",
-            get(get_manifestation_metadata),
-        )
-        .route("/api/v1/works/{id}/metadata", get(get_work_metadata))
-        .route(
-            "/api/v1/manifestations/{id}/metadata/accept",
-            post(accept_manifestation),
-        )
-        .route(
-            "/api/v1/manifestations/{id}/metadata/reject",
-            post(reject_manifestation),
-        )
-        .route(
-            "/api/v1/manifestations/{id}/metadata/revert",
-            post(revert_manifestation),
-        )
-        .route(
-            "/api/v1/manifestations/{id}/metadata/lock",
-            post(lock_field),
-        )
-        .route(
-            "/api/v1/manifestations/{id}/metadata/unlock",
-            post(unlock_field),
-        )
-        .route("/api/v1/books/{id}/metadata", patch(update_book_metadata))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(get_manifestation_metadata))
+        .routes(routes!(get_work_metadata))
+        .routes(routes!(accept_manifestation))
+        .routes(routes!(reject_manifestation))
+        .routes(routes!(revert_manifestation))
+        .routes(routes!(lock_field))
+        .routes(routes!(unlock_field))
+        .routes(routes!(update_book_metadata))
 }
 
-#[derive(Debug, Serialize)]
+/// One `metadata_versions` row in the review queue view.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 struct MetadataRow {
+    /// Version row id — the handle for accept/reject/revert.
     id: Uuid,
+    /// Canonical field name (e.g. `title`, `isbn_13`).
     field_name: String,
+    /// Source that produced this value (e.g. `openlibrary`, `manual`).
     source: String,
+    /// Proposed value in raw JSON form.
     new_value: Value,
+    /// Review status (`pending`, `applied`, `rejected`, …).
     status: String,
+    /// Source-reported confidence in the value.
     confidence_score: f32,
+    /// How the source matched the manifestation (e.g. `isbn`, `title`).
     match_type: String,
+    /// How many enrichment passes observed this value.
     observation_count: i32,
 }
 
+/// `GET /api/v1/manifestations/{id}/metadata` — review queue for one
+/// manifestation, newest first.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/manifestations/{id}/metadata",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn get_manifestation_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -94,6 +102,23 @@ async fn get_manifestation_metadata(
     Ok(axum::Json(rows))
 }
 
+/// `GET /api/v1/works/{id}/metadata` — review queue across every
+/// manifestation of a work, newest first.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/works/{id}/metadata",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Work id")),
+    responses(
+        (status = 200, description = "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)", body = [MetadataRow]),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn get_work_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -173,24 +198,56 @@ async fn load_versions(
 
 // ── accept / reject / revert / lock ────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+/// Body for accept / reject: the targeted `metadata_versions` row.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct VersionPayload {
+    /// Metadata version row to act on.
     version_id: Uuid,
 }
 
-#[derive(Debug, Deserialize)]
+/// Body for revert.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct RevertPayload {
+    /// Canonical field to revert (e.g. `title`).
     field_name: String,
-    /// `null` clears the canonical pointer AND the canonical column.
+    /// Version to restore; `null` clears the canonical pointer AND the
+    /// canonical column.
     version_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+/// Body for lock / unlock.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct LockPayload {
+    /// Field to lock or unlock (e.g. `title`).
     field_name: String,
+    /// Entity the lock applies to: `work` or `manifestation`.
+    #[schema(example = "manifestation")]
     entity_type: String,
 }
 
+/// `POST /api/v1/manifestations/{id}/metadata/accept` — promote a pending
+/// metadata version to canonical.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the version row does not belong to the
+///   manifestation or is RLS-hidden.
+/// - [`AppError::Validation`] when the stored value fails field parsing.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/metadata/accept",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    request_body = VersionPayload,
+    responses(
+        (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn accept_manifestation(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -248,6 +305,27 @@ async fn accept_manifestation(
     Ok(StatusCode::OK)
 }
 
+/// `POST /api/v1/manifestations/{id}/metadata/reject` — mark a pending
+/// metadata version as rejected.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the version row does not belong to the
+///   manifestation or is RLS-hidden.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/metadata/reject",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    request_body = VersionPayload,
+    responses(
+        (status = 200, description = "Version marked rejected"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn reject_manifestation(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -282,6 +360,30 @@ async fn reject_manifestation(
     Ok(StatusCode::OK)
 }
 
+/// `POST /api/v1/manifestations/{id}/metadata/revert` — restore a prior
+/// version as canonical, or clear the field entirely.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the manifestation or version is missing
+///   or RLS-hidden.
+/// - [`AppError::Validation`] when clearing a non-clearable field (e.g.
+///   `title`) or the stored value fails parsing.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/metadata/revert",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    request_body = RevertPayload,
+    responses(
+        (status = 200, description = "Field reverted to the given version, or cleared when version_id is null"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation or version missing, or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Field cannot be cleared or stored value fails parsing", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn revert_manifestation(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -341,6 +443,27 @@ async fn revert_manifestation(
     Ok(StatusCode::OK)
 }
 
+/// `POST /api/v1/manifestations/{id}/metadata/lock` — lock a field
+/// against future enrichment writes.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::Validation`] when `entity_type` is not `work` /
+///   `manifestation`.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/metadata/lock",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    request_body = LockPayload,
+    responses(
+        (status = 201, description = "Lock recorded (idempotent)"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn lock_field(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -361,6 +484,29 @@ async fn lock_field(
     Ok(StatusCode::CREATED)
 }
 
+/// `POST /api/v1/manifestations/{id}/metadata/unlock` — remove a field
+/// lock.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when no matching lock exists.
+/// - [`AppError::Validation`] when `entity_type` is not `work` /
+///   `manifestation`.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/manifestations/{id}/metadata/unlock",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    request_body = LockPayload,
+    responses(
+        (status = 200, description = "Lock removed"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "No matching lock", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn unlock_field(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -647,29 +793,46 @@ async fn clear_field(
     clippy::option_option,
     reason = "RFC 7396 sparse-update encoding — outer Option distinguishes absent (None) from present-and-null (Some(None))"
 )]
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 struct UpdateMetadataFields {
+    /// New title. Absent = unchanged; `null` is rejected (canonical title
+    /// is NOT NULL).
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     title: Option<Option<String>>,
+    /// New description. Absent = unchanged; `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     description: Option<Option<String>>,
+    /// New language. Absent = unchanged; `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     language: Option<Option<String>>,
+    /// New publisher. Absent = unchanged; `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     publisher: Option<Option<String>>,
+    /// New publication date (`YYYY-MM-DD`). Absent = unchanged; `null`
+    /// clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     pub_date: Option<Option<String>>,
+    /// New ISBN-10. Absent = unchanged; `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     isbn_10: Option<Option<String>>,
+    /// New ISBN-13. Absent = unchanged; `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<String>)]
     isbn_13: Option<Option<String>>,
 }
 
 /// Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`
 /// wrapper keeps the door open for future top-level keys (eg. `tags`,
 /// `series_position`) without forcing a body-shape migration.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateMetadataRequest {
+    /// RFC 7396 sparse field set; at least one field must be populated.
     fields: UpdateMetadataFields,
 }
 
@@ -729,6 +892,20 @@ impl UpdateMetadataFields {
 ///   by RLS for the current user (existence-not-leaked).
 /// - [`AppError::Forbidden`] when the caller is a child account.
 /// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/books/{id}/metadata",
+    tag = "metadata",
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    request_body(content = UpdateMetadataRequest, description = "RFC 7396 JSON Merge Patch under a `fields` envelope: absent fields are unchanged, `null` clears (except `title`)"),
+    responses(
+        (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails)
+    )
+)]
 #[allow(clippy::too_many_lines)]
 async fn update_book_metadata(
     current_user: CurrentUser,

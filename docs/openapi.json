@@ -180,6 +180,84 @@
         }
       }
     },
+    "/api/v1/books/{id}/metadata": {
+      "patch": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
+        "description": "RFC 7396 JSON Merge Patch shape. For each touched field the handler\ninserts a `metadata_versions` row with `source = 'manual'` and then\neither promotes that row to canonical via [`apply_version`] (when a\nvalue is supplied) or clears the canonical column via [`clear_field`]\n(when the value is `null`). The pending AI/OPF drafts on the same\nfield stay `status = 'pending'` — the operator can revert to one of\nthem later.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, or when the operator tries\n  to clear `title` (canonical title is `NOT NULL` on `works`).\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "update_book_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "RFC 7396 JSON Merge Patch under a `fields` envelope: absent fields are unchanged, `null` clears (except `title`)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No populated fields, ISBN/date parse failure, or attempt to clear title",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dashboard/activity": {
       "get": {
         "tags": [
@@ -265,6 +343,633 @@
           },
           "403": {
             "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/enrichment/status": {
+      "get": {
+        "tags": [
+          "enrichment"
+        ],
+        "summary": "`GET /api/v1/enrichment/status` — aggregate queue counters over the\nmanifestations visible to the caller.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "description": "Per-status manifestation counts under the caller's RLS context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ingestion/scan": {
+      "post": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "`POST /api/v1/ingestion/scan` — synchronously scan the ingestion\ndirectory (admin only).",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] when the scan fails at the service layer.",
+        "operationId": "scan",
+        "responses": {
+          "200": {
+            "description": "Scan complete; per-outcome file counts. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/enrichment/dry-run": {
+      "post": {
+        "tags": [
+          "enrichment"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/enrichment/dry-run` — synchronous\npreview of what an enrichment pass would change. No side effects\nbeyond the source cache.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors or fan-out infrastructure\n  failure.",
+        "operationId": "dry_run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Diff of changes an enrichment pass would make; per-source failures are listed, not fatal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DryRunDiff"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/enrichment/trigger": {
+      "post": {
+        "tags": [
+          "enrichment"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the\nmanifestation for a fresh enrichment pass.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Enrichment state reset to pending; the background worker picks the manifestation up on its next poll"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/metadata": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`GET /api/v1/manifestations/{id}/metadata` — review queue for one\nmanifestation, newest first.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_manifestation_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/metadata/accept": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/metadata/accept` — promote a pending\nmetadata version to canonical.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the version row does not belong to the\n  manifestation or is RLS-hidden.\n- [`AppError::Validation`] when the stored value fails field parsing.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "accept_manifestation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Version promoted to canonical; accepted ISBN changes may re-match the work"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found for this manifestation, or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Stored value fails field parsing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/metadata/lock": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/metadata/lock` — lock a field\nagainst future enrichment writes.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Validation`] when `entity_type` is not `work` /\n  `manifestation`.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "lock_field",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Lock recorded (idempotent)"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown entity_type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/metadata/reject": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/metadata/reject` — mark a pending\nmetadata version as rejected.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the version row does not belong to the\n  manifestation or is RLS-hidden.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "reject_manifestation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Version marked rejected"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found for this manifestation, or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/metadata/revert": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/metadata/revert` — restore a prior\nversion as canonical, or clear the field entirely.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation or version is missing\n  or RLS-hidden.\n- [`AppError::Validation`] when clearing a non-clearable field (e.g.\n  `title`) or the stored value fails parsing.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "revert_manifestation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Field reverted to the given version, or cleared when version_id is null"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation or version missing, or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Field cannot be cleared or stored value fails parsing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manifestations/{id}/metadata/unlock": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`POST /api/v1/manifestations/{id}/metadata/unlock` — remove a field\nlock.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when no matching lock exists.\n- [`AppError::Validation`] when `entity_type` is not `work` /\n  `manifestation`.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "unlock_field",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Lock removed"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No matching lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown entity_type",
             "content": {
               "application/json": {
                 "schema": {
@@ -1542,6 +2247,63 @@
         }
       }
     },
+    "/api/v1/works/{id}/metadata": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`GET /api/v1/works/{id}/metadata` — review queue across every\nmanifestation of a work, newest first.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_work_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Work id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -1964,6 +2726,58 @@
           }
         }
       },
+      "DryRunDiff": {
+        "type": "object",
+        "description": "The result of a dry-run enrichment pass for a single manifestation.\n\nContains three mutually exclusive lists: changes that would be applied\nimmediately, changes that would be staged for review, and fields that\nare locked (silently skipped).  Source failures are surfaced separately\nso callers can distinguish data results from infrastructure issues.",
+        "required": [
+          "manifestation_id",
+          "work_id",
+          "would_apply",
+          "would_stage",
+          "locked",
+          "source_failures"
+        ],
+        "properties": {
+          "locked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field names that were skipped because a user lock is active."
+          },
+          "manifestation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Manifestation that was evaluated."
+          },
+          "source_failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceFailureSummary"
+            },
+            "description": "Sources that returned an error during this run."
+          },
+          "work_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Parent work of the manifestation."
+          },
+          "would_apply": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            },
+            "description": "Fields that would be promoted to canonical (one entry per field)."
+          },
+          "would_stage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldChange"
+            },
+            "description": "Fields that would be left as pending and require human review."
+          }
+        }
+      },
       "EnrichmentStatus": {
         "type": "string",
         "description": "Lifecycle state of metadata enrichment for a single manifestation.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Drift from\neither side surfaces as a decode error at the boundary, never as a\nsilently coerced unknown value.",
@@ -1974,6 +2788,35 @@
           "failed",
           "skipped"
         ]
+      },
+      "FieldChange": {
+        "type": "object",
+        "description": "One proposed change to a single field from a single source.",
+        "required": [
+          "field_name",
+          "source_id",
+          "new_value",
+          "quorum"
+        ],
+        "properties": {
+          "field_name": {
+            "type": "string",
+            "description": "Canonical field name (e.g. `\"title\"`, `\"isbn_13\"`)."
+          },
+          "new_value": {
+            "description": "The proposed new value in its raw `JSON` form."
+          },
+          "quorum": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of sources that reported the same value (quorum count).",
+            "minimum": 0
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Source that produced this value (e.g. `\"openlibrary\"`, `\"googlebooks\"`)."
+          }
+        }
       },
       "FormatBucket": {
         "type": "object",
@@ -2007,6 +2850,25 @@
           "failed",
           "skipped"
         ]
+      },
+      "LockPayload": {
+        "type": "object",
+        "description": "Body for lock / unlock.",
+        "required": [
+          "field_name",
+          "entity_type"
+        ],
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "description": "Entity the lock applies to: `work` or `manifestation`.",
+            "example": "manifestation"
+          },
+          "field_name": {
+            "type": "string",
+            "description": "Field to lock or unlock (e.g. `title`)."
+          }
+        }
       },
       "ManifestationFormat": {
         "type": "string",
@@ -2050,6 +2912,56 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "MetadataRow": {
+        "type": "object",
+        "description": "One `metadata_versions` row in the review queue view.",
+        "required": [
+          "id",
+          "field_name",
+          "source",
+          "new_value",
+          "status",
+          "confidence_score",
+          "match_type",
+          "observation_count"
+        ],
+        "properties": {
+          "confidence_score": {
+            "type": "number",
+            "format": "float",
+            "description": "Source-reported confidence in the value."
+          },
+          "field_name": {
+            "type": "string",
+            "description": "Canonical field name (e.g. `title`, `isbn_13`)."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Version row id — the handle for accept/reject/revert."
+          },
+          "match_type": {
+            "type": "string",
+            "description": "How the source matched the manifestation (e.g. `isbn`, `title`)."
+          },
+          "new_value": {
+            "description": "Proposed value in raw JSON form."
+          },
+          "observation_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many enrichment passes observed this value."
+          },
+          "source": {
+            "type": "string",
+            "description": "Source that produced this value (e.g. `openlibrary`, `manual`)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Review status (`pending`, `applied`, `rejected`, …)."
           }
         }
       },
@@ -2214,6 +3126,27 @@
           }
         }
       },
+      "RevertPayload": {
+        "type": "object",
+        "description": "Body for revert.",
+        "required": [
+          "field_name"
+        ],
+        "properties": {
+          "field_name": {
+            "type": "string",
+            "description": "Canonical field to revert (e.g. `title`)."
+          },
+          "version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Version to restore; `null` clears the canonical pointer AND the\ncanonical column."
+          }
+        }
+      },
       "Role": {
         "type": "string",
         "description": "Authorization role assigned to a [`crate::models::user::User`].\n\nDrives `auth::middleware::CurrentUser::require_admin` and\n`auth::middleware::CurrentUser::require_not_child`; renaming a variant\ncompile-errors at every consumer, eliminating the silent-lockout\nhazard documented in UNK-108.",
@@ -2222,6 +3155,32 @@
           "adult",
           "child"
         ]
+      },
+      "ScanResponse": {
+        "type": "object",
+        "description": "Per-outcome file counts for one synchronous scan pass.",
+        "required": [
+          "processed",
+          "failed",
+          "skipped"
+        ],
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "description": "Files that errored during ingestion.",
+            "minimum": 0
+          },
+          "processed": {
+            "type": "integer",
+            "description": "Files ingested successfully.",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "description": "Files skipped (already ingested or unsupported).",
+            "minimum": 0
+          }
+        }
       },
       "SearchHit": {
         "type": "object",
@@ -2677,6 +3636,24 @@
           "author"
         ]
       },
+      "SourceFailureSummary": {
+        "type": "object",
+        "description": "A brief summary of a source-level failure during a dry-run pass.",
+        "required": [
+          "source_id",
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable error description."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Source that failed (e.g. `\"hardcover\"`)."
+          }
+        }
+      },
       "StatsResponse": {
         "type": "object",
         "description": "Response shape for `GET /api/v1/dashboard/stats`.",
@@ -2753,6 +3730,44 @@
           }
         }
       },
+      "StatusSummary": {
+        "type": "object",
+        "description": "Aggregate per-status manifestation counts for the enrichment queue.",
+        "required": [
+          "pending",
+          "in_progress",
+          "complete",
+          "failed",
+          "skipped"
+        ],
+        "properties": {
+          "complete": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Manifestations enriched successfully."
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Manifestations whose last attempt failed (retryable)."
+          },
+          "in_progress": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Manifestations currently being enriched."
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Manifestations awaiting enrichment."
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Manifestations skipped terminally."
+          }
+        }
+      },
       "TokenListItem": {
         "type": "object",
         "description": "One active device token in the list view. The token plaintext and its\nstored hash are never part of this shape.",
@@ -2796,6 +3811,74 @@
           "is_child": {
             "type": "boolean",
             "description": "New child status for the target user."
+          }
+        }
+      },
+      "UpdateMetadataFields": {
+        "type": "object",
+        "description": "Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.\n\nEncodes RFC 7396 JSON Merge Patch semantics via\n`serde_with::rust::double_option` (per\n`adr/2026-05-22-backend-aux-crates.md`):\n* absent key → `None`         → leave field unchanged.\n* key = `null` → `Some(None)` → clear the canonical value.\n* key = value → `Some(Some(v))` → set the canonical value.\n\n`cover` is not yet operator-editable from this endpoint — cover\npromotion happens via a separate file-upload path.",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New description. Absent = unchanged; `null` clears."
+          },
+          "isbn_10": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New ISBN-10. Absent = unchanged; `null` clears."
+          },
+          "isbn_13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New ISBN-13. Absent = unchanged; `null` clears."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New language. Absent = unchanged; `null` clears."
+          },
+          "pub_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New publication date (`YYYY-MM-DD`). Absent = unchanged; `null`\nclears."
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New publisher. Absent = unchanged; `null` clears."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New title. Absent = unchanged; `null` is rejected (canonical title\nis NOT NULL)."
+          }
+        }
+      },
+      "UpdateMetadataRequest": {
+        "type": "object",
+        "description": "Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`\nwrapper keeps the door open for future top-level keys (eg. `tags`,\n`series_position`) without forcing a body-shape migration.",
+        "required": [
+          "fields"
+        ],
+        "properties": {
+          "fields": {
+            "$ref": "#/components/schemas/UpdateMetadataFields",
+            "description": "RFC 7396 sparse field set; at least one field must be populated."
           }
         }
       },
@@ -3049,6 +4132,20 @@
           "failed"
         ]
       },
+      "VersionPayload": {
+        "type": "object",
+        "description": "Body for accept / reject: the targeted `metadata_versions` row.",
+        "required": [
+          "version_id"
+        ],
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Metadata version row to act on."
+          }
+        }
+      },
       "WorkDetail": {
         "type": "object",
         "description": "`/api/v1/works/{id}` response. Lists every manifestation the user\ncan see for a given work, grouped under the work-level prose.",
@@ -3215,6 +4312,18 @@
     {
       "name": "tokens",
       "description": "Per-user device tokens for OPDS / Basic-auth clients."
+    },
+    {
+      "name": "metadata",
+      "description": "Metadata review queue: accept / reject / revert / lock and manual edits."
+    },
+    {
+      "name": "enrichment",
+      "description": "Enrichment pipeline controls and queue status."
+    },
+    {
+      "name": "ingestion",
+      "description": "Admin-only library-scan trigger."
     }
   ]
 }
