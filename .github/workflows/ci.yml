@@ -715,8 +715,10 @@ jobs:
       - name: Install checkov 3.3.0
         run: pipx install checkov==3.3.0
 
+      # --config-file makes the suppression registry explicit; every skip
+      # in .checkov.yaml carries a justification and lift condition.
       - name: Scan OpenAPI spec (gating)
-        run: checkov -f docs/openapi.json --framework openapi --compact
+        run: checkov -f docs/openapi.json --framework openapi --compact --config-file .checkov.yaml
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
