@@ -37,6 +37,7 @@ use std::str::FromStr;
     serde::Deserialize,
     sqlx::Type,
     schemars::JsonSchema,
+    utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "manifestation_format", rename_all = "lowercase")]

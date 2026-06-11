@@ -14,7 +14,7 @@ use crate::models::manifestation_format::ManifestationFormat;
 /// Fields map 1:1 to the singleton row columns. The struct is held in
 /// `AppState` behind an `Arc<RwLock<Settings>>` and refreshed via
 /// LISTEN/NOTIFY + 60-second fallback poll.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Settings {
     /// Whether the enrichment pipeline is active.
     pub enrichment_enabled: bool,
@@ -49,8 +49,14 @@ pub struct Settings {
     pub opds_page_size: i32,
 
     /// Ranked format preference for ingestion (`["epub","pdf",…]`).
+    // Raw TEXT[] column (DB CHECK-validated); documented as the typed enum so
+    // read and write schemas agree — see `UpdateSettings.format_priority`.
+    #[schema(value_type = Vec<ManifestationFormat>)]
     pub format_priority: Vec<String>,
     /// Post-ingestion cleanup mode (`all`, `ingested`, or `none`).
+    // Raw TEXT column (DB CHECK-validated); documented as the typed enum so
+    // read and write schemas agree — see `UpdateSettings.cleanup_mode`.
+    #[schema(value_type = CleanupMode)]
     pub cleanup_mode: String,
 
     /// `OpenLibrary` API base URL.
@@ -110,7 +116,7 @@ impl Settings {
 /// `ManifestationFormat` are validated at deserialization time by serde;
 /// collection invariants (non-empty, no duplicates) are checked by
 /// [`validate_update`].
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateSettings {
     /// Whether the enrichment pipeline is active.

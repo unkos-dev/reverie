@@ -218,7 +218,15 @@ pub struct Config {
 /// rather than a silent fall-through — the same property the `Command` enum
 /// relies on.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+    utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum CleanupMode {

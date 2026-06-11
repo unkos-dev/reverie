@@ -383,6 +383,1111 @@
         }
       }
     },
+    "/api/v1/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "`GET /api/v1/settings` — return current persisted settings (admin only).",
+        "description": "Reads directly from the database so the response always reflects\nthe latest persisted state (admin endpoint, single-row read,\ncalled infrequently). Workers use the `RwLock` cache for zero-DB\nper-request reads.\n\nAlso includes `last_successful_reload_at` from the background\nLISTEN/NOTIFY task so operators can verify the live-reload\nmechanism is healthy.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "Current persisted settings plus reload health. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "`PUT /api/v1/settings` — partial update of settings (admin only).",
+        "description": "Accepts RFC 7396 JSON Merge Patch: absent fields are unchanged.\nValidates field values before persisting. Updates the local\n`RwLock` cache immediately (no NOTIFY round-trip for same-process\nreads). The DB trigger also fires `NOTIFY settings_changed` to\npropagate changes to other connected processes.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Validation`] when the body is empty or contains\n  invalid field values.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "put_settings",
+        "requestBody": {
+          "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty patch, malformed body, or invalid field values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shelves": {
+      "get": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`GET /api/v1/shelves` — list the caller's shelves.",
+        "description": "# Errors\n- [`AppError::Internal`] on database errors.",
+        "operationId": "list_shelves",
+        "responses": {
+          "200": {
+            "description": "The caller's shelves, system shelves first then by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Shelf"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`POST /api/v1/shelves` — create a new (non-system) shelf for the\ncaller.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Validation`] when the body is missing or `name` is\n  empty / whitespace-only.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "create_shelf",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShelfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Shelf created",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shelf"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing body or empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shelves/{id}": {
+      "get": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items.",
+        "description": "# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_shelf_with_items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shelf identity plus ordered items",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShelfWithItems"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shelf missing or owned by another user (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`DELETE /api/v1/shelves/{id}` — delete a non-system shelf.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the shelf is missing / not owned by\n  the caller.\n- [`AppError::SystemShelfImmutable`] when `is_system = TRUE`.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "delete_shelf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Shelf deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shelf missing or owned by another user (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "System shelves cannot be deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`PATCH /api/v1/shelves/{id}` — rename a non-system shelf owned by\nthe caller.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the shelf does not exist or belongs\n  to another user (existence-not-leaked).\n- [`AppError::SystemShelfImmutable`] (409) when the target shelf\n  has `is_system = TRUE`.\n- [`AppError::Validation`] when `name` is missing or\n  whitespace-only.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "rename_shelf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameShelfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed shelf",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shelf"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shelf missing or owned by another user (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "System shelves cannot be renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing body or empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shelves/{id}/items": {
+      "put": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`PUT /api/v1/shelves/{id}/items` — transactionally rewrite\n`shelf_items.position` based on the supplied order.",
+        "description": "Optimistic-concurrency: requires `If-Match: \"<updated_at>\"`\nheader matching the shelf's current `updated_at`; otherwise 412.\n\n# Errors\n- [`AppError::IfMatchRequired`] (428) when the header is absent.\n- [`AppError::Validation`] when the header is malformed or the\n  posted items list contains UUIDs that are not currently on the\n  shelf.\n- [`AppError::NotFound`] when the shelf is missing / not owned.\n- [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "reorder_shelf_items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Strong entity-tag from a prior shelf response; weak validators (W/\"...\") are rejected",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderItemsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Positions rewritten; shelf ETag bumped",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shelf missing or owned by another user (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match does not match the shelf's current updated_at",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed If-Match, or items list does not exactly cover the shelf",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header absent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`POST /api/v1/shelves/{id}/items` — append a manifestation at\n`max(position) + 1`. Bumps the shelf's `updated_at` (`ETag`).",
+        "description": "# Errors\n- [`AppError::Validation`] when the request body is missing,\n  malformed, or lacks the `manifestation_id` field.\n- [`AppError::NotFound`] when the shelf is missing / not owned, OR\n  when the manifestation is not visible to the caller (verified\n  via an RLS-scoped existence probe to prevent shelf-existence\n  probing of arbitrary manifestation ids).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "add_shelf_item",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shelf missing / not owned, or manifestation not visible to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing or malformed body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shelves/{id}/items/{manifestation_id}": {
+      "delete": {
+        "tags": [
+          "shelves"
+        ],
+        "summary": "`DELETE /api/v1/shelves/{id}/items/{manifestation_id}` — remove a\nshelf item. Bumps the shelf's `updated_at` (`ETag`).",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing / not owned by\n  the caller, OR when the item is not on the shelf (the second\n  case prevents silent `ETag` drift from a no-op delete: bumping\n  `updated_at` on zero `rows_affected` would invalidate a\n  correctly-held client `If-Match` for the next reorder).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "remove_shelf_item",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "manifestation_id",
+            "in": "path",
+            "description": "Manifestation to remove",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Item removed; shelf ETag bumped",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Shelf missing / not owned, or item not on the shelf",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tokens": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "`GET /api/v1/tokens` — list the caller's active (non-revoked) tokens.",
+        "description": "# Errors\n- [`AppError::Internal`] on database errors.",
+        "operationId": "list_tokens",
+        "responses": {
+          "200": {
+            "description": "The caller's active device tokens, hash and plaintext elided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TokenListItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "`POST /api/v1/tokens` — issue a new device token for the caller.",
+        "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, or the caller already has 10 active tokens.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "create_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Token created. The `token` field is the plaintext, returned exactly once — only its SHA-256 hash is persisted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Name empty / longer than 255 characters after trim, or the per-user cap of 10 active tokens is reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tokens/{id}": {
+      "delete": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "`DELETE /api/v1/tokens/{id}` — revoke one of the caller's tokens.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the id does not exist, belongs to another\n  user, or is already revoked (ownership is not leaked).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "revoke_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Token row id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Token revoked"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token does not exist, belongs to another user, or is already revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`GET /api/v1/users` — list all users (admin only).",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "list_users",
+        "responses": {
+          "200": {
+            "description": "All users, oldest first. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}": {
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`PATCH /api/v1/users/{id}` — update `display_name` / `email` (admin only).",
+        "description": "Does not bump `session_version`: neither `email` nor `display_name` gates\naccess (login identity is the OIDC `sub`, not email; see module-level\nsession-invalidation policy).\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] when `display_name` is null or empty, when\n  `email` is not a valid RFC 5322 addr-spec (display-name and domain-literal\n  forms are rejected), or when `email` is already in use by another user.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "update_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user. Does not invalidate the target's sessions (neither field gates access). Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Null/empty display_name, malformed email, or email already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/child-status": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`PUT /api/v1/users/{id}/child-status` — toggle child status (admin only).",
+        "description": "When `is_child` is set to `true`, `role` is simultaneously set to\n`'child'` in the same transaction to satisfy `chk_child_role_sync`.\nWhen `is_child` is set to `false`, `role` is reverted to `'adult'` only\nif the current role is `'child'`; other roles (e.g. `'admin'`) are left\nunchanged to prevent privilege escalation through the child-status toggle.\n\nBumps `session_version` — child/adult visibility rules differ under\nRLS, so existing sessions must re-evaluate.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] with detail \"would leave zero admins\"\n  when marking an admin as child would remove the last admin.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "update_child_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChildStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user. Enabling child status also sets role to `child`; disabling reverts `child` to `adult` (other roles unchanged). The target's active sessions are invalidated. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Marking the last admin as child would leave zero admins, or the request body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/role": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`PUT /api/v1/users/{id}/role` — change a user's role (admin only).",
+        "description": "Last-admin protection: acquires `FOR UPDATE` on all admin rows\nbefore the demotion check to prevent TOCTOU races.\n\nBumps `session_version` for the target user in the same transaction\nso their active sessions are invalidated.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] with detail \"would leave zero admins\"\n  when the demotion would remove the last admin.\n- [`AppError::Validation`] with message \"cannot set role to child without\n  enabling child status first\" when `role = child` on an `is_child = false`\n  user, or \"cannot change role from child without disabling child status\n  first\" when setting a non-child role on an `is_child = true` user.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "update_role",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user. The target's active sessions are invalidated. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/works/{id}": {
       "get": {
         "tags": [
@@ -503,6 +1608,20 @@
             "items": {
               "$ref": "#/components/schemas/BatchRow"
             }
+          }
+        }
+      },
+      "AddItemRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/shelves/{id}/items`.",
+        "required": [
+          "manifestation_id"
+        ],
+        "properties": {
+          "manifestation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Manifestation to append; must be visible to the caller."
           }
         }
       },
@@ -787,6 +1906,64 @@
           }
         }
       },
+      "CleanupMode": {
+        "type": "string",
+        "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string —\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through — the same property the `Command` enum\nrelies on.",
+        "enum": [
+          "all",
+          "ingested",
+          "none"
+        ]
+      },
+      "CreateShelfRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/shelves`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Shelf display name (non-empty after trim)."
+          }
+        }
+      },
+      "CreateTokenRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "User-supplied label for the device (1-255 characters after trim).",
+            "example": "My Kindle"
+          }
+        }
+      },
+      "CreateTokenResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "token"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Token row id — the handle for later revocation."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label the token was created with (trimmed)."
+          },
+          "token": {
+            "type": "string",
+            "description": "Token plaintext. Returned exactly once, here; only its SHA-256 hash\nis persisted, so the plaintext cannot be recovered later."
+          }
+        }
+      },
       "EnrichmentStatus": {
         "type": "string",
         "description": "Lifecycle state of metadata enrichment for a single manifestation.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Drift from\neither side surfaces as a decode error at the boundary, never as a\nsilently coerced unknown value.",
@@ -829,6 +2006,18 @@
           "complete",
           "failed",
           "skipped"
+        ]
+      },
+      "ManifestationFormat": {
+        "type": "string",
+        "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_FORMAT_PRIORITY` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
+        "enum": [
+          "epub",
+          "pdf",
+          "mobi",
+          "azw3",
+          "cbz",
+          "cbr"
         ]
       },
       "MetadataCoverage": {
@@ -974,6 +2163,65 @@
             "example": "https://reverie.example/probs/not-found"
           }
         }
+      },
+      "PutSettingsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Settings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "restart_required"
+            ],
+            "properties": {
+              "restart_required": {
+                "type": "boolean",
+                "description": "`true` when the patch touched at least one field that only takes\neffect after a process restart."
+              }
+            }
+          }
+        ],
+        "description": "Response shape for `PUT /api/v1/settings`."
+      },
+      "RenameShelfRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /api/v1/shelves/{id}`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New shelf display name (non-empty after trim)."
+          }
+        }
+      },
+      "ReorderItemsRequest": {
+        "type": "object",
+        "description": "Body for `PUT /api/v1/shelves/{id}/items` — full ordered manifestation list.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Complete new ordering: every manifestation currently on the shelf,\nexactly once. Partial reorders are rejected."
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "description": "Authorization role assigned to a [`crate::models::user::User`].\n\nDrives `auth::middleware::CurrentUser::require_admin` and\n`auth::middleware::CurrentUser::require_not_child`; renaming a variant\ncompile-errors at every consumer, eliminating the silent-lockout\nhazard documented in UNK-108.",
+        "enum": [
+          "admin",
+          "adult",
+          "child"
+        ]
       },
       "SearchHit": {
         "type": "object",
@@ -1154,6 +2402,272 @@
           }
         }
       },
+      "Settings": {
+        "type": "object",
+        "description": "Runtime-tunable settings loaded from the `settings` table.\n\nFields map 1:1 to the singleton row columns. The struct is held in\n`AppState` behind an `Arc<RwLock<Settings>>` and refreshed via\nLISTEN/NOTIFY + 60-second fallback poll.",
+        "required": [
+          "enrichment_enabled",
+          "enrichment_concurrency",
+          "enrichment_poll_idle_secs",
+          "enrichment_fetch_budget_secs",
+          "cover_max_bytes",
+          "cover_download_timeout_secs",
+          "cover_min_long_edge_px",
+          "cover_redirect_limit",
+          "writeback_enabled",
+          "writeback_concurrency",
+          "writeback_poll_idle_secs",
+          "writeback_max_attempts",
+          "opds_enabled",
+          "opds_page_size",
+          "format_priority",
+          "cleanup_mode",
+          "openlibrary_base_url",
+          "googlebooks_base_url",
+          "hardcover_base_url",
+          "updated_at"
+        ],
+        "properties": {
+          "cleanup_mode": {
+            "$ref": "#/components/schemas/CleanupMode",
+            "description": "Post-ingestion cleanup mode (`all`, `ingested`, or `none`)."
+          },
+          "cover_download_timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Cover download timeout in seconds."
+          },
+          "cover_max_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum cover image size in bytes."
+          },
+          "cover_min_long_edge_px": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Minimum cover long-edge resolution in pixels."
+          },
+          "cover_redirect_limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum HTTP redirects when fetching covers."
+          },
+          "enrichment_concurrency": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum concurrent enrichment workers (1–10)."
+          },
+          "enrichment_enabled": {
+            "type": "boolean",
+            "description": "Whether the enrichment pipeline is active."
+          },
+          "enrichment_fetch_budget_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Per-source HTTP fetch budget in seconds."
+          },
+          "enrichment_poll_idle_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Seconds the enrichment poller sleeps when the queue is empty."
+          },
+          "format_priority": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManifestationFormat"
+            },
+            "description": "Ranked format preference for ingestion (`[\"epub\",\"pdf\",…]`)."
+          },
+          "googlebooks_base_url": {
+            "type": "string",
+            "description": "Google Books API base URL."
+          },
+          "hardcover_base_url": {
+            "type": "string",
+            "description": "Hardcover `GraphQL` API base URL."
+          },
+          "opds_enabled": {
+            "type": "boolean",
+            "description": "Whether the OPDS catalogue is mounted."
+          },
+          "opds_page_size": {
+            "type": "integer",
+            "format": "int32",
+            "description": "OPDS feed page size (1–500)."
+          },
+          "openlibrary_base_url": {
+            "type": "string",
+            "description": "`OpenLibrary` API base URL."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "DB-assigned (`now()` on every UPDATE); not operator-settable."
+          },
+          "writeback_concurrency": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum concurrent writeback workers (1–10)."
+          },
+          "writeback_enabled": {
+            "type": "boolean",
+            "description": "Whether the writeback worker is active."
+          },
+          "writeback_max_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum writeback retry attempts per job."
+          },
+          "writeback_poll_idle_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Seconds the writeback poller sleeps when the queue is empty."
+          }
+        }
+      },
+      "SettingsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Settings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "restart_required_fields"
+            ],
+            "properties": {
+              "last_successful_reload_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "Timestamp of the last successful LISTEN/NOTIFY settings reload in\nthis process; `null` until the first reload."
+              },
+              "restart_required_fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Settings fields whose changes only take effect after a process\nrestart."
+              }
+            }
+          }
+        ],
+        "description": "Response shape for `GET /api/v1/settings`."
+      },
+      "Shelf": {
+        "type": "object",
+        "description": "One shelf in the shelves-list response, plus the read shape for\ncreate/rename round-trips.",
+        "required": [
+          "id",
+          "name",
+          "is_system",
+          "created_at",
+          "updated_at",
+          "item_count"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`shelves.created_at`."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`shelves.id`."
+          },
+          "is_system": {
+            "type": "boolean",
+            "description": "`shelves.is_system` — `true` for backend-managed shelves whose\nrow cannot be renamed or deleted (409 `system-shelf-immutable`\non the mutating handlers)."
+          },
+          "item_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Count of `shelf_items` rows on this shelf. Computed inline via\na correlated scalar subquery on the list endpoint and surfaces\nin the sidebar without a follow-up request per shelf."
+          },
+          "name": {
+            "type": "string",
+            "description": "`shelves.name` (display)."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`shelves.updated_at`. Doubles as the `ETag` value the client\nechoes on `If-Match` for the reorder endpoint."
+          }
+        }
+      },
+      "ShelfItem": {
+        "type": "object",
+        "description": "One row of the shelf-items list (`GET /api/v1/shelves/{id}`).\n\nCarries the position so the frontend can render in stored order\nand round-trip back as `PUT /api/v1/shelves/{id}/items` with the\nre-arranged list.",
+        "required": [
+          "manifestation_id",
+          "position",
+          "added_at"
+        ],
+        "properties": {
+          "added_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`shelf_items.added_at`."
+          },
+          "manifestation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`shelf_items.manifestation_id`."
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`shelf_items.position`. Caller echoes the ordering when sending\nthe reorder PUT."
+          }
+        }
+      },
+      "ShelfWithItems": {
+        "type": "object",
+        "description": "`GET /api/v1/shelves/{id}` response: shelf identity + ordered items.",
+        "required": [
+          "id",
+          "name",
+          "is_system",
+          "created_at",
+          "updated_at",
+          "items"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`shelves.created_at`."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "`shelves.id`."
+          },
+          "is_system": {
+            "type": "boolean",
+            "description": "`shelves.is_system`."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShelfItem"
+            },
+            "description": "Items ordered by `shelf_items.position` ASC, `added_at` ASC\nfor tiebreaking determinism."
+          },
+          "name": {
+            "type": "string",
+            "description": "`shelves.name`."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`shelves.updated_at` — the `ETag` value."
+          }
+        }
+      },
       "SortMode": {
         "type": "string",
         "description": "Sort axis selectable via `?sort=...` on `/api/v1/books`.",
@@ -1236,6 +2750,288 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "TokenListItem": {
+        "type": "object",
+        "description": "One active device token in the list view. The token plaintext and its\nstored hash are never part of this shape.",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Token creation timestamp."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Token row id."
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Timestamp of the last successful auth with this token; `null` if\nthe token has never been used."
+          },
+          "name": {
+            "type": "string",
+            "description": "User-supplied label."
+          }
+        }
+      },
+      "UpdateChildStatusRequest": {
+        "type": "object",
+        "description": "Body for `PUT /api/v1/users/{id}/child-status`.",
+        "required": [
+          "is_child"
+        ],
+        "properties": {
+          "is_child": {
+            "type": "boolean",
+            "description": "New child status for the target user."
+          }
+        }
+      },
+      "UpdateRoleRequest": {
+        "type": "object",
+        "description": "Body for `PUT /api/v1/users/{id}/role`.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "New role for the target user."
+          }
+        }
+      },
+      "UpdateSettings": {
+        "type": "object",
+        "description": "Partial update request for `PUT /api/v1/settings`.\n\nAll fields optional — absent fields are left unchanged (JSON Merge\nPatch semantics per RFC 7396). `CleanupMode` and\n`ManifestationFormat` are validated at deserialization time by serde;\ncollection invariants (non-empty, no duplicates) are checked by\n[`validate_update`].",
+        "properties": {
+          "cleanup_mode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CleanupMode",
+                "description": "Post-ingestion cleanup mode."
+              }
+            ]
+          },
+          "cover_download_timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Cover download timeout in seconds."
+          },
+          "cover_max_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Maximum cover image size in bytes."
+          },
+          "cover_min_long_edge_px": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Minimum cover long-edge resolution in pixels."
+          },
+          "cover_redirect_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Maximum HTTP redirects when fetching covers."
+          },
+          "enrichment_concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Maximum concurrent enrichment workers (1–10)."
+          },
+          "enrichment_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the enrichment pipeline is active."
+          },
+          "enrichment_fetch_budget_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Per-source HTTP fetch budget in seconds."
+          },
+          "enrichment_poll_idle_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Seconds the enrichment poller sleeps when the queue is empty."
+          },
+          "format_priority": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManifestationFormat"
+            },
+            "description": "Ranked format preference for ingestion."
+          },
+          "googlebooks_base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google Books API base URL."
+          },
+          "hardcover_base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Hardcover `GraphQL` API base URL."
+          },
+          "opds_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the OPDS catalogue is mounted."
+          },
+          "opds_page_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "OPDS feed page size (1–500)."
+          },
+          "openlibrary_base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`OpenLibrary` API base URL."
+          },
+          "writeback_concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Maximum concurrent writeback workers (1–10)."
+          },
+          "writeback_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the writeback worker is active."
+          },
+          "writeback_max_attempts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Maximum writeback retry attempts per job."
+          },
+          "writeback_poll_idle_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Seconds the writeback poller sleeps when the queue is empty."
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /api/v1/users/{id}`.\n\nRFC 7396 JSON Merge Patch: absent keys are untouched; explicit\n`null` on `email` clears; `null` on `display_name` is rejected\n(NOT NULL column).",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "New display name. Absent = unchanged; explicit `null` is rejected\n(NOT NULL column)."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`\nclears the stored address."
+          }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "description": "Wire-format user row returned by list and mutation endpoints.",
+        "required": [
+          "id",
+          "display_name",
+          "role",
+          "is_child",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Row creation timestamp."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable display name."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Email address; `null` when the user has none on file."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "User id."
+          },
+          "is_child": {
+            "type": "boolean",
+            "description": "Whether child content-visibility rules apply to this user."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Access-control role."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last mutation timestamp."
           }
         }
       },
@@ -1400,6 +3196,22 @@
     {
       "name": "dashboard",
       "description": "Admin-only library-health aggregates."
+    },
+    {
+      "name": "shelves",
+      "description": "User-scoped curation shelves and their ordered items."
+    },
+    {
+      "name": "users",
+      "description": "Admin-only user management."
+    },
+    {
+      "name": "settings",
+      "description": "Admin-only runtime settings."
+    },
+    {
+      "name": "tokens",
+      "description": "Per-user device tokens for OPDS / Basic-auth clients."
     }
   ]
 }
