@@ -7,15 +7,15 @@
 
 use std::path::PathBuf;
 
-use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::routing::get;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::basic_only::BasicOnly;
@@ -26,10 +26,34 @@ use crate::state::AppState;
 use super::feed::EPUB_MIME;
 
 /// Build the OPDS download router.
-pub fn router() -> Router<AppState> {
-    Router::new().route("/opds/books/{id}/file", get(download_epub))
+pub fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(download_epub))
 }
 
+/// `GET /opds/books/{id}/file` — streamed EPUB download. The response
+/// carries an RFC 6266 `Content-Disposition: attachment` header whose
+/// filename is derived from the work title (ASCII fallback plus RFC 5987
+/// UTF-8 form).
+///
+/// # Errors
+/// - [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,
+///   or its file is gone from disk.
+/// - [`AppError::Forbidden`] when the on-disk path escapes the configured
+///   library root (canonicalisation guard).
+/// - [`AppError::Internal`] on database or file IO errors.
+#[utoipa::path(
+    get,
+    path = "/opds/books/{id}/file",
+    tag = "opds",
+    security(("opds_basic" = [])),
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "EPUB byte stream; Content-Disposition: attachment with a title-derived filename", content_type = "application/epub+zip"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 403, description = "File path escapes the library root", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing, RLS-hidden, or file absent on disk", body = crate::openapi::ProblemDetails)
+    )
+)]
 async fn download_epub(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,

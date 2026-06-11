@@ -7,11 +7,10 @@
 //! cannot be served without being documented.
 
 use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
+use crate::openapi::ProblemDetails;
 use crate::state::AppState;
 
 /// Build the `/health{,/ready}` router as an [`OpenApiRouter`] so each handler's
@@ -41,7 +40,8 @@ pub async fn health() -> &'static str {
 }
 
 /// Readiness probe: pings the application pool with `SELECT 1` and returns
-/// `503` while the database is unreachable so orchestrators withhold traffic.
+/// `503` with an RFC 9457 body while the database is unreachable so
+/// orchestrators withhold traffic.
 #[utoipa::path(
     get,
     path = "/health/ready",
@@ -51,19 +51,50 @@ pub async fn health() -> &'static str {
     security(()),
     responses(
         (status = 200, description = "Ready — database reachable", body = String, content_type = "text/plain"),
-        // No body at runtime: the handler returns a bare 503 (empty body). The
-        // shared ProblemDetails error envelope is documented as a component and
-        // wired to the data routes that actually emit it in phase 2 (UNK-376).
-        (status = 503, description = "Database unreachable")
+        (status = 503, description = "Database unreachable", body = ProblemDetails)
     )
 )]
-pub async fn ready(State(state): State<AppState>) -> Result<impl IntoResponse, StatusCode> {
+pub async fn ready(State(state): State<AppState>) -> Result<&'static str, ProblemDetails> {
     sqlx::query_scalar!("SELECT 1 AS \"one!: i32\"")
         .fetch_one(&state.pool)
         .await
         .map_err(|e| {
             tracing::warn!(error = ?e, "readiness probe DB check failed");
-            StatusCode::SERVICE_UNAVAILABLE
+            // `about:blank` + reason-phrase title per RFC 9457 §4.2.1: the
+            // semantics are fully carried by the 503 status, so no
+            // Reverie-specific problem type is registered for it.
+            ProblemDetails {
+                r#type: "about:blank".to_owned(),
+                title: "Service Unavailable".to_owned(),
+                status: 503,
+                detail: "Database unreachable.".to_owned(),
+                instance: None,
+            }
         })?;
     Ok("ok")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::test_server;
+
+    #[tokio::test]
+    async fn ready_returns_503_problem_when_database_unreachable() {
+        let server = test_server();
+        let response = server.get("/health/ready").await;
+        response.assert_status(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/problem+json"),
+        );
+        let json: serde_json::Value = response.json();
+        assert_eq!(json["type"], "about:blank");
+        assert_eq!(json["title"], "Service Unavailable");
+        assert_eq!(json["status"], 503);
+        assert_eq!(json["detail"], "Database unreachable.");
+        assert_eq!(json["instance"], "/health/ready");
+    }
 }

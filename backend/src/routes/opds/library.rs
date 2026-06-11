@@ -8,11 +8,11 @@ use std::collections::HashMap;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
 use serde::Deserialize;
-use utoipa_axum::router::OpenApiRouter;
-use utoipa_axum::routes;
 use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
 use url::Url;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::basic_only::BasicOnly;

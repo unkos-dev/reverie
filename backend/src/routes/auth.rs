@@ -5,15 +5,15 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::{IntoResponse, Redirect};
 use axum_extra::extract::cookie::CookieJar;
-use utoipa_axum::router::OpenApiRouter;
-use utoipa_axum::routes;
-use uuid::Uuid;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use openidconnect::core::CoreResponseType;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, CsrfToken, Nonce, PkceCodeChallenge, PkceCodeVerifier,
     Scope, TokenResponse,
 };
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
+use uuid::Uuid;
 
 use tower_sessions::Session;
 
@@ -43,9 +43,9 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// after the user authenticates.
 #[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct CallbackParams {
-    /// Authorization code minted by the IdP.
+    /// Authorization code minted by the `IdP`.
     code: String,
-    /// OIDC anti-forgery state echoed back by the IdP; must match the
+    /// OIDC anti-forgery state echoed back by the `IdP`; must match the
     /// value `/auth/login` stored in the session.
     state: String,
 }

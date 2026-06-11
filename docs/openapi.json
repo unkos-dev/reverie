@@ -180,6 +180,100 @@
         }
       }
     },
+    "/api/v1/books/{id}/cover": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "`GET /api/v1/books/{id}/cover` — full-size cover for the web UI.",
+        "description": "# Errors\nSee [`opds_cover`].",
+        "operationId": "api_cover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: no-store"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing, RLS-hidden, or coverless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/{id}/cover/thumb": {
+      "get": {
+        "tags": [
+          "library"
+        ],
+        "summary": "`GET /api/v1/books/{id}/cover/thumb` — thumbnail cover for the web UI.",
+        "description": "# Errors\nSee [`opds_cover`].",
+        "operationId": "api_cover_thumb",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thumbnail image stream; Cache-Control: no-store"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing, RLS-hidden, or coverless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/books/{id}/metadata": {
       "patch": {
         "tags": [
@@ -2304,6 +2398,174 @@
         }
       }
     },
+    "/auth/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`GET /auth/callback` — OIDC redirect target: validate state, exchange\nthe code, establish the session, and issue the CSRF synchronizer token.",
+        "description": "# Errors\n- [`AppError::Unauthorized`] when the anti-forgery state is missing or\n  mismatched, or the ID token fails validation.\n- [`AppError::Internal`] on token-exchange or session-storage failure.",
+        "operationId": "callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "description": "Authorization code minted by the `IdP`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/login` stored in the session.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Login complete; session established, theme cookie seeded, redirect to /"
+          },
+          "401": {
+            "description": "Anti-forgery state missing/mismatched or ID-token validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`GET /auth/login` — start the OIDC authorization-code + PKCE flow.",
+        "description": "# Errors\n- [`AppError::Internal`] when session storage fails.",
+        "operationId": "login",
+        "responses": {
+          "307": {
+            "description": "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`POST /auth/logout` — destroy the current session (idempotent).",
+        "description": "# Errors\n- [`AppError::Internal`] when session deletion fails at the store.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Session destroyed (no-op without one)"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`GET /auth/me` — the authenticated caller's profile + CSRF token.",
+        "description": "# Errors\n- [`AppError::Unauthorized`] when the session user no longer exists.\n- [`AppError::Internal`] on database or session-store errors.",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "description": "Caller profile; `csrf_token` is the synchronizer token for unsafe verbs (null for Basic-auth sessions)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/theme": {
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`PATCH /auth/me/theme` — persist the caller's theme preference and\nrefresh the FOUC theme cookie.",
+        "description": "# Errors\n- [`AppError::Internal`] on database errors.",
+        "operationId": "update_theme",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThemeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Preference persisted; `reverie_theme` cookie refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown theme_preference value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -2333,7 +2595,7 @@
         "tags": [
           "health"
         ],
-        "summary": "Readiness probe: pings the application pool with `SELECT 1` and returns\n`503` while the database is unreachable so orchestrators withhold traffic.",
+        "summary": "Readiness probe: pings the application pool with `SELECT 1` and returns\n`503` with an RFC 9457 body while the database is unreachable so\norchestrators withhold traffic.",
         "operationId": "ready",
         "responses": {
           "200": {
@@ -2347,11 +2609,1142 @@
             }
           },
           "503": {
-            "description": "Database unreachable"
+            "description": "Database unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
           {}
+        ]
+      }
+    },
+    "/opds": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds` — catalog root: navigation feed linking `/opds/library`\nand every shelf owned by the authenticated user.",
+        "description": "# Errors\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "opds_root",
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed linking the library catalog and the user's shelves",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/books/{id}/cover": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/books/{id}/cover` — full-size cover, Basic auth.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or has no cover.\n- [`AppError::Internal`] on cover-generation or file IO errors.",
+        "operationId": "opds_cover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: no-store"
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Manifestation missing, RLS-hidden, or coverless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/books/{id}/cover/thumb": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/books/{id}/cover/thumb` — thumbnail cover, Basic auth.",
+        "description": "# Errors\nSee [`opds_cover`].",
+        "operationId": "opds_cover_thumb",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thumbnail image stream; Cache-Control: no-store"
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Manifestation missing, RLS-hidden, or coverless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/books/{id}/file": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/books/{id}/file` — streamed EPUB download. The response\ncarries an RFC 6266 `Content-Disposition: attachment` header whose\nfilename is derived from the work title (ASCII fallback plus RFC 5987\nUTF-8 form).",
+        "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or its file is gone from disk.\n- [`AppError::Forbidden`] when the on-disk path escapes the configured\n  library root (canonicalisation guard).\n- [`AppError::Internal`] on database or file IO errors.",
+        "operationId": "download_epub",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "EPUB byte stream; Content-Disposition: attachment with a title-derived filename",
+            "content": {
+              "application/epub+zip": {}
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "403": {
+            "description": "File path escapes the library root",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing, RLS-hidden, or file absent on disk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library` — library subcatalog navigation root.",
+        "description": "# Errors\n- [`AppError::Internal`] when the OPDS base URL is unconfigured.",
+        "operationId": "library_root",
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed linking the New / Authors / Series subcatalogs",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/authors": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/authors` — author index, cursor-paginated.",
+        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "library_authors",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed of authors with visible books",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/authors/{id}": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/authors/{id}` — one author's books,\ncursor-paginated.",
+        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "library_author_books",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Author id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of the author's visible books (empty for unknown authors)",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/new": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/new` — newest books, cursor-paginated.",
+        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "library_new",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of the newest visible books; rel=\"next\" link carries the cursor",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/opensearch.xml": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/opensearch.xml` — `OpenSearch` descriptor whose\nsearch template targets the library-wide `/opds/library/search`.",
+        "description": "# Errors\n- [`AppError::Internal`] when the OPDS base URL is unconfigured.",
+        "operationId": "library_opensearch",
+        "responses": {
+          "200": {
+            "description": "OpenSearch descriptor with the library-scoped search URL template",
+            "content": {
+              "application/opensearchdescription+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/search": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/search` — full-text search over visible books.",
+        "description": "# Errors\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "library_search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search term; an empty (or whitespace-only) query short-circuits\nto an empty feed without hitting the DB.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of search results; empty/whitespace query yields an empty feed",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/series": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/series` — series index, cursor-paginated.",
+        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "library_series",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed of series with visible books",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/library/series/{id}": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/library/series/{id}` — one series' books, in series order,\ncursor-paginated.",
+        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "library_series_books",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Series id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of the series' visible books (empty for unknown series)",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}` — shelf subcatalog navigation root.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_root",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed linking the shelf's New / Authors / Series subcatalogs",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/authors": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/authors` — the shelf's author index,\ncursor-paginated.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_authors",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed of authors with books on the shelf",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/authors/{author_id}": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/authors/{author_id}` — one author's books\non the shelf, cursor-paginated.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_author_books",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "author_id",
+            "in": "path",
+            "description": "Author id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of the author's books on the shelf (empty for unknown authors)",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/new": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/new` — the shelf's newest books,\ncursor-paginated.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_new",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of the shelf's newest visible books; rel=\"next\" link carries the cursor",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/opensearch.xml": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/opensearch.xml` — `OpenSearch` descriptor\nwhose search template is scoped to the shelf.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_opensearch",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenSearch descriptor with the shelf-scoped search URL template",
+            "content": {
+              "application/opensearchdescription+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/search": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/search` — full-text search over the\nshelf's books.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_search",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search term; an empty (or whitespace-only) query short-circuits\nto an empty feed without hitting the DB.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of search results scoped to the shelf; empty/whitespace query yields an empty feed",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/series": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/series` — the shelf's series index,\ncursor-paginated.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_series",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS navigation feed of series with books on the shelf",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=navigation": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
+        ]
+      }
+    },
+    "/opds/shelves/{shelf_id}/series/{series_id}": {
+      "get": {
+        "tags": [
+          "opds"
+        ],
+        "summary": "`GET /opds/shelves/{shelf_id}/series/{series_id}` — one series' books\non the shelf, in series order, cursor-paginated.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "operationId": "shelf_series_books",
+        "parameters": [
+          {
+            "name": "shelf_id",
+            "in": "path",
+            "description": "Shelf id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "series_id",
+            "in": "path",
+            "description": "Series id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OPDS acquisition feed of the series' books on the shelf (empty for unknown series)",
+            "content": {
+              "application/atom+xml;profile=opds-catalog;kind=acquisition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+          },
+          "404": {
+            "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "opds_basic": []
+          }
         ]
       }
     }
@@ -2882,6 +4275,54 @@
           "cbr"
         ]
       },
+      "MeResponse": {
+        "type": "object",
+        "description": "Profile payload for `GET /auth/me`.",
+        "required": [
+          "id",
+          "display_name",
+          "role",
+          "is_child",
+          "theme_preference"
+        ],
+        "properties": {
+          "csrf_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session-bound CSRF synchronizer token to echo as `X-CSRF-Token` on\nunsafe verbs; `null` for sessions that never completed\n`/auth/callback` (e.g. Basic-auth OPDS callers)."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable display name."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Email address; `null` when none on file."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "User id."
+          },
+          "is_child": {
+            "type": "boolean",
+            "description": "Whether child content-visibility rules apply."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Access-control role."
+          },
+          "theme_preference": {
+            "$ref": "#/components/schemas/ThemePreference",
+            "description": "Persisted UI theme preference."
+          }
+        }
+      },
       "MetadataCoverage": {
         "type": "object",
         "description": "Metadata-coverage numerators (denominator is `total`). The frontend\nderives percentages so the wire stays integer-only.",
@@ -3039,7 +4480,7 @@
       },
       "ProblemDetails": {
         "type": "object",
-        "description": "RFC 9457 `application/problem+json` error body, as emitted by the server's\n`AppError` type. Documentation-only: it mirrors the response shape and is\nnever constructed or serialized at runtime. Registered as a shared component\ndescribing the standard error envelope; the data routes that actually return\nit are annotated to reference it in phase 2 (UNK-376).",
+        "description": "RFC 9457 `application/problem+json` error body — the single runtime DTO\nfor the error envelope. The `IntoResponse` impl on\n[`crate::error::AppError`] constructs it for every Problem-Details\nvariant, and operational probes (readiness) build it directly, so the\ndocumented component schema and the bytes on the wire come from the same\nstruct and cannot drift.",
         "required": [
           "type",
           "title",
@@ -3056,7 +4497,7 @@
               "string",
               "null"
             ],
-            "description": "URI reference identifying the specific request, when available."
+            "description": "URI reference identifying the specific request, when available.\nOmitted (RFC 9457 §3.1 permits this) outside an HTTP request."
           },
           "status": {
             "type": "integer",
@@ -3768,6 +5209,28 @@
           }
         }
       },
+      "ThemePreference": {
+        "type": "string",
+        "description": "Per-user theme selection mirrored across DB, JSON, and the FOUC theme cookie.\n\nWire-format drift across these three surfaces is tracked under UNK-105;\nthe variant strings declared here are authoritative.",
+        "enum": [
+          "system",
+          "light",
+          "dark"
+        ]
+      },
+      "ThemeResponse": {
+        "type": "object",
+        "description": "Echo payload for `PATCH /auth/me/theme`.",
+        "required": [
+          "theme_preference"
+        ],
+        "properties": {
+          "theme_preference": {
+            "$ref": "#/components/schemas/ThemePreference",
+            "description": "The persisted theme preference."
+          }
+        }
+      },
       "TokenListItem": {
         "type": "object",
         "description": "One active device token in the list view. The token plaintext and its\nstored hash are never part of this shape.",
@@ -4053,6 +5516,19 @@
         },
         "additionalProperties": false
       },
+      "UpdateThemeRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /auth/me/theme`.",
+        "required": [
+          "theme_preference"
+        ],
+        "properties": {
+          "theme_preference": {
+            "$ref": "#/components/schemas/ThemePreference",
+            "description": "New theme preference; invalid values are rejected at\ndeserialization (422)."
+          }
+        }
+      },
       "UpdateUserRequest": {
         "type": "object",
         "description": "Body for `PATCH /api/v1/users/{id}`.\n\nRFC 7396 JSON Merge Patch: absent keys are untouched; explicit\n`null` on `email` clears; `null` on `display_name` is rejected\n(NOT NULL column).",
@@ -4324,6 +5800,14 @@
     {
       "name": "ingestion",
       "description": "Admin-only library-scan trigger."
+    },
+    {
+      "name": "auth",
+      "description": "OIDC login flow, session introspection, and theme preference."
+    },
+    {
+      "name": "opds",
+      "description": "OPDS 1.2 catalog (Atom XML) for e-reader clients, HTTP Basic auth. Documented unconditionally; the routes are absent at runtime when the operator sets `opds.enabled = false`."
     }
   ]
 }

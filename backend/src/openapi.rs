@@ -115,17 +115,22 @@ impl Modify for SecurityAddon {
         (name = "tokens", description = "Per-user device tokens for OPDS / Basic-auth clients."),
         (name = "metadata", description = "Metadata review queue: accept / reject / revert / lock and manual edits."),
         (name = "enrichment", description = "Enrichment pipeline controls and queue status."),
-        (name = "ingestion", description = "Admin-only library-scan trigger.")
+        (name = "ingestion", description = "Admin-only library-scan trigger."),
+        (name = "auth", description = "OIDC login flow, session introspection, and theme preference."),
+        (name = "opds", description = "OPDS 1.2 catalog (Atom XML) for e-reader clients, HTTP Basic auth. \
+                                       Documented unconditionally; the routes are absent at runtime when the \
+                                       operator sets `opds.enabled = false`.")
     )
 )]
 pub struct ApiDoc;
 
-/// RFC 9457 `application/problem+json` error body, as emitted by the server's
-/// `AppError` type. Documentation-only: it mirrors the response shape and is
-/// never constructed or serialized at runtime. Registered as a shared component
-/// describing the standard error envelope; the data routes that actually return
-/// it are annotated to reference it in phase 2 (UNK-376).
-#[derive(utoipa::ToSchema)]
+/// RFC 9457 `application/problem+json` error body — the single runtime DTO
+/// for the error envelope. The `IntoResponse` impl on
+/// [`crate::error::AppError`] constructs it for every Problem-Details
+/// variant, and operational probes (readiness) build it directly, so the
+/// documented component schema and the bytes on the wire come from the same
+/// struct and cannot drift.
+#[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct ProblemDetails {
     /// Stable URI reference identifying the problem type.
     #[schema(example = "https://reverie.example/probs/not-found")]
@@ -138,13 +143,46 @@ pub struct ProblemDetails {
     /// Human-readable explanation specific to this occurrence.
     pub detail: String,
     /// URI reference identifying the specific request, when available.
+    /// Omitted (RFC 9457 §3.1 permits this) outside an HTTP request.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
 }
 
+impl axum::response::IntoResponse for ProblemDetails {
+    /// Serialize as `application/problem+json` with the status taken from
+    /// the body's `status` field. When `instance` is unset, it is populated
+    /// from the request-path task-local captured by
+    /// [`crate::error::instance::problem_instance_layer`] (and stays omitted
+    /// outside an HTTP request, e.g. unit tests).
+    fn into_response(mut self) -> axum::response::Response {
+        use axum::http::{HeaderValue, StatusCode, header};
+
+        if self.instance.is_none() {
+            self.instance = crate::error::instance::current_request_uri();
+        }
+        let status = StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let mut response = (status, axum::Json(self)).into_response();
+        response.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/problem+json"),
+        );
+        response
+    }
+}
+
 /// The pilot router seeded with [`ApiDoc`] metadata, merging every documented
-/// module. Built once and consumed in two ways: [`router()`] takes its runtime
-/// [`axum::Router`] half, [`spec_json()`] takes its [`OpenApi`] half — so the
-/// served routes and the generated spec are always the same registration.
+/// module that is mounted unconditionally. Built once and consumed in two
+/// ways: [`router()`] takes its runtime [`axum::Router`] half, [`spec_json()`]
+/// takes its [`OpenApi`] half — so the served routes and the generated spec
+/// are always the same registration.
+///
+/// The OPDS feed routes are the one deliberate exception: their runtime mount
+/// is config-gated (`opds.enabled`) in `crate::build_router`, while the spec
+/// documents them unconditionally — [`spec_json`] merges
+/// [`crate::routes::opds::openapi_router`] on top of this router before
+/// splitting. The dual-mounted cover handlers' API half
+/// ([`crate::routes::opds::covers_router`]) is always mounted, so it lives
+/// here with the rest.
 fn pilot_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .merge(crate::routes::health::router())
@@ -158,10 +196,14 @@ fn pilot_router() -> OpenApiRouter<AppState> {
         .merge(crate::routes::metadata::router())
         .merge(crate::routes::enrichment::router())
         .merge(crate::routes::ingestion::router())
+        .merge(crate::routes::auth::router())
+        .merge(crate::routes::opds::covers_router())
 }
 
 /// Runtime router for the OpenAPI-documented modules, ready to merge into the
-/// main router. Discards the spec half (see [`spec_json`]).
+/// main router. Discards the spec half (see [`spec_json`]). Does NOT include
+/// the OPDS feed routes — `crate::build_router` mounts those separately,
+/// gated on `opds.enabled`.
 pub fn router() -> axum::Router<AppState> {
     pilot_router().split_for_parts().0
 }
@@ -169,13 +211,19 @@ pub fn router() -> axum::Router<AppState> {
 /// Serialize the OpenAPI document as pretty-printed JSON (trailing newline,
 /// matching the committed artifact and the `print-config-schema` convention).
 ///
+/// Merges the config-gated OPDS routes into the document first: the contract
+/// documents the full surface; per-instance availability is noted on the
+/// `opds` tag description.
+///
 /// # Errors
 ///
 /// Returns an error if the document cannot be serialized to JSON.
 pub fn spec_json() -> anyhow::Result<String> {
     use anyhow::Context as _;
 
-    let (_, api) = pilot_router().split_for_parts();
+    let (_, api) = pilot_router()
+        .merge(crate::routes::opds::openapi_router())
+        .split_for_parts();
     let mut json = api
         .to_pretty_json()
         .context("serialize OpenAPI document to JSON")?;

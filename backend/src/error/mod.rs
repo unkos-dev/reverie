@@ -30,11 +30,11 @@
 //! The `instance` field (RFC 9457 §3.1) carries the request path.
 //! It is captured by the [`instance::problem_instance_layer`] tower
 //! middleware mounted on the API router group, stored in a tokio
-//! task-local, and read back by [`AppError::into_response`]. When
-//! called outside an HTTP request (unit tests invoking
-//! `.into_response()` directly), the task-local is unset and the
-//! `instance` field is simply omitted from the body — RFC 9457 §3.1
-//! permits omission.
+//! task-local, and read back when the
+//! [`crate::openapi::ProblemDetails`] body is serialized. When called
+//! outside an HTTP request (unit tests invoking `.into_response()`
+//! directly), the task-local is unset and the `instance` field is
+//! simply omitted from the body — RFC 9457 §3.1 permits omission.
 
 pub mod instance;
 pub mod problems;
@@ -228,24 +228,17 @@ impl IntoResponse for AppError {
             }
         };
 
-        let mut body = serde_json::json!({
-            "type": problems::problem_type(slug),
-            "title": title,
-            "status": status.as_u16(),
-            "detail": detail,
-        });
-        if let Some(instance_uri) = instance::current_request_uri()
-            && let Some(obj) = body.as_object_mut()
-        {
-            obj.insert("instance".into(), serde_json::Value::String(instance_uri));
+        // The shared runtime DTO owns serialization, the problem+json
+        // content type, and the instance capture from the request
+        // task-local — one wire shape for every emitter.
+        crate::openapi::ProblemDetails {
+            r#type: problems::problem_type(slug),
+            title: title.to_owned(),
+            status: status.as_u16(),
+            detail,
+            instance: None,
         }
-
-        let mut response = (status, axum::Json(body)).into_response();
-        response.headers_mut().insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/problem+json"),
-        );
-        response
+        .into_response()
     }
 }
 
