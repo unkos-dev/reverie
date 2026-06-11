@@ -11,6 +11,17 @@
 //! end. Removing a `#[utoipa::path]` from a handler wired via `routes!` is a
 //! compile error, which is the coverage mechanism the remaining route modules
 //! adopt module-by-module in phase 2.
+//!
+//! # Coupling with `crate::error` (intentional)
+//!
+//! [`ProblemDetails`] is deliberately both the documented component schema
+//! and the runtime error DTO: the `IntoResponse` impl on
+//! [`crate::error::AppError`] constructs it, and its own `IntoResponse`
+//! reads the request-path task-local from [`crate::error::instance`]. The
+//! resulting openapi↔error circularity is the point — one struct owns the
+//! RFC 9457 wire shape, so the spec and the bytes on the wire cannot drift.
+//! Anyone splitting `ProblemDetails` out of this module must move both
+//! halves together.
 
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
