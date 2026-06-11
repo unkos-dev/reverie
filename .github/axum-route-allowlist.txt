@@ -1,0 +1,24 @@
+# UNK-379 raw-route allowlist
+#
+# Canonical registry of raw axum `.route(...)` registrations exempted from
+# the OpenApiRouter + `routes!(...)` requirement. CI greps for `.route(` in
+# `backend/src/` and rejects any line not containing a fixed string from
+# this file (`grep -v -F -f`).
+#
+# Adding an entry: include reviewer justification in the PR description
+# adding it. The exempt class must be one of:
+#   1. Test-only ad-hoc routers inside `#[cfg(test)]` modules — never part
+#      of the shipped router, so no OpenAPI documentation applies.
+#   2. Operational / standard-protocol paths deliberately kept on plain
+#      routing (none today; a new entry of this class needs an ADR or
+#      debt/ pointer).
+#
+# Pattern styles mirror .github/sqlx-runtime-allowlist.txt:
+#   - `path:` prefixes act as file-level blankets: every `.route(` in that
+#     file is exempted. Use only when the entire file's raw routing falls
+#     under one exempt class.
+#   - other substrings scope the exemption to specific call shapes.
+
+# (1) error/instance.rs file-blanket — #[cfg(test)] router exercising
+# problem_instance_layer URI capture; not a shipped endpoint
+backend/src/error/instance.rs:

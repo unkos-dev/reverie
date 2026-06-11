@@ -288,6 +288,27 @@ jobs:
               exit 1
           fi
 
+      # UNK-379: grep-guard against raw `.route(` registrations creeping in
+      # outside the OpenAPI pipeline. Every shipped endpoint must register via
+      # `OpenApiRouter` + `routes!(...)` backed by a `#[utoipa::path]`
+      # annotation so the generated spec stays complete (UNK-376). Allowlist
+      # documents the exempt sites (test-only routers, justified carve-outs).
+      - name: Guard against undocumented raw .route( registrations
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          violations=$(grep -rnE '\.route\(' backend/src/ \
+              | grep -v -F -f <(grep -vE '^\s*(#|$)' .github/axum-route-allowlist.txt) \
+              || true)
+          if [ -n "$violations" ]; then
+              echo "Raw .route( registrations detected outside the allowlist." >&2
+              echo "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," >&2
+              echo "or add a justified entry to .github/axum-route-allowlist.txt." >&2
+              echo "" >&2
+              echo "$violations" >&2
+              exit 1
+          fi
+
       # nextest runs each test in its own process — better parallelism
       # than the default thread-per-test runner, and a crashing test
       # can't take down its siblings. Each `#[sqlx::test]` already gets
