@@ -42,7 +42,10 @@ pub enum TerminalOutcome {
     /// delivered as `writeback_failed`.
     Skipped,
     /// Attempt failed; the job may still retry — delivered as
-    /// `writeback_failed`.
+    /// `writeback_failed`.  Within the TTL window a re-fired `failed`
+    /// event for the same job dedupes — consumers get at most one
+    /// `writeback_failed` per job per window, not one per retry; see
+    /// [`dispatch`] for the rationale.
     Failed,
 }
 
@@ -241,6 +244,18 @@ mod tests {
     }
 
     #[test]
+    fn dedupe_ttl_exceeds_max_claim_backoff() {
+        // Pins the invariant documented on DEDUPE_TTL_SECS: the TTL must
+        // outlive the maximum claim back-off (the INTERVAL '24 hours'
+        // literal in queue::claim_next), or a crash-recovery re-fire
+        // becomes eligible for re-claim after the dedupe entry expired.
+        // The back-off is a SQL literal, so this guards TTL reductions
+        // only — a back-off increase in claim_next must update this too.
+        let max_claim_backoff_secs = 24.0 * 3600.0;
+        assert!(DEDUPE_TTL_SECS > max_claim_backoff_secs);
+    }
+
+    #[test]
     fn event_id_is_stable_per_job_and_outcome() {
         let job_id = Uuid::new_v4();
         let id = event_id(job_id, TerminalOutcome::Complete);
@@ -355,5 +370,38 @@ mod tests {
         assert_eq!(dedupe_rows_for(&pool, &stale_eid).await, 0);
         let fresh_eid = event_id(job_id, TerminalOutcome::Complete);
         assert_eq!(dedupe_rows_for(&pool, &fresh_eid).await, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn dispatch_purge_is_capped_at_100_rows(pool: PgPool) {
+        // Pins the bounded-deletion contract: one dispatch purges at most
+        // 100 expired entries; the remainder survive for later cycles.
+        let app_pool = app_pool_for(&pool).await;
+        for i in 0..150 {
+            sqlx::query!(
+                "INSERT INTO webhook_event_dedupe (event_id, seen_at) \
+                 VALUES ($1, now() - ($2::double precision * interval '1 second'))",
+                format!("writeback:{}:complete-stale-{i}", Uuid::new_v4()),
+                DEDUPE_TTL_SECS + 3600.0,
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let job_id = Uuid::new_v4();
+        assert_eq!(
+            dispatch(&app_pool, &sample_event(job_id, TerminalOutcome::Complete)).await,
+            Dispatch::Delivered
+        );
+
+        let stale_remaining = sqlx::query_scalar!(
+            "SELECT count(*) AS \"n!\" FROM webhook_event_dedupe \
+             WHERE event_id LIKE '%-stale-%'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stale_remaining, 50);
     }
 }

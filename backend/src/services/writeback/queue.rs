@@ -1035,6 +1035,13 @@ mod tests {
     /// terminal event already fired.  The dispatcher must deliver exactly
     /// once — `seen_at` is only written on delivery, so an unchanged
     /// `seen_at` after the second `finish` proves the re-fire was deduped.
+    ///
+    /// Modelling note: this calls `finish` twice sequentially with both
+    /// calls fully succeeding, whereas the real crash shape leaves the job
+    /// row `pending` and re-claims it (the second `finish` then runs against
+    /// a non-`complete` row).  The property under test is identical either
+    /// way — the dedupe lookup keys only on the event id and never consults
+    /// `writeback_jobs` — so the sequential model exercises the same path.
     #[sqlx::test(migrations = "./migrations")]
     async fn finish_double_dispatch_delivers_exactly_once(pool: PgPool) {
         let app_pool = app_pool_for(&pool).await;
