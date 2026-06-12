@@ -183,7 +183,7 @@ function ShelfList({ shelves }: ShelfListProps): ReactElement | null {
           <Link
             to="/shelves"
             viewTransition
-            className="text-fg-faint hover:text-fg focus-visible:ring-accent flex rounded-md py-1.5 pl-9 pr-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2"
+            className="text-fg-muted hover:text-fg focus-visible:ring-accent flex rounded-md py-1.5 pl-9 pr-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2"
           >
             All shelves →
           </Link>

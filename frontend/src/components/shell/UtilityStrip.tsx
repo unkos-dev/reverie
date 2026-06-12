@@ -39,7 +39,7 @@ export function UtilityStrip({ menuSlot = null }: UtilityStripProps): ReactEleme
         className="border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg focus-visible:ring-accent flex h-9 w-56 shrink-0 items-center justify-between gap-3 rounded-md border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2"
       >
         <span className="truncate">Search the library…</span>
-        <kbd className="text-fg-faint font-mono text-[0.65rem] tracking-wide">
+        <kbd className="text-fg-muted font-mono text-[0.65rem] tracking-wide">
           {searchHintLabel()}
         </kbd>
       </button>

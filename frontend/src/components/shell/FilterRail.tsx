@@ -97,7 +97,7 @@ export function FilterRail({ seriesOptions, authorNames }: FilterRailProps): Rea
       </details>
 
       <details open>
-        <summary className="text-fg-faint cursor-pointer select-none font-mono text-xs uppercase tracking-[0.14em]">
+        <summary className="text-fg-muted cursor-pointer select-none font-mono text-xs uppercase tracking-[0.14em]">
           Author
         </summary>
         <div className="mt-2 flex flex-col gap-0.5">
