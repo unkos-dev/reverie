@@ -122,7 +122,10 @@ function LibraryContent(): ReactElement {
 
   return (
     <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} authorNames={authorNames} />}>
-      <div className="mx-auto max-w-7xl px-6 py-10 sm:px-10">
+      {/* No max-width cap — the browse room uses the full column so
+          ultrawide gets ~10 columns, not 4 stamps in a void (spec §5).
+          The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
+      <div className="px-6 py-10 sm:px-10">
         <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">Library</h1>
@@ -586,7 +589,7 @@ function ShelfPickerButton({
 function LibrarySkeleton(): ReactElement {
   const PLACEHOLDERS = Array.from({ length: 12 }, (_, i) => i);
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10 sm:px-10" aria-busy="true">
+    <div className="px-6 py-10 sm:px-10" aria-busy="true">
       <Skeleton className="mb-4 h-9 w-48" />
       <Separator className="mb-8" />
       <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">

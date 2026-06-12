@@ -52,7 +52,7 @@ export function LeftRail(): ReactElement {
           <Lockup size={13} theme={effective} />
         </Link>
       </div>
-      <nav aria-label="Primary" className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav aria-label="Primary" className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
         <ul className="flex flex-col gap-0.5">
           {PRIMARY_NAV.map((item) => (
             <li key={item.label}>
