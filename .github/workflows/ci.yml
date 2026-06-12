@@ -32,6 +32,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       staging: ${{ steps.filter.outputs.staging }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      iac: ${{ steps.filter.outputs.iac }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -74,6 +75,16 @@ jobs:
               # zizmor reads .github/zizmor.yml; a suppression edit must
               # re-run the workflow-security scan even with no workflow change.
               - '.github/zizmor.yml'
+            iac:
+              # trivy config (IaC misconfiguration) inputs: every Dockerfile
+              # and compose file, wherever it lives. A .trivyignore edit must
+              # re-run the scan even with no IaC change (same rationale as
+              # the zizmor.yml entry above).
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'docker/**'
+              - '.trivyignore'
+              - '.github/workflows/ci.yml'
             docs:
               # The generated reference artifacts (docs/openapi.json,
               # reference/configuration.mdx) live under docs/, so a backend
@@ -617,6 +628,56 @@ jobs:
           # findings and break the gate on an unrelated PR; bump deliberately.
           # Matches the version the workflow baseline was triaged against.
           version: "1.25.2"
+
+  # UNK-378: IaC misconfiguration scan over the Dockerfile and compose
+  # files. hadolint (repo-lint below) lints Dockerfile instruction syntax;
+  # trivy config checks the security-misconfiguration class it doesn't —
+  # root-user defaults, missing healthchecks, privileged/host-mode compose
+  # services, secrets-in-env shapes. Gates on HIGH/CRITICAL to match the
+  # image-scan gate in docker-publish.yml. Suppressions live in
+  # .trivyignore with per-finding justification (zizmor discipline).
+  iac-scan:
+    name: IaC misconfig (trivy)
+    needs: changes
+    if: needs.changes.outputs.iac == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # Same pinned curl-tarball install as docker-publish.yml; keep the
+      # two TRIVY_VERSION pins in lockstep when bumping.
+      - name: Install trivy v0.71.0
+        env:
+          # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
+          TRIVY_VERSION: "0.71.0"
+          TRIVY_SHA256: "30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
+          echo "${TRIVY_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$HOME/.local/bin" trivy
+          rm "$tarball"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Scope to the container/IaC surface rather than the whole tree:
+      # workflow security is zizmor's remit and Starlight/docs templates
+      # are not deployable IaC. --skip-dirs keeps node_modules and target
+      # noise out on a cold cache.
+      - name: Scan IaC for misconfigurations (gating)
+        run: |
+          set -euo pipefail
+          trivy config \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --skip-dirs node_modules,frontend/node_modules,docs/node_modules,backend/target \
+            --skip-dirs .github \
+            .
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
@@ -1314,6 +1375,7 @@ jobs:
       - a11y
       - staging-smoke
       - secret-scan
+      - iac-scan
       - docs
       - commitlint
       - pr-linear-ref

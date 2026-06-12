@@ -217,6 +217,82 @@ jobs:
             type=ref,event=branch
             type=sha,prefix=sha-,enable=${{ github.ref_type != 'tag' }}
 
+      # UNK-378: CVE-gate the image BEFORE it is tagged and signed. Until
+      # now the image was cosign-signed + SBOM-attested but never
+      # vuln-scanned — signing an unscanned artifact is attestation
+      # theatre. Placement is load-bearing: the per-arch images exist in
+      # GHCR only as untagged digests at this point, so a failing scan
+      # stops the manifest list from ever being created, tagged, or
+      # signed — no floating `:main` tag can point at a vulnerable image.
+      #
+      # Direct curl-tarball install pins the exact upstream release +
+      # SHA256, mirroring the actionlint/shellcheck/gitleaks installs in
+      # ci.yml (supply-chain discipline on a privileged publish workflow).
+      - name: Install trivy v0.71.0
+        env:
+          # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
+          TRIVY_VERSION: "0.71.0"
+          TRIVY_SHA256: "30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
+          echo "${TRIVY_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$HOME/.local/bin" trivy
+          rm "$tarball"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Blocking on fixable HIGH/CRITICAL CVEs; unfixed CVEs (no patched
+      # package available upstream) are excluded from the gate — they would
+      # block every publish until a distro fix ships, with no action
+      # available to us. trivy reads the registry credential from the
+      # docker login above. Every per-arch image is scanned (x-platform
+      # scanning is layer analysis, not execution, so the amd64 runner
+      # scans arm64 images fine).
+      #
+      # Indirection: buildx with `provenance`/`sbom` pushes each per-arch
+      # "digest" as an OCI image *index* whose children are the real image
+      # manifest plus an attestation manifest. trivy's remote backend
+      # resolves an index via the *scanner host's* platform (linux/amd64),
+      # which an arm64-only index doesn't carry — so enumerate the
+      # non-attestation children and scan each child manifest digest
+      # directly (a plain manifest needs no platform resolution).
+      - name: Scan image for vulnerabilities (gating)
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          for digest in *; do
+            raw=$(docker buildx imagetools inspect --raw "${IMAGE_REF}@sha256:${digest}")
+            # Index → scan every non-attestation child; bare manifest
+            # (no .manifests) → scan the digest itself.
+            children=$(jq -r '
+              if .manifests then
+                .manifests[]
+                | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")
+                | .digest
+              else
+                empty
+              end' <<<"$raw")
+            if [ -z "$children" ]; then
+              children="sha256:${digest}"
+            fi
+            for child in $children; do
+              echo "::group::trivy scan ${IMAGE_REF}@${child}"
+              trivy image \
+                --severity HIGH,CRITICAL \
+                --ignore-unfixed \
+                --exit-code 1 \
+                --no-progress \
+                "${IMAGE_REF}@${child}" \
+                || { echo "::endgroup::"; exit 1; }
+              echo "::endgroup::"
+            done
+          done
+
       # imagetools create assembles a manifest list from the per-arch
       # digests and tags it. Provenance/SBOM attestations on the per-arch
       # images are preserved on the resulting manifest list. OCI labels
