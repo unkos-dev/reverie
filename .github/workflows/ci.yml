@@ -838,17 +838,25 @@ jobs:
 
       # --error exits non-zero on any finding. Security packs only — the
       # full language packs bundle best-practice and portability rules
-      # (props-spreading, i18n) that are eslint's remit and produced ~180
-      # baseline findings of pure style noise; this gate is a security
-      # scanner, not a second linter. Tests are excluded the same way the
-      # wiremock carve-outs work for clippy — a test hitting an
-      # insecure-hash rule is exercising the API, not shipping it.
+      # (props-spreading, i18n) that are eslint's remit and pure style
+      # noise here; this gate is a security scanner, not a second linter.
+      #
+      # Tests are not excluded wholesale: a blanket file drop is a coverage
+      # blind spot (a hardcoded secret, or a helper later promoted to
+      # production, sitting in a test file would go unseen). A test that
+      # legitimately exercises an insecure API is carved out per-line with
+      # `// nosemgrep: <rule-id>` at the call site — the same call-site-
+      # scoped, self-documenting shape as the clippy `#[expect(...)]`
+      # carve-outs (#468), not a silent file drop.
       #
       # Excluded rule, with justification (zizmor discipline):
       #   rust.lang.security.args — audit-class rule firing on ANY
       #   std::env::args use; main.rs reads argv for CLI subcommand
       #   dispatch (`reverie migrate`), not for security decisions, and
-      #   the rule has no way to tell the difference.
+      #   the rule has no way to tell the difference. The rule-ID prefix
+      #   (`opengrep-rules.`) is the rules-checkout `path:` above — opengrep
+      #   derives rule IDs from the config path, so keep the two in lockstep
+      #   when renaming, or the exclusion silently stops matching.
       - name: Scan source (gating)
         run: |
           set -euo pipefail
@@ -858,10 +866,6 @@ jobs:
             --config .opengrep-rules/typescript/react/security \
             --exclude-rule opengrep-rules.rust.lang.security.args \
             --error \
-            --exclude '*_test.rs' \
-            --exclude '*.test.ts' \
-            --exclude '*.test.tsx' \
-            --exclude 'test_support.rs' \
             backend/src frontend/src
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
