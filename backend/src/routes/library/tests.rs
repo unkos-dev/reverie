@@ -911,6 +911,32 @@ async fn detail_endpoint_surfaces_publisher_and_pub_date(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_timestamps_are_rfc3339_strings(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let m_id = insert_book_with_author(&ingestion_pool, "ts", "Timestamped", "Doe, Jane").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    // Without the rfc3339 serde adapter, `time` serializes
+    // OffsetDateTime as a 9-element tuple and every frontend
+    // BookDetailSchema parse fails (z.string()).
+    for field in ["created_at", "updated_at"] {
+        let raw = body[field]
+            .as_str()
+            .unwrap_or_else(|| panic!("{field} must be a JSON string, got {}", body[field]));
+        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|e| panic!("{field} must parse as RFC 3339 ({e}): {raw}"));
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_endpoint_hidden_id_returns_404(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1040,6 +1066,13 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
             format!("/api/v1/books/{mid}/cover/thumb"),
         );
         assert!(m["ingestion_status"].is_string());
+        // RFC 3339 string, not time's 9-element tuple — the frontend
+        // WorkManifestationSchema expects z.string().
+        let raw = m["created_at"]
+            .as_str()
+            .unwrap_or_else(|| panic!("created_at must be a JSON string, got {}", m["created_at"]));
+        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|e| panic!("created_at must parse as RFC 3339 ({e}): {raw}"));
     }
     assert!(
         body["series"].is_null(),

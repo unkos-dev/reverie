@@ -3914,7 +3914,7 @@
           "created_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`manifestations.created_at`."
+            "description": "`manifestations.created_at`. RFC 3339 on the wire — without the\nadapter, `time` serialises a 9-element tuple and the frontend\n`BookDetailSchema` (`z.string()`) rejects every detail response."
           },
           "description": {
             "type": [
@@ -4007,7 +4007,7 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`manifestations.updated_at`."
+            "description": "`manifestations.updated_at`. RFC 3339 on the wire (see `created_at`)."
           },
           "validation_status": {
             "$ref": "#/components/schemas/ValidationStatus",
@@ -5773,7 +5773,7 @@
           "created_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`manifestations.created_at`."
+            "description": "`manifestations.created_at`. RFC 3339 on the wire — the frontend\n`WorkManifestationSchema` expects `z.string()`, not `time`'s\ndefault tuple serialisation."
           },
           "enrichment_status": {
             "$ref": "#/components/schemas/EnrichmentStatus",
