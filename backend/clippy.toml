@@ -29,4 +29,5 @@ disallowed-methods = [
   { path = "reqwest::Client::new", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment) or the OIDC http_client(); see adr/2026-05-18-outbound-http-user-agent.md" },
   { path = "reqwest::Client::builder", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment) or the OIDC http_client(); see adr/2026-05-18-outbound-http-user-agent.md" },
   { path = "reqwest::ClientBuilder::new", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment) or the OIDC http_client(); see adr/2026-05-18-outbound-http-user-agent.md" },
+  { path = "reqwest::Client::default", reason = "no default User-Agent — Default delegates to Client::new() which sends no User-Agent (UNK-255); build clients via api_client()/cover_client() (enrichment) or the OIDC http_client(); see adr/2026-05-18-outbound-http-user-agent.md" },
 ]
