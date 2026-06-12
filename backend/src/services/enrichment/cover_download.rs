@@ -256,6 +256,10 @@ fn write_atomically(dir: &Path, filename: &str, data: &[u8]) -> Result<PathBuf, 
     reason = "test code: x as u8 in image pixel generator; x is pixel position, wrapping is the intended behavior for test image generation"
 )]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+    )]
     use super::*;
     use std::io::Cursor;
 
