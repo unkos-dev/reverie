@@ -287,7 +287,8 @@ jobs:
                 --ignore-unfixed \
                 --exit-code 1 \
                 --no-progress \
-                "${IMAGE_REF}@${child}"
+                "${IMAGE_REF}@${child}" \
+                || { echo "::endgroup::"; exit 1; }
               echo "::endgroup::"
             done
           done
