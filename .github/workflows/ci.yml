@@ -774,6 +774,7 @@ jobs:
         run: |
           set -euo pipefail
           allow="MIT;Apache-2.0;ISC;0BSD;BSD-2-Clause;BSD-3-Clause;BlueOak-1.0.0;CC0-1.0;Python-2.0;Unlicense"
+          rc=0
           for tree in . frontend docs; do
             echo "::group::npm ci + license check (${tree})"
             (
@@ -784,9 +785,10 @@ jobs:
                 --excludePrivatePackages \
                 --excludePackagesStartingWith "@img/sharp-libvips" \
                 --onlyAllow "$allow"
-            )
+            ) || rc=1
             echo "::endgroup::"
           done
+          exit "$rc"
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
