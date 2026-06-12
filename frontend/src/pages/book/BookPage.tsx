@@ -79,9 +79,17 @@ function BookContent({ id }: BookContentProps): ReactElement {
         </aside>
         <section className="min-w-0">
           <header className="mb-6">
-            {seriesLabel !== null ? (
-              <p className="text-fg-muted mb-2 text-xs uppercase tracking-[0.14em]">
-                {seriesLabel}
+            {book.series !== null && seriesLabel !== null ? (
+              <p className="mb-2">
+                {/* Series detail must be click-reachable from here —
+                    it has no other inbound surface (UNK-385 §4). */}
+                <Link
+                  to={`/series/${book.series.id}`}
+                  viewTransition
+                  className="text-fg-muted hover:text-fg focus-visible:ring-accent rounded-sm text-xs uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2"
+                >
+                  {seriesLabel}
+                </Link>
               </p>
             ) : null}
             <h1 className="font-display text-fg text-3xl font-semibold tracking-tight">

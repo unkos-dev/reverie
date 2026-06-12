@@ -65,13 +65,14 @@ describe("BookPage", () => {
     expect(screen.getByText("Fyodor Dostoevsky")).toBeInTheDocument();
   });
 
-  test("renders the series label when present", async () => {
+  test("renders the series label as a link to the series detail", async () => {
     renderBook(
       bookFixture({
         series: { id: "s-1", name: "Karamazov Trilogy", position: 1 },
       }),
     );
-    expect(await screen.findByText(/Karamazov Trilogy · #1/)).toBeInTheDocument();
+    const label = await screen.findByText(/Karamazov Trilogy · #1/);
+    expect(label.closest("a")).toHaveAttribute("href", "/series/s-1");
   });
 
   test("renders the three tabs (Overview, Versions, Activity)", async () => {
