@@ -26,7 +26,7 @@ interface UtilityStripProps {
 /** Sticky 56px strip: breadcrumbs left, search affordance right. */
 export function UtilityStrip({ menuSlot = null }: UtilityStripProps): ReactElement {
   return (
-    <header className="border-border sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-[color-mix(in_srgb,var(--canvas)_82%,transparent)] px-4 backdrop-blur-[10px] sm:px-6">
+    <header className="border-border sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b bg-[color-mix(in_srgb,var(--canvas)_82%,transparent)] px-4 backdrop-blur-[10px] group-data-[zone=admin]/zone:bg-[color-mix(in_srgb,var(--canvas-2)_82%,transparent)] sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         {menuSlot}
         <Breadcrumbs />

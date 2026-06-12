@@ -68,6 +68,8 @@ export const shelfDetailRoute: RouteObject = {
 /** `/admin/users` — admin-only user management. */
 export const adminUsersRoute: RouteObject = {
   path: "admin/users",
+  // Shell tone shift to canvas-2 (spec §2 admin zone).
+  handle: { zone: "admin" },
   lazy: async () => {
     const mod = await import("./admin");
     return { loader: mod.loader, Component: mod.Component };
@@ -77,6 +79,8 @@ export const adminUsersRoute: RouteObject = {
 /** `/admin/dashboard` — admin-only library-health dashboard. */
 export const adminDashboardRoute: RouteObject = {
   path: "admin/dashboard",
+  // Shell tone shift to canvas-2 (spec §2 admin zone).
+  handle: { zone: "admin" },
   lazy: async () => {
     const mod = await import("./dashboard");
     return { loader: mod.loader, Component: mod.Component };
