@@ -23,7 +23,7 @@
  * `backend/src/routes/library/search.rs`.
  */
 import { useQuery } from "@tanstack/react-query";
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { searchLibrary, type SearchHit } from "@/api";
@@ -36,6 +36,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { setCommandPaletteOpener } from "@/lib/command-palette";
 import { queryKeys } from "@/lib/query/keys";
 
 /** Debounce delay between keystroke and the `/api/v1/search` request. */
@@ -53,25 +54,45 @@ const SNIPPET_HL_END = "\u0003";
 
 /**
  * Listen for `Cmd-K` / `Ctrl-K` and toggle the palette open. The
- * dialog itself owns `Esc`-to-close via Radix. Returns a `[open,
- * setOpen]` tuple so the caller can also open the palette via a
- * header button if one ships later.
+ * dialog itself owns `Esc`-to-close via Radix. Also registers the
+ * module-level opener (`lib/command-palette.ts`) so chrome like the
+ * utility strip's search affordance shares this one surface (spec S5).
+ *
+ * The invoker (the element focused at open time) is captured
+ * explicitly so close can restore focus to it deterministically —
+ * Radix's own previously-focused capture races the dialog's autofocus
+ * under test renderers, and the spec (§6) makes restore a MUST.
  */
-function useCmdKToggle(): [boolean, (open: boolean) => void] {
+function useCmdKToggle(): [boolean, (open: boolean) => void, RefObject<HTMLElement | null>] {
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  const invokerRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+  useEffect(() => {
+    function capture(): void {
+      invokerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== "k" && event.key !== "K") return;
       if (!event.metaKey && !event.ctrlKey) return;
       event.preventDefault();
-      setOpen((current) => !current);
+      if (!openRef.current) capture();
+      setOpen(!openRef.current);
     }
     window.addEventListener("keydown", onKeyDown);
+    setCommandPaletteOpener(() => {
+      if (!openRef.current) capture();
+      setOpen(true);
+    });
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      setCommandPaletteOpener(() => {});
     };
   }, []);
-  return [open, setOpen];
+  return [open, setOpen, invokerRef];
 }
 
 /** Debounced echo of `value` — updates `DEBOUNCE_MS` after the last change. */
@@ -90,7 +111,7 @@ function useDebounced<T>(value: T, delay: number): T {
 
 /** Global Cmd-K search palette. */
 export function CommandPalette(): ReactElement {
-  const [open, setOpen] = useCmdKToggle();
+  const [open, setOpen, invokerRef] = useCmdKToggle();
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounced(query.trim(), DEBOUNCE_MS);
   const navigate = useNavigate();
@@ -135,11 +156,18 @@ export function CommandPalette(): ReactElement {
       }}
       title="Search library"
       description="Search by title, description, or author across your library."
+      onCloseAutoFocus={(event) => {
+        if (invokerRef.current !== null && invokerRef.current.isConnected) {
+          event.preventDefault();
+          invokerRef.current.focus();
+        }
+        invokerRef.current = null;
+      }}
     >
       {/* Server is the filter — cmdk's prefix filter is disabled so
           ranked results render in the order the backend chose. */}
       <Command shouldFilter={false}>
-        <CommandInput placeholder="Search library…" value={query} onValueChange={setQuery} />
+        <CommandInput placeholder="Search the library…" value={query} onValueChange={setQuery} />
         <CommandList>
           {renderStatus({
             query: debouncedQuery,
@@ -163,8 +191,26 @@ export function CommandPalette(): ReactElement {
             </CommandGroup>
           ) : null}
         </CommandList>
+        <PaletteFooter />
       </Command>
     </CommandDialog>
+  );
+}
+
+/** Keyboard-hint footer row (spec §6): `↑↓ navigate · ↵ open · esc close`. */
+function PaletteFooter(): ReactElement {
+  return (
+    <div className="border-border text-fg-muted flex items-center gap-4 border-t px-3 py-2 font-mono text-[0.65rem] tracking-wide">
+      <span>
+        <kbd>↑↓</kbd> navigate
+      </span>
+      <span>
+        <kbd>↵</kbd> open
+      </span>
+      <span>
+        <kbd>esc</kbd> close
+      </span>
+    </div>
   );
 }
 

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
+import { openCommandPalette } from "@/lib/command-palette";
+
 import { CommandPalette, HighlightedSnippet } from "./CommandPalette";
 
 /**
@@ -75,13 +77,56 @@ describe("CommandPalette — Cmd-K binding", () => {
   });
 });
 
+describe("CommandPalette — module trigger (openCommandPalette)", () => {
+  test("opens the dialog when invoked", async () => {
+    renderPalette();
+    act(() => {
+      openCommandPalette();
+    });
+    expect(await screen.findByRole("dialog", { name: /search library/i })).toBeInTheDocument();
+  });
+
+  test("escape closes and focus returns to the previously focused element", async () => {
+    renderPalette();
+    const user = userEvent.setup();
+    const invoker = document.createElement("button");
+    invoker.textContent = "open search";
+    document.body.appendChild(invoker);
+    invoker.focus();
+    act(() => {
+      openCommandPalette();
+    });
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(invoker).toHaveFocus();
+    });
+    invoker.remove();
+  });
+});
+
+describe("CommandPalette — dialog semantics (spec §6)", () => {
+  test("dialog is modal with listbox results semantics and kbd footer", async () => {
+    renderPalette();
+    triggerCmdK();
+    const dialog = await screen.findByRole("dialog", { name: /search library/i });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(screen.getByText(/navigate/i)).toBeInTheDocument();
+    expect(screen.getByText(/close/i)).toBeInTheDocument();
+  });
+});
+
 describe("CommandPalette — search flow", () => {
   test("does not fire a request while query is under MIN_Q_LEN", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search library…");
+    const input = await screen.findByPlaceholderText("Search the library…");
     await user.type(input, "g");
     // No call should fire — under MIN_Q_LEN (2).
     await new Promise((r) => setTimeout(r, 300));
@@ -93,7 +138,7 @@ describe("CommandPalette — search flow", () => {
     renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search library…");
+    const input = await screen.findByPlaceholderText("Search the library…");
     await user.type(input, "war");
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
@@ -122,7 +167,7 @@ describe("CommandPalette — search flow", () => {
     const { router } = renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search library…");
+    const input = await screen.findByPlaceholderText("Search the library…");
     await user.type(input, "stoner");
     await screen.findByText("Stoner");
     await user.click(screen.getByText("Stoner"));
@@ -139,7 +184,7 @@ describe("CommandPalette — search flow", () => {
     renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search library…");
+    const input = await screen.findByPlaceholderText("Search the library…");
     await user.type(input, "war");
     await screen.findByText(/search failed/i);
     expect(consoleSpy).toHaveBeenCalled();
