@@ -11,22 +11,26 @@
 /* eslint-disable react-refresh/only-export-components */
 import type { LoaderFunctionArgs } from "react-router";
 
-import { getSeries } from "@/api";
+import { getSeries, type SeriesDetail } from "@/api";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import { SeriesPage } from "@/pages/series/SeriesPage";
 
 /**
  * Loader for `/series/:id`. Prefetches the series detail so the
- * page's `useSuspenseQuery` hits a hot cache.
+ * page's `useSuspenseQuery` hits a hot cache, then returns `{ title }`
+ * for the utility strip's breadcrumb. `prefetchQuery` swallows fetch
+ * errors — a cold cache degrades to `null` (crumb renders "Library"
+ * alone).
  */
-export async function loader({ params }: LoaderFunctionArgs): Promise<null> {
+export async function loader({ params }: LoaderFunctionArgs): Promise<{ title: string } | null> {
   const id = params.id ?? "";
   await queryClient.prefetchQuery({
     queryKey: queryKeys.series.detail(id),
     queryFn: ({ signal }) => getSeries(id, signal),
   });
-  return null;
+  const detail = queryClient.getQueryData<SeriesDetail>(queryKeys.series.detail(id));
+  return detail === undefined ? null : { title: detail.name };
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
