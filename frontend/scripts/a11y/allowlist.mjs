@@ -48,7 +48,7 @@ export const ALLOWLIST = [
     // review catch, not an axe catch.
     htmlIncludesAll: ["text-cover-"],
     rationale:
-      "axe background-attribution false positive on spine compositions: cover-palette text always sits on its paired bg-cover-* ground (CoverArtwork COLORWAY_CLASSES), which axe cannot see through the absolute stack.",
+      "DESIGN.md §4 Cover-Spine Rule: cover-palette text always sits on its paired bg-cover-* ground (CoverArtwork COLORWAY_CLASSES, every pairing ≥4.5:1 by construction); axe cannot attribute that ground through the spine's absolute stack and reports page-canvas contrast — a background-attribution false positive.",
     issue: null,
   },
 ];
