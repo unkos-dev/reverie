@@ -33,6 +33,7 @@ jobs:
       staging: ${{ steps.filter.outputs.staging }}
       workflows: ${{ steps.filter.outputs.workflows }}
       iac: ${{ steps.filter.outputs.iac }}
+      openapi: ${{ steps.filter.outputs.openapi }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -84,6 +85,13 @@ jobs:
               - 'docker-compose.yml'
               - 'docker/**'
               - '.trivyignore'
+              - '.github/workflows/ci.yml'
+            openapi:
+              # checkov OpenAPI policy inputs. A .checkov.yaml suppression
+              # edit must re-run the scan even with no spec change (same
+              # rationale as the zizmor.yml entry above).
+              - 'docs/openapi.json'
+              - '.checkov.yaml'
               - '.github/workflows/ci.yml'
             docs:
               # The generated reference artifacts (docs/openapi.json,
@@ -678,6 +686,39 @@ jobs:
             --skip-dirs node_modules,frontend/node_modules,docs/node_modules,backend/target \
             --skip-dirs .github \
             .
+
+  # UNK-378 (scope addition from UNK-380): checkov OpenAPI policy gate over
+  # the generated docs/openapi.json. Enforces the API-spec security-policy
+  # class nothing else covers — securitySchemes present and non-cleartext
+  # (CKV_OPENAPI_3), global security rules defined (CKV_OPENAPI_4),
+  # operation-level security coverage (CKV_OPENAPI_5), no global apiKey
+  # over cleartext. CKV_OPENAPI_4/5 are acceptance criteria for
+  # UNK-380/UNK-376. Suppressions, if ever needed, live in .checkov.yaml
+  # with per-finding justification (zizmor discipline). Scoped to the
+  # openapi framework — Dockerfile/compose misconfig is trivy's remit
+  # (iac-scan), workflow security is zizmor's.
+  openapi-policy:
+    name: OpenAPI policy (checkov)
+    needs: changes
+    if: needs.changes.outputs.openapi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # checkov is pip-only (no standalone release binary), so it installs
+      # via pipx like yamllint above. Version pinned so a new upstream
+      # policy cannot silently add findings and break the gate on an
+      # unrelated PR; bump deliberately.
+      - name: Install checkov 3.3.0
+        run: pipx install checkov==3.3.0
+
+      # --config-file makes the suppression registry explicit; every skip
+      # in .checkov.yaml carries a justification and lift condition.
+      - name: Scan OpenAPI spec (gating)
+        run: checkov -f docs/openapi.json --framework openapi --compact --config-file .checkov.yaml
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
   # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
@@ -1376,6 +1417,7 @@ jobs:
       - staging-smoke
       - secret-scan
       - iac-scan
+      - openapi-policy
       - docs
       - commitlint
       - pr-linear-ref
