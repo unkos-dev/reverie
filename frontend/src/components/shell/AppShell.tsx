@@ -16,8 +16,8 @@
  * chrome (spec S2) — the shell knows nothing about it.
  */
 import { Menu } from "lucide-react";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { useLocation, useMatches } from "react-router";
+import { useState, type ReactElement, type ReactNode } from "react";
+import { useMatches } from "react-router";
 
 import { Lockup } from "@/components/Lockup";
 import {
@@ -69,17 +69,13 @@ export function AppShell({ children }: AppShellProps): ReactElement {
 /**
  * Strip-left slot for viewports under 1024px: menu button opening the
  * rail drawer, plus the lockup (the rail that normally carries it is
- * hidden). The drawer closes on navigation so a chosen destination
- * doesn't leave it hanging over the new page.
+ * hidden). Clicking any nav link inside the drawer closes it so the
+ * chosen destination isn't left covered — event-driven rather than a
+ * pathname effect (set-state-in-effect causes cascading renders).
  */
 function DrawerSlot(): ReactElement {
   const [open, setOpen] = useState(false);
   const { effective } = useTheme();
-  const location = useLocation();
-
-  useEffect(() => {
-    setOpen(false);
-  }, [location.pathname]);
 
   return (
     <div className="flex items-center gap-3 lg:hidden">
@@ -93,7 +89,15 @@ function DrawerSlot(): ReactElement {
             <span className="sr-only">Open navigation</span>
           </button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-[260px] max-w-[80vw] gap-0 p-0">
+        <SheetContent
+          side="left"
+          className="w-[260px] max-w-[80vw] gap-0 p-0"
+          onClick={(event) => {
+            if (event.target instanceof Element && event.target.closest("a") !== null) {
+              setOpen(false);
+            }
+          }}
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>Navigation</SheetTitle>
             <SheetDescription>Primary navigation drawer.</SheetDescription>

@@ -13,7 +13,7 @@
  */
 import { useQuery, useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { Filter, LayoutGrid, List, Loader2, X } from "lucide-react";
-import { Suspense, useState, type ReactElement } from "react";
+import { Suspense, useState, type CSSProperties, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import {
@@ -21,8 +21,12 @@ import {
   listShelves,
   type BookListItem,
   type BookListResponse,
+  type ListSort,
   type Shelf,
 } from "@/api";
+import { CoverArtwork } from "@/components/CoverArtwork";
+import { BrowseLayout } from "@/components/shell/BrowseLayout";
+import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -32,6 +36,13 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,6 +51,12 @@ import { queryKeys } from "@/lib/query/keys";
 import { paramsFromSearch } from "@/routes/library-params";
 
 type ViewMode = "grid" | "list";
+
+const SORT_OPTIONS: { value: ListSort; label: string }[] = [
+  { value: "recent", label: "Recent" },
+  { value: "title", label: "Title" },
+  { value: "author", label: "Author" },
+];
 
 /**
  * Top-level page component. The `<Suspense>` boundary catches the
@@ -89,86 +106,146 @@ function LibraryContent(): ReactElement {
     setSearchParams(updated, { replace: true });
   }
 
+  // Facet options derive from the loaded pages — `SeriesRef` carries
+  // the id the backend filter wants; authors are display names only
+  // (placeholder group until UNK-387's author ids land).
+  const seriesById = new Map<string, string>();
+  for (const book of items) {
+    if (book.series !== null) seriesById.set(book.series.id, book.series.name);
+  }
+  const seriesOptions: SeriesFacetOption[] = [...seriesById]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const authorNames = [...new Set(items.flatMap((b) => b.authors))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10 sm:px-10">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">Library</h1>
-          <p className="text-fg-muted mt-1 text-sm">
-            {items.length === 0
-              ? "No books yet."
-              : `${String(items.length)} ${items.length === 1 ? "book" : "books"}`}
-          </p>
+    <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} authorNames={authorNames} />}>
+      <div className="mx-auto max-w-7xl px-6 py-10 sm:px-10">
+        <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">Library</h1>
+            {/* 30×3px gold slot-rule — the lib-head signature (spec §5). */}
+            <div aria-hidden="true" className="bg-accent mt-3 h-[3px] w-[30px]" />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
+            <div
+              role="group"
+              aria-label="View mode"
+              className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={viewMode === "grid"}
+                onClick={() => {
+                  setView("grid");
+                }}
+                className={viewMode === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
+              >
+                <LayoutGrid className="size-4" aria-hidden="true" />
+                <span className="sr-only">Grid</span>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={viewMode === "list"}
+                onClick={() => {
+                  setView("list");
+                }}
+                className={viewMode === "list" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
+              >
+                <List className="size-4" aria-hidden="true" />
+                <span className="sr-only">List</span>
+              </Button>
+            </div>
+          </div>
+        </header>
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
+          <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
         </div>
-        <div
-          role="group"
-          aria-label="View mode"
-          className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-pressed={viewMode === "grid"}
-            onClick={() => {
-              setView("grid");
-            }}
-            className={viewMode === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
-          >
-            <LayoutGrid className="size-4" aria-hidden="true" />
-            <span className="sr-only">Grid</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-pressed={viewMode === "list"}
-            onClick={() => {
-              setView("list");
-            }}
-            className={viewMode === "list" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
-          >
-            <List className="size-4" aria-hidden="true" />
-            <span className="sr-only">List</span>
-          </Button>
-        </div>
-      </header>
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
-        <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
+        <Separator className="mb-8" />
+
+        {items.length === 0 ? (
+          <EmptyState />
+        ) : viewMode === "grid" ? (
+          <BookGrid items={items} />
+        ) : (
+          <BookList items={items} />
+        )}
+
+        {hasNextPage ? (
+          <div className="mt-10 flex justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isFetchingNextPage}
+              onClick={() => {
+                void fetchNextPage();
+              }}
+            >
+              {isFetchingNextPage ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                  Loading…
+                </>
+              ) : (
+                "Load more"
+              )}
+            </Button>
+          </div>
+        ) : null}
       </div>
-      <Separator className="mb-8" />
+    </BrowseLayout>
+  );
+}
 
-      {items.length === 0 ? (
-        <EmptyState />
-      ) : viewMode === "grid" ? (
-        <BookGrid items={items} />
-      ) : (
-        <BookList items={items} />
-      )}
+interface SortMenuProps {
+  searchParams: URLSearchParams;
+  setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
+}
 
-      {hasNextPage ? (
-        <div className="mt-10 flex justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isFetchingNextPage}
-            onClick={() => {
-              void fetchNextPage();
-            }}
-          >
-            {isFetchingNextPage ? (
-              <>
-                <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-                Loading…
-              </>
-            ) : (
-              "Load more"
-            )}
-          </Button>
-        </div>
-      ) : null}
-    </div>
+/**
+ * Sort control — a real `<button>` menu (spec §9.3), wired to the
+ * existing `?sort=` contract (`recent` is the backend default, so it
+ * clears the param instead of writing it).
+ */
+function SortMenu({ searchParams, setSearchParams }: SortMenuProps): ReactElement {
+  const raw = searchParams.get("sort");
+  const active = SORT_OPTIONS.find((o) => o.value === raw) ?? { value: "recent", label: "Recent" };
+
+  function setSort(value: string): void {
+    const opt = SORT_OPTIONS.find((o) => o.value === value);
+    if (opt === undefined) return;
+    const updated = new URLSearchParams(searchParams);
+    if (opt.value === "recent") updated.delete("sort");
+    else updated.set("sort", opt.value);
+    updated.delete("cursor");
+    setSearchParams(updated, { replace: true });
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm">
+          Sort: {active.label}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuRadioGroup value={active.value} onValueChange={setSort}>
+          {SORT_OPTIONS.map((opt) => (
+            <DropdownMenuRadioItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -180,13 +257,20 @@ function BookGrid({ items }: BookGridProps): ReactElement {
   return (
     <ul
       data-testid="library-grid"
-      className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+      className="grid gap-x-6 gap-y-8 [grid-template-columns:repeat(auto-fill,minmax(clamp(170px,10vw,240px),1fr))]"
     >
-      {items.map((book) => (
-        <li key={book.id}>
-          <BookCard book={book} />
-        </li>
-      ))}
+      {items.map((book, index) => {
+        // Stagger index is the one dynamic value utilities can't carry;
+        // typed as an intersection so no `as` cast is needed.
+        const staggerStyle: CSSProperties & { "--tile-index": number } = {
+          "--tile-index": index,
+        };
+        return (
+          <li key={book.id} className="tile-in" style={staggerStyle}>
+            <BookCard book={book} />
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -251,10 +335,11 @@ function BookCard({ book }: BookCardProps): ReactElement {
     <article className="group">
       <Link
         to={`/b/${book.id}`}
-        className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 hover:-translate-y-0.5 focus-visible:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        viewTransition
+        className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 hover:-translate-y-0.5 hover:scale-[1.012] focus-visible:-translate-y-0.5 focus-visible:scale-[1.012] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       >
-        <div className="border-border group-hover:border-border-strong bg-surface-1 relative aspect-[2/3] overflow-hidden rounded-md border transition-colors">
-          <CoverImage src={book.cover_url} alt={`Cover of ${book.title}`} />
+        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_10px_28px_-10px_var(--accent)] group-focus-within:shadow-[0_10px_28px_-10px_var(--accent)] relative aspect-[2/3] overflow-hidden rounded-md border transition-[border-color,box-shadow]">
+          <CoverImage book={book} />
           {seriesLabel !== null ? (
             <span className="bg-canvas/85 text-fg border-border absolute left-2 top-2 rounded-sm border px-2 py-1 text-[0.62rem] uppercase tracking-[0.14em] backdrop-blur-sm">
               {seriesLabel}
@@ -262,7 +347,7 @@ function BookCard({ book }: BookCardProps): ReactElement {
           ) : null}
         </div>
         <div className="flex flex-col gap-1">
-          <h3 className="font-display text-fg line-clamp-2 text-sm font-semibold leading-tight">
+          <h3 className="font-display text-fg line-clamp-2 text-sm font-medium leading-tight">
             {book.title}
           </h3>
           <p className="text-fg-muted line-clamp-1 text-xs leading-tight">
@@ -275,13 +360,30 @@ function BookCard({ book }: BookCardProps): ReactElement {
 }
 
 interface CoverImageProps {
-  src: string;
-  alt: string;
+  book: BookListItem;
 }
 
-function CoverImage({ src, alt }: CoverImageProps): ReactElement {
+/**
+ * Real cover art with the typographic spine as fallback (spec S8):
+ * an absent `cover_url` or a load error swaps in `CoverArtwork`, so a
+ * mixed shelf renders dignified spines instead of broken images.
+ */
+function CoverImage({ book }: CoverImageProps): ReactElement {
+  const [failed, setFailed] = useState(false);
+  if (book.cover_url === "" || failed) {
+    return <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />;
+  }
   return (
-    <img src={src} alt={alt} loading="lazy" decoding="async" className="size-full object-cover" />
+    <img
+      src={book.cover_url}
+      alt={`Cover of ${book.title}`}
+      loading="lazy"
+      decoding="async"
+      onError={() => {
+        setFailed(true);
+      }}
+      className="size-full object-cover"
+    />
   );
 }
 

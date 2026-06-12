@@ -179,7 +179,7 @@ function MonogramSpine({ palette, title, author }: SpineProps): ReactElement {
           palette.display,
         )}
       >
-        {(title[0] ?? "·").toUpperCase()}
+        {(title.charAt(0) || "·").toUpperCase()}
       </div>
       <div className="flex flex-col gap-2">
         <div className={cn("h-[2px] w-8", palette.rule)} />

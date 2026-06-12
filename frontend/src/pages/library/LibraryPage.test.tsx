@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -32,9 +32,17 @@ interface RenderOpts {
   initialEntries?: string[];
   /** Params shape to prefill cache under. Defaults to the empty-params slot. */
   cacheParams?: ListBooksParams;
+  /** Additional cache slots to prefill (e.g. a post-interaction sort key). */
+  extraCacheParams?: ListBooksParams[];
 }
 
-function renderLibrary({ items, nextCursor, initialEntries, cacheParams }: RenderOpts): {
+function renderLibrary({
+  items,
+  nextCursor,
+  initialEntries,
+  cacheParams,
+  extraCacheParams = [],
+}: RenderOpts): {
   client: QueryClient;
 } {
   const client = new QueryClient({
@@ -42,10 +50,12 @@ function renderLibrary({ items, nextCursor, initialEntries, cacheParams }: Rende
   });
   const params: ListBooksParams = cacheParams ?? {};
   const response: BookListResponse = { items, next_cursor: nextCursor };
-  client.setQueryData(queryKeys.books.list(params), {
-    pages: [response],
-    pageParams: [undefined],
-  });
+  for (const slot of [params, ...extraCacheParams]) {
+    client.setQueryData(queryKeys.books.list(slot), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+  }
 
   function Wrapper(): ReactElement {
     const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
@@ -64,10 +74,68 @@ function renderLibrary({ items, nextCursor, initialEntries, cacheParams }: Rende
 }
 
 describe("LibraryPage", () => {
-  test("renders the heading and book count", async () => {
+  test("renders the heading without a fabricated total", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
-    expect(screen.getByText("1 book")).toBeInTheDocument();
+    // items.length counts loaded pages only — a "N books" line would
+    // misstate the library total (stats line deferred to UNK-387).
+    expect(screen.queryByText(/1 book/)).not.toBeInTheDocument();
+  });
+
+  test("sort control is a button menu writing ?sort=", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      extraCacheParams: [{ sort: "title" }],
+    });
+    const user = userEvent.setup();
+    const sortButton = await screen.findByRole("button", { name: /Sort/ });
+    await user.click(sortButton);
+    const title = await screen.findByRole("menuitemradio", { name: "Title" });
+    title.focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("button", { name: /Sort: Title/i })).toBeInTheDocument();
+  });
+
+  test("grid tiles carry a focus treatment equal to the hover treatment", async () => {
+    renderLibrary({ items: [bookFixture({ id: "abc", title: "Stoner" })], nextCursor: null });
+    const link = await screen.findByRole("link", { name: /stoner/i });
+    expect(link.className).toMatch(/hover:/);
+    expect(link.className).toMatch(/focus-visible:/);
+  });
+
+  test("missing cover art falls back to the typographic spine", async () => {
+    renderLibrary({
+      items: [bookFixture({ id: "no-cover", title: "Spineless", cover_url: "" })],
+      nextCursor: null,
+    });
+    await screen.findByTestId("library-grid");
+    expect(document.querySelector("[data-layout]")).not.toBeNull();
+  });
+
+  test("cover image load error swaps in the typographic spine", async () => {
+    renderLibrary({
+      items: [bookFixture({ id: "broken-cover", title: "Broken" })],
+      nextCursor: null,
+    });
+    const grid = await screen.findByTestId("library-grid");
+    const img = within(grid).getByRole("img", { name: /Cover of/ });
+    expect(document.querySelector("[data-layout]")).toBeNull();
+    fireEvent.error(img);
+    expect(document.querySelector("[data-layout]")).not.toBeNull();
+  });
+
+  test("filter rail lists distinct series from the loaded pages", async () => {
+    renderLibrary({
+      items: [
+        bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } }),
+        bookFixture({ id: "b", series: { id: "s-1", name: "Discworld", position: 2 } }),
+        bookFixture({ id: "c", series: null }),
+      ],
+      nextCursor: null,
+    });
+    const rail = await screen.findByRole("complementary", { name: "Filters" });
+    expect(within(rail).getAllByRole("radio", { name: "Discworld" })).toHaveLength(1);
   });
 
   test("renders one card per item in the grid by default", async () => {

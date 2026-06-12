@@ -10,7 +10,7 @@ import { useAuthMe } from "@/hooks/useAuthMe";
 import { LeftRail } from "./LeftRail";
 
 vi.mock("@/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/api")>();
+  const original = await importOriginal<Record<string, unknown>>();
   return { ...original, listShelves: vi.fn() };
 });
 

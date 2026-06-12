@@ -58,7 +58,7 @@ function Breadcrumbs(): ReactElement | null {
   const crumbMatch = [...matches].reverse().find((match) => isCrumbHandle(match.handle));
   if (crumbMatch === undefined || !isCrumbHandle(crumbMatch.handle)) return null;
 
-  let title: string | null = null;
+  let title: string | null;
   try {
     title = crumbMatch.handle.crumb(crumbMatch.loaderData);
   } catch {

@@ -11,8 +11,8 @@
  * content column — auto margins on a grid item kill column stretch;
  * centring belongs to the page's own max-width wrapper.
  */
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { useLocation, useSearchParams } from "react-router";
+import { useState, type ReactElement, type ReactNode } from "react";
+import { useSearchParams } from "react-router";
 
 import {
   Sheet,
@@ -29,18 +29,15 @@ interface BrowseLayoutProps {
   children: ReactNode;
 }
 
-/** Content + filter-rail grid with the <1280px Refine sheet. */
+/**
+ * Content + filter-rail grid with the <1280px Refine sheet. The sheet
+ * needs no close-on-navigate handling: the layout is page-owned, so
+ * leaving the page unmounts it, while same-page param writes (picking
+ * a filter) keep it open by design.
+ */
 export function BrowseLayout({ rail, children }: BrowseLayoutProps): ReactElement {
   const [refineOpen, setRefineOpen] = useState(false);
-  const location = useLocation();
   const [searchParams] = useSearchParams();
-
-  // Close the sheet when navigation leaves the page; keep it open
-  // across same-page param writes (picking a filter shouldn't slam
-  // the sheet shut).
-  useEffect(() => {
-    setRefineOpen(false);
-  }, [location.pathname]);
 
   return (
     <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_264px]">
