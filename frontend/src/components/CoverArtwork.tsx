@@ -201,9 +201,11 @@ function MonogramSpine({ palette, title, author }: SpineProps): ReactElement {
 function VerticalSpine({ palette, title, author }: SpineProps): ReactElement {
   return (
     <div className="absolute inset-0 flex flex-row-reverse items-stretch justify-between p-[7%]">
+      {/* line-clamp (-webkit-box) breaks under vertical writing modes —
+          nowrap + ellipsis truncates correctly along the block axis. */}
       <div
         className={cn(
-          "font-display line-clamp-1 max-h-full text-lg font-semibold tracking-tight [writing-mode:vertical-rl]",
+          "font-display max-h-full overflow-hidden text-ellipsis whitespace-nowrap text-lg font-semibold tracking-tight [writing-mode:vertical-rl]",
           palette.display,
         )}
       >
