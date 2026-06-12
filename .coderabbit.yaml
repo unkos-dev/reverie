@@ -43,13 +43,12 @@ reviews:
   path_instructions:
     - path: "backend/**/*.rs"
       instructions: |
-        Backend uses the `time` crate, not `chrono`. Flag any new `chrono`
-        import. Errors flow through `thiserror`-derived `AppError`; never
-        return raw `anyhow::Error` from public APIs. SQL queries use sqlx
+        Errors flow through `thiserror`-derived `AppError`; never return
+        raw `anyhow::Error` from public APIs. SQL queries use sqlx
         compile-time macros (`query!` / `query_as!` / `query_scalar!`); a
         new runtime-form `sqlx::query(...)` outside the documented
         carve-outs in `.github/sqlx-runtime-allowlist.txt` is a regression
-        — flag it.
+        — flag it. (The `chrono` ban is now a native CI grep guard.)
     - path: "frontend/src/**/*.{ts,tsx}"
       instructions: |
         No raw hex colour literals — every brand colour comes from the
@@ -121,12 +120,13 @@ reviews:
     hadolint:
       enabled: false
     # Structural pattern matching — net-new signal. `essential_rules`
-    # turns on CodeRabbit's built-in anti-pattern set. Repo-specific
-    # convention rules (the `chrono`, `as`/`!`, raw-hex, and runtime
-    # `sqlx::query` bans from path_instructions above) are the high-value
-    # follow-up: authored under rule_dirs, they enforce those bans
-    # deterministically instead of relying on the model's judgement,
-    # which the `chill` profile makes less reliable.
+    # turns on CodeRabbit's built-in anti-pattern set. The remaining
+    # judgement-based convention rules (the `as`/`!` and raw-hex bans from
+    # path_instructions above) are the high-value follow-up: authored under
+    # rule_dirs, they enforce those bans deterministically instead of
+    # relying on the model's judgement, which the `chill` profile makes
+    # less reliable. (The `chrono` and runtime-`sqlx::query` bans are now
+    # native CI guards.)
     ast-grep:
       essential_rules: true
       rule_dirs:
@@ -139,20 +139,23 @@ reviews:
       enabled: true
     presidio:
       enabled: true
-    # Security and SAST patterns. Reverie's threat model is multi-user
-    # exposed instance — security pattern matching across the diff is
-    # exactly the differentiator we want to preserve.
+    # SAST + IaC/image scanning — now native, blocking CI gates, so
+    # disabled here to avoid a second advisory (diff-only, non-gating)
+    # opinion. UNK-378 reproduced each as a ci.yml job: opengrep SAST over
+    # backend/src + frontend/src (#472), trivy image-CVE + IaC-misconfig
+    # scan (#469), and checkov OpenAPI/IaC policy (#470). CR's versions
+    # never gated merge, so dropping them is zero enforcement loss.
     semgrep:
-      enabled: true
+      enabled: false
     opengrep:
-      enabled: true
-    # Dep + IaC vulnerability scanning. Reverie has Dockerfile, GitHub
-    # Actions, and a Cargo / npm dep tree — three IaC/SCA surfaces CI
-    # does not yet exhaustively scan.
+      enabled: false
     trivy:
-      enabled: true
+      enabled: false
     checkov:
-      enabled: true
+      enabled: false
+    # Multi-ecosystem SCA (lockfile vuln scan) — kept. Complements, rather
+    # than duplicates, the native cargo-audit cron + npm advisory cron
+    # (#471) + dependency-review with a cross-ecosystem advisory pass.
     osvScanner:
       enabled: true
     # Markdown grammar and style. The markdown documentation surface
