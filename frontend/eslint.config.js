@@ -65,6 +65,39 @@ export default defineConfig([
     },
     rules: {
       ...restrictedSyntaxRule,
+      // Machine-enforces the frontend/CLAUDE.md rule "API calls centralise
+      // in src/api/; components never call fetch directly" (UNK-378 —
+      // previously enforced only by a CodeRabbit path_instruction). The
+      // src/api/** override below carves out the wrapper's own home; the
+      // /auth/* surface carve-out is documented on its own block.
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "fetch",
+          message:
+            "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised.",
+        },
+      ],
+      // The bare-identifier ban above misses the property-access forms
+      // `window.fetch(...)` / `globalThis.fetch(...)`, which resolve to the
+      // same global. Ban both so the centralisation convention can't be
+      // sidestepped with an unusual-but-valid spelling. Carved out in the
+      // same three override blocks as `no-restricted-globals`.
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "window",
+          property: "fetch",
+          message:
+            "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised.",
+        },
+        {
+          object: "globalThis",
+          property: "fetch",
+          message:
+            "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised.",
+        },
+      ],
       // Machine-enforces the frontend/CLAUDE.md ban on `as` casts against
       // object literals (`{ ... } as X`). The chained-through-`unknown`
       // form (`{ ... } as unknown as X`) — the documented escape hatch —
@@ -126,6 +159,39 @@ export default defineConfig([
     files: ["**/*.test.{ts,tsx}"],
     rules: {
       "@typescript-eslint/consistent-type-assertions": "off",
+    },
+  },
+  // src/api/ is where the centralised fetch wrapper lives — the one place
+  // the global is legitimately referenced (apiFetch's sendRequest, the
+  // csrf bootstrap).
+  {
+    files: ["src/api/**"],
+    rules: {
+      "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
+    },
+  },
+  // The /auth/* cookie-session surface predates apiFetch and deliberately
+  // sits outside it: fetchMe/useAuthMe need 401-as-value semantics (a
+  // logged-out visitor is a normal outcome, not a thrown ApiError), and
+  // apiFetch's CSRF-injection + Problem-Details retry machinery targets
+  // the /api/v1/* contract. Folding these into src/api/ with non-throwing
+  // variants is the eventual shape; until then the carve-out keeps the
+  // ban honest rather than silently violated.
+  {
+    files: ["src/lib/theme/api.ts", "src/hooks/useAuthMe.ts"],
+    rules: {
+      "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
+    },
+  },
+  // Tests stub and assert on the global (vi.stubGlobal("fetch", ...),
+  // mock dispatch helpers) — the ban targets production call sites.
+  {
+    files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "tests/**"],
+    rules: {
+      "no-restricted-globals": "off",
+      "no-restricted-properties": "off",
     },
   },
   // ADR: docstring linting for the tiered comment policy (UNK-236).

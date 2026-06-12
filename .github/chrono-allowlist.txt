@@ -1,0 +1,23 @@
+# chrono usage allowlist (UNK-378)
+#
+# This file is the canonical registry of `use chrono` / `extern crate
+# chrono` sites exempted from the project-wide chrono ban. Reverie
+# standardises on the `time` crate (backend/CLAUDE.md); CI greps for
+# chrono imports in `backend/src/` and rejects any line not containing
+# a fixed string from this file (`grep -v -F -f`).
+#
+# Adding an entry: include reviewer justification in the PR description
+# adding it. The only accepted carve-out class today:
+#   1. Third-party API signatures that require chrono types and offer no
+#      `time`-based alternative (e.g. openidconnect's
+#      CoreIdTokenClaims::new). Test scaffolding only — runtime code
+#      stays on `time`.
+#
+# Each non-comment line is a substring; if it appears in a `grep -rn`
+# output line `path:line:content`, that import is allowed.
+#
+# test_support.rs oidc-mock: openidconnect's CoreIdTokenClaims::new
+# signature accepts chrono::DateTime<Utc>; backend/Cargo.toml's chrono
+# dependency comment documents the same carve-out. Tier-4 test
+# scaffolding only.
+backend/src/test_support.rs:
