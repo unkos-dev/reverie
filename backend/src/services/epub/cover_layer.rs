@@ -14,11 +14,12 @@ use super::{
     zip_layer::{ZipHandle, read_entry},
 };
 
-/// Validate the cover image declared in the `OPF` manifest (`JPEG` or `PNG` only).
+/// Validate the cover image declared in the `OPF` manifest.
 ///
 /// Resolves the cover href relative to the `OPF` directory, reads the entry from
-/// `handle`, and attempts to decode it with the `image` crate. A missing or
-/// undecodable cover appends a `Degraded` issue; no cover declared is not an error.
+/// `handle`, and accepts it if it decodes as a raster (`JPEG`/`PNG`/`WebP`) or
+/// parses as `SVG`. A missing, undecodable, or unparsable cover appends a
+/// `Degraded` issue; no cover declared is not an error.
 pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec<Issue>) {
     let Some(opf) = opf_data else { return };
 
@@ -224,6 +225,22 @@ mod tests {
     #[test]
     fn malformed_svg_cover_emits_degraded() {
         let handle = make_handle_with_svg_cover(b"<svg><broken");
+        let opf = make_se_svg_opf("cover.svg");
+        let mut issues = Vec::new();
+        validate(&handle, Some(&opf), &mut issues);
+        assert!(issues.iter().any(|i| {
+            i.severity == Severity::Degraded
+                && matches!(&i.kind, IssueKind::UndecodableCover { .. })
+        }));
+    }
+
+    #[test]
+    fn filtered_svg_cover_emits_degraded() {
+        // A cover that parses but carries a filter primitive is a render-cost
+        // bomb (rejected at serve). Ingestion must agree and flag it Degraded
+        // up front, not accept it and surprise the serve path with a placeholder.
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"><filter id="b"><feGaussianBlur stdDeviation="8"/></filter><rect width="100" height="150" fill="black" filter="url(#b)"/></svg>"#;
+        let handle = make_handle_with_svg_cover(svg);
         let opf = make_se_svg_opf("cover.svg");
         let mut issues = Vec::new();
         validate(&handle, Some(&opf), &mut issues);

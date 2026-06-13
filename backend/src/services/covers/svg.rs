@@ -9,11 +9,10 @@
 //!
 //! THREAT: input is attacker-controlled XML pulled from an uploaded EPUB.
 //! Defenses, all enforced here:
-//! - **XXE**: `usvg` parses with `roxmltree`, which performs *zero* IO —
-//!   external entities are never fetched. `usvg` hard-codes `allow_dtd: true`
-//!   (verified in pinned 0.47 source), so DTDs are *parsed*, not rejected;
-//!   internal entity expansion is loop/depth-guarded by `roxmltree`, and the
-//!   `MAX_SVG_INPUT_BYTES` cap bounds expansion input as a belt.
+//! - **XXE / entity expansion**: we parse with `allow_dtd: false`, so any cover
+//!   carrying a DOCTYPE is rejected before entity processing — no external-entity
+//!   fetch, no billion-laughs, and no entity-inflated nesting that could slip
+//!   past the byte-scan depth guard. (`roxmltree` performs zero IO regardless.)
 //! - **Local file read via `<image href>`**: `usvg`'s default `resolve_string`
 //!   reads local files. We override it to resolve only sibling ZIP entries
 //!   (path-traversal-checked) and override `resolve_data` to bound base64
@@ -24,6 +23,17 @@
 //!   (`MAX_EMBEDDED_PIXELS`) before decode.
 //! - **Output-size bomb**: render output is capped at `MAX_RENDER_LONG_EDGE`;
 //!   `Pixmap::new` returning `None` (zero/oversize) maps to a decode error.
+//! - **Parser stack overflow**: both `roxmltree`'s parser and `usvg`'s tree
+//!   conversion recurse on element nesting with no depth guard and *abort the
+//!   process* on deeply nested SVG. `check_nesting_depth` bounds nesting with a
+//!   flat scan of the raw bytes (no parse, no recursion — cannot itself overflow)
+//!   *before* either touches the input.
+//! - **Render-cost bomb**: filters and vector tessellation escape the output
+//!   cap — resvg allocates filter buffers to the filter region, not the canvas,
+//!   and tessellation scales with segment count. `check_render_complexity`
+//!   rejects covers using filter primitives or exceeding segment/node budgets
+//!   *before* `resvg::render`. Both this and the depth bound are applied at
+//!   ingestion (Layer 5) too, so acceptance and serve-time agree.
 //! - **Silent transparent cover**: `usvg` drops unresolvable `<image>` nodes
 //!   and "succeeds" with a blank pixmap. We reject all-transparent renders so
 //!   the existing `<img onError>` spine fallback is preserved.
@@ -46,6 +56,22 @@ const MAX_EMBEDDED_PIXELS: u64 = 16 * 1024 * 1024;
 /// Long-edge cap of the rasterized output, in pixels. Matches `CoverSize::Full`
 /// so the downstream resize step is a near-no-op.
 const MAX_RENDER_LONG_EDGE: u32 = 1200;
+/// Hard cap on total vector path segments across the whole render tree.
+/// Tessellation cost scales with segment count independent of the output-size
+/// cap, so this bounds render CPU. Real covers are sub-1k; this leaves wide
+/// headroom while rejecting geometry-spam bombs.
+const MAX_SVG_PATH_SEGMENTS: usize = 50_000;
+/// Hard cap on total nodes (groups/paths/images) across the render tree.
+/// Backstops element-explosion bombs (e.g. millions of empty groups) that
+/// carry no path segments yet still cost per-node render work.
+const MAX_SVG_NODES: usize = 50_000;
+/// Hard cap on element-nesting depth, enforced on the raw bytes *before* any
+/// parse. Both `roxmltree`'s parser and usvg's tree conversion recurse on nesting
+/// with no guard and abort the process on deep input; depth-50 parses + renders
+/// fine in tests while depth-1000 overflows, so this cap sits comfortably inside
+/// the verified-safe range with ~10× headroom over real covers (a few levels
+/// deep). Also reused as the belt bound on the complexity walk's own recursion.
+const MAX_SVG_DEPTH: u32 = 48;
 
 /// Cheap byte-prefix sniff for SVG. Skips a UTF-8 BOM and leading ASCII
 /// whitespace, then matches `<?xml` or `<svg` (case-insensitive for the tag).
@@ -74,9 +100,11 @@ fn starts_with_ci(haystack: &[u8], needle: &[u8]) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`CoverError::Decode`] for: oversized input, unparsable SVG,
-/// non-positive or unallocatable render dimensions, PNG-encode failure, or an
-/// all-transparent render (so the caller's spine fallback still fires).
+/// Returns [`CoverError::Decode`] for anything [`parse_and_gate`] rejects
+/// (oversized input, non-UTF-8, unparsable SVG, excessive nesting depth, or
+/// unbounded render cost), plus non-positive or unallocatable render dimensions,
+/// PNG-encode failure, or an all-transparent render (so the caller's spine
+/// fallback still fires).
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -86,22 +114,7 @@ pub(crate) fn rasterize_svg<F>(svg_bytes: &[u8], resolve_sibling: F) -> Result<V
 where
     F: Fn(&str) -> Option<Vec<u8>> + Send + Sync,
 {
-    // THREAT: bound input before any parsing — caps entity-expansion and
-    // data-URI payload size.
-    if svg_bytes.len() > MAX_SVG_INPUT_BYTES {
-        return Err(CoverError::Decode(format!(
-            "svg input {} exceeds {MAX_SVG_INPUT_BYTES} byte cap",
-            svg_bytes.len()
-        )));
-    }
-
-    let opt = usvg::Options {
-        image_href_resolver: hardened_resolver(resolve_sibling),
-        ..Default::default()
-    };
-
-    let tree = usvg::Tree::from_data(svg_bytes, &opt)
-        .map_err(|e| CoverError::Decode(format!("svg parse: {e}")))?;
+    let tree = parse_and_gate(svg_bytes, resolve_sibling)?;
 
     let size = tree.size();
     let long = size.width().max(size.height());
@@ -139,18 +152,287 @@ where
         .map_err(|e| CoverError::Decode(format!("png encode: {e}")))
 }
 
-/// Parse-only validity check for the ingestion validator (Layer 5). Does not
-/// rasterize and resolves no siblings — it only answers "does this parse as an
-/// SVG?". Subject to the same input-size cap as [`rasterize_svg`].
+/// Acceptance check for the ingestion validator (Layer 5). Does not rasterize
+/// and resolves no siblings — it answers "would this render as a cover?".
+/// Applies the exact same pipeline as [`rasterize_svg`] via [`parse_and_gate`],
+/// so ingestion and serve-time agree: a cover accepted here will not be rejected
+/// at serve (and vice versa).
 pub(crate) fn parses_as_svg(svg_bytes: &[u8]) -> bool {
+    parse_and_gate(svg_bytes, |_: &str| None).is_ok()
+}
+
+/// Parse `svg_bytes` into a hardened usvg tree, enforcing every pre-render
+/// guard. The single source of truth shared by serve-time [`rasterize_svg`] and
+/// ingestion [`parses_as_svg`], so the two cannot disagree on what is acceptable.
+///
+/// THREAT pipeline, in order: input-size cap → **raw-byte nesting-depth bound** →
+/// UTF-8 → `roxmltree` parse → usvg conversion → render-cost gate. The depth
+/// bound is load-bearing and must run on the raw bytes *before any parse*:
+/// **both** `roxmltree`'s parser **and** usvg's tree conversion recurse on
+/// element nesting with no guard and stack-overflow (process abort) on deeply
+/// nested SVG. The byte scan ([`check_nesting_depth`]) is a flat loop, so it
+/// cannot itself overflow.
+///
+/// # Errors
+///
+/// [`CoverError::Decode`] on input over [`MAX_SVG_INPUT_BYTES`], nesting past
+/// [`MAX_SVG_DEPTH`] (see [`check_nesting_depth`]), non-UTF-8 bytes, an XML parse
+/// failure, a usvg conversion failure, or a render-cost breach (see
+/// [`check_render_complexity`]).
+fn parse_and_gate<F>(svg_bytes: &[u8], resolve_sibling: F) -> Result<usvg::Tree, CoverError>
+where
+    F: Fn(&str) -> Option<Vec<u8>> + Send + Sync,
+{
     if svg_bytes.len() > MAX_SVG_INPUT_BYTES {
-        return false;
+        return Err(CoverError::Decode(format!(
+            "svg input {} exceeds {MAX_SVG_INPUT_BYTES} byte cap",
+            svg_bytes.len()
+        )));
     }
-    let opt = usvg::Options {
-        image_href_resolver: hardened_resolver(|_: &str| None),
+
+    // THREAT: bound nesting depth on the raw bytes, before roxmltree or usvg
+    // touch it — both recurse on nesting and abort the process on deep input.
+    check_nesting_depth(svg_bytes)?;
+
+    let svg_str = std::str::from_utf8(svg_bytes)
+        .map_err(|_| CoverError::Decode("svg is not valid UTF-8".to_owned()))?;
+
+    // THREAT: disable DTD processing. With `allow_dtd: true`, roxmltree expands
+    // internal `<!ENTITY>` definitions at parse time, inflating nesting depth past
+    // what check_nesting_depth measured on the raw bytes (entity *bodies* live in
+    // the doctype, which the scanner skips) — a stack-overflow bypass. Disabling
+    // it also closes XXE and billion-laughs outright. Real covers carry no DTD; a
+    // cover that does is rejected (→ spine fallback).
+    let xml_opt = usvg::roxmltree::ParsingOptions {
+        allow_dtd: false,
         ..Default::default()
     };
-    usvg::Tree::from_data(svg_bytes, &opt).is_ok()
+    let doc = usvg::roxmltree::Document::parse_with_options(svg_str, xml_opt)
+        .map_err(|e| CoverError::Decode(format!("svg parse: {e}")))?;
+
+    let opt = usvg::Options {
+        image_href_resolver: hardened_resolver(resolve_sibling),
+        ..Default::default()
+    };
+    let tree = usvg::Tree::from_xmltree(&doc, &opt)
+        .map_err(|e| CoverError::Decode(format!("svg parse: {e}")))?;
+
+    // THREAT: bound render cost before resvg::render (parse is cheap + input-
+    // capped; render is the bomb). Rejects filters and geometry-spam.
+    check_render_complexity(&tree)?;
+    Ok(tree)
+}
+
+/// Reject SVG whose element nesting exceeds [`MAX_SVG_DEPTH`], scanned from the
+/// raw bytes **before any XML parse**.
+///
+/// THREAT: both `roxmltree`'s parser and usvg's tree conversion recurse on
+/// element nesting with no depth guard and abort the process (stack overflow) on
+/// deep input — so depth must be bounded before either runs. This is a flat byte
+/// scan (no parse, no recursion): it cannot itself overflow. Comments, CDATA,
+/// processing instructions and the doctype are skipped; element opens increment
+/// depth, close and self-closing tags do not. Conservative — it never
+/// undercounts genuine nesting.
+fn check_nesting_depth(bytes: &[u8]) -> Result<(), CoverError> {
+    let mut depth: u32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        let rest = &bytes[i..];
+        // Skip non-element constructs whose bodies may contain stray `<`/`>`.
+        if let Some(skip) = skip_delimited(rest, b"<!--", b"-->")
+            .or_else(|| skip_delimited(rest, b"<![CDATA[", b"]]>"))
+            .or_else(|| skip_delimited(rest, b"<?", b"?>"))
+            .or_else(|| skip_delimited(rest, b"<!", b">"))
+        {
+            i += skip;
+            continue;
+        }
+        if rest.starts_with(b"</") {
+            depth = depth.saturating_sub(1);
+            i += find_after(rest, b">").unwrap_or(rest.len());
+            continue;
+        }
+        // Element open: `<name ...>` or `<name .../>`.
+        let (tag_len, self_closing) = scan_open_tag(rest);
+        if !self_closing {
+            depth += 1;
+            if depth > MAX_SVG_DEPTH {
+                return Err(CoverError::Decode(format!(
+                    "svg nesting exceeds depth {MAX_SVG_DEPTH}"
+                )));
+            }
+        }
+        i += tag_len;
+    }
+    Ok(())
+}
+
+/// If `rest` begins with `open`, return the byte length up to and including the
+/// first following `close` (or to end-of-input if unterminated). Otherwise `None`.
+fn skip_delimited(rest: &[u8], open: &[u8], close: &[u8]) -> Option<usize> {
+    rest.starts_with(open)
+        .then(|| find_after(rest, close).unwrap_or(rest.len()))
+}
+
+/// Byte offset just past the first occurrence of `needle` in `hay`, or `None`.
+fn find_after(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len())
+        .position(|w| w == needle)
+        .map(|p| p + needle.len())
+}
+
+/// From a slice starting at the `<` of an element-open tag, return the length
+/// consumed (up to and including `>`) and whether the tag self-closes. Quotes are
+/// respected so a `>` inside an attribute value does not end the tag early.
+fn scan_open_tag(rest: &[u8]) -> (usize, bool) {
+    let mut quote = 0u8;
+    let mut j = 1; // past '<'
+    while j < rest.len() {
+        let c = rest[j];
+        if quote != 0 {
+            if c == quote {
+                quote = 0;
+            }
+        } else if c == b'"' || c == b'\'' {
+            quote = c;
+        } else if c == b'>' {
+            let self_closing = rest[j - 1] == b'/';
+            return (j + 1, self_closing);
+        }
+        j += 1;
+    }
+    (rest.len(), false) // unterminated tag; roxmltree will reject it downstream
+}
+
+/// Reject SVG covers whose render cost is unbounded relative to the output-size
+/// cap, *before* `resvg::render`. Two axes escape `MAX_RENDER_LONG_EDGE`:
+///
+/// - **Filters**: resvg allocates the filter buffer to the (transformed) filter
+///   region, **not** clamped to the output canvas (resvg 0.47 `filter/mod.rs`),
+///   so a crafted `filterUnits="userSpaceOnUse"` region + large `feGaussianBlur`
+///   is a CPU/memory bomb. Covers don't need filters → reject any.
+/// - **Vector tessellation**: cost scales with path-segment count independent of
+///   output size → cap total segments, plus total nodes (element-explosion
+///   backstop) and nesting depth (recursion/stack-overflow guard).
+///
+/// THREAT: input is attacker-controlled XML from an uploaded EPUB; this is the
+/// render-cost analogue of the pre-decode raster guards in [`safe_image_kind`].
+/// The walk descends `children`, the `clip-path`/`mask` sub-trees, **and** every
+/// node's paint-server / layout sub-trees (via [`usvg::Node::subroots`]) — a
+/// filter can hide inside a mask or a `<pattern>` fill, neither reachable via
+/// `children` alone.
+///
+/// # Errors
+///
+/// Returns [`CoverError::Decode`] on the first breach (filter present, or a
+/// segment/node/depth budget exceeded) so the caller's spine fallback fires.
+fn check_render_complexity(tree: &usvg::Tree) -> Result<(), CoverError> {
+    let mut budget = ComplexityBudget {
+        segments: 0,
+        nodes: 0,
+    };
+    check_group(tree.root(), 0, &mut budget)
+}
+
+/// Running totals for [`check_render_complexity`], threaded through the walk.
+struct ComplexityBudget {
+    segments: usize,
+    nodes: usize,
+}
+
+impl ComplexityBudget {
+    /// Count one node; error once the node budget is exceeded.
+    fn bump_node(&mut self) -> Result<(), CoverError> {
+        self.nodes = self.nodes.saturating_add(1);
+        if self.nodes > MAX_SVG_NODES {
+            return Err(CoverError::Decode(format!(
+                "svg cover exceeds {MAX_SVG_NODES} node budget"
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Recursively gate one group: reject on filters, descend its clip-path/mask
+/// sub-trees, then walk children.
+fn check_group(
+    group: &usvg::Group,
+    depth: u32,
+    budget: &mut ComplexityBudget,
+) -> Result<(), CoverError> {
+    if depth > MAX_SVG_DEPTH {
+        return Err(CoverError::Decode("svg cover nesting too deep".to_owned()));
+    }
+    budget.bump_node()?;
+    if !group.filters().is_empty() {
+        return Err(CoverError::Decode(
+            "svg cover uses filter primitives (unsupported)".to_owned(),
+        ));
+    }
+    // Follow the *full* clip-path / mask chains, not just the first link. usvg
+    // models `clip-path="url(#c2)"` on a `<clipPath>` (and the `<mask>` analogue)
+    // as a recursive sibling, and a filter or geometry bomb can hide past level 1.
+    // Each iteration costs a budget node, so a pathological chain is bounded.
+    let mut clip = group.clip_path();
+    while let Some(cp) = clip {
+        check_group(cp.root(), depth + 1, budget)?;
+        clip = cp.clip_path();
+    }
+    let mut mask = group.mask();
+    while let Some(mk) = mask {
+        check_group(mk.root(), depth + 1, budget)?;
+        mask = mk.mask();
+    }
+    for node in group.children() {
+        check_node(node, depth + 1, budget)?;
+    }
+    Ok(())
+}
+
+/// Gate one node by type, then descend its paint-server / layout sub-trees.
+///
+/// THREAT: a filter can hide inside a `<pattern>` fill/stroke (path) or a text
+/// layout sub-tree — neither is a `child`. [`usvg::Node::subroots`] is the public
+/// uniform accessor for those roots; without descending them a patterned filter
+/// reaches `resvg::render` uncounted.
+fn check_node(
+    node: &usvg::Node,
+    depth: u32,
+    budget: &mut ComplexityBudget,
+) -> Result<(), CoverError> {
+    match node {
+        // Groups carry their own filter/clip/mask handling and children.
+        usvg::Node::Group(child) => return check_group(child, depth, budget),
+        usvg::Node::Path(path) => {
+            budget.bump_node()?;
+            budget.segments = budget.segments.saturating_add(path.data().verbs().len());
+            if budget.segments > MAX_SVG_PATH_SEGMENTS {
+                return Err(CoverError::Decode(format!(
+                    "svg cover exceeds {MAX_SVG_PATH_SEGMENTS} path-segment budget"
+                )));
+            }
+        }
+        usvg::Node::Image(_) | usvg::Node::Text(_) => budget.bump_node()?,
+    }
+    // `subroots` takes an `FnMut(&Group)` with no return channel, so capture the
+    // first error and surface it after the walk.
+    let mut subroot_err: Option<CoverError> = None;
+    node.subroots(|subroot| {
+        if subroot_err.is_some() {
+            return;
+        }
+        if let Err(e) = check_group(subroot, depth + 1, budget) {
+            subroot_err = Some(e);
+        }
+    });
+    if let Some(e) = subroot_err {
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Build a hardened [`usvg::ImageHrefResolver`]: the string resolver restricts
@@ -183,22 +465,54 @@ where
 /// crate is built without the `gif` feature, so its dimensions cannot be sniffed
 /// and it is not a cover format we accept.
 fn safe_image_kind(data: Arc<Vec<u8>>) -> Option<usvg::ImageKind> {
+    // Cap rejections log shape only (size/dims/format), never payload bytes, at
+    // `debug` — input is attacker-controlled and a single SVG may embed many
+    // images, so a louder level would let a crafted cover amplify log volume.
     if data.len() > MAX_EMBEDDED_IMAGE_BYTES {
+        tracing::debug!(
+            bytes = data.len(),
+            cap = MAX_EMBEDDED_IMAGE_BYTES,
+            "svg cover: embedded image rejected (over byte cap)"
+        );
         return None;
     }
-    let fmt = image::guess_format(&data).ok()?;
-    let (width, height) =
+    let Ok(fmt) = image::guess_format(&data) else {
+        tracing::debug!(
+            bytes = data.len(),
+            "svg cover: embedded image rejected (unrecognized format)"
+        );
+        return None;
+    };
+    let Ok((width, height)) =
         image::ImageReader::with_format(std::io::Cursor::new(data.as_slice()), fmt)
             .into_dimensions()
-            .ok()?;
+    else {
+        tracing::debug!(
+            ?fmt,
+            "svg cover: embedded image rejected (undecodable header)"
+        );
+        return None;
+    };
     if u64::from(width).saturating_mul(u64::from(height)) > MAX_EMBEDDED_PIXELS {
+        tracing::debug!(
+            width,
+            height,
+            cap = MAX_EMBEDDED_PIXELS,
+            "svg cover: embedded image rejected (over pixel cap)"
+        );
         return None;
     }
     match fmt {
         image::ImageFormat::Jpeg => Some(usvg::ImageKind::JPEG(data)),
         image::ImageFormat::Png => Some(usvg::ImageKind::PNG(data)),
         image::ImageFormat::WebP => Some(usvg::ImageKind::WEBP(data)),
-        _ => None,
+        other => {
+            tracing::debug!(
+                ?other,
+                "svg cover: embedded image rejected (unsupported format)"
+            );
+            None
+        }
     }
 }
 
@@ -302,6 +616,217 @@ mod tests {
         assert!(matches!(err, CoverError::Decode(_)));
     }
 
+    /// SVG whose only visible content is a filled `<rect>` carrying a blur
+    /// filter. Renders fine without the gate; must be rejected with it.
+    fn filter_svg() -> String {
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><filter id="b"><feGaussianBlur stdDeviation="8"/></filter><rect width="100" height="150" fill="black" filter="url(#b)"/></svg>"#.to_owned()
+    }
+
+    /// A blur filter buried inside a `<mask>` — not reachable via `children()`,
+    /// only via the mask sub-tree. Guards the mask descent in the walk.
+    fn mask_filter_svg() -> String {
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><filter id="b"><feGaussianBlur stdDeviation="8"/></filter><mask id="m"><rect width="100" height="150" fill="white" filter="url(#b)"/></mask><rect width="100" height="150" fill="black" mask="url(#m)"/></svg>"#.to_owned()
+    }
+
+    /// Filled path with `segments` line commands inside the viewBox — visible
+    /// content (renders without the gate), bounded well under the input cap.
+    fn many_segments_svg(segments: usize) -> String {
+        let mut d = String::with_capacity(segments * 9 + 16);
+        d.push_str("M0 0");
+        for i in 0..segments {
+            use std::fmt::Write;
+            write!(d, " L{} {}", i % 100, i % 150).expect("write path data");
+        }
+        d.push_str(" Z");
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><path d="{d}" fill="black"/></svg>"#
+        )
+    }
+
+    #[test]
+    fn rejects_svg_with_filter() {
+        let err = rasterize_svg(filter_svg().as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        // Ingestion (Layer 5) must agree: a filtered cover is not acceptable.
+        assert!(!parses_as_svg(filter_svg().as_bytes()));
+    }
+
+    #[test]
+    fn rejects_filter_hidden_in_mask() {
+        let err = rasterize_svg(mask_filter_svg().as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        assert!(!parses_as_svg(mask_filter_svg().as_bytes()));
+    }
+
+    #[test]
+    fn rejects_filter_in_pattern() {
+        // A filter hidden inside a <pattern> paint server reaches resvg::render
+        // via the path's fill — not reachable through children/clip/mask, only
+        // through the path's paint-server subroots. The walk must descend them.
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><defs><filter id="b"><feGaussianBlur stdDeviation="200"/></filter><pattern id="p" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="black" filter="url(#b)"/></pattern></defs><rect width="100" height="100" fill="url(#p)"/></svg>"#;
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        assert!(!parses_as_svg(svg.as_bytes()));
+    }
+
+    #[test]
+    fn rejects_filter_in_chained_mask() {
+        // Filter hidden in a SECOND-level mask: m1 references m2 via mask=…, and
+        // m2's content carries the filter. The walk must follow the mask.mask
+        // chain, not just the first level.
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><filter id="f" filterUnits="userSpaceOnUse" x="-5000" y="-5000" width="10000" height="10000"><feGaussianBlur stdDeviation="500"/></filter><mask id="m2"><rect width="100" height="100" fill="white" filter="url(#f)"/></mask><mask id="m1" mask="url(#m2)"><rect width="100" height="100" fill="white"/></mask><rect width="100" height="100" fill="black" mask="url(#m1)"/></svg>"#;
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        assert!(!parses_as_svg(svg.as_bytes()));
+    }
+
+    #[test]
+    fn rejects_segments_in_chained_clip() {
+        // 60k path segments hidden in a SECOND-level clipPath: c1 references c2
+        // via clip-path=…. The walk must follow the clip_path.clip_path chain.
+        // The leading filled rect makes the clip visible (so it renders without
+        // the fix); the trailing dense subpath is the segment bomb.
+        let mut d = String::from("M0 0 L100 0 L100 100 L0 100 Z M10 10");
+        for i in 0..(MAX_SVG_PATH_SEGMENTS + 10_000) {
+            use std::fmt::Write;
+            write!(d, " L{} {}", i % 80 + 10, i % 80 + 10).expect("write path data");
+        }
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><clipPath id="c2"><path d="{d}"/></clipPath><clipPath id="c1" clip-path="url(#c2)"><rect width="100" height="100"/></clipPath><rect width="100" height="100" clip-path="url(#c1)" fill="black"/></svg>"#
+        );
+        assert!(
+            svg.len() <= MAX_SVG_INPUT_BYTES,
+            "fixture must fit input cap"
+        );
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+    }
+
+    #[test]
+    fn rejects_svg_with_doctype() {
+        // DTDs are disabled (allow_dtd: false). A DOCTYPE is the prerequisite for
+        // entity-expansion attacks that hide deep nesting from the byte-scan depth
+        // guard (roxmltree expands &entity; into deep DOM the scanner never saw),
+        // so any cover carrying one is rejected outright. Real covers have none.
+        let svg = r#"<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><rect width="100" height="150" fill="black"/></svg>"#;
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        assert!(!parses_as_svg(svg.as_bytes()));
+    }
+
+    #[test]
+    fn rejects_excessive_path_segments() {
+        let svg = many_segments_svg(MAX_SVG_PATH_SEGMENTS + 10_000);
+        assert!(
+            svg.len() <= MAX_SVG_INPUT_BYTES,
+            "fixture must fit input cap"
+        );
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        assert!(!parses_as_svg(svg.as_bytes()));
+    }
+
+    #[test]
+    fn accepts_vector_cover_under_segment_budget() {
+        // Well under budget, no filter — the gate must not false-reject it.
+        let svg = many_segments_svg(1_000);
+        let out = rasterize_svg(svg.as_bytes(), |_| None).unwrap();
+        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
+        assert!(parses_as_svg(svg.as_bytes()));
+    }
+
+    /// Real Standard Ebooks `cover.svg` (Pride and Prejudice). SE releases all
+    /// its work to the public domain (CC0). This is the canonical input UNK-406
+    /// exists to render, so the gate must accept it — a false-reject here would
+    /// regress every SE cover inside the PR that ships SVG support.
+    const STANDARD_EBOOKS_COVER: &str = include_str!("testdata/standard_ebooks_cover.svg");
+
+    #[test]
+    fn accepts_real_standard_ebooks_cover() {
+        // The cover references a sibling `cover.jpg` (full-bleed artwork); serve-
+        // time resolves it and renders non-blank. Verified real SE covers use no
+        // filters and a handful of path segments — far under every budget.
+        let artwork = raster(2, 2, image::ImageFormat::Jpeg);
+        let out = rasterize_svg(STANDARD_EBOOKS_COVER.as_bytes(), move |href| {
+            (href == "cover.jpg").then(|| artwork.clone())
+        })
+        .unwrap();
+        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
+        // Ingestion (no sibling resolver) must accept it too.
+        assert!(parses_as_svg(STANDARD_EBOOKS_COVER.as_bytes()));
+    }
+
+    /// Many zero-segment nodes (`<image>`), to drive the node-count budget
+    /// without first tripping the path-segment budget.
+    fn many_images_svg(count: usize) -> String {
+        let mut s = String::from(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">"#,
+        );
+        for _ in 0..count {
+            s.push_str(r#"<image href="c.png" width="1" height="1"/>"#);
+        }
+        s.push_str("</svg>");
+        s
+    }
+
+    #[test]
+    fn rejects_excessive_node_count() {
+        // Each `<image>` resolves to a 1px raster so usvg keeps the node; the
+        // count trips the node budget while contributing no path segments.
+        let svg = many_images_svg(MAX_SVG_NODES + 5);
+        assert!(
+            svg.len() <= MAX_SVG_INPUT_BYTES,
+            "fixture must fit input cap"
+        );
+        let px = raster(1, 1, image::ImageFormat::Png);
+        let err = rasterize_svg(svg.as_bytes(), move |href| {
+            (href == "c.png").then(|| px.clone())
+        })
+        .unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+    }
+
+    /// `depth` nested `<g>` wrapping a single rect. Plain groups — the pre-parse
+    /// depth check measures raw DOM nesting, before any usvg optimization.
+    fn nested_groups_svg(depth: usize) -> String {
+        let mut s = String::from(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">"#,
+        );
+        for _ in 0..depth {
+            s.push_str("<g>");
+        }
+        s.push_str(r#"<rect width="100" height="150" fill="black"/>"#);
+        for _ in 0..depth {
+            s.push_str("</g>");
+        }
+        s.push_str("</svg>");
+        s
+    }
+
+    #[test]
+    fn rejects_deeply_nested_svg_without_crashing() {
+        // usvg's tree conversion has no recursion guard and aborts the process on
+        // deep nesting (~266 levels). The pre-parse depth check (roxmltree DOM,
+        // iterative) must reject this cleanly — well past usvg's overflow point —
+        // before usvg ever converts it. The test passing (not SIGABRT) is the
+        // assertion.
+        let svg = nested_groups_svg(1_000);
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+        assert!(!parses_as_svg(svg.as_bytes()));
+    }
+
+    #[test]
+    fn accepts_moderately_nested_svg() {
+        // Just under MAX_SVG_DEPTH — documents the boundary: the depth check must
+        // not false-reject legitimately (if unusually) nested covers, and the
+        // deepest the cap permits still parses + renders without overflowing.
+        let svg = nested_groups_svg(45);
+        let out = rasterize_svg(svg.as_bytes(), |_| None).unwrap();
+        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
+        assert!(parses_as_svg(svg.as_bytes()));
+    }
+
     #[test]
     fn rejects_malformed_svg() {
         let err = rasterize_svg(b"<svg><broken", |_| None).unwrap_err();
@@ -323,9 +848,9 @@ mod tests {
 
     #[test]
     fn dtd_entities_are_inert() {
-        // External SYSTEM entity: roxmltree performs no IO, so it is never
-        // fetched. The text feature is off, so the only node is dropped →
-        // transparent render → Decode. No panic, no file content, no hang.
+        // DTDs are disabled (allow_dtd: false), so this DOCTYPE-declared external
+        // SYSTEM entity is rejected at parse — never expanded, never fetched, no
+        // file content read, no hang. Result is `Decode`.
         let svg = r#"<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text>&xxe;</text></svg>"#;
         let result = rasterize_svg(svg.as_bytes(), |_| None);
         assert!(result.is_err(), "external entity must not yield a cover");

@@ -93,11 +93,32 @@ Concrete shape of the decision:
   raster is bounded by byte size and a header-sniffed megapixel cap before
   decode; raw SVG input is capped before parse; render output is capped at the
   long edge (`Pixmap::new` over/zero-size → error).
+- **Parser stack overflow.** Both `roxmltree`'s parser **and** `usvg`'s tree
+  conversion recurse on element nesting with no depth guard and _abort the
+  process_ (stack overflow, uncatchable) on deeply nested SVG — observed at a few
+  hundred levels on a 2 MiB stack, reachable by a few-KB cover. Because the parser
+  itself overflows, the depth bound runs on the **raw bytes before any parse**: a
+  flat byte scan (no parse, no recursion — so it cannot itself overflow) rejects
+  nesting past a conservative cap that sits inside the empirically verified-safe
+  range (depth-50 parses and renders; depth-1000 overflows without the guard).
+  Only then is the SVG parsed (`roxmltree`) and converted (`from_xmltree`).
+- **Render-cost cap.** `resvg` has no render-time limits, and two axes escape the
+  output-size cap: filters (the filter buffer is allocated to the filter region,
+  not the canvas — a crafted `userSpaceOnUse` region + large `feGaussianBlur` is
+  a CPU/memory bomb) and vector tessellation (cost scales with segment count,
+  independent of output size). Before `resvg::render`, a complexity gate walks the
+  tree (`children`, the _full_ `clip-path`/`mask` chains, and every node's
+  paint-server / layout sub-trees via `Node::subroots` — a filter can hide inside
+  a `<pattern>` fill or a second-level chained `<mask>`) and rejects covers using
+  any filter primitive, or exceeding the total path-segment or node-count budgets.
 - **Blank-output guard.** `usvg` silently drops unresolvable `<image>` nodes and
   "succeeds" with a transparent pixmap; an all-transparent render is rejected so
   the `<img onError>` spine fallback is preserved.
-- **Validator (Layer 5) parses, does not rasterize.** A parseable SVG cover is
-  no longer flagged `Degraded`; ingestion stays cheap.
+- **Validator (Layer 5) parses + gates, does not rasterize.** A parseable SVG
+  cover within the render-cost budget is not flagged; one that breaches it
+  (filters, or geometry/node/depth over budget) is flagged `Degraded` at
+  ingestion. Acceptance and serve-time apply the _same_ gate, so a cover accepted
+  at ingestion will not later fail at serve and render as a placeholder.
 
 ### Consequences
 
@@ -112,9 +133,14 @@ Concrete shape of the decision:
   RUSTSEC-clean crate.
 - Bad — SVG covers relying on live `<text>` lose that text (no `text` feature).
   Acceptable for the canonical source; documented as a known limitation.
-- Neutral — `usvg` parses with `allow_dtd: true` (verified in pinned 0.47
-  source); DTDs are parsed, not rejected. This is safe because the defense is
-  structural (see Confirmation), not DTD rejection.
+- Bad — an SVG cover that legitimately uses filters renders via the spine
+  fallback rather than as artwork (filters are rejected as a render-cost bomb).
+  Acceptable: the canonical Standard Ebooks covers use none.
+- Bad — a cover whose SVG carries a DOCTYPE is rejected (spine fallback). We parse
+  with `allow_dtd: false` because DTD entity expansion otherwise inflates nesting
+  past the byte-scan depth guard (a stack-overflow bypass) and reopens XXE /
+  billion-laughs. Real covers (Standard Ebooks and modern toolchains) emit no
+  DOCTYPE, so the cost is borne only by unusual inputs.
 - Neutral — existing rows ingested before this change keep their `degraded`
   status until re-ingested or revalidated; covers render regardless, since
   serving never gates on `validation_status`. Bulk revalidation is a follow-up.
@@ -133,6 +159,23 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
   `rejects_oversized_svg_input`); output dimensions are capped.
 - **No silent transparent covers** — all-transparent renders return
   `Decode`, preserving the spine fallback (`blank_svg_yields_decode_error`).
+- **Deep nesting cannot crash the process** — nesting depth is bounded by a
+  raw-byte scan before any parse (both the parser and the converter recurse); a
+  1000-deep cover is rejected, not aborted, and a moderately nested cover still
+  renders (`rejects_deeply_nested_svg_without_crashing`,
+  `accepts_moderately_nested_svg`).
+- **Render cost is bounded before render** — filter primitives are rejected
+  (including those hidden in a mask or a `<pattern>` paint server) and
+  path-segment and node budgets enforced, at serve _and_ ingestion
+  (`rejects_svg_with_filter`, `rejects_filter_hidden_in_mask`,
+  `rejects_filter_in_pattern`, `rejects_filter_in_chained_mask`,
+  `rejects_segments_in_chained_clip`, `rejects_excessive_path_segments`,
+  `rejects_excessive_node_count`, `filtered_svg_cover_emits_degraded`).
+- **No DTD / entity-expansion surface** — DTDs are disabled, so a DOCTYPE-bearing
+  cover (the prerequisite for entity-inflated nesting and XXE) is rejected at
+  parse (`rejects_svg_with_doctype`, `dtd_entities_are_inert`).
+- **The canonical input renders** — a real Standard Ebooks `cover.svg` passes the
+  full gate and rasterizes (`accepts_real_standard_ebooks_cover`).
 - **Raster-only responses** — rasterization happens at extraction; only PNG flows
   to the cache and the serving handler.
 
@@ -166,8 +209,9 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 
 - Render hardening references: `usvg` `Options::image_href_resolver`,
   [resvg#647](https://github.com/linebender/resvg/issues/647) (no built-in
-  dimension limits), and the pinned 0.47 parser source confirming
-  `allow_dtd: true`.
+  dimension limits), and the pinned 0.47 parser source — neither `roxmltree` nor
+  `usvg` guards element-nesting recursion, so we parse with `allow_dtd: false` and
+  bound nesting on the raw bytes ourselves.
 - Security checklists consulted:
   [`docs/security/codeguard/codeguard-0-xml-and-serialization.md`](../docs/security/codeguard/codeguard-0-xml-and-serialization.md),
   [`docs/security/codeguard/codeguard-0-file-handling-and-uploads.md`](../docs/security/codeguard/codeguard-0-file-handling-and-uploads.md);
