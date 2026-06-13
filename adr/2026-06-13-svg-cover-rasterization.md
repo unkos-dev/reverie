@@ -13,11 +13,23 @@ informed: "Reverie contributors"
 
 Standard Ebooks — the canonical public-domain EPUB source — declare their cover
 as `images/cover.svg` (`media-type="image/svg+xml"`, `properties="cover-image"`).
-Reverie's cover pipeline is raster-only: `covers::extract` calls
-`image::guess_format`, which has no SVG support (upstream wontfix). Every
-SVG-declared cover therefore fails decoding, surfaces as HTTP 500
-(`CoverError::Decode`), and the frontend falls back to a typographic spine. On a
-library of Standard Ebooks, _no_ real cover art renders.
+Two gaps combine to break these covers. **Detection:** covers are located by
+`find_cover_href`, which matched only a few legacy manifest ids — but Standard
+Ebooks (and EPUB 3 generally) declare the cover via the `properties="cover-image"`
+attribute on an item with an arbitrary id (`cover.svg`/`cover.jpg`), which
+`opf_layer` discarded. So no SE cover was detected at all → HTTP 404
+(`NoCover`). A scan of the 80-book dev collection confirmed this is universal:
+0/80 detected by the id heuristic; all 80 use `properties="cover-image"` (72 SVG,
+8 JPEG). **Decode:** even once detected, `covers::extract` calls
+`image::guess_format`, which has no SVG support (upstream wontfix), so the SVG
+bytes fail to decode → HTTP 500 (`CoverError::Decode`). Either way the frontend
+falls back to a typographic spine; on a library of Standard Ebooks, _no_ real
+cover art renders.
+
+This decision addresses the decode gap (rasterize SVG → PNG). The detection gap
+ships in the same PR: `opf_layer` now captures `properties="cover-image"` and
+`find_cover_href` prefers it over the id heuristic — without it, rasterization
+would never be reached.
 
 Rendering SVG means executing an SVG renderer over **attacker-controlled XML**
 pulled from an uploaded EPUB. Reverie's threat model is a multi-user, internet-

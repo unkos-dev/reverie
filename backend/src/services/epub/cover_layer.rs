@@ -61,13 +61,21 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
     }
 }
 
-/// Find the cover image href from `OPF` manifest/metadata.
-/// Checks manifest item with `id="cover-image"`, `id="cover"`, etc.
+/// Find the cover image href from the `OPF`.
+///
+/// Prefers the EPUB 3 standard: the manifest item carrying
+/// `properties="cover-image"` ([`OpfData::cover_href`]) — this is how Standard
+/// Ebooks (and most modern EPUBs) declare the cover, with an arbitrary `id`
+/// like `cover.svg`. Falls back to the legacy id heuristic (`id="cover-image"`,
+/// `id="cover"`, …) for EPUBs that predate the property.
 ///
 /// Exported so `services::covers::extract` can mirror Step 5 detection
 /// semantics exactly — any divergence between the validation pass and the
 /// OPDS cover serve would be a silent correctness hazard.
 pub fn find_cover_href(opf: &OpfData) -> Option<String> {
+    if let Some(href) = &opf.cover_href {
+        return Some(href.clone());
+    }
     for id in &["cover-image", "cover", "Cover", "Cover-Image"] {
         if let Some(href) = opf.manifest.get(*id) {
             return Some(href.clone());
@@ -102,6 +110,7 @@ mod tests {
         manifest.insert(manifest_id.to_string(), href.to_string());
         OpfData {
             manifest,
+            cover_href: None,
             spine_idrefs: vec![],
             opf_path: "OEBPS/content.opf".to_string(),
             accessibility_metadata: None,
@@ -189,12 +198,21 @@ mod tests {
         }
     }
 
+    // Real Standard Ebooks shape: cover declared via properties="cover-image"
+    // with a non-magic id, so detection must come from `cover_href`, not the id
+    // heuristic.
+    fn make_se_svg_opf(href: &str) -> OpfData {
+        let mut opf = make_opf_data("cover.svg", href);
+        opf.cover_href = Some(href.to_string());
+        opf
+    }
+
     #[test]
     fn svg_cover_emits_no_issues() {
         // Standard Ebooks ship cover.svg; a parseable SVG must not be flagged.
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"><rect width="100" height="150"/></svg>"#;
         let handle = make_handle_with_svg_cover(svg);
-        let opf = make_opf_data("cover-image", "cover.svg");
+        let opf = make_se_svg_opf("cover.svg");
         let mut issues = Vec::new();
         validate(&handle, Some(&opf), &mut issues);
         assert!(
@@ -206,12 +224,27 @@ mod tests {
     #[test]
     fn malformed_svg_cover_emits_degraded() {
         let handle = make_handle_with_svg_cover(b"<svg><broken");
-        let opf = make_opf_data("cover-image", "cover.svg");
+        let opf = make_se_svg_opf("cover.svg");
         let mut issues = Vec::new();
         validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Degraded
                 && matches!(&i.kind, IssueKind::UndecodableCover { .. })
         }));
+    }
+
+    #[test]
+    fn find_cover_href_prefers_properties_over_id() {
+        // cover_href (from properties="cover-image") wins even when the id is
+        // not one of the legacy magic ids.
+        let opf = make_se_svg_opf("images/cover.svg");
+        assert_eq!(find_cover_href(&opf).as_deref(), Some("images/cover.svg"));
+    }
+
+    #[test]
+    fn find_cover_href_falls_back_to_id() {
+        // Legacy EPUBs without the property: the id heuristic still resolves.
+        let opf = make_opf_data("cover", "cover.jpg");
+        assert_eq!(find_cover_href(&opf).as_deref(), Some("cover.jpg"));
     }
 }

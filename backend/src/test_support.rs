@@ -687,7 +687,7 @@ pub mod db {
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest>
-    <item id="cover-image" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>
+    <item id="cover.svg" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>
   </manifest>
   <spine/>
 </package>"#,
