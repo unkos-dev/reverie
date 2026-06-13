@@ -39,6 +39,11 @@ pub struct SeriesMeta {
 pub struct OpfData {
     /// All manifest items: id → href
     pub manifest: HashMap<String, String>,
+    /// Href of the manifest item declared as the cover via the EPUB 3
+    /// `properties="cover-image"` attribute, if any. Captured independently of
+    /// the item's `id` — Standard Ebooks declare `id="cover.svg"` (not a magic
+    /// id), so id-only detection misses them.
+    pub cover_href: Option<String>,
     /// Spine idrefs (after removing broken refs)
     pub spine_idrefs: Vec<String>,
     /// `OPF` path within the archive (needed by repair and other layers)
@@ -97,6 +102,7 @@ pub fn validate(
     let xml = std::str::from_utf8(&bytes).ok()?;
 
     let mut manifest: HashMap<String, String> = HashMap::new();
+    let mut cover_href: Option<String> = None;
     let mut spine_idrefs: Vec<String> = Vec::new();
     let mut accessibility_meta: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -360,6 +366,17 @@ pub fn validate(
                         // C4: validate href path safety via shared helper.
                         if super::is_safe_path(href) {
                             manifest.insert(id.clone(), href.clone());
+                            // EPUB 3 cover detection: the cover is the item
+                            // carrying `properties="cover-image"`, regardless of
+                            // its id. `properties` is a space-separated token
+                            // list. First match wins.
+                            if cover_href.is_none()
+                                && attrs.get("properties").is_some_and(|p| {
+                                    p.split_ascii_whitespace().any(|t| t == "cover-image")
+                                })
+                            {
+                                cover_href = Some(href.clone());
+                            }
                         } else {
                             issues.push(Issue {
                                 layer: Layer::Opf,
@@ -426,6 +443,7 @@ pub fn validate(
 
     Some(OpfData {
         manifest,
+        cover_href,
         spine_idrefs: valid_spine,
         opf_path: path.to_string(),
         accessibility_metadata,
@@ -482,6 +500,38 @@ mod tests {
             i.severity == Severity::Repaired
                 && matches!(&i.kind, IssueKind::BrokenSpineRef { idref } if idref == "ch2")
         }));
+    }
+
+    #[test]
+    fn epub3_properties_cover_image_detected() {
+        // Standard Ebooks shape: the cover is declared via
+        // properties="cover-image" with id "cover.svg" — NOT one of the legacy
+        // magic ids, so id-only detection misses it.
+        let opf = br#"<package>
+            <manifest>
+                <item id="cover.svg" href="images/cover.svg" media-type="image/svg+xml" properties="cover-image"/>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.cover_href.as_deref(), Some("images/cover.svg"));
+    }
+
+    #[test]
+    fn no_cover_image_property_leaves_cover_href_none() {
+        let opf = br#"<package>
+            <manifest>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert!(data.cover_href.is_none());
     }
 
     #[test]

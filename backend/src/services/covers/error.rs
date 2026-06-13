@@ -7,8 +7,9 @@
 /// client.
 #[derive(Debug, thiserror::Error)]
 pub enum CoverError {
-    /// EPUB has no cover image per Step 5 detection (no manifest item with
-    /// one of the four expected cover ids).
+    /// No servable cover: the EPUB declares none (no `properties="cover-image"`
+    /// and no legacy cover id), has no parseable `OPF`, or the declared cover
+    /// file is absent from the archive. Maps to 404.
     #[error("no cover")]
     NoCover,
     /// Decoded but the bytes don't form a JPEG/PNG/WebP the `image` crate

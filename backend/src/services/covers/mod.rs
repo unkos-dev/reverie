@@ -17,6 +17,8 @@ pub mod error;
 pub mod extract;
 /// `Lanczos3` resize logic and the `CoverSize` size-tier enum.
 pub mod resize;
+/// Hardened SVG-to-PNG rasterization for SVG-declared covers.
+pub mod svg;
 
 use std::path::PathBuf;
 

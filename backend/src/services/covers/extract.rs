@@ -9,12 +9,14 @@ use std::path::Path;
 use image::ImageFormat;
 
 use super::error::CoverError;
-use crate::services::epub::{container_layer, cover_layer, opf_layer, zip_layer};
+use super::svg;
+use crate::services::epub::{container_layer, cover_layer, is_safe_path, opf_layer, zip_layer};
 
-/// Read the EPUB at `epub_path`, locate the cover via manifest ids, return
-/// its raw bytes + the detected `ImageFormat`. Returns
-/// [`CoverError::NoCover`] when no cover is declared or the declared file is
-/// missing.
+/// Read the EPUB at `epub_path`, locate the cover (EPUB 3
+/// `properties="cover-image"`, falling back to the legacy id heuristic), and
+/// return its raw bytes + detected `ImageFormat`. `SVG`-declared covers are
+/// rasterized to `PNG` at this boundary. Returns [`CoverError::NoCover`] when
+/// no cover is declared or the declared file is missing.
 pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
     // zip_layer::validate emits issues into a Vec rather than returning them;
     // we need the ZipHandle but don't care about its advisory issues here
@@ -39,7 +41,64 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
     };
 
     let bytes = zip_layer::read_entry(&handle, &entry_path).ok_or(CoverError::NoCover)?;
-    let fmt = image::guess_format(&bytes).map_err(|e| CoverError::Decode(e.to_string()))?;
 
-    Ok((bytes, fmt))
+    match image::guess_format(&bytes) {
+        Ok(fmt) => Ok((bytes, fmt)),
+        // SVG-declared covers (e.g. Standard Ebooks `images/cover.svg`) are not
+        // decodable by the raster pipeline. Rasterize to PNG at this boundary;
+        // everything downstream already handles PNG. The href resolver is
+        // restricted to sibling entries inside this same archive.
+        Err(_) if svg::looks_like_svg(&bytes) => {
+            let cover_dir = entry_path.rfind('/').map_or("", |i| &entry_path[..i]);
+            let png = svg::rasterize_svg(&bytes, |href| {
+                let sibling_path = join_sibling_path(cover_dir, href)?;
+                zip_layer::read_entry(&handle, &sibling_path)
+            })?;
+            Ok((png, ImageFormat::Png))
+        }
+        Err(e) => Err(CoverError::Decode(e.to_string())),
+    }
+}
+
+/// Join a sibling `href` (referenced from an SVG cover's `<image>`) against the
+/// cover's directory inside the EPUB ZIP, re-validating the combined path.
+///
+/// THREAT: hrefs come from attacker-controlled SVG. The SVG resolver already
+/// runs [`is_safe_path`] on the raw `href`; this re-checks the joined
+/// `{cover_dir}/{href}` so a future change to how `cover_dir` is derived cannot
+/// silently reintroduce path traversal before the ZIP lookup. Returns `None`
+/// for any unsafe path.
+fn join_sibling_path(cover_dir: &str, href: &str) -> Option<String> {
+    let sibling_path = if cover_dir.is_empty() {
+        href.to_owned()
+    } else {
+        format!("{cover_dir}/{href}")
+    };
+    is_safe_path(&sibling_path).then_some(sibling_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::join_sibling_path;
+
+    #[test]
+    fn join_sibling_path_scopes_to_cover_dir() {
+        assert_eq!(
+            join_sibling_path("OEBPS/images", "cover.jpg").as_deref(),
+            Some("OEBPS/images/cover.jpg")
+        );
+        assert_eq!(
+            join_sibling_path("", "cover.jpg").as_deref(),
+            Some("cover.jpg")
+        );
+    }
+
+    #[test]
+    fn join_sibling_path_rejects_unsafe_combined() {
+        // Defence-in-depth: even if a future cover_dir derivation let an unsafe
+        // join through, is_safe_path on the combined path blocks traversal and
+        // absolute paths before they reach the ZIP lookup.
+        assert!(join_sibling_path("OEBPS", "../secret.png").is_none());
+        assert!(join_sibling_path("", "/etc/hostname").is_none());
+    }
 }

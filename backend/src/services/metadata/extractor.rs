@@ -257,6 +257,7 @@ mod tests {
     fn empty_opf() -> OpfData {
         OpfData {
             manifest: HashMap::new(),
+            cover_href: None,
             spine_idrefs: vec![],
             opf_path: "OEBPS/content.opf".into(),
             accessibility_metadata: None,
