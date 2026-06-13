@@ -124,7 +124,9 @@ function bodyFor(url: URL, role: string): unknown {
   if (pathname === "/api/v1/users") return [{ ...ADMIN_ME, ...USER_TIMESTAMPS }];
   if (pathname === "/api/v1/dashboard/stats") return STATS;
   if (pathname.startsWith("/api/v1/dashboard/activity")) return { batches: [] };
-  return {};
+  // Fail fast — a silent `{}` for an unknown path would green-light
+  // unintended network calls and hide route/data regressions.
+  throw new Error(`Unhandled fetch path in shell-navigation.test.tsx: ${pathname}`);
 }
 
 const USER_TIMESTAMPS = {

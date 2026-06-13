@@ -86,6 +86,17 @@ describe("AppShell — drawer (<1024px)", () => {
     });
     expect(menuButton).toHaveFocus();
   });
+
+  test("clicking a nav link inside the drawer closes it", async () => {
+    renderShell();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Open navigation/ }));
+    const drawer = await screen.findByRole("dialog", { name: /Navigation/ });
+    await user.click(within(drawer).getByRole("link", { name: "Library" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe("AppShell — admin zone", () => {

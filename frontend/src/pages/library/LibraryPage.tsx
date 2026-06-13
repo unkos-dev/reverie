@@ -601,7 +601,10 @@ function LibrarySkeleton(): ReactElement {
     <div className="px-6 py-10 sm:px-10" aria-busy="true">
       <Skeleton className="mb-4 h-9 w-48" />
       <Separator className="mb-8" />
-      <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      {/* Same auto-fill expression as the loaded BookGrid — a fixed
+          breakpoint ladder here would change column count when data
+          arrives, producing a visible layout jump. */}
+      <div className="grid gap-x-6 gap-y-8 [grid-template-columns:repeat(auto-fill,minmax(clamp(170px,10vw,240px),1fr))]">
         {PLACEHOLDERS.map((i) => (
           <div key={i} className="flex flex-col gap-3">
             <Skeleton className="aspect-[2/3] w-full rounded-md" />

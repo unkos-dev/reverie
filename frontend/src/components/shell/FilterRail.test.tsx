@@ -75,7 +75,11 @@ describe("FilterRail — author placeholder (deferred to UNK-387)", () => {
       const row = screen.getByText(name).closest('[aria-disabled="true"]');
       expect(row).not.toBeNull();
       expect(row).not.toHaveAttribute("tabindex");
-      expect(row?.closest("input,button,a")).toBeNull();
+      // Descendant query — closest() walks up and would pass even with
+      // a nested interactive control inside the row.
+      expect(
+        row?.querySelector('a,button,input,select,textarea,[tabindex]:not([tabindex="-1"])'),
+      ).toBeNull();
       expect(row).toHaveAccessibleDescription("Planned — not in this release");
     }
   });

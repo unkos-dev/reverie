@@ -60,8 +60,8 @@ security.
 
 ## Small screens keep every feature
 
-Below 1280px the filter rail collapses into a **Refine** button that
-opens the same controls in a sheet. Below 1024px the navigation rail
+Below 1280px, the filter rail collapses into a **Refine** button that
+opens the same controls in a sheet. Below 1024px, the navigation rail
 becomes a drawer behind a menu button in the strip. Nothing is
 desktop-only: every destination and every filter is reachable at every
 size, just behind one more press.

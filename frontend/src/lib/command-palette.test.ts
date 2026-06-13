@@ -14,6 +14,13 @@ function mockPlatform(platform: string): void {
   });
 }
 
+function mockUserAgentData(value: { platform?: string } | undefined): void {
+  Object.defineProperty(window.navigator, "userAgentData", {
+    configurable: true,
+    value,
+  });
+}
+
 describe("openCommandPalette", () => {
   test("invokes the registered opener", () => {
     const opener = vi.fn();
@@ -38,5 +45,19 @@ describe("searchHintLabel", () => {
   test("returns Ctrl K elsewhere", () => {
     mockPlatform("Win32");
     expect(searchHintLabel()).toBe("Ctrl K");
+  });
+
+  test("prefers userAgentData.platform over navigator.platform", () => {
+    mockUserAgentData({ platform: "macOS" });
+    mockPlatform("Win32");
+    expect(searchHintLabel()).toBe("⌘K");
+    mockUserAgentData(undefined);
+  });
+
+  test("falls back to navigator.platform when userAgentData carries no platform", () => {
+    mockUserAgentData({});
+    mockPlatform("MacIntel");
+    expect(searchHintLabel()).toBe("⌘K");
+    mockUserAgentData(undefined);
   });
 });

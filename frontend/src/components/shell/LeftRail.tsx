@@ -67,7 +67,7 @@ export function LeftRail(): ReactElement {
           {PRIMARY_NAV.map((item) => (
             <li key={item.label}>
               <RailItem item={item} />
-              {item.label === "Shelves" ? <ShelfList shelves={shelves} /> : null}
+              {item.to === "/shelves" ? <ShelfList shelves={shelves} /> : null}
             </li>
           ))}
         </ul>

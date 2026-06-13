@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -122,7 +122,9 @@ describe("LibraryPage", () => {
     const img = within(grid).getByRole("img", { name: /Cover of/ });
     expect(document.querySelector("[data-layout]")).toBeNull();
     fireEvent.error(img);
-    expect(document.querySelector("[data-layout]")).not.toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector("[data-layout]")).not.toBeNull();
+    });
   });
 
   test("filter rail lists distinct series from the loaded pages", async () => {

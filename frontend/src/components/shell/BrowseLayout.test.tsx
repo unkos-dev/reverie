@@ -5,7 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { BrowseLayout } from "./BrowseLayout";
 
-function renderLayout(): void {
+function renderLayout(initialEntry = "/library"): void {
   const router = createMemoryRouter(
     [
       {
@@ -17,7 +17,7 @@ function renderLayout(): void {
         ),
       },
     ],
-    { initialEntries: ["/library"] },
+    { initialEntries: [initialEntry] },
   );
   render(<RouterProvider router={router} />);
 }
@@ -27,6 +27,18 @@ describe("BrowseLayout", () => {
     renderLayout();
     expect(screen.getByText("PAGE_CONTENT")).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Filters" })).toBeInTheDocument();
+  });
+
+  test("Refine button shows the active-filter dot only when ?series= is set", () => {
+    renderLayout("/library?series=s-1");
+    const refine = screen.getByRole("button", { name: /Refine/ });
+    expect(refine.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  test("Refine button carries no active-filter dot without ?series=", () => {
+    renderLayout();
+    const refine = screen.getByRole("button", { name: /Refine/ });
+    expect(refine.querySelector('[aria-hidden="true"]')).toBeNull();
   });
 
   test("Refine button opens a sheet carrying the same rail; esc closes", async () => {

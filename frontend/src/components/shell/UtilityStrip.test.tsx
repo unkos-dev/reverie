@@ -59,6 +59,30 @@ describe("UtilityStrip — breadcrumbs", () => {
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).not.toBeInTheDocument();
   });
 
+  test("degrades to Library alone and logs when the crumb function throws", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderStrip(
+      [
+        {
+          path: "/b/:id",
+          element: <UtilityStrip />,
+          loader: () => ({ title: "Ignored" }),
+          handle: {
+            crumb: () => {
+              throw new Error("malformed loader data");
+            },
+          },
+        },
+      ],
+      "/b/abc",
+    );
+    const nav = await screen.findByRole("navigation", { name: "Breadcrumb" });
+    expect(nav).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Library" })).toBeInTheDocument();
+    expect(screen.queryByText("Ignored")).not.toBeInTheDocument();
+    expect(errorSpy).toHaveBeenCalledWith("[UtilityStrip] crumb function threw", expect.any(Error));
+  });
+
   test("degrades to Library alone when loader data is null (cold cache)", async () => {
     renderStrip(
       [

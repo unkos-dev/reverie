@@ -16,7 +16,7 @@
  * Facet options derive from the loaded pages — the owning page passes
  * them in; the rail holds no fetch of its own.
  */
-import type { ReactElement } from "react";
+import { useId, type ReactElement } from "react";
 import { useSearchParams } from "react-router";
 
 import { PLANNED_TOOLTIP } from "./nav-items";
@@ -38,6 +38,9 @@ interface FilterRailProps {
 export function FilterRail({ seriesOptions, authorNames }: FilterRailProps): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeSeries = searchParams.get("series");
+  // Instance-scoped — BrowseLayout mounts the rail twice (desktop
+  // column + open Refine sheet); a static id would duplicate.
+  const plannedDescriptionId = useId();
 
   function setSeries(next: string | null): void {
     const updated = new URLSearchParams(searchParams);
@@ -105,7 +108,7 @@ export function FilterRail({ seriesOptions, authorNames }: FilterRailProps): Rea
             <span
               key={name}
               aria-disabled="true"
-              aria-describedby="author-facet-planned"
+              aria-describedby={plannedDescriptionId}
               className="text-fg-faint group relative flex cursor-default items-center rounded-md px-2 py-1.5"
             >
               <span className="truncate">{name}</span>
@@ -119,7 +122,7 @@ export function FilterRail({ seriesOptions, authorNames }: FilterRailProps): Rea
             </span>
           ))}
         </div>
-        <span id="author-facet-planned" className="sr-only">
+        <span id={plannedDescriptionId} className="sr-only">
           {PLANNED_TOOLTIP}
         </span>
       </details>
