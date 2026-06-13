@@ -14,6 +14,9 @@
  */
 import type { RouteObject } from "react-router";
 
+import type { ZoneHandle } from "@/components/shell/AppShell";
+import { titleCrumb } from "@/components/shell/crumbs";
+
 /** `/library` — paginated grid of books visible to the current user. */
 export const libraryRoute: RouteObject = {
   path: "library",
@@ -26,6 +29,8 @@ export const libraryRoute: RouteObject = {
 /** `/b/:id` — detail for one manifestation. */
 export const bookRoute: RouteObject = {
   path: "b/:id",
+  // Breadcrumb `Library › <title>` from the loader's `{ title } | null`.
+  handle: { crumb: titleCrumb },
   lazy: async () => {
     const mod = await import("./book");
     return { loader: mod.loader, Component: mod.Component };
@@ -35,6 +40,8 @@ export const bookRoute: RouteObject = {
 /** `/series/:id` — series detail with ordered works + completeness indicator. */
 export const seriesRoute: RouteObject = {
   path: "series/:id",
+  // Breadcrumb `Library › <series name>` from the loader's `{ title } | null`.
+  handle: { crumb: titleCrumb },
   lazy: async () => {
     const mod = await import("./series");
     return { loader: mod.loader, Component: mod.Component };
@@ -62,6 +69,8 @@ export const shelfDetailRoute: RouteObject = {
 /** `/admin/users` — admin-only user management. */
 export const adminUsersRoute: RouteObject = {
   path: "admin/users",
+  // Shell tone shift to canvas-2 (spec §2 admin zone).
+  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./admin");
     return { loader: mod.loader, Component: mod.Component };
@@ -71,6 +80,8 @@ export const adminUsersRoute: RouteObject = {
 /** `/admin/dashboard` — admin-only library-health dashboard. */
 export const adminDashboardRoute: RouteObject = {
   path: "admin/dashboard",
+  // Shell tone shift to canvas-2 (spec §2 admin zone).
+  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./dashboard");
     return { loader: mod.loader, Component: mod.Component };

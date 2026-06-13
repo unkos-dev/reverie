@@ -2,12 +2,19 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { ApiError } from "@/api";
 
 import App from "./App";
 import { queryClient, setUnauthenticatedHandler } from "./lib/query/client";
+
+// The shell's own behavior (rail, drawer, admin zone) is covered in
+// components/shell/*.test.tsx — here it would only drag auth/shelves
+// fetches into a test about the 401 boundary.
+vi.mock("@/components/shell/AppShell", () => ({
+  AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 
 const originalLocation = window.location;
 

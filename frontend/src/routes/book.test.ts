@@ -81,8 +81,16 @@ describe("book loader", () => {
     expect((result as Response).status).toBe(404);
   });
 
-  test("returns null on success", async () => {
+  test("returns the title for the breadcrumb on success", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(bookDetail("abc")));
+    const result = await loader(args("abc"));
+    expect(result).toEqual({ title: "x" });
+  });
+
+  test("returns null when the prefetch failed and the cache is cold", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("upstream blew up", { status: 500 }),
+    );
     const result = await loader(args("abc"));
     expect(result).toBeNull();
   });

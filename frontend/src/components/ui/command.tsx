@@ -37,12 +37,14 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  onCloseAutoFocus?: (event: Event) => void
 }) {
   return (
     <Dialog {...props}>
@@ -50,7 +52,11 @@ function CommandDialog({
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
+      {/* Radix conveys modality by aria-hiding outside content; spec §6
+          requires the explicit aria-modal attribute on the dialog itself. */}
       <DialogContent
+        aria-modal="true"
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0",
           className

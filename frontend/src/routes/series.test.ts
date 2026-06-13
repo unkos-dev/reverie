@@ -51,4 +51,27 @@ describe("series loader", () => {
 
     expect(queryClient.getQueryData(queryKeys.series.detail("abc-series"))).toBeDefined();
   });
+
+  test("returns the series name as crumb title on success", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(seriesBody("abc-series")));
+    const result = await loader(args("abc-series"));
+    expect(result).toEqual({ title: "Series" });
+  });
+
+  test("returns null when the prefetch failed and the cache is cold", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("upstream blew up", { status: 500 }),
+    );
+    const result = await loader(args("abc-series"));
+    expect(result).toBeNull();
+  });
+
+  test("throws a 404 Response on a missing id without hitting the API", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(loader(args(undefined))).rejects.toSatisfy(
+      (thrown: unknown) => thrown instanceof Response && thrown.status === 404,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

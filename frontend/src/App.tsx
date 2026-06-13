@@ -2,13 +2,17 @@ import { useEffect, type ReactElement } from "react";
 import { Outlet } from "react-router";
 
 import { CommandPalette } from "@/components/CommandPalette";
+import { AppShell } from "@/components/shell/AppShell";
 import { setUnauthenticatedHandler } from "@/lib/query/client";
 
 /**
  * Root route component (`/`).
  *
- * Renders the application shell that the data-mode router mounts
- * child routes (`/library`, `/b/:id`, …) into via `<Outlet />`.
+ * Mounts the `AppShell` chrome (left rail, utility strip, admin-zone
+ * tone) around the `<Outlet />` that the data-mode router fills with
+ * child routes (`/library`, `/b/:id`, …), plus the global
+ * `CommandPalette` as a sibling so its Cmd-K binding survives route
+ * transitions.
  *
  * Owns one cross-cutting effect: wiring the `QueryClient`'s 401
  * handler to a full-page redirect at `/auth/login`. The backend OIDC
@@ -31,10 +35,12 @@ function App(): ReactElement {
   }, []);
 
   return (
-    <main className="bg-canvas text-fg min-h-screen">
-      <Outlet />
+    <>
+      <AppShell>
+        <Outlet />
+      </AppShell>
       <CommandPalette />
-    </main>
+    </>
   );
 }
 

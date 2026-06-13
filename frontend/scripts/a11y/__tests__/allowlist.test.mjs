@@ -81,6 +81,38 @@ describe("a11y allowlist — discriminator", () => {
   });
 });
 
+describe("a11y allowlist — cover-spine carve-out", () => {
+  it("allowlists a spine text node carrying a text-cover-* class", () => {
+    const spineText = node(
+      '<div class="font-display text-cover-cream line-clamp-4 text-base font-semibold">',
+    );
+    const remaining = filterAllowed([violation("color-contrast", [spineText])]);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("does NOT allowlist a non-cover color-contrast node", () => {
+    const plainText = node('<p class="text-fg-faint">');
+    const remaining = filterAllowed([violation("color-contrast", [plainText])]);
+    expect(remaining).toHaveLength(1);
+  });
+
+  it("does NOT allowlist a text-cover-* node under a different rule id", () => {
+    const spineText = node('<div class="text-cover-ink">');
+    const remaining = filterAllowed([violation("image-alt", [spineText])]);
+    expect(remaining).toHaveLength(1);
+  });
+
+  it("keeps the spine carve-out independent of the lg-button carve-out", () => {
+    // A mixed violation: one spine node + one non-exempt badge node —
+    // only the badge survives.
+    const spineText = node('<div class="text-cover-parchment">');
+    const remaining = filterAllowed([violation("color-contrast", [spineText, badgeNode])]);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].nodes).toHaveLength(1);
+    expect(remaining[0].nodes[0].html).toContain('data-slot="badge"');
+  });
+});
+
 describe("a11y verdict — liveness gate", () => {
   it("passes only when the scan ran AND nothing remains", () => {
     expect(verdict({ violations: [], scanOk: true }).pass).toBe(true);

@@ -34,6 +34,23 @@ export const ALLOWLIST = [
       "DESIGN.md §2 Light-Gold Restriction: Reverie Gold is permitted on large CTAs (primary buttons). Cream-on-gold ~3.44:1 is the accepted brand carve-out for this surface only.",
     issue: null,
   },
+  {
+    ruleId: "color-contrast",
+    // Typographic-spine text (CoverArtwork). The `text-cover-*` classes only
+    // ever render inside a `[data-layout]` spine whose ROOT carries the
+    // matching `bg-cover-*` ground, but axe cannot attribute that background
+    // through the spine's absolutely-positioned layers and falls back to the
+    // page canvas — on Dark that yields a bogus ink-on-ink 1.03:1 while the
+    // measured truth is ink-on-gold rgb(14,13,10) on rgb(201,169,97) ≈ 8:1
+    // (verified via getComputedStyle in the UNK-385 browser pass). Colorway
+    // pairings are fixed in COLORWAY_CLASSES (CoverArtwork.tsx) and all clear
+    // 4.5:1 by construction; misuse of `text-cover-*` outside a spine is a
+    // review catch, not an axe catch.
+    htmlIncludesAll: ["text-cover-"],
+    rationale:
+      "DESIGN.md §4 Cover-Spine Rule: cover-palette text always sits on its paired bg-cover-* ground (CoverArtwork COLORWAY_CLASSES, every pairing ≥4.5:1 by construction); axe cannot attribute that ground through the spine's absolute stack and reports page-canvas contrast — a background-attribution false positive.",
+    issue: null,
+  },
 ];
 
 /**

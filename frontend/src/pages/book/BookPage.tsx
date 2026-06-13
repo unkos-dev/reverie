@@ -10,10 +10,11 @@
  * plus a manual edit form (`PATCH /api/v1/books/{id}/metadata`).
  */
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, type ReactElement } from "react";
+import { Suspense, useState, type ReactElement } from "react";
 import { Link, useParams } from "react-router";
 
 import { getBook, type BookDetail } from "@/api";
+import { CoverArtwork } from "@/components/CoverArtwork";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -68,20 +69,22 @@ function BookContent({ id }: BookContentProps): ReactElement {
       <div className="grid grid-cols-1 gap-10 md:grid-cols-[280px_1fr]">
         <aside className="md:sticky md:top-10 md:self-start">
           <div className="border-border bg-surface-1 relative aspect-[2/3] overflow-hidden rounded-md border">
-            <img
-              src={book.cover_url}
-              alt={`Cover of ${book.title}`}
-              loading="eager"
-              decoding="async"
-              className="size-full object-cover"
-            />
+            <DetailCover book={book} />
           </div>
         </aside>
         <section className="min-w-0">
           <header className="mb-6">
-            {seriesLabel !== null ? (
-              <p className="text-fg-muted mb-2 text-xs uppercase tracking-[0.14em]">
-                {seriesLabel}
+            {book.series !== null && seriesLabel !== null ? (
+              <p className="mb-2">
+                {/* Series detail must be click-reachable from here —
+                    it has no other inbound surface (UNK-385 §4). */}
+                <Link
+                  to={`/series/${book.series.id}`}
+                  viewTransition
+                  className="text-fg-muted hover:text-fg focus-visible:ring-accent rounded-sm text-xs uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2"
+                >
+                  {seriesLabel}
+                </Link>
               </p>
             ) : null}
             <h1 className="font-display text-fg text-3xl font-semibold tracking-tight">
@@ -119,6 +122,34 @@ function BookContent({ id }: BookContentProps): ReactElement {
         </section>
       </div>
     </div>
+  );
+}
+
+interface DetailCoverProps {
+  book: BookDetail;
+}
+
+/**
+ * Real cover art with the typographic spine fallback (spec S8) — the
+ * detail page mirrors the grid tile so a missing or failing cover
+ * never renders the browser's broken-image glyph.
+ */
+function DetailCover({ book }: DetailCoverProps): ReactElement {
+  const [failed, setFailed] = useState(false);
+  if (book.cover_url === "" || failed) {
+    return <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />;
+  }
+  return (
+    <img
+      src={book.cover_url}
+      alt={`Cover of ${book.title}`}
+      loading="eager"
+      decoding="async"
+      onError={() => {
+        setFailed(true);
+      }}
+      className="size-full object-cover"
+    />
   );
 }
 

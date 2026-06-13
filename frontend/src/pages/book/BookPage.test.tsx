@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -65,13 +65,14 @@ describe("BookPage", () => {
     expect(screen.getByText("Fyodor Dostoevsky")).toBeInTheDocument();
   });
 
-  test("renders the series label when present", async () => {
+  test("renders the series label as a link to the series detail", async () => {
     renderBook(
       bookFixture({
         series: { id: "s-1", name: "Karamazov Trilogy", position: 1 },
       }),
     );
-    expect(await screen.findByText(/Karamazov Trilogy · #1/)).toBeInTheDocument();
+    const label = await screen.findByText(/Karamazov Trilogy · #1/);
+    expect(label.closest("a")).toHaveAttribute("href", "/series/s-1");
   });
 
   test("renders the three tabs (Overview, Versions, Activity)", async () => {
@@ -156,6 +157,16 @@ describe("BookPage", () => {
     expect(
       await screen.findByRole("alertdialog", { name: /clear description/i }),
     ).toBeInTheDocument();
+  });
+
+  test("cover load error swaps in the typographic spine", async () => {
+    renderBook(bookFixture());
+    const img = await screen.findByRole("img", { name: /Cover of/ });
+    expect(document.querySelector("[data-layout]")).toBeNull();
+    fireEvent.error(img);
+    await waitFor(() => {
+      expect(document.querySelector("[data-layout]")).not.toBeNull();
+    });
   });
 
   test("back link points to /library", async () => {

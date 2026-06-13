@@ -132,9 +132,13 @@ pub struct BookDetail {
     /// summary counts above remain so clients can render the tab badge
     /// without parsing the full list.
     pub metadata_versions: Vec<MetadataVersionRow>,
-    /// `manifestations.created_at`.
+    /// `manifestations.created_at`. RFC 3339 on the wire — without the
+    /// adapter, `time` serialises a 9-element tuple and the frontend
+    /// `BookDetailSchema` (`z.string()`) rejects every detail response.
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
-    /// `manifestations.updated_at`.
+    /// `manifestations.updated_at`. RFC 3339 on the wire (see `created_at`).
+    #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
 }
 
@@ -279,6 +283,9 @@ pub struct WorkManifestation {
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
-    /// `manifestations.created_at`.
+    /// `manifestations.created_at`. RFC 3339 on the wire — the frontend
+    /// `WorkManifestationSchema` expects `z.string()`, not `time`'s
+    /// default tuple serialisation.
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }

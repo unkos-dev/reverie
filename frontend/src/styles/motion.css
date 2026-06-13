@@ -1,0 +1,66 @@
+/**
+ * Shell + library motion (spec §8 budget, UNK-385).
+ *
+ * - Route crossfades ride the View Transitions API via react-router's
+ *   `<Link viewTransition>`. Neither the router nor the browser checks
+ *   `prefers-reduced-motion` for view transitions — the suppression
+ *   below is the only thing standing between a reduced-motion user and
+ *   the crossfade, so it must stay.
+ * - Tile entrance stagger and the reading-dot pulse live here because
+ *   keyframes + per-child delays exceed what utilities express.
+ * - Every animation flattens under `prefers-reduced-motion: reduce`
+ *   (spec §8: static dots, no stagger, no crossfade).
+ */
+
+/* Tile entrance — 480ms load-stagger (never scroll-gated, spec S10). */
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tile-in {
+  animation: tile-in 480ms var(--ease-standard) both;
+  animation-delay: calc(var(--tile-index, 0) * 24ms);
+}
+
+/* Reading-state dot — 2.6s opacity pulse (D2-locked cadence). */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.dot-pulse {
+  animation: dot-pulse 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-in {
+    animation: none;
+  }
+
+  .dot-pulse {
+    animation: none;
+  }
+
+  /* View Transitions: instant swap instead of crossfade. No
+     `!important` needed — nothing else sets animation on these
+     pseudos, so this declaration beats the UA default outright. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
+}
