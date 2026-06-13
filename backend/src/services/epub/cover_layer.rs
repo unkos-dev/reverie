@@ -1,10 +1,12 @@
 //! Cover-image decodability validation layer (Layer 5).
 //!
 //! Checks that the cover image declared in the `OPF` manifest exists in the
-//! archive and can be decoded as `JPEG` or `PNG`. Other image formats produce
-//! a `Degraded` issue rather than an `Irrecoverable` one — the book is still
-//! readable without a valid cover. The `image` crate is compiled with only
-//! the `jpeg` and `png` features to limit attack surface.
+//! archive and is usable: either it decodes as a raster (`JPEG`/`PNG`/`WebP`
+//! via the `image` crate) or it parses as `SVG` (Standard Ebooks ship
+//! `cover.svg`). SVG covers are only *parsed* here — rasterization to `PNG`
+//! happens lazily at serve time in [`crate::services::covers`]. An undecodable,
+//! unparsable, or missing cover produces a `Degraded` issue rather than an
+//! `Irrecoverable` one — the book is still readable without a valid cover.
 
 use super::{
     Issue, IssueKind, Layer, Severity,
@@ -41,10 +43,14 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
         return;
     };
 
-    // Attempt to decode as JPEG or PNG. Other formats → Degraded.
-    // image crate compiled with default-features = false, features = ["jpeg", "png"] only.
+    // Attempt to decode as a raster first. SVG-declared covers aren't
+    // raster-decodable — accept them when they parse as SVG (parse only; no
+    // rasterization at ingestion). Anything else → Degraded.
     match image::load_from_memory(&bytes) {
-        Ok(_) => {} // decodable — no issue
+        Ok(_) => {} // decodable raster — no issue
+        Err(_)
+            if crate::services::covers::svg::looks_like_svg(&bytes)
+                && crate::services::covers::svg::parses_as_svg(&bytes) => {}
         Err(_) => {
             issues.push(Issue {
                 layer: Layer::Cover,
@@ -160,6 +166,47 @@ mod tests {
     fn undecodable_cover_emits_degraded() {
         let handle = make_handle_with_cover(b"not an image");
         let opf = make_opf_data("cover", "cover.jpg");
+        let mut issues = Vec::new();
+        validate(&handle, Some(&opf), &mut issues);
+        assert!(issues.iter().any(|i| {
+            i.severity == Severity::Degraded
+                && matches!(&i.kind, IssueKind::UndecodableCover { .. })
+        }));
+    }
+
+    fn make_handle_with_svg_cover(svg_bytes: &[u8]) -> ZipHandle {
+        use std::io::Write;
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("OEBPS/cover.svg", opts).unwrap();
+        w.write_all(svg_bytes).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+        ZipHandle {
+            bytes,
+            entries: vec!["OEBPS/cover.svg".to_string()],
+        }
+    }
+
+    #[test]
+    fn svg_cover_emits_no_issues() {
+        // Standard Ebooks ship cover.svg; a parseable SVG must not be flagged.
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"><rect width="100" height="150"/></svg>"#;
+        let handle = make_handle_with_svg_cover(svg);
+        let opf = make_opf_data("cover-image", "cover.svg");
+        let mut issues = Vec::new();
+        validate(&handle, Some(&opf), &mut issues);
+        assert!(
+            issues.is_empty(),
+            "expected no issues for SVG cover: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_svg_cover_emits_degraded() {
+        let handle = make_handle_with_svg_cover(b"<svg><broken");
+        let opf = make_opf_data("cover-image", "cover.svg");
         let mut issues = Vec::new();
         validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {

@@ -648,6 +648,86 @@ pub mod db {
 
         w.finish().unwrap().into_inner()
     }
+
+    /// Build a minimal EPUB whose cover is an SVG at `OEBPS/cover.svg`
+    /// (manifest id `cover-image`, `media-type="image/svg+xml"`,
+    /// `properties="cover-image"`) — the Standard Ebooks shape. `svg_body` is
+    /// the raw SVG bytes; when `sibling_jpeg` is set, an `OEBPS/cover.jpg` entry
+    /// is added so an `<image href="cover.jpg">` reference resolves. `marker`
+    /// makes the archive bytes (and thus the SHA-256) unique per call site.
+    fn build_svg_cover_epub(marker: &str, svg_body: &[u8], sibling_jpeg: bool) -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", stored).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+
+        w.start_file("META-INF/container.xml", default.clone())
+            .unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .unwrap();
+
+        w.start_file("OEBPS/content.opf", default.clone()).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest>
+    <item id="cover-image" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>
+  </manifest>
+  <spine/>
+</package>"#,
+        )
+        .unwrap();
+
+        w.start_file("OEBPS/cover.svg", default.clone()).unwrap();
+        w.write_all(svg_body).unwrap();
+
+        if sibling_jpeg {
+            let jpeg = {
+                let img = image::DynamicImage::new_rgb8(2, 2);
+                let mut b = Vec::new();
+                img.write_to(&mut std::io::Cursor::new(&mut b), image::ImageFormat::Jpeg)
+                    .expect("encode jpeg");
+                b
+            };
+            w.start_file("OEBPS/cover.jpg", default.clone()).unwrap();
+            w.write_all(&jpeg).unwrap();
+        }
+
+        w.start_file("META-INF/reverie-marker.txt", default)
+            .unwrap();
+        w.write_all(marker.as_bytes()).unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    /// SE-realistic SVG cover referencing a sibling raster via
+    /// `<image href="cover.jpg">`; the sibling 2×2 JPEG is included so the
+    /// rasterizer's in-ZIP href resolver has something to resolve.
+    pub fn make_minimal_epub_with_svg_cover_sibling_ref(marker: &str) -> Vec<u8> {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><image href="cover.jpg" width="100" height="150"/></svg>"#;
+        build_svg_cover_epub(marker, svg, true)
+    }
+
+    /// Malformed (truncated) SVG cover — exercises the negative serve path.
+    pub fn make_minimal_epub_with_malformed_svg_cover(marker: &str) -> Vec<u8> {
+        build_svg_cover_epub(marker, b"<svg><broken", false)
+    }
 }
 
 /// Mock OIDC provider scaffolding for end-to-end auth-flow tests.

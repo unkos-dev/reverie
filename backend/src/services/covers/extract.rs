@@ -9,6 +9,7 @@ use std::path::Path;
 use image::ImageFormat;
 
 use super::error::CoverError;
+use super::svg;
 use crate::services::epub::{container_layer, cover_layer, opf_layer, zip_layer};
 
 /// Read the EPUB at `epub_path`, locate the cover via manifest ids, return
@@ -39,7 +40,25 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
     };
 
     let bytes = zip_layer::read_entry(&handle, &entry_path).ok_or(CoverError::NoCover)?;
-    let fmt = image::guess_format(&bytes).map_err(|e| CoverError::Decode(e.to_string()))?;
 
-    Ok((bytes, fmt))
+    match image::guess_format(&bytes) {
+        Ok(fmt) => Ok((bytes, fmt)),
+        // SVG-declared covers (e.g. Standard Ebooks `images/cover.svg`) are not
+        // decodable by the raster pipeline. Rasterize to PNG at this boundary;
+        // everything downstream already handles PNG. The href resolver is
+        // restricted to sibling entries inside this same archive.
+        Err(_) if svg::looks_like_svg(&bytes) => {
+            let cover_dir = entry_path.rfind('/').map_or("", |i| &entry_path[..i]);
+            let png = svg::rasterize_svg(&bytes, |href| {
+                let sibling_path = if cover_dir.is_empty() {
+                    href.to_owned()
+                } else {
+                    format!("{cover_dir}/{href}")
+                };
+                zip_layer::read_entry(&handle, &sibling_path)
+            })?;
+            Ok((png, ImageFormat::Png))
+        }
+        Err(e) => Err(CoverError::Decode(e.to_string())),
+    }
 }

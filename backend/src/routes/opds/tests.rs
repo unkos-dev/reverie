@@ -549,6 +549,130 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     assert_eq!(response.status_code(), StatusCode::OK);
 }
 
+// ── SVG covers rasterize to PNG and serve (UNK-406) ──────────────────────
+
+async fn insert_manifestation_bytes(
+    ingestion_pool: &PgPool,
+    library_root: &StdPath,
+    marker: &str,
+    title: &str,
+    epub_bytes: &[u8],
+) -> Uuid {
+    let dest = library_root.join(format!("{marker}.epub"));
+    std::fs::write(&dest, epub_bytes).expect("write epub");
+    let abs_path = std::fs::canonicalize(&dest).expect("canonicalize");
+    let file_path = abs_path.to_string_lossy().into_owned();
+
+    use sha2::{Digest, Sha256};
+    let hash: String = Sha256::digest(epub_bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+
+    let work_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+        title,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert work");
+
+    sqlx::query_scalar!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, $4, \
+                 'complete'::ingestion_status, 'clean'::validation_status) \
+         RETURNING id",
+        work_id,
+        file_path,
+        hash,
+        epub_bytes.len() as i64,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert manifestation")
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn svg_cover_rasterizes_and_serves(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let library_root = std::fs::canonicalize(tmp.path()).unwrap();
+
+    // SE-realistic: cover.svg references a sibling cover.jpg inside the ZIP.
+    let epub = test_support::db::make_minimal_epub_with_svg_cover_sibling_ref("svg-cov");
+    let m = insert_manifestation_bytes(
+        &ingestion_pool,
+        &library_root,
+        "svg-cov",
+        "SVG Covered",
+        &epub,
+    )
+    .await;
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+
+    let response = server
+        .get(&format!("/api/v1/books/{m}/cover/thumb"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let ct = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(ct, "image/png");
+
+    let body = response.as_bytes().to_vec();
+    assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
+    let img = image::load_from_memory(&body).expect("decode served png");
+    assert!(
+        img.width().max(img.height()) <= 300,
+        "thumb long edge ≤ 300"
+    );
+
+    let cache_dir = library_root.join("_covers").join("cache");
+    let has_png = std::fs::read_dir(&cache_dir)
+        .unwrap()
+        .filter_map(std::result::Result::ok)
+        .any(|e| e.path().extension().is_some_and(|x| x == "png"));
+    assert!(has_png, "expected a cached .png cover");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn malformed_svg_cover_does_not_serve(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let library_root = std::fs::canonicalize(tmp.path()).unwrap();
+
+    let epub = test_support::db::make_minimal_epub_with_malformed_svg_cover("bad-svg");
+    let m = insert_manifestation_bytes(&ingestion_pool, &library_root, "bad-svg", "Bad SVG", &epub)
+        .await;
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+
+    let response = server
+        .get(&format!("/api/v1/books/{m}/cover/thumb"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    // Malformed SVG → CoverError::Decode → 500 (same as a corrupt raster cover).
+    assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let cache_dir = library_root.join("_covers").join("cache");
+    let count = std::fs::read_dir(&cache_dir).map_or(0, Iterator::count);
+    assert_eq!(count, 0, "no cover should be cached for a malformed SVG");
+}
+
 // ── Regression: cover dual-mount asymmetry (UNK-376 PR1) ─────────────────
 
 /// PR1 (`/api`→`/api/v1`, UNK-376): the cover handler is dual-mounted and the

@@ -31,6 +31,10 @@ export default defineConfig({
           items: [{ label: "Introduction", slug: "getting-started/introduction" }],
         },
         {
+          label: "Guides",
+          items: [{ autogenerate: { directory: "guides" } }],
+        },
+        {
           label: "Design",
           items: [{ autogenerate: { directory: "design" } }],
         },
