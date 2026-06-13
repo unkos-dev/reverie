@@ -5,11 +5,12 @@
  * viewer is logged out) the chip renders nothing — the 401 redirect in
  * `App.tsx` owns the logged-out path.
  *
- * THREAT: sign-out must destroy the server-side session (POST
- * `/auth/logout`) before navigating — dropping UI state alone would
- * leave a replayable session cookie. Navigation proceeds even when the
- * request fails so a user on a broken network still lands on the login
- * surface; the raw error goes to the console for the operator.
+ * THREAT: sign-out must attempt server-side session destruction (POST
+ * `/auth/logout`) — dropping UI state alone would leave a replayable
+ * session cookie. Navigation is NOT conditional on success: it
+ * proceeds even when the request fails so a user on a broken network
+ * still lands on the login surface (the cookie's server-side TTL is
+ * the backstop); the raw error goes to the console for the operator.
  *
  * Theme switching reuses the `useTheme()` write-through that powers
  * `theme-switcher.tsx`. The standalone `<ThemeSwitcher/>` carries its

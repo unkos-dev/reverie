@@ -61,7 +61,10 @@ function Breadcrumbs(): ReactElement | null {
   let title: string | null;
   try {
     title = crumbMatch.handle.crumb(crumbMatch.loaderData);
-  } catch {
+  } catch (error) {
+    // Degrading is sanctioned; doing it silently is not — a throwing
+    // crumb means a loader/crumb contract bug worth surfacing.
+    console.error("[UtilityStrip] crumb function threw", error);
     title = null;
   }
 

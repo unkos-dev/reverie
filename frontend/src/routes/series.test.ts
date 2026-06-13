@@ -65,4 +65,13 @@ describe("series loader", () => {
     const result = await loader(args("abc-series"));
     expect(result).toBeNull();
   });
+
+  test("throws a 404 Response on a missing id without hitting the API", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(loader(args(undefined))).rejects.toSatisfy(
+      (thrown: unknown) => thrown instanceof Response && thrown.status === 404,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

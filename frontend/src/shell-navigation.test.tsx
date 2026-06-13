@@ -61,6 +61,13 @@ const BOOK_LIST_ITEM = {
   enrichment_status: "complete",
 };
 
+const FILTERED_BOOK_LIST_ITEM = {
+  ...BOOK_LIST_ITEM,
+  id: "b2",
+  work_id: "w2",
+  title: "Mort",
+};
+
 const BOOK_DETAIL = {
   ...BOOK_LIST_ITEM,
   description: "A dragon appears.",
@@ -93,10 +100,16 @@ const STATS = {
   },
 };
 
-function bodyFor(pathname: string, role: string): unknown {
+function bodyFor(url: URL, role: string): unknown {
+  const pathname = url.pathname;
   if (pathname === "/auth/me") return { ...ADMIN_ME, role };
   if (pathname.startsWith("/api/v1/books/")) return BOOK_DETAIL;
   if (pathname.startsWith("/api/v1/books")) {
+    // A series filter returns a distinct item so the seam test can
+    // tell a refetch from a cached re-render.
+    if (url.searchParams.get("series") === "series-1") {
+      return { items: [FILTERED_BOOK_LIST_ITEM], next_cursor: null };
+    }
     return { items: [BOOK_LIST_ITEM], next_cursor: null };
   }
   if (pathname.startsWith("/api/v1/shelves/")) {
@@ -125,7 +138,7 @@ function stubFetch(role: string): void {
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
       "http://localhost",
     );
-    const body = bodyFor(url.pathname, role);
+    const body = bodyFor(url, role);
     return Promise.resolve(
       new Response(JSON.stringify(body), {
         status: 200,
@@ -193,11 +206,15 @@ describe("shell navigation — click reachability (admin)", () => {
       { timeout: 5000 },
     );
 
-    // Series detail via the book's series label. Settle on the page
-    // heading first — clicking a node found mid-suspense can hit a
-    // detached element after the data render replaces it.
+    // Series detail via the book's series label. The heading settle
+    // alone is insufficient — the library tile's own h3 satisfies it
+    // before the book page commits, so the series link itself must be
+    // awaited (a sync getByRole races the post-navigation render
+    // flush and loses on slower machines).
     await screen.findByRole("heading", { name: /Guards! Guards!/ });
-    await user.click(screen.getByRole("link", { name: /Discworld · #8/ }));
+    await user.click(
+      await screen.findByRole("link", { name: /Discworld · #8/ }, { timeout: 5000 }),
+    );
     await waitFor(
       () => {
         expect(router.state.location.pathname).toBe("/series/series-1");
@@ -251,6 +268,41 @@ describe("shell navigation — click reachability (admin)", () => {
       },
       { timeout: 5000 },
     );
+  });
+});
+
+describe("filter rail — param-write to loader-refetch seam", () => {
+  test("selecting a series facet refetches the grid with the filter applied", async () => {
+    stubFetch("admin");
+    const { router } = renderApp();
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole("link", { name: /Guards! Guards!/ })).toBeInTheDocument();
+
+    // Select the Discworld radio in the filter rail.
+    await user.click(await screen.findByRole("radio", { name: "Discworld" }));
+    await waitFor(
+      () => {
+        expect(new URLSearchParams(router.state.location.search).get("series")).toBe("series-1");
+      },
+      { timeout: 5000 },
+    );
+
+    // The query re-fired with the param and the grid re-rendered from
+    // the filtered response — not from the unfiltered cache entry.
+    expect(await screen.findByRole("link", { name: /Mort/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Guards! Guards!/ })).not.toBeInTheDocument();
+
+    // Toggle-off: re-clicking the active radio clears the param and
+    // restores the unfiltered grid (spec §10 active-filter clearing).
+    await user.click(screen.getByRole("radio", { name: "Discworld" }));
+    await waitFor(
+      () => {
+        expect(new URLSearchParams(router.state.location.search).get("series")).toBeNull();
+      },
+      { timeout: 5000 },
+    );
+    expect(await screen.findByRole("link", { name: /Guards! Guards!/ })).toBeInTheDocument();
   });
 });
 

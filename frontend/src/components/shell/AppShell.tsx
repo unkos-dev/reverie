@@ -110,6 +110,19 @@ function DrawerSlot(): ReactElement {
   );
 }
 
+/** Shell zones with a distinct chrome tone. Widen as zones arrive. */
+export type AppZone = "admin";
+
+/**
+ * Shape of `handle` on zone-bearing routes. Route declarations use
+ * `satisfies ZoneHandle` so a zone typo is a compile error instead of
+ * a silently missed tone shift.
+ */
+export interface ZoneHandle {
+  /** Zone flag read by the shell's `data-zone` attribute. */
+  zone: AppZone;
+}
+
 /** Narrow a route `handle` to the admin-zone flag. */
 function hasAdminZone(handle: unknown): boolean {
   return (

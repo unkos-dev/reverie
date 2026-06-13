@@ -13,7 +13,7 @@
  */
 import { useQuery, useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { Filter, LayoutGrid, List, Loader2, X } from "lucide-react";
-import { Suspense, useState, type CSSProperties, type ReactElement } from "react";
+import { Suspense, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import {
@@ -431,11 +431,20 @@ function ActiveFilterChips({
   // `useQuery` with `enabled: false` would block the first render; we
   // unconditionally subscribe to the cache and let the picker mutation
   // populate it on first use.
-  const { data: shelves, isError: shelvesError } = useQuery<Shelf[]>({
+  const {
+    data: shelves,
+    isError: shelvesError,
+    error: shelvesQueryError,
+  } = useQuery<Shelf[]>({
     queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
     staleTime: 60_000,
   });
+  // "(unknown)" is acceptable UI degradation; the failure behind it
+  // must still reach the console (QueryCache.onError only routes 401s).
+  useEffect(() => {
+    if (shelvesError) console.error("[ActiveFilterChips] shelves fetch failed", shelvesQueryError);
+  }, [shelvesError, shelvesQueryError]);
   const shelfNameFor = (id: string): string => {
     if (shelvesError) return "(unknown)";
     return shelves?.find((s) => s.id === id)?.name ?? shortId(id);

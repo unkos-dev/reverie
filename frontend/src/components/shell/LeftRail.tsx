@@ -11,7 +11,7 @@
  * (`data === undefined`) so non-admins never see an admin flash.
  */
 import { useQuery } from "@tanstack/react-query";
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 import { Link, NavLink } from "react-router";
 
 import { listShelves, type Shelf } from "@/api";
@@ -32,11 +32,21 @@ const SHELF_CAP = 7;
 export function LeftRail(): ReactElement {
   const { effective } = useTheme();
   const { data: me } = useAuthMe();
-  const { data: shelves } = useQuery({
+  const {
+    data: shelves,
+    isError: shelvesError,
+    error: shelvesQueryError,
+  } = useQuery({
     queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
     staleTime: 60_000,
   });
+  // The shelf-less rail is sanctioned degradation, but the failure
+  // must stay observable — the central QueryCache.onError only routes
+  // 401s, so a non-auth failure would otherwise vanish.
+  useEffect(() => {
+    if (shelvesError) console.error("[LeftRail] shelves fetch failed", shelvesQueryError);
+  }, [shelvesError, shelvesQueryError]);
 
   return (
     <aside

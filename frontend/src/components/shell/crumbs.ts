@@ -9,6 +9,17 @@
  * cache was cold (loaders return `null` then).
  */
 
+/**
+ * Loader return shape consumed by {@link titleCrumb}. Loaders alias
+ * their domain field into `title` (e.g. the series loader maps
+ * `detail.name`); `satisfies TitleData` at the return site keeps that
+ * contract compile-checked across modules.
+ */
+export interface TitleData {
+  /** Trailing breadcrumb label for the route. */
+  title: string;
+}
+
 /** Shape of `handle` on breadcrumb-bearing routes. */
 export interface CrumbHandle {
   /** Maps loader data to the trailing crumb label (`null` = no label). */

@@ -1,5 +1,5 @@
 /**
- * Global Cmd-K command palette (11b).
+ * Global Cmd-K command palette.
  *
  * Mounted once at the application root (`App.tsx`) so the global
  * `useEffect` keybinding survives route transitions. Opens on
@@ -61,7 +61,8 @@ const SNIPPET_HL_END = "\u0003";
  * The invoker (the element focused at open time) is captured
  * explicitly so close can restore focus to it deterministically —
  * Radix's own previously-focused capture races the dialog's autofocus
- * under test renderers, and the spec (§6) makes restore a MUST.
+ * under test renderers, and the spec's testing requirements (§11)
+ * make restore a MUST ("focus trapped + restored").
  */
 function useCmdKToggle(): [boolean, (open: boolean) => void, RefObject<HTMLElement | null>] {
   const [open, setOpen] = useState(false);

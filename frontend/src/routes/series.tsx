@@ -12,6 +12,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 
 import { getSeries, type SeriesDetail } from "@/api";
+import type { TitleData } from "@/components/shell/crumbs";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import { SeriesPage } from "@/pages/series/SeriesPage";
@@ -22,15 +23,23 @@ import { SeriesPage } from "@/pages/series/SeriesPage";
  * for the utility strip's breadcrumb. `prefetchQuery` swallows fetch
  * errors — a cold cache degrades to `null` (crumb renders "Library"
  * alone).
+ *
+ * Throws a `Response` on a missing id — react-router's documented
+ * loader-bailout mechanism (same guard as the `/b/:id` loader); the
+ * alternative would send `GET /series/` with an empty id segment.
  */
-export async function loader({ params }: LoaderFunctionArgs): Promise<{ title: string } | null> {
-  const id = params.id ?? "";
+export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData | null> {
+  const id = params.id;
+  if (typeof id !== "string" || id.length === 0) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
+    throw new Response("Missing series id", { status: 404 });
+  }
   await queryClient.prefetchQuery({
     queryKey: queryKeys.series.detail(id),
     queryFn: ({ signal }) => getSeries(id, signal),
   });
   const detail = queryClient.getQueryData<SeriesDetail>(queryKeys.series.detail(id));
-  return detail === undefined ? null : { title: detail.name };
+  return detail === undefined ? null : ({ title: detail.name } satisfies TitleData);
 }
 
 /** Component export consumed by the route's `lazy()` callback. */

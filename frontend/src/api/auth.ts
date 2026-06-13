@@ -6,7 +6,7 @@
  * replayable from the browser. The POST goes through {@link apiFetch}
  * so the CSRF synchronizer token rides along on the unsafe verb once
  * the enforcement middleware lands (token issuance shipped first; see
- * the csrf-rollout ADR).
+ * the CSRF defense section of `adr/2026-05-22-json-api-conventions.md`).
  *
  * `/auth/me` reads live in `hooks/useAuthMe.ts` (query-shaped); this
  * module owns the imperative mutations only.

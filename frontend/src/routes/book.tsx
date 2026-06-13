@@ -12,6 +12,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 
 import { getBook, type BookDetail } from "@/api";
+import type { TitleData } from "@/components/shell/crumbs";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import { BookPage } from "@/pages/book/BookPage";
@@ -30,7 +31,7 @@ import { BookPage } from "@/pages/book/BookPage";
  * disabled for that single line because the framework-prescribed
  * value is intentionally not an `Error` subclass.
  */
-export async function loader({ params }: LoaderFunctionArgs): Promise<{ title: string } | null> {
+export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData | null> {
   const id = params.id;
   if (typeof id !== "string" || id.length === 0) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
@@ -41,7 +42,7 @@ export async function loader({ params }: LoaderFunctionArgs): Promise<{ title: s
     queryFn: ({ signal }) => getBook(id, signal),
   });
   const detail = queryClient.getQueryData<BookDetail>(queryKeys.books.detail(id));
-  return detail === undefined ? null : { title: detail.title };
+  return detail === undefined ? null : ({ title: detail.title } satisfies TitleData);
 }
 
 export { BookPage as Component };

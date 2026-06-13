@@ -245,7 +245,14 @@ function FramedSpine({ palette, title, author }: SpineProps): ReactElement {
   );
 }
 
-/** Gold jacket band across the middle carrying the title. */
+/**
+ * Gold jacket band across the middle carrying the title.
+ *
+ * The band itself is hardcoded `cover-gold`/`cover-ink` regardless of
+ * the assigned colorway — the gold band IS this composition's identity.
+ * Only the decorative rule above it takes the palette; don't "fix" the
+ * band to thread `palette` through.
+ */
 function BandSpine({ palette, title, author }: SpineProps): ReactElement {
   return (
     <div className="absolute inset-0 flex flex-col justify-center">

@@ -14,6 +14,7 @@
  */
 import type { RouteObject } from "react-router";
 
+import type { ZoneHandle } from "@/components/shell/AppShell";
 import { titleCrumb } from "@/components/shell/crumbs";
 
 /** `/library` — paginated grid of books visible to the current user. */
@@ -69,7 +70,7 @@ export const shelfDetailRoute: RouteObject = {
 export const adminUsersRoute: RouteObject = {
   path: "admin/users",
   // Shell tone shift to canvas-2 (spec §2 admin zone).
-  handle: { zone: "admin" },
+  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./admin");
     return { loader: mod.loader, Component: mod.Component };
@@ -80,7 +81,7 @@ export const adminUsersRoute: RouteObject = {
 export const adminDashboardRoute: RouteObject = {
   path: "admin/dashboard",
   // Shell tone shift to canvas-2 (spec §2 admin zone).
-  handle: { zone: "admin" },
+  handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./dashboard");
     return { loader: mod.loader, Component: mod.Component };

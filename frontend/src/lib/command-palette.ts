@@ -36,6 +36,10 @@ export function openCommandPalette(): void {
  * this label only advertises the conventional one per platform.
  */
 export function searchHintLabel(): string {
+  // `navigator` is a browser global — guard so non-browser callers
+  // (node-environment tests, future SSR) get the safe default instead
+  // of a ReferenceError.
+  if (typeof navigator === "undefined") return "Ctrl K";
   const nav: Navigator & { userAgentData?: { platform?: string } } = navigator;
   const platform = nav.userAgentData?.platform ?? nav.platform;
   return /mac|iphone|ipad/i.test(platform) ? "⌘K" : "Ctrl K";

@@ -31,9 +31,11 @@ return to, not filters you apply.
 
 ## Planned entries are visible
 
-The rail shows a few destinations that aren't built yet — Home, Stats,
-and Settings render dimmed with a "Planned — not in this release"
-note. This is deliberate: the rail communicates the product's intended
+The rail shows a few destinations that aren't built yet — Home and
+Stats render dimmed with a "Planned — not in this release" note.
+Settings is not a rail destination: it lives in the user menu at the
+foot of the rail, carrying the same planned treatment.
+This is deliberate: the rail communicates the product's intended
 shape, and a self-hosting operator evaluating Reverie can see where it
 is going without reading a roadmap. Planned entries are skipped by
 keyboard navigation and never act as links.
