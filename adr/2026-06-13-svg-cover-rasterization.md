@@ -117,8 +117,13 @@ Concrete shape of the decision:
 - **Validator (Layer 5) parses + gates, does not rasterize.** A parseable SVG
   cover within the render-cost budget is not flagged; one that breaches it
   (filters, or geometry/node/depth over budget) is flagged `Degraded` at
-  ingestion. Acceptance and serve-time apply the _same_ gate, so a cover accepted
-  at ingestion will not later fail at serve and render as a placeholder.
+  ingestion. Acceptance and serve-time apply the _same_ parse-and-render-cost
+  gate, so a cover that clears ingestion will not later fail at serve _on those
+  gates_. The serve path additionally rasterizes and rejects an all-transparent
+  result, so an SVG that parses and is within budget but resolves to no visible
+  pixels (an `<image>` whose sibling is absent, or an empty `<svg>`) is accepted
+  at ingestion yet falls back to the spine at serve — both correctly avoid
+  serving a blank cover, by different paths.
 
 ### Consequences
 

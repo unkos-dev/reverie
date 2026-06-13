@@ -153,17 +153,25 @@ where
 }
 
 /// Acceptance check for the ingestion validator (Layer 5). Does not rasterize
-/// and resolves no siblings — it answers "would this render as a cover?".
-/// Applies the exact same pipeline as [`rasterize_svg`] via [`parse_and_gate`],
-/// so ingestion and serve-time agree: a cover accepted here will not be rejected
-/// at serve (and vice versa).
+/// and resolves no siblings — it answers "does this parse and clear the
+/// render-cost gate?". Shares [`parse_and_gate`] with serve-time
+/// [`rasterize_svg`], so the two cannot disagree on the parse/gate verdict: a
+/// cover that clears those gates here will not be rejected by them at serve. The
+/// serve path additionally rasterizes and rejects an all-transparent result, so
+/// an SVG that parses and is within budget but resolves to no visible pixels (an
+/// `<image>` whose sibling is absent at serve, or an empty `<svg>`) is accepted
+/// here yet falls back to the spine at serve — both avoid serving a blank cover.
 pub(crate) fn parses_as_svg(svg_bytes: &[u8]) -> bool {
     parse_and_gate(svg_bytes, |_: &str| None).is_ok()
 }
 
 /// Parse `svg_bytes` into a hardened usvg tree, enforcing every pre-render
 /// guard. The single source of truth shared by serve-time [`rasterize_svg`] and
-/// ingestion [`parses_as_svg`], so the two cannot disagree on what is acceptable.
+/// ingestion [`parses_as_svg`], so the two cannot disagree on the parse-and-gate
+/// verdict. (The serve path additionally rasterizes and rejects a non-positive
+/// declared size or an all-transparent render — the size check keys on the
+/// declared viewport, the transparency check on sibling resolution — so both
+/// live only there; see [`parses_as_svg`].)
 ///
 /// THREAT pipeline, in order: input-size cap → **raw-byte nesting-depth bound** →
 /// UTF-8 → `roxmltree` parse → usvg conversion → render-cost gate. The depth
@@ -886,6 +894,65 @@ mod tests {
             Some(bomb.clone())
         })
         .unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+    }
+
+    // Standard base64 (RFC 4648, with padding) — enough to embed a raster as a
+    // `data:` URI so usvg's data-URI path hands the decoded bytes to the
+    // overridden `resolve_data` resolver. Self-contained to avoid a test-only dep.
+    fn base64_encode(data: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+        for chunk in data.chunks(3) {
+            let n = (u32::from(chunk[0]) << 16)
+                | (u32::from(chunk.get(1).copied().unwrap_or(0)) << 8)
+                | u32::from(chunk.get(2).copied().unwrap_or(0));
+            out.push(ALPHABET[((n >> 18) & 63) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 63) as usize] as char);
+            out.push(if chunk.len() > 1 {
+                ALPHABET[((n >> 6) & 63) as usize] as char
+            } else {
+                '='
+            });
+            out.push(if chunk.len() > 2 {
+                ALPHABET[(n & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+        out
+    }
+
+    /// SVG whose only paintable content is a single `<image>` carrying a base64
+    /// `data:` URI — so the raster reaches the `resolve_data` resolver, and a
+    /// rejected payload yields a fully-transparent render (Decode).
+    fn data_uri_image_svg(b64: &str) -> String {
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><image href="data:image/png;base64,{b64}" width="100" height="150"/></svg>"#
+        )
+    }
+
+    #[test]
+    fn accepts_data_uri_image() {
+        // resolve_data path (base64 data-URI): a valid small PNG must resolve
+        // through safe_image_kind and render non-blank — the SE data-URI cover
+        // shape, distinct from the in-ZIP sibling path.
+        let b64 = base64_encode(&raster(2, 2, image::ImageFormat::Png));
+        let out = rasterize_svg(data_uri_image_svg(&b64).as_bytes(), |_| None).unwrap();
+        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
+    }
+
+    #[test]
+    fn rejects_huge_pixel_data_uri() {
+        // The megapixel guard must fire on the resolve_data (base64 data-URI)
+        // path, not only resolve_string siblings: a header-only PNG declaring
+        // 30000×30000 (900 MP) is dropped → transparent render → Decode. (The
+        // byte cap can't be exercised here — MAX_SVG_INPUT_BYTES bounds the whole
+        // SVG, including the base64 payload, below MAX_EMBEDDED_IMAGE_BYTES — so
+        // the megapixel guard is the reachable data-URI cap.)
+        let b64 = base64_encode(&png_header_only(30_000, 30_000));
+        let err = rasterize_svg(data_uri_image_svg(&b64).as_bytes(), |_| None).unwrap_err();
         assert!(matches!(err, CoverError::Decode(_)));
     }
 
