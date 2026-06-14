@@ -143,8 +143,11 @@ unimplemented = "warn"
 # `miniz_oxide` deflate codec behind both the ZIP reader and PNG decode — leaves
 # part of the path slow. Deps compile once at opt3, then cache.
 #
-# Scope: `dev` profile only (the dev box runs `cargo run`). `"*"` covers
-# dependencies, not the first-party crate, so our own code stays at opt-level 0
-# for fast incremental rebuilds; `release` and the `test` profile are untouched.
+# Scope: the `dev` profile. `"*"` covers dependencies, not the first-party
+# crate, so our own code stays at opt-level 0 for fast incremental rebuilds.
+# `release` (the shipped binary) is untouched. The `test` profile inherits
+# `dev`, so `cargo test` also builds dependencies at opt-level 3 — this only
+# makes test builds faster and changes no semantics; the one-time recompile is
+# absorbed by `rust-cache` in CI.
 [profile.dev.package."*"]
 opt-level = 3
