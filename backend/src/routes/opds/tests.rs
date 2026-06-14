@@ -561,6 +561,16 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     assert_eq!(response.status_code(), StatusCode::NOT_MODIFIED);
     assert!(response.as_bytes().is_empty(), "304 carries no body");
 
+    // Stale/mismatched If-None-Match → 200 with the full body (the
+    // revalidate-after-content-change path, e.g. a Step 8 writeback).
+    let response = server
+        .get(&format!("/opds/books/{m}/cover"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_NONE_MATCH, "\"stale-hash-full\"")
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    assert_eq!(response.as_bytes().to_vec(), first_bytes);
+
     // Thumb variant: served as JPEG, same caching contract (ETag present).
     let response = server
         .get(&format!("/opds/books/{m}/cover/thumb"))
