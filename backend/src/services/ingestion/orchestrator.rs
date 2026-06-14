@@ -598,6 +598,20 @@ async fn process_file(
         );
     }
 
+    // Pre-warm the thumbnail cover off the request path so the first library
+    // grid view is a warm cache hit instead of a cold rasterize. Best-effort,
+    // concurrency-bounded, and EPUB-only (the sole format with an embedded
+    // cover today). `current_file_hash` is `copy_result.sha256` (see
+    // `commit_ingest`), which keys the cover cache.
+    if matches!(format, ManifestationFormat::Epub) {
+        crate::services::covers::spawn_warm_thumb(
+            library_path.display().to_string(),
+            manifestation_id,
+            copy_result.sha256.clone(),
+            final_path_str.clone(),
+        );
+    }
+
     ProcessResult::Complete
 }
 

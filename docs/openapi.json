@@ -202,7 +202,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: no-store"
+            "description": "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"
+          },
+          "304": {
+            "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
             "description": "Authentication required",
@@ -249,7 +252,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Thumbnail image stream; Cache-Control: no-store"
+            "description": "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"
+          },
+          "304": {
+            "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
             "description": "Authentication required",
@@ -2727,7 +2733,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: no-store"
+            "description": "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"
+          },
+          "304": {
+            "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)"
@@ -2772,7 +2781,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Thumbnail image stream; Cache-Control: no-store"
+            "description": "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"
+          },
+          "304": {
+            "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)"
