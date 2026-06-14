@@ -129,3 +129,22 @@ dbg_macro = "deny"
 undocumented_unsafe_blocks = "deny"
 todo = "warn"
 unimplemented = "warn"
+
+# Optimise all dependencies in `dev`/`run` builds.
+#
+# Cover serving rasterizes SVG covers (resvg/usvg/tiny-skia) and unzips +
+# decodes + Lanczos-resizes + re-encodes rasters (zip/flate2/miniz_oxide,
+# image/png/zune-jpeg/fdeflate). Under the unoptimised dev profile these pixel-
+# and byte-loop crates dominate a cold cover generation — ~11s on the dev box.
+# Building dependencies at opt-level 3 keeps that path fast. Applying it to all
+# deps (`"*"`) rather than an enumerated cover-crate list is deliberate: an
+# explicit list silently drifts (a package override for a crate not in the graph
+# is ignored without warning), and missing one hot transitive crate — e.g. the
+# `miniz_oxide` deflate codec behind both the ZIP reader and PNG decode — leaves
+# part of the path slow. Deps compile once at opt3, then cache.
+#
+# Scope: `dev` profile only (the dev box runs `cargo run`). `"*"` covers
+# dependencies, not the first-party crate, so our own code stays at opt-level 0
+# for fast incremental rebuilds; `release` and the `test` profile are untouched.
+[profile.dev.package."*"]
+opt-level = 3
