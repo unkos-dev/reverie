@@ -26,13 +26,23 @@ use crate::state::AppState;
 /// unchanged) once `max-age` lapses.
 const COVER_MAX_AGE_SECS: u32 = 86_400;
 
-/// `Cache-Control` for cover responses.
+/// `Vary` for cover responses.
 ///
-/// THREAT: covers are RLS-scoped per-user content, not credentials —
-/// `codeguard-0-http-headers.md` reserves `no-store` for sensitive data. We
-/// use `private` so shared proxies/CDNs never store a cover; the residual is a
-/// cover lingering in a *shared browser* cache post-logout (low severity — a
-/// public-domain book cover, and re-fetching still requires auth). See
+/// THREAT: covers are RLS-scoped, so two users hitting the same cover URL can
+/// get different results (one a `200`, one a `404`). `private` keeps shared
+/// proxies out but does NOT partition a browser's *own* cache by user — without
+/// `Vary`, on a shared browser a cached cover for user A would be replayed to
+/// user B after an account switch, leaking an RLS-hidden cover (e.g. a child
+/// account seeing an adult-only cover an adult viewed). `Vary` partitions the
+/// cache by the credential: `Authorization` for OPDS Basic, `Cookie` for the
+/// web session. Session/Basic credentials are stable within a session, so this
+/// preserves the per-session caching win while closing the cross-user replay.
+const COVER_VARY: &str = "Authorization, Cookie";
+
+/// `Cache-Control` for cover responses. `private` (not `no-store`) — covers are
+/// RLS-scoped images, not credentials, and `codeguard-0-http-headers.md`
+/// reserves `no-store` for sensitive data. Cross-user cache replay is handled
+/// by [`COVER_VARY`], not by suppressing caching. See
 /// `adr/2026-06-14-cover-cache-headers-and-thumbnail-encoding.md`.
 fn cover_cache_control() -> String {
     format!("private, max-age={COVER_MAX_AGE_SECS}")
@@ -208,8 +218,11 @@ async fn serve_cover(
         Err(e) => return Err(AppError::Internal(anyhow::anyhow!(e))),
     };
 
-    // Strong validator, quoted per RFC 9110 §8.8.3. Browsers echo the quoted
-    // form verbatim in If-None-Match, so compare against the quoted string.
+    // Strong validator, quoted per RFC 9110 §8.8.3. We emit exactly one strong
+    // ETag and browsers echo it back verbatim, so an exact compare is
+    // sufficient: list / `*` / weak `W/` forms only arise from hand-crafted
+    // requests, and any unmatched form falls through to a correct `200` (never
+    // a wrong `304`).
     let etag = format!("\"{}\"", artifact.etag);
 
     if if_none_match.is_some_and(|inm| inm == etag) {
@@ -217,6 +230,7 @@ async fn serve_cover(
             .status(StatusCode::NOT_MODIFIED)
             .header(header::ETAG, &etag)
             .header(header::CACHE_CONTROL, cover_cache_control())
+            .header(header::VARY, COVER_VARY)
             .body(Body::empty())
             .map_err(|e| AppError::Internal(e.into()));
     }
@@ -239,6 +253,7 @@ async fn serve_cover(
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CACHE_CONTROL, cover_cache_control())
         .header(header::ETAG, &etag)
+        .header(header::VARY, COVER_VARY)
         .body(body)
         .map_err(|e| AppError::Internal(e.into()))
 }

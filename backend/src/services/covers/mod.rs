@@ -79,16 +79,22 @@ fn etag_for(file_hash: &str, size: CoverSize) -> String {
     format!("{prefix}-{size_tag}")
 }
 
-/// Return the cached path for `(manifestation_id, file_hash, size)` if any
-/// encoding (jpg/png/webp) is already on disk. The output extension depends on
-/// tier and source format, so all three are probed.
+/// Return the cached path for `(manifestation_id, file_hash, size)` if a
+/// valid-for-this-tier encoding is already on disk. The `Thumb` tier is always
+/// JPEG, so it probes only `jpg` — this ignores a stale `png`/`webp` thumbnail
+/// from before the JPEG-thumbnail policy and regenerates it as JPEG. The `Full`
+/// tier preserves the source format, so it probes the raster encodings.
 fn cached_hit(
     cache: &CoverCache,
     manifestation_id: Uuid,
     file_hash: &str,
     size: CoverSize,
 ) -> Option<PathBuf> {
-    for ext in ["jpg", "png", "webp"] {
+    let exts: &[&str] = match size {
+        CoverSize::Thumb => &["jpg"],
+        CoverSize::Full => &["jpg", "png", "webp"],
+    };
+    for &ext in exts {
         let path = cache.cached_path(manifestation_id, file_hash, size, ext);
         if path.exists() {
             return Some(path);

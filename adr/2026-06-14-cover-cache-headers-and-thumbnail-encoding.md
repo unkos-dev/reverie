@@ -62,11 +62,14 @@ threat-model control.
 **A — caching headers.** Covers serve `Cache-Control: private, max-age=86400`
 with a strong `ETag` of `"{current_file_hash[..16]}-{size}"`, and the handler
 answers a matching `If-None-Match` with `304 Not Modified`. `private` keeps
-shared proxies/CDNs from storing a cover; `max-age` serves repeat views from
-the browser cache with no request; once it lapses the `ETag` drives a cheap
-revalidation. `immutable` is rejected because the URL is not hash-addressed —
-the `ETag` (which _is_ derived from the file hash) gives correct revalidation
-after a writeback instead.
+shared proxies/CDNs from storing a cover, and `Vary: Authorization, Cookie`
+partitions the per-user private cache so a shared browser cannot replay an
+RLS-scoped cover across an account switch (covers are RLS-visibility-scoped, so
+the same URL can be a `200` for one user and a `404` for another). `max-age`
+serves repeat views from the browser cache with no request; once it lapses the
+`ETag` drives a cheap revalidation. `immutable` is rejected because the URL is
+not hash-addressed — the `ETag` (which _is_ derived from the file hash) gives
+correct revalidation after a writeback instead.
 
 **B — pre-warm the thumbnail at ingest.** `process_file` fires a
 concurrency-bounded, best-effort background task that generates the thumbnail
@@ -76,9 +79,10 @@ semaphore (no thundering herd on the blocking pool), and never fails ingest.
 Full-size covers stay lazy — the reader view loads one at a time.
 
 **C — JPEG thumbnails.** The thumbnail tier always encodes to JPEG (quality
-82, alpha flattened); the full tier preserves the source format. WebP would be
-preferable for alpha but `image` 0.25 has no WebP encoder, and opaque cover art
-makes JPEG's lossy/no-alpha tradeoff invisible at grid size.
+82); the full tier preserves the source format. Since JPEG has no alpha,
+transparency is composited over white first — a bare channel-drop would render
+the transparent regions of a non-canvas-filling SVG cover black. WebP would
+preserve alpha directly, but `image` 0.25 has no WebP encoder.
 
 ### Consequences
 
@@ -87,10 +91,11 @@ makes JPEG's lossy/no-alpha tradeoff invisible at grid size.
 - Good, because moving generation into `spawn_blocking` (both the warm path and
   the lazy `get_or_create` miss path) removes image work from the async runtime
   thread — a latent blocking-IO bug.
-- Bad, because a cover can linger in a _shared browser_ cache after logout
-  (THREAT). Severity is low: it is a public-domain book cover, `private` blocks
-  shared caches, and re-fetching still requires authentication. Accepted over
-  `no-store` for the large repeat-view win.
+- Neutral, because the shared-browser cross-user replay (THREAT) — a cached
+  RLS-scoped cover served to a different account after a switch on the same
+  browser — is closed by `Vary: Authorization, Cookie`, which partitions the
+  private cache by credential. Credentials are stable within a session, so
+  per-session caching is preserved while the cross-user replay is blocked.
 - Bad, because a writeback within the `max-age` window shows a stale cover for
   up to a day. Accepted: covers change rarely (enrichment), and the `ETag`
   makes it self-correct on the next revalidation.

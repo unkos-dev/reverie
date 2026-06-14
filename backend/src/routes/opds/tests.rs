@@ -532,6 +532,18 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
         etag.starts_with('"') && etag.ends_with('"'),
         "ETag is a quoted strong validator: {etag}"
     );
+    // Vary partitions the per-user private cache so a shared browser cannot
+    // replay an RLS-scoped cover across an account switch.
+    let vary = response
+        .headers()
+        .get(axum::http::header::VARY)
+        .expect("cover 200 carries Vary")
+        .to_str()
+        .unwrap();
+    assert!(
+        vary.contains("Authorization") && vary.contains("Cookie"),
+        "Vary covers both credential channels: {vary}"
+    );
     let first_bytes = response.as_bytes().to_vec();
     assert!(!first_bytes.is_empty());
 
@@ -560,6 +572,13 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::NOT_MODIFIED);
     assert!(response.as_bytes().is_empty(), "304 carries no body");
+    assert!(
+        response
+            .headers()
+            .get(axum::http::header::VARY)
+            .is_some_and(|v| v.to_str().is_ok_and(|s| s.contains("Cookie"))),
+        "304 also carries Vary"
+    );
 
     // Stale/mismatched If-None-Match → 200 with the full body (the
     // revalidate-after-content-change path, e.g. a Step 8 writeback).
