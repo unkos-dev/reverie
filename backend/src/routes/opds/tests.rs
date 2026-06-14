@@ -520,7 +520,18 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
         .unwrap()
         .to_str()
         .unwrap();
-    assert_eq!(cache_ctrl, "no-store");
+    assert_eq!(cache_ctrl, "private, max-age=86400");
+    let etag = response
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("cover response carries a strong ETag")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        etag.starts_with('"') && etag.ends_with('"'),
+        "ETag is a quoted strong validator: {etag}"
+    );
     let first_bytes = response.as_bytes().to_vec();
     assert!(!first_bytes.is_empty());
 
@@ -541,12 +552,34 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     assert_eq!(response.status_code(), StatusCode::OK);
     assert_eq!(response.as_bytes().to_vec(), first_bytes);
 
-    // Thumb variant works too.
+    // Conditional request with the matching ETag → 304 Not Modified, no body.
+    let response = server
+        .get(&format!("/opds/books/{m}/cover"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_NONE_MATCH, etag.clone())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::NOT_MODIFIED);
+    assert!(response.as_bytes().is_empty(), "304 carries no body");
+
+    // Thumb variant: served as JPEG, same caching contract (ETag present).
     let response = server
         .get(&format!("/opds/books/{m}/cover/thumb"))
         .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "image/jpeg"
+    );
+    assert!(
+        response.headers().get(axum::http::header::ETAG).is_some(),
+        "thumb response carries an ETag"
+    );
 }
 
 // ── SVG covers rasterize to PNG and serve (UNK-406) ──────────────────────
@@ -616,6 +649,8 @@ async fn svg_cover_rasterizes_and_serves(pool: PgPool) {
     let server =
         test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
 
+    // Thumbnail: the SVG rasterizes to PNG internally, then re-encodes to
+    // JPEG for the grid (still no SVG bytes ever served).
     let response = server
         .get(&format!("/api/v1/books/{m}/cover/thumb"))
         .add_header(AUTHORIZATION, basic.clone())
@@ -628,22 +663,58 @@ async fn svg_cover_rasterizes_and_serves(pool: PgPool) {
         .unwrap()
         .to_str()
         .unwrap();
-    assert_eq!(ct, "image/png");
+    assert_eq!(ct, "image/jpeg");
 
     let body = response.as_bytes().to_vec();
-    assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
-    let img = image::load_from_memory(&body).expect("decode served png");
+    assert_eq!(
+        image::guess_format(&body).unwrap(),
+        image::ImageFormat::Jpeg
+    );
+    let img = image::load_from_memory(&body).expect("decode served jpeg");
     assert!(
         img.width().max(img.height()) <= 300,
         "thumb long edge ≤ 300"
     );
 
+    // Full-size preserves the rasterized PNG for reader-view fidelity.
+    let full = server
+        .get(&format!("/api/v1/books/{m}/cover"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(full.status_code(), StatusCode::OK);
+    assert_eq!(
+        full.headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "image/png"
+    );
+    let full_body = full.as_bytes().to_vec();
+    assert_eq!(
+        image::guess_format(&full_body).unwrap(),
+        image::ImageFormat::Png
+    );
+
     let cache_dir = library_root.join("_covers").join("cache");
-    let has_png = std::fs::read_dir(&cache_dir)
+    let exts: Vec<String> = std::fs::read_dir(&cache_dir)
         .unwrap()
         .filter_map(std::result::Result::ok)
-        .any(|e| e.path().extension().is_some_and(|x| x == "png"));
-    assert!(has_png, "expected a cached .png cover");
+        .filter_map(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .map(str::to_owned)
+        })
+        .collect();
+    assert!(
+        exts.iter().any(|x| x == "jpg"),
+        "expected a cached .jpg thumbnail, got {exts:?}"
+    );
+    assert!(
+        exts.iter().any(|x| x == "png"),
+        "expected a cached .png full cover, got {exts:?}"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

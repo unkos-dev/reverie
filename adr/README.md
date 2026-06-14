@@ -53,3 +53,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [No unbounded queries: keyset pagination as the default list contract](2026-06-08-keyset-pagination-list-contract.md) (accepted, 2026-06-08)
 - [Adopt a declarative configuration stack (figment + serde + validator + schemars)](2026-06-09-declarative-config-stack.md) (accepted, 2026-06-09)
 - [Rasterize SVG-declared EPUB covers to PNG via resvg](2026-06-13-svg-cover-rasterization.md) (accepted, 2026-06-13)
+- [Cover cache headers, ingest pre-warm, and JPEG thumbnails](2026-06-14-cover-cache-headers-and-thumbnail-encoding.md) (accepted, 2026-06-14)
