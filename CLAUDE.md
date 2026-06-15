@@ -72,7 +72,7 @@ Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` �
 
 ## Hard Rules
 
-1. **Never merge to `main` without explicit user approval.** Present PR, wait for human approve + merge. Non-negotiable.
+1. **Never merge to `main`; the user performs the merge.** Present the PR, hand off at "green and ready for review", and stop. Agents never run `gh pr merge`, click the merge button, or propose plans containing a merge step — even after verbal approval. Non-negotiable.
 2. **Never commit secrets** — no `.env`, no tokens, no API keys. Use `.env.example` for templates.
 3. **Conventional Commits mandatory** — non-conforming messages break automated changelog generation.
 4. **Match existing patterns** — before new file or module, check how similar things structured. Follow established pattern.
