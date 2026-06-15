@@ -38,7 +38,6 @@ extend-exclude = [
   "node_modules/",
   "frontend/dist/",
   "frontend/public/brand/",
-  "graphify-out/",
   # Vendored codeguard security context — frozen as authored (see
   # docs/security/codeguard/README.md governance note).
   "docs/security/codeguard/",
