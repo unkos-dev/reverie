@@ -11,7 +11,7 @@ Reverie = self-hosted ebook library manager. Monorepo: `backend/` (Rust + Axum),
 `main` = only long-lived branch. All work on short-lived feature branches.
 
 - Branch from `main`, merge back to `main` via PR
-- **PRs need explicit user approval to merge** — agents never merge without human confirmation
+- **PRs need explicit user approval to merge** — the user performs the merge themselves; agents never run the merge (see Hard Rule 1)
 - Branch prefixes: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`
 - Include Linear issue ID when applicable: `feat/unk-42-epub-import`
 
