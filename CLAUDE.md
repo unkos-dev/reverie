@@ -174,14 +174,3 @@ Hard rules:
 - **Workarounds adopted under temporary constraints (missing tooling, unbuilt infra, blocked deps) = tech debt, not idiomatic patterns.** Trace each candidate workaround to its justification before defending; justification lifted → debt.
 
 Format + lifecycle: `debt/README.md`. Entries machine-extractable; post-v0.2 a public dev roadmap will consume active entries as "Known limitations and accepted technical debt" section.
-
-## graphify
-
-Project has graphify knowledge graph at graphify-out/.
-
-Rules:
-
-- Before architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes + community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of raw files
-- Cross-module "how does X relate to Y" questions: prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — traverse graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code files in session, run `graphify update .` to keep graph current (AST-only, no API cost)

@@ -51,16 +51,5 @@ backend/tests/fixtures/library/
 .playwright-mcp/
 d2-*.png
 
-# graphify — output is fully regenerated from code on every commit; no value
-# tracking it for a solo project. Always gitignore the entire directory.
-graphify-out/
-.graphifyignore
-
 # Personal agent-workflow tooling — kept local, not project-shared
 SDL.md
-
-# graphify also installs per-developer git hooks under .husky/. They are
-# local-only (each contributor opts into graphify) and not project-shared,
-# so they shouldn't be tracked.
-.husky/post-checkout
-.husky/post-commit
