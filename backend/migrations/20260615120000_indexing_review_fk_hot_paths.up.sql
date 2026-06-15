@@ -22,18 +22,23 @@ CREATE INDEX idx_work_authors_work_position
 
 -- MEDIUM — pending metadata versions for the book-detail review panel.
 -- load_pending_versions: WHERE manifestation_id = $1 AND status = 'pending'
--- ORDER BY last_seen_at DESC. The existing idx_mv_manifestation_field
--- (manifestation_id, field_name) covers the equality but not the status filter
--- or the sort. Partial on status = 'pending' keeps the index to actionable rows
--- only, so the high-frequency status transitions on the rest of the table do
--- not pay for it.
+-- ORDER BY last_seen_at DESC (the query also post-filters new_value != 'null'
+-- and NOT id = ANY($canonical) and applies a LIMIT — neither affects index
+-- suitability; they are applied on the index-scan result). The existing
+-- idx_mv_manifestation_field (manifestation_id, field_name) covers the equality
+-- but not the status filter or the sort. Partial on status = 'pending' keeps the
+-- index to actionable rows only, so the high-frequency status transitions on the
+-- rest of the table do not pay for it.
 CREATE INDEX idx_mv_pending_last_seen
     ON public.metadata_versions USING btree (manifestation_id, last_seen_at DESC)
     WHERE status = 'pending'::public.metadata_review_status;
 
 -- LOW — OPDS series-books feed: WHERE sw.series_id = $1
--- ORDER BY sw.position ASC NULLS LAST. PK (series_id, work_id) covers the
--- equality but not the position sort. NULLS LAST matches the query's ordering.
+-- ORDER BY sw.position ASC NULLS LAST, m.created_at DESC, m.id DESC. PK
+-- (series_id, work_id) covers the equality but not the position sort. The index
+-- supplies (series_id, position ASC NULLS LAST); the trailing m.created_at/m.id
+-- keys are on the joined manifestations table and cannot live in a series_works
+-- index, so Postgres incremental-sorts those within each position tie-group.
 CREATE INDEX idx_series_works_series_position
     ON public.series_works USING btree (series_id, position ASC NULLS LAST);
 
