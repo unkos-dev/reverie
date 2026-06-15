@@ -11,7 +11,7 @@ Reverie = self-hosted ebook library manager. Monorepo: `backend/` (Rust + Axum),
 `main` = only long-lived branch. All work on short-lived feature branches.
 
 - Branch from `main`, merge back to `main` via PR
-- **PRs need explicit user approval to merge** — agents never merge without human confirmation
+- **PRs need explicit user approval to merge** — the user performs the merge themselves; agents never run the merge (see Hard Rule 1)
 - Branch prefixes: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`
 - Include Linear issue ID when applicable: `feat/unk-42-epub-import`
 
@@ -72,7 +72,7 @@ Follow [Semantic Versioning](https://semver.org/). Managed by `release-please` �
 
 ## Hard Rules
 
-1. **Never merge to `main` without explicit user approval.** Present PR, wait for human approve + merge. Non-negotiable.
+1. **Never merge to `main`; the user performs the merge.** Present the PR, hand off at "green and ready for review", and stop. Agents never run `gh pr merge`, click the merge button, or propose plans containing a merge step — even after verbal approval. Non-negotiable.
 2. **Never commit secrets** — no `.env`, no tokens, no API keys. Use `.env.example` for templates.
 3. **Conventional Commits mandatory** — non-conforming messages break automated changelog generation.
 4. **Match existing patterns** — before new file or module, check how similar things structured. Follow established pattern.
