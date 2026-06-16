@@ -28,10 +28,11 @@
 //! transaction so add/remove also bump the ETag — without that, a
 //! follow-up reorder PUT would 412 spuriously.
 
-use axum::extract::{OriginalUri, Path, Query, State};
+use axum::extract::{OriginalUri, Path, State};
 use axum::http::header::{ETAG, IF_MATCH, LINK};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
+use axum_extra::extract::{Query, QueryRejection};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
@@ -147,6 +148,7 @@ struct ShelfListResponse {
     responses(
         (status = 200, description = "One page of the caller's shelves, system shelves first then by name", body = ShelfListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -154,9 +156,10 @@ struct ShelfListResponse {
 async fn list_shelves(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Query(params): Query<ShelfListParams>,
+    params: Result<Query<ShelfListParams>, QueryRejection>,
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
+    let Query(params) = params?;
     let page_size = i64::from(state.config.opds.page_size);
     let cursor = params
         .cursor
@@ -526,6 +529,7 @@ struct ShelfDetailResponse {
             ("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"),
             ("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain")
          )),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
@@ -535,9 +539,10 @@ async fn get_shelf_with_items(
     current_user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Query(params): Query<ShelfItemsParams>,
+    params: Result<Query<ShelfItemsParams>, QueryRejection>,
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
+    let Query(params) = params?;
     let page_size = i64::from(state.config.opds.page_size);
     let cursor = params
         .cursor

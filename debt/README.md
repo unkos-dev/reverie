@@ -145,7 +145,6 @@ no translation pass.
 
 <!-- listed most-stale first; new entries go to the top -->
 
-- [Inconsistent query-parameter error envelope](2026-06-10-inconsistent-query-error-envelope.md) — recognised in UNK-376 planning; only library::list returns problem+json on bad query, siblings emit plaintext 400; lifts when all query handlers use the problem+json envelope
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md) — adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
 - [Dev postgres host port 5433](2026-05-05-dev-postgres-port-5433.md) — adopted because Coder workspace's shared-postgres on 5432; lifts on UNK-169
 - [chrono in OIDC test mock](2026-05-05-chrono-in-oidc-mock.md) — adopted because openidconnect v4 forces chrono types in test setup; lifts on dep-unblock or wrapper

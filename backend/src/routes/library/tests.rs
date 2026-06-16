@@ -1725,3 +1725,24 @@ async fn api_v1_move_old_path_returns_problem_not_spa(pool: PgPool) {
         .await;
     test_support::assert_problem(&old, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_endpoint_duplicate_query_key_returns_400(pool: PgPool) {
+    // A duplicate `?q=a&q=b` rejects at the axum_extra::Query extractor
+    // (serde_html_form errors on a repeated scalar key) and must surface as
+    // RFC 9457 problem+json, not axum's plaintext 400 (clears debt 2026-06-10).
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/v1/search?q=a&q=b")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+}

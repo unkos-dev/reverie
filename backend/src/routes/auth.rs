@@ -5,6 +5,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::{IntoResponse, Redirect};
 use axum_extra::extract::cookie::CookieJar;
+use axum_extra::extract::{Query, QueryRejection};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use openidconnect::core::CoreResponseType;
 use openidconnect::{
@@ -42,6 +43,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// `/auth/callback` query-string parameters returned by the OIDC issuer
 /// after the user authenticates.
 #[derive(serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct CallbackParams {
     /// Authorization code minted by the `IdP`.
     code: String,
@@ -118,6 +120,7 @@ async fn login(
     params(CallbackParams),
     responses(
         (status = 307, description = "Login complete; session established, theme cookie seeded, redirect to /"),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Anti-forgery state missing/mismatched or ID-token validation failed", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -125,8 +128,9 @@ async fn callback(
     State(state): State<AppState>,
     session: Session,
     jar: CookieJar,
-    axum::extract::Query(params): axum::extract::Query<CallbackParams>,
+    params: Result<Query<CallbackParams>, QueryRejection>,
 ) -> Result<(CookieJar, Redirect), AppError> {
+    let Query(params) = params?;
     // Validate OIDC anti-forgery state (the `state` query param echoed
     // back by the IdP must match the value `/auth/login` stored under
     // `oidc_csrf_state`). This is the OIDC transient — distinct from
@@ -431,6 +435,30 @@ mod tests {
         let server = test_support::test_server();
         let response = server.get("/auth/me").await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn callback_malformed_query_returns_400_problem_json_no_secret_leak() {
+        // A duplicate `?code=a&code=b` rejects at the axum_extra::Query
+        // extractor before any session/OIDC work, so this returns RFC 9457
+        // problem+json (not axum's plaintext 400) without a live DB (clears
+        // debt 2026-06-10). THREAT (Hard Rule 6): the rejection `detail` must
+        // name only the offending field, never the `code`/`state` value.
+        let server = test_support::test_server();
+        let response = server
+            .get("/auth/callback?code=secret-a&code=secret-b")
+            .await;
+
+        let body = test_support::assert_problem(
+            &response,
+            crate::error::problems::MALFORMED_QUERY,
+            StatusCode::BAD_REQUEST,
+        );
+        let detail = body["detail"].as_str().unwrap();
+        assert!(
+            !detail.contains("secret-a") && !detail.contains("secret-b"),
+            "rejection detail must not echo the code value, got: {detail}"
+        );
     }
 
     fn session_set_cookie(response: &axum_test::TestResponse) -> String {
