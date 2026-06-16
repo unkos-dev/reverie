@@ -16,6 +16,10 @@
     "markdownlint-cli2": "^0.22.1",
     "prettier": "^3.8.3"
   },
+  "overrides": {
+    "markdown-it": "14.2.0",
+    "js-yaml": "4.2.0"
+  },
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
