@@ -1314,3 +1314,76 @@ async fn navigation_feeds_reject_malformed_cursor(pool: PgPool) {
         );
     }
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn query_handlers_reject_duplicate_key_with_problem_json(pool: PgPool) {
+    // Every OPDS query handler routes a malformed-query rejection through
+    // AppError → RFC 9457 application/problem+json (clears debt 2026-06-10).
+    // Duplicate-key (`?field=a&field=b`) is the universal reject vector:
+    // serde_html_form (axum_extra::Query) errors on a repeated scalar key.
+    // For shelf-scoped routes the Query rejection fires before
+    // assert_shelf_owned, so a random shelf id (no fixture) still yields a
+    // 400, not a 404.
+    // THREAT: the malformed-query status must be structural (always 400),
+    // never vary by shelf existence — a status/timing oracle would otherwise
+    // leak shelf enumeration. Asserting 400 on a random (non-owned) shelf id
+    // pins that invariant.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    let sid = Uuid::new_v4();
+    let author = Uuid::new_v4();
+    let series = Uuid::new_v4();
+    let paths = [
+        "/opds/library/new?cursor=a&cursor=b".to_string(),
+        "/opds/library/authors?cursor=a&cursor=b".to_string(),
+        format!("/opds/library/authors/{author}?cursor=a&cursor=b"),
+        "/opds/library/series?cursor=a&cursor=b".to_string(),
+        format!("/opds/library/series/{series}?cursor=a&cursor=b"),
+        "/opds/library/search?q=a&q=b".to_string(),
+        format!("/opds/shelves/{sid}/new?cursor=a&cursor=b"),
+        format!("/opds/shelves/{sid}/authors?cursor=a&cursor=b"),
+        format!("/opds/shelves/{sid}/authors/{author}?cursor=a&cursor=b"),
+        format!("/opds/shelves/{sid}/series?cursor=a&cursor=b"),
+        format!("/opds/shelves/{sid}/series/{series}?cursor=a&cursor=b"),
+        format!("/opds/shelves/{sid}/search?q=a&q=b"),
+    ];
+    for path in paths {
+        let response = server
+            .get(&path)
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::BAD_REQUEST,
+            "expected 400 at {path}"
+        );
+        test_support::assert_problem(
+            &response,
+            crate::error::problems::MALFORMED_QUERY,
+            StatusCode::BAD_REQUEST,
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn empty_cursor_returns_first_page_not_422(pool: PgPool) {
+    // Parser-swap parity (serde_urlencoded → serde_html_form): `?cursor=`
+    // (empty) decoded to Some("") → 422 malformed cursor under
+    // serde_urlencoded; under serde_html_form it decodes to None, so the feed
+    // returns its first page. Assert the success path post-swap.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    let response = server
+        .get("/opds/library/new?cursor=")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+}

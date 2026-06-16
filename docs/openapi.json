@@ -389,6 +389,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -1111,6 +1121,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -1329,6 +1349,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -1470,6 +1500,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ShelfDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2487,6 +2527,16 @@
           "307": {
             "description": "Login complete; session established, theme cookie seeded, redirect to /"
           },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Anti-forgery state missing/mismatched or ID-token validation failed",
             "content": {
@@ -2910,10 +2960,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -2924,6 +2971,16 @@
               "application/atom+xml;profile=opds-catalog;kind=navigation": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2974,10 +3031,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -2988,6 +3042,16 @@
               "application/atom+xml;profile=opds-catalog;kind=acquisition": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3028,10 +3092,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3042,6 +3103,16 @@
               "application/atom+xml;profile=opds-catalog;kind=acquisition": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3127,6 +3198,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)"
           }
@@ -3153,10 +3234,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3167,6 +3245,16 @@
               "application/atom+xml;profile=opds-catalog;kind=navigation": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3217,10 +3305,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3231,6 +3316,16 @@
               "application/atom+xml;profile=opds-catalog;kind=acquisition": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3333,10 +3428,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3347,6 +3439,16 @@
               "application/atom+xml;profile=opds-catalog;kind=navigation": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3417,10 +3519,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3431,6 +3530,16 @@
               "application/atom+xml;profile=opds-catalog;kind=acquisition": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3491,10 +3600,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3505,6 +3611,16 @@
               "application/atom+xml;profile=opds-catalog;kind=acquisition": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3632,6 +3748,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)"
           },
@@ -3678,10 +3804,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3692,6 +3815,16 @@
               "application/atom+xml;profile=opds-catalog;kind=navigation": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3762,10 +3895,7 @@
             "description": "Opaque cursor returned in a previous response's `rel=\"next\"` link;\n`None` returns the first page.",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -3776,6 +3906,16 @@
               "application/atom+xml;profile=opds-catalog;kind=acquisition": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }

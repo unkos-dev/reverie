@@ -343,6 +343,17 @@ content negotiation, the handler picks it up at that point.
   Frontend consumes it via a module-level setter; no API surface
   change beyond the field.
 
+## Confirmation
+
+- The RFC 7807 envelope governs **every** error on the JSON API surface
+  (`/api/v1/*`), including query-parameter rejections: handlers extract
+  `Result<Query<T>, QueryRejection>` (`axum_extra`) and `?`-propagate, so a
+  malformed query returns `application/problem+json`
+  (`type` `.../malformed-query`, HTTP 400), never axum's plaintext 400.
+- OPDS query handlers (out of scope per §"Content negotiation" — their feeds
+  stay `application/atom+xml`) return the same problem+json on a malformed
+  query via their existing `Result<_, AppError>` path, not by this ADR.
+
 ## Alternatives Considered
 
 ### Keep `{"error": "<msg>"}` error envelope; defer RFC 7807
@@ -426,6 +437,9 @@ their slugs.
 
 ## More Information
 
+- Revisit trigger — the query-rejection invariant above is review-enforced;
+  a repo-wide lint guard (deliberately out of scope for any single
+  convention) is tracked in UNK-431.
 - Parent (security stance):
   [`project_open_source_security_stance.md`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md)
   — threat model is the multi-user exposed instance.

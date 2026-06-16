@@ -39,7 +39,7 @@ use std::collections::HashMap;
 
 use axum::Json;
 use axum::extract::State;
-use axum_extra::extract::Query;
+use axum_extra::extract::{Query, QueryRejection};
 use serde::Deserialize;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -114,6 +114,7 @@ pub(super) struct SearchParams {
     params(SearchParams),
     responses(
         (status = 200, description = "Top hybrid-ranked search results", body = SearchResponse),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Empty, missing, or over-length query", body = crate::openapi::ProblemDetails)
     )
@@ -121,8 +122,9 @@ pub(super) struct SearchParams {
 pub(super) async fn search(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Query(params): Query<SearchParams>,
+    params: Result<Query<SearchParams>, QueryRejection>,
 ) -> Result<Json<SearchResponse>, AppError> {
+    let Query(params) = params?;
     let q_raw = params
         .q
         .as_deref()

@@ -19,8 +19,9 @@
 //! no RLS and are `SELECT`-granted to `reverie_app` directly.
 
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::response::IntoResponse;
+use axum_extra::extract::{Query, QueryRejection};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -299,6 +300,7 @@ struct ActivityResponse {
     params(ActivityParams),
     responses(
         (status = 200, description = "Most-recent ingestion batches, newest first. Admin only.", body = ActivityResponse),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
     )
@@ -306,9 +308,10 @@ struct ActivityResponse {
 async fn activity(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Query(params): Query<ActivityParams>,
+    params: Result<Query<ActivityParams>, QueryRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_admin()?;
+    let Query(params) = params?;
 
     let limit = params
         .limit

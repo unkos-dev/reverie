@@ -982,3 +982,85 @@ async fn shelf_items_rejects_malformed_cursor(pool: PgPool) {
         .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_shelves_duplicate_query_key_returns_400(pool: PgPool) {
+    // `?cursor=a&cursor=b` rejects at the axum_extra::Query extractor
+    // (serde_html_form errors on a repeated scalar key) and must surface as
+    // RFC 9457 problem+json, not axum's plaintext 400 (clears debt 2026-06-10).
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "dup-list").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/shelves?cursor=a&cursor=b")
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    test_support::assert_problem(
+        &r,
+        crate::error::problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_items_duplicate_query_key_returns_400(pool: PgPool) {
+    // The Query rejection fires as the first line of the handler body, before
+    // the shelf lookup, so a duplicate `?cursor=a&cursor=b` yields 400
+    // problem+json (clears debt 2026-06-10).
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "dup-items").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Dup shelf").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}?cursor=a&cursor=b"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    test_support::assert_problem(
+        &r,
+        crate::error::problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_shelves_empty_cursor_returns_first_page_not_422(pool: PgPool) {
+    // Parser-swap parity (serde_urlencoded → serde_html_form): `?cursor=`
+    // (empty) decoded to Some("") under serde_urlencoded → 422 malformed
+    // cursor; under serde_html_form it decodes to None, so the handler returns
+    // the first page. Assert the success path post-swap.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "empty-cursor").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/shelves?cursor=")
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_items_empty_cursor_returns_first_page_not_422(pool: PgPool) {
+    // Same parser-swap parity as list_shelves, for the sibling
+    // get_shelf_with_items handler (ShelfItemsParams.cursor is the same
+    // Option<String>). `?cursor=` decodes to None under serde_html_form → first
+    // page. Needs a real shelf: the cursor decode runs after the shelf lookup,
+    // not before (unlike the duplicate-key rejection, which fires at the
+    // extractor).
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "empty-items-cursor").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Empty items shelf").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}?cursor="))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+}

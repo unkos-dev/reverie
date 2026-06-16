@@ -5,8 +5,9 @@
 
 use std::collections::HashMap;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::response::Response;
+use axum_extra::extract::{Query, QueryRejection};
 use serde::Deserialize;
 use sqlx::{Postgres, QueryBuilder, Row};
 use time::OffsetDateTime;
@@ -112,6 +113,7 @@ pub(super) fn build_subcatalog_root(base: &Url, self_path: &str, title: &str) ->
 
 /// Cursor pagination input shared by every paginated feed handler.
 #[derive(Debug, Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PageParams {
     /// Opaque cursor returned in a previous response's `rel="next"` link;
     /// `None` returns the first page.
@@ -131,6 +133,7 @@ pub struct PageParams {
     params(PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -138,8 +141,9 @@ pub struct PageParams {
 async fn library_new(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     let base = base_url(&state)?.clone();
     let bytes = emit_new(
         &state,
@@ -166,6 +170,7 @@ async fn library_new(
     params(PageParams),
     responses(
         (status = 200, description = "OPDS navigation feed of authors with visible books", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -173,8 +178,9 @@ async fn library_new(
 async fn library_authors(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     let base = base_url(&state)?.clone();
     let bytes = emit_authors(
         &state,
@@ -202,6 +208,7 @@ async fn library_authors(
     params(("id" = Uuid, Path, description = "Author id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the author's visible books (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -210,8 +217,9 @@ async fn library_author_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path(author_id): Path<Uuid>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     let base = base_url(&state)?.clone();
     let bytes = emit_author_books(
         &state,
@@ -239,6 +247,7 @@ async fn library_author_books(
     params(PageParams),
     responses(
         (status = 200, description = "OPDS navigation feed of series with visible books", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -246,8 +255,9 @@ async fn library_author_books(
 async fn library_series(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     let base = base_url(&state)?.clone();
     let bytes = emit_series(
         &state,
@@ -275,6 +285,7 @@ async fn library_series(
     params(("id" = Uuid, Path, description = "Series id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the series' visible books (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -283,8 +294,9 @@ async fn library_series_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path(series_id): Path<Uuid>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     let base = base_url(&state)?.clone();
     let bytes = emit_series_books(
         &state,
@@ -301,6 +313,7 @@ async fn library_series_books(
 
 /// `OpenSearch` `?q=` query parameter for the search endpoints.
 #[derive(Debug, Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchParams {
     /// Search term; an empty (or whitespace-only) query short-circuits
     /// to an empty feed without hitting the DB.
@@ -320,14 +333,16 @@ pub struct SearchParams {
     params(SearchParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of search results; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)")
     )
 )]
 async fn library_search(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Query(params): Query<SearchParams>,
+    params: Result<Query<SearchParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     let base = base_url(&state)?.clone();
     let bytes = emit_search(
         &state,

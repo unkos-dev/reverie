@@ -309,3 +309,52 @@ async fn activity_endpoint_requires_auth(pool: PgPool) {
     let response = server.get("/api/v1/dashboard/activity").await;
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn activity_malformed_query_returns_400(pool: PgPool) {
+    // Both the bad-type vector (`?limit=abc`, an Option<i64> decode failure)
+    // and the duplicate-key vector (`?limit=1&limit=2`) reject at the
+    // axum_extra::Query extractor and must return RFC 9457 problem+json, not
+    // axum's plaintext 400 (clears debt 2026-06-10). Admin creds so the
+    // require_admin gate passes and execution reaches the query-rejection.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, admin_auth) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    for q in ["?limit=abc", "?limit=1&limit=2"] {
+        let response = server
+            .get(&format!("/api/v1/dashboard/activity{q}"))
+            .add_header(AUTHORIZATION, admin_auth.clone())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::BAD_REQUEST,
+            "expected 400 at {q}"
+        );
+        test_support::assert_problem(
+            &response,
+            problems::MALFORMED_QUERY,
+            StatusCode::BAD_REQUEST,
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn activity_empty_limit_uses_default_not_400(pool: PgPool) {
+    // Parser-swap parity (serde_urlencoded → serde_html_form): `?limit=`
+    // (empty) errored under serde_urlencoded ("cannot parse integer from
+    // empty string"); under serde_html_form it decodes to None and the
+    // handler applies the default limit. Assert the success path holds — the
+    // swap must not turn an empty optional param into a spurious 400.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, admin_auth) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/v1/dashboard/activity?limit=")
+        .add_header(AUTHORIZATION, admin_auth)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+}

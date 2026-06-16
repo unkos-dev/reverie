@@ -3,8 +3,9 @@
 //! verifies ownership under `acquire_with_rls` and returns 404 for foreign
 //! shelves to avoid leaking shelf existence.
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::response::Response;
+use axum_extra::extract::{Query, QueryRejection};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -103,6 +104,7 @@ async fn shelf_root(
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the shelf's newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
@@ -112,8 +114,9 @@ async fn shelf_new(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path(shelf_id): Path<Uuid>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
@@ -145,6 +148,7 @@ async fn shelf_new(
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
     responses(
         (status = 200, description = "OPDS navigation feed of authors with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
@@ -154,8 +158,9 @@ async fn shelf_authors(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path(shelf_id): Path<Uuid>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
@@ -191,6 +196,7 @@ async fn shelf_authors(
     ),
     responses(
         (status = 200, description = "OPDS acquisition feed of the author's books on the shelf (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
@@ -200,8 +206,9 @@ async fn shelf_author_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path((shelf_id, author_id)): Path<(Uuid, Uuid)>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
@@ -234,6 +241,7 @@ async fn shelf_author_books(
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
     responses(
         (status = 200, description = "OPDS navigation feed of series with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
@@ -243,8 +251,9 @@ async fn shelf_series(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path(shelf_id): Path<Uuid>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
@@ -280,6 +289,7 @@ async fn shelf_series(
     ),
     responses(
         (status = 200, description = "OPDS acquisition feed of the series' books on the shelf (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
@@ -289,8 +299,9 @@ async fn shelf_series_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path((shelf_id, series_id)): Path<(Uuid, Uuid)>,
-    Query(params): Query<PageParams>,
+    params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
@@ -322,6 +333,7 @@ async fn shelf_series_books(
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), SearchParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of search results scoped to the shelf; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails)
     )
@@ -330,8 +342,9 @@ async fn shelf_search(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
     Path(shelf_id): Path<Uuid>,
-    Query(params): Query<SearchParams>,
+    params: Result<Query<SearchParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
+    let Query(params) = params?;
     assert_shelf_owned(&state, user.user_id, shelf_id).await?;
     let base = base_url(&state)?.clone();
     let self_parent = format!("/opds/shelves/{shelf_id}");
