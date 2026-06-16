@@ -1,0 +1,17 @@
+-- UNK-424: drop redundant idx_device_tokens_user_id, superseded by the partial
+-- active-token index added in UNK-368 (PR #480):
+--   idx_device_tokens_user_active (user_id, created_at DESC) WHERE revoked_at IS NULL.
+--
+-- Every application query against device_tokens filters
+-- `WHERE user_id = $1 AND revoked_at IS NULL` (list_for_user, the active-token
+-- count in create_with_limit, revoke), all read on the Basic-auth hot path and
+-- all covered by the partial index. The single-column idx_device_tokens_user_id
+-- backed only the bare `user_id` equality, which now has no caller.
+--
+-- The one path that scans all rows for a user_id regardless of revoked_at is the
+-- FK cascade from users.id (ON DELETE CASCADE). A partial index cannot satisfy a
+-- predicate outside its WHERE, so post-drop that cascade seq-scans device_tokens.
+-- Accepted: device_tokens is small and low-churn, and user deletion is rare — the
+-- seq-scan cost on a small table is negligible, and dropping the index removes its
+-- per-write maintenance overhead.
+DROP INDEX IF EXISTS public.idx_device_tokens_user_id;
