@@ -1,20 +1,22 @@
 /**
- * Reverie canonical theme tree.
+ * Reverie canonical theme tree (three-tier — spec
+ * plans/2026-06-18-editorial-design-system-tokens-design.md).
  *
- * Token names and palette values are sourced from the brand identity at
- * https://github.com/unkos-dev/reverie-branding/blob/main/identity.md (§4)
- * and the philosophy spec §10 (`plans/2026-04-25-design-system-philosophy-design.md`,
- * gitignored). State-color tokens (`--color-success`, `--color-warning`,
- * `--color-danger`, `--color-info`) are deliberately absent — see
- * philosophy §11A: state communicates through typography weight, surface
- * opacity, motion, and the gold accent, not hue.
+ *   Tier 1  primitives.generated.css  — generated Radix ramps (do not hand-edit)
+ *   Tier 2  this file                 — semantic roles + shadcn aliases + @theme inline
+ *   Tier 3  atmosphere.css            — art-directed --cover-* / --atm-* (chrome must not read)
  *
- * Self-hosted variable woff2 `@font-face` blocks live in
- * `frontend/src/styles/fonts.css` (created in D3.16) and are imported
- * alongside this file from `frontend/src/index.css`. Between the time
- * this file lands and D3.16 lands, the font-family declarations below
- * fall through to `system-ui`; that is the intentional intermediate
- * state.
+ * Token values trace to the brand SoT (reverie-branding/identity.md §4) and the
+ * editorial design-system spec. A single danger hue (#B91C1C) is the one
+ * sanctioned state color — it amends the no-hue-states philosophy (§11A) per
+ * WCAG 1.4.1 (color never the sole signal; danger always pairs with
+ * icon/weight/text). See adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md.
+ * Success/warning/info remain absent — state still speaks through weight,
+ * surface opacity, motion, and the gold accent.
+ *
+ * Self-hosted variable woff2 @font-face blocks live in
+ * frontend/src/styles/fonts.css, imported alongside this file from
+ * frontend/src/index.css.
  */
 @import "tailwindcss";
 /* Tier 1 — generated Radix primitives (do not hand-edit; regenerate via radix-gen).
@@ -63,13 +65,11 @@
   --color-hover: var(--surface-2);
 
   /* `bg-overlay` is the scrim token for modal / dialog / sheet / popover
-     backdrops. Theme-aware: Light theme uses a gentle ink scrim that
-     reads against the warm Parchment canvas; Dark theme uses a deeper
-     ink scrim because a low-alpha tint against the near-black Ink canvas
-     (#14120e) gives almost no visual separation. Both directions stay
-     ink-shifted (no inverted cream-on-dark scrim) to keep the
-     ink/parchment brand identity coherent across themes. The runtime
-     value lives on each theme selector below. */
+     backdrops. Uniform ink scrim on BOTH themes (rgb(14 13 10 / 88%), spec
+     §5d) — a near-opaque warm-ink veil; a parchment-tinted scrim would defeat
+     the modal. Named exception to the primitive contract (§6); the runtime
+     value lives on the light selector below and is intentionally not
+     theme-split. */
   --color-overlay: var(--overlay);
 
   /* Typography — Satoshi for body/chrome, Author for display, JetBrains
@@ -89,13 +89,8 @@
      New code should prefer the canonical --color-canvas/--color-fg/etc.
      names; this layer exists so the shadcn registry primitives we
      install (button, card, dropdown-menu, etc.) drop in without
-     visual drift to the default neutral-grey palette.
-
-     Destructive tokens deliberately alias to fg/border so banned
-     hue-coded state expression (red error) collapses into the
-     §11A no-hue mapping (font-semibold + gold recovery action).
-     The aliases keep the utilities renderable so primitives compile;
-     the actual error-state UX is enforced at the surface level. */
+     visual drift to the default neutral-grey palette. Destructive now
+     routes to the real --danger hue (see the per-token note below). */
   --color-background: var(--canvas);
   --color-foreground: var(--fg);
   --color-card: var(--surface);
