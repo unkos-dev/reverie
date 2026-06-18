@@ -122,3 +122,26 @@ describe("danger + destructive wiring", () => {
     expect(indexCss).not.toMatch(/--color-destructive:\s*var\(--fg\)/);
   });
 });
+
+describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
+  // The sand-12 halo is the OUTER focus edge; it must clear the 3:1 non-text
+  // floor against the page on both themes (the gold ring alone is sub-3:1 on
+  // parchment). Guards the numeric claim in the index.css :focus-visible comment
+  // against primitive regeneration; resolves to ~12:1 light / ~16.8:1 dark today.
+  for (const theme of [
+    { name: "dark", m: dark },
+    { name: "light", m: light },
+  ] as const) {
+    it(`${theme.name}: sand-12 focus halo on canvas >= 3:1`, () => {
+      expect(contrast(theme.m["sand-12"], theme.m["bg"])).toBeGreaterThanOrEqual(3);
+    });
+  }
+  // Guard the semantic chain so a rename/repoint of either focus token fails
+  // loudly rather than silently dropping the remedy.
+  it("--focus-ring maps to --accent", () => {
+    expect(indexCss).toMatch(/--focus-ring:\s*var\(--accent\)/);
+  });
+  it("--focus-halo maps to --sand-12", () => {
+    expect(indexCss).toMatch(/--focus-halo:\s*var\(--sand-12\)/);
+  });
+});

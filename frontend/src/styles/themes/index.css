@@ -40,6 +40,7 @@
   --color-canvas-2: var(--canvas-2);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-fg: var(--fg);
@@ -197,9 +198,9 @@
 /* Focus indicator — spec §5b / WCAG 1.4.11. GEOMETRY IS LOAD-BEARING: the
    box-shadow spread (6px) must EXCEED outline-offset(2)+width(2)=4px so the
    sand-12 halo is the OUTER edge against the page. A 4px spread coincides with
-   the gold outline edge, leaving gold-9 = 2.67:1 adjacent to parchment — the
+   the gold outline edge, leaving gold-9 = 2.80:1 adjacent to parchment — the
    very failure this remedy fixes. The sand-12 halo carries the ≥3:1 boundary on
-   both themes (≈11.48:1 light / ≈16.76:1 dark). Universal (one rule, no theme
+   both themes (≈12.02:1 light / ≈16.76:1 dark). Universal (one rule, no theme
    branch) per the signed-off decision §11.2. VERIFY BY RENDER on the light theme
    via agent-browser — do not mark done on the computed claim alone. No
    border-radius is set here on purpose: outline + box-shadow already follow the
