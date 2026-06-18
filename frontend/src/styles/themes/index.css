@@ -17,6 +17,10 @@
  * state.
  */
 @import "tailwindcss";
+/* Tier 1 — generated Radix primitives (do not hand-edit; regenerate via radix-gen).
+   Provides --sand/--gold/--danger ramps + alpha + P3 + contrast + --bg.
+   Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
+@import "./primitives.generated.css";
 
 /* Teach Tailwind that the `dark:` variant activates when [data-theme="dark"]
    is on an ancestor (or the element itself). Required because Tailwind v4's
