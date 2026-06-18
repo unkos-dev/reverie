@@ -79,10 +79,15 @@
 ## Styling
 
 - Tailwind CSS (v4) utility classes. Tailwind is configured via
-  `@tailwindcss/vite` in `vite.config.ts`. Canonical design tokens
-  live in `src/styles/themes/index.css` (`@theme inline` declarations
-  exposing `--color-canvas`, `--color-fg`, `--color-accent`, etc.) and
-  the matching palette overrides in `:root` / `[data-theme="dark"]`.
+  `@tailwindcss/vite` in `vite.config.ts`. Design tokens live in
+  `src/styles/themes/` as a three-tier tree: `primitives.generated.css`
+  (Radix ramps generated from the brand anchors — never hand-edited,
+  regenerate), `index.css` (semantic roles + shadcn aliases via
+  `@theme inline` / `var()`, hex-banned by stylelint), and
+  `atmosphere.css` (sealed art-directed tier — chrome must not consume).
+  This tree implements the palette; its source of truth is the
+  reverie-branding repo (`identity.md`), and drift resolves in
+  branding's favour.
   Self-hosted variable woff2 fonts at
   `public/fonts/fontshare/files/` (Author + Satoshi + JetBrains Mono).
   Never use arbitrary hex values — reuse a token. The Lockup component
