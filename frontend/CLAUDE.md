@@ -96,7 +96,7 @@
 - **shadcn/ui:** components added via CLI (`npx shadcn@latest add <component>`).
   Do not manually create shadcn components. The shadcn-namespace CSS
   variables (`--color-background`, `--color-card`, `--color-primary`,
-  etc.) are aliased onto the canonical brand palette in
+  etc.) are aliased onto the brand palette in
   `styles/themes/index.css`, so stock primitives render brand-aligned
   without per-file rewrites.
 
