@@ -44,6 +44,12 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-strong: var(--accent-strong);
   --color-fg-on-accent: var(--fg-on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-border-control: var(--border-control);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-fg-on-danger: var(--fg-on-danger);
   /* `bg-hover` is the shadcn-primitive hover/focus lift token.
      Decoupled from brand `--color-accent` (Reverie Gold) so dropdown,
      select, and similar primitives don't saturate gold on every hover.
@@ -101,8 +107,11 @@
   --color-muted-foreground: var(--fg-muted);
   --color-input: var(--border);
   --color-ring: var(--accent);
-  --color-destructive: var(--fg);
-  --color-destructive-foreground: var(--fg-on-accent);
+  /* Destructive now routes to the real danger hue (spec §4/§5; ADR
+     2026-06-18-single-danger-hue-amends-no-hue-philosophy). Previously
+     aliased to --fg under the no-hue policy. */
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--fg-on-danger);
 
   /* Cover-artwork palette (theme-independent).
      Production cover art comes from EPUB / enrichment; the design-system
@@ -166,6 +175,14 @@
   --accent-text: var(--gold-11);
   --fg-on-accent: var(--gold-contrast);
   --overlay: rgb(14 13 10 / 88%); /* ink scrim, named exception (spec §6) */
+  /* danger — destructive/error only; never decorative (spec §7, WCAG 1.4.1) */
+  --danger: var(--danger-9);
+  --danger-text: var(--danger-11);
+  --danger-soft: var(--danger-3);
+  --fg-on-danger: var(--danger-contrast); /* white, 6.47:1 */
+  /* focus stack — spec §5b: gold ring + sand-12 halo carries ≥3:1 on light */
+  --focus-ring: var(--accent);
+  --focus-halo: var(--sand-12);
 }
 
 /* Dark theme needs no semantic overrides: every Tier 2 token above is a

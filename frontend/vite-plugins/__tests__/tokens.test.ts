@@ -88,15 +88,26 @@ describe("brand anchors land verbatim", () => {
 });
 
 describe("semantic tokens reference existing primitives", () => {
-  // every `--x: var(--y)` in index.css whose target is a primitive family
-  // must resolve to a key present in the parsed primitive map.
-  const refs = [...indexCss.matchAll(/--[\w-]+:\s*var\(--((?:sand|gold|danger|bg)[\w-]*)\)/g)].map(
-    (m) => m[1],
-  );
+  // every `--x: var(--y)` semantic definition whose target is a primitive
+  // family must resolve to a key in the parsed primitive map. The @theme inline
+  // `--color-*` alias layer is excluded — it references semantic tokens (e.g.
+  // `--color-danger: var(--danger)`), not primitives.
+  const refs = [
+    ...indexCss.matchAll(/--(?!color-)[\w-]+:\s*var\(--((?:sand|gold|danger|bg)[\w-]*)\)/g),
+  ].map((m) => m[1]);
   it("finds semantic→primitive references", () => expect(refs.length).toBeGreaterThan(5));
   for (const target of refs) {
     it(`--${target} exists in primitives`, () => {
       expect(target === "bg" || target in dark, `dangling var(--${target})`).toBeTruthy();
     });
   }
+});
+
+describe("danger + destructive wiring", () => {
+  it("--danger semantic maps to danger-9", () =>
+    expect(indexCss).toMatch(/--danger:\s*var\(--danger-9\)/));
+  it("shadcn --color-destructive routes to --danger (not --fg)", () => {
+    expect(indexCss).toMatch(/--color-destructive:\s*var\(--danger\)/);
+    expect(indexCss).not.toMatch(/--color-destructive:\s*var\(--fg\)/);
+  });
 });
