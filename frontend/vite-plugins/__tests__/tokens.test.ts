@@ -145,3 +145,41 @@ describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
     expect(indexCss).toMatch(/--focus-halo:\s*var\(--sand-12\)/);
   });
 });
+
+// Resolve a semantic token in index.css to the primitive family member it
+// references (e.g. --fg -> sand-12, --canvas -> bg). Throws if it does not
+// resolve directly to a primitive — a removed/renamed mapping fails loudly.
+function resolveSemantic(token: string): string {
+  const m = indexCss.match(
+    new RegExp(`--${token}:\\s*var\\(--((?:sand|gold|danger|bg)[\\w-]*)\\)`),
+  );
+  if (!m) throw new Error(`--${token} does not resolve to a primitive`);
+  return m[1];
+}
+
+// Role pairs resolved THROUGH the index.css semantic mapping (not by primitive
+// name): a bad retarget of a semantic token — e.g. --fg-on-accent flipped off
+// --gold-contrast — fails here even though the by-name primitive pair stays green.
+const resolvedPairs: ReadonlyArray<[label: string, fg: string, bg: string, min: number]> = [
+  ["--fg on --canvas", "fg", "canvas", 7],
+  ["--fg-muted on --canvas", "fg-muted", "canvas", 4.5],
+  ["--accent-text on --canvas", "accent-text", "canvas", 4.5],
+  ["--danger-text on --canvas", "danger-text", "canvas", 4.5],
+  ["--fg-on-accent on --accent", "fg-on-accent", "accent", 4.5],
+  ["--fg-on-danger on --danger", "fg-on-danger", "danger", 4.5],
+];
+
+describe("semantic roles resolve to AA-adequate primitives (spec §6)", () => {
+  for (const theme of [
+    { name: "dark", m: dark },
+    { name: "light", m: light },
+  ] as const) {
+    for (const [label, fg, bg, min] of resolvedPairs) {
+      it(`${theme.name}: ${label} >= ${String(min)}:1`, () => {
+        expect(
+          contrast(theme.m[resolveSemantic(fg)], theme.m[resolveSemantic(bg)]),
+        ).toBeGreaterThanOrEqual(min);
+      });
+    }
+  }
+});
