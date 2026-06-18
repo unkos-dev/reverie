@@ -21,6 +21,9 @@
    Provides --sand/--gold/--danger ramps + alpha + P3 + contrast + --bg.
    Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
 @import "./primitives.generated.css";
+/* Tier 3 — art-directed atmosphere (--atm-* + --cover-*). Chrome must not
+   consume these (governance §7). Spec §4/§8. */
+@import "./atmosphere.css";
 
 /* Teach Tailwind that the `dark:` variant activates when [data-theme="dark"]
    is on an ancestor (or the element itself). Required because Tailwind v4's
@@ -136,19 +139,9 @@
   --ease-emphasised: cubic-bezier(0.16, 0.78, 0.3, 1);
 }
 
-/* Cover-artwork palette — declared once on :root only. Intentionally NOT
-   overridden by [data-theme="dark"] so cover artwork stays brand-fixed
-   across theme switches; covers inherit the same artwork-stability rule
-   that keeps the Lockup component glyph constant. The cream and parchment
-   values intentionally duplicate the Dark `--fg` and Light `--canvas`
-   sources — they live here as independent constants so a future
-   palette pass on either theme cannot silently mutate the cover spine. */
-:root {
-  --cover-ink: #0e0d0a;
-  --cover-cream: #e8e0d0;
-  --cover-parchment: #e8dcc2;
-  --cover-gold: #c9a961;
-}
+/* Cover-artwork palette (--cover-*) now lives in atmosphere.css (Tier 3),
+   relocated there alongside the --atm-* block (spec §8). The @theme inline
+   --color-cover-* mappings above still resolve via that import. */
 
 /* Default + explicit Light theme (Parchment).
    Runtime values live on regular selectors, NOT inside @theme (which can't
@@ -204,4 +197,19 @@
   50% {
     opacity: 0.85;
   }
+}
+
+/* Focus indicator — spec §5b / WCAG 1.4.11. GEOMETRY IS LOAD-BEARING: the
+   box-shadow spread (6px) must EXCEED outline-offset(2)+width(2)=4px so the
+   sand-12 halo is the OUTER edge against the page. A 4px spread coincides with
+   the gold outline edge, leaving gold-9 = 2.67:1 adjacent to parchment — the
+   very failure this remedy fixes. The sand-12 halo carries the ≥3:1 boundary on
+   both themes (≈11.48:1 light / ≈16.76:1 dark). Universal (one rule, no theme
+   branch) per the signed-off decision §11.2. VERIFY BY RENDER on the light theme
+   via agent-browser — do not mark done on the computed claim alone. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 6px var(--focus-halo);
 }
