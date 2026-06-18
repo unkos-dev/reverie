@@ -24,7 +24,7 @@ function channel(c: number): number {
 }
 function luminance(hex: string): number {
   let h = hex.replace("#", "");
-  if (h.length === 3) h = [...h].map((c) => c + c).join(""); // expand #abc → #aabbcc
+  if (h.length === 3) h = h.replace(/(.)/g, "$1$1"); // expand #abc → #aabbcc
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
@@ -68,7 +68,7 @@ describe("primitive role-pair contrast (spec §6)", () => {
     { name: "light", m: light },
   ] as const) {
     for (const [label, fg, bg, min] of pairs) {
-      it(`${theme.name}: ${label} >= ${min}:1`, () => {
+      it(`${theme.name}: ${label} >= ${String(min)}:1`, () => {
         expect(theme.m[fg], `missing --${fg}`).toBeDefined();
         expect(theme.m[bg], `missing --${bg}`).toBeDefined();
         expect(contrast(theme.m[fg], theme.m[bg])).toBeGreaterThanOrEqual(min);
@@ -77,15 +77,23 @@ describe("primitive role-pair contrast (spec §6)", () => {
   }
 });
 
+/* eslint-disable no-restricted-syntax -- brand-anchor assertions intentionally
+   compare against literal hex (#c9a961 gold, #b91c1c danger, #0e0d0a ink):
+   verifying the generated primitives match the locked anchors is this block's
+   purpose. The no-raw-hex rule targets component/style source, not value tests. */
 describe("brand anchors land verbatim", () => {
-  it("gold-9 dark == #c9a961", () => expect(dark["gold-9"].toLowerCase()).toBe("#c9a961"));
+  it("gold-9 dark == #c9a961", () => {
+    expect(dark["gold-9"].toLowerCase()).toBe("#c9a961");
+  });
   it("danger-9 == #b91c1c both themes", () => {
     expect(dark["danger-9"].toLowerCase()).toBe("#b91c1c");
     expect(light["danger-9"].toLowerCase()).toBe("#b91c1c");
   });
-  it("gold-contrast is ink, not white (spec §4a)", () =>
-    expect(dark["gold-contrast"].toLowerCase()).toBe("#0e0d0a"));
+  it("gold-contrast is ink, not white (spec §4a)", () => {
+    expect(dark["gold-contrast"].toLowerCase()).toBe("#0e0d0a");
+  });
 });
+/* eslint-enable no-restricted-syntax */
 
 describe("semantic tokens reference existing primitives", () => {
   // every `--x: var(--y)` semantic definition whose target is a primitive
@@ -95,7 +103,9 @@ describe("semantic tokens reference existing primitives", () => {
   const refs = [
     ...indexCss.matchAll(/--(?!color-)[\w-]+:\s*var\(--((?:sand|gold|danger|bg)[\w-]*)\)/g),
   ].map((m) => m[1]);
-  it("finds semantic→primitive references", () => expect(refs.length).toBeGreaterThan(5));
+  it("finds semantic→primitive references", () => {
+    expect(refs.length).toBeGreaterThan(5);
+  });
   for (const target of refs) {
     it(`--${target} exists in primitives`, () => {
       expect(target === "bg" || target in dark, `dangling var(--${target})`).toBeTruthy();
@@ -104,8 +114,9 @@ describe("semantic tokens reference existing primitives", () => {
 });
 
 describe("danger + destructive wiring", () => {
-  it("--danger semantic maps to danger-9", () =>
-    expect(indexCss).toMatch(/--danger:\s*var\(--danger-9\)/));
+  it("--danger semantic maps to danger-9", () => {
+    expect(indexCss).toMatch(/--danger:\s*var\(--danger-9\)/);
+  });
   it("shadcn --color-destructive routes to --danger (not --fg)", () => {
     expect(indexCss).toMatch(/--color-destructive:\s*var\(--danger\)/);
     expect(indexCss).not.toMatch(/--color-destructive:\s*var\(--fg\)/);
