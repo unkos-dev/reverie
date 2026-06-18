@@ -146,43 +146,34 @@
    be nested per Tailwind v4 docs). */
 :root,
 [data-theme="light"] {
-  --canvas: #e8dcc2; /* Parchment */
-  --canvas-2: #dfd2b4;
-  --surface: #f0e6cf;
-  --surface-2: #e5d8bc;
-  --border: #c7b894;
-  --border-strong: #b0a07c;
-  --fg: #0e0d0a; /* Ink */
-  --fg-muted: #5a5244;
-  --fg-faint: #8a8170;
-  /* Reverie Gold #C9A961 darkened for Light theme. Sourced from philosophy
-     spec §10, not identity.md (which only locks #C9A961). Passes 1.4.11
-     (UI 3:1) + 1.4.3 large-text on Parchment; does NOT pass normal-text
-     4.5:1 — restrict to focus rings, large CTAs, recovery actions. */
-  --accent: #8e6f38;
-  --accent-soft: #dcc890;
-  --accent-strong: #6e5424;
-  --fg-on-accent: #e8dcc2; /* Parchment */
-  --overlay: rgb(0 0 0 / 15%);
+  /* Tier 2 semantic roles → Tier 1 primitives. Theme-constant mapping; the
+     primitive swap (primitives.generated.css [data-theme="dark"]) does the
+     light/dark work. Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
+  --canvas: var(--bg); /* parchment page (spec §4b) */
+  --canvas-2: var(--sand-2);
+  --surface: var(--sand-3);
+  --surface-2: var(--sand-4);
+  --surface-3: var(--sand-5);
+  --border: var(--sand-6); /* decorative separator (1.4.11-exempt) */
+  --border-strong: var(--sand-7);
+  --border-control: var(--sand-12); /* sole boundary of interactive controls (spec §5b) */
+  --fg: var(--sand-12);
+  --fg-muted: var(--sand-11);
+  --fg-faint: var(--sand-a10); /* tertiary; sub-AA — placeholder/non-essential only */
+  --accent: var(--gold-9);
+  --accent-soft: var(--gold-3);
+  --accent-strong: var(--gold-10); /* hover-darken (Radix); spec §5a confirmed */
+  --accent-text: var(--gold-11);
+  --fg-on-accent: var(--gold-contrast);
+  --overlay: rgb(14 13 10 / 88%); /* ink scrim, named exception (spec §6) */
 }
 
-/* Dark theme — Ink-leaning canvas + warm surfaces + Reverie Gold accent. */
-[data-theme="dark"] {
-  --canvas: #14120e;
-  --canvas-2: #1a1812;
-  --surface: #221f18;
-  --surface-2: #2a261d;
-  --border: #2e2a22;
-  --border-strong: #3a3528;
-  --fg: #e8e0d0; /* Cream */
-  --fg-muted: #a8a090;
-  --fg-faint: #6e6858;
-  --accent: #c9a961; /* Reverie Gold */
-  --accent-soft: #4a3c24;
-  --accent-strong: #d4b070;
-  --fg-on-accent: #0e0d0a; /* Ink */
-  --overlay: rgb(0 0 0 / 60%);
-}
+/* Dark theme needs no semantic overrides: every Tier 2 token above is a
+   theme-constant reference, and primitives.generated.css already redefines
+   --sand/--gold/--danger/--bg under [data-theme="dark"], so the semantic layer
+   re-resolves automatically. --overlay is ink-anchored on both themes (spec §5d).
+   A [data-theme="dark"] block belongs here only if a token must differ
+   structurally on dark — none currently do. */
 
 /* Loading-pulse keyframe — philosophy §11A loading-state expression.
    Loading state communicates via opacity pulse on the loading region,
