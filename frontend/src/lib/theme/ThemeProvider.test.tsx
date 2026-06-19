@@ -281,6 +281,35 @@ describe("ThemeProvider setPreference", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  test("PATCH 403 (expired session / missing CSRF) → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    mockMe("light");
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      json: () => Promise.resolve({}),
+    });
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preference").textContent).toBe("dark");
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   test("PATCH 502 (backend down) → cookie wins, no rollback, no toast", async () => {
     installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
