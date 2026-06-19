@@ -30,11 +30,11 @@ function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRo
 }
 
 describe("FilterRail — series facet (live)", () => {
-  test("selecting a series sets ?series= with radio semantics", async () => {
+  test("selecting a series sets ?series= with single-select checkbox semantics", async () => {
     const router = renderRail();
     const user = userEvent.setup();
     const rail = screen.getByRole("complementary", { name: "Filters" });
-    const radio = within(rail).getByRole("radio", { name: "Discworld" });
+    const radio = within(rail).getByRole("checkbox", { name: "Discworld" });
     await user.click(radio);
     expect(new URLSearchParams(router.state.location.search).get("series")).toBe("s-1");
     expect(radio).toBeChecked();
@@ -43,7 +43,7 @@ describe("FilterRail — series facet (live)", () => {
   test("selecting the active series again clears the filter", async () => {
     const router = renderRail("/library?series=s-1");
     const user = userEvent.setup();
-    const radio = screen.getByRole("radio", { name: "Discworld" });
+    const radio = screen.getByRole("checkbox", { name: "Discworld" });
     expect(radio).toBeChecked();
     await user.click(radio);
     expect(new URLSearchParams(router.state.location.search).get("series")).toBeNull();
@@ -58,11 +58,11 @@ describe("FilterRail — series facet (live)", () => {
     expect(search.get("cursor")).toBeNull();
   });
 
-  test("series radios are keyboard operable", async () => {
+  test("series checkboxes are keyboard operable", async () => {
     const router = renderRail();
     const user = userEvent.setup();
     await user.tab();
-    expect(screen.getByRole("radio", { name: "Discworld" })).toHaveFocus();
+    expect(screen.getByRole("checkbox", { name: "Discworld" })).toHaveFocus();
     await user.keyboard(" ");
     expect(new URLSearchParams(router.state.location.search).get("series")).toBe("s-1");
   });
@@ -75,11 +75,15 @@ describe("FilterRail — author placeholder (deferred to UNK-387)", () => {
       const row = screen.getByText(name).closest('[aria-disabled="true"]');
       expect(row).not.toBeNull();
       expect(row).not.toHaveAttribute("tabindex");
-      // Descendant query — closest() walks up and would pass even with
-      // a nested interactive control inside the row.
+      // The only control is the disabled, non-tabbable tick-box shown by
+      // request; nothing enabled or in the tab order is permitted.
       expect(
-        row?.querySelector('a,button,input,select,textarea,[tabindex]:not([tabindex="-1"])'),
+        row?.querySelector(
+          'a,button,select,textarea,input:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ),
       ).toBeNull();
+      // The tick-box affordance is present but inert.
+      expect(row?.querySelector("input")).toBeDisabled();
       expect(row).toHaveAccessibleDescription("Planned — not in this release");
     }
   });
