@@ -134,8 +134,13 @@ function LibraryContent(): ReactElement {
       {/* Always rendered; `.cinema-hint` fades in/out purely via the
           `[data-cinematic="on"]` opacity rule. Gating it on the boolean
           would unmount it in the same commit that clears the attribute,
-          so the CSS fade-out could never paint. */}
-      <p className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]">
+          so the CSS fade-out could never paint. `aria-hidden` because it's
+          a visual-only affordance — opacity:0 still exposes it to AT, so
+          without this it would be announced on every load. */}
+      <p
+        className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]"
+        aria-hidden="true"
+      >
         Cinematic mode · press F to exit
       </p>
       {/* Raise the whole browse layout — rail included — above the fixed

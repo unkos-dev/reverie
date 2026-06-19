@@ -1,7 +1,6 @@
 /**
  * Bookmark ribbon — a slim gilt thumb pinned to the right edge that
- * tracks scroll position through the library (V5 spec §5, "the one
- * decisive gold flourish").
+ * tracks scroll position through the library.
  *
  * Purely decorative (`aria-hidden`): the native scrollbar and keyboard
  * scrolling stay the mechanism, so there is no drag affordance and

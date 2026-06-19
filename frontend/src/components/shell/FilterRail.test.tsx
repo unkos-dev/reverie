@@ -3,7 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
+import { openCommandPalette } from "@/lib/command-palette";
+
 import { FilterRail } from "./FilterRail";
+
+vi.mock("@/lib/command-palette", () => ({
+  openCommandPalette: vi.fn(),
+  searchHintLabel: () => "Ctrl K",
+}));
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -28,6 +35,15 @@ function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRo
   render(<RouterProvider router={router} />);
   return router;
 }
+
+describe("FilterRail — search affordance", () => {
+  test("clicking the search button opens the command palette", async () => {
+    renderRail();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Find a volume/ }));
+    expect(vi.mocked(openCommandPalette)).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("FilterRail — series facet (live)", () => {
   test("selecting a series sets ?series= with single-select checkbox semantics", async () => {

@@ -201,7 +201,7 @@
   }
 }
 
-/* ─── Cinematic mode (V5 §5) ──────────────────────────────────────────
+/* ─── Cinematic mode ──────────────────────────────────────────────────
    Press F on the Library page to dissolve the chrome. The hook
    (hooks/useCinematicMode) sets data-cinematic / data-cursor-hidden on
    the document element; marked chrome (`[data-chrome]`) fades out and the

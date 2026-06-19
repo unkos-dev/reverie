@@ -1,5 +1,5 @@
 /**
- * Cinematic mode for the Library reading room (V5 spec §5).
+ * Cinematic mode for the Library reading room.
  *
  * Press `F` (outside any field) to dissolve the surrounding chrome; `F`
  * again or `Escape` exits. After ~2s of pointer stillness the cursor

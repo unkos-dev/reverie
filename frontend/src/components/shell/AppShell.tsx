@@ -38,7 +38,7 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-/** Shell chrome: skip link, left rail (or drawer), strip, main column. */
+/** Shell chrome: skip link, left rail (or drawer), main column. */
 export function AppShell({ children }: AppShellProps): ReactElement {
   const matches = useMatches();
   const isAdminZone = matches.some((match) => hasAdminZone(match.handle));
