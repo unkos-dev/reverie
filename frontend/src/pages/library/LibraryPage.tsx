@@ -350,14 +350,17 @@ function BookCard({ book }: BookCardProps): ReactElement {
     book.series && book.series.position !== null
       ? `${book.series.name} · #${String(book.series.position)}`
       : (book.series?.name ?? null);
+  // Delay the z-index drop on hover-out so the card stays above its
+  // neighbours for the full 200ms lift-down — otherwise z resets instantly
+  // and the accent glow is clipped mid-animation.
   return (
-    <article className="group">
+    <article className="group relative z-0 transition-[z-index] delay-200 duration-0 hover:z-10 hover:delay-0 focus-within:z-10 focus-within:delay-0">
       <Link
         to={`/b/${book.id}`}
         viewTransition
-        className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 hover:-translate-y-0.5 hover:scale-[1.012] focus-visible:-translate-y-0.5 focus-visible:scale-[1.012] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 ease-out hover:-translate-y-2 hover:scale-[1.04] focus-visible:-translate-y-2 focus-visible:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 motion-reduce:transform-none"
       >
-        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_10px_28px_-10px_var(--accent)] group-focus-within:shadow-[0_10px_28px_-10px_var(--accent)] relative aspect-[2/3] overflow-hidden rounded-md border transition-[border-color,box-shadow]">
+        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_18px_44px_-12px_var(--accent)] group-focus-within:shadow-[0_18px_44px_-12px_var(--accent)] relative aspect-[2/3] overflow-hidden rounded-md border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">
           {usesSpine ? (
             <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
           ) : (
