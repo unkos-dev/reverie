@@ -27,4 +27,9 @@ describe("LibraryMasthead", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Shelves" })).toBeInTheDocument();
     expect(screen.getByText("A test kicker")).toBeInTheDocument();
   });
+
+  test("hero bleed classes are overridable", () => {
+    const { container } = render(<LibraryMasthead heroBleedClassName="mx-0" />);
+    expect(container.querySelector(".lib-hero")).toHaveClass("mx-0");
+  });
 });
