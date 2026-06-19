@@ -159,13 +159,13 @@ describe("BookPage", () => {
     ).toBeInTheDocument();
   });
 
-  test("cover load error swaps in the typographic spine", async () => {
+  test("cover load error swaps in the cloth spine", async () => {
     renderBook(bookFixture());
     const img = await screen.findByRole("img", { name: /Cover of/ });
-    expect(document.querySelector("[data-layout]")).toBeNull();
+    expect(document.querySelector("[data-cloth]")).toBeNull();
     fireEvent.error(img);
     await waitFor(() => {
-      expect(document.querySelector("[data-layout]")).not.toBeNull();
+      expect(document.querySelector("[data-cloth]")).not.toBeNull();
     });
   });
 
