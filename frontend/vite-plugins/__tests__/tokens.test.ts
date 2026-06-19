@@ -139,34 +139,40 @@ describe("danger + destructive wiring", () => {
 });
 
 describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
-  // The sand-12 halo is the OUTER focus edge; it must clear the 3:1 non-text
-  // floor against the page on both themes (the gold ring alone is sub-3:1 on
-  // parchment). Guards the numeric claim in the index.css :focus-visible comment
-  // against primitive regeneration; resolves to ~12:1 light / ~16.8:1 dark today.
+  // One 2px gold-11 ring, no halo: --accent-text (gold-11) carries the >=3:1
+  // non-text boundary against the page on its own, so the sand-12 box-shadow
+  // that padded gold-9's failing 2.80:1 is gone. These guard the numeric claim
+  // in the index.css :focus-visible comment against primitive regeneration.
   for (const theme of [
     { name: "dark", m: dark },
     { name: "light", m: light },
   ] as const) {
-    it(`${theme.name}: sand-12 focus halo on canvas >= 3:1`, () => {
-      expect(contrast(theme.m["sand-12"], theme.m["bg"])).toBeGreaterThanOrEqual(3);
+    it(`${theme.name}: gold-11 focus ring on canvas >= 3:1 (non-text floor)`, () => {
+      expect(contrast(theme.m["gold-11"], theme.m["bg"])).toBeGreaterThanOrEqual(3);
     });
   }
-  // Pin the published halo figures (the index.css comment + docs prose) so a
-  // primitive regeneration that shifts them fails loudly and forces the prose to
-  // update in lockstep — the gap that let a stale ratio ship green before.
-  it("light halo (sand-12 on parchment) rounds to the published 12.02:1", () => {
-    expect(Math.round(contrast(light["sand-12"], light["bg"]) * 100) / 100).toBe(12.02);
+  // Pin the published ring figures (the index.css comment) so a primitive
+  // regeneration that drops them below the stated ~7:1 / ~10:1 fails loudly and
+  // forces the prose to update in lockstep — the gap that let a stale ratio ship
+  // green before.
+  it("light ring (gold-11 on parchment) clears the published ~7:1", () => {
+    expect(contrast(light["gold-11"], light["bg"])).toBeGreaterThanOrEqual(7);
   });
-  it("dark halo (sand-12 on ink) rounds to the published 16.76:1", () => {
-    expect(Math.round(contrast(dark["sand-12"], dark["bg"]) * 100) / 100).toBe(16.76);
+  it("dark ring (gold-11 on ink) clears the published ~10:1", () => {
+    expect(contrast(dark["gold-11"], dark["bg"])).toBeGreaterThanOrEqual(10);
   });
-  // Guard the semantic chain so a rename/repoint of either focus token fails
-  // loudly rather than silently dropping the remedy.
-  it("--focus-ring maps to --accent", () => {
-    expect(indexCss).toMatch(/--focus-ring:\s*var\(--accent\)/);
+  // Guard the semantic chain: the ring repoints to --accent-text (gold-11), and
+  // the halo token plus its box-shadow bloom are gone for good.
+  it("--focus-ring maps to --accent-text", () => {
+    expect(indexCss).toMatch(/--focus-ring:\s*var\(--accent-text\)/);
   });
-  it("--focus-halo maps to --sand-12", () => {
-    expect(indexCss).toMatch(/--focus-halo:\s*var\(--sand-12\)/);
+  it("--focus-halo is removed", () => {
+    expect(indexCss).not.toMatch(/--focus-halo/);
+  });
+  it(":focus-visible pins box-shadow to none (no halo, suppresses component rings)", () => {
+    const rule = indexCss.match(/:focus-visible\s*\{[^}]*\}/);
+    expect(rule).not.toBeNull();
+    expect(rule?.[0]).toMatch(/box-shadow:\s*none/);
   });
 });
 
