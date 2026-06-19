@@ -43,7 +43,18 @@ function parseBlock(css: string, selectorMarker: string): Record<string, string>
   const start = css.indexOf(selectorMarker);
   if (start === -1) throw new Error(`selector not found: ${selectorMarker}`);
   const open = css.indexOf("{", start);
-  const close = css.indexOf("}", open);
+  // Walk forward tracking brace depth so a future generated format with a nested
+  // at-rule or a comment containing `}` inside the block can't truncate the parse
+  // early (the current flat sRGB blocks have no nested braces, so this is a no-op
+  // today — it future-proofs against regeneration drift).
+  let depth = 1;
+  let pos = open + 1;
+  while (pos < css.length && depth > 0) {
+    if (css[pos] === "{") depth++;
+    else if (css[pos] === "}") depth--;
+    pos++;
+  }
+  const close = pos - 1;
   const body = css.slice(open + 1, close);
   const map: Record<string, string> = {};
   for (const m of body.matchAll(/--([\w-]+):\s*(#[0-9a-fA-F]{3,8})\s*;/g)) {
