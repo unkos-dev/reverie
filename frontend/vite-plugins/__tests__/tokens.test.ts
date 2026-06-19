@@ -92,8 +92,9 @@ describe("brand anchors land verbatim", () => {
     expect(dark["danger-9"].toLowerCase()).toBe("#b91c1c");
     expect(light["danger-9"].toLowerCase()).toBe("#b91c1c");
   });
-  it("gold-contrast is ink, not white (spec §4a)", () => {
+  it("gold-contrast is ink, not white, in both themes (spec §4a)", () => {
     expect(dark["gold-contrast"].toLowerCase()).toBe("#0e0d0a");
+    expect(light["gold-contrast"].toLowerCase()).toBe("#0e0d0a");
   });
 });
 /* eslint-enable no-restricted-syntax */
@@ -139,6 +140,15 @@ describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
       expect(contrast(theme.m["sand-12"], theme.m["bg"])).toBeGreaterThanOrEqual(3);
     });
   }
+  // Pin the published halo figures (the index.css comment + docs prose) so a
+  // primitive regeneration that shifts them fails loudly and forces the prose to
+  // update in lockstep — the gap that let a stale ratio ship green before.
+  it("light halo (sand-12 on parchment) rounds to the published 12.02:1", () => {
+    expect(Math.round(contrast(light["sand-12"], light["bg"]) * 100) / 100).toBe(12.02);
+  });
+  it("dark halo (sand-12 on ink) rounds to the published 16.76:1", () => {
+    expect(Math.round(contrast(dark["sand-12"], dark["bg"]) * 100) / 100).toBe(16.76);
+  });
   // Guard the semantic chain so a rename/repoint of either focus token fails
   // loudly rather than silently dropping the remedy.
   it("--focus-ring maps to --accent", () => {

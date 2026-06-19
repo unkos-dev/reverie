@@ -61,7 +61,7 @@ A universal `:focus-visible` rule pairs a 2px gold outline with a `6px` sand-12
 `outline-offset + outline-width` so the high-contrast sand-12 edge — not the
 gold ring — is the outermost pixel against the page. This carries the ≥ 3:1
 non-text-contrast floor on the light theme, where the gold ring alone is only
-2.67:1 on parchment.
+2.8:1 on parchment.
 
 ## Governance
 
@@ -75,5 +75,5 @@ non-text-contrast floor on the light theme, where the gold ring alone is only
 - **Finite primitive set.** Adding a primitive means regenerating the Radix
   ramps — a reviewed change, never an ad-hoc hex.
 
-The dual-theme two-tier (plus atmosphere) architecture is recorded in the
-token-architecture ADR (`adr/2026-06-18-radix-two-tier-dual-theme-tokens.md`).
+The dual-theme three-tier architecture is recorded in the
+token-architecture ADR (`adr/2026-06-18-radix-three-tier-dual-theme-tokens.md`).

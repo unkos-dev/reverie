@@ -7,7 +7,7 @@ consulted: "—"
 informed: "Reverie contributors"
 ---
 
-# Radix-generated dual-theme color tokens (two-tier + sealed atmosphere)
+# Radix-generated three-tier dual-theme color tokens
 
 ## Context and Problem Statement
 
@@ -47,9 +47,9 @@ decorative color cannot leak into UI chrome?
 
 ## Decision Outcome
 
-Chosen option: **Radix Colors generated scales consumed through a two-tier
-semantic contract, with a sealed atmosphere third tier**, because it satisfies
-every driver at once. The generator produces matched light and dark 12-step
+Chosen option: **Radix Colors generated scales consumed through a three-tier
+contract — generated primitives, a semantic role layer, and a sealed atmosphere
+tier**, because it satisfies every driver at once. The generator produces matched light and dark 12-step
 scales from the same anchors, with per-step roles whose contrast holds by
 construction — so AA is structural and the two themes cannot drift — and its
 output is plain CSS custom properties, vendored as a static file, so there is no

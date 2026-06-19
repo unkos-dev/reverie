@@ -201,7 +201,7 @@
    the gold outline edge, leaving gold-9 = 2.80:1 adjacent to parchment — the
    very failure this remedy fixes. The sand-12 halo carries the ≥3:1 boundary on
    both themes (≈12.02:1 light / ≈16.76:1 dark). Universal (one rule, no theme
-   branch) per the signed-off decision §11.2. VERIFY BY RENDER on the light theme
+   branch) per spec §11.2. VERIFY BY RENDER on the light theme
    via agent-browser — do not mark done on the computed claim alone. No
    border-radius is set here on purpose: outline + box-shadow already follow the
    element's own radius, and this rule is UNLAYERED (outranks Tailwind's utilities

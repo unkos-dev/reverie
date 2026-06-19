@@ -7,7 +7,7 @@
  * Anchors:    bg-dark #0E0D0A · bg-light(parchment) #E8DCC2
  *             accent(gold) #C9A961 · danger #B91C1C · neutral-seed #8A8170
  * OVERRIDE:   --gold-contrast forced to ink #0e0d0a (generator returned #fff,
- *             which is unreadable on light-gold: white/gold-9 = 2.25:1 dark).
+ *             unreadable on the pale dark-theme gold-9 #c9a961: white = 2.25:1).
  * Families:   --sand-* (warm neutral) · --gold-* (accent) · --danger-* (destructive only)
  */
 

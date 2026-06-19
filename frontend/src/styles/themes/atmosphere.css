@@ -8,9 +8,10 @@
  * invite chrome consumption. Atmosphere is read via raw `var(--atm-*)` only.
  *
  * Hex / rgba literals are permitted here (art-directed Tier 3). `--atm-*` values
- * are vendored verbatim from the locked V6 mock (spec §8.4) — regenerate from
- * the mock, do not hand-tune. The selector structure is adapted to the repo's
- * light-default convention (the mock is dark-default): theme-fixed tokens live
+ * are vendored verbatim from the art-directed atmosphere reference (spec §8.4) —
+ * regenerate from that reference, do not hand-tune. The selector structure is
+ * adapted to the repo's light-default convention (the reference is dark-default):
+ * theme-fixed tokens live
  * on `:root`; vellum/sheen/ember retune per theme. `--atm-spine-tex-*` cover
  * textures are deferred to port-time (§5i).
  */
@@ -48,7 +49,7 @@
 
 /* Theme-retuning atmosphere — vellum/sheen/ember shift with the room light.
    Light (default): ink-on-parchment alphas + softer terracotta ember.
-   Dark: cream alphas + warm ember. Values verbatim from the V6 mock. */
+   Dark: cream alphas + warm ember. Values verbatim from the atmosphere reference (spec §8.4). */
 :root,
 [data-theme="light"] {
   --atm-vellum: rgb(37 31 20 / 4%);
