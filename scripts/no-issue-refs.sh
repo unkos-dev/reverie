@@ -42,12 +42,15 @@ is_gated() {
   return 1
 }
 
-# Keep only in-scope paths that still exist (a changed-file list can name
-# deletions).
+# lint-staged passes absolute paths to string commands; CI (paths-filter)
+# passes repo-relative ones. Normalise to repo-relative so the is_gated()
+# include/exclude patterns match in both cases, then keep only in-scope paths
+# that still exist — a changed-file list can name deletions.
 files=()
 for path in "$@"; do
-  if [ -f "$path" ] && is_gated "$path"; then
-    files+=("$path")
+  rel="${path#"$PWD/"}"
+  if [ -f "$rel" ] && is_gated "$rel"; then
+    files+=("$rel")
   fi
 done
 

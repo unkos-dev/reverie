@@ -1007,14 +1007,19 @@ jobs:
 
       # source_files is a JSON array; pass it through an env var (not inline
       # `${{ }}` in the script) and parse with jq so the run block stays free
-      # of template interpolation.
+      # of template interpolation. NUL-delimited (jq -j … + "\u0000" / mapfile
+      # -d '') so a filename containing a newline can't be split and bypass the
+      # guard. `shell: bash` is explicit — mapfile + process substitution are
+      # bash-only, and this self-documents rather than relying on the runner
+      # default.
       - name: Reject issue-tracker refs in changed source
         if: steps.source-changed.outputs.source == 'true'
+        shell: bash
         env:
           SOURCE_FILES: ${{ steps.source-changed.outputs.source_files }}
         run: |
           set -euo pipefail
-          mapfile -t files < <(printf '%s' "$SOURCE_FILES" | jq -r '.[]')
+          mapfile -d '' -t files < <(printf '%s' "$SOURCE_FILES" | jq -j '.[] + "\u0000"')
           if [ "${#files[@]}" -gt 0 ]; then
             scripts/no-issue-refs.sh "${files[@]}"
           fi
