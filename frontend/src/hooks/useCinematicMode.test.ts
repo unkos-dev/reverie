@@ -38,6 +38,22 @@ describe("useCinematicMode", () => {
     expect(result.current).toBe(false);
   });
 
+  test("Escape is ignored while typing in a field (search stays an escape hatch)", () => {
+    const { result } = renderHook(() => useCinematicMode());
+    act(() => {
+      fireEvent.keyDown(window, { key: "f" });
+    });
+    expect(result.current).toBe(true);
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    act(() => {
+      fireEvent.keyDown(field, { key: "Escape" });
+    });
+    expect(result.current).toBe(true);
+    field.remove();
+  });
+
   test("F is ignored while typing in a field", () => {
     const { result } = renderHook(() => useCinematicMode());
     const field = document.createElement("input");

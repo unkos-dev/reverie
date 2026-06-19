@@ -78,7 +78,9 @@ export function LibraryPage(): ReactElement {
 
 function LibraryContent(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
-  const cinematic = useCinematicMode();
+  // Drives cinematic mode via the document `data-cinematic` attribute (CSS
+  // reads it); the boolean return is unused — visibility is CSS-only.
+  useCinematicMode();
   const viewMode: ViewMode = searchParams.get("view") === "list" ? "list" : "grid";
   const params = paramsFromSearch(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
@@ -129,12 +131,13 @@ function LibraryContent(): ReactElement {
     <>
       <Atmosphere />
       <BookmarkRibbon />
-      {/* Cinematic mode dims the chrome; this hint shows how to exit. */}
-      {cinematic ? (
-        <p className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]">
-          Cinematic mode · press F to exit
-        </p>
-      ) : null}
+      {/* Always rendered; `.cinema-hint` fades in/out purely via the
+          `[data-cinematic="on"]` opacity rule. Gating it on the boolean
+          would unmount it in the same commit that clears the attribute,
+          so the CSS fade-out could never paint. */}
+      <p className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]">
+        Cinematic mode · press F to exit
+      </p>
       {/* Raise the whole browse layout — rail included — above the fixed
           atmosphere layers. The rail renders outside `children`, so a
           content-only stacking context leaves it under `.lib-grain` (z-1). */}

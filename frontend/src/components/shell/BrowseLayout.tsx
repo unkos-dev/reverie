@@ -70,9 +70,7 @@ export function BrowseLayout({ rail, children }: BrowseLayoutProps): ReactElemen
         {children}
       </div>
       <div data-chrome="" className="border-border hidden border-l xl:block">
-        <div className="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto px-5 py-8">
-          {rail}
-        </div>
+        <div className="sticky top-0 max-h-screen overflow-y-auto px-5 py-8">{rail}</div>
       </div>
     </div>
   );

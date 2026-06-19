@@ -92,6 +92,15 @@ describe("LibraryPage", () => {
     expect(document.querySelector(".lib-grain")).not.toBeNull();
   });
 
+  test("cinema-hint is always in the DOM so its CSS fade can play (not gated on state)", async () => {
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    await screen.findByRole("heading", { name: "Library" });
+    // Not in cinematic mode, but the hint must still render — visibility is
+    // CSS-only (`[data-cinematic="on"] .cinema-hint`), so unmounting it would
+    // kill the fade-out.
+    expect(document.querySelector(".cinema-hint")).not.toBeNull();
+  });
+
   test("sort control is a button menu writing ?sort=", async () => {
     renderLibrary({
       items: [bookFixture()],

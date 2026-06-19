@@ -35,7 +35,9 @@ export function useCinematicMode(): boolean {
       ) {
         event.preventDefault();
         setActive((current) => !current);
-      } else if (event.key === "Escape") {
+      } else if (event.key === "Escape" && !inEditableField(event.target)) {
+        // The search bar stays as an in-mode escape hatch, so Escape there
+        // (clear query / dismiss autocomplete) must not also exit cinematic.
         setActive(false);
       }
     }
