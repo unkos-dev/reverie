@@ -53,7 +53,10 @@ export function AppShell({ children }: AppShellProps): ReactElement {
       >
         Skip to content
       </a>
-      <div data-chrome="" className="sticky top-0 hidden h-screen w-[228px] shrink-0 lg:block">
+      <div
+        data-chrome=""
+        className="border-border cinematic-collapse sticky top-0 hidden h-screen w-[228px] shrink-0 border-r lg:block"
+      >
         <LeftRail />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">

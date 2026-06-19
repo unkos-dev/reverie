@@ -221,6 +221,9 @@ function LibraryContent(): ReactElement {
                 </Button>
               </div>
             ) : null}
+            <footer className="border-border text-fg-faint mt-16 border-t pt-6 text-center font-mono text-[0.68rem] uppercase tracking-[0.18em]">
+              Reverie · MMXXVI · Set in Author, Satoshi and JetBrains Mono
+            </footer>
           </div>
         </BrowseLayout>
       </div>
@@ -370,7 +373,7 @@ function BookCard({ book }: BookCardProps): ReactElement {
         viewTransition
         className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 ease-out hover:-translate-y-2 hover:scale-[1.04] focus-visible:-translate-y-2 focus-visible:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 motion-reduce:transform-none"
       >
-        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_18px_44px_-12px_var(--accent)] group-focus-within:shadow-[0_18px_44px_-12px_var(--accent)] relative aspect-[2/3] overflow-hidden rounded-md border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">
+        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_18px_44px_-12px_var(--accent)] group-focus-within:shadow-[0_18px_44px_-12px_var(--accent)] relative aspect-[2/3] overflow-hidden border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">
           {usesSpine ? (
             <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
           ) : (
@@ -637,7 +640,7 @@ function LibrarySkeleton(): ReactElement {
       <div className="grid gap-x-6 gap-y-8 [grid-template-columns:repeat(auto-fill,minmax(clamp(170px,10vw,240px),1fr))]">
         {PLACEHOLDERS.map((i) => (
           <div key={i} className="flex flex-col gap-3">
-            <Skeleton className="aspect-[2/3] w-full rounded-md" />
+            <Skeleton className="aspect-[2/3] w-full" />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-3 w-1/2" />
           </div>

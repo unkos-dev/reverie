@@ -40,7 +40,7 @@ export function BrowseLayout({ rail, children }: BrowseLayoutProps): ReactElemen
   const [searchParams] = useSearchParams();
 
   return (
-    <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_264px]">
+    <div className="cinematic-grid xl:grid xl:grid-cols-[minmax(0,1fr)_264px]">
       <div className="min-w-0">
         <div data-chrome="" className="flex justify-end px-4 pt-4 sm:px-6 xl:hidden">
           <Sheet open={refineOpen} onOpenChange={setRefineOpen}>
@@ -69,7 +69,7 @@ export function BrowseLayout({ rail, children }: BrowseLayoutProps): ReactElemen
         </div>
         {children}
       </div>
-      <div data-chrome="" className="hidden xl:block">
+      <div data-chrome="" className="border-border hidden border-l xl:block">
         <div className="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto px-5 py-8">
           {rail}
         </div>

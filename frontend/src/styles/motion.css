@@ -235,6 +235,27 @@
   opacity: 0.65;
 }
 
+/* Collapse the rails so the centre pane fills the screen (V5 cinematic).
+   Unlayered, so it outranks the w-[228px] / grid-cols utilities without
+   `!important`. */
+.cinematic-collapse {
+  transition: width var(--duration-slow) var(--ease-standard);
+}
+
+.cinematic-grid {
+  transition: grid-template-columns var(--duration-slow) var(--ease-standard);
+}
+
+[data-cinematic="on"] .cinematic-collapse {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-cinematic="on"] .cinematic-grid {
+  grid-template-columns: minmax(0, 1fr) 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tile-in {
     animation: none;
@@ -250,9 +271,11 @@
     animation: none;
   }
 
-  /* Cinematic chrome + hint snap instead of fading. */
+  /* Cinematic chrome + hint snap instead of fading or sliding. */
   [data-chrome],
-  .cinema-hint {
+  .cinema-hint,
+  .cinematic-collapse,
+  .cinematic-grid {
     transition: none;
   }
 

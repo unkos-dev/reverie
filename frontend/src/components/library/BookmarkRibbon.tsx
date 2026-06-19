@@ -37,8 +37,8 @@ export function BookmarkRibbon(): ReactElement {
     };
   }, []);
 
-  // Keep the 4rem-tall thumb inside the full-height track at both ends.
-  const thumbStyle: CSSProperties = { top: `calc(${String(progress)} * (100vh - 4rem))` };
+  // Keep the 2.5rem-tall thumb inside the full-height track at both ends.
+  const thumbStyle: CSSProperties = { top: `calc(${String(progress)} * (100vh - 2.5rem))` };
 
   return (
     <div
@@ -46,10 +46,7 @@ export function BookmarkRibbon(): ReactElement {
       aria-hidden="true"
       className="pointer-events-none fixed right-1.5 top-0 z-20 hidden h-screen w-1 lg:block"
     >
-      <div
-        className="bg-accent absolute right-0 h-16 w-full rounded-full opacity-80"
-        style={thumbStyle}
-      />
+      <div className="bg-accent absolute right-0 h-10 w-full opacity-90" style={thumbStyle} />
     </div>
   );
 }
