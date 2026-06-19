@@ -40,20 +40,20 @@ State communicates through **typography weight, surface opacity, motion,
 and the gold accent** — never a state-coded hue, with a single bounded
 exception, **danger** (below). This is a load-bearing brand invariant:
 
-| State                             | Expression                                                                                                                                                                             |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Default / idle                    | `text-fg`, `bg-surface` (or unchanged)                                                                                                                                                 |
-| Hover (surface lift)              | `translate-y-[-1px]` + `border-border-strong`                                                                                                                                          |
-| Hover (in-list item)              | `bg-hover` (= `bg-surface-2`); brand gold is reserved for primary affordances and is never a hover treatment                                                                           |
-| Active / pressed                  | `bg-accent` or `bg-accent-strong`                                                                                                                                                      |
-| Selected                          | `bg-accent-soft` background + `text-fg`                                                                                                                                                |
-| Disabled                          | `opacity-50` + `text-fg-muted`                                                                                                                                                         |
-| Loading                           | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                                                                         |
-| Error (recoverable)               | `text-fg font-semibold` + gold recovery action                                                                                                                                         |
-| Destructive / unrecoverable error | `--danger` fill, border, or icon (white text on the fill), always paired with an icon, weight, or label — the one state hue (below)                                                    |
-| Success (explicit)                | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                                                                       |
-| Link                              | underline + `text-accent` on hover; no permanent colour difference                                                                                                                     |
-| Focus (keyboard)                  | universal `:focus-visible` — 2px gold outline + 2px offset + 6px `sand-12` halo; the high-contrast halo carries the ≥ 3:1 boundary (see [Color Tokens](/reverie/design/color-tokens/)) |
+| State                             | Expression                                                                                                                                                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default / idle                    | `text-fg`, `bg-surface` (or unchanged)                                                                                                                                                                                      |
+| Hover (surface lift)              | `translate-y-[-1px]` + `border-border-strong`                                                                                                                                                                               |
+| Hover (in-list item)              | `bg-hover` (= `bg-surface-2`); brand gold is reserved for primary affordances and is never a hover treatment                                                                                                                |
+| Active / pressed                  | `bg-accent` or `bg-accent-strong`                                                                                                                                                                                           |
+| Selected                          | `bg-accent-soft` background + `text-fg`                                                                                                                                                                                     |
+| Disabled                          | `opacity-50` + `text-fg-muted`                                                                                                                                                                                              |
+| Loading                           | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                                                                                                              |
+| Error (recoverable)               | `text-fg font-semibold` + gold recovery action                                                                                                                                                                              |
+| Destructive / unrecoverable error | `--danger` fill, border, or icon (white text on the fill), always paired with an icon, weight, or label — the one state hue (below)                                                                                         |
+| Success (explicit)                | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                                                                                                            |
+| Link                              | underline + `text-accent` on hover; no permanent colour difference                                                                                                                                                          |
+| Focus (keyboard)                  | universal `:focus-visible` — single 2px `gold-11` outline + 2px offset, no halo; `gold-11` (`--accent-text`) carries the ≥ 3:1 non-text boundary unaided on both themes (see [Color Tokens](/reverie/design/color-tokens/)) |
 
 `--color-danger` is the **one** sanctioned state hue — reserved for
 destructive and unrecoverable-error semantics, never decorative, and always
@@ -89,14 +89,15 @@ WCAG 2.2 1.4.11 3:1 floor as a line or as text; darkening it far enough to
 clear 3:1 would stop reading as gold. The contrast is carried by _how the
 accent is used_: solid fills (large CTAs, primary actions) carry **ink
 text** at ≈ 5:1, which clears 1.4.3 — the fill, not the gold edge, does the
-work — and focus rings pair the gold outline with the high-contrast
-`sand-12` halo that carries the ≥ 3:1 boundary (see
-[Color Tokens](/reverie/design/color-tokens/)).
+work. Focus rings sidestep the deviation entirely by using `gold-11`
+(`--accent-text`), the text-grade gold that clears the ≥ 3:1 boundary on its
+own — no halo required (see [Color Tokens](/reverie/design/color-tokens/)).
 
 axe-core surfaces 1.4.11 / 1.4.3 violations on any Light surface that uses
-the gold edge or gold text outside those fill-and-halo cases. The
-restriction — use the light accent only as a fill (with ink text), a focus
-ring (with the halo), or a recovery action — is the brand's mitigation; the
+the `gold-9` edge or `gold-9` text outside those mitigated cases. The
+restriction — use the light accent (`gold-9`) only as a fill (with ink
+text) or a recovery action, with focus rings reserved for the compliant
+`gold-11` — is the brand's mitigation; the
 [`/design/system`](/reverie/design/visual-identity/) gallery may surface a
 small number of axe violations on the documented `lg`-size primary button
 surface, and the design-system axe gate tolerates those. Introducing gold as

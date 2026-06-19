@@ -111,19 +111,19 @@ ambient pulses.
 State communicates through typography weight, surface opacity, motion,
 and the gold accent — never a state-coded hue. The canonical mapping:
 
-| State                | Expression                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                       |
-| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                |
-| Hover (in-list item) | `bg-hover` (= `bg-surface-2`)                                                                                |
-| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                            |
-| Selected             | `bg-accent-soft` background + `text-fg`                                                                      |
-| Disabled             | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only — opacity-50 × fg-faint drops below AA)   |
-| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                               |
-| Error                | `text-fg font-semibold` + gold recovery action                                                               |
-| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                             |
-| Link                 | underline + `text-accent` on hover; no permanent colour difference                                           |
-| Focus (keyboard)     | 2px gold outline + 2px offset (`focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`) |
+| State                | Expression                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                                                     |
+| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                                              |
+| Hover (in-list item) | `bg-hover` (= `bg-surface-2`)                                                                                                              |
+| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                                                          |
+| Selected             | `bg-accent-soft` background + `text-fg`                                                                                                    |
+| Disabled             | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only — opacity-50 × fg-faint drops below AA)                                 |
+| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                             |
+| Error                | `text-fg font-semibold` + gold recovery action                                                                                             |
+| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                           |
+| Link                 | underline + `text-accent` on hover; no permanent colour difference                                                                         |
+| Focus (keyboard)     | single 2px `gold-11` outline + 2px offset, no halo — global `:focus-visible` rule (`--focus-ring: var(--accent-text)`, `box-shadow: none`) |
 
 Charts and code blocks are scoped exceptions — when they ship, the
 deviation is documented here and constrained to the surface that
