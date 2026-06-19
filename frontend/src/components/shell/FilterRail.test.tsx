@@ -69,7 +69,7 @@ describe("FilterRail — series facet (live)", () => {
   });
 });
 
-describe("FilterRail — author placeholder (deferred to UNK-387)", () => {
+describe("FilterRail — author placeholder (deferred, backend-gated)", () => {
   test("renders real author names disabled, out of tab order, with planned description", () => {
     renderRail();
     for (const name of AUTHORS) {

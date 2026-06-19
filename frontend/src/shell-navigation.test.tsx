@@ -1,5 +1,5 @@
 /**
- * Click-reachability integration test (UNK-385 acceptance gate):
+ * Click-reachability integration test:
  * every routed screen reachable by click from `/library`, over the
  * REAL production route set with the network stubbed at `fetch`.
  */
