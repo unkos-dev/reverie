@@ -1,5 +1,5 @@
 /**
- * Shell + library motion (spec §8 budget).
+ * Shell + library motion.
  *
  * - Route crossfades ride the View Transitions API via react-router's
  *   `<Link viewTransition>`. Neither the router nor the browser checks

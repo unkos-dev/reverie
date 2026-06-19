@@ -7,9 +7,9 @@
  * `useSuspenseInfiniteQuery`. The route loader has already seeded
  * page 1 into the cache; this component subscribes and renders.
  *
- * Visual filter affordances (shelf chips, search input, command
- * palette) are deferred to sub-phase 11b. This page renders the grid
- * / list toggle and the Load-more pagination control only.
+ * Renders the editorial masthead and ambient atmosphere over the browse
+ * column — the filter rail, the shelf/sort/active-filter controls, the
+ * grid/list toggle, and Load-more pagination over the fetched pages.
  */
 import { useQuery, useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { Filter, LayoutGrid, List, Loader2, X } from "lucide-react";
@@ -109,8 +109,8 @@ function LibraryContent(): ReactElement {
   }
 
   // Facet options derive from the loaded pages — `SeriesRef` carries
-  // the id the backend filter wants; authors are display names only
-  // (placeholder group until author ids are available).
+  // the id the backend filter wants; authors have no stable id, so they
+  // group by display name only.
   const seriesById = new Map<string, string>();
   for (const book of items) {
     if (book.series !== null) seriesById.set(book.series.id, book.series.name);
