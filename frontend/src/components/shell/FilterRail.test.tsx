@@ -61,7 +61,8 @@ describe("FilterRail — series facet (live)", () => {
   test("series checkboxes are keyboard operable", async () => {
     const router = renderRail();
     const user = userEvent.setup();
-    await user.tab();
+    await user.tab(); // search affordance at the top of the rail
+    await user.tab(); // first series checkbox
     expect(screen.getByRole("checkbox", { name: "Discworld" })).toHaveFocus();
     await user.keyboard(" ");
     expect(new URLSearchParams(router.state.location.search).get("series")).toBe("s-1");

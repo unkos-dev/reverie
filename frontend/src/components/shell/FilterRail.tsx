@@ -11,7 +11,7 @@
  * - **Author** — disabled checkbox rows carrying real names. The backend
  *   expects `?author=<uuid>` but the list payload exposes author *names*
  *   only — sending a name 400s. The tick-box is shown by request but
- *   stays disabled + non-tabbable until UNK-387 lands author UUIDs,
+ *   stays disabled + non-tabbable until the backend lands author UUIDs,
  *   counts, multi-select, and the remaining facets.
  *
  * Facet options derive from the loaded pages — the owning page passes
@@ -19,6 +19,8 @@
  */
 import { useId, type ReactElement } from "react";
 import { useSearchParams } from "react-router";
+
+import { openCommandPalette, searchHintLabel } from "@/lib/command-palette";
 
 import { PLANNED_TOOLTIP } from "./nav-items";
 
@@ -54,6 +56,19 @@ export function FilterRail({ seriesOptions, authorNames }: FilterRailProps): Rea
 
   return (
     <aside aria-label="Filters" className="flex flex-col gap-4 text-sm">
+      {/* Search lives in the rail now (the top utility strip was removed). */}
+      <button
+        type="button"
+        onClick={() => {
+          openCommandPalette();
+        }}
+        className="border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg focus-visible:ring-accent flex h-9 w-full items-center justify-between gap-3 rounded-md border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2"
+      >
+        <span className="truncate">Find a volume…</span>
+        <kbd className="text-fg-muted font-mono text-[0.65rem] tracking-wide">
+          {searchHintLabel()}
+        </kbd>
+      </button>
       <details open>
         <summary className="text-fg-muted cursor-pointer select-none font-mono text-xs uppercase tracking-[0.14em]">
           Series
@@ -110,7 +125,7 @@ export function FilterRail({ seriesOptions, authorNames }: FilterRailProps): Rea
             >
               {/* Disabled, non-tabbable, SR-hidden — the tick-box affordance
                   is shown by request while the author facet stays inert
-                  (multi-select + UUID filtering tracked in Linear). */}
+                  (multi-select + UUID filtering are backend-gated). */}
               <input
                 type="checkbox"
                 disabled

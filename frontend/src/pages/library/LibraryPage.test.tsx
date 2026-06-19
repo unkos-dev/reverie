@@ -147,7 +147,7 @@ describe("LibraryPage", () => {
       nextCursor: null,
     });
     const rail = await screen.findByRole("complementary", { name: "Filters" });
-    expect(within(rail).getAllByRole("radio", { name: "Discworld" })).toHaveLength(1);
+    expect(within(rail).getAllByRole("checkbox", { name: "Discworld" })).toHaveLength(1);
   });
 
   test("renders one card per item in the grid by default", async () => {

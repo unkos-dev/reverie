@@ -1,16 +1,18 @@
 /**
  * App shell — dual-rail chrome around the routed page (spec §2).
  *
- * Desktop (≥1024px): sticky 228px left rail + content column with the
- * utility strip on top. Below 1024px the rail collapses into a
- * focus-trapped left drawer behind a menu button in the strip, and the
- * lockup moves into the strip — feature parity at every size, no
- * desktop-only paths (spec §7).
+ * Desktop (≥1024px): sticky 228px left rail + content column. Below
+ * 1024px the rail collapses into a focus-trapped left drawer behind a
+ * floating menu button (top-left) that also carries the lockup — feature
+ * parity at every size, no desktop-only paths (spec §7).
  *
- * Admin routes (`handle: { zone: "admin" }`) flip the content column
- * and strip to `canvas-2` — the "rooms of the house" tone shift
- * (philosophy §4). The flag rides on `data-zone` so the strip and main
- * read it via a Tailwind group variant instead of prop drilling.
+ * There is no top utility strip: search lives in the page's filter rail
+ * and the hero art runs to the top edge (editorial redesign).
+ *
+ * Admin routes (`handle: { zone: "admin" }`) flip the content column to
+ * `canvas-2` — the "rooms of the house" tone shift (philosophy §4). The
+ * flag rides on `data-zone` so main reads it via a Tailwind group
+ * variant instead of prop drilling.
  *
  * The right filter rail is page-owned (`BrowseLayout`), NOT shell
  * chrome (spec S2) — the shell knows nothing about it.
@@ -31,7 +33,6 @@ import {
 import { useTheme } from "@/lib/theme/ThemeProvider";
 
 import { LeftRail } from "./LeftRail";
-import { UtilityStrip } from "./UtilityStrip";
 
 interface AppShellProps {
   children: ReactNode;
@@ -53,6 +54,11 @@ export function AppShell({ children }: AppShellProps): ReactElement {
       >
         Skip to content
       </a>
+      {/* Mobile nav — the top strip that used to host this is gone (search
+          lives in the filter rail now); float the drawer trigger instead. */}
+      <div className="fixed left-3 top-3 z-40 lg:hidden">
+        <DrawerSlot />
+      </div>
       <div
         data-chrome=""
         className="border-border cinematic-collapse sticky top-0 hidden h-screen w-[228px] shrink-0 border-r lg:block"
@@ -60,7 +66,6 @@ export function AppShell({ children }: AppShellProps): ReactElement {
         <LeftRail />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <UtilityStrip menuSlot={<DrawerSlot />} />
         <main id="main" className="group-data-[zone=admin]/zone:bg-canvas-2 flex-1">
           {children}
         </main>
