@@ -25,6 +25,8 @@ import {
   type Shelf,
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
+import { Atmosphere } from "@/components/library/Atmosphere";
+import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { BrowseLayout } from "@/components/shell/BrowseLayout";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
@@ -121,90 +123,93 @@ function LibraryContent(): ReactElement {
   );
 
   return (
-    <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} authorNames={authorNames} />}>
-      {/* No max-width cap — the browse room uses the full column so
+    <>
+      <Atmosphere />
+      <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} authorNames={authorNames} />}>
+        {/* No max-width cap — the browse room uses the full column so
           ultrawide gets ~10 columns, not 4 stamps in a void (spec §5).
           The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
-      <div className="px-6 py-10 sm:px-10">
-        <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">Library</h1>
-            {/* 30×3px gold slot-rule — the lib-head signature (spec §5). */}
-            <div aria-hidden="true" className="bg-accent mt-3 h-[3px] w-[30px]" />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
-            <div
-              role="group"
-              aria-label="View mode"
-              className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-pressed={viewMode === "grid"}
-                onClick={() => {
-                  setView("grid");
-                }}
-                className={viewMode === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
+        <div className="relative z-[2] px-6 py-10 sm:px-10">
+          <LibraryMasthead />
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
+              <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
+              <div
+                role="group"
+                aria-label="View mode"
+                className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
               >
-                <LayoutGrid className="size-4" aria-hidden="true" />
-                <span className="sr-only">Grid</span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-pressed={viewMode === "list"}
-                onClick={() => {
-                  setView("list");
-                }}
-                className={viewMode === "list" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
-              >
-                <List className="size-4" aria-hidden="true" />
-                <span className="sr-only">List</span>
-              </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={viewMode === "grid"}
+                  onClick={() => {
+                    setView("grid");
+                  }}
+                  className={
+                    viewMode === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
+                  }
+                >
+                  <LayoutGrid className="size-4" aria-hidden="true" />
+                  <span className="sr-only">Grid</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={viewMode === "list"}
+                  onClick={() => {
+                    setView("list");
+                  }}
+                  className={
+                    viewMode === "list" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
+                  }
+                >
+                  <List className="size-4" aria-hidden="true" />
+                  <span className="sr-only">List</span>
+                </Button>
+              </div>
             </div>
           </div>
-        </header>
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
-          <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
+          <Separator className="mb-8" />
+
+          {items.length === 0 ? (
+            <EmptyState />
+          ) : viewMode === "grid" ? (
+            <BookGrid items={items} />
+          ) : (
+            <BookList items={items} />
+          )}
+
+          {hasNextPage ? (
+            <div className="mt-10 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => {
+                  void fetchNextPage();
+                }}
+              >
+                {isFetchingNextPage ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                    Loading…
+                  </>
+                ) : (
+                  "Load more"
+                )}
+              </Button>
+            </div>
+          ) : null}
         </div>
-        <Separator className="mb-8" />
-
-        {items.length === 0 ? (
-          <EmptyState />
-        ) : viewMode === "grid" ? (
-          <BookGrid items={items} />
-        ) : (
-          <BookList items={items} />
-        )}
-
-        {hasNextPage ? (
-          <div className="mt-10 flex justify-center">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isFetchingNextPage}
-              onClick={() => {
-                void fetchNextPage();
-              }}
-            >
-              {isFetchingNextPage ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-                  Loading…
-                </>
-              ) : (
-                "Load more"
-              )}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    </BrowseLayout>
+      </BrowseLayout>
+    </>
   );
 }
 
