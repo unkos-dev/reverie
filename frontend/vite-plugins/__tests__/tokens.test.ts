@@ -151,10 +151,11 @@ describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
       expect(contrast(theme.m["gold-11"], theme.m["bg"])).toBeGreaterThanOrEqual(3);
     });
   }
-  // Pin the published ring figures (the index.css comment) so a primitive
-  // regeneration that drops them below the stated ~7:1 / ~10:1 fails loudly and
-  // forces the prose to update in lockstep — the gap that let a stale ratio ship
-  // green before.
+  // Set a floor under the published ring figures (the index.css comment): if a
+  // primitive regeneration drops gold-11 below the stated ~7:1 / ~10:1, the test
+  // fails loudly and the prose must be updated. The floor is a minimum, not an
+  // exact pin — upward drift is benign (a regen that *raises* contrast still
+  // satisfies the published figure) and intentionally does not fail.
   it("light ring (gold-11 on parchment) clears the published ~7:1", () => {
     expect(contrast(light["gold-11"], light["bg"])).toBeGreaterThanOrEqual(7);
   });
@@ -173,6 +174,20 @@ describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
     const rule = indexCss.match(/:focus-visible\s*\{[^}]*\}/);
     expect(rule).not.toBeNull();
     expect(rule?.[0]).toMatch(/box-shadow:\s*none/);
+  });
+});
+
+describe("accent-glow token (cover-lift shadow)", () => {
+  // The toned library cover-lift glow lives behind a token so the arbitrary
+  // `shadow-[…var(--accent-glow)]` utility compiles — Tailwind v4 drops an
+  // inline color-mix() during shadow-color extraction. Guard the token and its
+  // reference to --accent so a rename/repoint of the accent can't silently
+  // leave the glow empty (it would render no shadow, not throw).
+  it("--accent-glow is defined", () => {
+    expect(indexCss).toMatch(/--accent-glow:/);
+  });
+  it("--accent-glow mixes from --accent via color-mix", () => {
+    expect(indexCss).toMatch(/--accent-glow:\s*color-mix\([^;]*var\(--accent\)/);
   });
 });
 
