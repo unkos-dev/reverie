@@ -162,6 +162,10 @@
   --accent-soft: var(--gold-3);
   --accent-strong: var(--gold-10); /* hover-darken (Radix); spec §5a confirmed */
   --accent-text: var(--gold-11);
+  /* toned accent for the cover-lift shadow — a token (not an inline color-mix)
+     so the arbitrary `shadow-[…var(--accent-glow)]` utility compiles; Tailwind
+     v4's shadow-color extraction drops a color-mix() written inline. */
+  --accent-glow: color-mix(in oklch, var(--accent) 45%, transparent);
   --fg-on-accent: var(--gold-contrast);
   --overlay: rgb(14 13 10 / 88%); /* ink scrim, named exception (spec §6) */
   /* danger — destructive/error only; never decorative (spec §7, WCAG 1.4.1) */
@@ -169,9 +173,9 @@
   --danger-text: var(--danger-11);
   --danger-soft: var(--danger-3);
   --fg-on-danger: var(--danger-contrast); /* white, 6.47:1 */
-  /* focus stack — spec §5b: gold ring + sand-12 halo carries ≥3:1 on light */
-  --focus-ring: var(--accent);
-  --focus-halo: var(--sand-12);
+  /* focus ring — spec §5b / WCAG 1.4.11: gold-11 (--accent-text) clears ≥3:1
+     non-text contrast against parchment unaided, so one 2px ring needs no halo. */
+  --focus-ring: var(--accent-text);
 }
 
 /* Dark theme needs no semantic overrides: every Tier 2 token above is a
@@ -195,19 +199,24 @@
   }
 }
 
-/* Focus indicator — spec §5b / WCAG 1.4.11. GEOMETRY IS LOAD-BEARING: the
-   box-shadow spread (6px) must EXCEED outline-offset(2)+width(2)=4px so the
-   sand-12 halo is the OUTER edge against the page. A 4px spread coincides with
-   the gold outline edge, leaving gold-9 = 2.80:1 adjacent to parchment — the
-   very failure this remedy fixes. The sand-12 halo carries the ≥3:1 boundary on
-   both themes (≈12.02:1 light / ≈16.76:1 dark). Universal (one rule, no theme
-   branch) per spec §11.2. VERIFY BY RENDER on the light theme
-   via agent-browser — do not mark done on the computed claim alone. No
-   border-radius is set here on purpose: outline + box-shadow already follow the
-   element's own radius, and this rule is UNLAYERED (outranks Tailwind's utilities
-   layer), so forcing a radius would square off rounded-full controls on focus. */
+/* Focus indicator — spec §5b / WCAG 1.4.11. A single 2px gold-11 ring at a 2px
+   offset, no halo. gold-11 (--accent-text) carries the ≥3:1 non-text boundary
+   against the page on its own (≈7:1 light / ≈10:1 dark); the earlier sand-12
+   box-shadow existed only to rescue gold-9's 2.80:1 on parchment, and dropping
+   the ring to gold-11 removes that need along with the over-loud bloom it cast.
+   `box-shadow: none` IS LOAD-BEARING, not leftover: this rule is UNLAYERED
+   (outranks Tailwind's utilities layer), and several controls carry their own
+   `focus-visible:ring-*` (a box-shadow ring) — the old halo silently overrode
+   them so the global outline was the one indicator app-wide. Drop this line and
+   every such control paints a SECOND concentric ring (verified by render on the
+   library cards). Keeping it `none` preserves the single-indicator contract
+   without the bloom. Universal (one rule, no theme branch) per spec §11.2.
+   VERIFY BY RENDER in both themes via agent-browser — do not mark done on the
+   computed claim alone. No border-radius is set here on purpose: the outline
+   follows the element's own radius, so forcing a radius would square off
+   rounded-full controls on focus. */
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  box-shadow: 0 0 0 6px var(--focus-halo);
+  box-shadow: none;
 }

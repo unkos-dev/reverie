@@ -56,12 +56,15 @@ The rationale is recorded in the single-danger-hue ADR
 
 ## Focus indicator (WCAG 1.4.11)
 
-A universal `:focus-visible` rule pairs a 2px gold outline with a `6px` sand-12
-"halo" box-shadow. The geometry is load-bearing: the halo spread must exceed
-`outline-offset + outline-width` so the high-contrast sand-12 edge — not the
-gold ring — is the outermost pixel against the page. This carries the ≥ 3:1
-non-text-contrast floor on the light theme, where the gold ring alone is only
-2.8:1 on parchment.
+A universal `:focus-visible` rule applies a single 2px `gold-11` outline at a
+2px offset (`--focus-ring: var(--accent-text)`), with `box-shadow: none`.
+`gold-11` carries the ≥ 3:1 non-text-contrast floor against the page unaided
+(≈ 7:1 light / ≈ 10:1 dark), so no outer halo is needed. An earlier design
+padded a `gold-9` ring with a high-contrast `sand-12` halo to rescue its
+2.8:1 on parchment; moving the ring to `gold-11` removes that need. The
+`box-shadow: none` is load-bearing: the rule is unlayered and suppresses the
+component-level `focus-visible:ring-*` box-shadows that would otherwise paint a
+second concentric ring.
 
 ## Governance
 
