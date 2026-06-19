@@ -983,6 +983,42 @@ jobs:
       - name: Format check (prettier)
         run: npx --no-install prettier --check .
 
+      # Reject issue-tracker references (UNK- + digits) in public-facing source
+      # and docs — they describe the codebase/product, not a private tracker,
+      # and such a reference is usually a symptom that the whole comment/passage
+      # narrates process/deferred work. Changed-files only: paths-filter lists
+      # the candidate files that differ from the PR base, and
+      # scripts/no-issue-refs.sh applies the in-scope policy (source + Markdown,
+      # minus agent-process / vendored / archival files) and greps them — so
+      # pre-existing references in untouched files don't fail the build (a
+      # pre-release sweep clears those). lint-staged is the local mirror.
+      - name: Detect changed source and docs
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: source-changed
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          list-files: json
+          filters: |
+            source:
+              - 'backend/src/**/*.rs'
+              - 'frontend/src/**/*.{ts,tsx,js,jsx,css}'
+              - '**/*.{md,mdx}'
+
+      # source_files is a JSON array; pass it through an env var (not inline
+      # `${{ }}` in the script) and parse with jq so the run block stays free
+      # of template interpolation.
+      - name: Reject issue-tracker refs in changed source
+        if: steps.source-changed.outputs.source == 'true'
+        env:
+          SOURCE_FILES: ${{ steps.source-changed.outputs.source_files }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(printf '%s' "$SOURCE_FILES" | jq -r '.[]')
+          if [ "${#files[@]}" -gt 0 ]; then
+            scripts/no-issue-refs.sh "${files[@]}"
+          fi
+
   frontend:
     name: Frontend
     needs: changes

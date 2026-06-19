@@ -35,4 +35,13 @@ module.exports = {
   // `|| true` at the same time as the bg-black fix lands, alongside
   // flipping the CI `continue-on-error` flag.
   "frontend/src/**/*.{ts,tsx,html,css}": () => "sh -c 'npm --prefix frontend run detect || true'",
+  // Reject issue-tracker references (UNK- + digits) in public-facing source
+  // and docs — they describe the codebase/product, not a private tracker.
+  // lint-staged passes only the staged files, so this is changed-files only;
+  // scripts/no-issue-refs.sh owns the in-scope policy (source + Markdown,
+  // minus agent-process / vendored / archival files). The pre-release sweep
+  // clears the pre-existing references in untouched files.
+  "backend/src/**/*.rs": "scripts/no-issue-refs.sh",
+  "frontend/src/**/*.{ts,tsx,js,jsx,css}": "scripts/no-issue-refs.sh",
+  "**/*.{md,mdx}": "scripts/no-issue-refs.sh",
 };
