@@ -104,26 +104,26 @@ describe("LibraryPage", () => {
     expect(link.className).toMatch(/focus-visible:/);
   });
 
-  test("missing cover art falls back to the typographic spine", async () => {
+  test("missing cover art falls back to the cloth spine", async () => {
     renderLibrary({
       items: [bookFixture({ id: "no-cover", title: "Spineless", cover_url: "" })],
       nextCursor: null,
     });
     await screen.findByTestId("library-grid");
-    expect(document.querySelector("[data-layout]")).not.toBeNull();
+    expect(document.querySelector("[data-cloth]")).not.toBeNull();
   });
 
-  test("cover image load error swaps in the typographic spine", async () => {
+  test("cover image load error swaps in the cloth spine", async () => {
     renderLibrary({
       items: [bookFixture({ id: "broken-cover", title: "Broken" })],
       nextCursor: null,
     });
     const grid = await screen.findByTestId("library-grid");
     const img = within(grid).getByRole("img", { name: /Cover of/ });
-    expect(document.querySelector("[data-layout]")).toBeNull();
+    expect(document.querySelector("[data-cloth]")).toBeNull();
     fireEvent.error(img);
     await waitFor(() => {
-      expect(document.querySelector("[data-layout]")).not.toBeNull();
+      expect(document.querySelector("[data-cloth]")).not.toBeNull();
     });
   });
 
