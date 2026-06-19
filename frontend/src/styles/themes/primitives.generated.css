@@ -1,0 +1,335 @@
+/*
+ * Reverie editorial design-system — Radix-generated color primitives.
+ * GENERATED ARTIFACT — do not hand-edit. Regenerate via radix-gen scratch.
+ *
+ * Source fn:  radix-ui/website @ 88a9f14 (components/generate-radix-colors.tsx)
+ * Deps:       @radix-ui/colors@3.0.0  colorjs.io@0.6.1  bezier-easing@3.0.0
+ * Anchors:    bg-dark #0E0D0A · bg-light(parchment) #E8DCC2
+ *             accent(gold) #C9A961 · danger #B91C1C · neutral-seed #8A8170
+ * OVERRIDE:   --gold-contrast forced to ink #0e0d0a (generator returned #fff,
+ *             unreadable on the pale dark-theme gold-9 #c9a961: white = 2.25:1).
+ * Families:   --sand-* (warm neutral) · --gold-* (accent) · --danger-* (destructive only)
+ */
+
+/* ---- LIGHT (default) ---- */
+:root,
+[data-theme="light"] {
+  /* page background (parchment) */
+  --bg: #e8dcc2;
+  --sand-1: #d9d8d6;
+  --sand-2: #d3d1cf;
+  --sand-3: #c8c6c2;
+  --sand-4: #bfbcb6;
+  --sand-5: #b6b2ab;
+  --sand-6: #ada89f;
+  --sand-7: #a29c90;
+  --sand-8: #8f8778;
+  --sand-9: #635a49;
+  --sand-10: #595041;
+  --sand-11: #3d362a;
+  --sand-12: #251f14;
+  --sand-a1: #bbd0ff54;
+  --sand-a2: #87aaff37;
+  --sand-a3: #0641c224;
+  --sand-a4: #052b802e;
+  --sand-a5: #01195837;
+  --sand-a6: #01103841;
+  --sand-a7: #01081d4d;
+  --sand-a8: #03010363;
+  --sand-a9: #150d02a0;
+  --sand-a10: #120a00aa;
+  --sand-a11: #0e0900c8;
+  --sand-a12: #0f0a00e5;
+  --sand-contrast: #0e0d0a;
+  --sand-surface: #ffffffcc;
+  --gold-1: #d9d8d6;
+  --gold-2: #d7d2c9;
+  --gold-3: #d6c8a8;
+  --gold-4: #d1bc8f;
+  --gold-5: #cab076;
+  --gold-6: #bba167;
+  --gold-7: #aa9158;
+  --gold-8: #98792f;
+  --gold-9: #a77c00;
+  --gold-10: #967100;
+  --gold-11: #5a3e00;
+  --gold-12: #403827;
+  --gold-a1: #bbd0ff54;
+  --gold-a2: #5887fe1e;
+  --gold-a3: #654b0523;
+  --gold-a4: #92640344;
+  --gold-a5: #9c6c0164;
+  --gold-a6: #895f0178;
+  --gold-a7: #7754018c;
+  --gold-a8: #7f5a01c2;
+  --gold-a9: #a77c00;
+  --gold-a10: #967100;
+  --gold-a11: #5a3e00;
+  --gold-a12: #170f00cc;
+  --gold-contrast: #0e0d0a;
+  --gold-surface: #d3d0cbcc;
+  --danger-1: #dad7d7;
+  --danger-2: #d7d0cf;
+  --danger-3: #d4c2bf;
+  --danger-4: #d7b1ab;
+  --danger-5: #d2a19a;
+  --danger-6: #c98f88;
+  --danger-7: #bd7a72;
+  --danger-8: #b15f56;
+  --danger-9: #b91c1c;
+  --danger-10: #a7000a;
+  --danger-11: #900000;
+  --danger-12: #631b16;
+  --danger-a1: #c0ceff58;
+  --danger-a2: #9aa5ff37;
+  --danger-a3: #4407aa1f;
+  --danger-a4: #91014d32;
+  --danger-a5: #97022e45;
+  --danger-a6: #91021d5a;
+  --danger-a7: #88011072;
+  --danger-a8: #88000491;
+  --danger-a9: #b20005df;
+  --danger-a10: #a7000a;
+  --danger-a11: #900000;
+  --danger-a12: #530301e3;
+  --danger-contrast: #fff;
+  --danger-surface: #d3cdd2cc;
+}
+
+/* ---- DARK ---- */
+[data-theme="dark"] {
+  --bg: #0e0d0a;
+  --sand-1: #0e0d0a;
+  --sand-2: #191815;
+  --sand-3: #24221e;
+  --sand-4: #2b2924;
+  --sand-5: #34302a;
+  --sand-6: #3e3a32;
+  --sand-7: #4c473d;
+  --sand-8: #675f51;
+  --sand-9: #756c5b;
+  --sand-10: #827a69;
+  --sand-11: #bab2a3;
+  --sand-12: #f0eee9;
+  --sand-a1: #00000000;
+  --sand-a2: #f8f7f40c;
+  --sand-a3: #f8eddf18;
+  --sand-a4: #fdf4e01f;
+  --sand-a5: #fbe7d229;
+  --sand-a6: #feeed233;
+  --sand-a7: #feedd042;
+  --sand-a8: #fdeac95f;
+  --sand-a9: #ffecc86d;
+  --sand-a10: #ffefcf7b;
+  --sand-a11: #fff4e0b6;
+  --sand-a12: #fefcf7f0;
+  --sand-contrast: #f0eee9;
+  --sand-surface: rgba(0, 0, 0, 0.05);
+  --gold-1: #0f0d09;
+  --gold-2: #1b1812;
+  --gold-3: #262217;
+  --gold-4: #312a1a;
+  --gold-5: #3c321c;
+  --gold-6: #4b3e1f;
+  --gold-7: #5f4d22;
+  --gold-8: #7b6225;
+  --gold-9: #c9a961;
+  --gold-10: #be9e56;
+  --gold-11: #d9b970;
+  --gold-12: #f5e2ba;
+  --gold-a1: #8e0d0002;
+  --gold-a2: #fbd69c0e;
+  --gold-a3: #fadb8a1a;
+  --gold-a4: #f9d07526;
+  --gold-a5: #fecd6831;
+  --gold-a6: #fecd5d41;
+  --gold-a7: #ffcb5156;
+  --gold-a8: #fdc84674;
+  --gold-a9: #ffd67ac6;
+  --gold-a10: #fed371bb;
+  --gold-a11: #ffd983d7;
+  --gold-a12: #feeac2f5;
+  --gold-contrast: #0e0d0a;
+  --gold-surface: #28231a80;
+  --danger-1: #140a09;
+  --danger-2: #21110f;
+  --danger-3: #410a08;
+  --danger-4: #590000;
+  --danger-5: #6c0003;
+  --danger-6: #7f0f0f;
+  --danger-7: #9a211e;
+  --danger-8: #c72d29;
+  --danger-9: #b91c1c;
+  --danger-10: #9c241f;
+  --danger-11: #ff9082;
+  --danger-12: #ffcec6;
+  --danger-a1: #e9000007;
+  --danger-a2: #f53e4715;
+  --danger-a3: #ff000136;
+  --danger-a4: #fd000050;
+  --danger-a5: #fd000064;
+  --danger-a6: #ff121578;
+  --danger-a7: #fe302d95;
+  --danger-a8: #ff3733c4;
+  --danger-a9: #ff2223b5;
+  --danger-a10: #fe342e97;
+  --danger-a11: #ff9082;
+  --danger-a12: #ffcec6;
+  --danger-contrast: #fff;
+  --danger-surface: #34151480;
+}
+
+/* ---- P3 wide-gamut (progressive enhancement; sRGB above is the floor) ---- */
+@supports (color: color(display-p3 1 1 1)) {
+  @media (color-gamut: p3) {
+    :root,
+    [data-theme="light"] {
+      --sand-1: oklch(88.2% 0.0031 83.38);
+      --sand-2: oklch(86.2% 0.0042 83.38);
+      --sand-3: oklch(82.7% 0.0064 83.38);
+      --sand-4: oklch(79.6% 0.0096 83.38);
+      --sand-5: oklch(76.5% 0.0109 83.38);
+      --sand-6: oklch(73.3% 0.0141 83.38);
+      --sand-7: oklch(69.3% 0.0176 83.38);
+      --sand-8: oklch(62.7% 0.0236 83.38);
+      --sand-9: oklch(47.2% 0.0291 83.38);
+      --sand-10: oklch(43.6% 0.0272 83.38);
+      --sand-11: oklch(33.8% 0.0224 83.38);
+      --sand-12: oklch(24.3% 0.0225 83.38);
+      --sand-a1: color(display-p3 0.7294 0.8118 1 / 0.294);
+      --sand-a2: color(display-p3 0.4745 0.6157 1 / 0.173);
+      --sand-a3: color(display-p3 0.0039 0.2078 0.6863 / 0.131);
+      --sand-a4: color(display-p3 0.0039 0.1451 0.4588 / 0.174);
+      --sand-a5: color(display-p3 0.0078 0.0941 0.3176 / 0.214);
+      --sand-a6: color(display-p3 0.0039 0.0588 0.2 / 0.253);
+      --sand-a7: color(display-p3 0 0.0275 0.0941 / 0.3);
+      --sand-a8: color(display-p3 0.0118 0.0039 0.0118 / 0.387);
+      --sand-a9: color(display-p3 0.0627 0.0392 0 / 0.62);
+      --sand-a10: color(display-p3 0.0549 0.0314 0 / 0.66);
+      --sand-a11: color(display-p3 0.051 0.0314 0 / 0.782);
+      --sand-a12: color(display-p3 0.051 0.0353 0 / 0.894);
+      --gold-1: oklch(88.2% 0.003 86.06);
+      --gold-2: oklch(86.6% 0.0142 86.06);
+      --gold-3: oklch(83.6% 0.0457 86.06);
+      --gold-4: oklch(80.3% 0.065 86.06);
+      --gold-5: oklch(76.6% 0.0818 86.06);
+      --gold-6: oklch(71.9% 0.0826 86.06);
+      --gold-7: oklch(66.6% 0.0814 86.06);
+      --gold-8: oklch(59.1% 0.0986 86.06);
+      --gold-9: oklch(61.1% 0.1346 86.06);
+      --gold-10: oklch(56.9% 0.12 86.06);
+      --gold-11: oklch(38.3% 0.0989 86.06);
+      --gold-12: oklch(34.5% 0.0295 86.06);
+      --gold-a1: color(display-p3 0.7294 0.8118 1 / 0.294);
+      --gold-a2: color(display-p3 0.1843 0.4157 1 / 0.087);
+      --gold-a3: color(display-p3 0.3686 0.2706 0.0039 / 0.132);
+      --gold-a4: color(display-p3 0.5098 0.3765 0.0039 / 0.249);
+      --gold-a5: color(display-p3 0.5608 0.4039 0.0039 / 0.366);
+      --gold-a6: color(display-p3 0.4824 0.3451 0.0039 / 0.437);
+      --gold-a7: color(display-p3 0.4157 0.298 0 / 0.513);
+      --gold-a8: color(display-p3 0.4353 0.3098 0 / 0.696);
+      --gold-a9: color(display-p3 0.5569 0.4 0 / 0.797);
+      --gold-a10: color(display-p3 0.4902 0.3569 0 / 0.823);
+      --gold-a11: color(display-p3 0.2863 0.1922 0 / 0.919);
+      --gold-a12: color(display-p3 0.0745 0.051 0 / 0.792);
+      --danger-1: oklch(88.2% 0.003 27.52);
+      --danger-2: oklch(86.3% 0.008 27.52);
+      --danger-3: oklch(82.8% 0.0203 27.52);
+      --danger-4: oklch(79.2% 0.0453 27.52);
+      --danger-5: oklch(75.2% 0.0593 27.52);
+      --danger-6: oklch(70.5% 0.0714 27.52);
+      --danger-7: oklch(64.8% 0.0856 27.52);
+      --danger-8: oklch(58% 0.1085 27.52);
+      --danger-9: oklch(50.5% 0.1905 27.52);
+      --danger-10: oklch(45.6% 0.1881 27.52);
+      --danger-11: oklch(39.7% 0.1905 27.52);
+      --danger-12: oklch(33.9% 0.1051 27.52);
+      --danger-a1: color(display-p3 0.7412 0.8 1 / 0.311);
+      --danger-a2: color(display-p3 0.5412 0.5922 1 / 0.173);
+      --danger-a3: color(display-p3 0.1804 0.0039 0.6 / 0.114);
+      --danger-a4: color(display-p3 0.4745 0.0039 0.2627 / 0.191);
+      --danger-a5: color(display-p3 0.4824 0.0039 0.1569 / 0.26);
+      --danger-a6: color(display-p3 0.4627 0.0039 0.0941 / 0.341);
+      --danger-a7: color(display-p3 0.4392 0.0039 0.0392 / 0.432);
+      --danger-a8: color(display-p3 0.4471 0 0 / 0.55);
+      --danger-a9: color(display-p3 0.6118 0.0196 0 / 0.808);
+      --danger-a10: color(display-p3 0.5569 0.0118 0 / 0.879);
+      --danger-a11: color(display-p3 0.4863 0.0314 0 / 0.924);
+      --danger-a12: color(display-p3 0.2745 0.0157 0 / 0.869);
+    }
+    [data-theme="dark"] {
+      --sand-1: oklch(15.9% 0.0057 83.38);
+      --sand-2: oklch(21% 0.0055 83.38);
+      --sand-3: oklch(25.2% 0.0079 83.38);
+      --sand-4: oklch(28.2% 0.009 83.38);
+      --sand-5: oklch(31.2% 0.0112 83.38);
+      --sand-6: oklch(34.9% 0.0145 83.38);
+      --sand-7: oklch(40.1% 0.0178 83.38);
+      --sand-8: oklch(49% 0.0241 83.38);
+      --sand-9: oklch(53.5% 0.0278 83.38);
+      --sand-10: oklch(58.1% 0.0272 83.38);
+      --sand-11: oklch(76.7% 0.0231 83.38);
+      --sand-12: oklch(94.8% 0.0066 83.38);
+      --sand-a1: color(display-p3 0 0 0 / 0);
+      --sand-a2: color(display-p3 0.9961 0.9922 0.9765 / 0.046);
+      --sand-a3: color(display-p3 0.9961 0.949 0.8941 / 0.092);
+      --sand-a4: color(display-p3 0.9961 0.9608 0.9176 / 0.121);
+      --sand-a5: color(display-p3 1 0.9451 0.8824 / 0.154);
+      --sand-a6: color(display-p3 0.9961 0.9529 0.8627 / 0.196);
+      --sand-a7: color(display-p3 1 0.949 0.8431 / 0.254);
+      --sand-a8: color(display-p3 1 0.9333 0.8235 / 0.366);
+      --sand-a9: color(display-p3 1 0.9373 0.8157 / 0.42);
+      --sand-a10: color(display-p3 1 0.9451 0.8353 / 0.478);
+      --sand-a11: color(display-p3 1 0.9608 0.8941 / 0.71);
+      --sand-a12: color(display-p3 1 0.9922 0.9686 / 0.938);
+      --gold-1: oklch(15.9% 0.0079 86.06);
+      --gold-2: oklch(21% 0.0117 86.06);
+      --gold-3: oklch(25.2% 0.0201 86.06);
+      --gold-4: oklch(28.7% 0.0286 86.06);
+      --gold-5: oklch(32.4% 0.0381 86.06);
+      --gold-6: oklch(36.9% 0.0499 86.06);
+      --gold-7: oklch(42.8% 0.0643 86.06);
+      --gold-8: oklch(50.8% 0.0841 86.06);
+      --gold-9: oklch(74.8% 0.0986 86.06);
+      --gold-10: oklch(71.2% 0.0986 86.06);
+      --gold-11: oklch(79.7% 0.0986 86.06);
+      --gold-12: oklch(91.9% 0.0563 86.06);
+      --gold-a1: color(display-p3 0.8431 0.051 0 / 0.005);
+      --gold-a2: color(display-p3 0.9961 0.9137 0.7412 / 0.05);
+      --gold-a3: color(display-p3 0.9961 0.9098 0.6118 / 0.096);
+      --gold-a4: color(display-p3 0.9961 0.8549 0.5373 / 0.142);
+      --gold-a5: color(display-p3 1 0.8431 0.4902 / 0.183);
+      --gold-a6: color(display-p3 1 0.8353 0.4392 / 0.245);
+      --gold-a7: color(display-p3 1 0.8392 0.4157 / 0.324);
+      --gold-a8: color(display-p3 1 0.8275 0.3804 / 0.436);
+      --gold-a9: color(display-p3 1 0.8667 0.5451 / 0.756);
+      --gold-a10: color(display-p3 1 0.8588 0.5216 / 0.71);
+      --gold-a11: color(display-p3 1 0.8784 0.5725 / 0.822);
+      --gold-a12: color(display-p3 1 0.9373 0.7843 / 0.947);
+      --danger-1: oklch(15.9% 0.0173 27.52);
+      --danger-2: oklch(20% 0.028 27.52);
+      --danger-3: oklch(24.8% 0.0836 27.52);
+      --danger-4: oklch(28.8% 0.1246 27.52);
+      --danger-5: oklch(33.1% 0.1386 27.52);
+      --danger-6: oklch(38.2% 0.1448 27.52);
+      --danger-7: oklch(45% 0.1568 27.52);
+      --danger-8: oklch(54.3% 0.1905 27.52);
+      --danger-9: oklch(50.5% 0.1905 27.52);
+      --danger-10: oklch(45.6% 0.1568 27.52);
+      --danger-11: oklch(78.4% 0.1905 27.52);
+      --danger-12: oklch(90.2% 0.0687 27.52);
+      --danger-a1: color(display-p3 0.9922 0 0 / 0.021);
+      --danger-a2: color(display-p3 0.9961 0.3294 0.3725 / 0.071);
+      --danger-a3: color(display-p3 1 0.0941 0.0627 / 0.187);
+      --danger-a4: color(display-p3 1 0.0235 0 / 0.279);
+      --danger-a5: color(display-p3 1 0.0863 0.0471 / 0.349);
+      --danger-a6: color(display-p3 1 0.1922 0.1608 / 0.424);
+      --danger-a7: color(display-p3 0.9961 0.2824 0.2392 / 0.532);
+      --danger-a8: color(display-p3 1 0.3098 0.2627 / 0.702);
+      --danger-a9: color(display-p3 1 0.251 0.2078 / 0.648);
+      --danger-a10: color(display-p3 1 0.302 0.2431 / 0.536);
+      --danger-a11: color(display-p3 1 0.6235 0.5608 / 0.938);
+      --danger-a12: color(display-p3 1 0.8431 0.8118 / 0.967);
+    }
+  }
+}

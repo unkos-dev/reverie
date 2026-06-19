@@ -1,22 +1,31 @@
 /**
- * Reverie canonical theme tree.
+ * Reverie canonical theme tree (three-tier — spec
+ * plans/2026-06-18-editorial-design-system-tokens-design.md).
  *
- * Token names and palette values are sourced from the brand identity at
- * https://github.com/unkos-dev/reverie-branding/blob/main/identity.md (§4)
- * and the philosophy spec §10 (`plans/2026-04-25-design-system-philosophy-design.md`,
- * gitignored). State-color tokens (`--color-success`, `--color-warning`,
- * `--color-danger`, `--color-info`) are deliberately absent — see
- * philosophy §11A: state communicates through typography weight, surface
- * opacity, motion, and the gold accent, not hue.
+ *   Tier 1  primitives.generated.css  — generated Radix ramps (do not hand-edit)
+ *   Tier 2  this file                 — semantic roles + shadcn aliases + @theme inline
+ *   Tier 3  atmosphere.css            — art-directed --cover-* / --atm-* (chrome must not read)
  *
- * Self-hosted variable woff2 `@font-face` blocks live in
- * `frontend/src/styles/fonts.css` (created in D3.16) and are imported
- * alongside this file from `frontend/src/index.css`. Between the time
- * this file lands and D3.16 lands, the font-family declarations below
- * fall through to `system-ui`; that is the intentional intermediate
- * state.
+ * Token values trace to the brand SoT (reverie-branding/identity.md §4) and the
+ * editorial design-system spec. A single danger hue (#B91C1C) is the one
+ * sanctioned state color — it amends the no-hue-states philosophy (§11A) per
+ * WCAG 1.4.1 (color never the sole signal; danger always pairs with
+ * icon/weight/text). See adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md.
+ * Success/warning/info remain absent — state still speaks through weight,
+ * surface opacity, motion, and the gold accent.
+ *
+ * Self-hosted variable woff2 @font-face blocks live in
+ * frontend/src/styles/fonts.css, imported alongside this file from
+ * frontend/src/index.css.
  */
 @import "tailwindcss";
+/* Tier 1 — generated Radix primitives (do not hand-edit; regenerate via radix-gen).
+   Provides --sand/--gold/--danger ramps + alpha + P3 + contrast + --bg.
+   Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
+@import "./primitives.generated.css";
+/* Tier 3 — art-directed atmosphere (--atm-* + --cover-*). Chrome must not
+   consume these (governance §7). Spec §4/§8. */
+@import "./atmosphere.css";
 
 /* Teach Tailwind that the `dark:` variant activates when [data-theme="dark"]
    is on an ancestor (or the element itself). Required because Tailwind v4's
@@ -31,6 +40,7 @@
   --color-canvas-2: var(--canvas-2);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-fg: var(--fg);
@@ -40,6 +50,12 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-strong: var(--accent-strong);
   --color-fg-on-accent: var(--fg-on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-border-control: var(--border-control);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-fg-on-danger: var(--fg-on-danger);
   /* `bg-hover` is the shadcn-primitive hover/focus lift token.
      Decoupled from brand `--color-accent` (Reverie Gold) so dropdown,
      select, and similar primitives don't saturate gold on every hover.
@@ -50,13 +66,11 @@
   --color-hover: var(--surface-2);
 
   /* `bg-overlay` is the scrim token for modal / dialog / sheet / popover
-     backdrops. Theme-aware: Light theme uses a gentle ink scrim that
-     reads against the warm Parchment canvas; Dark theme uses a deeper
-     ink scrim because a low-alpha tint against the near-black Ink canvas
-     (#14120e) gives almost no visual separation. Both directions stay
-     ink-shifted (no inverted cream-on-dark scrim) to keep the
-     ink/parchment brand identity coherent across themes. The runtime
-     value lives on each theme selector below. */
+     backdrops. Uniform ink scrim on BOTH themes (rgb(14 13 10 / 88%), spec
+     §5d) — a near-opaque warm-ink veil; a parchment-tinted scrim would defeat
+     the modal. Named exception to the primitive contract (§6); the runtime
+     value lives on the light selector below and is intentionally not
+     theme-split. */
   --color-overlay: var(--overlay);
 
   /* Typography — Satoshi for body/chrome, Author for display, JetBrains
@@ -76,13 +90,8 @@
      New code should prefer the canonical --color-canvas/--color-fg/etc.
      names; this layer exists so the shadcn registry primitives we
      install (button, card, dropdown-menu, etc.) drop in without
-     visual drift to the default neutral-grey palette.
-
-     Destructive tokens deliberately alias to fg/border so banned
-     hue-coded state expression (red error) collapses into the
-     §11A no-hue mapping (font-semibold + gold recovery action).
-     The aliases keep the utilities renderable so primitives compile;
-     the actual error-state UX is enforced at the surface level. */
+     visual drift to the default neutral-grey palette. Destructive now
+     routes to the real --danger hue (see the per-token note below). */
   --color-background: var(--canvas);
   --color-foreground: var(--fg);
   --color-card: var(--surface);
@@ -97,8 +106,11 @@
   --color-muted-foreground: var(--fg-muted);
   --color-input: var(--border);
   --color-ring: var(--accent);
-  --color-destructive: var(--fg);
-  --color-destructive-foreground: var(--fg-on-accent);
+  /* Destructive now routes to the real danger hue (spec §4/§5; ADR
+     2026-06-18-single-danger-hue-amends-no-hue-philosophy). Previously
+     aliased to --fg under the no-hue policy. */
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--fg-on-danger);
 
   /* Cover-artwork palette (theme-independent).
      Production cover art comes from EPUB / enrichment; the design-system
@@ -123,62 +135,51 @@
   --ease-emphasised: cubic-bezier(0.16, 0.78, 0.3, 1);
 }
 
-/* Cover-artwork palette — declared once on :root only. Intentionally NOT
-   overridden by [data-theme="dark"] so cover artwork stays brand-fixed
-   across theme switches; covers inherit the same artwork-stability rule
-   that keeps the Lockup component glyph constant. The cream and parchment
-   values intentionally duplicate the Dark `--fg` and Light `--canvas`
-   sources — they live here as independent constants so a future
-   palette pass on either theme cannot silently mutate the cover spine. */
-:root {
-  --cover-ink: #0e0d0a;
-  --cover-cream: #e8e0d0;
-  --cover-parchment: #e8dcc2;
-  --cover-gold: #c9a961;
-}
+/* Cover-artwork palette (--cover-*) now lives in atmosphere.css (Tier 3),
+   relocated there alongside the --atm-* block (spec §8). The @theme inline
+   --color-cover-* mappings above still resolve via that import. */
 
 /* Default + explicit Light theme (Parchment).
    Runtime values live on regular selectors, NOT inside @theme (which can't
    be nested per Tailwind v4 docs). */
 :root,
 [data-theme="light"] {
-  --canvas: #e8dcc2; /* Parchment */
-  --canvas-2: #dfd2b4;
-  --surface: #f0e6cf;
-  --surface-2: #e5d8bc;
-  --border: #c7b894;
-  --border-strong: #b0a07c;
-  --fg: #0e0d0a; /* Ink */
-  --fg-muted: #5a5244;
-  --fg-faint: #8a8170;
-  /* Reverie Gold #C9A961 darkened for Light theme. Sourced from philosophy
-     spec §10, not identity.md (which only locks #C9A961). Passes 1.4.11
-     (UI 3:1) + 1.4.3 large-text on Parchment; does NOT pass normal-text
-     4.5:1 — restrict to focus rings, large CTAs, recovery actions. */
-  --accent: #8e6f38;
-  --accent-soft: #dcc890;
-  --accent-strong: #6e5424;
-  --fg-on-accent: #e8dcc2; /* Parchment */
-  --overlay: rgb(0 0 0 / 15%);
+  /* Tier 2 semantic roles → Tier 1 primitives. Theme-constant mapping; the
+     primitive swap (primitives.generated.css [data-theme="dark"]) does the
+     light/dark work. Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
+  --canvas: var(--bg); /* parchment page (spec §4b) */
+  --canvas-2: var(--sand-2);
+  --surface: var(--sand-3);
+  --surface-2: var(--sand-4);
+  --surface-3: var(--sand-5);
+  --border: var(--sand-6); /* decorative separator (1.4.11-exempt) */
+  --border-strong: var(--sand-7);
+  --border-control: var(--sand-12); /* sole boundary of interactive controls (spec §5b) */
+  --fg: var(--sand-12);
+  --fg-muted: var(--sand-11);
+  --fg-faint: var(--sand-a10); /* tertiary; sub-AA — placeholder/non-essential only */
+  --accent: var(--gold-9);
+  --accent-soft: var(--gold-3);
+  --accent-strong: var(--gold-10); /* hover-darken (Radix); spec §5a confirmed */
+  --accent-text: var(--gold-11);
+  --fg-on-accent: var(--gold-contrast);
+  --overlay: rgb(14 13 10 / 88%); /* ink scrim, named exception (spec §6) */
+  /* danger — destructive/error only; never decorative (spec §7, WCAG 1.4.1) */
+  --danger: var(--danger-9);
+  --danger-text: var(--danger-11);
+  --danger-soft: var(--danger-3);
+  --fg-on-danger: var(--danger-contrast); /* white, 6.47:1 */
+  /* focus stack — spec §5b: gold ring + sand-12 halo carries ≥3:1 on light */
+  --focus-ring: var(--accent);
+  --focus-halo: var(--sand-12);
 }
 
-/* Dark theme — Ink-leaning canvas + warm surfaces + Reverie Gold accent. */
-[data-theme="dark"] {
-  --canvas: #14120e;
-  --canvas-2: #1a1812;
-  --surface: #221f18;
-  --surface-2: #2a261d;
-  --border: #2e2a22;
-  --border-strong: #3a3528;
-  --fg: #e8e0d0; /* Cream */
-  --fg-muted: #a8a090;
-  --fg-faint: #6e6858;
-  --accent: #c9a961; /* Reverie Gold */
-  --accent-soft: #4a3c24;
-  --accent-strong: #d4b070;
-  --fg-on-accent: #0e0d0a; /* Ink */
-  --overlay: rgb(0 0 0 / 60%);
-}
+/* Dark theme needs no semantic overrides: every Tier 2 token above is a
+   theme-constant reference, and primitives.generated.css already redefines
+   --sand/--gold/--danger/--bg under [data-theme="dark"], so the semantic layer
+   re-resolves automatically. --overlay is ink-anchored on both themes (spec §5d).
+   A [data-theme="dark"] block belongs here only if a token must differ
+   structurally on dark — none currently do. */
 
 /* Loading-pulse keyframe — philosophy §11A loading-state expression.
    Loading state communicates via opacity pulse on the loading region,
@@ -192,4 +193,21 @@
   50% {
     opacity: 0.85;
   }
+}
+
+/* Focus indicator — spec §5b / WCAG 1.4.11. GEOMETRY IS LOAD-BEARING: the
+   box-shadow spread (6px) must EXCEED outline-offset(2)+width(2)=4px so the
+   sand-12 halo is the OUTER edge against the page. A 4px spread coincides with
+   the gold outline edge, leaving gold-9 = 2.80:1 adjacent to parchment — the
+   very failure this remedy fixes. The sand-12 halo carries the ≥3:1 boundary on
+   both themes (≈12.02:1 light / ≈16.76:1 dark). Universal (one rule, no theme
+   branch) per spec §11.2. VERIFY BY RENDER on the light theme
+   via agent-browser — do not mark done on the computed claim alone. No
+   border-radius is set here on purpose: outline + box-shadow already follow the
+   element's own radius, and this rule is UNLAYERED (outranks Tailwind's utilities
+   layer), so forcing a radius would square off rounded-full controls on focus. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--focus-halo);
 }

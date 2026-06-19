@@ -1,5 +1,6 @@
 {
   "extends": ["stylelint-config-standard"],
+  "ignoreFiles": ["**/*.generated.css"],
   "rules": {
     "at-rule-no-unknown": [
       true,
@@ -26,10 +27,9 @@
   },
   "overrides": [
     {
-      "files": ["src/styles/themes/**/*.css", "src/styles/fonts.css"],
-      "rules": {
-        "color-no-hex": null
-      }
+      "comment": "Atmosphere (Tier 3) + self-hosted @font-face — raw hex permitted (art-directed editorial constants / fonts). The generated Tier 1 primitives file is excluded from linting via top-level ignoreFiles (machine-generated; regenerate via radix-gen, never hand-edit). The Tier 2 semantic file (index.css) is NOT exempt — it is hex-banned. Spec §6/§7.",
+      "files": ["src/styles/themes/atmosphere.css", "src/styles/fonts.css"],
+      "rules": { "color-no-hex": null }
     }
   ]
 }

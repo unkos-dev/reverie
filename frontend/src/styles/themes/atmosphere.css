@@ -1,0 +1,68 @@
+/**
+ * Tier 3 — ATMOSPHERE (art-directed, NOT Radix-governed).
+ * Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4 (Tier 3), §7, §8.
+ *
+ * UI chrome MUST NOT consume these tokens — they are art-directed editorial
+ * constants behind a review gate (§7). No `@theme inline` utilities are
+ * generated for `--atm-*`, by design: that would expose `bg-atm-*` classes and
+ * invite chrome consumption. Atmosphere is read via raw `var(--atm-*)` only.
+ *
+ * Hex / rgba literals are permitted here (art-directed Tier 3). `--atm-*` values
+ * are vendored verbatim from the art-directed atmosphere reference (spec §8.4) —
+ * regenerate from that reference, do not hand-tune. The selector structure is
+ * adapted to the repo's light-default convention (the reference is dark-default):
+ * theme-fixed tokens live
+ * on `:root`; vellum/sheen/ember retune per theme. `--atm-spine-tex-*` cover
+ * textures are deferred to port-time (§5i).
+ */
+:root {
+  /* Cover-artwork palette — theme-fixed (covers are physical objects; they do
+     not swap on the Light↔Dark flip). Relocated here from index.css. */
+  --cover-ink: #0e0d0a;
+  --cover-cream: #e8e0d0;
+  --cover-parchment: #e8dcc2;
+  --cover-gold: #c9a961;
+
+  /* gilt foil — 5-stop hero H1 gradient (theme-fixed) */
+  --atm-gilt-0: #f8e8b8;
+  --atm-gilt-1: #e8cc85;
+  --atm-gilt-2: #c9a961;
+  --atm-gilt-3: #9a7e40;
+  --atm-gilt-4: #5e4520;
+
+  /* cover-cloth palette — book spines as physical objects. Six warm-dark tones,
+     theme-fixed (covers stay dark even on parchment — books are objects, not
+     chrome). `-c` = cloth body, `-e` = embossed edge. */
+  --atm-cloth-bordeaux-c: #2a0e10;
+  --atm-cloth-bordeaux-e: #4a1820;
+  --atm-cloth-oxblood-c: #1e0a12;
+  --atm-cloth-oxblood-e: #3a121e;
+  --atm-cloth-midnight-c: #10182a;
+  --atm-cloth-midnight-e: #1f2a40;
+  --atm-cloth-charcoal-c: #161613;
+  --atm-cloth-charcoal-e: #26241f;
+  --atm-cloth-sepia-c: #2a1c0c;
+  --atm-cloth-sepia-e: #3f2c16;
+  --atm-cloth-terracotta-c: #4a1f10;
+  --atm-cloth-terracotta-e: #6b2f1c;
+}
+
+/* Theme-retuning atmosphere — vellum/sheen/ember shift with the room light.
+   Light (default): ink-on-parchment alphas + softer terracotta ember.
+   Dark: cream alphas + warm ember. Values verbatim from the atmosphere reference (spec §8.4). */
+:root,
+[data-theme="light"] {
+  --atm-vellum: rgb(37 31 20 / 4%);
+  --atm-vellum-2: rgb(37 31 20 / 7%);
+  --atm-sheen-edge: rgb(37 31 20 / 8%);
+  --atm-sheen-peak: rgb(37 31 20 / 14%);
+  --atm-ember: 184 90 56; /* terracotta — softer on parchment */
+}
+
+[data-theme="dark"] {
+  --atm-vellum: rgb(232 224 208 / 4%);
+  --atm-vellum-2: rgb(232 224 208 / 7%);
+  --atm-sheen-edge: rgb(232 224 208 / 10%);
+  --atm-sheen-peak: rgb(232 224 208 / 18%);
+  --atm-ember: 255 165 95; /* warm ember on ink */
+}

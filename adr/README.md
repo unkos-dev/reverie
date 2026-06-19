@@ -54,3 +54,5 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Adopt a declarative configuration stack (figment + serde + validator + schemars)](2026-06-09-declarative-config-stack.md) (accepted, 2026-06-09)
 - [Rasterize SVG-declared EPUB covers to PNG via resvg](2026-06-13-svg-cover-rasterization.md) (accepted, 2026-06-13)
 - [Cover cache headers, ingest pre-warm, and JPEG thumbnails](2026-06-14-cover-cache-headers-and-thumbnail-encoding.md) (accepted, 2026-06-14)
+- [Radix-generated three-tier dual-theme color tokens](2026-06-18-radix-three-tier-dual-theme-tokens.md) (accepted, 2026-06-18)
+- [A single danger hue amends the no-hue-states policy](2026-06-18-single-danger-hue-amends-no-hue-philosophy.md) (accepted, 2026-06-18)
