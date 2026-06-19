@@ -36,5 +36,5 @@ PNG removes that risk entirely and keeps the cover route raster-only.
 - **Gzip-compressed `.svgz` is not supported.** Only uncompressed SVG is
   recognised as a cover.
 - A cover that fails to render (malformed SVG, or one whose only content is an
-  image that cannot be resolved) falls back to the generated typographic spine,
+  image that cannot be resolved) falls back to the generated cloth-bound cover,
   exactly as a missing cover does.

@@ -4,9 +4,9 @@ description: How the app shell is organised — the navigation rail, contextual 
 ---
 
 Every screen in Reverie wears the same chrome: a navigation rail on the
-left, a slim utility strip across the top, and — on browse surfaces — a
-contextual filter rail on the right. This page describes how to move
-around and why the shell is shaped the way it is.
+left and — on browse surfaces — a contextual filter rail on the right.
+This page describes how to move around and why the shell is shaped the
+way it is.
 
 ## The dual-rail shell
 
@@ -42,11 +42,20 @@ keyboard navigation and never act as links.
 
 ## One search surface
 
-Search lives in one place: the command palette. The utility strip's
-search field opens it, and `⌘K` / `Ctrl K` opens it from anywhere.
-There is intentionally no second inline search box — one surface means
-search behaves identically wherever you invoke it, and the palette can
-grow into a broader command surface later without a migration.
+Search lives in one place: the command palette. A search button at the
+top of the filter rail opens it; so do `⌘K` / `Ctrl K` and the `/` key
+from anywhere outside a text field. There is intentionally no second
+inline search box — one surface means search behaves identically
+wherever you invoke it, and the palette can grow into a broader command
+surface later without a migration.
+
+## Cinematic mode
+
+On the Library page, press `F` (outside any text field) to dissolve the
+surrounding chrome — the navigation rail, filter rail, and controls fade
+out so the cover art fills the screen. Press `F` again or `Escape` to
+exit. After two seconds of pointer stillness the cursor hides too;
+moving the pointer brings it back.
 
 ## Admin is a different room
 
@@ -62,9 +71,9 @@ security.
 
 Below 1280px, the filter rail collapses into a **Refine** button that
 opens the same controls in a sheet. Below 1024px, the navigation rail
-becomes a drawer behind a menu button in the strip. Nothing is
-desktop-only: every destination and every filter is reachable at every
-size, just behind one more press.
+becomes a drawer behind a floating menu button in the top-left corner.
+Nothing is desktop-only: every destination and every filter is reachable
+at every size, just behind one more press.
 
 ## Accessibility
 

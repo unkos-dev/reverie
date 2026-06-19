@@ -26,6 +26,7 @@ import {
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
+import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { BrowseLayout } from "@/components/shell/BrowseLayout";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
@@ -48,6 +49,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
 import { paramsFromSearch } from "@/routes/library-params";
@@ -76,6 +78,9 @@ export function LibraryPage(): ReactElement {
 
 function LibraryContent(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
+  // Drives cinematic mode via the document `data-cinematic` attribute (CSS
+  // reads it); the boolean return is unused — visibility is CSS-only.
+  useCinematicMode();
   const viewMode: ViewMode = searchParams.get("view") === "list" ? "list" : "grid";
   const params = paramsFromSearch(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
@@ -125,6 +130,19 @@ function LibraryContent(): ReactElement {
   return (
     <>
       <Atmosphere />
+      <BookmarkRibbon />
+      {/* Always rendered; `.cinema-hint` fades in/out purely via the
+          `[data-cinematic="on"]` opacity rule. Gating it on the boolean
+          would unmount it in the same commit that clears the attribute,
+          so the CSS fade-out could never paint. `aria-hidden` because it's
+          a visual-only affordance — opacity:0 still exposes it to AT, so
+          without this it would be announced on every load. */}
+      <p
+        className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]"
+        aria-hidden="true"
+      >
+        Cinematic mode · press F to exit
+      </p>
       {/* Raise the whole browse layout — rail included — above the fixed
           atmosphere layers. The rail renders outside `children`, so a
           content-only stacking context leaves it under `.lib-grain` (z-1). */}
@@ -135,7 +153,7 @@ function LibraryContent(): ReactElement {
             The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
           <div className="px-6 py-10 sm:px-10">
             <LibraryMasthead />
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-2">
                 <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
                 <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
@@ -211,6 +229,9 @@ function LibraryContent(): ReactElement {
                 </Button>
               </div>
             ) : null}
+            <footer className="border-border text-fg-faint mt-16 border-t pt-6 text-center font-mono text-[0.68rem] uppercase tracking-[0.18em]">
+              Reverie · MMXXVI · Set in Author, Satoshi and JetBrains Mono
+            </footer>
           </div>
         </BrowseLayout>
       </div>
@@ -360,7 +381,7 @@ function BookCard({ book }: BookCardProps): ReactElement {
         viewTransition
         className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 ease-out hover:-translate-y-2 hover:scale-[1.04] focus-visible:-translate-y-2 focus-visible:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 motion-reduce:transform-none"
       >
-        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_18px_44px_-12px_var(--accent)] group-focus-within:shadow-[0_18px_44px_-12px_var(--accent)] relative aspect-[2/3] overflow-hidden rounded-md border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">
+        <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_18px_44px_-12px_var(--accent)] group-focus-within:shadow-[0_18px_44px_-12px_var(--accent)] relative aspect-[2/3] overflow-hidden border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">
           {usesSpine ? (
             <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />
           ) : (
@@ -627,7 +648,7 @@ function LibrarySkeleton(): ReactElement {
       <div className="grid gap-x-6 gap-y-8 [grid-template-columns:repeat(auto-fill,minmax(clamp(170px,10vw,240px),1fr))]">
         {PLACEHOLDERS.map((i) => (
           <div key={i} className="flex flex-col gap-3">
-            <Skeleton className="aspect-[2/3] w-full rounded-md" />
+            <Skeleton className="aspect-[2/3] w-full" />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-3 w-1/2" />
           </div>

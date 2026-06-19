@@ -1,75 +1,44 @@
 /**
- * Typographic spine — the cover fallback primitive (spec §5, S8).
+ * Cloth-bound spine — the cover fallback primitive (V5 cover generator).
  *
- * Real `cover_url` art is canonical; when a book has none the grid
- * renders one of five spine compositions (standard, monogram,
- * vertical, framed, band) in one of four colorways (ink, cream,
- * parchment, gold). Assignment hashes the book id, so the same book
- * wears the same spine across renders, themes, and reloads.
+ * Real `cover_url` art is canonical; when a book has none the grid renders
+ * a generated cloth-bound cover: a warm-dark binding cloth (one of six
+ * family-related tones) under a real binding texture (linen, buckram,
+ * marbled endpaper, plain cloth, leather), framed by a double gilt rule
+ * with gilt-foil title and mono author. Assignment hashes the book id, so
+ * the same book wears the same binding across renders, themes, and reloads.
  *
- * Covers are brand-fixed and theme-independent — a publisher's spine
- * does not shift with the reader's theme. The `--cover-*` tokens are
- * declared once on `:root` with no `[data-theme]` override. Because
- * `--cover-parchment` equals the Light canvas, every cover carries the
- * pedestal treatment (hairline + shadow) so books stay objects on
- * Parchment; Dark neutralizes it (spec §5 cover pedestal).
- *
- * Promoted from the D4 fixture (`pages/design/components/CoverArtwork`,
- * left in place for the dev-only design routes).
+ * Covers are atmosphere (Tier 3): physical objects, theme-fixed. The cloth
+ * (`--atm-cloth-*`) and gilt (`--atm-gilt-*`) tones do NOT switch when the
+ * reader toggles Light↔Dark — a binding does not change material when the
+ * room lights do. A subtle pedestal shadow keeps the dark cloth reading as
+ * an object on the Light parchment canvas.
  */
 import type { ReactElement } from "react";
+import { useId } from "react";
 
 import { cn } from "@/lib/utils";
 
-const LAYOUTS = ["standard", "monogram", "vertical", "framed", "band"] as const;
-type SpineLayout = (typeof LAYOUTS)[number];
+/** Binding cloth tone (resolves to `--atm-cloth-<tone>-c/-e`). */
+type ClothTone = "bordeaux" | "oxblood" | "midnight" | "charcoal" | "sepia" | "terracotta";
 
-const COLORWAYS = ["ink", "cream", "parchment", "gold"] as const;
-type SpineColorway = (typeof COLORWAYS)[number];
+/** Binding-cloth weave drawn over the cloth ground. */
+type Texture = "linen" | "buckram" | "marbled" | "plain" | "leather";
 
-interface ColorwayClasses {
-  ground: string;
-  display: string;
-  body: string;
-  rule: string;
-  ruleFill: string;
-  groundFill: string;
+interface Binding {
+  tone: ClothTone;
+  texture: Texture;
 }
 
-const COLORWAY_CLASSES: Record<SpineColorway, ColorwayClasses> = {
-  ink: {
-    ground: "bg-cover-ink",
-    display: "text-cover-cream",
-    body: "text-cover-cream",
-    rule: "bg-cover-gold",
-    ruleFill: "fill-cover-gold",
-    groundFill: "fill-cover-ink",
-  },
-  cream: {
-    ground: "bg-cover-cream",
-    display: "text-cover-ink",
-    body: "text-cover-ink",
-    rule: "bg-cover-gold",
-    ruleFill: "fill-cover-gold",
-    groundFill: "fill-cover-cream",
-  },
-  parchment: {
-    ground: "bg-cover-parchment",
-    display: "text-cover-ink",
-    body: "text-cover-ink",
-    rule: "bg-cover-gold",
-    ruleFill: "fill-cover-gold",
-    groundFill: "fill-cover-parchment",
-  },
-  gold: {
-    ground: "bg-cover-gold",
-    display: "text-cover-ink",
-    body: "text-cover-ink",
-    rule: "bg-cover-ink",
-    ruleFill: "fill-cover-ink",
-    groundFill: "fill-cover-gold",
-  },
-};
+/** Six warm-dark bindings, each cloth tone paired with a weave. */
+const BINDINGS: readonly Binding[] = [
+  { tone: "bordeaux", texture: "linen" },
+  { tone: "oxblood", texture: "buckram" },
+  { tone: "midnight", texture: "marbled" },
+  { tone: "charcoal", texture: "plain" },
+  { tone: "sepia", texture: "leather" },
+  { tone: "terracotta", texture: "linen" },
+];
 
 /** Cheap stable string hash (not cryptographic — distribution only). */
 function hashId(id: string): number {
@@ -80,6 +49,113 @@ function hashId(id: string): number {
   return h;
 }
 
+/**
+ * Greedy word-wrap for the gilt title — at most three lines of ~13
+ * characters. Overflow words are dropped (titles are decorative here; the
+ * link carries the full accessible name).
+ */
+function wrapTitle(title: string): string[] {
+  const MAX_CHARS = 13;
+  const MAX_LINES = 3;
+  const words = title.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current === "" ? word : `${current} ${word}`;
+    if (current !== "" && candidate.length > MAX_CHARS) {
+      lines.push(current);
+      current = word;
+      if (lines.length === MAX_LINES) break;
+    } else {
+      current = candidate;
+    }
+  }
+  if (lines.length < MAX_LINES && current !== "") lines.push(current);
+  return lines.length > 0 ? lines : [title.slice(0, MAX_CHARS)];
+}
+
+/** Title face shrinks as the longest line grows (V5 sizing). */
+function titleFontSize(lines: string[]): number {
+  const longest = Math.max(...lines.map((l) => l.length));
+  if (longest > 11) return 14;
+  if (longest > 7) return 17;
+  return 22;
+}
+
+/** SVG `<pattern>` for one binding weave. Ids are caller-unique. */
+function texturePattern(id: string, kind: Texture): ReactElement {
+  switch (kind) {
+    case "linen":
+      return (
+        <pattern id={id} width="5" height="5" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="5" stroke="rgba(255,255,255,0.10)" strokeWidth="1" />
+          <line x1="0" y1="0" x2="5" y2="0" stroke="rgba(0,0,0,0.22)" strokeWidth="1" />
+        </pattern>
+      );
+    case "buckram":
+      return (
+        <pattern
+          id={id}
+          width="7"
+          height="7"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(45)"
+        >
+          <line x1="0" y1="0" x2="0" y2="7" stroke="rgba(0,0,0,0.30)" strokeWidth="1" />
+          <line x1="3" y1="0" x2="3" y2="7" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" />
+        </pattern>
+      );
+    case "marbled":
+      return (
+        <pattern id={id} width="34" height="64" patternUnits="userSpaceOnUse">
+          <path
+            d="M0 14 Q8 8 16 16 T34 12"
+            stroke="rgba(255,255,255,0.12)"
+            fill="none"
+            strokeWidth="0.9"
+          />
+          <path
+            d="M0 30 Q10 24 18 32 T34 28"
+            stroke="rgba(0,0,0,0.22)"
+            fill="none"
+            strokeWidth="0.9"
+          />
+          <path
+            d="M0 46 Q9 40 17 48 T34 44"
+            stroke="rgba(255,255,255,0.08)"
+            fill="none"
+            strokeWidth="0.8"
+          />
+          <path
+            d="M0 58 Q11 52 19 60 T34 56"
+            stroke="rgba(0,0,0,0.16)"
+            fill="none"
+            strokeWidth="0.7"
+          />
+        </pattern>
+      );
+    case "leather":
+      return (
+        <pattern id={id} width="14" height="14" patternUnits="userSpaceOnUse">
+          <ellipse cx="3" cy="2" rx="0.9" ry="0.6" fill="rgba(255,255,255,0.14)" />
+          <ellipse cx="9" cy="5" rx="0.7" ry="0.5" fill="rgba(0,0,0,0.28)" />
+          <ellipse cx="2" cy="10" rx="0.6" ry="0.8" fill="rgba(0,0,0,0.22)" />
+          <ellipse cx="11" cy="11" rx="0.9" ry="0.6" fill="rgba(255,255,255,0.10)" />
+          <ellipse cx="7" cy="8" rx="0.7" ry="0.7" fill="rgba(255,255,255,0.08)" />
+          <ellipse cx="13" cy="3" rx="0.6" ry="0.5" fill="rgba(0,0,0,0.20)" />
+        </pattern>
+      );
+    case "plain":
+    default:
+      return (
+        <pattern id={id} width="4" height="4" patternUnits="userSpaceOnUse">
+          <rect width="1" height="1" fill="rgba(255,255,255,0.08)" />
+          <rect x="2" y="2" width="1" height="1" fill="rgba(0,0,0,0.18)" />
+        </pattern>
+      );
+  }
+}
+
 interface CoverArtworkProps {
   bookId: string;
   title: string;
@@ -88,9 +164,10 @@ interface CoverArtworkProps {
 }
 
 /**
- * Deterministic typographic cover. Fills its container (`size-full`);
- * the caller owns the aspect box. Marked `aria-hidden` — surrounding
- * link text already carries the accessible label.
+ * Deterministic cloth-bound cover. Fills its container (`size-full`); the
+ * caller owns the aspect box. Marked `aria-hidden` — the surrounding link
+ * text already carries the accessible label; the `<title>` element is for
+ * tooling/tests only.
  */
 export function CoverArtwork({
   bookId,
@@ -98,193 +175,149 @@ export function CoverArtwork({
   authors,
   className,
 }: CoverArtworkProps): ReactElement {
-  const h = hashId(bookId);
-  const layout: SpineLayout = LAYOUTS[h % LAYOUTS.length] ?? "standard";
-  const colorway: SpineColorway = COLORWAYS[Math.floor(h / 5) % COLORWAYS.length] ?? "ink";
-  const palette = COLORWAY_CLASSES[colorway];
-  const author = authors[0] ?? "";
+  // Stable per-mount, url(#…)-safe id namespace for the SVG defs.
+  const svgId = useId().replace(/:/g, "");
+  const binding = BINDINGS[hashId(bookId) % BINDINGS.length] ?? {
+    tone: "charcoal",
+    texture: "plain",
+  };
+  const { tone, texture } = binding;
+  const author = (authors[0] ?? "").toUpperCase();
+
+  const lines = wrapTitle(title);
+  const size = titleFontSize(lines);
+  const lineHeight = size * 1.06;
+  const titleY = 200 - ((lines.length - 1) * lineHeight) / 2;
+
+  const clothId = `cloth_${svgId}`;
+  const leafId = `leaf_${svgId}`;
+  const ruleId = `rule_${svgId}`;
+  const texId = `tex_${svgId}`;
+  const vignId = `vign_${svgId}`;
 
   return (
     <div
-      data-layout={layout}
-      data-colorway={colorway}
+      data-cloth={tone}
+      data-texture={texture}
       aria-hidden="true"
       className={cn(
         "relative size-full overflow-hidden",
-        // Pedestal: hairline + shadow keep parchment covers readable as
-        // objects on the Light canvas; Dark needs no lift.
-        "border-border-strong border shadow-sm dark:border-transparent dark:shadow-none",
-        palette.ground,
+        // Pedestal keeps the dark cloth reading as an object on parchment;
+        // Dark canvas needs no lift.
+        "shadow-sm dark:shadow-none",
         className,
       )}
     >
-      {layout === "standard" ? (
-        <StandardSpine palette={palette} title={title} author={author} />
-      ) : null}
-      {layout === "monogram" ? (
-        <MonogramSpine palette={palette} title={title} author={author} />
-      ) : null}
-      {layout === "vertical" ? (
-        <VerticalSpine palette={palette} title={title} author={author} />
-      ) : null}
-      {layout === "framed" ? <FramedSpine palette={palette} title={title} author={author} /> : null}
-      {layout === "band" ? <BandSpine palette={palette} title={title} author={author} /> : null}
-    </div>
-  );
-}
+      <svg viewBox="0 0 240 360" preserveAspectRatio="xMidYMid slice" className="size-full">
+        <title>{title}</title>
+        <defs>
+          <linearGradient id={clothId} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor={`var(--atm-cloth-${tone}-c)`} />
+            <stop offset="1" stopColor={`var(--atm-cloth-${tone}-e)`} />
+          </linearGradient>
+          <linearGradient id={leafId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--atm-gilt-0)" />
+            <stop offset="35%" stopColor="var(--atm-gilt-1)" />
+            <stop offset="55%" stopColor="var(--atm-gilt-2)" />
+            <stop offset="80%" stopColor="var(--atm-gilt-3)" />
+            <stop offset="100%" stopColor="var(--atm-gilt-4)" />
+          </linearGradient>
+          <linearGradient id={ruleId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--atm-gilt-1)" />
+            <stop offset="100%" stopColor="var(--atm-gilt-4)" />
+          </linearGradient>
+          {texturePattern(texId, texture)}
+          <radialGradient id={vignId} cx="0.5" cy="0.5" r="0.7">
+            <stop offset="0%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.55)" />
+          </radialGradient>
+        </defs>
 
-interface SpineProps {
-  palette: ColorwayClasses;
-  title: string;
-  author: string;
-}
-
-/** Slot mark + top rule, title block lower third, author at the foot. */
-function StandardSpine({ palette, title, author }: SpineProps): ReactElement {
-  return (
-    <>
-      <svg
-        viewBox="0 0 300 400"
-        className="absolute inset-0 h-full w-full"
-        preserveAspectRatio="xMidYMid slice"
-      >
-        <rect x="20" y="20" width="20" height="20" className={palette.ruleFill} />
-        <rect x="22.5" y="29" width="15" height="2" className={palette.groundFill} />
-        <rect x="20" y="56" width="60" height="1.5" className={palette.ruleFill} />
-        <rect x="20" y="332" width="80" height="1" opacity="0.7" className={palette.ruleFill} />
+        <rect width="240" height="360" fill={`url(#${clothId})`} />
+        <rect width="240" height="360" fill={`url(#${texId})`} />
+        <rect width="240" height="360" fill={`url(#${vignId})`} />
+        {/* Spine edge-darkening down each side (atmosphere depth, not chrome). */}
+        <rect x="0" y="0" width="6" height="360" fill="rgba(0,0,0,0.35)" />
+        <rect x="234" y="0" width="6" height="360" fill="rgba(0,0,0,0.35)" />
+        {/* Double gilt frame. */}
+        <rect
+          x="14"
+          y="14"
+          width="212"
+          height="332"
+          fill="none"
+          stroke={`url(#${ruleId})`}
+          strokeWidth="0.7"
+          opacity="0.7"
+        />
+        <rect
+          x="18"
+          y="18"
+          width="204"
+          height="324"
+          fill="none"
+          stroke={`url(#${ruleId})`}
+          strokeWidth="0.3"
+          opacity="0.4"
+        />
+        {/* Top ornament. */}
+        <g
+          transform="translate(120 56)"
+          stroke={`url(#${ruleId})`}
+          strokeWidth="0.7"
+          opacity="0.75"
+          fill="none"
+        >
+          <path d="M-26 0h52" />
+          <circle r="2.4" fill={`url(#${ruleId})`} stroke="none" />
+          <path d="M-34 -6l8 6 -8 6 M34 -6l-8 6 8 6" />
+        </g>
+        {/* Gilt-foil title. */}
+        <text
+          x="120"
+          y={titleY}
+          fill={`url(#${leafId})`}
+          textAnchor="middle"
+          fontStyle="italic"
+          fontWeight="600"
+          fontSize={size}
+          letterSpacing="0.005em"
+          className="font-display"
+        >
+          {lines.map((line, i) => (
+            <tspan key={line + String(i)} x="120" dy={i === 0 ? 0 : lineHeight}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+        {/* Author. */}
+        {author !== "" ? (
+          <text
+            x="120"
+            y="282"
+            fill={`url(#${ruleId})`}
+            textAnchor="middle"
+            opacity="0.9"
+            fontWeight="500"
+            fontSize="8"
+            letterSpacing="0.22em"
+            className="font-body"
+          >
+            {author}
+          </text>
+        ) : null}
+        {/* Bottom ornament. */}
+        <g
+          transform="translate(120 312)"
+          stroke={`url(#${ruleId})`}
+          strokeWidth="0.6"
+          opacity="0.6"
+          fill="none"
+        >
+          <path d="M-22 0h44" />
+          <path d="M0 -4l3 4 -3 4 -3 -4z" fill={`url(#${ruleId})`} stroke="none" />
+        </g>
       </svg>
-      <div className="absolute inset-0 flex flex-col justify-between p-[7%]">
-        <div className="h-[16%]" />
-        <div
-          className={cn(
-            "font-display line-clamp-4 text-base font-semibold leading-[1.05] tracking-tight",
-            palette.display,
-          )}
-        >
-          {title}
-        </div>
-        <AuthorLine palette={palette} author={author} />
-      </div>
-    </>
-  );
-}
-
-/** Oversized display-face initial behind the title block. */
-function MonogramSpine({ palette, title, author }: SpineProps): ReactElement {
-  return (
-    <div className="absolute inset-0 flex flex-col justify-between p-[7%]">
-      <div
-        className={cn(
-          "font-display text-[5.5rem] font-semibold leading-none opacity-90",
-          palette.display,
-        )}
-      >
-        {(title.charAt(0) || "·").toUpperCase()}
-      </div>
-      <div className="flex flex-col gap-2">
-        <div className={cn("h-[2px] w-8", palette.rule)} />
-        <div
-          className={cn(
-            "font-display line-clamp-3 text-sm font-semibold leading-tight",
-            palette.display,
-          )}
-        >
-          {title}
-        </div>
-        <AuthorLine palette={palette} author={author} />
-      </div>
-    </div>
-  );
-}
-
-/** Title runs top-to-bottom along the right edge like a shelf spine. */
-function VerticalSpine({ palette, title, author }: SpineProps): ReactElement {
-  return (
-    <div className="absolute inset-0 flex flex-row-reverse items-stretch justify-between p-[7%]">
-      {/* line-clamp (-webkit-box) breaks under vertical writing modes —
-          nowrap + ellipsis truncates correctly along the block axis. */}
-      <div
-        className={cn(
-          "font-display max-h-full overflow-hidden text-ellipsis whitespace-nowrap text-lg font-semibold tracking-tight [writing-mode:vertical-rl]",
-          palette.display,
-        )}
-      >
-        {title}
-      </div>
-      <div className="flex flex-col justify-end gap-2">
-        <div className={cn("h-[2px] w-6", palette.rule)} />
-        <AuthorLine palette={palette} author={author} />
-      </div>
-    </div>
-  );
-}
-
-/** Inset hairline frame, centred title. */
-function FramedSpine({ palette, title, author }: SpineProps): ReactElement {
-  return (
-    <div className="absolute inset-0 p-[7%]">
-      <div
-        className={cn(
-          "flex h-full flex-col items-center justify-center gap-3 border p-[8%] text-center",
-          palette.display,
-          "border-current/40",
-        )}
-      >
-        <div
-          className={cn(
-            "font-display line-clamp-4 text-base font-semibold leading-[1.1] tracking-tight",
-            palette.display,
-          )}
-        >
-          {title}
-        </div>
-        <div className={cn("h-[1.5px] w-8", palette.rule)} />
-        <AuthorLine palette={palette} author={author} />
-      </div>
-    </div>
-  );
-}
-
-/**
- * Gold jacket band across the middle carrying the title.
- *
- * The band itself is hardcoded `cover-gold`/`cover-ink` regardless of
- * the assigned colorway — the gold band IS this composition's identity.
- * Only the decorative rule above it takes the palette; don't "fix" the
- * band to thread `palette` through.
- */
-function BandSpine({ palette, title, author }: SpineProps): ReactElement {
-  return (
-    <div className="absolute inset-0 flex flex-col justify-center">
-      <div className="bg-cover-gold flex flex-col gap-1.5 px-[7%] py-[8%]">
-        <div className="font-display text-cover-ink line-clamp-3 text-base font-semibold leading-[1.05] tracking-tight">
-          {title}
-        </div>
-        <div className="text-cover-ink font-body text-[0.62rem] uppercase tracking-[0.18em] opacity-85">
-          {author}
-        </div>
-      </div>
-      <div className={cn("absolute inset-x-[7%] top-[8%] h-[1.5px] opacity-70", palette.rule)} />
-    </div>
-  );
-}
-
-/** Shared author footer line. */
-function AuthorLine({
-  palette,
-  author,
-}: {
-  palette: ColorwayClasses;
-  author: string;
-}): ReactElement {
-  return (
-    <div
-      className={cn(
-        "font-body line-clamp-1 text-[0.62rem] uppercase tracking-[0.18em] opacity-85",
-        palette.body,
-      )}
-    >
-      {author}
     </div>
   );
 }

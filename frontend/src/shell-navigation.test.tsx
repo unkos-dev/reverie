@@ -1,5 +1,5 @@
 /**
- * Click-reachability integration test (UNK-385 acceptance gate):
+ * Click-reachability integration test:
  * every routed screen reachable by click from `/library`, over the
  * REAL production route set with the network stubbed at `fetch`.
  */
@@ -281,8 +281,8 @@ describe("filter rail — param-write to loader-refetch seam", () => {
 
     expect(await screen.findByRole("link", { name: /Guards! Guards!/ })).toBeInTheDocument();
 
-    // Select the Discworld radio in the filter rail.
-    await user.click(await screen.findByRole("radio", { name: "Discworld" }));
+    // Select the Discworld checkbox in the filter rail.
+    await user.click(await screen.findByRole("checkbox", { name: "Discworld" }));
     await waitFor(
       () => {
         expect(new URLSearchParams(router.state.location.search).get("series")).toBe("series-1");
@@ -295,9 +295,9 @@ describe("filter rail — param-write to loader-refetch seam", () => {
     expect(await screen.findByRole("link", { name: /Mort/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Guards! Guards!/ })).not.toBeInTheDocument();
 
-    // Toggle-off: re-clicking the active radio clears the param and
+    // Toggle-off: re-clicking the active checkbox clears the param and
     // restores the unfiltered grid (spec §10 active-filter clearing).
-    await user.click(screen.getByRole("radio", { name: "Discworld" }));
+    await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
     await waitFor(
       () => {
         expect(new URLSearchParams(router.state.location.search).get("series")).toBeNull();

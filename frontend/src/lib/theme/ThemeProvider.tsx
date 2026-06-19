@@ -84,9 +84,9 @@ interface ThemeProviderProps {
  *
  * Failure model: the cookie is the documented source of truth. Network or
  * server failures during PATCH keep the optimistic update; only validation
- * rejections (4xx other than 401) roll back and surface a toast — those
- * represent real client/server disagreement. Rationale lives inline in
- * `setPreference`.
+ * rejections (4xx other than 401/403) roll back and surface a toast — those
+ * represent real client/server disagreement. Auth lapses (401/403) keep the
+ * cookie. Rationale lives inline in `setPreference`.
  *
  * @param props.children - Subtree that consumes `useTheme()`.
  * @returns React element wrapping the children in the theme context.
@@ -208,17 +208,21 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
           channelRef.current?.postMessage({ preference: next });
           return;
         }
-        // 401 (anonymous) and 5xx (backend unavailable) are not real
-        // failures — the cookie is the documented source of truth for
-        // the theme preference and survives logout / backend outages by
-        // design (see docs/.../design/visual-identity.md, § Theme
-        // cookie lifecycle). Keep the optimistic update; emit a quiet
-        // console warning so the situation is visible in devtools but
-        // never surface a toast that contradicts the cookie's
-        // authority. Validation rejections (4xx other than 401) still
-        // roll back + toast — those represent a real disagreement
-        // between client and server.
-        if (result.status === 401 || result.status >= 500) {
+        // 401 (anonymous), 403 (expired session / missing CSRF), and 5xx
+        // (backend unavailable) are not validation failures. Keep the
+        // optimistic update so the theme doesn't flip mid-visit on an
+        // auth lapse or outage; emit a quiet console warning (visible in
+        // devtools) but no toast. The cookie carries the preference
+        // through the lapse; the reconcile effect above re-syncs to the
+        // server's stored preference on the next successful authenticated
+        // load, so the server stays canonical across sessions (see
+        // docs/.../design/visual-identity.md, § Theme cookie lifecycle).
+        // Only validation rejections (4xx other than 401/403) roll back
+        // + toast — a real client/server disagreement, not an auth lapse.
+        // Rolling back on a 403 would strand the reader on their old theme
+        // whenever a session expires mid-visit (the bug this guards
+        // against).
+        if (result.status === 401 || result.status === 403 || result.status >= 500) {
           console.warn(`theme PATCH returned ${String(result.status)}; cookie persists`);
           // Cookie wins → broadcast so other tabs converge without a
           // reload. Same contract as the 2xx success path.

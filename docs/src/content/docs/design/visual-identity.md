@@ -20,7 +20,7 @@ detail (cookie lifecycle, FOUC mechanics, cross-stack contracts).
 - Colours: Reverie Gold `#C9A961`, Ink `#0E0D0A`, Cream `#E8E0D0`,
   Parchment `#E8DCC2`. See the canonical token table below.
 - Typography: Author Variable (display), Satoshi Variable (body),
-  JetBrains Mono Regular (mono — conditional, UNK-113).
+  JetBrains Mono Regular (mono, loaded conditionally).
 
 ## Tokens
 
@@ -149,8 +149,8 @@ The string `reverie_theme` lives in three places:
 - `frontend/src/lib/theme/cookie.ts`
 
 All three MUST change together. The backend unit test on
-`set_theme_cookie` enforces the backend side; cross-stack drift is
-tracked under [UNK-105](https://linear.app/unkos/issue/UNK-105).
+`set_theme_cookie` enforces the backend side; the frontend side has no
+automated parity guard yet, so the two must be kept in sync by hand.
 
 ### Cookie attribute parity
 
@@ -187,6 +187,16 @@ This matches industry precedent (GitHub `color_mode`, MDN's site
 preference, Audiobookshelf, Jellyfin, Kavita) and the shared-device
 rationale: a device's user-distinct theme survives a session sign-out
 without leaking identity.
+
+When the client persists a preference change, a failed `PATCH` is handled
+by response class. A 401 (anonymous), 403 (expired session or missing
+CSRF), or 5xx (backend unavailable) keeps the optimistic value — the theme
+must not flip mid-visit on an auth lapse or outage — and the reconcile on
+the next successful authenticated load re-syncs to the server's stored
+preference, so the server stays canonical across sessions. Only a
+validation rejection (a 4xx other than 401/403) rolls back and surfaces a
+toast, since that is a genuine client/server disagreement rather than an
+auth lapse.
 
 The cookie carries no PII — only the literal string `system`, `light`,
 or `dark`. It is not `HttpOnly` because the FOUC script runs before any
