@@ -110,7 +110,7 @@ function LibraryContent(): ReactElement {
 
   // Facet options derive from the loaded pages — `SeriesRef` carries
   // the id the backend filter wants; authors are display names only
-  // (placeholder group until UNK-387's author ids land).
+  // (placeholder group until author ids are available).
   const seriesById = new Map<string, string>();
   for (const book of items) {
     if (book.series !== null) seriesById.set(book.series.id, book.series.name);

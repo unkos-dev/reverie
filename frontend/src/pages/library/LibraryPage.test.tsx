@@ -78,7 +78,7 @@ describe("LibraryPage", () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
     // items.length counts loaded pages only — a "N books" line would
-    // misstate the library total (stats line deferred to UNK-387).
+    // misstate the library total (a stats line awaits a user-scoped count source).
     expect(screen.queryByText(/1 book/)).not.toBeInTheDocument();
   });
 
