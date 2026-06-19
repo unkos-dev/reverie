@@ -26,6 +26,7 @@ import {
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
+import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { BrowseLayout } from "@/components/shell/BrowseLayout";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
@@ -127,6 +128,7 @@ function LibraryContent(): ReactElement {
   return (
     <>
       <Atmosphere />
+      <BookmarkRibbon />
       {/* Cinematic mode dims the chrome; this hint shows how to exit. */}
       {cinematic ? (
         <p className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]">
