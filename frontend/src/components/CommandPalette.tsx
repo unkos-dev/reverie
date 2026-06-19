@@ -77,11 +77,23 @@ function useCmdKToggle(): [boolean, (open: boolean) => void, RefObject<HTMLEleme
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key !== "k" && event.key !== "K") return;
-      if (!event.metaKey && !event.ctrlKey) return;
+      const cmdK = (event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey);
+      // "/" is a quick-open shortcut — but only when the caller isn't
+      // typing into a field, or it would swallow a literal slash.
+      const target = event.target;
+      const inField =
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      const slash =
+        event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !inField;
+      if (!cmdK && !slash) return;
       event.preventDefault();
       if (!openRef.current) capture();
-      setOpen(!openRef.current);
+      // Cmd-K toggles; "/" only ever opens.
+      setOpen(cmdK ? !openRef.current : true);
     }
     window.addEventListener("keydown", onKeyDown);
     setCommandPaletteOpener(() => {
@@ -168,7 +180,11 @@ export function CommandPalette(): ReactElement {
       {/* Server is the filter — cmdk's prefix filter is disabled so
           ranked results render in the order the backend chose. */}
       <Command shouldFilter={false}>
-        <CommandInput placeholder="Search the library…" value={query} onValueChange={setQuery} />
+        <CommandInput
+          placeholder="Find a volume by title, author, quote…"
+          value={query}
+          onValueChange={setQuery}
+        />
         <CommandList>
           {renderStatus({
             query: debouncedQuery,

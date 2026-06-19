@@ -75,6 +75,26 @@ describe("CommandPalette — Cmd-K binding", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
+
+  test("opens on '/' when not typing in a field", async () => {
+    renderPalette();
+    act(() => {
+      fireEvent.keyDown(window, { key: "/" });
+    });
+    expect(await screen.findByRole("dialog", { name: /search library/i })).toBeInTheDocument();
+  });
+
+  test("ignores '/' while a field is focused", () => {
+    renderPalette();
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    act(() => {
+      fireEvent.keyDown(field, { key: "/" });
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    field.remove();
+  });
 });
 
 describe("CommandPalette — module trigger (openCommandPalette)", () => {
@@ -126,7 +146,7 @@ describe("CommandPalette — search flow", () => {
     renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search the library…");
+    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
     await user.type(input, "g");
     // No call should fire — under MIN_Q_LEN (2).
     await new Promise((r) => setTimeout(r, 300));
@@ -138,7 +158,7 @@ describe("CommandPalette — search flow", () => {
     renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search the library…");
+    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
     await user.type(input, "war");
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
@@ -167,7 +187,7 @@ describe("CommandPalette — search flow", () => {
     const { router } = renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search the library…");
+    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
     await user.type(input, "stoner");
     await screen.findByText("Stoner");
     await user.click(screen.getByText("Stoner"));
@@ -184,7 +204,7 @@ describe("CommandPalette — search flow", () => {
     renderPalette();
     const user = userEvent.setup();
     triggerCmdK();
-    const input = await screen.findByPlaceholderText("Search the library…");
+    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
     await user.type(input, "war");
     await screen.findByText(/search failed/i);
     expect(consoleSpy).toHaveBeenCalled();
