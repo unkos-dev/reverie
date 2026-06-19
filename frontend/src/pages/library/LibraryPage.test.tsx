@@ -78,8 +78,18 @@ describe("LibraryPage", () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
     // items.length counts loaded pages only — a "N books" line would
-    // misstate the library total (stats line deferred to UNK-387).
+    // misstate the true library total, so the page renders no count.
     expect(screen.queryByText(/1 book/)).not.toBeInTheDocument();
+  });
+
+  test("mounts the ambient atmosphere behind the editorial masthead", async () => {
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    // Masthead renders in page context (integration, not the unit test).
+    expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
+    expect(screen.getByText("Your library, catalogued.")).toBeInTheDocument();
+    // Decorative atmosphere layers mount once at the top of the page.
+    expect(document.querySelector(".lib-atm")).not.toBeNull();
+    expect(document.querySelector(".lib-grain")).not.toBeNull();
   });
 
   test("sort control is a button menu writing ?sort=", async () => {
