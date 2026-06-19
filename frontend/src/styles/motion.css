@@ -57,12 +57,23 @@
    Token-only (no raw hex): ambient radial + gilt H1 read the Tier-3
    `--atm-*` tokens; the hero fade flows the photo into `--canvas`. */
 
-/* Ambient ember field — fixed, slowly breathing radial behind content. */
+/* Ambient ember field — fixed, slowly breathing radial behind content.
+   The gradient + breathe live on the pseudo so the keyframe `opacity`
+   never lands on the element itself: animation values outrank normal
+   author declarations, so animating element opacity would silently
+   defeat the light-mode dim below. Element opacity stays free for the
+   theme and stacks with the pseudo's breathe. */
 .lib-atm {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
+}
+
+.lib-atm::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   background:
     radial-gradient(
       ellipse 65% 55% at 35% 26%,
@@ -199,8 +210,9 @@
     animation: none;
   }
 
-  /* Ambient field holds a still frame — no breathing. */
-  .lib-atm {
+  /* Ambient field holds a still frame — no breathing. The breathe
+     animation lives on the `::before` pseudo, so suppress it there. */
+  .lib-atm::before {
     animation: none;
   }
 
