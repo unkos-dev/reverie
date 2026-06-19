@@ -48,6 +48,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
 import { paramsFromSearch } from "@/routes/library-params";
@@ -76,6 +77,7 @@ export function LibraryPage(): ReactElement {
 
 function LibraryContent(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
+  const cinematic = useCinematicMode();
   const viewMode: ViewMode = searchParams.get("view") === "list" ? "list" : "grid";
   const params = paramsFromSearch(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
@@ -125,6 +127,12 @@ function LibraryContent(): ReactElement {
   return (
     <>
       <Atmosphere />
+      {/* Cinematic mode dims the chrome; this hint shows how to exit. */}
+      {cinematic ? (
+        <p className="cinema-hint font-mono text-fg-muted text-xs uppercase tracking-[0.2em]">
+          Cinematic mode · press F to exit
+        </p>
+      ) : null}
       {/* Raise the whole browse layout — rail included — above the fixed
           atmosphere layers. The rail renders outside `children`, so a
           content-only stacking context leaves it under `.lib-grain` (z-1). */}
@@ -135,7 +143,7 @@ function LibraryContent(): ReactElement {
             The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
           <div className="px-6 py-10 sm:px-10">
             <LibraryMasthead />
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-2">
                 <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
                 <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />

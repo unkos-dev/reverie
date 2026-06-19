@@ -201,6 +201,40 @@
   }
 }
 
+/* ─── Cinematic mode (V5 §5) ──────────────────────────────────────────
+   Press F on the Library page to dissolve the chrome. The hook
+   (hooks/useCinematicMode) sets data-cinematic / data-cursor-hidden on
+   the document element; marked chrome (`[data-chrome]`) fades out and the
+   cursor idles away, leaving the covers on a quiet field. */
+[data-chrome] {
+  transition: opacity var(--duration-slow) var(--ease-standard);
+}
+
+[data-cinematic="on"] [data-chrome] {
+  pointer-events: none;
+  opacity: 0;
+}
+
+[data-cinematic="on"][data-cursor-hidden="on"],
+[data-cinematic="on"][data-cursor-hidden="on"] * {
+  cursor: none;
+}
+
+.cinema-hint {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  z-index: 30;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--ease-standard);
+}
+
+[data-cinematic="on"] .cinema-hint {
+  opacity: 0.65;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tile-in {
     animation: none;
@@ -214,6 +248,12 @@
      animation lives on the `::before` pseudo, so suppress it there. */
   .lib-atm::before {
     animation: none;
+  }
+
+  /* Cinematic chrome + hint snap instead of fading. */
+  [data-chrome],
+  .cinema-hint {
+    transition: none;
   }
 
   /* View Transitions: instant swap instead of crossfade. No
