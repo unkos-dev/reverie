@@ -1,0 +1,6 @@
+extends: existence
+message: "Avoid em dashes in prose. Recast with a comma, colon, or full stop."
+level: warning
+nonword: true
+tokens:
+  - '\x{2014}'

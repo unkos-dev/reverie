@@ -43,5 +43,11 @@ module.exports = {
   // clears the pre-existing references in untouched files.
   "backend/src/**/*.rs": "scripts/no-issue-refs.sh",
   "frontend/src/**/*.{ts,tsx,js,jsx,css}": "scripts/no-issue-refs.sh",
-  "**/*.{md,mdx}": "scripts/no-issue-refs.sh",
+  // Markdown gets two prose passes: the issue-ref guard, then the Vale prose
+  // linter. vale-lint.sh owns the in-scope set (docs/src, adr, repo-root
+  // Markdown, minus agent-process files) and runs the same locally and in CI.
+  // Advisory while the docs backlog is triaged: the rules emit at `warning`,
+  // so Vale exits zero and never blocks the commit. Vale is pinned in the
+  // workspace image (hard-rule-8).
+  "**/*.{md,mdx}": ["scripts/no-issue-refs.sh", "scripts/vale-lint.sh"],
 };

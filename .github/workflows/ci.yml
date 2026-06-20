@@ -974,6 +974,42 @@ jobs:
       - name: Markdown lint (markdownlint-cli2)
         run: git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r npx --no-install markdownlint-cli2
 
+      # Vale prose linter. Catches mechanical AI-writing tells in Markdown docs.
+      # Vale is a Go binary with official release archives, so it installs via
+      # the SHA-pinned curl-tarball path used for shellcheck and hadolint above
+      # (taiki-e/install-action does not carry it). Pinned to the version the
+      # workspace image ships (hard-rule-8), keeping local pre-commit and CI on
+      # the same linter.
+      - name: Install Vale 3.15.1
+        env:
+          # renovate: datasource=github-releases depName=errata-ai/vale extractVersion=^v(?<version>.+)$
+          VALE_VERSION: "3.15.1"
+          VALE_SHA256: "c024d9c157874fb043d4f24a055d60050d1bb18755251f590593eed5bace1857"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          tarball="vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/${tarball}"
+          echo "${VALE_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$HOME/.local/bin" vale
+          rm "$tarball"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The ruleset self-test (stdin snippets, no fixtures on disk) is the gate:
+      # it fails the build if a prose rule stops firing or starts matching clean
+      # prose. jq ships on ubuntu-latest.
+      - name: Prose lint self-test (Vale ruleset)
+        run: scripts/vale-selftest.sh
+
+      # The prose pass over the docs is advisory until the existing backlog is
+      # triaged clean (mirrors the impeccable-detect rollout below). Warnings
+      # exit zero; continue-on-error also absorbs any error-level surprise so a
+      # finding never fails the build while the posture is advisory.
+      - name: Prose lint (Vale, advisory)
+        run: scripts/vale-lint.sh --all
+        continue-on-error: true
+
       # Authoritative formatting gate. lint-staged runs `prettier --write` on
       # staged files locally, but pre-commit is bypassable (`--no-verify`) and
       # never runs on fork PRs; this `--check` over the whole tree is the
