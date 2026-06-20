@@ -1,4 +1,4 @@
-# Cloudflare edge — dev/staging hostnames
+# Cloudflare edge: dev/staging hostnames
 
 Operators who front Reverie dev or staging environments with Cloudflare
 (via a Tunnel, an Origin, or a Worker) get one auto-injected script they
@@ -32,8 +32,8 @@ telemetry back to `cloudflareinsights.com`.
 
 Reverie's dev `Content-Security-Policy` (see
 [`frontend/vite.config.ts`](../../frontend/vite.config.ts)) is intentionally
-relaxed for tooling — `'unsafe-inline'`/`'unsafe-eval'` for HMR overlays
-and Tailwind JIT — and it explicitly allowlists the beacon origins so the
+relaxed for tooling (`'unsafe-inline'`/`'unsafe-eval'` for HMR overlays
+and Tailwind JIT) and it explicitly allowlists the beacon origins so the
 auto-injected script does not trip a CSP violation on every page load:
 
 ```text
@@ -45,11 +45,11 @@ The loopback `ws://` origins are always present. For each non-loopback
 hostname in `REVERIE_DEV_HOSTS`, `buildDevCsp`
 ([`frontend/vite-plugins/dev-csp.ts`](../../frontend/vite-plugins/dev-csp.ts))
 appends a `wss://<host>` origin to `connect-src` so the HMR websocket can
-traverse a TLS edge — the same allowlist input the dev server's host guard
-already consumes, so no separate env var is needed.
+traverse a TLS edge (the same allowlist input the dev server's host guard
+already consumes), so no separate env var is needed.
 
-The cleaner alternative — a per-hostname **Exclude** rule under
-**Web Analytics → Manage site → Advanced options** — requires a
+The cleaner alternative (a per-hostname **Exclude** rule under
+**Web Analytics → Manage site → Advanced options**) requires a
 Cloudflare **Pro** subscription. On Free, the only granular control is
 the zone-wide RUM Enable/Disable toggle, which is too coarse for a zone
 that hosts more than the dev surface.
@@ -64,13 +64,13 @@ that hosts more than the dev surface.
 
 ## Production CSP
 
-The production CSP (served by the Reverie backend — see
+The production CSP (served by the Reverie backend; see
 [`backend/src/security/csp.rs`](../../backend/src/security/csp.rs)) is
 hash-based and strict and does **not** allowlist
 `static.cloudflareinsights.com`. RUM on the production hostname is a
 separate decision against that file, independent of the dev CSP.
 
-If you want RUM on production, scope that decision deliberately — do not
+If you want RUM on production, scope that decision deliberately; do not
 copy the dev allowlist across.
 
 ## Related

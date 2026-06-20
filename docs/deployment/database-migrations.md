@@ -28,7 +28,7 @@ reverie migrate
 ```
 
 This reads `DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN), applies any
-pending migrations, and exits. It does not read the application config — a
+pending migrations, and exits. It does not read the application config; a
 migrate step needs no OIDC secret or application DSN. A non-zero exit means
 migration failed; the error names the failure mode and recovery.
 
@@ -46,12 +46,12 @@ binary, using its own `reverie_app` pool, and **refuses to start** if they
 diverge. The check is fail-closed in both directions:
 
 - **Database behind the binary** (the common "forgot to run `reverie migrate`"
-  case) — the server refuses rather than serving against a schema missing
+  case): the server refuses rather than serving against a schema missing
   tables or columns it expects, which would otherwise surface as opaque
   runtime errors.
-- **Database ahead of the binary** — the server refuses rather than writing
+- **Database ahead of the binary**: the server refuses rather than writing
   against a schema it does not understand.
-- **Never migrated** (no migration history at all) — the server reports that
+- **Never migrated** (no migration history at all): the server reports that
   the database is not initialized and points you at `reverie migrate`, instead
   of emitting a cryptic missing-table error.
 
@@ -86,7 +86,7 @@ split (`.env.migrate` / `.env.runtime`): `.env.migrate` carries only
 carries the application configuration (`DATABASE_URL`, OIDC settings, …)
 without the migration DSN. A single combined `.env` passed to both commands
 works, but it hands the long-lived server the `reverie_migrator` credential
-for its entire lifetime — exactly the exposure the two-identity model above
+for its entire lifetime, exactly the exposure the two-identity model above
 exists to avoid.
 
 ## Opt-in: in-process migration on startup

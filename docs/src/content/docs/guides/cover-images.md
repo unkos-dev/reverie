@@ -15,8 +15,8 @@ image.
 | JPEG, PNG, WebP | Decoded and resized directly.                                      |
 | SVG             | Rendered to PNG on the server, then resized like any other raster. |
 
-SVG support exists because [Standard Ebooks](https://standardebooks.org/) — the
-canonical public-domain EPUB source — ship their cover as an SVG
+SVG support exists because [Standard Ebooks](https://standardebooks.org/), the
+canonical public-domain EPUB source, ship their cover as an SVG
 (`images/cover.svg`).
 
 ## How SVG covers are handled

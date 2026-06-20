@@ -11,10 +11,10 @@ detail (cookie lifecycle, FOUC mechanics, cross-stack contracts).
 
 ## Brand identity reference
 
-- Mark: **Slot** — a single rectangular slot, the negative space of a
+- Mark: **Slot**: a single rectangular slot, the negative space of a
   bookshelf. See `identity.md` §1.
 - Lockup: Slot + wordmark in horizontal lockup. The Lockup component at
-  `frontend/src/components/Lockup.tsx` is the canonical render — see
+  `frontend/src/components/Lockup.tsx` is the canonical render; see
   `identity.md` §6 for proportions.
 - Tagline: **"Your library, catalogued."**
 - Colours: Reverie Gold `#C9A961`, Ink `#0E0D0A`, Cream `#E8E0D0`,
@@ -48,12 +48,12 @@ resolve to brand variables.
 
 **No state-color tokens.** `--color-success`, `--color-warning`,
 `--color-danger`, `--color-info`, and `--color-neutral` are deliberately
-absent — see [Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue).
+absent; see [Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue).
 
 The Light-theme accent (`#8E6F38`) is the brand's `#C9A961` darkened to
 satisfy WCAG 2.2 1.4.11 (UI component 3:1) and 1.4.3 large-text
 contrast against `#E8DCC2`. It does **not** pass 1.4.3 normal-text
-4.5:1 — restrict to focus rings, large CTAs, and recovery actions.
+4.5:1; restrict to focus rings, large CTAs, and recovery actions.
 axe-core surfaces this as a violation on any Light surface where
 `bg-accent` carries normal body text; the design-system axe gate
 tolerates this documented violation on the `lg`-size primary button
@@ -102,14 +102,14 @@ the scale is conventional and the cost-of-renaming is high.
 | `--ease-emphasised` | `cubic-bezier(0.16, 0.78, 0.30, 1)` | Accent-bearing motion               |
 
 The `loading-pulse` keyframe (`opacity: 1 ↔ 0.85`, ~1.6s) carries the
-loading-state expression — no `--color-loading` token; the loading
+loading-state expression: no `--color-loading` token; the loading
 region pulses opacity instead. Reduced-motion preferences disable
 ambient pulses.
 
 ## State expression (no hue)
 
 State communicates through typography weight, surface opacity, motion,
-and the gold accent — never a state-coded hue. The canonical mapping:
+and the gold accent, never a state-coded hue. The canonical mapping:
 
 | State                | Expression                                                                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -125,7 +125,7 @@ and the gold accent — never a state-coded hue. The canonical mapping:
 | Link                 | underline + `text-accent` on hover; no permanent colour difference                                                                         |
 | Focus (keyboard)     | single 2px `gold-11` outline + 2px offset, no halo — global `:focus-visible` rule (`--focus-ring: var(--accent-text)`, `box-shadow: none`) |
 
-Charts and code blocks are scoped exceptions — when they ship, the
+Charts and code blocks are scoped exceptions; when they ship, the
 deviation is documented here and constrained to the surface that
 requires it.
 
@@ -135,7 +135,7 @@ Three preferences: `system`, `light`, `dark`. Three places store the
 state:
 
 - The browser `reverie_theme` cookie (the canonical preference).
-- `<html data-theme>` (the resolved effective theme — `light` or
+- `<html data-theme>` (the resolved effective theme, `light` or
   `dark`, never `system`).
 - The `users.theme_preference` row in the database (the per-user
   preference that follows the user across devices).
@@ -161,7 +161,7 @@ The cookie attributes are a parity contract between
 - `Max-Age=31536000` (one year, matches `Duration::days(365)` exactly)
 - `SameSite=Lax`
 - **No** `HttpOnly` (JS must read it before hydration)
-- `Secure` (always set — Reverie requires HTTPS in production; localhost
+- `Secure` (always set; Reverie requires HTTPS in production; localhost
   is a browser-recognised secure context, so dev still works)
 
 Drift on either side produces two cookies of the same name with
@@ -177,7 +177,7 @@ marker in `frontend/index.html`; the body lives at
 `frontend/src/fouc/fouc.js` (plain ES5, self-invoking, try/catch
 fallback to `light`). `vite build` emits `dist/csp-hashes.json`
 containing the SHA-256, which `backend/src/security/dist_validation.rs`
-reads at startup. CSP is hash-based — no nonce, no backend templating.
+reads at startup. CSP is hash-based: no nonce, no backend templating.
 
 ## Theme cookie lifecycle
 
@@ -190,15 +190,15 @@ without leaking identity.
 
 When the client persists a preference change, a failed `PATCH` is handled
 by response class. A 401 (anonymous), 403 (expired session or missing
-CSRF), or 5xx (backend unavailable) keeps the optimistic value — the theme
-must not flip mid-visit on an auth lapse or outage — and the reconcile on
+CSRF), or 5xx (backend unavailable) keeps the optimistic value (the theme
+must not flip mid-visit on an auth lapse or outage) and the reconcile on
 the next successful authenticated load re-syncs to the server's stored
 preference, so the server stays canonical across sessions. Only a
 validation rejection (a 4xx other than 401/403) rolls back and surfaces a
 toast, since that is a genuine client/server disagreement rather than an
 auth lapse.
 
-The cookie carries no PII — only the literal string `system`, `light`,
+The cookie carries no PII, only the literal string `system`, `light`,
 or `dark`. It is not `HttpOnly` because the FOUC script runs before any
 module loader and must read it synchronously to avoid a flicker.
 
@@ -220,6 +220,6 @@ import { Lockup } from "@/components/Lockup";
 ```
 
 The Lockup intentionally inlines `#C9A961` / `#0E0D0A` / `#E8E0D0` as
-constants (philosophy §11C invariant — the Lockup must render
+constants (philosophy §11C invariant; the Lockup must render
 correctly even before `themes/index.css` resolves, e.g. on the OIDC
 error page). It is the documented exemption to the hex-literal ban.
