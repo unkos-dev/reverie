@@ -77,6 +77,6 @@ When that PR merges:
 
 - The postgres port revert task: the revert
   ticket (lift trigger)
-- `docker/compose.dev.yml` — workaround site
-- `backend/CLAUDE.md` — connection-string examples that will need
+- `docker/compose.dev.yml`: workaround site
+- `backend/CLAUDE.md`: connection-string examples that will need
   updating to `5432`

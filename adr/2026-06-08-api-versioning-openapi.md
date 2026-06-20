@@ -49,9 +49,9 @@ How should the API be versioned, and in what format is its contract described?
 
 **Versioning scheme:**
 
-- **V1 — URL path major version (`/api/v1/...`).**
-- **V2 — Header / `Accept`-based version negotiation.**
-- **V3 — No versioning; evolve `/api/*` in place forever.**
+- **V1: URL path major version (`/api/v1/...`).**
+- **V2: Header / `Accept`-based version negotiation.**
+- **V3: No versioning; evolve `/api/*` in place forever.**
 
 **Contract format:**
 
@@ -84,8 +84,8 @@ Chosen options: **V1 + S1.**
   reference exists to prevent.
 
   The version is **3.1, not 3.2**, on three grounds. The code-first generator
-  this would use (utoipa, the dominant axum-native option) emits 3.1 — its
-  `OpenApiVersion` enum has a single `3.1.0` variant — so pinning the contract to
+  this would use (utoipa, the dominant axum-native option) emits 3.1, its
+  `OpenApiVersion` enum has a single `3.1.0` variant, so pinning the contract to
   3.2 would pin it to an unreleased upstream capability, the same wait-on-upstream
   trap the
   [first-party session layer ADR](2026-06-04-first-party-session-layer.md)
@@ -140,7 +140,7 @@ that generated document.
 - Bad, because the version is coarse (whole-API major), not per-resource: fine
   for a single coherent surface.
 
-### V2 — header / `Accept` versioning
+### V2: header / `Accept` versioning
 
 - Good, because URLs stay stable across versions.
 - Bad, because it is invisible in a browser/curl, harder to cache, and adds

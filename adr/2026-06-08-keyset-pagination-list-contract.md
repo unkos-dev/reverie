@@ -22,7 +22,7 @@ rule, and the tradeoffs the project is accepting by choosing keyset.
 The contract is also not yet uniformly met. The catalog (`/api/books`) and the
 OPDS _acquisition_ feeds are keyset-paginated with a stable tiebreaker, and the
 OPDS series-_editions_ feed is a capped single page. But several lists issue
-`LIMIT`-less `SELECT`s whose row count grows with library or user size —
+`LIMIT`-less `SELECT`s whose row count grows with library or user size:
 `/api/shelves`, `/api/users`, `GET /api/shelves/{id}` items, and the OPDS
 authors- and series-_navigation_ feeds all return the entire set with no cap. So
 today the surface is a mix of keyset, capped single-page, and genuinely

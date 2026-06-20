@@ -20,7 +20,7 @@ A `Content-Security-Policy` differentiated by route class:
   one known inline FOUC script (via `'sha256-...'`). No `'unsafe-inline'` for
   scripts.
 - **API responses** (`/api/*`, `/auth/*`, `/health/*`, `/opds/*`):
-  `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` — APIs never
+  `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, APIs never
   render, so everything is locked down.
 
 ## Opt-in: HSTS
@@ -129,7 +129,7 @@ Reverie sets two cookies on authenticated browsers:
 
 `reverie_theme` is intentionally not `HttpOnly` because JavaScript must
 read it synchronously before React hydrates to avoid a theme flicker. It
-carries no PII — only the literal string `system`, `light`, or `dark`.
+carries no PII: only the literal string `system`, `light`, or `dark`.
 See `docs/design/visual-identity.md` § Theme Cookie Lifecycle for the
 full rationale and the contrast rule: any future _session-state_ cookie
 MUST be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the
@@ -148,7 +148,7 @@ or directly.
 The session cookie (`id`) does not set `Secure` today; that's tracked as
 a follow-up to apply the same treatment.
 
-## `style-src 'unsafe-inline'` — why it's still there
+## `style-src 'unsafe-inline'`: why it's still there
 
 The HTML CSP allows inline styles:
 
@@ -158,8 +158,8 @@ style-src 'self' 'unsafe-inline'
 
 This is a pragmatic concession for:
 
-- **Tailwind CSS JIT** — generates `style=""` on some utilities.
-- **Radix UI portals** — positions popovers/dialogs with runtime inline
+- **Tailwind CSS JIT**: generates `style=""` on some utilities.
+- **Radix UI portals**: positions popovers/dialogs with runtime inline
   styles.
 
 CSS injection impact is far narrower than script injection: a CSS injection
@@ -195,7 +195,7 @@ If either returns less than A, check:
 1. Open the application.
 2. Open DevTools → Console.
 3. Navigate between routes.
-4. Watch for `Refused to execute inline script because it violates the following Content Security Policy directive` — if you see one, a
+4. Watch for `Refused to execute inline script because it violates the following Content Security Policy directive`, if you see one, a
    legitimate inline script landed in a PR without a hash. File an issue.
 
 ## Further reading

@@ -33,7 +33,7 @@ Two facts settle which terms are real:
 
 1. **`quarantined` never persists.** When EPUB validation returns
    `ValidationOutcome::Quarantined`, the orchestrator deletes the
-   library file and returns `ProcessResult::Failed` — no manifestation
+   library file and returns `ProcessResult::Failed`, no manifestation
    row is ever created (`backend/src/services/ingestion/orchestrator.rs:404-425`).
    `quarantined` is therefore a dead variant on the storage/wire surface.
 2. **`pending` is real.** It is the column default (`DEFAULT 'pending'`)
@@ -44,7 +44,7 @@ The remaining disagreement is purely the `Clean` ↔ `valid` rename. The
 orchestrator currently translates `ValidationOutcome::Clean => "valid"`
 (`orchestrator.rs:427`). That translation step **is** the drift: the
 storage string diverges from the domain enum that defines it. Resolving
-the vocabulary is a prerequisite for the typed enum — a `sqlx::Type`
+the vocabulary is a prerequisite for the typed enum, a `sqlx::Type`
 cannot be introduced cleanly on a vocabulary that contradicts its own
 domain source. The choice spans DB schema + Rust DTO + frontend
 interface, so it did not fit inside the 11a-A.3 read-path slice and was
@@ -52,7 +52,7 @@ deferred here.
 
 ## Decision Drivers
 
-- Close the `sqlx::Type` enum series — remove the last raw-`String` DB
+- Close the `sqlx::Type` enum series, remove the last raw-`String` DB
   enum so unknown DB variants fail decode loudly instead of reaching the
   wire as opaque strings.
 - Eliminate the storage↔domain vocabulary drift at its root rather than
@@ -66,19 +66,19 @@ deferred here.
 
 ## Considered Options
 
-- **Option A** — rename the Postgres value `valid` → `clean`; canonical
+- **Option A**: rename the Postgres value `valid` → `clean`; canonical
   vocabulary `pending | clean | repaired | degraded`. _(chosen)_
-- **Option B** — adopt the DB vocabulary as-is (`valid`) and rewrite the
+- **Option B**: adopt the DB vocabulary as-is (`valid`) and rewrite the
   frontend union to match.
-- **Option C** — keep `validation_status` untouched; add a separate
+- **Option C**: keep `validation_status` untouched; add a separate
   `availability_status` (`clean | quarantined`) column for a curation
   surface.
-- **Issue-as-written variant** — rename `pending` → `clean` and add
+- **Issue-as-written variant**: rename `pending` → `clean` and add
   `quarantined`, per the validation status vocabulary's original Option-A text.
 
 ## Decision Outcome
 
-Chosen: **Option A** — rename the Postgres enum value `valid` → `clean`
+Chosen: **Option A**: rename the Postgres enum value `valid` → `clean`
 (`ALTER TYPE ... RENAME VALUE`), keep `pending`/`repaired`/`degraded`,
 do not add `quarantined`. Canonical vocabulary across DB, Rust DTO, and
 wire becomes `pending | clean | repaired | degraded`, surfaced through a
@@ -88,7 +88,7 @@ pattern.
 ### Why `clean`, not `valid` (load-bearing rationale)
 
 `valid | repaired | degraded` are **all** stored-and-usable outcomes.
-Labelling one of them `valid` implies the other two are _invalid_ — they
+Labelling one of them `valid` implies the other two are _invalid_, they
 are not; a repaired or degraded file is still ingested, stored, and
 served. `clean` names the actual distinction: _no issues found_, as
 opposed to _had issues, auto-repaired_ (`repaired`) or _has issues,
@@ -98,7 +98,7 @@ one valid state plus two error states.
 Renaming to `clean` additionally makes the orchestrator mapping an
 identity (`Clean => "clean"`), eliminating the translation seam that
 produced the drift, and realigns the stored string with
-`ValidationOutcome` — the only place validation semantics are actually
+`ValidationOutcome`: the only place validation semantics are actually
 decided.
 
 The operator-facing explanation of these states is deferred to a
@@ -109,10 +109,10 @@ corrected now because the rename makes its current listing wrong. See
 
 ### Consequences
 
-- **Good** — closes the `sqlx::Type` enum series; storage string, domain
+- **Good**: closes the `sqlx::Type` enum series; storage string, domain
   enum, and wire union all agree; the `Clean => "valid"` translation
   seam is gone.
-- **Good** — the frontend union tightens from `z.string()` to a closed
+- **Good**: the frontend union tightens from `z.string()` to a closed
   set, so an unaccounted-for backend enum change surfaces as a
   `ZodError` at the boundary, not silent UI drift.
 - **Bad**: touches ~12 seed/test SQL call sites writing
@@ -134,7 +134,7 @@ and the frontend lint/test suite. The closing PR flips
 
 ## Pros and Cons of the Options
 
-### Option A — rename `valid` → `clean` (chosen)
+### Option A: rename `valid` → `clean` (chosen)
 
 - Good: kills the storage↔domain drift at its root; identity
   orchestrator mapping; correct naming of the value set; tightens the
@@ -142,15 +142,15 @@ and the frontend lint/test suite. The closing PR flips
 - Bad: one migration plus ~12 seed/test call-site edits.
 - Neutral: pre-release, so no production backfill.
 
-### Option B — adopt DB vocabulary as-is (`valid`)
+### Option B: adopt DB vocabulary as-is (`valid`)
 
-- Good — smallest delta: no migration, no `'valid'` call-site churn.
-- Bad — codifies the `valid` mislabel permanently and leaves the
+- Good: smallest delta: no migration, no `'valid'` call-site churn.
+- Bad: codifies the `valid` mislabel permanently and leaves the
   `Clean => "valid"` translation seam in place (the exact drift this
   ticket exists to remove). Cheaper now, but the mislabel cost is
   forever and the migration cost is one-time and pre-release.
 
-### Option C — separate `availability_status` column
+### Option C: separate `availability_status` column
 
 - Good: cleanly separates ingestion validity from a curation surface
   if quarantine ever becomes a retained state.
@@ -161,7 +161,7 @@ and the frontend lint/test suite. The closing PR flips
 
 ### Issue-as-written variant (rename `pending` → `clean`, add `quarantined`)
 
-- Bad — factually wrong as stated: `pending` is a real lifecycle state
+- Bad: factually wrong as stated: `pending` is a real lifecycle state
   (column default) that must stay, and `quarantined` has no write path.
   Rejected; the accepted decision renames `valid` instead and keeps
   `pending`.

@@ -42,16 +42,16 @@ underlying blocker is resolved.
 What `eslint-plugin-react` is currently doing for the project (per
 `frontend/eslint.config.js`):
 
-1. `react.configs.flat.recommended` — base ruleset, mostly
+1. `react.configs.flat.recommended`: base ruleset, mostly
    historical rules that target React 16-era patterns
    (`jsx-uses-react`, `no-deprecated`, etc.)
-2. `react.configs.flat['jsx-runtime']` — disables
+2. `react.configs.flat['jsx-runtime']`: disables
    `react-in-jsx-scope` and `jsx-uses-react`. Redundant for projects
    on the new JSX transform (Reverie has been on it since project
    bootstrap)
-3. `'react/jsx-key': 'error'` — explicit, load-bearing. Catches
+3. `'react/jsx-key': 'error'`: explicit, load-bearing. Catches
    missing `key` prop on iterated JSX
-4. `'react/no-array-index-key': 'error'` — explicit, load-bearing.
+4. `'react/no-array-index-key': 'error'`: explicit, load-bearing.
    Catches the `<List>` anti-pattern of using array indices as keys
 
 Two of the four entries are load-bearing; the other two are dead
@@ -76,7 +76,7 @@ The two load-bearing rules have direct equivalents:
 | `react/no-array-index-key` | `@eslint-react/no-array-index-key` |
 
 The historical/redundant entries (`flat.recommended`,
-`flat['jsx-runtime']`) are dropped — `@eslint-react`'s
+`flat['jsx-runtime']`) are dropped, `@eslint-react`'s
 `recommended-typescript` preset replaces them with rules that
 target current React patterns and integrate cleanly with the
 existing `tseslint.configs.strictTypeChecked` extends.
@@ -87,20 +87,20 @@ range, and are not part of this decision's scope.
 
 ## Consequences
 
-- Good — unblocks `eslint` and `@eslint/js` v10 bumps. The Renovate
+- Good: unblocks `eslint` and `@eslint/js` v10 bumps. The Renovate
   pin from PR #147 is removed in the migration PR; future eslint
   majors flow through Renovate normally
 - Good: replaces a 13-month-stale plugin with one that has shipped
   releases as recently as last week. Reduces supply-chain risk
-- Good — `@eslint-react/eslint-plugin` is TypeScript-first; rule
+- Good: `@eslint-react/eslint-plugin` is TypeScript-first; rule
   authors reach into TS type information, catching bugs that
   `eslint-plugin-react`'s untyped AST analysis misses
   (e.g. missing `key` on a typed `Array<T>` returned from a hook
   that needs renderable props)
-- Good — fewer rules in the `recommended-typescript` preset are
+- Good: fewer rules in the `recommended-typescript` preset are
   React-16-era historical, so post-migration the lint output is
   more relevant to the actual code under review
-- Bad — the `recommended-typescript` preset turns on rules that
+- Bad: the `recommended-typescript` preset turns on rules that
   `eslint-plugin-react`'s `recommended` did not. Migration PR will
   surface a one-time wave of new lint errors that need
   triage: address, suppress with documented reason, or override
@@ -121,23 +121,23 @@ range, and are not part of this decision's scope.
   migration PR
 - Neutral: bundle size impact zero (lint runs in CI + dev only,
   not in production)
-- Neutral — `frontend/CLAUDE.md` rules around `as` casts, TS
+- Neutral: `frontend/CLAUDE.md` rules around `as` casts, TS
   `enum`, and raw hex are enforced via `no-restricted-syntax` and
-  `@typescript-eslint/consistent-type-assertions` — neither plugin
+  `@typescript-eslint/consistent-type-assertions`: neither plugin
   involved. No change
 
 ## Alternatives Considered
 
-- **Drop `eslint-plugin-react` entirely; rely on `typescript-eslint` and `eslint-plugin-react-hooks` only.** Rejected — loses both
+- **Drop `eslint-plugin-react` entirely; rely on `typescript-eslint` and `eslint-plugin-react-hooks` only.** Rejected: loses both
   load-bearing rules. `typescript-eslint` does not catch missing
   `key` props or array-index-as-key; `eslint-plugin-react-hooks`
   scope is limited to hook-rule violations
-- **Fork `eslint-plugin-react`.** Rejected — indefinite maintenance
+- **Fork `eslint-plugin-react`.** Rejected: indefinite maintenance
   burden on a single-maintainer project. The whole point of
   external lint plugins is offloading rule-authoring to the
   ecosystem
 - **Wait for upstream to ship eslint v10 compat in
-  `eslint-plugin-react`.** Rejected — issue
+  `eslint-plugin-react`.** Rejected: issue
   [#3977](https://github.com/jsx-eslint/eslint-plugin-react/issues/3977)
   has been open without progress and the project has shown no
   release activity for over a year. Waiting indefinitely for a
@@ -179,8 +179,8 @@ Open a superseding ADR if any of the following happen:
   : trial review tally records the eslint v10 PRs that
   triggered this decision
 - Related PRs:
-  - #135 (closed) — `@eslint/js` v10 bump, ERESOLVE
-  - #136 (closed) — `eslint` v10 bump, ERESOLVE, force-pushed 12×
-  - #147 (merged) — Renovate pin holding eslint at `<10`
+  - #135 (closed): `@eslint/js` v10 bump, ERESOLVE
+  - #136 (closed): `eslint` v10 bump, ERESOLVE, force-pushed 12×
+  - #147 (merged): Renovate pin holding eslint at `<10`
 - Tracker: the trial tally has the false-positive credit-cap
   and hallucination context that surrounded the eslint v10 saga

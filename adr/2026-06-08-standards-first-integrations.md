@@ -58,7 +58,7 @@ infrastructure:
   a reader client.
 - **Identity**: OIDC + forward-auth headers → the operator's IdP. Reverie does
   not build an SSO / user-directory product.
-- **Metrics** — a Prometheus-format `/metrics` endpoint (opt-in) → the
+- **Metrics**: a Prometheus-format `/metrics` endpoint (opt-in) → the
   operator's Prometheus. Reverie does not bundle a metrics store or dashboards.
 - **Logs**: structured, machine-parsable logs to stdout → the operator's
   aggregator. Reverie does not bundle log storage.

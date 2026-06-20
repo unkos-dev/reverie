@@ -76,7 +76,7 @@ defect.
   the enrichment client already takes the UA as an arg, and the
   OIDC client doesn't have a `Config` in scope at construction
   time (it's called from `config.rs` itself in some paths).
-- **Option C — Compile-time lint.** A `dylint` / `clippy.toml`
+- **Option C: Compile-time lint.** A `dylint` / `clippy.toml`
   rule that forbids `ClientBuilder::new().build()` without
   `.user_agent(...)`. Possible but heavy; no off-the-shelf lint
   exists and writing one for a 6-call-site codebase is
@@ -159,9 +159,9 @@ without requiring them to find this ADR first.
   : same class of substrate-edge-case bug in the same deploy
   pipeline, motivating the longer-form decision record here
   rather than yet another incident-only fix.
-- `backend/src/auth/oidc.rs` — implementation site.
-- `backend/src/services/enrichment/http.rs` — pre-existing
+- `backend/src/auth/oidc.rs`: implementation site.
+- `backend/src/services/enrichment/http.rs`: pre-existing
   conformant client; pattern source for the provider-courtesy
   UA shape.
-- `backend/src/config.rs::user_agent` — operator-contact UA
+- `backend/src/config.rs::user_agent`: operator-contact UA
   composition for enrichment clients.

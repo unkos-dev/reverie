@@ -60,7 +60,7 @@ Concretely:
 - **Build**: a single multi-stage `Dockerfile` produces one image. The
   Vite build emits `dist/` (including `csp-hashes.json`) into the
   frontend stage, the Rust build produces `reverie-api`, and the
-  runtime stage copies both — frontend dist into `/srv/frontend`,
+  runtime stage copies both: frontend dist into `/srv/frontend`,
   binary into `/usr/local/bin`
 - **Runtime**: the backend reads `REVERIE_FRONTEND_DIST_PATH` at
   startup, validates the directory and the `csp-hashes.json` sidecar
@@ -96,7 +96,7 @@ Concretely:
   `SameSite`, OIDC redirect URIs, and XHR `credentials: include` all
   Just Work because requests are same-origin end-to-end. This is a
   meaningful reduction in attack surface and operational complexity
-- Good — **simple self-hoster install**. `docker run` plus a Postgres
+- Good: **simple self-hoster install**. `docker run` plus a Postgres
   container is the entire baseline. Matches how the target audience
   (homelabbers and small self-hosting communities) actually consume
   software
@@ -105,7 +105,7 @@ Concretely:
   `backend@vY` that disagree on API shape. CI bumps both halves in
   one PR (release-please already enforces this via `Cargo.toml` +
   `package.json` co-versioning)
-- Good — **single healthcheck, single failure mode**. One `/health`
+- Good: **single healthcheck, single failure mode**. One `/health`
   endpoint covers both halves. Simplifies orchestration
   (`depends_on: condition: service_healthy`), Traefik routing, and
   deploy automation
@@ -126,7 +126,7 @@ Concretely:
   Mitigated by keeping the static-serve module narrow
   (`backend/src/routes/spa.rs`) and the CSP module isolated
   (`backend/src/security/headers.rs`)
-- Bad — **the build-time sidecar contract (`csp-hashes.json`) is an
+- Bad: **the build-time sidecar contract (`csp-hashes.json`) is an
   invariant the test suite must protect**. If a frontend refactor
   drops the plugin or changes the schema, the backend will panic at
   startup. Mitigated by the existing tests in
@@ -161,7 +161,7 @@ Concretely:
   against the split
 
 - **Embed the frontend bundle into the Rust binary via
-  `include_dir!` or `rust-embed`.** Rejected — would lose the
+  `include_dir!` or `rust-embed`.** Rejected: would lose the
   ability to swap frontend assets without recompiling Rust, would
   inflate the binary size, and would complicate the CSP sidecar
   pattern (the JSON file would need a parallel `include_str!` slot
@@ -230,15 +230,15 @@ Open a superseding ADR if any of the following happen:
   Dockerfile, and CI scope of the staging deploy
 - Tracker: the ticket commissioning this ADR
 - Code references:
-  - `Dockerfile` — single multi-stage build
-  - `backend/src/lib.rs::build_router_with_session_store` —
+  - `Dockerfile`: single multi-stage build
+  - `backend/src/lib.rs::build_router_with_session_store`:
     `routes::spa::router_enabled` mount
-  - `backend/src/lib.rs::run` — `frontend_dist_path` startup
+  - `backend/src/lib.rs::run`: `frontend_dist_path` startup
     validation
-  - `backend/src/security/headers.rs` — CSP enforcement, including
+  - `backend/src/security/headers.rs`: CSP enforcement, including
     `spa_fallback_response`
-  - `backend/src/security/dist_validation.rs` — startup-time
+  - `backend/src/security/dist_validation.rs`: startup-time
     sidecar contract enforcement
-  - `frontend/vite-plugins/csp-hash.ts` — the build-time sidecar
+  - `frontend/vite-plugins/csp-hash.ts`: the build-time sidecar
     emitter
-  - `frontend/vite.config.ts` — dev-mode proxy + relaxed dev CSP
+  - `frontend/vite.config.ts`: dev-mode proxy + relaxed dev CSP

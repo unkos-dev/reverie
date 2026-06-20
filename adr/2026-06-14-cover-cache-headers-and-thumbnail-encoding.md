@@ -18,7 +18,7 @@ causes, none of which is the EPUB cover decode itself:
 1. **No client caching.** Every cover response carried `Cache-Control:
 no-store` with no `ETag`. The on-disk cache makes a warm server hit ~20 ms,
    but `no-store` forbids _any_ browser caching and the absence of a validator
-   rules out cheap `304` revalidation — so the browser re-downloads every
+   rules out cheap `304` revalidation, so the browser re-downloads every
    visible cover on every navigation and scroll (~8 MB for a 75-book grid),
    regardless of server warmth.
 2. **Cold generation is lazy and expensive.** Covers rasterize + Lanczos3-resize
@@ -59,7 +59,7 @@ threat-model control.
 
 ## Decision Outcome
 
-**A — caching headers.** Covers serve `Cache-Control: private, max-age=86400`
+**A: caching headers.** Covers serve `Cache-Control: private, max-age=86400`
 with a strong `ETag` of `"{current_file_hash[..16]}-{size}"`, and the handler
 answers a matching `If-None-Match` with `304 Not Modified`. `private` keeps
 shared proxies/CDNs from storing a cover, and `Vary: Authorization, Cookie`
@@ -68,10 +68,10 @@ RLS-scoped cover across an account switch (covers are RLS-visibility-scoped, so
 the same URL can be a `200` for one user and a `404` for another). `max-age`
 serves repeat views from the browser cache with no request; once it lapses the
 `ETag` drives a cheap revalidation. `immutable` is rejected because the URL is
-not hash-addressed — the `ETag` (which _is_ derived from the file hash) gives
+not hash-addressed: the `ETag` (which _is_ derived from the file hash) gives
 correct revalidation after a writeback instead.
 
-**B — pre-warm the thumbnail at ingest.** `process_file` fires a
+**B: pre-warm the thumbnail at ingest.** `process_file` fires a
 concurrency-bounded, best-effort background task that generates the thumbnail
 for each newly-ingested EPUB. The first grid view is then a warm hit. Warming
 is detached (the synchronous scan returns immediately), bounded by a process
@@ -93,7 +93,7 @@ preserve alpha directly, but `image` 0.25 has no WebP encoder.
   thread: a latent blocking-IO bug.
 - Neutral, because the shared-browser cross-user replay (THREAT): a cached
   RLS-scoped cover served to a different account after a switch on the same
-  browser — is closed by `Vary: Authorization, Cookie`, which partitions the
+  browser: is closed by `Vary: Authorization, Cookie`, which partitions the
   private cache by credential. Credentials are stable within a session, so
   per-session caching is preserved while the cross-user replay is blocked.
 - Bad, because a writeback within the `max-age` window shows a stale cover for

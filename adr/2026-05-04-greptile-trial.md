@@ -45,29 +45,29 @@ start tight and miss patterns.
 
 `greptile.json` at repo root:
 
-- `strictness: 1` — counter-intuitively, this is the _least_
+- `strictness: 1`: counter-intuitively, this is the _least_
   filtered setting in Greptile's schema (1 = Low strictness =
   Verbose; 3 = High strictness = Critical-only). Comments on
   everything Greptile flags. Trial purpose is signal calibration
-  — needs the full output to evaluate
-- `commentTypes: ["logic", "syntax", "style", "info"]` — every
+  , needs the full output to evaluate
+- `commentTypes: ["logic", "syntax", "style", "info"]`, every
   category enabled. Style overlap with the lint policy is expected
   signal data: any style nit Greptile raises that lint already
   enforces is a data point on Greptile's lint awareness; any nit
   lint doesn't catch is a candidate for a new lint rule
-- `triggerOnUpdates: true` — re-review on every push, not just first
+- `triggerOnUpdates: true`: re-review on every push, not just first
 - `customContext.files`: pinned references to `CLAUDE.md`,
   `backend/CLAUDE.md`, `frontend/CLAUDE.md`,
   `adr/2026-05-03-strict-lint-policy.md`, and the 13
   `.claude/security/codeguard-*.md` checklists. These are the
   load-bearing convention sources, which Greptile should read
   before flagging style/security
-- `customContext.rules`: project-specific rules with file scopes —
+- `customContext.rules`: project-specific rules with file scopes:
   `time` not `chrono` (backend), no raw hex literals (frontend), no
   `enum` (frontend), no inline JSX style (frontend), shadcn/ui
   carve-out, secret-handling stance, TDD requirement, Conventional
   Commits requirement
-- No `ignorePatterns` initially — see Alternatives. Amended
+- No `ignorePatterns` initially: see Alternatives. Amended
   2026-05-04 to exclude lockfiles only; see Amendments below
 
 ### App install
@@ -136,7 +136,7 @@ tracking ticket by design):
 - Convention-misread recurrence (trial tally row #9 class). If it
   recurs, encode the ADR-status convention in `greptile.json`
   `customRules` rather than relying on per-PR inference
-- Lockfile `ignorePatterns` sufficiency — confirm the carve-out
+- Lockfile `ignorePatterns` sufficiency: confirm the carve-out
   still suppresses the rename-hallucination class as the lockfile
   format evolves
 - Cross-tool overlap-rate creep with CodeRabbit on docstring-heavy
@@ -154,10 +154,10 @@ tracking ticket by design):
 - Good: graph-based context (the Greptile differentiator) means
   comments can reference cross-file patterns, not just the diff
   in isolation. Stronger than per-file static analysis
-- Good — pinned `customContext.files` align Greptile with project
+- Good: pinned `customContext.files` align Greptile with project
   conventions from day one. Reduces the cold-start noise common in
   AI reviewers that don't read the codebase's documented rules
-- Good — `strictness: 1` + all `commentTypes` produces maximum
+- Good: `strictness: 1` + all `commentTypes` produces maximum
   signal data for the trial verdict. Easier to dial up (raise the
   filter to 2 or 3) at the gate with evidence than to dial down
   from a quiet starting point and miss the patterns Greptile only
@@ -172,8 +172,8 @@ tracking ticket by design):
   this repo; not transferable to private repos without re-review
 - Bad: third-party SaaS dependency. If Greptile changes pricing,
   policy, or API, the workflow regresses. Mitigated by trial
-  framing — no automation depends on Greptile's existence
-- Neutral — `customContext` may inflate per-PR token spend on
+  framing: no automation depends on Greptile's existence
+- Neutral: `customContext` may inflate per-PR token spend on
   Greptile's side. Visible in their billing dashboard (if relevant
   for the trial tier) but not on our infra
 - Neutral: Greptile's findings are advisory. Maintainer remains
@@ -203,7 +203,7 @@ tracking ticket by design):
   the gate with evidence. Starting filtered and trying to
   reconstruct what was hidden is harder than starting verbose and
   pruning
-- **`commentTypes: ["logic"]` only.** Rejected — pre-filters out
+- **`commentTypes: ["logic"]` only.** Rejected: pre-filters out
   the data needed to evaluate Greptile's full output. Trial first,
   filter later
 - **Add `ignorePatterns` for `package-lock.json`, `Cargo.lock`,
@@ -297,13 +297,13 @@ which the label gate suppressed.
 #### What stays unchanged
 
 - Strictness, commentTypes, customContext, ignorePatterns, all
-  customRules — unchanged
-- Author exclusion for `renovate(bot)` and `dependabot[bot]` —
+  customRules: unchanged
+- Author exclusion for `renovate(bot)` and `dependabot[bot]`:
   unchanged (separate per-bot quotas; never depleted maintainer
   quota)
 - Trial gate metric (≥30% actionable) and gate decision matrix: unchanged. The CodeRabbit parallel trial (2026-05-21 gate)
   is also unchanged
-- `triggerOnUpdates: false` — retained as a noise control, not a
+- `triggerOnUpdates: false`: retained as a noise control, not a
   quota control
 
 #### What to watch
@@ -334,7 +334,7 @@ shown in the Greptile dashboard:
 because the sqlx-macros series clustered three to five reviews per PR.
 Renovate and Dependabot are already excluded via per-author Greptile
 config (separate per-bot quota; bot-PR reviews do not deplete the
-maintainer's `junkovich` author quota — confirmed empirically when
+maintainer's `junkovich` author quota: confirmed empirically when
 the cap-hit notice referenced `junkovich`-author reviews only).
 
 The dominant burn driver is `triggerOnUpdates: true`: every push to
@@ -359,9 +359,9 @@ maintainer's intent to internal-review first, then ask Greptile.
 }
 ```
 
-- `triggerOnUpdates: false` — pushes to an open PR do not trigger a
+- `triggerOnUpdates: false`: pushes to an open PR do not trigger a
   fresh review. Eliminates the per-push-burst burn.
-- `labels: ["greptile-review"]` — Greptile only reviews PRs that
+- `labels: ["greptile-review"]`: Greptile only reviews PRs that
   carry the `greptile-review` label. Doc-only / chore / config PRs
   that never get the label never burn a review.
 
@@ -425,8 +425,8 @@ do not carry logic-level signal, exactly the class where the prior
 <!-- markdownlint-enable MD024 -->
 
 - Strictness, commentTypes, customContext, ignorePatterns, all
-  customRules — unchanged.
-- Author exclusion for `renovate(bot)` and `dependabot[bot]` —
+  customRules: unchanged.
+- Author exclusion for `renovate(bot)` and `dependabot[bot]`:
   unchanged. Their per-bot review counters are separate from
   the maintainer's author quota.
 - Trial gate metric (≥30% actionable) and gate decision matrix:
@@ -469,7 +469,7 @@ framing, both Greptile and CodeRabbit named in passing with their
 security disclosures, AI-training opt-in/out clauses split
 per-reviewer.
 
-### 2026-05-04 — `ignorePatterns` added for lockfiles (PR #148)
+### 2026-05-04: `ignorePatterns` added for lockfiles (PR #148)
 
 The initial config in this ADR deferred `ignorePatterns` to the
 trial gate, with the explicit trigger: _"Add at the trial gate if
@@ -481,7 +481,7 @@ A different binding constraint emerged ~5 hours into the trial,
 not anticipated by the original ADR: a **confirmed hallucination
 pattern** specific to lockfiles. Two consecutive Renovate npm-bump
 PRs (#71 `@commitlint/config-conventional` and #74
-`markdownlint-cli2`) produced identical false-positive findings —
+`markdownlint-cli2`) produced identical false-positive findings:
 Greptile narrated the existing `name: reverie-dev` string in
 `package-lock.json` context as a brand-new `tome-dev → reverie-dev`
 "silent rename" introduced by the PR. Verified against actual
@@ -511,7 +511,7 @@ Trial tally tracking these findings: the trial tally (rows #4 and #5).
 - MADR 4.0: <https://adr.github.io/madr/>
 - Greptile docs: <https://docs.greptile.com>
 - `greptile.json` schema: <https://docs.greptile.com/code-review/configuration>
-- Related: [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md) — strict lint
+- Related: [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md): strict lint
   landed first to compress style territory before this trial
 - Related: `CLAUDE.md` "Hard Rules" §5 (TDD), §6 (security
   scrutiny), §7 (secret handling): Greptile is configured to

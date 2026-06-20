@@ -31,7 +31,7 @@ As of 2026-05-12 this coupling is actively blocking work:
   `docker pull`. The Incus LXC on `oci-compute-1` is provisioned but
   idle pending an image URL
 - `infra/local/reverie-dev/compose.yml` in the homelab repo references
-  the placeholder tag `ghcr.io/unkos-dev/reverie:0.0.0-placeholder` —
+  the placeholder tag `ghcr.io/unkos-dev/reverie:0.0.0-placeholder`:
   intentionally non-functional until a real tag exists
 
 The deeper problem: **the staging image lifecycle is gated on the
@@ -58,11 +58,11 @@ the load-bearing constraints before re-coupling the channels.
 
 Reverie's CI publishes Docker images on **two independent triggers**:
 
-1. **`main`-branch push** — emits `ghcr.io/unkos-dev/reverie:main`
+1. **`main`-branch push**: emits `ghcr.io/unkos-dev/reverie:main`
    (floating, tracks main HEAD) and `:sha-<7>` (immutable pin to that
    commit). Audience: staging environments and reproducible-pin
    consumers
-2. **Version tag push (`v*`)** — emits `:vX.Y.Z` and `:X.Y` (semver
+2. **Version tag push (`v*`)**: emits `:vX.Y.Z` and `:X.Y` (semver
    tags). Audience: self-hosters consuming a released version
 
 The semver tag flow is **unchanged**: release-please continues to
@@ -108,7 +108,7 @@ UI action is acceptable operational cost.
 - Good: **staging gets continuous images at zero extra release
   cadence**. Every main merge produces a pullable artefact. Homelab
   Phase 3 deploy unblocks immediately
-- Good — **reproducible pins via `:sha-<7>`**. Staging operators can
+- Good: **reproducible pins via `:sha-<7>`**. Staging operators can
   pin a specific commit when investigating a regression, then move
   back to `:main` when done. This is the conventional pattern for
   ephemeral environments tracking trunk
@@ -123,7 +123,7 @@ UI action is acceptable operational cost.
   tag flows instead of one. GHCR is free for public packages, so
   cost is zero. Storage footprint is the only concern; manifest
   cleanup via retention policy is a future ADR if it matters
-- Bad — **`:main` is a footgun for self-hosters who copy the wrong
+- Bad: **`:main` is a footgun for self-hosters who copy the wrong
   tag**. A homelabber following an old blog post might pull `:main`
   and get an unreleased build. Mitigation: documentation in
   `README.md` and `docs/` calls out that `:main` is staging-only;
@@ -148,20 +148,20 @@ UI action is acceptable operational cost.
 
 ## Alternatives Considered
 
-- **Kick release-please early to force `v0.1.0`.** Rejected — burns
+- **Kick release-please early to force `v0.1.0`.** Rejected: burns
   the semver milestone on a scaffolding release. The first semver tag
   appears in `CHANGELOG.md` forever; making it "v0.1.0: docker
   scaffolding, no UI" is permanent low-signal noise. Self-hosters who
   later browse releases would have to skip past it. The whole point
   of holding PR #33 is that v0.1.0 should mean something
-- **Manual local `docker build && docker push`.** Rejected — breaks
+- **Manual local `docker build && docker push`.** Rejected: breaks
   the CI-is-publisher invariant. Every image at `ghcr.io/unkos-dev/`
   should be reproducible from a workflow run + commit SHA. Manual
   pushes lose that audit trail, can't be re-built deterministically,
   and require maintainer credentials with `write:packages` scope
   outside of GitHub Actions OIDC. Provenance also breaks any future
   Sigstore / cosign signing flow
-- **Auto-assign `:latest` to main HEAD.** Rejected — `:latest` is a
+- **Auto-assign `:latest` to main HEAD.** Rejected: `:latest` is a
   contract with self-hosters that means "the most recent stable
   release I can run". Pointing it at main HEAD makes `docker pull
 ghcr.io/unkos-dev/reverie` (the most natural command a curious user
@@ -169,13 +169,13 @@ ghcr.io/unkos-dev/reverie` (the most natural command a curious user
   is hard to walk back. Better to leave `:latest` unset until the
   first real release defines it
 - **Separate `docker-publish-staging.yml` workflow file.** Rejected
-  — which duplicates the entire pipeline (login, metadata, buildx setup,
+  , duplicates the entire pipeline (login, metadata, buildx setup,
   build-push) for a one-line trigger difference. Two upgrade paths
   to track when bumping action versions. The single-workflow
   approach with both triggers in `on:` is cleaner; metadata-action's
   `type=semver` patterns already correctly emit only on tag refs, so
   cross-contamination is impossible
-- **`workflow_dispatch` manual button.** Rejected — defeats
+- **`workflow_dispatch` manual button.** Rejected: defeats
   CI-driven deploy automation. Staging should track main
   automatically; gating image production on a maintainer clicking a
   button reintroduces the friction this decision is trying to
@@ -240,7 +240,7 @@ ghcr.io/unkos-dev/reverie:main` succeeds from a clean
         unauthenticated context
   - [ ] `:latest` tag does not exist at GHCR after the workflow run
   - [ ] Next `v*` tag push (whenever PR #33 eventually merges)
-        still emits `:vX.Y.Z` + `:X.Y` correctly — the semver path is
+        still emits `:vX.Y.Z` + `:X.Y` correctly, the semver path is
         not regressed
   - [ ] gha cache usage post-merge stays under a 5 GB observed
         ceiling, leaving headroom for a future build-cache ADR
@@ -271,8 +271,8 @@ ghcr.io/unkos-dev/reverie:main` succeeds from a clean
   the held release-please PR whose intentional delay surfaced this
   coupling
 - Code references:
-  - `.github/workflows/docker-publish.yml` — single file changed by
+  - `.github/workflows/docker-publish.yml`: single file changed by
     this decision
-  - `release-please-config.json` — release-please configuration,
+  - `release-please-config.json`: release-please configuration,
     unchanged by this decision but provides the canonical semver
     flow that `:latest` will eventually track

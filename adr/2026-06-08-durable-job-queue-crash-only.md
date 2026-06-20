@@ -32,7 +32,7 @@ lease / visibility timeouts to do it?
 ## Decision Drivers
 
 - **In-flight work must survive an instant kill** with no lost work and no
-  permanently-stuck `in_progress` rows — without bespoke liveness tracking.
+  permanently-stuck `in_progress` rows: without bespoke liveness tracking.
 - **Single-instance is the default; don't pre-build multi-instance machinery.**
   The [pooling ADR](2026-06-08-connection-pooling.md) defers its
   multi-instance concern to the topology that needs it; the job model should
@@ -48,7 +48,7 @@ lease / visibility timeouts to do it?
 
 ## Considered Options
 
-- **A — Restart-bounded reclaim: `FOR UPDATE SKIP LOCKED` claim + startup-revert
+- **A: Restart-bounded reclaim: `FOR UPDATE SKIP LOCKED` claim + startup-revert
   of orphaned `in_progress` + per-job timeouts + a panic guard; crash-only;
   idempotent handlers.**
 - **B**: Lease / visibility-timeout reclaim (wall-clock), with heartbeat renewal
@@ -70,8 +70,8 @@ the **instance** boundary, not on worker count.
   [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md) names
   as a "don't preclude scale" guardrail. Mutual exclusion of one `in_progress`
   row per work-unit is enforced by a partial unique index.
-- **Crash recovery is restart-bounded.** At instance startup — once per process
-  boot, before the worker pool begins claiming — orphaned `in_progress` rows are
+- **Crash recovery is restart-bounded.** At instance startup, once per process
+  boot, before the worker pool begins claiming, orphaned `in_progress` rows are
   reverted to `pending` and re-claimed. Because every worker lives inside the one
   instance, a crash kills them all together, so a restart proves any
   `in_progress` row is an orphan regardless of how many workers were running;

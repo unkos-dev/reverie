@@ -17,16 +17,16 @@ pages when their surface lands.
 The `validation_status` enum is `pending | clean | repaired | degraded`.
 The distinction is not self-evident to an operator reading the value:
 
-- `pending` — the manifestation row exists but structural validation has
+- `pending`: the manifestation row exists but structural validation has
   not run yet.
-- `clean` — validation found no issues.
-- `repaired` — validation found issues that were automatically repaired;
+- `clean`: validation found no issues.
+- `repaired`: validation found issues that were automatically repaired;
   the file is ingested, stored, and served.
-- `degraded` — validation found issues that are tolerated; the file is
+- `degraded`: validation found issues that are tolerated; the file is
   still served.
 
 The load-bearing point operators need: `clean`, `repaired`, and
-`degraded` are **all** stored-and-served outcomes on one quality tier —
+`degraded` are **all** stored-and-served outcomes on one quality tier:
 `clean` means _no issues found_, not _the only valid state_. A
 quarantined file is never represented here because quarantine deletes the
 file and writes no row.
@@ -48,7 +48,7 @@ persisting. Two operator-visible behaviours:
 - **Invalid format degrades to NULL, not a login failure.** A malformed
   claim (display-name form `Alice <alice@example.com>`, domain-literal
   `alice@[127.0.0.1]`, or a non-email string) is discarded and
-  `users.email` stored as `NULL`. Login still succeeds — identity is the
+  `users.email` stored as `NULL`. Login still succeeds, identity is the
   OIDC `sub`, not the email claim (OIDC Core §5.7: email is optional and
   non-identifying).
 - **Malformed claim on re-login overwrites a previously-stored valid
@@ -68,7 +68,7 @@ The admin `PATCH /api/v1/users/{id}` endpoint validates the email field
 against the same RFC 5322 _addr-spec_ rules as the OIDC path
 (`is_addr_spec`). This tightens the prior `EmailAddress::is_valid` check,
 which accepted display-name (`Alice <alice@example.com>`) and
-domain-literal (`alice@[127.0.0.1]`) forms — both now rejected with 422.
+domain-literal (`alice@[127.0.0.1]`) forms: both now rejected with 422.
 Email changes and clears do **not** bump `session_version`: email is not
 an access-control input (login identity is the OIDC `sub`, RLS keys on
 user id/role/`is_child`), so no active session needs invalidating.
@@ -83,7 +83,7 @@ the admin user-management UI lands.
 The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and
 `/opds` are deliberately unversioned (operational / standard-protocol
 paths exempt from the URL-path major-version rule). The data routes moved
-from `/api/*` to `/api/v1/*` — a breaking change. Old `/api/*` paths now
+from `/api/*` to `/api/v1/*`: a breaking change. Old `/api/*` paths now
 return a JSON Problem `404`.
 
 Deferred on purpose: pre-v0.1.0 there are no released API consumers, so no

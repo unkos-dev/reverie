@@ -14,7 +14,7 @@ informed: "Reverie contributors"
 Standard Ebooks (the canonical public-domain EPUB source) declare their cover
 as `images/cover.svg` (`media-type="image/svg+xml"`, `properties="cover-image"`).
 Two gaps combine to break these covers. **Detection:** covers are located by
-`find_cover_href`, which matched only a few legacy manifest ids — but Standard
+`find_cover_href`, which matched only a few legacy manifest ids, but Standard
 Ebooks (and EPUB 3 generally) declare the cover via the `properties="cover-image"`
 attribute on an item with an arbitrary id (`cover.svg`/`cover.jpg`), which
 `opf_layer` discarded. So no SE cover was detected at all → HTTP 404
@@ -28,7 +28,7 @@ cover art renders.
 
 This decision addresses the decode gap (rasterize SVG → PNG). The detection gap
 ships in the same PR: `opf_layer` now captures `properties="cover-image"` and
-`find_cover_href` prefers it over the id heuristic — without it, rasterization
+`find_cover_href` prefers it over the id heuristic, without it, rasterization
 would never be reached.
 
 Rendering SVG means executing an SVG renderer over **attacker-controlled XML**
@@ -49,12 +49,12 @@ requires capturing. Tracked as the SVG cover rasterization task.
   `<image href>`, and decode/expansion bombs.
 - Minimal blast radius: cache keying, the resize step, and the serving handler
   should be reused unchanged.
-- Bounded build weight — `oci-compute-1` OOMs the GNU linker under heavy parallel
+- Bounded build weight: `oci-compute-1` OOMs the GNU linker under heavy parallel
   builds, so a fat transitive tree (e.g. bundled fonts) is a cost.
 
 ## Considered Options
 
-- **Rasterize at extraction to PNG via `resvg`** — sniff SVG at the
+- **Rasterize at extraction to PNG via `resvg`**, sniff SVG at the
   `guess_format` failure point, render to PNG, hand the PNG to the existing
   pipeline.
 - **Serve SVG pass-through**: store and serve the SVG bytes directly.
@@ -104,11 +104,11 @@ Concrete shape of the decision:
   Only then is the SVG parsed (`roxmltree`) and converted (`from_xmltree`).
 - **Render-cost cap.** `resvg` has no render-time limits, and two axes escape the
   output-size cap: filters (the filter buffer is allocated to the filter region,
-  not the canvas — a crafted `userSpaceOnUse` region + large `feGaussianBlur` is
+  not the canvas: a crafted `userSpaceOnUse` region + large `feGaussianBlur` is
   a CPU/memory bomb) and vector tessellation (cost scales with segment count,
   independent of output size). Before `resvg::render`, a complexity gate walks the
   tree (`children`, the _full_ `clip-path`/`mask` chains, and every node's
-  paint-server / layout sub-trees via `Node::subroots` — a filter can hide inside
+  paint-server / layout sub-trees via `Node::subroots`, a filter can hide inside
   a `<pattern>` fill or a second-level chained `<mask>`) and rejects covers using
   any filter primitive, or exceeding the total path-segment or node-count budgets.
 - **Blank-output guard.** `usvg` silently drops unresolvable `<image>` nodes and
@@ -136,7 +136,7 @@ Concrete shape of the decision:
 - Bad: a new rendering dependency (~23 transitive crates) and untrusted-XML
   parsing enter the tree. Mitigated by the hardening above and the maintained,
   RUSTSEC-clean crate.
-- Bad — SVG covers relying on live `<text>` lose that text (no `text` feature).
+- Bad: SVG covers relying on live `<text>` lose that text (no `text` feature).
   Acceptable for the canonical source; documented as a known limitation.
 - Bad: an SVG cover that legitimately uses filters renders via the spine
   fallback rather than as artwork (filters are rejected as a render-cost bomb).
@@ -146,7 +146,7 @@ Concrete shape of the decision:
   past the byte-scan depth guard (a stack-overflow bypass) and reopens XXE /
   billion-laughs. Real covers (Standard Ebooks and modern toolchains) emit no
   DOCTYPE, so the cost is borne only by unusual inputs.
-- Neutral — existing rows ingested before this change keep their `degraded`
+- Neutral: existing rows ingested before this change keep their `degraded`
   status until re-ingested or revalidated; covers render regardless, since
   serving never gates on `validation_status`. Bulk revalidation is a follow-up.
 
@@ -179,7 +179,7 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 - **No DTD / entity-expansion surface**: DTDs are disabled, so a DOCTYPE-bearing
   cover (the prerequisite for entity-inflated nesting and XXE) is rejected at
   parse (`rejects_svg_with_doctype`, `dtd_entities_are_inert`).
-- **The canonical input renders** — a real Standard Ebooks `cover.svg` passes the
+- **The canonical input renders**: a real Standard Ebooks `cover.svg` passes the
   full gate and rasterizes (`accepts_real_standard_ebooks_cover`).
 - **Raster-only responses**: rasterization happens at extraction; only PNG flows
   to the cache and the serving handler.
@@ -204,8 +204,8 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 
 ### Prefer the raster sibling only
 
-- Good — no SVG rendering at all.
-- Bad — the sibling `cover.jpg` is not manifest-declared as the cover; heuristic
+- Good: no SVG rendering at all.
+- Bad: the sibling `cover.jpg` is not manifest-declared as the cover; heuristic
   sibling-hunting is fragile and misses the base64 data-URI variant entirely.
 - Bad: the in-ZIP href resolver in the chosen option subsumes this case cleanly,
   so the heuristic adds fragility for no coverage gain.
@@ -214,7 +214,7 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 
 - Render hardening references: `usvg` `Options::image_href_resolver`,
   [resvg#647](https://github.com/linebender/resvg/issues/647) (no built-in
-  dimension limits), and the pinned 0.47 parser source — neither `roxmltree` nor
+  dimension limits), and the pinned 0.47 parser source, neither `roxmltree` nor
   `usvg` guards element-nesting recursion, so we parse with `allow_dtd: false` and
   bound nesting on the raw bytes ourselves.
 - Security checklists consulted:

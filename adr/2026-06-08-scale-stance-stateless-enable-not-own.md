@@ -106,7 +106,7 @@ and job claim is concurrency-safe
 
 ### Confirmation
 
-Enforced as the `backend/CLAUDE.md` **"Stateless application"** invariant — no
+Enforced as the `backend/CLAUDE.md` **"Stateless application"** invariant: no
 critical state in process memory. No first-party clustering, leader-election, or
 distributed-coordination code exists in the tree; the only cross-instance
 coordination used is Postgres advisory locks (migration) and `FOR UPDATE SKIP
@@ -146,6 +146,6 @@ LOCKED` job claim.
 - [Durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md):
   durable-not-distributed worker design.
 - [Standards-first integrations ADR](2026-06-08-standards-first-integrations.md)
-  — implementing the same "enable, don't own" philosophy on the integrations axis.
+  , the same "enable, don't own" philosophy on the integrations axis.
 - Revisit trigger: if first-party HA ever becomes a goal (e.g. a hosted Reverie
   offering), this stance gets a superseding ADR; it is not amended by exception.

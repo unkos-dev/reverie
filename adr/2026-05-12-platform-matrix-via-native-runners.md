@@ -51,7 +51,7 @@ record.
 Reverie's Docker publish workflow builds each architecture on a native
 GitHub-hosted runner and assembles the manifest list as a final step.
 
-1. **One or two build jobs** (dynamic matrix) — the matrix `include`
+1. **One or two build jobs** (dynamic matrix), the matrix `include`
    list is emitted per trigger by the `prepare-matrix` job described
    in item 3 below. Each instance differs on runner and target
    platform:
@@ -101,12 +101,12 @@ shape changes.
 
 ## Consequences
 
-- Good — **wall-clock = `max(amd64, arm64)`**, not sum, on tag pushes.
+- Good: **wall-clock = `max(amd64, arm64)`**, not sum, on tag pushes.
   Per-arch builds run in parallel on native runners.
-- Good — **`main`-push arm64 build runs natively**, not emulated.
+- Good: **`main`-push arm64 build runs natively**, not emulated.
   Eliminates the 30+ min QEMU baseline observed on run
   `25731891335`. Staging image cadence becomes acceptable.
-- Good — **no QEMU dependency**. `docker/setup-qemu-action` and its
+- Good: **no QEMU dependency**. `docker/setup-qemu-action` and its
   `binfmt_misc` fragility are gone from the workflow. The "Compute
   build platforms" shell step is replaced by a `prepare-matrix` job
   emitting the include list as JSON; per-trigger filtering moves from
@@ -114,7 +114,7 @@ shape changes.
 - Good: **release boundary fully native on both architectures**.
   Self-hosters pulling a `v*` tag receive images built without
   emulation on either leg.
-- Good — **attestations preserved**. `provenance: mode=max` and
+- Good: **attestations preserved**. `provenance: mode=max` and
   `sbom: true` on each per-arch build; `imagetools create` propagates
   per-platform attestations onto the resulting manifest list. This is
   the standard pattern and keeps the path to future image signing
@@ -126,7 +126,7 @@ shape changes.
   similar to the QEMU baseline (the amd64 leg was always fast; the
   arm64 leg dominates either way), and total wall-clock drops because
   the two build legs are concurrent.
-- Bad — **digest plumbing via `actions/upload-artifact` +
+- Bad: **digest plumbing via `actions/upload-artifact` +
   `download-artifact`**. Per-arch builds and the merge job don't share
   a workspace, so digests cross job boundaries as artifacts. This is
   the canonical pattern but adds two steps per build and one per
@@ -142,7 +142,7 @@ shape changes.
   QEMU for tag-push amd64.** Rejected: puts QEMU on the public
   release path. Tags are the worst place to absorb emulation cost.
   Half-measure that doesn't remove the QEMU dependency.
-- **Self-hosted ARM runner on `oci-compute-1`.** Rejected — self-hosted
+- **Self-hosted ARM runner on `oci-compute-1`.** Rejected: self-hosted
   runners on a public repo are a documented GitHub security
   anti-pattern: forks can inject workflow code that runs on the
   self-hosted machine. Adds operational surface (runner agent, OS
@@ -153,7 +153,7 @@ shape changes.
   acceptance criterion that CI runtime does not regress materially
   fails today; this is the regression.
 - **Arm64-only on `v*` tags (inverse of the chosen split).** Rejected
-  — homelab staging consumes `:main` arm64. Making arm64 a release-only
+  , homelab staging consumes `:main` arm64. Making arm64 a release-only
   artefact regresses staging.
 - **Full multi-arch (amd64 + arm64) on both triggers.** Rejected:
   amd64 has no consumer today. The sole arm64 consumer is
@@ -198,7 +198,7 @@ Open a superseding ADR if any of the following happen:
 - MADR 4.0: <https://adr.github.io/madr/>
 - Supersedes:
   [`adr/2026-05-12-decouple-staging-image-from-semver-releases.md`](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md)
-  — two-channel publication and `:latest`-not-auto-assigned decisions
+  , two-channel publication and `:latest`-not-auto-assigned decisions
   remain in force; build-shape decision is replaced
 - Related:
   [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
@@ -208,11 +208,11 @@ Open a superseding ADR if any of the following happen:
 - Related: the upstream issue decoupling staging image from semver releases (immediate predecessor, which introduced QEMU and the trigger-driven platform matrix; the trigger split is preserved by this ADR, the QEMU dependency is removed)
 - Related: homelab Phase 3 staging deploy that consumes the `:main` arm64 image
 - Empirical baseline: [run 25731891335](https://github.com/unkos-dev/reverie/actions/runs/25731891335)
-  — which was a 30+ min arm64-via-QEMU build on main-push — the regression that
+  , 30+ min arm64-via-QEMU build on main-push, the regression that
   prompted this change
 - Code references:
-  - `.github/workflows/docker-publish.yml` — single workflow changed
+  - `.github/workflows/docker-publish.yml`: single workflow changed
     by this decision
-  - `release-please-config.json` — release-please configuration,
+  - `release-please-config.json`: release-please configuration,
     unchanged by this decision but provides the `v*` tag flow this
     ADR's tag-push leg consumes

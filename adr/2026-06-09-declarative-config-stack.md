@@ -76,12 +76,12 @@ configuration.
 
 - **A**: Keep the imperative reader (status quo).\*\* Solve the docs need some other
   way (e.g. a `syn` source parser, or a hand-maintained reference table).
-- **B — Minimal declarative-for-docs ("light path").** Derive `schemars::JsonSchema`
+- **B: Minimal declarative-for-docs ("light path").** Derive `schemars::JsonSchema`
   on the _existing_ structs, annotate each field's env-name and default, and render
   the reference from the emitted schema. Extend the existing default-assertion and
-  call-site-coverage tests to close drift. **Leave `from_source` untouched** — no
+  call-site-coverage tests to close drift. **Leave `from_source` untouched**, no
   figment, no validator.
-- **C — Full declarative stack (chosen).** Replace `from_source` with a
+- **C: Full declarative stack (chosen).** Replace `from_source` with a
   `figment` + `serde` load pipeline, `validator` for validation, and `schemars`
   (scoped to the config crate) for the reference and a reusable JSON Schema.
 
@@ -124,14 +124,14 @@ struct the single introspectable source of truth, which resolves the configurati
 generator soundly and removes the class of hand-rolled drift the imperative reader
 invites. The stack:
 
-- **`figment`** — layered loading (struct defaults → environment), nested-struct
+- **`figment`**: layered loading (struct defaults → environment), nested-struct
   deserialization, and an in-memory provider for hermetic tests (replacing the
   `EnvGet` closure seam).
-- **`serde`** — typed deserialization into the config structs (already in tree).
-- **`validator`** — declarative range checks plus framework-hosted custom and
+- **`serde`**: typed deserialization into the config structs (already in tree).
+- **`validator`**: declarative range checks plus framework-hosted custom and
   cross-field validators (conditional-required, header-injection), with
   field-attributed error aggregation.
-- **`schemars`** — `JsonSchema` derive on the config structs, scoped to the config
+- **`schemars`**: `JsonSchema` derive on the config structs, scoped to the config
   crate; the configuration reference and a reusable JSON Schema artifact are
   rendered from it.
 
@@ -145,7 +145,7 @@ owns the task sequence, the offload boundary, and the verification checklist.
   once on the field; the reference generator reads the structure instead of parsing
   prose, and documentation cannot silently drift from the loader.
 - Good, because validation gains a consistent, well-vetted framework with
-  field-attributed, aggregated errors — an improvement over fail-fast `if`-ladders
+  field-attributed, aggregated errors: an improvement over fail-fast `if`-ladders
   on a surface that includes a security-relevant injection check.
 - Good, because figment's layering leaves the door open to optional config-file
   support later without another rewrite (enabled, not pursued here).
@@ -168,10 +168,10 @@ owns the task sequence, the offload boundary, and the verification checklist.
 - Bad (smaller than feared), because some of `from_source`'s complexity survives
   as custom code in new shapes: the `REVERIE_LOG_LEVEL > RUST_LOG > "info"`
   cascade, the conditional-required migration DSN, and the ingestion-DSN fallback
-  (all post-deserialize), plus two custom field deserializers — `format_priority`
+  (all post-deserialize), plus two custom field deserializers, `format_priority`
   (bare CSV→`Vec<enum>`) and `csp_report_endpoint` (raw-string injection guard).
   Implementation prototyping established that figment does **not** coerce
-  `Str→num`/`Str→bool` from a raw-string provider — its own `Env` provider parses
+  `Str→num`/`Str→bool` from a raw-string provider, its own `Env` provider parses
   each value via `Value`'s `FromStr` first. Mirroring that parse in `EnvProvider`
   makes numeric coercion native and the strict-bool contract (which requires only
   lowercase `true`/`false`, rejecting `1`/`yes`) native too, so the per-field
@@ -185,8 +185,8 @@ owns the task sequence, the offload boundary, and the verification checklist.
   like `enrichment.concurrency`). It is carried by a small custom
   `figment::Provider` (`EnvProvider`, ~60 lines) holding an explicit per-key
   var→dotted-field map; the `REVERIE_LOG_LEVEL > RUST_LOG` cascade is resolved
-  inside that provider. The provider — rather than figment's lighter `Env::map()`
-  — is justified less by the mapping than by the **test seam**: its in-memory
+  inside that provider. The provider, rather than figment's lighter `Env::map()`
+  , is justified less by the mapping than by the **test seam**: its in-memory
   `from_pairs` constructor keeps config tests parallel-safe without mutating
   process env (for parallel test environment isolation), which stock `figment::Env` (process-env-only) cannot do
   without `Jail`'s global-env lock and the `getenv`/`setenv` race. The map doubles
@@ -194,14 +194,14 @@ owns the task sequence, the offload boundary, and the verification checklist.
   revisit trigger below was evaluated against this provider and did not fire.
 - Neutral, because the operator env-var surface is deliberately mixed: bare
   ecosystem-canonical names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) alongside
-  `REVERIE_`-namespaced app-specific knobs — rather than a uniform scheme.
+  `REVERIE_`-namespaced app-specific knobs: rather than a uniform scheme.
   Regularizing every var to mirror the struct nesting (e.g. `__`-separated,
   `REVERIE_OPDS__PUBLIC_URL`) would let stock `figment::Env::split("__")` drop
   most of the per-key map, but was rejected: it spends pre-v1.0 latitude to
   degrade operator ergonomics (longer, `__`-typo-prone names) and to make the
   var↔field registry implicit. The bare/namespaced split matches mature
-  self-hosted peers and is the intended contract. (`OIDC_*` staying bare — which
-  risks collision on a shared host running another OIDC app — is flagged for
+  self-hosted peers and is the intended contract. (`OIDC_*` staying bare, which
+  risks collision on a shared host running another OIDC app, is flagged for
   separate reconsideration, not settled here.)
 - Neutral, because the backend then runs two schema systems on disjoint surfaces:
   utoipa for the HTTP API and schemars for config. No type is described by both, so
@@ -215,7 +215,7 @@ owns the task sequence, the offload boundary, and the verification checklist.
 Configuration loads through figment's declarative pipeline with no hand-rolled
 `env::var` / `get("KEY")` ladder remaining in the loader; every field's env
 binding and default are declared in structured form (field metadata or an
-explicit provider map), not parsed from prose — the `REVERIE_LOG_LEVEL` /
+explicit provider map), not parsed from prose, the `REVERIE_LOG_LEVEL` /
 `RUST_LOG` cascade being the named multi-source exception. The behavioural config
 tests (defaults and the process-env-free injection seam) stay green against the
 new pipeline; the staging-example coverage test is rewritten against the
@@ -233,7 +233,7 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
 ### B: Minimal declarative-for-docs (light path)
 
 - Good, because it solves the docs trigger and every S1 sub-problem at a fraction of
-  the surface area — `from_source` is untouched, so the security-relevant load path
+  the surface area: `from_source` is untouched, so the security-relevant load path
   carries no regression risk.
 - Good, because the annotation↔loader drift gap is largely closable with a test
   extending the existing default assertions.

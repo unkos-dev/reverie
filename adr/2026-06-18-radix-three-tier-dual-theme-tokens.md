@@ -40,7 +40,7 @@ decorative color cannot leak into UI chrome?
 
 ## Considered Options
 
-- Radix Colors (`generateRadixColors`) — generated 12-step perceptual scales,
+- Radix Colors (`generateRadixColors`): generated 12-step perceptual scales,
   consumed through two semantic tiers, with a sealed atmosphere tier.
 - Radix Themes: the Radix component library with its own theming.
 - Hand-tuned per-theme hex ramps.
@@ -57,16 +57,16 @@ runtime dependency and nothing to fetch.
 
 The three tiers:
 
-1. **Primitives (Tier 1)** — `--sand-*` (neutral), `--gold-*` (accent), and
+1. **Primitives (Tier 1)**: `--sand-*` (neutral), `--gold-*` (accent), and
    `--danger-*` (state) 12-step scales, plus alpha, P3, contrast, and a `--bg`
    page token, generated for both themes and vendored verbatim as
    `themes/primitives.generated.css`. Raw hex lives only here; regenerated, never
    hand-edited.
-2. **Semantic (Tier 2)** — reverie role names (`--canvas`, `--surface`,
+2. **Semantic (Tier 2)**: reverie role names (`--canvas`, `--surface`,
    `--border`, `--fg`, `--accent`, `--danger`, …) plus the shadcn aliases, each
    resolving to a Tier 1 step via `var()`. No raw color. The mapping is
    theme-constant; the primitive layer does the light/dark switch.
-3. **Atmosphere (Tier 3)** — `--atm-*` art-directed constants (gilt, ember,
+3. **Atmosphere (Tier 3)**: `--atm-*` art-directed constants (gilt, ember,
    sheen, vellum, cloth). A sealed parallel namespace: UI chrome resolves color
    through Tier 2 only and never reads `--atm-*`.
 

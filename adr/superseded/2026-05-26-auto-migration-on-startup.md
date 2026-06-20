@@ -18,7 +18,7 @@ informed: []
 > logging) and revises two: the migration _lifecycle_ (always-on in-process →
 > out-of-band-by-default plus an opt-in `REVERIE_AUTO_MIGRATE` flag) and the
 > migration _connection role_ (cluster superuser → dedicated non-superuser
-> `reverie_migrator`). This file is retained for decision history only — do not
+> `reverie_migrator`). This file is retained for decision history only, do not
 > build against it.
 
 ## Context and Problem Statement
@@ -45,15 +45,15 @@ Related: [persisted settings ADR](../2026-05-26-persisted-settings.md) (assumes 
 
 ### Migration lifecycle
 
-1. **Auto-migrate on startup, always-on** — no operator action needed, no opt-out
-2. **Auto-migrate with opt-out** (`REVERIE_AUTO_MIGRATE=false`) — operator can disable for manual control
-3. **Manual-only** (status quo) — operator runs `sqlx migrate run` before starting the app
+1. **Auto-migrate on startup, always-on**: no operator action needed, no opt-out
+2. **Auto-migrate with opt-out** (`REVERIE_AUTO_MIGRATE=false`): operator can disable for manual control
+3. **Manual-only** (status quo): operator runs `sqlx migrate run` before starting the app
 
 ### Transaction semantics
 
-1. **All-or-nothing batch transaction** — wrap all pending migrations in one `BEGIN`/`COMMIT`; failure rolls back everything
-2. **Per-migration transactions** (sqlx default) — each migration in its own transaction; failure leaves partial state
-3. **Dry-run preflight** — run in a transaction, verify, rollback, then run for real
+1. **All-or-nothing batch transaction**: wrap all pending migrations in one `BEGIN`/`COMMIT`; failure rolls back everything
+2. **Per-migration transactions** (sqlx default): each migration in its own transaction; failure leaves partial state
+3. **Dry-run preflight**: run in a transaction, verify, rollback, then run for real
 
 ### Schema-version safety
 
@@ -80,7 +80,7 @@ PostgreSQL supports transactional DDL (`CREATE TABLE`, `ALTER TABLE`, `DROP` all
 
 Migrations marked with `-- no-transaction` (required for `CREATE INDEX CONCURRENTLY` and some `ALTER TYPE ... ADD VALUE` operations) run outside the batch individually, after the batch commits.
 
-**Ordering invariant**: no-transaction migrations must never appear in the version-sorted sequence before a transactional migration that depends on their schema change. The batch runner executes all transactional migrations first (in version order within the batch), then runs no-transaction migrations in version order afterward. This means interleaved sequences like `[M1(tx), M2(no-tx), M3(tx)]` are only safe when M3 does not depend on M2. This invariant is enforced at review time — any PR adding a `-- no-transaction` migration must verify that no later transactional migration in the same release depends on it. No-transaction migrations are rare (enum value additions, concurrent indexes) and this constraint has not been a practical limitation in comparable projects.
+**Ordering invariant**: no-transaction migrations must never appear in the version-sorted sequence before a transactional migration that depends on their schema change. The batch runner executes all transactional migrations first (in version order within the batch), then runs no-transaction migrations in version order afterward. This means interleaved sequences like `[M1(tx), M2(no-tx), M3(tx)]` are only safe when M3 does not depend on M2. This invariant is enforced at review time, any PR adding a `-- no-transaction` migration must verify that no later transactional migration in the same release depends on it. No-transaction migrations are rare (enum value additions, concurrent indexes) and this constraint has not been a practical limitation in comparable projects.
 
 Per-migration transactions (sqlx default) rejected: partial-state failure mode is unacceptable for self-hosted operators without DB expertise.
 
@@ -137,9 +137,9 @@ Recovery guidance in ERROR messages distinguishes three failure modes:
 - Good, because schema-ahead detection catches stale-image deployments with a clear message instead of cryptic SQL errors
 - Good, because ephemeral migration connection maintains the RLS security boundary: schema-owner privileges never exist during request serving
 - Good, because advisory lock makes concurrent container starts safe by default
-- Bad, because custom migration runner (~60–80 lines) couples to sqlx's `_sqlx_migrations` table schema — must be verified on sqlx version bumps
-- Bad, because `-- no-transaction` migrations (enum ADD VALUE, CONCURRENTLY indexes) run outside the batch and cannot be rolled back atomically with the rest — a failed no-tx migration leaves transactional migrations committed, requiring manual intervention (distinct recovery guidance emitted at ERROR level)
-- Neutral, because adds one required env var (`DATABASE_URL_MIGRATION`) — consistent with existing multi-DSN pattern
+- Bad, because custom migration runner (~60–80 lines) couples to sqlx's `_sqlx_migrations` table schema, must be verified on sqlx version bumps
+- Bad, because `-- no-transaction` migrations (enum ADD VALUE, CONCURRENTLY indexes) run outside the batch and cannot be rolled back atomically with the rest, a failed no-tx migration leaves transactional migrations committed, requiring manual intervention (distinct recovery guidance emitted at ERROR level)
+- Neutral, because adds one required env var (`DATABASE_URL_MIGRATION`), consistent with existing multi-DSN pattern
 
 ### Semver and release-notes implications
 
@@ -147,27 +147,27 @@ Pre-v1.0: schema is freely mutable (existing convention). Migrations are transpa
 
 Post-v1.0: migrations that are purely additive (new tables, new columns with defaults, new indexes) are MINOR bumps. Destructive migrations (column drops, type changes, data reshaping) are MAJOR bumps. The migration itself runs transparently in both cases. The semver signal and release notes communicate the impact, not the runtime.
 
-Auto-update tools (Watchtower, Renovate) surface version changes. Changelogs (generated by `release-please`) document migration impact. The app itself does not alarm the user — it just works.
+Auto-update tools (Watchtower, Renovate) surface version changes. Changelogs (generated by `release-please`) document migration impact. The app itself does not alarm the user, it just works.
 
 ## Implementation Plan
 
 ### Affected paths
 
-- `backend/src/config.rs` — add `migration_database_url: String` (required, from `DATABASE_URL_MIGRATION`)
-- `backend/src/db.rs` — add `run_migrations(url: &str) -> Result<MigrationReport, MigrationError>` with batch transaction runner, schema-ahead detection, advisory lock, and `lock_timeout` configuration
-- `backend/src/lib.rs` — insert migration call between `Config::from_env()` (line 221) and `db::init_pool()` (line 274)
-- `docker-compose.yml` — no change needed (dev DSN already uses schema owner `reverie`)
-- `backend/CLAUDE.md` — update "Run migrations as schema owner" section, document `DATABASE_URL_MIGRATION`
+- `backend/src/config.rs`: add `migration_database_url: String` (required, from `DATABASE_URL_MIGRATION`)
+- `backend/src/db.rs`: add `run_migrations(url: &str) -> Result<MigrationReport, MigrationError>` with batch transaction runner, schema-ahead detection, advisory lock, and `lock_timeout` configuration
+- `backend/src/lib.rs`: insert migration call between `Config::from_env()` (line 221) and `db::init_pool()` (line 274)
+- `docker-compose.yml`: no change needed (dev DSN already uses schema owner `reverie`)
+- `backend/CLAUDE.md`: update "Run migrations as schema owner" section, document `DATABASE_URL_MIGRATION`
 
 ### Dependencies
 
-`crc = "3"` added as a direct dependency — promoted from transitive (via sqlx) because the advisory lock ID computation requires `CRC_32_ISO_HDLC` to match sqlx's internal lock ID formula. `sqlx` (already present) provides `Migrator`, `Migration`, and `PgPool`.
+`crc = "3"` added as a direct dependency, promoted from transitive (via sqlx) because the advisory lock ID computation requires `CRC_32_ISO_HDLC` to match sqlx's internal lock ID formula. `sqlx` (already present) provides `Migrator`, `Migration`, and `PgPool`.
 
 Future: the evaluation of extracting batch migration runner as public crate tracks potential extraction as a standalone crate once battle-tested.
 
 ### Patterns to follow
 
-- Compile-time migration embedding via `sqlx::migrate!()` macro (the same mechanism used internally by `#[sqlx::test(migrations = "./migrations")]` across the test suite) — the production runner accesses the embedded `Migrator` directly via this macro
+- Compile-time migration embedding via `sqlx::migrate!()` macro (the same mechanism used internally by `#[sqlx::test(migrations = "./migrations")]` across the test suite), the production runner accesses the embedded `Migrator` directly via this macro
 - Advisory lock acquisition matching sqlx's internal lock ID for interop
 - `_sqlx_migrations` table schema matching sqlx's format (version, description, installed_on, success, checksum, execution_time)
 - Ephemeral pool pattern: `PgPoolOptions::new().max_connections(1).connect(url)` → use → drop
@@ -175,12 +175,12 @@ Future: the evaluation of extracting batch migration runner as public crate trac
 
 ### Patterns to avoid
 
-- Do NOT use `sqlx::Migrator::run()` — it uses per-migration transactions, not batch
-- Do NOT keep the migration pool alive after migrations complete — drop it before runtime pool init
-- Do NOT add an opt-out env var — always-on is the deliberate design
-- Do NOT log migration SQL content — may contain sensitive DDL comments or role names
-- Do NOT log connection strings, passwords, or any portion of `DATABASE_URL_MIGRATION` — schema-owner credentials are high-privilege secrets
-- Do NOT fall back to `DATABASE_URL` when `DATABASE_URL_MIGRATION` is unset — the 4-role architecture has no single-role scenario
+- Do NOT use `sqlx::Migrator::run()`: it uses per-migration transactions, not batch
+- Do NOT keep the migration pool alive after migrations complete, drop it before runtime pool init
+- Do NOT add an opt-out env var, always-on is the deliberate design
+- Do NOT log migration SQL content, may contain sensitive DDL comments or role names
+- Do NOT log connection strings, passwords, or any portion of `DATABASE_URL_MIGRATION`, schema-owner credentials are high-privilege secrets
+- Do NOT fall back to `DATABASE_URL` when `DATABASE_URL_MIGRATION` is unset, the 4-role architecture has no single-role scenario
 
 ### Configuration
 
@@ -192,18 +192,18 @@ No other new env vars. `lock_timeout` is hardcoded at 30s (interim, pending the 
 
 ### Migration steps
 
-Migration rollup PR #333 (merged 2026-05-26) consolidated 27 migrations into `20260526000000_initial_schema`. Staging's `_sqlx_migrations` table was reset as part of that rollup — otherwise schema-ahead detection would false-positive on the 27 historical rows unknown to the new binary.
+Migration rollup PR #333 (merged 2026-05-26) consolidated 27 migrations into `20260526000000_initial_schema`. Staging's `_sqlx_migrations` table was reset as part of that rollup, otherwise schema-ahead detection would false-positive on the 27 historical rows unknown to the new binary.
 
 Deployment sequence:
 
 1. ~~PR #333 (migration rollup) merges~~: done (merged 2026-05-26)
 2. This ADR's implementation PR merges
 3. Staging adds `DATABASE_URL_MIGRATION` to its compose env
-4. Next image pull auto-migrates — no manual `sqlx migrate run` ever again
+4. Next image pull auto-migrates: no manual `sqlx migrate run` ever again
 
 ### Verification
 
-- [ ] `cargo test` passes — all existing tests unaffected (`#[sqlx::test]` still uses sqlx's built-in migrator)
+- [ ] `cargo test` passes: all existing tests unaffected (`#[sqlx::test]` still uses sqlx's built-in migrator)
 - [ ] `cargo clippy -- -D warnings` clean
 - [ ] `cargo sqlx prepare --workspace --check` reports no drift
 - [ ] Fresh database: startup applies all migrations, logs `applied N pending migrations`, app serves requests
@@ -217,7 +217,7 @@ Deployment sequence:
 - [ ] Concurrent starts: two processes starting simultaneously, advisory lock serialises, both succeed, no duplicate migration rows
 - [ ] Ephemeral pool: migration pool is dropped before runtime pools are created (verify by connection count or pool lifecycle logging at DEBUG)
 - [ ] `-- no-transaction` migration: a migration with the marker runs outside the batch, after the batch commits
-- [ ] `-- no-transaction` migration failure: startup fails with ERROR distinguishing this from batch failure — message indicates transactional migrations already committed and "pin old image" alone does not restore the database; operator must manually revert the partial no-tx change
+- [ ] `-- no-transaction` migration failure: startup fails with ERROR distinguishing this from batch failure, message indicates transactional migrations already committed and "pin old image" alone does not restore the database; operator must manually revert the partial no-tx change
 
 ## Pros and Cons of the Options
 
@@ -240,7 +240,7 @@ Deployment sequence:
 - Good, because explicit control
 - Bad, because caused the staging outage
 - Bad, because deviates from self-hosted conventions
-- Bad, because requires operators to know about `sqlx migrate run` — leaks implementation detail
+- Bad, because requires operators to know about `sqlx migrate run`, leaks implementation detail
 
 ### All-or-nothing batch transaction
 
@@ -253,8 +253,8 @@ Deployment sequence:
 
 ### Per-migration transactions (sqlx default)
 
-- Good, because zero custom code — `Migrator::run()` just works
-- Bad, because partial-state failure mode — DB left in limbo where neither old nor new image works
+- Good, because zero custom code, `Migrator::run()` just works
+- Bad, because partial-state failure mode, DB left in limbo where neither old nor new image works
 - Bad, because recovery requires manual SQL intervention by operators who may not have DB expertise
 
 ### Dry-run preflight
@@ -271,9 +271,9 @@ Deployment sequence:
 
 **Restart-loop behaviour**: with `restart: unless-stopped` (Docker) or `restartPolicy: Always` (Kubernetes), a persistent migration failure causes the container to hammer Postgres in a restart loop. The ERROR log message includes recovery guidance to break the loop by pinning the previous image tag. Future enhancement: exponential backoff on repeated migration failure (not in scope for this ADR).
 
-**PostgreSQL extension privileges**: migrations `CREATE EXTENSION pg_trgm`. In the bundled-postgres scenario, `POSTGRES_USER=reverie` makes `reverie` the cluster superuser — works. For any future "bring your own Postgres" path (RDS, Supabase, Crunchy), trusted extensions need DB-owner; non-trusted need SUPERUSER. Not in scope today; noted for future operator documentation.
+**PostgreSQL extension privileges**: migrations `CREATE EXTENSION pg_trgm`. In the bundled-postgres scenario, `POSTGRES_USER=reverie` makes `reverie` the cluster superuser, works. For any future "bring your own Postgres" path (RDS, Supabase, Crunchy), trusted extensions need DB-owner; non-trusted need SUPERUSER. Not in scope today; noted for future operator documentation.
 
-**`start_period` consideration**: while migrations run, the container is "starting." Docker's default HEALTHCHECK `start_period` is 0s — health check failures begin counting from container start. Operators using HEALTHCHECK must set `start_period` explicitly to cover migration duration. Pre-v1.0 schema evolution is freely mutable; a future data-backfill migration could easily exceed a typical `start_period` value. Migrations that include data backfill should document the expected duration and recommend an appropriate `start_period` in the release notes.
+**`start_period` consideration**: while migrations run, the container is "starting." Docker's default HEALTHCHECK `start_period` is 0s, health check failures begin counting from container start. Operators using HEALTHCHECK must set `start_period` explicitly to cover migration duration. Pre-v1.0 schema evolution is freely mutable; a future data-backfill migration could easily exceed a typical `start_period` value. Migrations that include data backfill should document the expected duration and recommend an appropriate `start_period` in the release notes.
 
 **Revisit conditions:**
 

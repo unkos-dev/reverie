@@ -83,22 +83,22 @@ empirically known.
 `.coderabbit.yaml` at repo root, modelled on the Greptile config
 shape:
 
-- `reviews.profile: chill` — comparable to Greptile `strictness: 1`
+- `reviews.profile: chill`: comparable to Greptile `strictness: 1`
   in spirit (verbose-by-design for trial calibration)
-- `reviews.path_instructions` — pin per-path conventions matching
+- `reviews.path_instructions`: pin per-path conventions matching
   Greptile's `customRules` (time-not-chrono, no-raw-hex, no-enum,
   no-inline-style, shadcn carve-out, secret-handling stance,
   TDD requirement, Conventional Commits)
-- `reviews.path_filters` — exclude `**/package-lock.json`,
+- `reviews.path_filters`: exclude `**/package-lock.json`,
   `**/Cargo.lock` (matches Greptile's `ignorePatterns` carve-out
   for the lockfile hallucination class)
 - `reviews.auto_review.enabled: true`, `reviews.auto_review.drafts: false`
   : auto on every non-draft PR. No per-push-burn concern under
   rate-limit pricing the way it was a fixed-cap concern on Greptile
-- `reviews.tools.markdownlint.enabled: false` — markdown lint
+- `reviews.tools.markdownlint.enabled: false`: markdown lint
   already enforced via repo `.markdownlint-cli2.jsonc`. Don't
   duplicate
-- `reviews.review_status: true` — formal PR Review (status check)
+- `reviews.review_status: true`: formal PR Review (status check)
   enabled. The gating-gap closer relative to Greptile
 
 ### App install
@@ -216,7 +216,7 @@ tracking ticket by design):
   PR plus the local multi-agent review (`prp-core:prp-review-agents`)
   plus the maintainer pass. PR comment volume goes up; triage cost
   goes up
-- Bad — operational complexity. Two `*.json` / `*.yaml` configs to
+- Bad: operational complexity. Two `*.json` / `*.yaml` configs to
   maintain, two ADR + tally pairs to track, two security
   disclosures in `CONTRIBUTING.md`. If both are retired, cleanup
   cost is correspondingly higher
@@ -295,13 +295,13 @@ amending again with a session-level pacing discipline.
 
 #### What stays unchanged
 
-- PR-side trial framing, gate (2026-05-21), and decision matrix —
+- PR-side trial framing, gate (2026-05-21), and decision matrix:
   unchanged
-- `actionable-rate ≥ 30%` metric — measured on PR-side findings only.
+- `actionable-rate ≥ 30%` metric: measured on PR-side findings only.
   CLI findings are _not_ counted into the metric (they reduce the
   PR-side surface rather than add to it; they are tracked
   separately under the CLI pre-push review notes)
-- `.coderabbit.yaml` config — unchanged. CLI inherits the same
+- `.coderabbit.yaml` config: unchanged. CLI inherits the same
   `path_instructions`, `path_filters`, `profile`, etc. from the
   in-repo config
 - CONTRIBUTING.md § "Third-party AI code review": unchanged.
@@ -333,6 +333,6 @@ amending again with a session-level pacing discipline.
 - CodeRabbit security and trust: <https://www.coderabbit.ai/trust-center>
 - CodeRabbit CLI docs: <https://docs.coderabbit.ai/cli>
 - CodeRabbit CLI + Claude Code integration: <https://docs.coderabbit.ai/cli/claude-code-integration>
-- `CONTRIBUTING.md` § "Third-party AI code review" — contributor
+- `CONTRIBUTING.md` § "Third-party AI code review", contributor
   disclosure (updated to product-agnostic framing in the same PR
   that lands this ADR)

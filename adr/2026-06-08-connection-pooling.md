@@ -26,8 +26,8 @@ between the application and Postgres?
 ## Decision Drivers
 
 - **Single-instance deployment.** The shipped topology is one app process. The
-  problem a separate pooling tier solves — many app processes exhausting
-  Postgres `max_connections` — does not exist by default.
+  problem a separate pooling tier solves, many app processes exhausting
+  Postgres `max_connections`: does not exist by default.
 - **Minimize component count and SPOF** for a self-hosted operator. Every
   bundled component is one more thing to run, monitor, and have fail.
 - **Session-level Postgres features are load-bearing.** Reverie's persisted
@@ -41,9 +41,9 @@ between the application and Postgres?
 
 ## Considered Options
 
-- **A — In-process `sqlx::PgPool`(s) as the sole pooling layer.**
-- **B — Add a separate connection-pooling tier between app and Postgres.**
-- **C — No pool; open a connection per request.**
+- **A: In-process `sqlx::PgPool`(s) as the sole pooling layer.**
+- **B: Add a separate connection-pooling tier between app and Postgres.**
+- **C: No pool; open a connection per request.**
 
 ## Decision Outcome
 
@@ -76,7 +76,7 @@ with a pooler externally. Reverie simply does not ship or depend on one.
   [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md)'s
   concern, where pool sizing or an operator-owned pooler would be revisited.
 - Neutral, because choosing not to _bundle_ a pooling tier does not forbid one
-  — as an operator may add one externally with no Reverie change.
+  , an operator may add one externally with no Reverie change.
 
 ### Confirmation
 
@@ -87,7 +87,7 @@ Compose deployment.
 
 ## Pros and Cons of the Options
 
-### A — in-process `sqlx::PgPool`, no separate pooling tier
+### A: in-process `sqlx::PgPool`, no separate pooling tier
 
 - Good, because it ratifies what already ships; zero new surface.
 - Good, because session-mode connections preserve `LISTEN`/`NOTIFY`, advisory
@@ -113,7 +113,7 @@ Compose deployment.
 ## More Information
 
 - Pairs with [scale stance: stateless app, enable-don't-own HA](2026-06-08-scale-stance-stateless-enable-not-own.md)
-  — which owns the multi-instance pool-sizing question this one defers.
+  , that ADR owns the multi-instance pool-sizing question this one defers.
 - [Migration model ADR](2026-06-02-hybrid-migration-entrypoints-and-role.md):
   the single-instance contract and the `reverie_app` / `reverie_ingestion` /
   `reverie_readonly` role split the per-role pools follow.

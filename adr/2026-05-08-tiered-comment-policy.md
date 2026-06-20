@@ -36,7 +36,7 @@ needs are explicit:
   boundary, not implicit ones reconstructed from naming.
 - `cargo doc` consumers (a class that includes some auditors and
   contributors) read the rendered library reference. Empty
-  docstrings on `pub` items render as a lazy library shape — a
+  docstrings on `pub` items render as a lazy library shape, a
   trust signal in the wrong direction.
 
 The project has hit two concrete signals that the global default
@@ -71,7 +71,7 @@ comments" rule is preserved for internal items; explicit-
 documentation expectations apply to public API and security-
 critical code.
 
-### Tier 1 — Public API (`pub` items at module boundaries)
+### Tier 1: Public API (`pub` items at module boundaries)
 
 Every `pub fn`, `pub struct`, `pub enum`, `pub trait`, and `pub
 const` exposed at a module boundary carries a `///` Rust doc
@@ -86,7 +86,7 @@ Required content:
   function guarantees.
 - **Non-obvious WHY** where applicable. The constraint, decision,
   or threat-model context that motivated the shape.
-- **`# Errors`** section for `pub fn` returning `Result<…>` —
+- **`# Errors`** section for `pub fn` returning `Result<…>`:
   enumerate variants and trigger conditions
   (`clippy::missing_errors_doc` enforces this for any pub fn
   returning Result; already active per the strict-lint policy
@@ -157,7 +157,7 @@ Phased rollout: a dedicated task tracks the phases:
 0. **Split `backend/` into `lib.rs` + thin `main.rs`** before any
    doc-lint work. `missing_docs` (and clippy `missing_errors_doc`
    etc.) only fire on items reachable from outside the crate. The
-   current shape is a bin-only crate — every `pub fn` inside
+   current shape is a bin-only crate, every `pub fn` inside
    modules is crate-private to the lint, and the lint is silent.
    Verified empirically: `cargo rustc --bin reverie-api -- -W missing_docs`
    returns 2 warnings (both at `main.rs` root);
@@ -214,7 +214,7 @@ maintainer before landing.
   annotations on Tier 2 code mean an auditor can read the
   security boundary without reconstructing intent from naming
   - git archaeology.
-- Good — `cargo doc` rendered library reference becomes a real
+- Good: `cargo doc` rendered library reference becomes a real
   doc surface. Project trust signal shifts in the right
   direction for self-hosters evaluating the codebase.
 - Good: Tier 3 carve-out preserves the agent-friendly
@@ -223,10 +223,10 @@ maintainer before landing.
   policy explicitly demands them.
 - Good: phased rollout means no single mega-PR. Each module
   graduates independently; review burden distributed.
-- Bad — initial backfill is a real cost. ~342 backend `pub`
+- Bad: initial backfill is a real cost. ~342 backend `pub`
   items + frontend equivalent. Even with subagent dispatch,
   authoring quality docstrings is non-trivial work.
-- Bad — Phase 0 (`lib.rs` split) is structural change, not just
+- Bad: Phase 0 (`lib.rs` split) is structural change, not just
   attribute placement. Every internal call site referencing
   `crate::*` from tests or `main.rs` is touched. Carries its own
   review burden before any docstring authoring begins. The
@@ -284,13 +284,13 @@ maintainer before landing.
 ## More Information
 
 - Global cross-project rule:
-  `~/.claude/CLAUDE.md` § "Comments" — the rule this ADR amends
+  `~/.claude/CLAUDE.md` § "Comments": the rule this ADR amends
   for the OSS-product context
-- `adr/2026-05-03-strict-lint-policy.md` — the strict-lint
+- `adr/2026-05-03-strict-lint-policy.md`: the strict-lint
   policy whose pedantic clippy lints (`missing_errors_doc`,
   `missing_panics_doc`, `missing_safety_doc`) are the partial
   enforcement floor for this policy
-- `backend/CLAUDE.md` § "Rust Code Rules" — `// SAFETY:`
+- `backend/CLAUDE.md` § "Rust Code Rules", `// SAFETY:`
   convention referenced by Tier 2
 - CR docstring evidence: PR #178 commit `034e837`,
   `frontend/vite-plugins/hmr-config.ts` (clipped WHY-comment

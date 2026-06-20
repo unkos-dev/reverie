@@ -39,9 +39,9 @@ so the gate does not simply mask it?
 
 - **agent-browser (CDP) + axe-core, with a documented allowlist**: drive a
   Chromium-family browser over CDP, inject axe-core, gate on the result.
-- **`@axe-core/cli`** — the off-the-shelf axe CLI (selenium + chromedriver).
-- **`@axe-core/playwright`** — axe on top of Playwright-managed browsers.
-- **Manual audits only** — no automated gate.
+- **`@axe-core/cli`**: the off-the-shelf axe CLI (selenium + chromedriver).
+- **`@axe-core/playwright`**: axe on top of Playwright-managed browsers.
+- **Manual audits only**: no automated gate.
 
 ## Decision Outcome
 
@@ -114,7 +114,7 @@ cannot be mistaken for "0 violations".
 ### `@axe-core/cli`
 
 - Bad, because its bundled `chromedriver` and Selenium Manager are x64-only ELF
-  binaries — `exec format error` on the ARM64 workspace, and Chrome-for-Testing
+  binaries: `exec format error` on the ARM64 workspace, and Chrome-for-Testing
   has no linux-arm64 build (Chrome ARM64 Linux is not GA until ~Q2 2026). The
   gate would be CI-only and not locally reproducible.
 - Bad, because its allowlisting is coarse (whole-rule disable / selector
@@ -137,7 +137,7 @@ cannot be mistaken for "0 violations".
   that fires on UI-touching PRs (keyboard nav, focus visibility, 1.4.11/1.4.3,
   reduced motion, tokens-not-hex, alarm carve-out).
 - The `wcag22aa` tag in axe selects only the rules _new_ in WCAG 2.2 (e.g.
-  `target-size`) — it does **not** include `color-contrast`. Narrowing the gate
+  `target-size`): it does **not** include `color-contrast`. Narrowing the gate
   to `wcag22aa` alone would make it pass trivially; the full AA tag set is
   required and is hard-coded in the runner.
 - Rollout: the gate shipped **advisory** (`continue-on-error` on the `a11y`

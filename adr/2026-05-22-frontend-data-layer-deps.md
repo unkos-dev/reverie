@@ -155,7 +155,7 @@ not ship keyboard support by default.
   authoritative place; route loader pattern is documented in
   `library-ui.plan.md` and copied into the codebase as a
   comment-block exemplar.
-- **Bad** — `manualPagination: true` is an easy footgun for
+- **Bad**: `manualPagination: true` is an easy footgun for
   contributors who follow the shadcn data-table docs verbatim
   (the default example is client-side pagination, which would
   bypass server cursors entirely). Mitigation: the first
@@ -249,7 +249,7 @@ v8 is the current stable. v9 is not released. No reason to wait.
 - [`feedback_reverie_frontend_is_npm`](../.claude/projects/-home-coder-reverie/memory/feedback_reverie_frontend_is_npm.md)
   : npm only.
 - [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md)
-  — handling of `npm audit` findings on these new packages.
+  , handling of `npm audit` findings on these new packages.
 - Implementation plan: `.claude/PRPs/plans/library-ui.plan.md`
   (Sub-phase 11a Tasks 9 + 12; 11b Task 6; 11d Task 6).
 - Tracker: the Step 11 API conventions work.

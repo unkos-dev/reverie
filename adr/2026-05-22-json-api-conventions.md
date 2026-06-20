@@ -43,7 +43,7 @@ adopts.
 
 ## Decision
 
-### Field naming — `snake_case`
+### Field naming: `snake_case`
 
 JSON fields use `snake_case` (e.g. `cover_url`, `next_cursor`,
 `created_at`). Reverie's existing `User` struct in
@@ -72,7 +72,7 @@ the existing OPDS Atom feed (Atom's `<updated>` and `<published>`
 use the same shape per RFC 4287 §3.3) so the two surfaces stay
 consistent for any operator who reads both.
 
-### Error envelope — RFC 7807 `application/problem+json` (CHANGED)
+### Error envelope: RFC 7807 `application/problem+json` (CHANGED)
 
 Errors emit `application/problem+json` per RFC 7807 with the
 following body shape:
@@ -98,14 +98,14 @@ following body shape:
   decision lands.
 - `title` and `status` mirror the HTTP status reason phrase and
   numeric code.
-- `detail` is the caller-visible message — what was previously
+- `detail` is the caller-visible message, what was previously
   the singular `"error"` field.
 - `instance` is the request path (RFC 7807 §3.1 makes this
   optional but recommended; we always include it for debuggability).
 - Content-Type is `application/problem+json`, not
   `application/json`. This signals to RFC 7807-aware clients that
   the body is a Problem Details document and not a domain object
-  with an `error` field — important for `fetch().then(res =>
+  with an `error` field: important for `fetch().then(res =>
 res.json())` flows that branch on shape.
 
 This is a **CHANGE** from the inherited shape
@@ -138,16 +138,16 @@ request-coupled construct, so the path is captured by a tiny
 `backend/src/error/instance.rs` that stores the request path into
 a `tokio::task_local!` slot on request entry. `AppError::into_response`
 reads from that task-local. The middleware mounts on the outermost
-composite router inside `build_router_with_session_store` — wrapping
-matched API routes AND the composite fallback — so that
+composite router inside `build_router_with_session_store`: wrapping
+matched API routes AND the composite fallback, so that
 reserved-prefix typos (`/api/__nope__`, `/auth/__nope__`) emitted
 by `composite_fallback` carry the `instance` field too. The slot is
 `None` outside an HTTP request (e.g. unit tests calling
 `AppError::Validation(...).into_response()` directly), in which
-case `instance` is omitted from the body — RFC 7807 §3.1 permits
+case `instance` is omitted from the body, RFC 7807 §3.1 permits
 omission.
 
-### Null shape — `Option<T>::None` → JSON `null` (NEVER `skip_serializing_if`)
+### Null shape: `Option<T>::None` → JSON `null` (NEVER `skip_serializing_if`)
 
 Nullable fields serialise as `null`, never omitted. TypeScript
 consumers read `field: T | null` (always present, sometimes null)
@@ -177,7 +177,7 @@ so offset pagination would shift the page boundary mid-scroll.
 Cursors are also O(log N) per page at scale; offsets degrade as
 the table grows, and the blueprint targets 50K+ library sizes.
 
-### Pagination signaling — RFC 8288 `Link` header + body `next_cursor`
+### Pagination signaling: RFC 8288 `Link` header + body `next_cursor`
 
 Every paginated response includes:
 
@@ -220,7 +220,7 @@ plan). Reverie adopts the OWASP synchronizer-token pattern:
   (`subtle::ConstantTimeEq`) → 403 with `type: ".../csrf-mismatch"`.
 - Token rotates on privilege change (when `session_version`
   increments).
-- `POST /auth/logout` is exempt — logging out destroys the
+- `POST /auth/logout` is exempt, logging out destroys the
   session and therefore the token; a logged-out user has no
   session to attach a token to.
 
@@ -287,7 +287,7 @@ support exists across every client language we are likely to
 care about. RFC 7396 is explicitly limited to merging object
 trees (no array merging), which is what we need.
 
-### HTTP precondition — RFC 9110 §13.1 `If-Match` / 412 / 428
+### HTTP precondition: RFC 9110 §13.1 `If-Match` / 412 / 428
 
 Optimistic-concurrency endpoints (shelf reorder in 11d, future
 metadata writes that need ETag protection) require an `If-Match`
@@ -305,7 +305,7 @@ without re-litigating.
 
 `Accept: application/json` is the default for the API surface.
 Errors emit `application/problem+json`. OPDS routes remain on
-`application/atom+xml` (unchanged — OPDS is out of scope for
+`application/atom+xml` (unchanged: OPDS is out of scope for
 Step 11). No `Accept` header parsing yet; we default to JSON
 unconditionally on `/api/*` paths. If a future client needs
 content negotiation, the handler picks it up at that point.
@@ -316,11 +316,11 @@ content negotiation, the handler picks it up at that point.
   contributors and external integrators find every shape decision
   already grounded in a public spec; reviewer ceremony around
   "why this shape" collapses.
-- **Good** — frontend `src/api/` client and backend handlers
+- **Good**: frontend `src/api/` client and backend handlers
   share one shape definition: snake_case, RFC 7807 body, RFC 8288
   pagination, RFC 7396 patches. Cross-cutting drift between
   backend and frontend types is structurally bounded.
-- **Good** — the migration from `{"error": "<msg>"}` to RFC 7807
+- **Good**: the migration from `{"error": "<msg>"}` to RFC 7807
   is the only inherited-divergence-to-standard move; it is
   surgical (single `IntoResponse` impl + a `test_support` helper).
 - **Good**: adopting the synchronizer token during the
@@ -332,13 +332,13 @@ content negotiation, the handler picks it up at that point.
   the diff but the PR still touches several existing test files
   (auth, ingestion, enrichment, metadata, tokens). Sub-phase 11a's
   test plan accounts for this.
-- **Bad** — `next_cursor` plus the Link header duplicate the same
+- **Bad**: `next_cursor` plus the Link header duplicate the same
   signal. Worth the redundancy for the JS-client ergonomics win;
   documented as deliberate.
-- **Bad** — `instance` field requires a tokio task-local + a
+- **Bad**: `instance` field requires a tokio task-local + a
   tower middleware. ~30 LOC including tests; acceptable cost for
   RFC 7807 conformance and request-path debuggability.
-- **Neutral** — `csrf_token` adds one field to the `/auth/me`
+- **Neutral**: `csrf_token` adds one field to the `/auth/me`
   response (12-line shape diff in `backend/src/models/user.rs`).
   Frontend consumes it via a module-level setter; no API surface
   change beyond the field.
@@ -391,7 +391,7 @@ it as a header.
 
 Rejected on the basis that the synchronizer token is the OWASP
 "strongest" recommendation, and Reverie already has a
-server-side session store (`tower-sessions`) — the cost of
+server-side session store (`tower-sessions`): the cost of
 synchronizer is essentially "one more session key", whereas
 double-submit needs a second cookie and JS to read it. We pick
 the OWASP-strongest option since the cost difference is

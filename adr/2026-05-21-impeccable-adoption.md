@@ -12,7 +12,7 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 Reverie's UI/UX agent toolset accreted three skills with overlapping
-remits — `ui-ux-pro-max` (catalog + shadcn MCP bridge),
+remits: `ui-ux-pro-max` (catalog + shadcn MCP bridge),
 `design-system` (audit + consistency review), and
 `frontend-patterns` (React patterns). The design system itself is
 locked: Reverie has a published brand identity, D2 design tokens,
@@ -37,7 +37,7 @@ Outcomes:
 - `design-system` produced a 10-line scorecard with vague refs.
   Soft-everything; no file:line, no actionable diff.
 - `impeccable detect` (deterministic) caught 3× `bg-black` in stock
-  shadcn overlays (`alert-dialog`, `dialog`, `sheet`) — direct
+  shadcn overlays (`alert-dialog`, `dialog`, `sheet`), direct
   violations of Reverie's tinted-neutral brand spec, file:line +
   fix recommendation per finding.
 - `impeccable critique` (LLM) produced a 14-finding punch list with
@@ -86,7 +86,7 @@ ADR-or-amendment after the detector earns its keep.
   auto-merge); `impeccable` is currently at v2.1.9, so patch
   bumps auto-merge would apply once any rules drift to require it.
 - **No Chromium download.** `frontend/package.json` carries
-  `"puppeteer": { "skipDownload": true }` — puppeteer's
+  `"puppeteer": { "skipDownload": true }`, puppeteer's
   cosmiconfig-based config loader discovers this field on every
   `npm install`/`npm ci` and skips the postinstall Chromium
   fetch. Our usage never invokes the puppeteer code path (see
@@ -96,10 +96,10 @@ ADR-or-amendment after the detector earns its keep.
 
 `impeccable` ships these runtime deps (lockfile, 2026-05-21):
 
-- `jsdom@29.0.0` — HTML parsing for static scan. Required.
-- `marked@^16.4.2` — markdown rendering for impeccable's skill
+- `jsdom@29.0.0`: HTML parsing for static scan. Required.
+- `marked@^16.4.2`: markdown rendering for impeccable's skill
   surface (not used by the detector). Required transitively.
-- `puppeteer@^24.42.0` — **optional**. Used only by
+- `puppeteer@^24.42.0`: **optional**. Used only by
   `detectUrl()` (URL-scan). Dynamically imported. Top-level
   imports do not reach puppeteer.
 
@@ -112,10 +112,10 @@ unaffected.
 
 Alternatives to `skipDownload: true` were rejected:
 
-- `npm ci --omit=optional` — breaks `@tailwindcss/oxide`'s 12
+- `npm ci --omit=optional`: breaks `@tailwindcss/oxide`'s 12
   platform-binary `optionalDependencies` (standard npm
   platform-binary pattern). Tailwind build would fail.
-- `PUPPETEER_SKIP_DOWNLOAD=true` env var on CI only — leaves the
+- `PUPPETEER_SKIP_DOWNLOAD=true` env var on CI only, leaves the
   Chromium download firing on every developer's local `npm install`.
 - Bake Chromium into the Coder workspace image: doesn't solve CI
   (GitHub-hosted runners), introduces puppeteer-vs-system-Chromium

@@ -65,25 +65,25 @@ purge commit, not in frontmatter.
 
 ### Field meanings
 
-- **`severity`** — impact score. Used by future tooling (post-v0.2
+- **`severity`**: impact score. Used by future tooling (post-v0.2
   public roadmap) to filter what surfaces to outside readers. `low` =
   paper cut affecting only contributors; `medium` = real cost to one
   audience (operators / developers / CI); `high` = security smell,
   unsafe code, or a footgun that has caused or could cause incidents.
-- **`surfaces`** — who notices this debt. Multi-valued list from:
+- **`surfaces`**: who notices this debt. Multi-valued list from:
   `developer` (only contributors hit it), `server-operator` (people
   running Reverie in production), `end-user` (browser users of a
   Reverie instance), `security` (defensive posture), `ci`
   (continuous integration).
-- **`lift-when-class`** — bucketed reason for blockage:
-  - `dep-unblocks` — waiting on an upstream dependency to ship X
-  - `internal-refactor` — needs work in this repo to lift
-  - `external-standard` — waiting on an external standard / convention
-  - `feature-flag` — gated on a project-internal feature flag flip
-  - `release-tag` — gated on a release version
-  - `infra-gap-closes` — waiting on adjacent infrastructure (homelab,
+- **`lift-when-class`**: bucketed reason for blockage:
+  - `dep-unblocks`: waiting on an upstream dependency to ship X
+  - `internal-refactor`: needs work in this repo to lift
+  - `external-standard`: waiting on an external standard / convention
+  - `feature-flag`: gated on a project-internal feature flag flip
+  - `release-tag`: gated on a release version
+  - `infra-gap-closes`: waiting on adjacent infrastructure (homelab,
     deployment surface) being in place
-- **`lift-when`** — specific, measurable condition. Free text.
+- **`lift-when`**: specific, measurable condition. Free text.
   Examples: "the target issue merged to main", "openidconnect v5 stable
   release ships with chrono decoupled", "v0.2 release tag cut".
 

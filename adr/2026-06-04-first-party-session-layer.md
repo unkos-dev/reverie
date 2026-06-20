@@ -16,10 +16,10 @@ Reverie's session/auth stack rests on four crates by a single maintainer
 `tower-sessions-sqlx-store`, and `axum-login`. Two of those wrappers are
 abandoned on crates.io:
 
-- **`axum-login` 0.18.0** — last released 2025-07-20 (~11 months). Peer-pins
+- **`axum-login` 0.18.0**: last released 2025-07-20 (~11 months). Peer-pins
   `tower-sessions = "0.14"`. The upstream fix bumping it to `tower-sessions`
   0.15 merged 2026-05-07 (commit `151c72d`) but has never been released.
-- **`tower-sessions-sqlx-store` 0.15.0** — last released 2025-01-01 (~17
+- **`tower-sessions-sqlx-store` 0.15.0**: last released 2025-01-01 (~17
   months). Its `tower-sessions-core` dependency pins `^0.14`.
 
 These are two independent peer-pins that jointly block
@@ -39,7 +39,7 @@ is in the wrappers, not the primitive.
 Reverie consumes only a thin slice of `axum-login`: the `AuthnBackend` and
 `AuthUser` traits, the `AuthSession` extractor (login / logout / `.session` /
 `.user`), and `AuthManagerLayer`. It does **not** use axum-login's
-authorization layer (`AuthzBackend`, permissions, groups, `login_required!`) —
+authorization layer (`AuthzBackend`, permissions, groups, `login_required!`):
 role-based access control (`CurrentUser` with `require_admin` /
 `require_not_child`) and the Basic-auth device-token fallback are already
 first-party. Likewise the Postgres `SessionStore` is a four-method surface
@@ -57,7 +57,7 @@ code on the maintained `tower-sessions` core?
 
 - Unblock the coordinated upgrade permanently, not contingent on two unresponsive upstreams.
 - Minimize abandoned / single-maintainer dependency surface on the
-  auth-critical path — OpenSSF Scorecard `Maintained` signal and supply-chain
+  auth-critical path: OpenSSF Scorecard `Maintained` signal and supply-chain
   hardening for an OSS, multi-user-exposed threat model.
 - Preserve the OWASP Session Management invariants already in place and
   test-locked.
@@ -68,10 +68,10 @@ code on the maintained `tower-sessions` core?
 
 ## Considered Options
 
-- **A1+A2 — Keep `tower-sessions` core; replace `axum-login` and
+- **A1+A2: Keep `tower-sessions` core; replace `axum-login` and
   `tower-sessions-sqlx-store` with first-party code.**
-- **F — Replace the stack with `axum-session` (AscendingCreations).**
-- **G — Fully first-party, dropping `tower-sessions` core as well.**
+- **F: Replace the stack with `axum-session` (AscendingCreations).**
+- **G: Fully first-party, dropping `tower-sessions` core as well.**
 - **Keep waiting / git-dep override `axum-login` to unreleased `main`.**
 
 ## Decision Outcome
@@ -175,12 +175,12 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
   in `prp-plan` output under `.claude/PRPs/plans/`, not in this ADR.
 - Supersedes
   [`superseded/2026-05-08-tower-sessions-sqlx-store.md`](superseded/2026-05-08-tower-sessions-sqlx-store.md)
-  — that ADR adopted `tower-sessions-sqlx-store` and explicitly rejected a
+  , that ADR adopted `tower-sessions-sqlx-store` and explicitly rejected a
   hand-written store; the context changed when the store became the second pin
   blocking the coordinated upgrade. Its session-table schema, grants, RLS-exemption, and
   expiry-index decisions are carried forward in the Decision Outcome above.
 - The 0.14 pin was tracked in `debt/2026-05-21-tower-sessions-0-14-pin.md`
-  (since purged — `git log --diff-filter=D -- debt/` recovers it): this
+  (since purged: `git log --diff-filter=D -- debt/` recovers it): this
   decision's first-party replacement was its lift path, and PR #424 removed
   both `axum-login` and `tower-sessions-sqlx-store`, unpinning `tower-sessions`
   to 0.15.

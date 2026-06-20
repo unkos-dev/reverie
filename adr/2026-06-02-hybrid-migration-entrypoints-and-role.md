@@ -51,22 +51,22 @@ the database lock/timeout strategy and project-wide logging conventions.
 
 ### Migration identity
 
-1. **Cluster superuser** — the bundled `POSTGRES_USER`.
-2. **Dedicated non-superuser role `reverie_migrator`** — `LOGIN`, owns the schema
+1. **Cluster superuser**: the bundled `POSTGRES_USER`.
+2. **Dedicated non-superuser role `reverie_migrator`**: `LOGIN`, owns the schema
    objects, `CREATE` on the database; not `SUPERUSER`, not `BYPASSRLS`.
 3. **Reuse a runtime role** (`reverie_app`).
 
 ### Migration invocation
 
-1. **In-process, always-on** — the app migrates itself on every startup.
-2. **Out-of-band only** — a `reverie migrate` step runs before the app; the app
+1. **In-process, always-on**: the app migrates itself on every startup.
+2. **Out-of-band only**: a `reverie migrate` step runs before the app; the app
    never migrates and never holds migration credentials.
-3. **Hybrid** — both entrypoints share one runner: a `reverie migrate` subcommand
+3. **Hybrid**: both entrypoints share one runner: a `reverie migrate` subcommand
    (out-of-band) plus an opt-in `REVERIE_AUTO_MIGRATE` startup flag.
 
 ### Transaction semantics
 
-1. **All-or-nothing batch** — all pending migrations in one `BEGIN`/`COMMIT`; any
+1. **All-or-nothing batch**: all pending migrations in one `BEGIN`/`COMMIT`; any
    failure rolls the whole batch back.
 2. **Per-migration transactions** (sqlx default): a failure leaves partial state.
 3. **Dry-run preflight**: run, verify, roll back, then run for real.
@@ -79,10 +79,10 @@ the database lock/timeout strategy and project-wide logging conventions.
 
 ## Decision Outcome
 
-### Identity — dedicated `reverie_migrator` (option 2)
+### Identity: dedicated `reverie_migrator` (option 2)
 
 `init-roles.sql` provisions a non-superuser role that owns the schema objects
-(created by it on the initial migration) with `CREATE` on the database —
+(created by it on the initial migration) with `CREATE` on the database:
 sufficient for the trusted extensions and all DDL. `DATABASE_URL_MIGRATION` uses
 this role, sourced from a `REVERIE_MIGRATOR_PASSWORD` secret. The bootstrap
 superuser is used only by first-boot `init-roles.sql` and never appears in any
@@ -98,7 +98,7 @@ Both entrypoints delegate to one `db::run_migrations`. The shipped
 `docker-compose.yml` runs a one-shot `reverie-migrate` service, with the app
 gated by `depends_on: { reverie-migrate: { condition:
 service_completed_successfully } }`. In this default topology the **app container
-holds no DDL credentials** — `DATABASE_URL_MIGRATION` is set only on the
+holds no DDL credentials**: `DATABASE_URL_MIGRATION` is set only on the
 short-lived migrate service. The compose upgrade path stays one command:
 `docker compose pull && docker compose up -d` runs the migrate service to
 completion, then the app.
@@ -165,7 +165,7 @@ during request serving. Concurrent starts are serialised by a PostgreSQL
 advisory lock matching sqlx's internal lock ID, acquired via
 `pg_try_advisory_lock` in a bounded retry loop (~30s) rather than a blocking
 `pg_advisory_lock`; failure to acquire fails startup with a clear error. The
-ephemeral connection sets `lock_timeout=30s` to bound heavyweight lock waits — an
+ephemeral connection sets `lock_timeout=30s` to bound heavyweight lock waits, an
 interim default pending a project-wide database lock and timeout strategy.
 
 ### Logging
@@ -238,7 +238,7 @@ do NOT revert: manually insert the tracking row").
 - Good, because least-privilege isolates schema-management from the cluster superuser.
 - Good, because feasible with zero migration-content changes (trusted extensions).
 - Neutral, because adds one role and one secret.
-- Bad, because object ownership must be `reverie_migrator` — automatic only on a
+- Bad, because object ownership must be `reverie_migrator`, automatic only on a
   fresh DB; an existing DB owned by another role needs `REASSIGN OWNED` or recreate.
 
 ### Cluster superuser
@@ -257,7 +257,7 @@ do NOT revert: manually insert the tracking row").
 ### Out-of-band only
 
 - Good, because the app never holds DDL creds in any topology.
-- Bad, because no single-process escape hatch — bare-`docker run` upgrades are
+- Bad, because no single-process escape hatch, bare-`docker run` upgrades are
   always two-step.
 
 ### All-or-nothing batch transaction
@@ -303,7 +303,7 @@ data-backfill migrations should document expected duration in release notes.
 
 **For `prp-plan` to verify on a real instance** (not inherit): staging object
 ownership; PG15+ `public`-schema grant; a `NOBYPASSRLS` owner is blocked by any
-future `FORCE ROW LEVEL SECURITY` cross-tenant backfill. Cross-repo surface —
+future `FORCE ROW LEVEL SECURITY` cross-tenant backfill. Cross-repo surface:
 reverie: `init-roles.sql`, `config.rs`, `migrate` subcommand,
 `docker-compose.yml`, `docker/staging.env.runtime.example`, `backend/CLAUDE.md`;
 homelab: env templates, `REVERIE_MIGRATOR_PASSWORD` secret, ansible.

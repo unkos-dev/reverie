@@ -54,7 +54,7 @@ relatively higher.
 
 ## Decision
 
-### Tool — `eslint-plugin-jsdoc`
+### Tool: `eslint-plugin-jsdoc`
 
 Adopt `eslint-plugin-jsdoc` (current latest matching
 `eslint@^10.4.0`, peer-dep range `^7 || ^8 || ^9 || ^10`). Pin in
@@ -67,12 +67,12 @@ the existing flat-config block scoped to
 
 Enable a minimal pair of rules:
 
-- `jsdoc/require-jsdoc` — scoped via the rule's `contexts` filter
+- `jsdoc/require-jsdoc`: scoped via the rule's `contexts` filter
   to `ExportNamedDeclaration`, `ExportDefaultDeclaration`, and
   `TSInterfaceDeclaration` with an `export` modifier. Public
   exports only; internal helpers in the same file are Tier 3 and
   exempt by construction.
-- `jsdoc/require-description` — any JSDoc block that does exist
+- `jsdoc/require-description`: any JSDoc block that does exist
   must carry a description sentence. Closes the empty-`/** */`
   loophole.
 
@@ -113,10 +113,10 @@ the rollout.
 `frontend/eslint.config.js` adds two scoped overrides that disable
 both rules:
 
-1. `frontend/src/components/ui/**` — shadcn primitives are
+1. `frontend/src/components/ui/**`: shadcn primitives are
    generator output; per parent ADR Tier 4.
 2. `frontend/tests/**`, `**/*.test.{ts,tsx}`, `**/*.spec.{ts,tsx}`,
-   `frontend/tests/setup.ts` — test files are Tier 4 per parent
+   `frontend/tests/setup.ts`: test files are Tier 4 per parent
    ADR (test name is the spec).
 
 `frontend/src/fouc/fouc.js` is in-scope despite being `.js` (not
@@ -129,11 +129,11 @@ TS), the security pinning relationship to
 - **Good**: frontend cold-read surface graduates to the same
   documentation bar as the backend `pub` API. OSS-audience case
   closed across both halves of the codebase.
-- **Good** — minimal rule set avoids `@param`-boilerplate
+- **Good**: minimal rule set avoids `@param`-boilerplate
   anti-pattern called out by the parent ADR. Lint enforces
   presence; policy text + reviewer + bot review enforce content
   quality.
-- **Good** — `eslint-plugin-jsdoc` is well-maintained, widely
+- **Good**: `eslint-plugin-jsdoc` is well-maintained, widely
   adopted in TS+ESLint stacks, and supports flat config. Zero new
   custom rule code to maintain.
 - **Good**: single big-bang flip avoids the per-directory PR
@@ -166,7 +166,7 @@ Use the existing `typescript-eslint` parser + a custom
 `no-restricted-syntax` selector to require a leading comment on
 every `ExportNamedDeclaration`. Zero new package.
 
-Rejected — `typescript-eslint` upstream removed the `valid-jsdoc`
+Rejected: `typescript-eslint` upstream removed the `valid-jsdoc`
 rule; no native equivalent exists. A custom AST selector can
 enforce presence but cannot enforce shape (description sentence,
 empty-block detection). Maintenance burden falls on us; the
@@ -235,5 +235,5 @@ not a property reviewers happen to catch on the day.
 - Tracker: the frontend docstring tooling task
   (parent: the comment policy phased rollout task).
 - `eslint-plugin-jsdoc` peer-dep range verified 2026-05-22:
-  `^7 || ^8 || ^9 || ^10` — covers the pinned
+  `^7 || ^8 || ^9 || ^10`, covers the pinned
   `eslint@^10.4.0`.

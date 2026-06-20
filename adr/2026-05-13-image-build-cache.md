@@ -102,7 +102,7 @@ string across branches is the correct shape:
   warm = 2m38s (whitespace-only src edit, same branch). The warm run
   log shows `importing cache manifest from gha:...` (cache-from hit)
   and 11+ `CACHED` lines.
-- Good — **cache miss is never a correctness risk.** `cache-from`
+- Good: **cache miss is never a correctness risk.** `cache-from`
   miss → cold build. `cache-to` failure → silent fallthrough. No
   partial-state corruption surface; rollback is a single-commit
   revert with no data migration or external state to unwind.
@@ -116,7 +116,7 @@ string across branches is the correct shape:
   is silent; degradation is perf-only and surfaces as colder warm
   builds. Tier 1 obs catches this manually (operator inspects
   `actions/caches` API on demand).
-- Neutral — **`workflow_dispatch` adds a manual trigger surface on
+- Neutral: **`workflow_dispatch` adds a manual trigger surface on
   main.** Same write-perm boundary as push-to-main; no new privilege
   escalation path.
 - Bad: **cargo-chef adds a build-time dependency.** Pinned
@@ -132,7 +132,7 @@ string across branches is the correct shape:
 - Bad: **first main-push after merge is cold.** Cache writes from
   feature-branch verification go under `refs/heads/feat/...`; main's
   first cache-from miss is expected. Subsequent main-pushes warm.
-- Unknown — **tag-push (`refs/tags/v*`) cache hit behaviour.** Tag
+- Unknown: **tag-push (`refs/tags/v*`) cache hit behaviour.** Tag
   refs read with `base = main` fallback per GHA scoping rules.
   Documented behaviour for tag refs is ambiguous in practice. Both
   outcomes are functionally correct, only perf differs. Action: record
@@ -238,9 +238,9 @@ Open a superseding or amending ADR if any of the following happen:
 - Empirical post-cache warm: 2m38s feature-branch same-branch reuse
   (run [25771327467](https://github.com/unkos-dev/reverie/actions/runs/25771327467))
 - Code references:
-  - `Dockerfile` — cargo-chef split decided by this ADR
-  - `.github/workflows/docker-publish.yml` — cache wiring + Tier 1
+  - `Dockerfile`: cargo-chef split decided by this ADR
+  - `.github/workflows/docker-publish.yml`: cache wiring + Tier 1
     obs + workflow_dispatch decided by this ADR
-  - `.claude/PRPs/plans/image-build-cache.plan.md` — implementation
+  - `.claude/PRPs/plans/image-build-cache.plan.md`: implementation
     plan; carry-over section enumerated the points folded into this
     ADR

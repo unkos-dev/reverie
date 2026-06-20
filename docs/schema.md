@@ -173,7 +173,7 @@ causes all visibility checks to fail, so queries return zero rows.
   rather than cascade-delete entire series trees.
 
 - **`updated_at` triggers**: Active on `users`, `works`, `manifestations`. Reserved
-  table `reading_positions` has the column but no trigger yet — add via the reusable
+  table `reading_positions` has the column but no trigger yet, add via the reusable
   `set_updated_at()` function when activated.
 
 - **pgvector**: Reserved as a SQL comment in migration 7. When ready, create a new
@@ -181,5 +181,5 @@ causes all visibility checks to fail, so queries return zero rows.
 
 ## Naming Convention
 
-All identifiers use `snake_case`. No hyphens anywhere — enum values, column names,
+All identifiers use `snake_case`. No hyphens anywhere, enum values, column names,
 table names all use underscores (e.g., `sub_genre` not `sub-genre`).
