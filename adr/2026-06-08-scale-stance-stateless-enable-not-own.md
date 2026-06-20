@@ -145,7 +145,7 @@ LOCKED` job claim.
   owned here, on the scale axis.
 - [Durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md):
   durable-not-distributed worker design.
-- [Standards-first integrations ADR](2026-06-08-standards-first-integrations.md)
-  , the same "enable, don't own" philosophy on the integrations axis.
+- [Standards-first integrations ADR](2026-06-08-standards-first-integrations.md),
+  the same "enable, don't own" philosophy on the integrations axis.
 - Revisit trigger: if first-party HA ever becomes a goal (e.g. a hosted Reverie
   offering), this stance gets a superseding ADR; it is not amended by exception.

@@ -24,8 +24,8 @@ candidates were considered:
   `maxcountryman/tower-sessions-stores` repo, same author as
   `tower-sessions` itself. Tracks `tower-sessions-core` versions
   closely. Apache-2.0/MIT.
-- **`tower-sessions-rusqlite-store` / `tower-sessions-redis-store`**
-  , same family, different backends. Not relevant: Reverie's
+- **`tower-sessions-rusqlite-store` / `tower-sessions-redis-store`**,
+  same family, different backends. Not relevant: Reverie's
   primary store is already Postgres (per
   [`adr/2026-05-05-single-image-distribution-central-csp.md`](../2026-05-05-single-image-distribution-central-csp.md)
   and the wider stack), and adding Redis or sqlite as a session
@@ -73,8 +73,8 @@ the same convention; the migration replicates it manually so the
 schema sits under the project's standard sqlx migration pipeline
 rather than crate-bundled DDL.
 
-- `CREATE TABLE tower_sessions.session (id, data bytea, expiry_date)`
-  : schema and column names exactly match the
+- `CREATE TABLE tower_sessions.session (id, data bytea, expiry_date)`:
+  schema and column names exactly match the
   `tower-sessions-sqlx-store@0.15.0` defaults so no
   `with_schema_name` / `with_table_name` override is needed at
   `PostgresStore::new` construction.
@@ -180,13 +180,13 @@ the contract:
 - the coordinated upgrade task: coordinated
   `tower-sessions` 0.14 → 0.15 bump, blocked on
   `axum-login@0.18.0` peer-pin
-- [`adr/2026-05-04-greptile-trial.md`](../2026-05-04-greptile-trial.md)
-  , Greptile's "No new direct dependencies without an ADR" rule
+- [`adr/2026-05-04-greptile-trial.md`](../2026-05-04-greptile-trial.md),
+  Greptile's "No new direct dependencies without an ADR" rule
   flagged the original PR #180 missing this ADR
 - `backend/Cargo.toml:39-44`: inline pin rationale, cross-
   references this ADR
-- `backend/migrations/20260526000000_initial_schema.up.sql`
-  : the schema + grants this ADR ratifies (tower_sessions schema section)
+- `backend/migrations/20260526000000_initial_schema.up.sql`:
+  the schema + grants this ADR ratifies (tower_sessions schema section)
 - `tower-sessions` upstream:
   <https://github.com/maxcountryman/tower-sessions>
 - `tower-sessions-sqlx-store` upstream:

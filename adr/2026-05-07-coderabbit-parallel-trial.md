@@ -92,8 +92,8 @@ shape:
 - `reviews.path_filters`: exclude `**/package-lock.json`,
   `**/Cargo.lock` (matches Greptile's `ignorePatterns` carve-out
   for the lockfile hallucination class)
-- `reviews.auto_review.enabled: true`, `reviews.auto_review.drafts: false`
-  : auto on every non-draft PR. No per-push-burn concern under
+- `reviews.auto_review.enabled: true`, `reviews.auto_review.drafts: false`:
+  auto on every non-draft PR. No per-push-burn concern under
   rate-limit pricing the way it was a fixed-cap concern on Greptile
 - `reviews.tools.markdownlint.enabled: false`: markdown lint
   already enforced via repo `.markdownlint-cli2.jsonc`. Don't
@@ -323,10 +323,10 @@ amending again with a session-level pacing discipline.
 
 ## More Information
 
-- [`adr/2026-05-04-greptile-trial.md`](2026-05-04-greptile-trial.md)
-  : the parent trial that this ADR runs alongside
-- [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md)
-  : the strict-lint baseline that compresses style territory
+- [`adr/2026-05-04-greptile-trial.md`](2026-05-04-greptile-trial.md):
+  the parent trial that this ADR runs alongside
+- [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md):
+  the strict-lint baseline that compresses style territory
   for both AI reviewers
 - CodeRabbit docs: <https://docs.coderabbit.ai>
 - CodeRabbit pricing: <https://www.coderabbit.ai/pricing>

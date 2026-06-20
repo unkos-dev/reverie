@@ -219,8 +219,8 @@ Open a superseding ADR if any of the following happen:
 ## More Information
 
 - MADR 4.0: <https://adr.github.io/madr/>
-- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](2026-04-30-adopt-architecture-decision-records.md)
-  : the meta-ADR that established this format and process
+- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](2026-04-30-adopt-architecture-decision-records.md):
+  the meta-ADR that established this format and process
 - Related: the CSP introduction (Done) that made the single-image model
   load-bearing for security. Reading the CSP documentation alongside this ADR is
   necessary to understand why the rejection of the split is more

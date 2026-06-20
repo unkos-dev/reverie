@@ -441,8 +441,8 @@ their slugs.
   a repo-wide lint guard (deliberately out of scope for any single
   convention) is tracked in the API linting task.
 - Parent (security stance):
-  [`project_open_source_security_stance.md`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md)
-  : threat model is the multi-user exposed instance.
+  [`project_open_source_security_stance.md`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md):
+  threat model is the multi-user exposed instance.
 - Industry-standard default principle:
   [`feedback_industry_standard_default.md`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md).
 - IETF specs cited: RFC 7807 (Problem Details),

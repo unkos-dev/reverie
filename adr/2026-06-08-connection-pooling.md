@@ -75,8 +75,8 @@ with a pooler externally. Reverie simply does not ship or depend on one.
   is explicitly not the supported default and is the
   [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md)'s
   concern, where pool sizing or an operator-owned pooler would be revisited.
-- Neutral, because choosing not to _bundle_ a pooling tier does not forbid one
-  , an operator may add one externally with no Reverie change.
+- Neutral, because choosing not to _bundle_ a pooling tier does not forbid one,
+  an operator may add one externally with no Reverie change.
 
 ### Confirmation
 
@@ -112,8 +112,8 @@ Compose deployment.
 
 ## More Information
 
-- Pairs with [scale stance: stateless app, enable-don't-own HA](2026-06-08-scale-stance-stateless-enable-not-own.md)
-  , that ADR owns the multi-instance pool-sizing question this one defers.
+- Pairs with [scale stance: stateless app, enable-don't-own HA](2026-06-08-scale-stance-stateless-enable-not-own.md),
+  that ADR owns the multi-instance pool-sizing question this one defers.
 - [Migration model ADR](2026-06-02-hybrid-migration-entrypoints-and-role.md):
   the single-instance contract and the `reverie_app` / `reverie_ingestion` /
   `reverie_readonly` role split the per-role pools follow.

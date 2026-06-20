@@ -129,8 +129,8 @@ review baseline.
 
 - [Scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md): the
   same "enable, don't own" philosophy on the HA axis.
-- The outbound webhooks task: outbound webhooks, the first
-  concrete eventing integration; implementation tracked there, not here.
+- Outbound webhooks, the first concrete eventing integration;
+  implementation is tracked separately, not here.
 - Existing instances of this philosophy (not re-derived here): the OPDS feed,
   OIDC + forward-auth identity, and the `/health` / `/readiness` endpoints
   already shipped.

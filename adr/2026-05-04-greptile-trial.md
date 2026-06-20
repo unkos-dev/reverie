@@ -48,8 +48,8 @@ start tight and miss patterns.
 - `strictness: 1`: counter-intuitively, this is the _least_
   filtered setting in Greptile's schema (1 = Low strictness =
   Verbose; 3 = High strictness = Critical-only). Comments on
-  everything Greptile flags. Trial purpose is signal calibration
-  , needs the full output to evaluate
+  everything Greptile flags. Trial purpose is signal calibration,
+  needs the full output to evaluate
 - `commentTypes: ["logic", "syntax", "style", "info"]`, every
   category enabled. Style overlap with the lint policy is expected
   signal data: any style nit Greptile raises that lint already

@@ -180,8 +180,8 @@ that generated document.
 - [JSON API conventions ADR](2026-05-22-json-api-conventions.md): the shapes the
   OpenAPI document describes; this ADR adds the version prefix and the contract
   format without restating those shapes.
-- [Single-image distribution ADR](2026-05-05-single-image-distribution-central-csp.md)
-  : why the bundled frontend is lockstep and the version mainly serves external
+- [Single-image distribution ADR](2026-05-05-single-image-distribution-central-csp.md):
+  why the bundled frontend is lockstep and the version mainly serves external
   clients.
 - The docs-as-done task: the generator,
   reference renderer, and CI docs gate that implement this decision.

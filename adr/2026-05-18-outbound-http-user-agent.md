@@ -155,8 +155,8 @@ without requiring them to find this ADR first.
 - Outbound HTTP user agent investigation and fix.
 - Homelab substrate deploy that surfaced the failure mode.
 - Predecessor:
-  the GLIBC dynamic linker fix
-  : same class of substrate-edge-case bug in the same deploy
+  the GLIBC dynamic linker fix:
+  same class of substrate-edge-case bug in the same deploy
   pipeline, motivating the longer-form decision record here
   rather than yet another incident-only fix.
 - `backend/src/auth/oidc.rs`: implementation site.

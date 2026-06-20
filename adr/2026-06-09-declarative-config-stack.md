@@ -185,8 +185,8 @@ owns the task sequence, the offload boundary, and the verification checklist.
   like `enrichment.concurrency`). It is carried by a small custom
   `figment::Provider` (`EnvProvider`, ~60 lines) holding an explicit per-key
   var→dotted-field map; the `REVERIE_LOG_LEVEL > RUST_LOG` cascade is resolved
-  inside that provider. The provider, rather than figment's lighter `Env::map()`
-  , is justified less by the mapping than by the **test seam**: its in-memory
+  inside that provider. The provider, rather than figment's lighter `Env::map()`,
+  is justified less by the mapping than by the **test seam**: its in-memory
   `from_pairs` constructor keeps config tests parallel-safe without mutating
   process env (for parallel test environment isolation), which stock `figment::Env` (process-env-only) cannot do
   without `Jail`'s global-env lock and the `getenv`/`setenv` race. The map doubles

@@ -212,14 +212,14 @@ Open a superseding or amending ADR if any of the following happen:
 
 - MADR 4.0: <https://adr.github.io/madr/>
 - Predecessor:
-  [`adr/2026-05-12-platform-matrix-via-native-runners.md`](2026-05-12-platform-matrix-via-native-runners.md)
-  : established build shape (per-arch native runners, manifest merge);
+  [`adr/2026-05-12-platform-matrix-via-native-runners.md`](2026-05-12-platform-matrix-via-native-runners.md):
+  established build shape (per-arch native runners, manifest merge);
   flagged build-cache strategy as the next ADR. This ADR resolves
   that flag. Build-shape decisions from the predecessor remain in
   force.
 - Related:
-  [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
-  : defines image contents; this ADR decides how those contents are
+  [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md):
+  defines image contents; this ADR decides how those contents are
   cached during build. No interaction with runtime image surface.
 - Tracker: the Linear ticket commissioning this work
 - Implementation PR:

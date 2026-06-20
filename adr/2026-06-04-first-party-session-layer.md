@@ -22,9 +22,8 @@ abandoned on crates.io:
 - **`tower-sessions-sqlx-store` 0.15.0**: last released 2025-01-01 (~17
   months). Its `tower-sessions-core` dependency pins `^0.14`.
 
-These are two independent peer-pins that jointly block
-The coordinated `tower-sessions` upgrade issue: the `tower-sessions`
-0.14 → 0.15 bump (Renovate PR
+These are two independent peer-pins that jointly block the coordinated
+`tower-sessions` 0.14 → 0.15 bump (Renovate PR
 [#128](https://github.com/unkos-dev/reverie/pull/128)). Removing one does not
 unblock the bump; the other still holds 0.14. `tower-sessions` 0.15 (released
 2026-02-01) carries a memory-ordering race fix and a `rand` 0.9 update worth
@@ -174,8 +173,8 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
   Implementation is tracked in `prp-plan` output under `.claude/PRPs/plans/`,
   not in this ADR.
 - Supersedes
-  [`superseded/2026-05-08-tower-sessions-sqlx-store.md`](superseded/2026-05-08-tower-sessions-sqlx-store.md)
-  , that ADR adopted `tower-sessions-sqlx-store` and explicitly rejected a
+  [`superseded/2026-05-08-tower-sessions-sqlx-store.md`](superseded/2026-05-08-tower-sessions-sqlx-store.md),
+  that ADR adopted `tower-sessions-sqlx-store` and explicitly rejected a
   hand-written store; the context changed when the store became the second pin
   blocking the coordinated upgrade. Its session-table schema, grants, RLS-exemption, and
   expiry-index decisions are carried forward in the Decision Outcome above.

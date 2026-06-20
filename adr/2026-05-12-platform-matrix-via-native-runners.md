@@ -152,8 +152,8 @@ shape changes.
   blocked by run `25731891335` (30+ min). The predecessor ADR's
   acceptance criterion that CI runtime does not regress materially
   fails today; this is the regression.
-- **Arm64-only on `v*` tags (inverse of the chosen split).** Rejected
-  , homelab staging consumes `:main` arm64. Making arm64 a release-only
+- **Arm64-only on `v*` tags (inverse of the chosen split).** Rejected,
+  homelab staging consumes `:main` arm64. Making arm64 a release-only
   artefact regresses staging.
 - **Full multi-arch (amd64 + arm64) on both triggers.** Rejected:
   amd64 has no consumer today. The sole arm64 consumer is
@@ -197,18 +197,18 @@ Open a superseding ADR if any of the following happen:
 
 - MADR 4.0: <https://adr.github.io/madr/>
 - Supersedes:
-  [`adr/2026-05-12-decouple-staging-image-from-semver-releases.md`](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md)
-  , two-channel publication and `:latest`-not-auto-assigned decisions
+  [`adr/2026-05-12-decouple-staging-image-from-semver-releases.md`](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md),
+  two-channel publication and `:latest`-not-auto-assigned decisions
   remain in force; build-shape decision is replaced
 - Related:
-  [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
-  : upstream invariant. The image contents are decided by that ADR;
+  [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md):
+  upstream invariant. The image contents are decided by that ADR;
   this ADR decides how the image is built and tagged
 - Tracker: the workflow automation task commissioning this ADR and the corresponding workflow PR; folds in the architecture matrix task (originally tracked a superseding ADR for the QEMU-intermediate step that this ADR removes wholesale)
 - Related: the upstream issue decoupling staging image from semver releases (immediate predecessor, which introduced QEMU and the trigger-driven platform matrix; the trigger split is preserved by this ADR, the QEMU dependency is removed)
 - Related: homelab Phase 3 staging deploy that consumes the `:main` arm64 image
-- Empirical baseline: [run 25731891335](https://github.com/unkos-dev/reverie/actions/runs/25731891335)
-  , 30+ min arm64-via-QEMU build on main-push, the regression that
+- Empirical baseline: [run 25731891335](https://github.com/unkos-dev/reverie/actions/runs/25731891335),
+  30+ min arm64-via-QEMU build on main-push, the regression that
   prompted this change
 - Code references:
   - `.github/workflows/docker-publish.yml`: single workflow changed

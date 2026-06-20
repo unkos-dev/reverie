@@ -230,11 +230,11 @@ is the path of least resistance.
 
 ## More Information
 
-- [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md)
-  : defaults to standard-library / audited-crate idioms over
+- [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md):
+  defaults to standard-library / audited-crate idioms over
   hand-rolled primitives.
-- [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md)
-  , handling of `cargo audit` findings on these new packages.
+- [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md),
+  handling of `cargo audit` findings on these new packages.
 - Sibling ADR:
   [`2026-05-22-json-api-conventions.md`](2026-05-22-json-api-conventions.md)
   (RFC 7396 Merge Patch decision; CSRF synchronizer-token

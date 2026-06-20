@@ -168,8 +168,8 @@ ghcr.io/unkos-dev/reverie` (the most natural command a curious user
   types) return an unreleased build. Once shipped, this expectation
   is hard to walk back. Better to leave `:latest` unset until the
   first real release defines it
-- **Separate `docker-publish-staging.yml` workflow file.** Rejected
-  , duplicates the entire pipeline (login, metadata, buildx setup,
+- **Separate `docker-publish-staging.yml` workflow file.** Rejected,
+  duplicates the entire pipeline (login, metadata, buildx setup,
   build-push) for a one-line trigger difference. Two upgrade paths
   to track when bumping action versions. The single-workflow
   approach with both triggers in `on:` is cleaner; metadata-action's
@@ -258,10 +258,10 @@ ghcr.io/unkos-dev/reverie:main` succeeds from a clean
 ## More Information
 
 - MADR 4.0: <https://adr.github.io/madr/>
-- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](../2026-04-30-adopt-architecture-decision-records.md)
-  : the meta-ADR that established this format
-- Related: [`adr/2026-05-05-single-image-distribution-central-csp.md`](../2026-05-05-single-image-distribution-central-csp.md)
-  : the upstream invariant. The image _contents_ are decided by that
+- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](../2026-04-30-adopt-architecture-decision-records.md):
+  the meta-ADR that established this format
+- Related: [`adr/2026-05-05-single-image-distribution-central-csp.md`](../2026-05-05-single-image-distribution-central-csp.md):
+  the upstream invariant. The image _contents_ are decided by that
   ADR; this ADR decides _when_ the image publishes
 - Tracker: the continuous staging images task, which is the
   Linear ticket commissioning this ADR and the corresponding workflow PR
