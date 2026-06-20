@@ -118,8 +118,8 @@ components:
     padding: "0 0.625rem"
     height: "2rem"
   button-destructive:
-    backgroundColor: "{colors.danger-soft-dark}"
-    textColor: "{colors.danger-text-dark}"
+    backgroundColor: "#B91C1C33" # --color-destructive (danger) @ 20% — the dark soft fill
+    textColor: "{colors.danger-dark}"
     rounded: "{rounded.lg}"
     padding: "0 0.625rem"
     height: "2rem"
