@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test for the ReverieProse Vale style. Feeds known-slop and known-clean
+# Self-test for the ReverieProse Vale style. Feeds known-bad and known-clean
 # snippets to Vale over stdin and asserts that each rule fires on its target
 # and stays silent on clean prose. Snippets are passed in-memory (no fixture
 # files on disk), so the other tree-walking linters (markdownlint, prettier,
@@ -26,11 +26,14 @@ alerts_for() {
 }
 
 expect_fires() {
-  local rule="ReverieProse.$1" snippet="$2"
-  if alerts_for "$snippet" | grep -qx "$rule"; then
-    echo "ok   $rule fires"
+  local rule="ReverieProse.$1" snippet="$2" got
+  # Exact match: the snippet must trip its target rule and nothing else, so an
+  # accidental second match (a regression) is caught rather than masked.
+  got=$(alerts_for "$snippet")
+  if [ "$got" = "$rule" ]; then
+    echo "ok   $rule fires (only)"
   else
-    echo "FAIL $rule did not fire on: $snippet" >&2
+    echo "FAIL expected only [$rule], got [${got:-<none>}] on: $snippet" >&2
     fail=1
   fi
 }
@@ -46,7 +49,7 @@ expect_silent() {
   fi
 }
 
-# Each slop snippet must trip exactly its target rule.
+# Each bad snippet must trip exactly its target rule.
 expect_fires ThroatClearing "It's worth noting that the parser reads the OPF package."
 expect_fires BusinessJargon "Let's circle back to the import pipeline tomorrow."
 expect_fires Adverbs "The cache is fundamentally a key-value store."
@@ -57,6 +60,14 @@ expect_fires WhStarter "The store is durable. What makes this work is the log."
 # Clean technical prose must trip nothing.
 expect_silent "The parser extracts EPUB 3 metadata from the OPF package."
 expect_silent "Run the database migration before starting the server."
+
+# Edge cases that lock in deliberate design choices.
+# WhStarter is paragraph-scoped, so a Wh- word in a heading is exempt.
+expect_silent "# How the reader caches pages"
+# Vale lints prose only: an em dash inside an inline code span is ignored.
+expect_silent "The \`a ${emdash} b\` operator is code, not prose."
+# Near miss: "deep" without "dive" must not trip BusinessJargon.
+expect_silent "We dug deep into the schema before the migration."
 
 if [ "$fail" -ne 0 ]; then
   echo "vale self-test: FAILED" >&2

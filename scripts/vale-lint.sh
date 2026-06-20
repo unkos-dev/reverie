@@ -50,6 +50,7 @@ fi
 files=()
 for path in "${candidates[@]+"${candidates[@]}"}"; do
   rel="${path#"$PWD/"}"
+  rel="${rel#./}"
   if [ -f "$rel" ] && in_scope "$rel"; then
     files+=("$rel")
   fi
