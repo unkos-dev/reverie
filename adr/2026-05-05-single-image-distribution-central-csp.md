@@ -17,16 +17,16 @@ JSON API and the React/Vite frontend bundle on the same port (`:3000`).
 Frontend assets land in `/srv/frontend` at image-build time, and the
 backend reads `REVERIE_FRONTEND_DIST_PATH` at startup to mount the SPA
 fallback router. This shape was introduced when the Dockerfile was
-first written and reinforced by [UNK-106](https://linear.app/unkos/issue/UNK-106)
+first written and reinforced by the Content-Security-Policy (CSP) implementation
 (Content-Security-Policy), which wired a build-time `cspHashPlugin` in
 Vite that emits `dist/csp-hashes.json`; the backend reads that sidecar
 on startup and serves `index.html` with a strict CSP header containing
 those exact script/style hashes.
 
 The decision has never been captured as an ADR. It was effectively
-inherited from the original scaffold and made load-bearing by UNK-106.
+inherited from the original scaffold and made load-bearing by the CSP implementation.
 This becomes a problem when planning a staging runtime
-([UNK-159](https://linear.app/unkos/issue/UNK-159)): a reasonable
+(the staging runtime work): a reasonable
 default for "deploy a frontend with hot iteration" is to split frontend
 and backend into separate images so the frontend can rebuild without
 recompiling Rust. That split was proposed and partially planned across
@@ -43,7 +43,7 @@ single-image coupling was inspected. Splitting would have:
 The reversal happened mid-plan when the actual code was read. This ADR
 records the architecture that already exists, the alternatives that
 were considered, and the conditions that would force a future
-reversal — so the next agent or contributor can see the load-bearing
+reversal, so the next agent or contributor can see the load-bearing
 constraints before proposing the same split again.
 
 ## Decision
@@ -60,7 +60,7 @@ Concretely:
 - **Build**: a single multi-stage `Dockerfile` produces one image. The
   Vite build emits `dist/` (including `csp-hashes.json`) into the
   frontend stage, the Rust build produces `reverie-api`, and the
-  runtime stage copies both — frontend dist into `/srv/frontend`,
+  runtime stage copies both: frontend dist into `/srv/frontend`,
   binary into `/usr/local/bin`
 - **Runtime**: the backend reads `REVERIE_FRONTEND_DIST_PATH` at
   startup, validates the directory and the `csp-hashes.json` sidecar
@@ -82,57 +82,57 @@ Concretely:
   preserved by Vite's proxy
 - **Visibility from outside the workspace**: solved separately by a
   Cloudflare Tunnel exposing the Vite dev server
-  ([UNK-164](https://linear.app/unkos/issue/UNK-164)), not by image
+  (the Cloudflare Tunnel setup), not by image
   rebuilds. Active-dev visibility is decoupled from the image
   distribution decision
 
 ## Consequences
 
-- Good — **single CSP enforcement point**. The hash sidecar pattern
+- Good: **single CSP enforcement point**. The hash sidecar pattern
   ensures policy and assets are built together and consumed together.
   No drift between the policy emitter and the asset hashes. Audit
   scope for CSP changes is one file
-- Good — **zero CORS in production and dev**. Cookies, CSRF,
+- Good: **zero CORS in production and dev**. Cookies, CSRF,
   `SameSite`, OIDC redirect URIs, and XHR `credentials: include` all
   Just Work because requests are same-origin end-to-end. This is a
   meaningful reduction in attack surface and operational complexity
-- Good — **simple self-hoster install**. `docker run` plus a Postgres
+- Good: **simple self-hoster install**. `docker run` plus a Postgres
   container is the entire baseline. Matches how the target audience
   (homelabbers and small self-hosting communities) actually consume
   software
-- Good — **atomic deploy unit**. One image tag = one rollback target.
+- Good: **atomic deploy unit**. One image tag = one rollback target.
   No version-skew possible between a `frontend@vX` and a
   `backend@vY` that disagree on API shape. CI bumps both halves in
   one PR (release-please already enforces this via `Cargo.toml` +
   `package.json` co-versioning)
-- Good — **single healthcheck, single failure mode**. One `/health`
+- Good: **single healthcheck, single failure mode**. One `/health`
   endpoint covers both halves. Simplifies orchestration
   (`depends_on: condition: service_healthy`), Traefik routing, and
   deploy automation
-- Bad — **frontend-only edits trigger an image rebuild that includes
+- Bad: **frontend-only edits trigger an image rebuild that includes
   a Rust stage**. In practice, Docker layer caching means the Rust
   stage hits cache on frontend-only changes, so the rebuild is
   ~10–20s vs ~5s for a hypothetical split. Cost is real but
   small; addressed by NOT using image rebuilds for active dev
   iteration (see below)
-- Bad — **the frontend stack and backend stack are coupled through
+- Bad: **the frontend stack and backend stack are coupled through
   the image**. You cannot deploy a frontend-only hotfix without
   shipping the backend binary. Acceptable for a project at Reverie's
   scale; would be a problem at a scale where independent FE/BE
   release cadence becomes a deliberate strategy
-- Bad — **the backend Rust binary embeds the responsibility of
+- Bad: **the backend Rust binary embeds the responsibility of
   static-asset serving and HTML response shaping**. Slightly outside
   the "API server" archetype most Rust-Axum tutorials present.
   Mitigated by keeping the static-serve module narrow
   (`backend/src/routes/spa.rs`) and the CSP module isolated
   (`backend/src/security/headers.rs`)
-- Bad — **the build-time sidecar contract (`csp-hashes.json`) is an
+- Bad: **the build-time sidecar contract (`csp-hashes.json`) is an
   invariant the test suite must protect**. If a frontend refactor
   drops the plugin or changes the schema, the backend will panic at
   startup. Mitigated by the existing tests in
   `frontend/vite-plugins/__tests__/csp-hash.test.ts` and the backend
   startup validation that fails fast and loud
-- Neutral — **iteration speed for the active-dev loop is unaffected**
+- Neutral: **iteration speed for the active-dev loop is unaffected**
   by the image-distribution decision. Active dev runs Vite + cargo
   watch directly in the workspace; the image is only relevant for
   staging and production deploys
@@ -161,7 +161,7 @@ Concretely:
   against the split
 
 - **Embed the frontend bundle into the Rust binary via
-  `include_dir!` or `rust-embed`.** Rejected — would lose the
+  `include_dir!` or `rust-embed`.** Rejected: would lose the
   ability to swap frontend assets without recompiling Rust, would
   inflate the binary size, and would complicate the CSP sidecar
   pattern (the JSON file would need a parallel `include_str!` slot
@@ -171,7 +171,7 @@ Concretely:
   which matches how Docker layer caching wants to operate
 
 - **Separate frontend image served by Nginx, with CSP injected by
-  Nginx config templated at build time.** Rejected — the Vite hash
+  Nginx config templated at build time.** Rejected: the Vite hash
   sidecar is JSON, not Nginx config syntax. Templating it requires
   either (a) a build-time post-processor that emits Nginx
   fragments, adding a second toolchain step that the CI pipeline
@@ -181,7 +181,7 @@ Concretely:
   (`backend/src/security/headers.rs`)
 
 - **Cloudflare Workers / edge-side CSP injection.** Rejected for
-  this project — Reverie is self-hosted; the deployment target is
+  this project: Reverie is self-hosted; the deployment target is
   homelabs and small self-hosting communities, not a hosted SaaS
   with a Cloudflare-owned edge in front of every install. Edge-side
   policy works for projects whose deployment model includes a
@@ -219,29 +219,26 @@ Open a superseding ADR if any of the following happen:
 ## More Information
 
 - MADR 4.0: <https://adr.github.io/madr/>
-- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](2026-04-30-adopt-architecture-decision-records.md)
-  — the meta-ADR that established this format and process
-- Related: [UNK-106](https://linear.app/unkos/issue/UNK-106) — the
-  CSP introduction (Done) that made the single-image model
-  load-bearing for security. Reading UNK-106 alongside this ADR is
+- Related: [`adr/2026-04-30-adopt-architecture-decision-records.md`](2026-04-30-adopt-architecture-decision-records.md):
+  the meta-ADR that established this format and process
+- Related: the CSP introduction (Done) that made the single-image model
+  load-bearing for security. Reading the CSP documentation alongside this ADR is
   necessary to understand why the rejection of the split is more
   than a preference
-- Related: [UNK-159](https://linear.app/unkos/issue/UNK-159) —
-  the staging runtime master ticket. This ADR's parent context;
+- Related: the staging runtime master ticket. This ADR's parent context;
   the decision recorded here directly shapes the compose stack,
   Dockerfile, and CI scope of the staging deploy
-- Tracker: [UNK-160](https://linear.app/unkos/issue/UNK-160) —
-  the ticket commissioning this ADR
+- Tracker: the ticket commissioning this ADR
 - Code references:
-  - `Dockerfile` — single multi-stage build
-  - `backend/src/lib.rs::build_router_with_session_store` —
+  - `Dockerfile`: single multi-stage build
+  - `backend/src/lib.rs::build_router_with_session_store`:
     `routes::spa::router_enabled` mount
-  - `backend/src/lib.rs::run` — `frontend_dist_path` startup
+  - `backend/src/lib.rs::run`: `frontend_dist_path` startup
     validation
-  - `backend/src/security/headers.rs` — CSP enforcement, including
+  - `backend/src/security/headers.rs`: CSP enforcement, including
     `spa_fallback_response`
-  - `backend/src/security/dist_validation.rs` — startup-time
+  - `backend/src/security/dist_validation.rs`: startup-time
     sidecar contract enforcement
-  - `frontend/vite-plugins/csp-hash.ts` — the build-time sidecar
+  - `frontend/vite-plugins/csp-hash.ts`: the build-time sidecar
     emitter
-  - `frontend/vite.config.ts` — dev-mode proxy + relaxed dev CSP
+  - `frontend/vite.config.ts`: dev-mode proxy + relaxed dev CSP

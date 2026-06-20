@@ -1,6 +1,6 @@
 # Content Security Policy and security headers
 
-Reverie ships strict security response headers by default (UNK-106). This
+Reverie ships strict security response headers by default (as part of the strict security response headers task). This
 document is for operators: it explains what ships, why, and how to tune it.
 
 ## What ships by default
@@ -20,7 +20,7 @@ A `Content-Security-Policy` differentiated by route class:
   one known inline FOUC script (via `'sha256-...'`). No `'unsafe-inline'` for
   scripts.
 - **API responses** (`/api/*`, `/auth/*`, `/health/*`, `/opds/*`):
-  `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` — APIs never
+  `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, APIs never
   render, so everything is locked down.
 
 ## Opt-in: HSTS
@@ -106,7 +106,7 @@ Reverie self-hosts variable woff2 fonts at
 is sufficient for the default deployment. Operators who need fonts from
 a CDN (e.g., Google Fonts, custom asset host) must edit
 `backend/src/security/csp.rs::build_html_csp` to allowlist the required
-origin(s) and rebuild. No runtime configuration knob exists for this —
+origin(s) and rebuild. No runtime configuration knob exists for this:
 the policy is intentionally code-declared so every deployment has an
 identical, auditable font policy out of the box.
 
@@ -129,7 +129,7 @@ Reverie sets two cookies on authenticated browsers:
 
 `reverie_theme` is intentionally not `HttpOnly` because JavaScript must
 read it synchronously before React hydrates to avoid a theme flicker. It
-carries no PII — only the literal string `system`, `light`, or `dark`.
+carries no PII: only the literal string `system`, `light`, or `dark`.
 See `docs/design/visual-identity.md` § Theme Cookie Lifecycle for the
 full rationale and the contrast rule: any future _session-state_ cookie
 MUST be `HttpOnly` and MUST be cleared on logout; `reverie_theme` is the
@@ -141,14 +141,14 @@ deployment in 2026 is a misconfiguration we don't bend the design to
 support. Localhost dev still works because Chrome (≥v89) and Firefox
 treat `http://localhost` as a secure context and accept Secure cookies
 on it. An operator running Reverie behind a public DNS name on plain
-HTTP will see the browser silently reject the cookie — the documented
+HTTP will see the browser silently reject the cookie, which is the documented
 signal to put the deployment behind TLS, whether terminated at a proxy
 or directly.
 
 The session cookie (`id`) does not set `Secure` today; that's tracked as
 a follow-up to apply the same treatment.
 
-## `style-src 'unsafe-inline'` — why it's still there
+## `style-src 'unsafe-inline'`: why it's still there
 
 The HTML CSP allows inline styles:
 
@@ -158,8 +158,8 @@ style-src 'self' 'unsafe-inline'
 
 This is a pragmatic concession for:
 
-- **Tailwind CSS JIT** — generates `style=""` on some utilities.
-- **Radix UI portals** — positions popovers/dialogs with runtime inline
+- **Tailwind CSS JIT**: generates `style=""` on some utilities.
+- **Radix UI portals**: positions popovers/dialogs with runtime inline
   styles.
 
 CSS injection impact is far narrower than script injection: a CSS injection
@@ -181,8 +181,8 @@ HSTS if the request was served before TLS termination (unchanged behaviour).
 
 ### Third-party auditors
 
-- [securityheaders.com](https://securityheaders.com) — expect **A+**.
-- [Mozilla Observatory](https://observatory.mozilla.org) — expect **A+**.
+- [securityheaders.com](https://securityheaders.com): expect **A+**.
+- [Mozilla Observatory](https://observatory.mozilla.org): expect **A+**.
 
 If either returns less than A, check:
 
@@ -195,7 +195,7 @@ If either returns less than A, check:
 1. Open the application.
 2. Open DevTools → Console.
 3. Navigate between routes.
-4. Watch for `Refused to execute inline script because it violates the following Content Security Policy directive` — if you see one, a
+4. Watch for `Refused to execute inline script because it violates the following Content Security Policy directive`, if you see one, a
    legitimate inline script landed in a PR without a hash. File an issue.
 
 ## Further reading

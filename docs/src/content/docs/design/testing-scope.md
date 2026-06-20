@@ -8,15 +8,15 @@ The Step 10 design system is tested at two distinct bars.
 ## What ships with deterministic unit tests
 
 - **Today (D0–D2):**
-  - `Lockup` brand component — React Testing Library coverage of the
+  - `Lockup` brand component: React Testing Library coverage of the
     wordmark variants and accessibility contract
     (`frontend/src/components/Lockup.test.tsx`).
-  - The CSP-hash Vite plugin — node-environment unit tests under
+  - The CSP-hash Vite plugin: node-environment unit tests under
     `frontend/vite-plugins/__tests__/csp-hash.test.ts`.
   - The `axum_extra` `CookieJar` tuple-response contract that the backend
     design-system sliver (theme PATCH, OIDC callback cookie seed) depends
-    on — `backend/tests/cookie_jar_sanity.rs`.
-  - Vitest harness validation — `frontend/src/__tests__/smoke.test.ts`
+    on: `backend/tests/cookie_jar_sanity.rs`.
+  - Vitest harness validation: `frontend/src/__tests__/smoke.test.ts`
     confirms the jsdom test project is wired up; replaced with an
     `App`-renders assertion in D3.
 - **D3–D5 acceptance bar (added before the relevant feature lands):**
@@ -43,4 +43,4 @@ Applied-page Lighthouse gates are Step 11's responsibility.
 This split is deliberate. Snapshotting visual output in per-component unit
 tests locks styling into a pixel-brittle contract that Step 11 cannot move.
 The design system's acceptance bar is the axe-core hard gate plus a human
-review — per-component visual regression tooling is not adopted.
+review; per-component visual regression tooling is not adopted.

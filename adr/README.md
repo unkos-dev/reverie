@@ -6,7 +6,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 - Directory: `adr`
 - Naming: `YYYY-MM-DD-short-kebab-slug.md` (date-prefixed, no numeric prefixes)
-- Shape: canonical [MADR 4.0](https://adr.github.io/madr/). Copy [TEMPLATE.md](TEMPLATE.md) — not the `adr` skill's bundled template (it bolts on an Implementation Plan section this repo does not want).
+- Shape: canonical [MADR 4.0](https://adr.github.io/madr/). Copy [TEMPLATE.md](TEMPLATE.md), not the `adr` skill's bundled template (it bolts on an Implementation Plan section this repo does not want).
 - Sections (in order): Context and Problem Statement → Decision Drivers (opt) → Considered Options → Decision Outcome (Consequences, Confirmation) → Pros and Cons of the Options (opt) → More Information (opt)
 - Status values: `proposed`, `accepted`, `rejected`, `deprecated`, `superseded`
 - Supersession (header fields, not status prose): the replacement ADR carries `supersedes: ["superseded/<old>.md"]`; the replaced ADR carries `status: superseded` + `superseded-by: ["../<new>.md"]` and is moved into `adr/superseded/`. Paths are relative to the file.

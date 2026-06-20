@@ -36,7 +36,7 @@ reverie.example.com {
 }
 ```
 
-Caddy auto-provisions TLS via Let's Encrypt. No HSTS config needed — Reverie
+Caddy auto-provisions TLS via Let's Encrypt. No HSTS config needed; Reverie
 emits it when `REVERIE_BEHIND_HTTPS=true`.
 
 ### nginx
@@ -134,6 +134,6 @@ POST to Loki. Shape the source to accept both legacy
 Any HTTPS endpoint that accepts unauthenticated POSTs works. The body will
 be one of:
 
-- `application/csp-report` — legacy `report-uri` payload (single object).
-- `application/reports+json` — Reporting API payload (array of report
+- `application/csp-report`: legacy `report-uri` payload (single object).
+- `application/reports+json`: Reporting API payload (array of report
   objects, each with `type: "csp-violation"` and a `body` field).

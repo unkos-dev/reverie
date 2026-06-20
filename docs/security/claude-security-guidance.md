@@ -9,7 +9,7 @@ multi-user instance exposed to the internet, not a private homelab deploy.
   (background pipeline), `reverie_readonly` (reporting). Migration pool
   (`reverie` schema owner) is ephemeral and drops before runtime.
 - Every user-facing query MUST go through `db::acquire_with_rls(pool, user_id)`.
-  Bare `pool.acquire()` in request handlers bypasses RLS — always flag this.
+  Bare `pool.acquire()` in request handlers bypasses RLS; always flag this.
 - User context set via `set_config('app.current_user_id', uuid, true)` with
   LOCAL scope (auto-resets on commit/rollback). Missing set_config = RLS bypass.
 - Writeback worker uses a dedicated pool with `app.system_context = 'writeback'`.
@@ -24,7 +24,7 @@ multi-user instance exposed to the internet, not a private homelab deploy.
   behind TLS-terminating proxy). Adding `Secure` breaks non-TLS dev setups.
 - Session tokens must never appear in logs, error messages, or serialised output.
 - Auth enforcement uses `CurrentUser::require_admin()` / `require_not_child()`.
-  Direct field reads on role/is_child bypass the canonical check — flag them.
+  Direct field reads on role/is_child bypass the canonical check; flag them.
 
 ## Outbound HTTP
 
@@ -38,7 +38,7 @@ multi-user instance exposed to the internet, not a private homelab deploy.
 ## EPUB & XML parsing
 
 - `quick-xml` reader: no DTD processing, no entity expansion. Changing these
-  defaults opens XXE surface — flag any `expand_empty_elements` or custom entity
+  defaults opens XXE surface; flag any `expand_empty_elements` or custom entity
   configuration.
 - ZIP extraction enforces uncompressed size limits (zip-bomb prevention). Path
   entries validated: no `../` traversal, no absolute paths.

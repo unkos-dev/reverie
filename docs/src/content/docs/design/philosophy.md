@@ -37,8 +37,8 @@ Reverie is opinionated:
 ## State without hue
 
 State communicates through **typography weight, surface opacity, motion,
-and the gold accent** — never a state-coded hue, with a single bounded
-exception, **danger** (below). This is a load-bearing brand invariant:
+and the gold accent** (never a state-coded hue, with a single bounded
+exception, **danger** (below)). This is a load-bearing brand invariant:
 
 | State                             | Expression                                                                                                                                                                                                                  |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -55,7 +55,7 @@ exception, **danger** (below). This is a load-bearing brand invariant:
 | Link                              | underline + `text-accent` on hover; no permanent colour difference                                                                                                                                                          |
 | Focus (keyboard)                  | universal `:focus-visible` — single 2px `gold-11` outline + 2px offset, no halo; `gold-11` (`--accent-text`) carries the ≥ 3:1 non-text boundary unaided on both themes (see [Color Tokens](/reverie/design/color-tokens/)) |
 
-`--color-danger` is the **one** sanctioned state hue — reserved for
+`--color-danger` is the **one** sanctioned state hue: reserved for
 destructive and unrecoverable-error semantics, never decorative, and always
 paired with an icon, weight, or text label (WCAG 1.4.1). The rationale is
 recorded in the single-danger-hue decision
@@ -65,11 +65,11 @@ deliberately excludes `--color-success`, `--color-warning`, `--color-info`,
 and `--color-neutral`. Adding any further hue-coded state token requires a
 separate brand-aligned decision; do not "harmlessly add" them on the
 assumption they'll be useful later. Charts and code blocks are scoped
-exceptions — when they ship, the deviation is documented in
+exceptions; when they ship, the deviation is documented in
 [Visual Identity](/reverie/design/visual-identity/) and constrained to the
 surface that requires it.
 
-`--color-fg-faint` is **decorative-only** — breadcrumb separators,
+`--color-fg-faint` is **decorative-only**: breadcrumb separators,
 ornamental dividers, and similar tertiary glyphs. It is never a
 functional-state colour, because `opacity-50 × text-fg-faint` falls
 below AA in both themes; that's why the disabled-state mapping above
@@ -84,20 +84,20 @@ unambiguous.
 
 ### Light-theme accent: documented axe deviation
 
-On Parchment the light accent (`#A77C00`, `gold-9`) is ≈ 2.8:1 — below the
+On Parchment the light accent (`#A77C00`, `gold-9`) is ≈ 2.8:1, below the
 WCAG 2.2 1.4.11 3:1 floor as a line or as text; darkening it far enough to
 clear 3:1 would stop reading as gold. The contrast is carried by _how the
 accent is used_: solid fills (large CTAs, primary actions) carry **ink
-text** at ≈ 5:1, which clears 1.4.3 — the fill, not the gold edge, does the
+text** at ≈ 5:1, which clears 1.4.3; the fill, not the gold edge, does the
 work. Focus rings sidestep the deviation entirely by using `gold-11`
 (`--accent-text`), the text-grade gold that clears the ≥ 3:1 boundary on its
-own — no halo required (see [Color Tokens](/reverie/design/color-tokens/)).
+own; no halo required (see [Color Tokens](/reverie/design/color-tokens/)).
 
 axe-core surfaces 1.4.11 / 1.4.3 violations on any Light surface that uses
 the `gold-9` edge or `gold-9` text outside those mitigated cases. The
-restriction — use the light accent (`gold-9`) only as a fill (with ink
+restriction (use the light accent (`gold-9`) only as a fill (with ink
 text) or a recovery action, with focus rings reserved for the compliant
-`gold-11` — is the brand's mitigation; the
+`gold-11`) is the brand's mitigation; the
 [`/design/system`](/reverie/design/visual-identity/) gallery may surface a
 small number of axe violations on the documented `lg`-size primary button
 surface, and the design-system axe gate tolerates those. Introducing gold as
@@ -115,7 +115,7 @@ content.
 ## Theming
 
 Three preferences (`system` / `light` / `dark`), one cookie, one FOUC
-script. The cookie (`reverie_theme`) survives logout by design — it is
+script. The cookie (`reverie_theme`) survives logout by design; it is
 device state, not session state. The FOUC pre-paint script reads the
 cookie synchronously, sets `<html data-theme>` before React hydrates,
 and the canonical theme tree's `[data-theme="dark"]` / `light`
@@ -125,7 +125,7 @@ for the cross-stack contract.
 
 ## What we don't build
 
-- A framework. Reverie's design system is intentionally narrow — it
+- A framework. Reverie's design system is intentionally narrow; it
   serves Reverie, not arbitrary downstream consumers.
 - A token-name framework. The token names map 1:1 onto the brand
   identity's palette. No automation is required to keep them in sync;

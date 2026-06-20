@@ -11,7 +11,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Step 11 of the Reverie blueprint (UNK-80) adds a JSON REST API
+Step 11 of the Reverie blueprint (the API conventions work) adds a JSON REST API
 surface (see sibling
 [`2026-05-22-json-api-conventions.md`](2026-05-22-json-api-conventions.md))
 across six sub-phases (11a–11f). The implementation requires
@@ -45,7 +45,7 @@ together the two ADRs cover the full Step 11 dependency surface.
 
 ## Decision
 
-### `axum-extra` — add `"query"` to the existing features list
+### `axum-extra`: add `"query"` to the existing features list
 
 Existing entry in `backend/Cargo.toml`:
 
@@ -59,7 +59,7 @@ After this PR:
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
 ```
 
-The version stays pinned at `0.12.6` — this version was selected
+The version stays pinned at `0.12.6`, this version was selected
 to match axum 0.8.9's compatibility requirements; downgrading
 breaks the build. EDIT the existing line; do NOT add a duplicate
 `axum-extra` entry. Sub-phase 11a Task 4 (committed in this
@@ -82,7 +82,7 @@ tree; adding a feature flag costs zero dependencies (the crate
 is already compiling). `serde_qs` would be a net-new dep with
 substantially the same surface.
 
-### `serde_with` — new top-level dependency (Sub-phase 11c)
+### `serde_with`: new top-level dependency (Sub-phase 11c)
 
 Add to `backend/Cargo.toml`:
 
@@ -128,11 +128,11 @@ helper accessible. If a future use needs `serde_with_macros`
 (e.g. the `#[serde_as]` attribute), add `"macros"` back with an
 updated ADR or per-PR justification.
 
-### `subtle` — first non-test consumer documented (no Cargo.toml change)
+### `subtle`: first non-test consumer documented (no Cargo.toml change)
 
 `subtle = "2.6.1"` is already in tree (was added when
 `auth/token.rs` adopted constant-time SHA-256 hex compare for
-the device-token verifier — see
+the device-token verifier: see
 [`backend/src/auth/token.rs:50-56`](../backend/src/auth/token.rs)).
 
 Sub-phase 11a Task 1c introduces the **second** consumer:
@@ -159,30 +159,30 @@ rather than buried in a per-handler docstring.
 
 ## Consequences
 
-- **Good** — `axum-extra` feature flip is the minimum diff that
+- **Good**: `axum-extra` feature flip is the minimum diff that
   forward-compatibly supports 11b filter params. No dependency
   count delta, no version churn.
-- **Good** — `serde_with` is the canonical solution for the
+- **Good**: `serde_with` is the canonical solution for the
   Merge Patch decode problem. Adopting it in 11c (when the first
   PATCH endpoint lands) avoids hand-rolling a fragile
   three-state decoder. Maintainability cost is low: the crate
   is widely used in the serde ecosystem, RustSec-clean, and the
   `double_option` helper has been stable across v2 and v3.
-- **Good** — documenting `subtle`'s second consumer in this ADR
+- **Good**: documenting `subtle`'s second consumer in this ADR
   keeps the constant-time-compare convention discoverable. New
   contributors who need to compare a presented secret can find
   the prior art (device-token + CSRF-token) without grep
   archaeology.
-- **Bad** — `serde_with` is a large crate (many helpers,
+- **Bad**: `serde_with` is a large crate (many helpers,
   generated macro expansion is non-trivial). We accept the
   compile-time + binary-size cost in exchange for not
   hand-rolling Merge Patch decoders. Mitigation: never enable
   optional `serde_with` features without an updated entry in
   this ADR or a successor.
-- **Bad** — `axum-extra` `"query"` feature pulls in `serde_qs`
+- **Bad**: `axum-extra` `"query"` feature pulls in `serde_qs`
   transitively. Reverie's `Cargo.lock` will grow by ~1 indirect
   dependency. Acceptable cost.
-- **Neutral** — `subtle` is already cargo-cached and audited.
+- **Neutral**: `subtle` is already cargo-cached and audited.
   Adding a second consumer changes nothing at the build-graph
   level.
 
@@ -193,7 +193,7 @@ rather than buried in a per-handler docstring.
 Add `serde_qs = "0.13"` as a new top-level dep. Use
 `serde_qs::axum::QsQuery<T>` extractor.
 
-Rejected — `axum-extra` is already in tree. Enabling its
+Rejected: `axum-extra` is already in tree. Enabling its
 `"query"` feature is the smaller diff; adding `serde_qs` as a
 sibling top-level adds a new dependency for substantially the
 same surface.
@@ -203,7 +203,7 @@ same surface.
 Write a per-field `Visitor` impl that distinguishes absent /
 null / value. Cheapest in dependencies.
 
-Rejected — `serde_with::rust::double_option` is exactly this,
+Rejected: `serde_with::rust::double_option` is exactly this,
 written, tested, audited, and reused across the serde
 ecosystem. Hand-rolling is not the kind of thing Reverie should
 own forever.
@@ -217,7 +217,7 @@ encapsulates this with optimisation-barrier protection (LLVM
 will not reorder the fold into a short-circuit short of the
 crate's volatile-read barriers).
 
-Rejected — `subtle` is already in tree; reinventing the barrier
+Rejected: `subtle` is already in tree; reinventing the barrier
 opens us to subtle compiler-rewrite bugs that the crate
 explicitly defends against. Use the audited crate.
 
@@ -225,16 +225,16 @@ explicitly defends against. Use the audited crate.
 
 Various community crates exist for repeated-key decode.
 
-Rejected on "already in tree" grounds — `axum-extra` `"query"`
+Rejected on "already in tree" grounds, `axum-extra` `"query"`
 is the path of least resistance.
 
 ## More Information
 
-- [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md)
-  — defaults to standard-library / audited-crate idioms over
+- [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md):
+  defaults to standard-library / audited-crate idioms over
   hand-rolled primitives.
-- [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md)
-  — handling of `cargo audit` findings on these new packages.
+- [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md),
+  handling of `cargo audit` findings on these new packages.
 - Sibling ADR:
   [`2026-05-22-json-api-conventions.md`](2026-05-22-json-api-conventions.md)
   (RFC 7396 Merge Patch decision; CSRF synchronizer-token
@@ -244,4 +244,4 @@ is the path of least resistance.
   (frontend dependency adoptions for Step 11).
 - Implementation plan: `.claude/PRPs/plans/library-ui.plan.md`
   (Sub-phase 11a Tasks 1c + 4; 11c Task 1).
-- Linear: [UNK-80](https://linear.app/unkos/issue/UNK-80).
+- Tracker: the Step 11 API conventions work.

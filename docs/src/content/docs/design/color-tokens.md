@@ -49,7 +49,7 @@ primitive; none carry raw color.
 
 `--danger` (`#B91C1C`, Radix step 9) is the **only** state color. It amends the
 otherwise no-hue-states philosophy and is reserved strictly for
-destructive / error semantics — **never decorative**. Per WCAG 1.4.1 color is
+destructive / error semantics, **never decorative**. Per WCAG 1.4.1 color is
 never the sole signal: danger always pairs with an icon, weight, or text label.
 The rationale is recorded in the single-danger-hue ADR
 (`adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`).
@@ -76,7 +76,7 @@ second concentric ring.
 - **Atmosphere review gate.** `--atm-*` additions are art-directed and reviewed;
   UI chrome may not consume them.
 - **Finite primitive set.** Adding a primitive means regenerating the Radix
-  ramps — a reviewed change, never an ad-hoc hex.
+  ramps, a reviewed change, never an ad-hoc hex.
 
 The dual-theme three-tier architecture is recorded in the
 token-architecture ADR (`adr/2026-06-18-radix-three-tier-dual-theme-tokens.md`).

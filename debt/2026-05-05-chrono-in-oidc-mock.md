@@ -41,15 +41,15 @@ No first-party code outside `oidc_mock` touches chrono.
 
 Two crates for the same job is taxing for several reasons:
 
-1. Cognitive overhead — contributors have to remember which crate
+1. Cognitive overhead: contributors have to remember which crate
    applies where, and what conversions exist between them.
-2. Compile time — chrono's deps add to the dev build.
-3. Audit surface — chrono has its own CVE history; `time` was chosen
+2. Compile time: chrono's deps add to the dev build.
+3. Audit surface: chrono has its own CVE history; `time` was chosen
    in part for its smaller surface. Carrying chrono in dev-deps
    widens the attack surface against the test toolchain (relevant if
    tests are ever run against untrusted input, which they shouldn't
    be but the discipline matters).
-4. The carve-out invites scope creep — every new test that touches
+4. The carve-out invites scope creep: every new test that touches
    OIDC claims has the same temptation.
 
 ## Lift conditions
@@ -60,7 +60,7 @@ Three independent paths can lift this debt:
    ships a constructor that takes generic time types or `time` crate
    types. Track the upstream issue tracker for openidconnect.
 2. **Migrate OIDC lib**: switch to a different OIDC client crate that
-   uses `time` natively. Substantial refactor — not motivated by this
+   uses `time` natively. Substantial refactor, not motivated by this
    debt alone, but a future libauth refactor could absorb the change.
 3. **Wrap-and-convert at the boundary**: write a thin local adapter
    (`oidc_mock::time_to_chrono`) that takes `time::OffsetDateTime` and
@@ -80,11 +80,11 @@ When any path completes:
 
 ## Related
 
-- `backend/CLAUDE.md` — carve-out documentation (would update on
+- `backend/CLAUDE.md`: carve-out documentation (would update on
   lift)
-- `backend/src/test_support.rs::oidc_mock` — workaround site
-- Memory: `project_time_not_chrono.md` — project posture
-- No Linear ticket yet — file as part of any libauth refactor or
+- `backend/src/test_support.rs::oidc_mock`: workaround site
+- Memory: `project_time_not_chrono.md`: project posture
+- No Linear ticket yet: file as part of any libauth refactor or
   when an upstream dep-unblock surfaces. Until then, this debt entry
   is the canonical record.
 
@@ -99,11 +99,11 @@ repo's last commit was Nov 2025, latest stable is **4.0.1** (Jul
 stuck at `0.1.0-alpha.3` since Feb 2026 with no movement. Not dead,
 but slow. The same root pin also keeps `reqwest 0.12.28` in the tree
 transitively (`openidconnect 4 → oauth2 5 → reqwest 0.12`), the
-residue left by closed issue UNK-93 (reqwest 0.13 direct bump,
+residue left by the closed reqwest 0.13 direct bump task (reqwest 0.13 direct bump,
 PR #149).
 
 Pre-evaluated escape hatches if upstream stalls indefinitely. None
-strictly dominates — recorded so a future session doesn't
+strictly dominates, and is recorded so a future session doesn't
 cold-research this:
 
 | Option                               | reqwest                    | chrono                     | Maintenance             | Switch cost                                                           |
@@ -115,7 +115,7 @@ cold-research this:
 
 Key trap: the only full-RP alternative that clears the reqwest-dual
 residue (`openid`) drags **chrono into the production tree** via
-`biscuit`, which is _strictly worse_ for this debt — today chrono is
+`biscuit`, which is _strictly worse_ for this debt, today chrono is
 dev-dep-only. `mas-oidc-client` is best-maintained but purpose-built
 for the Matrix Authentication Service and also chrono-based.
 
@@ -129,12 +129,12 @@ with an independently-motivated libauth refactor, OR if
 `openidconnect` is confirmed abandoned (no commits + an unpatched
 advisory). Until then, keep watching upstream.
 
-### Preferred fix for the reqwest-dual residue — bring-your-own client (not a fork, not a crate swap)
+### Preferred fix for the reqwest-dual residue: bring-your-own client (not a fork, not a crate swap)
 
 The reqwest-0.12 residue does **not** require any of the crate-swap
 options above, nor forking `openidconnect`/`oauth2`. The reqwest pin
 lives in `oauth2`'s optional `reqwest` _feature_, not in its core. As
-of `oauth2 5.0.0` the crate exposes an `AsyncHttpClient` trait — a
+of `oauth2 5.0.0` the crate exposes an `AsyncHttpClient` trait, a
 single method `call(HttpRequest) -> Future<Result<HttpResponse>>`,
 with a blanket impl for any `Fn(HttpRequest) -> Future`. Upstream's
 own `oauth2-reqwest` adapter is **70 LOC in one file**; that is the
@@ -145,7 +145,7 @@ using its bundled reqwest:
 
 1. Vendor / re-implement the ~70 LOC `AsyncHttpClient` impl over
    **reqwest 0.13**. Reverie already owns a hardened reqwest client +
-   SSRF resolver in `backend/src/services/enrichment/http.rs` — wrap
+   SSRF resolver in `backend/src/services/enrichment/http.rs`: wrap
    that, so the OIDC path inherits the same SSRF guard.
 2. `Cargo.toml`: set `oauth2` / `openidconnect` to
    `default-features = false` and drop the `reqwest` feature.
@@ -155,15 +155,15 @@ using its bundled reqwest:
 
 **Effort: ~0.5–1 day.** Removes `reqwest 0.12.28` from the tree
 entirely; ongoing cost ≈ nil (≈70 first-party lines, no fork
-liability). The OAuth2/OIDC state machine is untouched — only _which_
+liability). The OAuth2/OIDC state machine is untouched: only _which_
 HTTP client `oauth2` calls changes.
 
 Scope caveats:
 
-- This clears **only** the reqwest-dual residue (UNK-93 leftover). It
-  does **not** lift this chrono debt — chrono is forced by
+- This clears **only** the reqwest-dual residue (leftover from the reqwest 0.13 direct bump task). It
+  does **not** lift this chrono debt; chrono is forced by
   `CoreIdTokenClaims::new`'s signature, orthogonal to the HTTP client.
-- It is still Tier-2 auth-path code (`docs/security/codeguard/`) — needs
+- It is still Tier-2 auth-path code (`docs/security/codeguard/`), needs
   security review, not a casual edit.
 - Discretionary, not urgent: residue is `severity: low`. Good
   "knock out next time we're in `auth/`" candidate rather than

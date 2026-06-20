@@ -54,7 +54,7 @@ docker compose -f docker/compose.dev.yml up
 Reverie ships a strict hash-based `Content-Security-Policy`, opt-in HSTS, and
 the full Permissions-Policy / X-Content-Type-Options / Referrer-Policy /
 X-Frame-Options header set by default. The backend owns all security
-response headers — reverse proxies should pass them through unchanged.
+response headers; reverse proxies should pass them through unchanged.
 
 Target grade: **A+** on [securityheaders.com](https://securityheaders.com)
 and [Mozilla Observatory](https://observatory.mozilla.org) for any
@@ -69,7 +69,7 @@ Caddy / nginx / Traefik samples.
 ### Verifying image signatures
 
 Every published image is signed with [Sigstore](https://www.sigstore.dev/)
-cosign using keyless signing — no long-lived key, with the signature
+cosign using keyless signing (no long-lived key), with the signature
 recorded in the public Rekor transparency log. Verify an image before
 pulling it:
 

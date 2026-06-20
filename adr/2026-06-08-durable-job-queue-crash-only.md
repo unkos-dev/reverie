@@ -11,12 +11,12 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Reverie runs background work — enrichment, cover/metadata writeback, ingestion
+Reverie runs background work (enrichment, cover/metadata writeback, ingestion)
 follow-up. The claim path already exists: jobs are Postgres rows, claimed with
 `FOR UPDATE SKIP LOCKED`, with one `in_progress` row per work-unit enforced by a
 partial unique index. What is half-wired is crash recovery of an orphaned
 `in_progress` row: writeback reverts orphaned `in_progress` rows to `pending` at
-startup, but enrichment reverts only on graceful shutdown — so a hard
+startup, but enrichment reverts only on graceful shutdown, so a hard
 kill of enrichment strands its `in_progress` rows with nothing to reclaim them.
 No decision is on record for how a crashed job is reclaimed.
 
@@ -25,14 +25,14 @@ _committed_ state survive an instant kill and explicitly defers the crash-safety
 of _in-flight work_ to here. Reverie is single-instance and
 durable-not-distributed
 ([scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md)), so the
-requirement is durable, safe reclaim — not distribution. The open question: how
+requirement is durable, safe reclaim, not distribution. The open question: how
 is a crashed job reclaimed, and does the default deployment need wall-clock
 lease / visibility timeouts to do it?
 
 ## Decision Drivers
 
 - **In-flight work must survive an instant kill** with no lost work and no
-  permanently-stuck `in_progress` rows — without bespoke liveness tracking.
+  permanently-stuck `in_progress` rows: without bespoke liveness tracking.
 - **Single-instance is the default; don't pre-build multi-instance machinery.**
   The [pooling ADR](2026-06-08-connection-pooling.md) defers its
   multi-instance concern to the topology that needs it; the job model should
@@ -48,13 +48,13 @@ lease / visibility timeouts to do it?
 
 ## Considered Options
 
-- **A — Restart-bounded reclaim: `FOR UPDATE SKIP LOCKED` claim + startup-revert
+- **A: Restart-bounded reclaim: `FOR UPDATE SKIP LOCKED` claim + startup-revert
   of orphaned `in_progress` + per-job timeouts + a panic guard; crash-only;
   idempotent handlers.**
-- **B — Lease / visibility-timeout reclaim (wall-clock), with heartbeat renewal
+- **B: Lease / visibility-timeout reclaim (wall-clock), with heartbeat renewal
   for long jobs.**
-- **C — A dedicated external message broker / queue service.**
-- **D — In-memory or best-effort dispatch with no durable reclaim.**
+- **C: A dedicated external message broker / queue service.**
+- **D: In-memory or best-effort dispatch with no durable reclaim.**
 
 ## Decision Outcome
 
@@ -70,8 +70,8 @@ the **instance** boundary, not on worker count.
   [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md) names
   as a "don't preclude scale" guardrail. Mutual exclusion of one `in_progress`
   row per work-unit is enforced by a partial unique index.
-- **Crash recovery is restart-bounded.** At instance startup — once per process
-  boot, before the worker pool begins claiming — orphaned `in_progress` rows are
+- **Crash recovery is restart-bounded.** At instance startup, once per process
+  boot, before the worker pool begins claiming, orphaned `in_progress` rows are
   reverted to `pending` and re-claimed. Because every worker lives inside the one
   instance, a crash kills them all together, so a restart proves any
   `in_progress` row is an orphan regardless of how many workers were running;
@@ -80,24 +80,24 @@ the **instance** boundary, not on worker count.
   graceful shutdown, so a hard kill strands its rows).
 - **Live-worker job death is closed by point fixes, not a lease.** A worker task
   that dies while the instance stays alive (panic or hang) is the one case
-  startup-revert misses — and in a pool it is the _common_ individual failure,
-  not whole-process death. Hangs are bounded by per-job timeouts — already a
+  startup-revert misses, and in a pool it is the _common_ individual failure,
+  not whole-process death. Hangs are bounded by per-job timeouts, which is already a
   project-wide invariant (`backend/CLAUDE.md` "Timeouts + backpressure
-  everywhere"; enrichment has a fetch budget) — turning a hang into a caught
+  everywhere"; enrichment has a fetch budget), turning a hang into a caught
   error that completes the job's bookkeeping. A task panic re-pends the row via a
   guard on the spawned task. Both are required, not optional, for this option to
   be complete.
 - **Handlers are idempotent.** Because reclaim re-runs a job that may have
   partially executed, every handler must be safe to run again. File-mutating jobs
   (writeback: OPF rewrite, cover embed, path rename) are _not_ transactional with
-  their Postgres row — the crash-safe-state ADR's transaction guarantee does not
-  extend to filesystem writes — so each must document its re-run safety
+  their Postgres row; the crash-safe-state ADR's transaction guarantee does not
+  extend to filesystem writes, so each must document its re-run safety
   (write-to-temp-then-rename, or a per-work-unit guard), not merely be labelled
   idempotent.
 - **Workers are crash-only.** Correctness never depends on a graceful shutdown
   having run. A SIGTERM drain (stop claiming, finish in-flight;
-  [UNK-194](https://linear.app/unkos/issue/UNK-194)) is an _optimization_ that
-  avoids needless re-runs on a planned restart — politeness, not correctness.
+  the graceful-shutdown drain task) is an _optimization_ that
+  avoids needless re-runs on a planned restart (politeness, not correctness).
 - **No distribution.** Durability and mutual exclusion come from Postgres; there
   is no external broker, distributed scheduler, or cross-node coordination.
   Parallelism is a pool of N workers within the instance against the one queue.
@@ -106,7 +106,7 @@ the **instance** boundary, not on worker count.
 the default.** The moment an operator runs multiple instances (enabled, not
 owned, by the [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md);
 no leader election means each instance runs its own worker pool), restart-bounded reclaim becomes
-unsafe — one instance booting would re-pend a peer's still-running job. That
+unsafe: one instance booting would re-pend a peer's still-running job. That
 topology, and only that topology, needs wall-clock leases _plus_ heartbeat
 renewal to avoid double-running long jobs. The lease lands with multi-instance
 support, mirroring how the pooling ADR defers pool sizing to the same trigger.
@@ -115,11 +115,10 @@ double-run hazard for long writeback jobs (a fixed lease expiring while the
 holder is still mutating an EPUB), so it is a non-trivial build that waits for the
 topology that justifies it.
 
-Implementation is the durable-queue epic
-([UNK-365](https://linear.app/unkos/issue/UNK-365)); dispatcher idempotency is
-tracked in [UNK-98](https://linear.app/unkos/issue/UNK-98); the enrichment
-startup-revert parity gap is tracked in
-[UNK-373](https://linear.app/unkos/issue/UNK-373).
+Implementation is the durable queue epic;
+dispatcher idempotency is tracked in the dispatcher idempotency task;
+the enrichment startup-revert parity gap is tracked in
+the startup-revert parity gap task.
 
 ### Consequences
 
@@ -133,7 +132,7 @@ startup-revert parity gap is tracked in
   ADR, keeping the data layer's stance consistent.
 - Bad, because restart-bounded reclaim does **not** recover a job whose worker
   died while the process stayed alive; that case is only covered if the per-job
-  timeout and the panic guard are in place — they are therefore mandatory, not
+  timeout and the panic guard are in place; they are therefore mandatory, not
   nice-to-have.
 - Bad, because multi-instance support carries an additive migration later (lease
   columns + reaper + heartbeat); deferred, not free.
@@ -150,7 +149,7 @@ correctness depends on graceful shutdown.
 
 ## Pros and Cons of the Options
 
-### A — restart-bounded reclaim (chosen)
+### A: restart-bounded reclaim (chosen)
 
 - Good, because reclaim is exact for the single-instance default and needs no
   timeout tuning.
@@ -159,17 +158,17 @@ correctness depends on graceful shutdown.
   task death, and is unsafe under multi-instance (which is why the lease is the
   deferred lift, not a rejected idea).
 
-### B — lease / visibility-timeout
+### B: lease / visibility-timeout
 
 - Good, because it is the correct mechanism once multiple instances run, where no
   worker may assume a peer is dead.
 - Bad, because for a single instance it replaces an exact restart signal with a
   wall-clock guess that double-runs long-but-healthy jobs unless heartbeat
-  renewal is added — real machinery for a topology not in the default.
+  renewal is added, which represents real machinery for a topology not in the default.
 - Bad, because a fixed lease expiring mid-run can let two workers mutate the same
   EPUB concurrently.
 
-### C — dedicated external message broker
+### C: dedicated external message broker
 
 - Good, because purpose-built brokers offer high throughput and rich delivery
   semantics.
@@ -177,27 +176,25 @@ correctness depends on graceful shutdown.
   Postgres already provides, for a job cadence that does not need broker-grade
   throughput.
 
-### D — in-memory / best-effort dispatch
+### D: in-memory / best-effort dispatch
 
 - Good, because it is the least code in the immediate term.
-- Bad, because a crash loses in-flight and queued work — the failure this
+- Bad, because a crash loses in-flight and queued work: the failure this
   decision exists to remove.
 
 ## More Information
 
-- [Crash-safe state ADR](2026-06-08-postgres-backed-crash-safe-state.md) —
+- [Crash-safe state ADR](2026-06-08-postgres-backed-crash-safe-state.md):
   committed-state durability; this ADR is its in-flight-work complement, and the
   boundary it notes (transactions do not cover filesystem writes) is why
   file-mutating handlers must prove re-run safety.
-- [Scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md) —
+- [Scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md):
   durable-not-distributed posture and the `SKIP LOCKED` concurrency guardrail;
   multi-instance is the trigger for the deferred lease.
-- [Pooling ADR](2026-06-08-connection-pooling.md) — the same
+- [Pooling ADR](2026-06-08-connection-pooling.md): the same
   defer-the-multi-instance-concern posture this ADR mirrors.
-- [UNK-365](https://linear.app/unkos/issue/UNK-365) (durable queue),
-  [UNK-98](https://linear.app/unkos/issue/UNK-98) (dispatcher idempotency),
-  [UNK-194](https://linear.app/unkos/issue/UNK-194) (graceful-shutdown drain) —
-  implementation tracked there, not here.
+- The durable queue epic, dispatcher idempotency task, and graceful-shutdown drain task:
+  implementation is tracked there, not here.
 - Revisit trigger: when multi-instance becomes a supported deployment, adopt
-  option B (lease / visibility-timeout + heartbeat) for reclaim — an additive
+  option B (lease / visibility-timeout + heartbeat) for reclaim: an additive
   change layered on the claim model decided here.

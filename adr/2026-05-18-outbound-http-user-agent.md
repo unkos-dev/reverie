@@ -11,7 +11,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-[UNK-255](https://linear.app/unkos/issue/UNK-255) surfaced a
+The outbound HTTP user agent issue surfaced a
 startup-time `403 Forbidden` on OIDC discovery when Reverie was
 deployed against an Authentik instance fronted by Cloudflare. The
 root cause, confirmed via empirical CF zone-API inspection plus
@@ -55,8 +55,8 @@ defect.
   client UAs. A stable, identifiable UA lets upstream operators
   match misbehaviour to a specific deployment without forcing
   Reverie operators to volunteer it.
-- **No abuse-cloak.** The opposite anti-pattern — spoofing a
-  browser UA — is rejected: it reduces upstream operators' ability
+- **No abuse-cloak.** The opposite anti-pattern, spoofing a
+  browser UA, is rejected: it reduces upstream operators' ability
   to identify the client, which is bad-citizen behaviour for an
   OSS HTTP consumer.
 - **Single load-bearing fact.** The "set an explicit UA" rule is
@@ -65,26 +65,26 @@ defect.
 
 ## Considered Options
 
-- **Option A — Project convention: every outbound client sets a
+- **Option A: Project convention: every outbound client sets a
   `reverie/<version>` UA minimum, with provider-courtesy contact
   appended where relevant.** Captured in this ADR and enforced via
   per-site code review.
-- **Option B — Wrapper crate / shared builder in
+- **Option B: Wrapper crate / shared builder in
   `backend/src/http/`.** Funnels all outbound clients through a
   single constructor that injects the UA. Stronger enforcement but
   introduces a project-internal abstraction for a one-line concern;
   the enrichment client already takes the UA as an arg, and the
   OIDC client doesn't have a `Config` in scope at construction
   time (it's called from `config.rs` itself in some paths).
-- **Option C — Compile-time lint.** A `dylint` / `clippy.toml`
+- **Option C: Compile-time lint.** A `dylint` / `clippy.toml`
   rule that forbids `ClientBuilder::new().build()` without
   `.user_agent(...)`. Possible but heavy; no off-the-shelf lint
   exists and writing one for a 6-call-site codebase is
   over-engineering.
-- **Option D — Do nothing, document in the WAF-deploy guide.**
+- **Option D**: Do nothing, document in the WAF-deploy guide.
   Pushes the burden onto every operator. Already proven failure
-  mode (UNK-255 is the second time this kind of substrate-edge
-  case has bitten us, after UNK-253 GLIBC).
+  mode (the user agent issue was the second time this kind of substrate-edge
+  case has bitten us, after the GLIBC dynamic linker issue).
 
 ## Decision
 
@@ -118,7 +118,7 @@ without requiring them to find this ADR first.
 ### Good
 
 - OIDC discovery succeeds against any WAF that drops empty-UA
-  requests — UNK-255 fixed and the same class of failure
+  requests, which was fixed and the same class of failure
   pre-empted for every future outbound client.
 - Upstream IdP / API operators see a stable, traceable client.
 - The convention is small enough to encode in code review with no
@@ -131,7 +131,7 @@ without requiring them to find this ADR first.
   outbound client without a UA can land if the reviewer doesn't
   know to look. If this happens twice, escalate to Option C
   (compile-time lint) or Option B (mandatory wrapper).
-- The OIDC UA does not include operator contact — discovery is
+- The OIDC UA does not include operator contact: discovery is
   before operator-contact config is plumbed, and threading it
   through is more code-churn than the marginal benefit. Operator
   contact appears only on enrichment clients.
@@ -152,18 +152,16 @@ without requiring them to find this ADR first.
 
 ## References
 
-- [UNK-255](https://linear.app/unkos/issue/UNK-255) — investigation
-  and fix issue.
-- [UNK-230](https://linear.app/unkos/issue/UNK-230) — homelab
-  substrate deploy that surfaced the failure mode.
+- Outbound HTTP user agent investigation and fix.
+- Homelab substrate deploy that surfaced the failure mode.
 - Predecessor:
-  [UNK-253](https://linear.app/unkos/issue/UNK-253) (GLIBC fix)
-  — same class of substrate-edge-case bug in the same deploy
+  the GLIBC dynamic linker fix:
+  same class of substrate-edge-case bug in the same deploy
   pipeline, motivating the longer-form decision record here
   rather than yet another incident-only fix.
-- `backend/src/auth/oidc.rs` — implementation site.
-- `backend/src/services/enrichment/http.rs` — pre-existing
+- `backend/src/auth/oidc.rs`: implementation site.
+- `backend/src/services/enrichment/http.rs`: pre-existing
   conformant client; pattern source for the provider-courtesy
   UA shape.
-- `backend/src/config.rs::user_agent` — operator-contact UA
+- `backend/src/config.rs::user_agent`: operator-contact UA
   composition for enrichment clients.

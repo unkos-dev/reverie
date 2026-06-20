@@ -12,14 +12,14 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 Reverie's UI/UX agent toolset accreted three skills with overlapping
-remits — `ui-ux-pro-max` (catalog + shadcn MCP bridge),
+remits: `ui-ux-pro-max` (catalog + shadcn MCP bridge),
 `design-system` (audit + consistency review), and
 `frontend-patterns` (React patterns). The design system itself is
 locked: Reverie has a published brand identity, D2 design tokens,
 shadcn primitives aliased onto the canonical palette, and a tiered
 comment policy that codifies threat-aware docstrings on UI
 surfaces. Catalog-style skills produce diminishing returns once the
-visual direction is settled — their value front-loads on a
+visual direction is settled, as their value front-loads on a
 greenfield project, then drifts toward soft-everything scorecards
 ("7/10 on color, 7/10 on spacing") that don't move work forward.
 
@@ -37,7 +37,7 @@ Outcomes:
 - `design-system` produced a 10-line scorecard with vague refs.
   Soft-everything; no file:line, no actionable diff.
 - `impeccable detect` (deterministic) caught 3× `bg-black` in stock
-  shadcn overlays (`alert-dialog`, `dialog`, `sheet`) — direct
+  shadcn overlays (`alert-dialog`, `dialog`, `sheet`), direct
   violations of Reverie's tinted-neutral brand spec, file:line +
   fix recommendation per finding.
 - `impeccable critique` (LLM) produced a 14-finding punch list with
@@ -58,7 +58,7 @@ the toolset.
 Adopt `impeccable` (v2.1.9, MIT/Apache-2.0) as a frontend dev
 dependency. Wire its deterministic detector into the existing
 pre-commit/lint-staged chain plus the frontend CI job. Static-scan
-mode only (URL-scan deferred — see Future Plan).
+mode only (URL-scan deferred; see Future Plan).
 
 This ADR governs the dependency itself. The skill side (full
 impeccable command surface) lands in a separate PR with its own
@@ -69,7 +69,7 @@ ADR-or-amendment after the detector earns its keep.
 - **Static scan only.** Command form: `impeccable detect src`.
   Operates on file content, never reaches the puppeteer code path
   (which is dynamically imported inside the URL-only `detectUrl()`
-  function — see Future Plan for the runtime evidence).
+  function; see Future Plan for the runtime evidence).
 - **Pre-commit (lint-staged)** triggers full-scan when any staged
   path matches `frontend/src/**/*.{ts,tsx,html,css}`. Function form
   used so the same `npm --prefix frontend run detect` runs locally
@@ -86,7 +86,7 @@ ADR-or-amendment after the detector earns its keep.
   auto-merge); `impeccable` is currently at v2.1.9, so patch
   bumps auto-merge would apply once any rules drift to require it.
 - **No Chromium download.** `frontend/package.json` carries
-  `"puppeteer": { "skipDownload": true }` — puppeteer's
+  `"puppeteer": { "skipDownload": true }`, puppeteer's
   cosmiconfig-based config loader discovers this field on every
   `npm install`/`npm ci` and skips the postinstall Chromium
   fetch. Our usage never invokes the puppeteer code path (see
@@ -96,10 +96,10 @@ ADR-or-amendment after the detector earns its keep.
 
 `impeccable` ships these runtime deps (lockfile, 2026-05-21):
 
-- `jsdom@29.0.0` — HTML parsing for static scan. Required.
-- `marked@^16.4.2` — markdown rendering for impeccable's skill
+- `jsdom@29.0.0`: HTML parsing for static scan. Required.
+- `marked@^16.4.2`: markdown rendering for impeccable's skill
   surface (not used by the detector). Required transitively.
-- `puppeteer@^24.42.0` — **optional**. Used only by
+- `puppeteer@^24.42.0`: **optional**. Used only by
   `detectUrl()` (URL-scan). Dynamically imported. Top-level
   imports do not reach puppeteer.
 
@@ -112,12 +112,12 @@ unaffected.
 
 Alternatives to `skipDownload: true` were rejected:
 
-- `npm ci --omit=optional` — breaks `@tailwindcss/oxide`'s 12
+- `npm ci --omit=optional`: breaks `@tailwindcss/oxide`'s 12
   platform-binary `optionalDependencies` (standard npm
   platform-binary pattern). Tailwind build would fail.
-- `PUPPETEER_SKIP_DOWNLOAD=true` env var on CI only — leaves the
+- `PUPPETEER_SKIP_DOWNLOAD=true` env var on CI only, leaves the
   Chromium download firing on every developer's local `npm install`.
-- Bake Chromium into the Coder workspace image — doesn't solve CI
+- Bake Chromium into the Coder workspace image: doesn't solve CI
   (GitHub-hosted runners), introduces puppeteer-vs-system-Chromium
   version drift, and pays the cost for a feature we don't run.
 
@@ -139,12 +139,12 @@ No trial gate. Revisit conditions:
 ## Decision Drivers
 
 - Empirical comparison on a real Reverie surface, not vendor claims
-- Deterministic + CI-runnable + free (no API cost) — orthogonal
+- Deterministic + CI-runnable + free (no API cost): orthogonal
   axis to LLM skills already in use
 - Catches what existing skills miss (3× `bg-black` proof)
 - Compatible with locked brand: tool flags violations of _our_
   tokens, doesn't impose its own taste catalog
-- Husky + lint-staged + Renovate already wired — incremental cost
+- Husky + lint-staged + Renovate already wired: incremental cost
   of one devDep + one lint-staged entry + one CI step
 
 ## Considered Options
@@ -155,11 +155,11 @@ No trial gate. Revisit conditions:
 
 - Deterministic 27-rule detector catches anti-patterns the LLM
   skills miss (3× `bg-black` proof)
-- ~1s wall-time full scan; ~400ms single-file — fits inside
+- ~1s wall-time full scan; ~400ms single-file: fits inside
   lint-staged budget
-- CLI ships as a standalone npm package — installable as devDep,
+- CLI ships as a standalone npm package: installable as devDep,
   Renovate-trackable
-- Skill side available later (separate PR) — incremental adoption
+- Skill side available later (separate PR): incremental adoption
 - URL-scan path exists upstream for future enable
 
 **Cons**:
@@ -167,7 +167,7 @@ No trial gate. Revisit conditions:
 - One more devDep + ~53 transitive packages on `npm ci`
 - Optional puppeteer pulls Chromium download by default (mitigated
   by `skipDownload: true`)
-- LLM critique surface is opinionated — may conflict with locked
+- LLM critique surface is opinionated: may conflict with locked
   brand if invoked indiscriminately (out of scope for this ADR;
   detector-only)
 
@@ -236,7 +236,7 @@ Rejected. Revisit if upstream `impeccable` becomes unreliable.
 - Frontend anti-patterns surfaced deterministically every commit +
   every PR
 - 3× `bg-black` findings now visible in CI logs every frontend PR
-  until the deferred fix lands — natural pressure toward addressing
+  until the deferred fix lands, creating natural pressure toward addressing
   it on the first modal/dialog/sheet PR
 - CI signal independent of LLM availability; runs on `ubuntu-latest`
   in <2s
@@ -257,7 +257,7 @@ Rejected. Revisit if upstream `impeccable` becomes unreliable.
 
 - Renovate handles version tracking; pre-v1.0 manual-review
   posture inherited (impeccable is currently v2.1.9, so this is
-  moot — bumps would auto-merge under the stable-deps rule)
+  moot; bumps would auto-merge under the stable-deps rule)
 
 ## Future Plan: URL-scan enablement
 
@@ -278,7 +278,7 @@ inline` resolves OKLCH tokens at render time; static scan sees
   `plans/2026-04-26-philosophy-spec-revision.md`).
 - **Touch target dimensions post-fluid-sizing.**
 - **Line length after responsive resolution** (the 65–75ch cap).
-- **Anti-patterns only visible after JS interaction** — open
+- **Anti-patterns only visible after JS interaction**: open
   dialog, hovered state, focused field, mounted Suspense boundary.
 - **State-after-React-render checks.** Static scan sees JSX source,
   URL-scan sees what the user actually sees.
@@ -297,11 +297,11 @@ collects findings, closes the browser. CI already passes
 Adopt URL-scan when **all** of the following are true:
 
 1. **≥5 rendered Reverie surfaces shipped** (library hub, reader,
-   settings, auth, ingestion status, etc.) — the design system
+   settings, auth, ingestion status, etc.): the design system
    showcase doesn't count
-2. **Design system stabilized** — no token churn for 30 consecutive
+2. **Design system stabilized**: no token churn for 30 consecutive
    days
-3. **A target host exists in CI** — either ephemeral dev server
+3. **A target host exists in CI**: either ephemeral dev server
    boot inside the frontend job, or PR-preview deployment lane
    (currently neither; staging exists but isn't PR-scoped)
 
@@ -332,17 +332,17 @@ unscheduled "we should do that sometime" backlog item.
 ## More Information
 
 - Comparison artifact: `plans/2026-05-21-ui-tooling-comparison.md`
-  (gitignored — local scratch per CLAUDE.md "Planning Artifact
+  (gitignored, local scratch per CLAUDE.md "Planning Artifact
   Locations" convention)
 - Memory entries: `project_ui_tooling_comparison_decisions`,
   `project_bg_black_overlays_deferred`,
   `project_backend_local_validation_gap`
-- Related Linear: UNK-267 (backend pre-push hook — surfaced during
+- Related: the backend pre-push hook task (surfaced during
   the same audit, separate scope)
 - Related ADRs: `2026-05-03-strict-lint-policy.md` (sibling
   enforcement layer); `2026-05-04-greptile-trial.md` and
   `2026-05-07-coderabbit-parallel-trial.md` (bot-tool adoption
-  pattern, trial-gate convention — not applicable here since
+  pattern, trial-gate convention, not applicable here since
   `impeccable` is a free static dev tool, not a paid hosted
   service)
 - Upstream: <https://github.com/pbakaus/impeccable> (Apache-2.0,
