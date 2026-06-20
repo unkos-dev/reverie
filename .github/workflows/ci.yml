@@ -1002,13 +1002,19 @@ jobs:
       - name: Prose lint self-test (Vale ruleset)
         run: scripts/vale-selftest.sh
 
-      # The prose pass over the docs is advisory until the existing backlog is
-      # triaged clean (mirrors the impeccable-detect rollout below). Warnings
-      # exit zero; continue-on-error also absorbs any error-level surprise so a
-      # finding never fails the build while the posture is advisory.
+      # Scope-policy test for vale-lint.sh: asserts the include/exclude
+      # classification (agent-process docs, .claude, non-scope paths) and the
+      # ./ path normalisation, the second half of the prose-lint gate.
+      - name: Prose lint scope test (vale-lint.sh)
+        run: scripts/vale-scope-test.sh
+
+      # The prose pass over the docs is advisory because every rule emits at
+      # `warning`, so Vale exits zero and this step passes while the existing
+      # backlog is triaged (mirrors the impeccable-detect rollout below). The
+      # Phase 3 flip raises the rule levels to `error`: Vale then exits non-zero
+      # and this step fails the build, with no other change needed.
       - name: Prose lint (Vale, advisory)
         run: scripts/vale-lint.sh --all
-        continue-on-error: true
 
       # Authoritative formatting gate. lint-staged runs `prettier --write` on
       # staged files locally, but pre-commit is bypassable (`--no-verify`) and

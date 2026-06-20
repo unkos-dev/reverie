@@ -34,30 +34,38 @@ in_scope() {
   return 1
 }
 
-candidates=()
-if [ "${1:-}" = "--all" ]; then
-  while IFS= read -r -d '' path; do
-    candidates+=("$path")
-  done < <(git ls-files -z -- docs/src adr ':(glob)*.md' ':(glob)*.mdx')
-else
-  candidates=("$@")
-fi
-
-# lint-staged passes absolute paths to string commands; CI passes repo-relative
-# ones. Normalise to repo-relative so in_scope() matches in both cases, then
-# keep only in-scope paths that still exist (a changed-file list can name
-# deletions).
-files=()
-for path in "${candidates[@]+"${candidates[@]}"}"; do
-  rel="${path#"$PWD/"}"
-  rel="${rel#./}"
-  if [ -f "$rel" ] && in_scope "$rel"; then
-    files+=("$rel")
+main() {
+  local candidates=()
+  if [ "${1:-}" = "--all" ]; then
+    while IFS= read -r -d '' path; do
+      candidates+=("$path")
+    done < <(git ls-files -z -- docs/src adr ':(glob)*.md' ':(glob)*.mdx')
+  else
+    candidates=("$@")
   fi
-done
 
-if [ "${#files[@]}" -eq 0 ]; then
-  exit 0
+  # lint-staged passes absolute paths to string commands; CI passes
+  # repo-relative ones. Normalise to repo-relative so in_scope() matches in both
+  # cases, then keep only in-scope paths that still exist (a changed-file list
+  # can name deletions).
+  local files=() path rel
+  for path in "${candidates[@]+"${candidates[@]}"}"; do
+    rel="${path#"$PWD/"}"
+    rel="${rel#./}"
+    if [ -f "$rel" ] && in_scope "$rel"; then
+      files+=("$rel")
+    fi
+  done
+
+  if [ "${#files[@]}" -eq 0 ]; then
+    return 0
+  fi
+
+  exec vale "${files[@]}"
+}
+
+# Run only when executed directly; sourcing (e.g. scripts/vale-scope-test.sh)
+# loads in_scope() for unit testing without invoking Vale.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
 fi
-
-exec vale "${files[@]}"
