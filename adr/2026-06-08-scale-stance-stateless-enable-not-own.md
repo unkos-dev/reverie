@@ -43,12 +43,12 @@ audience self-hosts. Where is the line between _enabling_ scale and _owning_ it?
 
 ## Considered Options
 
-- **A**: Stateless application enables operator-run multi-instance / HA; Reverie
-  owns no distributed infrastructure.\*\*
-- **B**: Build first-party HA: leader election, clustering, node discovery,
-  distributed scheduling.\*\*
-- **C**: Single-instance only; allow stateful shortcuts that actively preclude
-  scale-out.\*\*
+- **A: Stateless application enables operator-run multi-instance / HA; Reverie
+  owns no distributed infrastructure.**
+- **B: Build first-party HA: leader election, clustering, node discovery,
+  distributed scheduling.**
+- **C: Single-instance only; allow stateful shortcuts that actively preclude
+  scale-out.**
 
 ## Decision Outcome
 

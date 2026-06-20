@@ -74,7 +74,7 @@ configuration.
 
 ## Considered Options
 
-- **A**: Keep the imperative reader (status quo).\*\* Solve the docs need some other
+- **A: Keep the imperative reader (status quo).** Solve the docs need some other
   way (e.g. a `syn` source parser, or a hand-maintained reference table).
 - **B: Minimal declarative-for-docs ("light path").** Derive `schemars::JsonSchema`
   on the _existing_ structs, annotate each field's env-name and default, and render

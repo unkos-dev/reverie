@@ -48,10 +48,10 @@ the project give up to get it?
 
 ## Considered Options
 
-- **A**: Keyset/cursor pagination as the default; a capped single page as the
-  justified exception for naturally-bounded sets; no unbounded queries.\*\*
-- **B**: Offset / page-number pagination as the list contract.\*\*
-- **C**: No project-wide contract; each endpoint decides ad hoc.\*\*
+- **A: Keyset/cursor pagination as the default; a capped single page as the
+  justified exception for naturally-bounded sets; no unbounded queries.**
+- **B: Offset / page-number pagination as the list contract.**
+- **C: No project-wide contract; each endpoint decides ad hoc.**
 
 ## Decision Outcome
 

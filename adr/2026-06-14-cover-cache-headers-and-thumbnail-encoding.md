@@ -78,7 +78,7 @@ is detached (the synchronous scan returns immediately), bounded by a process
 semaphore (no thundering herd on the blocking pool), and never fails ingest.
 Full-size covers stay lazy: the reader view loads one at a time.
 
-**C**: JPEG thumbnails.\*\* The thumbnail tier always encodes to JPEG (quality
+**C: JPEG thumbnails.** The thumbnail tier always encodes to JPEG (quality
 82); the full tier preserves the source format. Since JPEG has no alpha,
 transparency is composited over white first; a bare channel-drop would render
 the transparent regions of a non-canvas-filling SVG cover black. WebP would

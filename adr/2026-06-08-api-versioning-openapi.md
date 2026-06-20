@@ -55,10 +55,10 @@ How should the API be versioned, and in what format is its contract described?
 
 **Contract format:**
 
-- **S1**: OpenAPI 3.1, generated code-first from the handlers as the single
-  source of truth.\*\*
-- **S2**: A hand-written OpenAPI document maintained alongside the code.\*\*
-- **S3**: No machine-readable spec; rustdoc / prose reference only.\*\*
+- **S1: OpenAPI 3.1, generated code-first from the handlers as the single
+  source of truth.**
+- **S2: A hand-written OpenAPI document maintained alongside the code.**
+- **S3: No machine-readable spec; rustdoc / prose reference only.**
 
 ## Decision Outcome
 

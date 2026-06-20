@@ -51,10 +51,10 @@ lease / visibility timeouts to do it?
 - **A: Restart-bounded reclaim: `FOR UPDATE SKIP LOCKED` claim + startup-revert
   of orphaned `in_progress` + per-job timeouts + a panic guard; crash-only;
   idempotent handlers.**
-- **B**: Lease / visibility-timeout reclaim (wall-clock), with heartbeat renewal
-  for long jobs.\*\*
-- **C**: A dedicated external message broker / queue service.
-- **D**: In-memory or best-effort dispatch with no durable reclaim.
+- **B: Lease / visibility-timeout reclaim (wall-clock), with heartbeat renewal
+  for long jobs.**
+- **C: A dedicated external message broker / queue service.**
+- **D: In-memory or best-effort dispatch with no durable reclaim.**
 
 ## Decision Outcome
 

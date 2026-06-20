@@ -41,12 +41,12 @@ multi-write invariants kept consistent across a crash?
 
 ## Considered Options
 
-- **A**: Critical state lives in Postgres; multi-write invariants are wrapped in
-  atomic transactions; crash-safety rests on Postgres WAL + fsync.\*\*
-- **B**: Keep some critical state in process memory or local files for speed and
-  reconstruct it on restart.\*\*
-- **C**: Persist state to Postgres but apply multi-row changes as independent
-  statements (no enclosing transaction), relying on statement ordering.\*\*
+- **A: Critical state lives in Postgres; multi-write invariants are wrapped in
+  atomic transactions; crash-safety rests on Postgres WAL + fsync.**
+- **B: Keep some critical state in process memory or local files for speed and
+  reconstruct it on restart.**
+- **C: Persist state to Postgres but apply multi-row changes as independent
+  statements (no enclosing transaction), relying on statement ordering.**
 
 ## Decision Outcome
 

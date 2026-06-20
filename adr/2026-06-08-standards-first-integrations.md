@@ -40,12 +40,12 @@ feature.
 
 ## Considered Options
 
-- **A**: Standards-first and hook-based: expose an open-standard interface (or an
-  outbound hook) per axis; bundle none of the consuming services.\*\*
-- **B**: Batteries-included: bundle adjacent services (built-in user management /
-  SSO, a built-in metrics+dashboard stack, a built-in notification engine).\*\*
-- **C**: Bespoke per-integration APIs: a custom, non-standard interface for each
-  axis.\*\*
+- **A: Standards-first and hook-based: expose an open-standard interface (or an
+  outbound hook) per axis; bundle none of the consuming services.**
+- **B: Batteries-included: bundle adjacent services (built-in user management /
+  SSO, a built-in metrics+dashboard stack, a built-in notification engine).**
+- **C: Bespoke per-integration APIs: a custom, non-standard interface for each
+  axis.**
 
 ## Decision Outcome
 

@@ -311,7 +311,7 @@ which the label gate suppressed.
 - Per-author review counter on the Greptile dashboard. If a
   cap-style notice reappears post-lift, the cap-lift was
   scoped (e.g. one-time reset) rather than a permanent OSS
-  ; escalate back to support
+  entitlement; escalate back to support
 - Actionable-rate metric. Including doc-only PRs in the trial
   pool may dilute the rate if Greptile flags non-issues on them.
   Tally each doc-PR review explicitly against the gate metric

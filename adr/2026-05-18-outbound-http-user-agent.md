@@ -65,12 +65,12 @@ defect.
 
 ## Considered Options
 
-- **Option A**: Project convention: every outbound client sets a
+- **Option A: Project convention: every outbound client sets a
   `reverie/<version>` UA minimum, with provider-courtesy contact
-  appended where relevant.\*\* Captured in this ADR and enforced via
+  appended where relevant.** Captured in this ADR and enforced via
   per-site code review.
-- **Option B**: Wrapper crate / shared builder in
-  `backend/src/http/`.\*\* Funnels all outbound clients through a
+- **Option B: Wrapper crate / shared builder in
+  `backend/src/http/`.** Funnels all outbound clients through a
   single constructor that injects the UA. Stronger enforcement but
   introduces a project-internal abstraction for a one-line concern;
   the enrichment client already takes the UA as an arg, and the

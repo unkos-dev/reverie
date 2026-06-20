@@ -198,7 +198,7 @@ frontend's react-query infinite-query helper consumes a body
 field with less ceremony than a parsed Link header. The two are
 guaranteed to carry the same information; either is sufficient.
 
-### CSRF defense: RFC 8288 CSRF defense: OWASP synchronizer token pattern (CHANGED)
+### CSRF defense: OWASP synchronizer token pattern (CHANGED)
 
 `SameSite=Lax` cookies alone are insufficient per the OWASP CSRF
 prevention cheat sheet (cited as P0 reading in the Sub-phase 11a
