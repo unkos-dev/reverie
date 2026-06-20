@@ -1,0 +1,13 @@
+extends: substitution
+message: "Prefer '%s' over business jargon."
+level: warning
+ignorecase: true
+swap:
+  game-changer: significant
+  "deep dive": analysis
+  "circle back": revisit
+  "moving forward": next
+  "double down": commit
+  "on the same page": aligned
+  "lean into": embrace
+  "take a step back": reconsider

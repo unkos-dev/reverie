@@ -1,0 +1,10 @@
+extends: existence
+message: "Wh- opener is a crutch. Lead with the subject or name the specific point."
+level: warning
+nonword: true
+# Paragraph scope skips headings (e.g. a "How it works" heading is fine) and
+# matches a sentence-initial Wh- word at the paragraph start or after sentence
+# punctuation.
+scope: paragraph
+raw:
+  - '(?:^|[.!?]\s+)(?:What|When|Where|Which|Who|Why|How)\b'

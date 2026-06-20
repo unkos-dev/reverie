@@ -1,0 +1,19 @@
+extends: existence
+message: "'%s' is empty emphasis. Delete it or show the point instead."
+level: warning
+ignorecase: true
+tokens:
+  - really
+  - literally
+  - genuinely
+  - honestly
+  - simply
+  - actually
+  - truly
+  - fundamentally
+  - inherently
+  - inevitably
+  - interestingly
+  - importantly
+  - crucially
+  - deeply
