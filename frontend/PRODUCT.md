@@ -42,7 +42,7 @@ Surfaces that share the visual vocabulary of any of these are wrong, regardless 
 - **SaaS-cream AI-workflow chrome** (Linear, Stripe, vercel-cream marketing). The first-order category trap for self-hosted media managers in 2026. Reverie is not a workflow tool.
 - **Generic ebook UI** (Calibre, Plex-clone shelves, default-Tailwind grids of identical cards with title + author + cover). Utilitarian CRUD is the category cliché — Reverie is in the category but must not look like it shipped from the category.
 - **Cozy reading nook** (lamp, paper, warm-domestic, hand-drawn book stacks). The philosophy spec rejected this lane outright. The library is an archive, not a corner of a living room. The reader recedes; it does not invite.
-- **Severity-coloured dashboards** (red/amber/green pills, info-blue callouts, status banners, "did you know" patterns). Gold means "this matters", Reverie Alarm means "stop", and everything else is weight, density, and motion. No third hue earns its screen.
+- **Severity-coloured dashboards** (red/amber/green pills, info-blue callouts, status banners, "did you know" patterns). Gold means "this matters", the danger hue means "stop", and everything else is weight, density, and motion. No third hue earns its screen.
 
 Drift-checks: if a designer can guess theme + palette from category alone, the first reflex hasn't been avoided. If a designer can guess aesthetic family from category + anti-refs ("self-hosted media manager that's not Calibre → editorial-typographic"), the second reflex hasn't been avoided either. Both must be non-obvious.
 
@@ -50,11 +50,11 @@ Drift-checks: if a designer can guess theme + palette from category alone, the f
 
 1. **Inscription, not decoration.** Every interface gesture is a commitment to the record. Add, edit, delete, enrich — each is an act of cataloguing. Surfaces should feel like the user is making something permanent, not refreshing a feed.
 
-2. **One accent, one alarm, everything else is weight.** Reverie Gold says "this matters"; Reverie Alarm says "stop." State, hierarchy, and emphasis below that level are communicated through weight, opacity, type scale, density, and motion — never through additional hues. There is no severity ladder.
+2. **One accent, one danger hue, everything else is weight.** Reverie Gold says "this matters"; a single danger hue says "stop." The danger hue is a bounded exception to the no-hue-states rule — reserved for irreversible-destructive confirmation and unrecoverable system errors, never a severity ladder. State, hierarchy, and emphasis below that level are communicated through weight, opacity, type scale, density, and motion, never through additional hues. Success, warning, and info stay hue-less.
 
 3. **The library does identity work; the reader recedes.** The cinematic-boutique register lives in the collector's-archive surfaces (home, library grid, book detail). The reader inherits palette and motion language but its chrome is the most minimal of all views. Two rooms in one house, both serving their primary task.
 
-4. **Motion is felt, not flaunted.** No canvas-wide ambient drift. Localised hero treatments only. 180–320 ms ease-out (quart/quint/expo), never bounce, elastic, or spring. `prefers-reduced-motion` is respected as a first-class state — the cinematic register lives in palette and typography when motion recedes.
+4. **Motion is felt, not flaunted.** Ambient atmosphere is reserved for the Library identity surface — a contained breathing field, never a page-wide gradient on the app shell, reader, or admin chrome, which stay still. Other motion is localised hero treatment (parallax cover backdrops, hover lift), not canvas-wide. 180–320 ms ease-out (quart/quint/expo), never bounce, elastic, or spring. `prefers-reduced-motion` is respected as a first-class state — the cinematic register lives in palette and typography when motion recedes.
 
 5. **Self-hosting is a posture, not a feature.** Treat users as operators with taste, not as customers of a hosted service. No upsells, no telemetry prompts, no trial-CTA scaffolding, no marketing growth-hook patterns. The product is for people who chose to own their library; the surfaces must respect that choice.
 
@@ -63,10 +63,10 @@ Drift-checks: if a designer can guess theme + palette from category alone, the f
 Target: **WCAG 2.2 Level AA** as a design invariant, not a post-hoc check.
 
 - All non-text UI components meet 1.4.11 (3:1 against adjacent surface). Body text meets 1.4.3 (4.5:1).
-- The brand carries a deliberate, accepted constraint: Reverie Gold on Parchment (light theme accent) passes 1.4.11 and 1.4.3 large-text only — not 1.4.3 normal text. The gold is therefore restricted on light surfaces to focus rings, large CTAs, and recovery actions. axe-core contrast violations on small-text gold are the right signal: the surface is misusing the accent.
-- Reverie Alarm is the only alarm hue and is fill-only — never body text. Both alarm values sit at hue 354°, deliberately cool of pure red so they cannot be misread as warm cousins of gold. Lightness is mode-bound; hue is the tunable for distinguishability.
-- Colour-blind safety is engineered in: alarm is reinforcement, never the primary channel. Destructive intent and unrecoverable error are communicated through copy, friction, and iconography first; colour amplifies for users who can perceive it. The design must work with the colour stripped.
+- The brand carries a deliberate, accepted constraint: Reverie Gold on Parchment (the light-theme accent fill) passes 1.4.11 and 1.4.3 large-text only — not 1.4.3 normal text. The gold accent is therefore restricted on light surfaces to large CTAs and recovery actions. The focus ring is a separate, darker accent-text shade that clears the 1.4.11 non-text boundary on its own. axe-core contrast violations on small-text gold are the right signal: the surface is misusing the accent.
+- The danger hue is the only sanctioned state colour and is fill, border, or icon only — never body text. It is a generated, AA-correct warm red (its on-colour is white, clearing AA for normal text), shared across both themes and reserved strictly for irreversible-destructive confirmation and unrecoverable system errors. Per WCAG 1.4.1 it always pairs with an icon, weight, or text label, so colour alone never carries the meaning.
+- Colour-blind safety is engineered in: the danger hue is reinforcement, never the primary channel. Destructive intent and unrecoverable error are communicated through copy, friction, and iconography first; colour amplifies for users who can perceive it. The design must work with the colour stripped.
 - `prefers-reduced-motion: reduce` is respected on every motion-bearing surface. Status-dot pulses become static, hover lift reduces to opacity change, cursor parallax disables. The cinematic register survives in palette and typography when motion withdraws.
-- Keyboard navigation, focus visibility, and screen-reader semantics are first-class. Focus rings use the accent — that's part of the accent's "this matters" job.
+- Keyboard navigation, focus visibility, and screen-reader semantics are first-class. Focus rings use the gold accent (its darker accent-text shade) — that's part of the accent's "this matters" job.
 
 Motion is welcome — within the budget above. Reduced-motion respect is an accommodation for the users who need it, not a default that flattens the surfaces for everyone.
