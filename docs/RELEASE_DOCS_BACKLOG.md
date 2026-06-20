@@ -12,7 +12,7 @@ pages when their surface lands.
 
 ### `validation_status` operator semantics
 
-**Source:** [`adr/2026-05-28-validation-status-vocabulary.md`](../adr/2026-05-28-validation-status-vocabulary.md) (UNK-276)
+**Source:** [`adr/2026-05-28-validation-status-vocabulary.md`](./adr/2026-05-28-validation-status-vocabulary.md) (the validation status vocabulary task)
 
 The `validation_status` enum is `pending | clean | repaired | degraded`.
 The distinction is not self-evident to an operator reading the value:
@@ -39,7 +39,7 @@ them lands. The dev-facing reference in
 ### OIDC `email` claim: addr-spec validation and degrade-to-NULL
 
 **Source:** `backend/src/models/user.rs`
-(`is_addr_spec`, `upsert_from_oidc_and_maybe_promote`) — UNK-309
+(`is_addr_spec`, `upsert_from_oidc_and_maybe_promote`), which is tracked in the email validation task
 
 The OIDC `email` claim is signature-verified but not format-checked
 upstream. Reverie validates it against RFC 5322 _addr-spec_ rules before
@@ -62,7 +62,7 @@ behaviour when the admin user-management surface lands.
 
 ### Admin `PATCH /api/v1/users/{id}`: addr-spec email validation
 
-**Source:** `backend/src/routes/users/mod.rs` — UNK-309
+**Source:** `backend/src/routes/users/mod.rs`, which is tracked in the email validation task
 
 The admin `PATCH /api/v1/users/{id}` endpoint validates the email field
 against the same RFC 5322 _addr-spec_ rules as the OIDC path
@@ -78,7 +78,7 @@ the admin user-management UI lands.
 
 ### `/api/v1` URL versioning and the breaking move from `/api/*`
 
-**Source:** [`adr/2026-06-08-api-versioning-openapi.md`](../adr/2026-06-08-api-versioning-openapi.md) (UNK-376)
+**Source:** [`adr/2026-06-08-api-versioning-openapi.md`](./adr/2026-06-08-api-versioning-openapi.md) (the API versioning and OpenAPI contract task)
 
 The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and
 `/opds` are deliberately unversioned (operational / standard-protocol
@@ -88,7 +88,7 @@ return a JSON Problem `404`.
 
 Deferred on purpose: pre-v0.1.0 there are no released API consumers, so no
 migration guide is owed yet, and full `#[utoipa::path]` coverage of the
-versioned surface lands across UNK-376 PR2..N rather than this mount-move
+versioned surface lands across the API versioning task PRs rather than this mount-move
 PR. Write a user-facing "API versioning and breaking-change migration"
 Starlight page (the `/api/v1` contract, what's unversioned and why, the
 deprecation policy for a future `/api/v2`) once the generated API
@@ -96,7 +96,7 @@ reference covers the full route set.
 
 ### Shelves list/detail pagination envelopes
 
-**Source:** [`adr/2026-06-08-keyset-pagination-list-contract.md`](../adr/2026-06-08-keyset-pagination-list-contract.md) (UNK-374, PR #465)
+**Source:** [`adr/2026-06-08-keyset-pagination-list-contract.md`](./adr/2026-06-08-keyset-pagination-list-contract.md) (the list contract compliance task, PR #465)
 
 Pre-release breaking wire change to capture in the eventual `/api/v1`
 migration guide: `GET /api/v1/shelves` moved from a bare JSON array to a

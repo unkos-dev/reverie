@@ -16,13 +16,13 @@ The predecessor ADR
 established the current build shape (native per-arch runners, dynamic
 matrix, manifest merge) and explicitly flagged build-cache strategy as
 the next ADR. Empirical baseline 2026-05-12 main-push (arm64-only,
-post-`UNK-244`): prepare 3s + build 3m55s + merge 22s = **4m35s wall**,
+post-native-runners ADR): prepare 3s + build 3m55s + merge 22s = **4m35s wall**,
 all cold every run. Backend has 70 direct Cargo dependencies, and that
 number will climb as feature work lands (Step 7 enrichment, OIDC, etc.).
 Cold rebuild cost compounds across two arches on every `v*` tag push
 and across every main push.
 
-There is no on-disk persistence between runs — GitHub-hosted runners
+There is no on-disk persistence between runs: GitHub-hosted runners
 are ephemeral. Without an explicit cache backend, every `cargo build`
 re-fetches and re-compiles all 70 deps. The current Dockerfile also
 puts dep compilation and app compilation in the same layer, so even if
@@ -32,7 +32,7 @@ app code changes.
 This ADR records the decision on cache shape, the alternatives that
 were considered, and the conditions that would force a future
 reversal. It does not change the build shape decided by the
-predecessor — per-arch native runners, manifest merge, the two
+predecessor: per-arch native runners, manifest merge, the two
 publication channels, and the `:latest`-not-auto-assigned policy all
 remain in force.
 
@@ -59,7 +59,7 @@ dedicated cacheable layer.
    `chef` (shared base with pinned `cargo-chef@0.1.77 --locked`),
    `planner` (emits `recipe.json`), `cooker` (compiles deps only from
    `recipe.json`), and `backend-builder` (real build atop the warm dep
-   layer). The cooker layer is the cache target — warm hits skip ~3min
+   layer). The cooker layer is the cache target: warm hits skip ~3min
    of dep compilation when `Cargo.lock` is unchanged.
 
 3. **Frontend buildkit npm cache mount.**
@@ -95,7 +95,7 @@ string across branches is the correct shape:
 
 ## Consequences
 
-- Good — **warm builds skip the cooker layer.** Empirically verified
+- Good: **warm builds skip the cooker layer.** Empirically verified
   on the implementation branch:
   [run 25771083286](https://github.com/unkos-dev/reverie/actions/runs/25771083286)
   cold = 6m32s; [run 25771327467](https://github.com/unkos-dev/reverie/actions/runs/25771327467)
@@ -106,12 +106,12 @@ string across branches is the correct shape:
   miss → cold build. `cache-to` failure → silent fallthrough. No
   partial-state corruption surface; rollback is a single-commit
   revert with no data migration or external state to unwind.
-- Good — **mode=max preserves intermediate layers.** Partial-hit
+- Good: **mode=max preserves intermediate layers.** Partial-hit
   scenarios (e.g. a single dep version bump on a single arch) still
   reuse what they can.
-- Good — **per-arch scope isolation.** amd64 and arm64 caches don't
+- Good: **per-arch scope isolation.** amd64 and arm64 caches don't
   compete for entries; LRU eviction is local to each arch's pool.
-- Neutral — **GHA cache pool capped at 10GB per repo.** Currently
+- Neutral: **GHA cache pool capped at 10GB per repo.** Currently
   ~1GB per arch after a full build; plenty of headroom. LRU eviction
   is silent; degradation is perf-only and surfaces as colder warm
   builds. Tier 1 obs catches this manually (operator inspects
@@ -119,17 +119,17 @@ string across branches is the correct shape:
 - Neutral — **`workflow_dispatch` adds a manual trigger surface on
   main.** Same write-perm boundary as push-to-main; no new privilege
   escalation path.
-- Bad — **cargo-chef adds a build-time dependency.** Pinned
+- Bad: **cargo-chef adds a build-time dependency.** Pinned
   `0.1.77 --locked`. Bump requires lockstep across the shared `chef`
   base (single line). Supply-chain risk is bounded to one
   version-pinned crate.
-- Bad — **chef-layer rebuild cost on base-image churn.** When
+- Bad: **chef-layer rebuild cost on base-image churn.** When
   `rust:1-slim` ships a patch update (auto-pulled), the
   `cargo install cargo-chef` re-runs (~30–60s tax) and cascades to
   cooker + backend-builder. Pre-existing pattern (this PR doesn't
   introduce floating tags), but the cache wiring makes the cost
   visible as a cold-day event rather than baseline.
-- Bad — **first main-push after merge is cold.** Cache writes from
+- Bad: **first main-push after merge is cold.** Cache writes from
   feature-branch verification go under `refs/heads/feat/...`; main's
   first cache-from miss is expected. Subsequent main-pushes warm.
 - Unknown — **tag-push (`refs/tags/v*`) cache hit behaviour.** Tag
@@ -149,7 +149,7 @@ string across branches is the correct shape:
   **Rejected**: no dedicated layer for deps vs app code, so any
   app-only edit still re-links every dep. Cargo's incremental
   compilation helps but doesn't match the layer-cache hit rate of a
-  dedicated cooker stage. The alternative is also less portable —
+  dedicated cooker stage. The alternative is also less portable:
   cache-mount semantics on non-GHA buildkit drivers vary, while
   cargo-chef's layer pattern is portable to any buildkit-compatible
   builder.
@@ -213,18 +213,17 @@ Open a superseding or amending ADR if any of the following happen:
 - MADR 4.0: <https://adr.github.io/madr/>
 - Predecessor:
   [`adr/2026-05-12-platform-matrix-via-native-runners.md`](2026-05-12-platform-matrix-via-native-runners.md)
-  — established build shape (per-arch native runners, manifest merge);
+  : established build shape (per-arch native runners, manifest merge);
   flagged build-cache strategy as the next ADR. This ADR resolves
   that flag. Build-shape decisions from the predecessor remain in
   force.
 - Related:
   [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
-  — defines image contents; this ADR decides how those contents are
+  : defines image contents; this ADR decides how those contents are
   cached during build. No interaction with runtime image surface.
-- Tracker: [UNK-246](https://linear.app/unkos/issue/UNK-246) — Linear
-  ticket commissioning this work
+- Tracker: the Linear ticket commissioning this work
 - Implementation PR:
-  [#233](https://github.com/unkos-dev/reverie/pull/233) — merged
+  [#233](https://github.com/unkos-dev/reverie/pull/233), merged
   2026-05-13 as commit
   [`2f62f65`](https://github.com/unkos-dev/reverie/commit/2f62f65)
 - Adversarial review of the implementation surfaced two MEDIUM

@@ -96,7 +96,7 @@ ingestion_jobs     (standalone)
 
 **Note:** `ingestion_status` tracks per-file lifecycle on manifestations.
 `job_status` tracks batch orchestration on ingestion_jobs. These are intentionally
-separate — a job can fail while individual files succeeded, and vice versa.
+separate, as a job can fail while individual files succeeded, and vice versa.
 
 ## Database Role Architecture
 
@@ -113,7 +113,7 @@ Migrations run as the dedicated least-privilege `reverie_migrator`
 This keeps cluster-wide authority out of the schema-management path: the
 migrator can create and own schema objects but cannot create roles, alter
 the server, or bypass row-level security. The application process holds no
-migration credential at all on the default path — see
+migration credential at all on the default path; see
 [Database migrations](deployment/database-migrations.md).
 
 ### `reverie_ingestion` Access Scope
@@ -138,7 +138,7 @@ RLS is enabled on `manifestations` only. Six per-operation policies control acce
 | `manifestations_delete`                | DELETE    | `reverie_app`                     | Admin/adult only                 |
 | `manifestations_ingestion_full_access` | ALL       | `reverie_ingestion`               | Unconditional access             |
 
-Children cannot UPDATE or DELETE manifestations — these are shared library records.
+Children cannot UPDATE or DELETE manifestations: these are shared library records.
 Children manage their visibility through `shelf_items` instead.
 
 ### Session Variable Contract
@@ -153,9 +153,9 @@ COMMIT;
 ```
 
 `SET LOCAL` (the `true` parameter) is transaction-scoped and auto-resets on
-commit/rollback — safe with connection pools. If the variable is not set,
+commit/rollback, which is safe with connection pools. If the variable is not set,
 `current_setting('app.current_user_id', true)` returns NULL, and `NULL::uuid`
-causes all visibility checks to fail — queries return zero rows.
+causes all visibility checks to fail, so queries return zero rows.
 
 ## Design Decisions
 

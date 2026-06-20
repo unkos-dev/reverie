@@ -11,7 +11,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Step 11 of the Reverie blueprint (UNK-80) introduces the
+Step 11 of the Reverie blueprint (the API conventions work) introduces the
 production browser UI on top of three new JSON endpoints
 (`/api/books`, `/api/books/{id}`, `/api/works/{id}`) in
 Sub-phase 11a, followed by search (11b), metadata curation
@@ -127,29 +127,29 @@ maintained successor (react-dnd's last meaningful release was
 2022; dnd-kit ships monthly), supports React 19, has zero
 external deps beyond peer React, and has built-in keyboard
 accessibility (sortable rows must be operable from keyboard for
-WCAG 2.2 AA — Reverie's accessibility skill explicitly requires
+WCAG 2.2 AA, Reverie's accessibility skill explicitly requires
 this). React-dnd needs an HTML5/Touch backend wrapper that does
 not ship keyboard support by default.
 
 ## Consequences
 
-- **Good** — react-query is the de-facto standard for
+- **Good**: react-query is the de-facto standard for
   TypeScript+React data layers in 2024+. New contributors arrive
   pre-trained; no Reverie-specific patterns to learn for cache
   shape, key conventions, or mutation invalidation.
-- **Good** — the four packages share maintainership (Tanner
+- **Good**: the four packages share maintainership (Tanner
   Linsley + the TanStack maintainers cover react-query,
   react-query-devtools, and react-table; dnd-kit has a separate
   but actively-maintained team). Supply-chain audit posture is
   consistent across the surface.
-- **Good** — devtools is dev-bundle-only; the production bundle
+- **Good**: devtools is dev-bundle-only; the production bundle
   cost is bounded by react-query alone (~10KB gzipped) plus
   react-table when adopted (~8KB gzipped) plus dnd-kit
   (~12KB gzipped including sortable).
-- **Bad** — four new top-level dependencies. Dependabot /
+- **Bad**: four new top-level dependencies. Dependabot /
   Renovate surface grows by four. Trade-off accepted vs. the
   hand-rolled-state-machine cost outlined per package above.
-- **Bad** — react-query has a learning curve for contributors
+- **Bad**: react-query has a learning curve for contributors
   coming from Redux or SWR. Mitigation: query-key factory in
   `frontend/src/lib/query/keys.ts` collapses key shape into one
   authoritative place; route loader pattern is documented in
@@ -162,7 +162,7 @@ not ship keyboard support by default.
   data-table consumer carries a Tier 1 JSDoc on its options
   spelling out the manual-pagination requirement. Reviewers
   treat any new client-side-pagination data-table as a blocker.
-- **Neutral** — dnd-kit + react-table together do not overlap
+- **Neutral**: dnd-kit + react-table together do not overlap
   with any existing dependency. No removal triggered.
 
 ## Alternatives Considered
@@ -245,14 +245,14 @@ v8 is the current stable. v9 is not released. No reason to wait.
 ## More Information
 
 - [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md)
-  — defaults to ecosystem-standard packages over custom plumbing.
+  : defaults to ecosystem-standard packages over custom plumbing.
 - [`feedback_reverie_frontend_is_npm`](../.claude/projects/-home-coder-reverie/memory/feedback_reverie_frontend_is_npm.md)
-  — npm only.
+  : npm only.
 - [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md)
   — handling of `npm audit` findings on these new packages.
 - Implementation plan: `.claude/PRPs/plans/library-ui.plan.md`
   (Sub-phase 11a Tasks 9 + 12; 11b Task 6; 11d Task 6).
-- Linear: [UNK-80](https://linear.app/unkos/issue/UNK-80).
+- Tracker: the Step 11 API conventions work.
 - Sibling ADR: this PR's
   `2026-05-22-json-api-conventions.md` and
   `2026-05-22-backend-aux-crates.md`.

@@ -1,6 +1,6 @@
 # Content Security Policy and security headers
 
-Reverie ships strict security response headers by default (UNK-106). This
+Reverie ships strict security response headers by default (as part of the strict security response headers task). This
 document is for operators: it explains what ships, why, and how to tune it.
 
 ## What ships by default
@@ -106,7 +106,7 @@ Reverie self-hosts variable woff2 fonts at
 is sufficient for the default deployment. Operators who need fonts from
 a CDN (e.g., Google Fonts, custom asset host) must edit
 `backend/src/security/csp.rs::build_html_csp` to allowlist the required
-origin(s) and rebuild. No runtime configuration knob exists for this —
+origin(s) and rebuild. No runtime configuration knob exists for this:
 the policy is intentionally code-declared so every deployment has an
 identical, auditable font policy out of the box.
 
@@ -141,7 +141,7 @@ deployment in 2026 is a misconfiguration we don't bend the design to
 support. Localhost dev still works because Chrome (≥v89) and Firefox
 treat `http://localhost` as a secure context and accept Secure cookies
 on it. An operator running Reverie behind a public DNS name on plain
-HTTP will see the browser silently reject the cookie — the documented
+HTTP will see the browser silently reject the cookie, which is the documented
 signal to put the deployment behind TLS, whether terminated at a proxy
 or directly.
 
@@ -181,8 +181,8 @@ HSTS if the request was served before TLS termination (unchanged behaviour).
 
 ### Third-party auditors
 
-- [securityheaders.com](https://securityheaders.com) — expect **A+**.
-- [Mozilla Observatory](https://observatory.mozilla.org) — expect **A+**.
+- [securityheaders.com](https://securityheaders.com): expect **A+**.
+- [Mozilla Observatory](https://observatory.mozilla.org): expect **A+**.
 
 If either returns less than A, check:
 

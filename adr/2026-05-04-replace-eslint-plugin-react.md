@@ -19,7 +19,7 @@ plugins layered on top of `typescript-eslint`. The stack works on
 `eslint@10.x`:
 
 - `eslint-plugin-react@7.37.5` (the current pinned version, last
-  released 2025-04 — 13+ months ago at the time of this decision)
+  released 2025-04 (13+ months ago at the time of this decision)
   declares its peer dependency range as
   `eslint@"^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7"`. eslint v10
   sits outside the range
@@ -90,7 +90,7 @@ range, and are not part of this decision's scope.
 - Good — unblocks `eslint` and `@eslint/js` v10 bumps. The Renovate
   pin from PR #147 is removed in the migration PR; future eslint
   majors flow through Renovate normally
-- Good — replaces a 13-month-stale plugin with one that has shipped
+- Good: replaces a 13-month-stale plugin with one that has shipped
   releases as recently as last week. Reduces supply-chain risk
 - Good — `@eslint-react/eslint-plugin` is TypeScript-first; rule
   authors reach into TS type information, catching bugs that
@@ -107,19 +107,19 @@ range, and are not part of this decision's scope.
   in the config. Expected scope: under 50 sites across
   `frontend/src/**`, given the strict-lint policy already enforces
   most modern React idioms
-- Bad — third-party dependency swap. If
+- Bad: third-party dependency swap. If
   `@eslint-react/eslint-plugin` itself goes stale in a future
   eslint major, the project hits the same blocker again. Mitigation:
   the `eslint-plugin-react-hooks` and
   `eslint-plugin-react-refresh` deps are independently maintained,
   so the React-specific lint surface is sharded across three
-  upstream maintainers — failure of any one is contained
-- Bad — rule names change. Any existing
+  upstream maintainers: failure of any one is contained
+- Bad: rule names change. Any existing
   `// eslint-disable-next-line react/jsx-key` comments need
   rewriting to `@eslint-react/no-missing-key`. Likely zero or
   near-zero in current codebase but worth grepping in the
   migration PR
-- Neutral — bundle size impact zero (lint runs in CI + dev only,
+- Neutral: bundle size impact zero (lint runs in CI + dev only,
   not in production)
 - Neutral — `frontend/CLAUDE.md` rules around `as` casts, TS
   `enum`, and raw hex are enforced via `no-restricted-syntax` and
@@ -143,13 +143,13 @@ range, and are not part of this decision's scope.
   release activity for over a year. Waiting indefinitely for a
   fix that may never come keeps the eslint pin in place
   indefinitely
-- **Stay on eslint v9 indefinitely.** Rejected — same as the
+- **Stay on eslint v9 indefinitely.** Rejected: same as the
   "wait for upstream" option in effect, with the additional cost
   of missing eslint v10 features and security fixes. The
   Renovate pin is documented as temporary precisely so this
   doesn't become the default
 - **Switch to a different React lint plugin family entirely (e.g.
-  Biome, deno-lint).** Rejected for this trial-scoped decision —
+  Biome, deno-lint).** Rejected for this trial-scoped decision:
   swapping the linter is a different and larger architectural
   change with its own ADR-level scope. `@eslint-react` is the
   smallest swap that resolves the immediate blocker
@@ -174,13 +174,13 @@ Open a superseding ADR if any of the following happen:
 - eslint flat config migration:
   <https://eslint.org/docs/latest/use/configure/migration-guide>
 - Related: [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md)
-  — frontend lint stack baseline this ADR amends
+  : frontend lint stack baseline this ADR amends
 - Related: [`adr/2026-05-04-greptile-trial.md`](2026-05-04-greptile-trial.md)
-  — trial review tally records the eslint v10 PRs that
+  : trial review tally records the eslint v10 PRs that
   triggered this decision
 - Related PRs:
   - #135 (closed) — `@eslint/js` v10 bump, ERESOLVE
   - #136 (closed) — `eslint` v10 bump, ERESOLVE, force-pushed 12×
   - #147 (merged) — Renovate pin holding eslint at `<10`
-- Tracker: UNK-155 trial tally has the false-positive credit-cap
+- Tracker: the trial tally has the false-positive credit-cap
   and hallucination context that surrounded the eslint v10 saga

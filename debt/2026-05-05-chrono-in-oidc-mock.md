@@ -41,7 +41,7 @@ No first-party code outside `oidc_mock` touches chrono.
 
 Two crates for the same job is taxing for several reasons:
 
-1. Cognitive overhead — contributors have to remember which crate
+1. Cognitive overhead: contributors have to remember which crate
    applies where, and what conversions exist between them.
 2. Compile time — chrono's deps add to the dev build.
 3. Audit surface — chrono has its own CVE history; `time` was chosen
@@ -49,7 +49,7 @@ Two crates for the same job is taxing for several reasons:
    widens the attack surface against the test toolchain (relevant if
    tests are ever run against untrusted input, which they shouldn't
    be but the discipline matters).
-4. The carve-out invites scope creep — every new test that touches
+4. The carve-out invites scope creep: every new test that touches
    OIDC claims has the same temptation.
 
 ## Lift conditions
@@ -99,11 +99,11 @@ repo's last commit was Nov 2025, latest stable is **4.0.1** (Jul
 stuck at `0.1.0-alpha.3` since Feb 2026 with no movement. Not dead,
 but slow. The same root pin also keeps `reqwest 0.12.28` in the tree
 transitively (`openidconnect 4 → oauth2 5 → reqwest 0.12`), the
-residue left by closed issue UNK-93 (reqwest 0.13 direct bump,
+residue left by the closed reqwest 0.13 direct bump task (reqwest 0.13 direct bump,
 PR #149).
 
 Pre-evaluated escape hatches if upstream stalls indefinitely. None
-strictly dominates — recorded so a future session doesn't
+strictly dominates, and is recorded so a future session doesn't
 cold-research this:
 
 | Option                               | reqwest                    | chrono                     | Maintenance             | Switch cost                                                           |
@@ -129,7 +129,7 @@ with an independently-motivated libauth refactor, OR if
 `openidconnect` is confirmed abandoned (no commits + an unpatched
 advisory). Until then, keep watching upstream.
 
-### Preferred fix for the reqwest-dual residue — bring-your-own client (not a fork, not a crate swap)
+### Preferred fix for the reqwest-dual residue: bring-your-own client (not a fork, not a crate swap)
 
 The reqwest-0.12 residue does **not** require any of the crate-swap
 options above, nor forking `openidconnect`/`oauth2`. The reqwest pin
@@ -155,13 +155,13 @@ using its bundled reqwest:
 
 **Effort: ~0.5–1 day.** Removes `reqwest 0.12.28` from the tree
 entirely; ongoing cost ≈ nil (≈70 first-party lines, no fork
-liability). The OAuth2/OIDC state machine is untouched — only _which_
+liability). The OAuth2/OIDC state machine is untouched: only _which_
 HTTP client `oauth2` calls changes.
 
 Scope caveats:
 
-- This clears **only** the reqwest-dual residue (UNK-93 leftover). It
-  does **not** lift this chrono debt — chrono is forced by
+- This clears **only** the reqwest-dual residue (leftover from the reqwest 0.13 direct bump task). It
+  does **not** lift this chrono debt; chrono is forced by
   `CoreIdTokenClaims::new`'s signature, orthogonal to the HTTP client.
 - It is still Tier-2 auth-path code (`docs/security/codeguard/`) — needs
   security review, not a casual edit.

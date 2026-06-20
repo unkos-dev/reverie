@@ -41,9 +41,9 @@ threat-model control.
 - Grid load must not re-download unchanged covers every navigation.
 - Covers stay access-controlled (RLS); no shared cache may store one.
 - A Step 8 metadata writeback rewrites a cover's `current_file_hash` at the
-  _same_ URL — staleness after a content change must be bounded.
+  _same_ URL; staleness after a content change must be bounded.
 - "Request timeouts everywhere" + "no blocking IO on the async runtime"
-  (backend invariants) — warming must not stall the synchronous scan request
+  (backend invariants): warming must not stall the synchronous scan request
   nor run image work on a runtime thread.
 - `image` 0.25 ships WebP **decode-only** (no encoder).
 
@@ -76,11 +76,11 @@ concurrency-bounded, best-effort background task that generates the thumbnail
 for each newly-ingested EPUB. The first grid view is then a warm hit. Warming
 is detached (the synchronous scan returns immediately), bounded by a process
 semaphore (no thundering herd on the blocking pool), and never fails ingest.
-Full-size covers stay lazy — the reader view loads one at a time.
+Full-size covers stay lazy: the reader view loads one at a time.
 
-**C — JPEG thumbnails.** The thumbnail tier always encodes to JPEG (quality
+**C**: JPEG thumbnails.\*\* The thumbnail tier always encodes to JPEG (quality
 82); the full tier preserves the source format. Since JPEG has no alpha,
-transparency is composited over white first — a bare channel-drop would render
+transparency is composited over white first; a bare channel-drop would render
 the transparent regions of a non-canvas-filling SVG cover black. WebP would
 preserve alpha directly, but `image` 0.25 has no WebP encoder.
 
@@ -90,8 +90,8 @@ preserve alpha directly, but `image` 0.25 has no WebP encoder.
   views are eliminated by warming; thumbnail payloads shrink ~6–8×.
 - Good, because moving generation into `spawn_blocking` (both the warm path and
   the lazy `get_or_create` miss path) removes image work from the async runtime
-  thread — a latent blocking-IO bug.
-- Neutral, because the shared-browser cross-user replay (THREAT) — a cached
+  thread: a latent blocking-IO bug.
+- Neutral, because the shared-browser cross-user replay (THREAT): a cached
   RLS-scoped cover served to a different account after a switch on the same
   browser — is closed by `Vary: Authorization, Cookie`, which partitions the
   private cache by credential. Credentials are stable within a session, so
@@ -114,7 +114,7 @@ preserve alpha directly, but `image` 0.25 has no WebP encoder.
 ## More Information
 
 Builds directly on [Rasterize SVG-declared EPUB covers to
-PNG](2026-06-13-svg-cover-rasterization.md) — the rasterization is unchanged;
+PNG](2026-06-13-svg-cover-rasterization.md): the rasterization is unchanged;
 this ADR governs how the result is cached, warmed, and encoded for delivery.
 Revisit if cover serving moves behind a CDN (the `private`/`ETag` contract
 would need re-evaluation) or if a WebP encoder becomes available in the image

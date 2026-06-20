@@ -14,7 +14,7 @@ informed: "Reverie contributors"
 Reverie's supported deployment is a single-instance Docker Compose service
 ([migration model ADR](2026-06-02-hybrid-migration-entrypoints-and-role.md)).
 That topology is a single point of failure: one app process, one Postgres. Some
-operators will want to remove that — run several app instances behind a load
+operators will want to remove that: run several app instances behind a load
 balancer, or a hot-standby for availability.
 
 The question is how far Reverie goes to meet them. It could build first-party
@@ -27,7 +27,7 @@ audience self-hosts. Where is the line between _enabling_ scale and _owning_ it?
 ## Decision Drivers
 
 - **Bounded scope.** Owning HA means owning leader election, failover,
-  split-brain handling, and their entire test and support surface — a different
+  split-brain handling, and their entire test and support surface: a different
   product. Every such component is also operational burden on the common
   single-instance self-hoster who will never use it.
 - **Don't architecturally preclude scale-out.** Statelessness is cheap
@@ -36,19 +36,19 @@ audience self-hosts. Where is the line between _enabling_ scale and _owning_ it?
 - **The HA-wanting operator already runs the infrastructure.** A load balancer
   and a highly-available Postgres are things that audience operates already;
   Reverie re-implementing them adds no value.
-- **"Enable, don't own"** — the same philosophy applied to integrations
+- **"Enable, don't own"**: the same philosophy applied to integrations
   ([standards-first integrations ADR](2026-06-08-standards-first-integrations.md))
   and to connection pooling
   ([pooling ADR](2026-06-08-connection-pooling.md)).
 
 ## Considered Options
 
-- **A — Stateless application enables operator-run multi-instance / HA; Reverie
-  owns no distributed infrastructure.**
-- **B — Build first-party HA: leader election, clustering, node discovery,
-  distributed scheduling.**
-- **C — Single-instance only; allow stateful shortcuts that actively preclude
-  scale-out.**
+- **A**: Stateless application enables operator-run multi-instance / HA; Reverie
+  owns no distributed infrastructure.\*\*
+- **B**: Build first-party HA: leader election, clustering, node discovery,
+  distributed scheduling.\*\*
+- **C**: Single-instance only; allow stateful shortcuts that actively preclude
+  scale-out.\*\*
 
 ## Decision Outcome
 
@@ -60,7 +60,7 @@ Chosen option: **A**.
   ([first-party session layer ADR](2026-06-04-first-party-session-layer.md)),
   so no instance holds authoritative in-memory state and no sticky-session
   affinity is required. An operator can therefore run N app instances behind
-  their own load balancer, or a standby, all pointing at one Postgres — which
+  their own load balancer, or a standby, all pointing at one Postgres, which
   they may make highly available by their own means (managed Postgres,
   replication, etc.).
 - **Reverie owns no distributed infrastructure.** No first-party leader
@@ -74,7 +74,7 @@ Chosen option: **A**.
   pool size against one Postgres.
 
 This stance does require a small standing guardrail: features must stay _safe_
-under concurrent instances even though one is the default — startup migration is
+under concurrent instances even though one is the default: startup migration is
 already advisory-locked so two instances can't double-migrate
 ([migration model ADR](2026-06-02-hybrid-migration-entrypoints-and-role.md)),
 and job claim is concurrency-safe
@@ -89,13 +89,13 @@ and job claim is concurrency-safe
   [durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md) is the
   remaining multi-instance lift, since restart-bounded reclaim is unsafe across
   concurrent instances.
-- Good, because Reverie's scope and failure surface stay bounded — no
+- Good, because Reverie's scope and failure surface stay bounded: no
   distributed-systems code to maintain, fewer moving parts for the
   single-instance majority.
 - Good, because it is consistent with the project-wide "enable, don't own"
   philosophy.
 - Bad, because Reverie ships no turnkey HA; the operator assembles a load
-  balancer and Postgres HA themselves. Acceptable — that audience runs that
+  balancer and Postgres HA themselves. This is acceptable, as that audience runs that
   infrastructure regardless.
 - Bad, because the default single-instance deployment remains a single point of
   failure; Reverie does not eliminate it, only makes elimination possible for
@@ -114,7 +114,7 @@ LOCKED` job claim.
 
 ## Pros and Cons of the Options
 
-### A — stateless app, operator-enabled HA, no owned distributed infra
+### A: stateless app, operator-enabled HA, no owned distributed infra
 
 - Good, because it unlocks scale-out for the operators who want it at the cost
   of one architectural property (statelessness) Reverie wants anyway.
@@ -122,15 +122,15 @@ LOCKED` job claim.
 - Neutral, because it pushes HA assembly onto the operator.
 - Bad, because it offers no built-in availability story out of the box.
 
-### B — first-party HA
+### B: first-party HA
 
 - Good, because it would give a turnkey multi-node experience.
 - Bad, because it is a different product: leader election, split-brain, failover
-  testing, and support — enormous scope for a self-hosted library manager.
+  testing, and support: enormous scope for a self-hosted library manager.
 - Bad, because it burdens the single-instance majority with components they
   never use.
 
-### C — single-instance only, stateful shortcuts
+### C: single-instance only, stateful shortcuts
 
 - Good, because it is marginally simpler in the near term.
 - Bad, because it forecloses scale-out permanently and would be expensive to
@@ -138,14 +138,14 @@ LOCKED` job claim.
 
 ## More Information
 
-- [Crash-safe state ADR](2026-06-08-postgres-backed-crash-safe-state.md) —
+- [Crash-safe state ADR](2026-06-08-postgres-backed-crash-safe-state.md):
   statelessness as a durability property; this ADR is its scaling complement.
-- [Pooling ADR](2026-06-08-connection-pooling.md) — owns the in-process
+- [Pooling ADR](2026-06-08-connection-pooling.md): owns the in-process
   pool; the multi-instance connection-budget sizing (N instances × pool size) is
   owned here, on the scale axis.
-- [Durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md) —
+- [Durable job queue ADR](2026-06-08-durable-job-queue-crash-only.md):
   durable-not-distributed worker design.
 - [Standards-first integrations ADR](2026-06-08-standards-first-integrations.md)
-  — the same "enable, don't own" philosophy on the integrations axis.
+  — implementing the same "enable, don't own" philosophy on the integrations axis.
 - Revisit trigger: if first-party HA ever becomes a goal (e.g. a hosted Reverie
-  offering), this stance gets a superseding ADR — it is not amended by exception.
+  offering), this stance gets a superseding ADR; it is not amended by exception.

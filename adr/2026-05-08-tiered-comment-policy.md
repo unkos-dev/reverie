@@ -12,7 +12,7 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 Global Claude Code instructions (`~/.claude/CLAUDE.md`) ratify
-"default to no comments — only add one when the WHY is non-obvious"
+"default to no comments, only add one when the WHY is non-obvious"
 as the cross-project default. The rule is well-tuned for a solo-dev
 or shared-team context where the readers are the author and a
 small group with shared conversation history; under those
@@ -49,11 +49,11 @@ needs amendment:
    post-fix preserved most of the information but in a different
    shape. Net: docstring-generation is happening already, just
    without a policy or quality bar.
-2. **Greptile's first dependency-governance catch (UNK-155 row
+2. **Greptile's first dependency-governance catch (trial tally row
    #17) explicitly cited that the version-pin rationale "lives in
    the PR body and inline `Cargo.toml` comment, neither of which
    is a durable decision record".** The implicit observation is
-   that documentation surfaces matter for stranger-readers — the
+   that documentation surfaces matter for stranger-readers: the
    PR body is invisible to anyone reading the merged tree. The
    same observation applies to comment policy: documentation
    visible at the call site is a different surface than
@@ -110,7 +110,7 @@ Anti-patterns:
 - **Generic boilerplate.** "@param x The x parameter" / "/// Constructor"
   is noise.
 
-### Tier 2 — Security-critical code
+### Tier 2: Security-critical code
 
 Code under `backend/src/auth/`, `backend/src/security/`, and any
 function handling credentials, sessions, OIDC flow, role
@@ -132,15 +132,15 @@ Patterns:
   (`adr/2026-05-08-tower-sessions-sqlx-store.md` etc.) when the
   decision providing context lives in an ADR.
 
-### Tier 3 — Internal non-public items
+### Tier 3: Internal non-public items
 
 Private fns, private structs, private modules: no docstring
 required. The original "default to no comments" rule is preserved
-in full for this tier — only add a comment when the WHY is
+in full for this tier: only add a comment when the WHY is
 non-obvious, when there's a hidden constraint, or when the code
 would surprise a future reader.
 
-### Tier 4 — Tests and test support
+### Tier 4: Tests and test support
 
 `#[test]` / `#[sqlx::test]` / Vitest / Playwright test functions
 do not carry docstrings. The test name _is_ the spec; a docstring
@@ -152,7 +152,7 @@ unless they encode a WHY future readers would not infer.
 
 ### Enforcement layering
 
-Phased rollout — UNK-190 tracks the phases:
+Phased rollout: a dedicated task tracks the phases:
 
 0. **Split `backend/` into `lib.rs` + thin `main.rs`** before any
    doc-lint work. `missing_docs` (and clippy `missing_errors_doc`
@@ -172,7 +172,7 @@ Phased rollout — UNK-190 tracks the phases:
    module. Build stays green (every module is shielded).
    Graduating a module = removing its `#![allow(missing_docs)]`;
    from that point any undocumented `pub` item in that module
-   fails CI. The ratchet is monotonic — once a module's allow is
+   fails CI. The ratchet is monotonic: once a module's allow is
    removed, it cannot regress without a visible diff.
 3. **Modules graduate** in audience-criticality order: auth →
    security → models → routes → services. Each graduation is its
@@ -182,7 +182,7 @@ Phased rollout — UNK-190 tracks the phases:
 4. **Re-enable previously-allowed clippy pedantic lints**
    (`missing_errors_doc`, currently `allow` in
    `backend/Cargo.toml` with the comment "inappropriate for
-   application crates" — true while the crate was bin-only,
+   application crates", which was true while the crate was bin-only,
    moot after Phase 0). `missing_panics_doc` and
    `missing_safety_doc` are already at the pedantic-warn level
    per `adr/2026-05-03-strict-lint-policy.md`; Tier 1
@@ -199,7 +199,7 @@ read this ADR + the CLAUDE.md tiered policy section, author
 Maintainer reviews per-module PRs.
 
 CodeRabbit's `finishing_touches.docstrings` is **not** the
-primary mechanism for the initial backfill — quality is
+primary mechanism for the initial backfill: quality is
 inconsistent (PR #178 evidence: clipped an existing WHY-comment
 mid-sentence) and the per-PR generation surface inflates review
 noise during the parallel-trial window. CR docstring generation
@@ -210,18 +210,18 @@ maintainer before landing.
 
 ## Consequences
 
-- Good — security audience served. Explicit threat-model
+- Good: security audience served. Explicit threat-model
   annotations on Tier 2 code mean an auditor can read the
   security boundary without reconstructing intent from naming
   - git archaeology.
 - Good — `cargo doc` rendered library reference becomes a real
   doc surface. Project trust signal shifts in the right
   direction for self-hosters evaluating the codebase.
-- Good — Tier 3 carve-out preserves the agent-friendly
+- Good: Tier 3 carve-out preserves the agent-friendly
   internals workflow. Refactoring private code does not require
   rewriting docstrings; comments rot is contained to where the
   policy explicitly demands them.
-- Good — phased rollout means no single mega-PR. Each module
+- Good: phased rollout means no single mega-PR. Each module
   graduates independently; review burden distributed.
 - Bad — initial backfill is a real cost. ~342 backend `pub`
   items + frontend equivalent. Even with subagent dispatch,
@@ -230,15 +230,15 @@ maintainer before landing.
   attribute placement. Every internal call site referencing
   `crate::*` from tests or `main.rs` is touched. Carries its own
   review burden before any docstring authoring begins. The
-  alternative — accepting that doc lints are silent on the
-  binary — was rejected because it makes the entire enforcement
+  alternative, accepting that doc lints are silent on the
+  binary, was rejected because it makes the entire enforcement
   layering decorative, defeating the ratchet that the OSS
   audience case justifies.
-- Bad — comment rot is now possible on Tier 1/2 surfaces. A
+- Bad: comment rot is now possible on Tier 1/2 surfaces. A
   function whose semantics drift from its docstring is worse
   than a function with no docstring. Review discipline must
   catch docstring drift in PRs touching documented code.
-- Neutral — CR's docstring auto-generation gets demoted from
+- Neutral: CR's docstring auto-generation gets demoted from
   "first-pass content generator" to "ad-hoc tool with policy
   guard-rails". The CR parallel trial gate (2026-05-21)
   evaluates the reviewer feature; the docstring feature is
@@ -247,22 +247,22 @@ maintainer before landing.
 ## Alternatives Considered
 
 - **Status quo (global "default to no comments" applies in
-  full).** Rejected — loses the benefits of explicit
+  full).** Rejected: loses the benefits of explicit
   documentation on the surfaces where the OSS audience needs it
   most. The global rule was tuned for a different audience.
 - **Inverse status quo (require docstrings on every item,
-  public and private).** Rejected — wave of low-signal
+  public and private).** Rejected: wave of low-signal
   signature-restating comments on internals where the original
   rule was correct. Comment rot risk dominates.
 - **Document only `pub` items, drop the security tier.**
-  Rejected — security-critical code has a higher documentation
+  Rejected: security-critical code has a higher documentation
   bar than other public API. A `pub fn require_admin` whose
   threat model is "string-comparison drift on enum rename"
   needs that drift surfaced in the docstring; a generic Tier 1
   rule misses it. The Tier 2 carve-out makes the security
   ratchet explicit.
 - **Skip the CLAUDE.md amendment; encode policy only in clippy
-  lints + eslint config.** Rejected — agents read CLAUDE.md
+  lints + eslint config.** Rejected: agents read CLAUDE.md
   before they read lint configs. The actionable rule needs to
   be in CLAUDE.md so future agents author docstrings under the
   policy _before_ CI flags the gap. Lint config is the
@@ -276,7 +276,7 @@ maintainer before landing.
   maintainer review is the cleaner shape for the initial
   backfill.
 - **Single mega-PR documenting every backend pub item.**
-  Rejected — review burden too high; one bad-quality file
+  Rejected: review burden too high; one bad-quality file
   blocks the entire batch. Per-module PRs distribute the review
   cost and let the maintainer reject one module's docs without
   losing the whole batch.
@@ -296,7 +296,7 @@ maintainer before landing.
   `frontend/vite-plugins/hmr-config.ts` (clipped WHY-comment
   pattern that motivated demoting CR from primary backfill
   mechanism)
-- UNK-155 row #17 (Greptile dependency-governance catch on PR
-  #180) — adjacent observation that documentation visible at
+- Trial tally row #17 (Greptile dependency-governance catch on PR
+  #180): adjacent observation that documentation visible at
   the call site matters more than documentation in PR review
   history

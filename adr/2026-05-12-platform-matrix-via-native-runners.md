@@ -16,11 +16,11 @@ The predecessor ADR
 [`2026-05-12-decouple-staging-image-from-semver-releases.md`](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md)
 established two publication channels (`main`-push → `:main` + `:sha-<7>`;
 `v*`-tag push → `:vX.Y.Z` + `:X.Y`). It flagged multi-arch readiness as a
-later concern. Subsequent work (`UNK-241`, PR #223, merged 2026-05-12)
+later concern. Subsequent work (the release decoupling work, PR #223, merged 2026-05-12)
 added a trigger-driven platform matrix and pulled in
 `docker/setup-qemu-action` so the amd64 GitHub-hosted runner could
 produce arm64 layers via `binfmt_misc`. That landed the arm64 image on
-`:main` and unblocked the homelab staging deploy (`UNK-230`).
+`:main` and unblocked the homelab staging deploy.
 
 It also left QEMU emulation as a permanent cost on every build.
 
@@ -41,7 +41,7 @@ on its native runner in parallel, then merge a manifest list".
 
 This ADR records the decision to make that move, the alternatives that
 were considered, and the conditions that would force a future reversal.
-It supersedes the predecessor's CI-shape section — the
+It supersedes the predecessor's CI-shape section: the
 two-publication-channels decision and the `:latest`-policy decision from
 that ADR remain in force and are restated here for the steady-state
 record.
@@ -111,7 +111,7 @@ shape changes.
   build platforms" shell step is replaced by a `prepare-matrix` job
   emitting the include list as JSON; per-trigger filtering moves from
   a workflow-step expression to a matrix-shape expression.
-- Good — **release boundary fully native on both architectures**.
+- Good: **release boundary fully native on both architectures**.
   Self-hosters pulling a `v*` tag receive images built without
   emulation on either leg.
 - Good — **attestations preserved**. `provenance: mode=max` and
@@ -119,7 +119,7 @@ shape changes.
   per-platform attestations onto the resulting manifest list. This is
   the standard pattern and keeps the path to future image signing
   (Sigstore / cosign) unblocked.
-- Neutral — **four jobs per publish run instead of one**. One
+- Neutral: **four jobs per publish run instead of one**. One
   `prepare-matrix` setup job (seconds), two `build` jobs (one or two
   matrix instances depending on trigger), one `merge` job. Each is
   short on its own; total runner minutes consumed on tag pushes are
@@ -131,7 +131,7 @@ shape changes.
   a workspace, so digests cross job boundaries as artifacts. This is
   the canonical pattern but adds two steps per build and one per
   merge. Acceptable cost.
-- Bad — **dependency on GitHub free-tier ARM runner availability**.
+- Bad: **dependency on GitHub free-tier ARM runner availability**.
   If GitHub changes free-tier ARM pricing or imposes sustained queue
   contention, builds slow or break. Revisit conditions below cover
   this.
@@ -139,7 +139,7 @@ shape changes.
 ## Alternatives Considered
 
 - **Option A: swap `runs-on: ubuntu-24.04-arm` for the arm64 leg, keep
-  QEMU for tag-push amd64.** Rejected — puts QEMU on the public
+  QEMU for tag-push amd64.** Rejected: puts QEMU on the public
   release path. Tags are the worst place to absorb emulation cost.
   Half-measure that doesn't remove the QEMU dependency.
 - **Self-hosted ARM runner on `oci-compute-1`.** Rejected — self-hosted
@@ -148,14 +148,14 @@ shape changes.
   self-hosted machine. Adds operational surface (runner agent, OS
   patching, network segmentation, ephemeral isolation harness). GH-hosted
   ARM is free, ephemeral, and isolated.
-- **Status quo: keep QEMU on every build.** Rejected — empirically
+- **Status quo: keep QEMU on every build.** Rejected: empirically
   blocked by run `25731891335` (30+ min). The predecessor ADR's
   acceptance criterion that CI runtime does not regress materially
   fails today; this is the regression.
 - **Arm64-only on `v*` tags (inverse of the chosen split).** Rejected
   — homelab staging consumes `:main` arm64. Making arm64 a release-only
   artefact regresses staging.
-- **Full multi-arch (amd64 + arm64) on both triggers.** Rejected —
+- **Full multi-arch (amd64 + arm64) on both triggers.** Rejected:
   amd64 has no consumer today. The sole arm64 consumer is
   `oci-compute-1`; the predecessor's trigger split already decided
   amd64 is a release-only platform. This ADR preserves that decision
@@ -167,7 +167,7 @@ Open a superseding ADR if any of the following happen:
 
 - **Second consumer or dev architecture emerges.** A developer
   workstation, a CI gate, or a second deploy target on amd64 changes
-  the trigger split — main-push may need both arches again, or arm64
+  the trigger split: main-push may need both arches again, or arm64
   may need to remain on tag-push only depending on demand. The
   build-shape decision in this ADR is stable across that change, but
   the `prepare-matrix` job's emitted JSON would update.
@@ -202,22 +202,13 @@ Open a superseding ADR if any of the following happen:
   remain in force; build-shape decision is replaced
 - Related:
   [`adr/2026-05-05-single-image-distribution-central-csp.md`](2026-05-05-single-image-distribution-central-csp.md)
-  — upstream invariant. The image contents are decided by that ADR;
+  : upstream invariant. The image contents are decided by that ADR;
   this ADR decides how the image is built and tagged
-- Tracker: [UNK-244](https://linear.app/unkos/issue/UNK-244) — the
-  Linear ticket commissioning this ADR and the corresponding workflow
-  PR; folds in [UNK-242](https://linear.app/unkos/issue/UNK-242)
-  (originally tracked a superseding ADR for the QEMU-intermediate step
-  that this ADR removes wholesale)
-- Related: [UNK-241](https://linear.app/unkos/issue/UNK-241) —
-  immediate predecessor (introduced QEMU and the trigger-driven
-  platform matrix); the trigger split is preserved by this ADR, the
-  QEMU dependency is removed
-- Related: [UNK-156](https://linear.app/unkos/issue/UNK-156) /
-  [UNK-230](https://linear.app/unkos/issue/UNK-230) — homelab Phase 3
-  staging deploy that consumes the `:main` arm64 image
+- Tracker: the workflow automation task commissioning this ADR and the corresponding workflow PR; folds in the architecture matrix task (originally tracked a superseding ADR for the QEMU-intermediate step that this ADR removes wholesale)
+- Related: the upstream issue decoupling staging image from semver releases (immediate predecessor, which introduced QEMU and the trigger-driven platform matrix; the trigger split is preserved by this ADR, the QEMU dependency is removed)
+- Related: homelab Phase 3 staging deploy that consumes the `:main` arm64 image
 - Empirical baseline: [run 25731891335](https://github.com/unkos-dev/reverie/actions/runs/25731891335)
-  — 30+ min arm64-via-QEMU build on main-push, the regression that
+  — which was a 30+ min arm64-via-QEMU build on main-push — the regression that
   prompted this change
 - Code references:
   - `.github/workflows/docker-publish.yml` — single workflow changed

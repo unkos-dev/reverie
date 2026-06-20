@@ -57,8 +57,8 @@ Related: [persisted settings ADR](../2026-05-26-persisted-settings.md) (assumes 
 
 ### Schema-version safety
 
-1. **Schema-ahead detection** — refuse startup if DB has migrations unknown to the binary
-2. **No version check** — let the app start and fail with SQL errors if schema is incompatible
+1. **Schema-ahead detection**: refuse startup if DB has migrations unknown to the binary
+2. **No version check**: let the app start and fail with SQL errors if schema is incompatible
 
 ## Decision Outcome
 
@@ -74,7 +74,7 @@ Opt-out rejected: YAGNI. Adds complexity for a fictional user profile.
 
 A custom migration runner wraps sqlx's embedded `Migrator` struct. All pending migrations execute within a single `BEGIN`/`COMMIT`. If any migration fails, the entire batch rolls back and the database is untouched at the pre-migration state.
 
-This is the critical operator-experience decision. With per-migration transactions, a failure at migration 3 of 5 leaves migrations 1–2 committed and 3–5 unapplied. The database is in a state where neither the old image nor the new image works. The operator must manually intervene with SQL. With all-or-nothing, the operator pins the previous image tag, restarts, and the app works — the database was never mutated.
+This is the critical operator-experience decision. With per-migration transactions, a failure at migration 3 of 5 leaves migrations 1–2 committed and 3–5 unapplied. The database is in a state where neither the old image nor the new image works. The operator must manually intervene with SQL. With all-or-nothing, the operator pins the previous image tag, restarts, and the app works, as the database was never mutated.
 
 PostgreSQL supports transactional DDL (`CREATE TABLE`, `ALTER TABLE`, `DROP` all roll back cleanly), making this possible. MySQL cannot do this.
 
@@ -90,11 +90,11 @@ Dry-run preflight rejected: doubles migration time, doesn't catch all issues (no
 
 On startup, the runner compares the binary's embedded migration list against the `_sqlx_migrations` table. If the database contains migration rows unknown to the binary, startup fails with:
 
-> database schema (migration 20260527...) is newer than this application version — upgrade the image or roll back the database manually
+> database schema (migration 20260527..) is newer than this application version: upgrade the image or roll back the database manually
 
 This prevents the confusing failure mode where a stale image hits tables/columns it doesn't understand and throws cryptic SQL errors.
 
-**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-384 hash. A mismatch indicates the migration file was modified after application — startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
+**Checksum verification**: on startup, the runner compares each applied migration's stored checksum against the embedded file's SHA-384 hash. A mismatch indicates the migration file was modified after application. Startup fails with a clear error identifying the mismatched migration version. This prevents silent schema drift from post-application file edits.
 
 ### Connection architecture
 
@@ -108,11 +108,11 @@ Multiple containers starting simultaneously (e.g., Docker restart race) are seri
 
 ### Lock timeout
 
-The ephemeral migration connection sets `lock_timeout=30s` to prevent DDL statements (e.g., `ALTER TABLE` waiting on a concurrent transaction's row lock) from hanging indefinitely. Note: `lock_timeout` applies to heavyweight PostgreSQL locks (table, row, extension), not advisory locks — advisory lock acquisition is bounded by the retry loop described above. These are two distinct protection layers. `lock_timeout` is an interim hardcoded default pending a project-wide database lock and timeout strategy ([UNK-296](https://linear.app/unkos/issue/UNK-296)).
+The ephemeral migration connection sets `lock_timeout=30s` to prevent DDL statements (e.g., `ALTER TABLE` waiting on a concurrent transaction's row lock) from hanging indefinitely. Note: `lock_timeout` applies to heavyweight PostgreSQL locks (table, row, extension), not advisory locks; advisory lock acquisition is bounded by the retry loop described above. These are two distinct protection layers. `lock_timeout` is an interim hardcoded default pending a project-wide database lock and timeout strategy (the database lock and timeout strategy).
 
 ### Logging
 
-Logging levels follow the project-wide conventions being formalised under [UNK-297](https://linear.app/unkos/issue/UNK-297). Interim levels:
+Logging levels follow the project-wide conventions being formalised under the project-wide logging conventions. Interim levels:
 
 | Scenario                      | Level | Message                                                                                       |
 | ----------------------------- | ----- | --------------------------------------------------------------------------------------------- |
@@ -132,10 +132,10 @@ Recovery guidance in ERROR messages distinguishes three failure modes:
 
 ### Consequences
 
-- Good, because operators pull a new image and restart — schema updates are invisible in the happy path
-- Good, because all-or-nothing transactions mean a failed migration leaves the database untouched — pin the old image to recover
+- Good, because operators pull a new image and restart: schema updates are invisible in the happy path
+- Good, because all-or-nothing transactions mean a failed migration leaves the database untouched: pin the old image to recover
 - Good, because schema-ahead detection catches stale-image deployments with a clear message instead of cryptic SQL errors
-- Good, because ephemeral migration connection maintains the RLS security boundary — schema-owner privileges never exist during request serving
+- Good, because ephemeral migration connection maintains the RLS security boundary: schema-owner privileges never exist during request serving
 - Good, because advisory lock makes concurrent container starts safe by default
 - Bad, because custom migration runner (~60–80 lines) couples to sqlx's `_sqlx_migrations` table schema — must be verified on sqlx version bumps
 - Bad, because `-- no-transaction` migrations (enum ADD VALUE, CONCURRENTLY indexes) run outside the batch and cannot be rolled back atomically with the rest — a failed no-tx migration leaves transactional migrations committed, requiring manual intervention (distinct recovery guidance emitted at ERROR level)
@@ -143,9 +143,9 @@ Recovery guidance in ERROR messages distinguishes three failure modes:
 
 ### Semver and release-notes implications
 
-Pre-v1.0: schema is freely mutable (existing convention). Migrations are transparent — users auto-update and the app handles it.
+Pre-v1.0: schema is freely mutable (existing convention). Migrations are transparent. Users auto-update and the app handles it.
 
-Post-v1.0: migrations that are purely additive (new tables, new columns with defaults, new indexes) are MINOR bumps. Destructive migrations (column drops, type changes, data reshaping) are MAJOR bumps. The migration itself runs transparently in both cases — the semver signal and release notes communicate the impact, not the runtime.
+Post-v1.0: migrations that are purely additive (new tables, new columns with defaults, new indexes) are MINOR bumps. Destructive migrations (column drops, type changes, data reshaping) are MAJOR bumps. The migration itself runs transparently in both cases. The semver signal and release notes communicate the impact, not the runtime.
 
 Auto-update tools (Watchtower, Renovate) surface version changes. Changelogs (generated by `release-please`) document migration impact. The app itself does not alarm the user — it just works.
 
@@ -163,7 +163,7 @@ Auto-update tools (Watchtower, Renovate) surface version changes. Changelogs (ge
 
 `crc = "3"` added as a direct dependency — promoted from transitive (via sqlx) because the advisory lock ID computation requires `CRC_32_ISO_HDLC` to match sqlx's internal lock ID formula. `sqlx` (already present) provides `Migrator`, `Migration`, and `PgPool`.
 
-Future: [UNK-299](https://linear.app/unkos/issue/UNK-299) tracks potential extraction as a standalone crate once battle-tested.
+Future: the evaluation of extracting batch migration runner as public crate tracks potential extraction as a standalone crate once battle-tested.
 
 ### Patterns to follow
 
@@ -188,7 +188,7 @@ Future: [UNK-299](https://linear.app/unkos/issue/UNK-299) tracks potential extra
 | ------------------------ | -------- | ------- | ------------------------------- |
 | `DATABASE_URL_MIGRATION` | Yes      | —       | Schema-owner DSN for migrations |
 
-No other new env vars. `lock_timeout` is hardcoded at 30s (interim, pending [UNK-296](https://linear.app/unkos/issue/UNK-296)).
+No other new env vars. `lock_timeout` is hardcoded at 30s (interim, pending the database lock and timeout strategy).
 
 ### Migration steps
 
@@ -196,7 +196,7 @@ Migration rollup PR #333 (merged 2026-05-26) consolidated 27 migrations into `20
 
 Deployment sequence:
 
-1. ~~PR #333 (migration rollup) merges~~ — done (merged 2026-05-26)
+1. ~~PR #333 (migration rollup) merges~~: done (merged 2026-05-26)
 2. This ADR's implementation PR merges
 3. Staging adds `DATABASE_URL_MIGRATION` to its compose env
 4. Next image pull auto-migrates — no manual `sqlx migrate run` ever again
@@ -214,7 +214,7 @@ Deployment sequence:
 - [ ] `DATABASE_URL_MIGRATION` unset: startup fails with `missing required environment variable: DATABASE_URL_MIGRATION`
 - [ ] `DATABASE_URL_MIGRATION` invalid credentials: startup fails with clear authentication error (not generic connection failure)
 - [ ] `lock_timeout` effective: verify migration connection has `lock_timeout = '30s'` via `SHOW lock_timeout` in test
-- [ ] Concurrent starts: two processes starting simultaneously — advisory lock serialises, both succeed, no duplicate migration rows
+- [ ] Concurrent starts: two processes starting simultaneously, advisory lock serialises, both succeed, no duplicate migration rows
 - [ ] Ephemeral pool: migration pool is dropped before runtime pools are created (verify by connection count or pool lifecycle logging at DEBUG)
 - [ ] `-- no-transaction` migration: a migration with the marker runs outside the batch, after the batch commits
 - [ ] `-- no-transaction` migration failure: startup fails with ERROR distinguishing this from batch failure — message indicates transactional migrations already committed and "pin old image" alone does not restore the database; operator must manually revert the partial no-tx change
@@ -227,7 +227,7 @@ Deployment sequence:
 - Good, because matches self-hosted OSS conventions (Gitea, Immich, Kavita, Paperless-ngx)
 - Good, because eliminates the class of outage that motivated this ADR
 - Neutral, because operators who want pre-migration review can check changelogs before pulling the new image
-- Bad, because no escape hatch for operators who want manual control — but no such operator exists in the target audience
+- Bad, because no escape hatch for operators who want manual control, but no such operator exists in the target audience
 
 ### Auto-migrate with opt-out
 
@@ -244,7 +244,7 @@ Deployment sequence:
 
 ### All-or-nothing batch transaction
 
-- Good, because failure leaves DB untouched — pin old image to recover
+- Good, because failure leaves DB untouched: pin old image to recover
 - Good, because PostgreSQL transactional DDL makes this reliable
 - Good, because fills a gap in the sqlx ecosystem (no existing solution, [sqlx #3770](https://github.com/launchbadge/sqlx/discussions/3770))
 - Neutral, because ~60–80 lines of custom runner code
@@ -266,7 +266,7 @@ Deployment sequence:
 
 ## More Information
 
-> Superseded — see the banner at the top of this file. The notes below are
+> Superseded, see the banner at the top of this file. The notes below are
 > retained as part of the historical record.
 
 **Restart-loop behaviour**: with `restart: unless-stopped` (Docker) or `restartPolicy: Always` (Kubernetes), a persistent migration failure causes the container to hammer Postgres in a restart loop. The ERROR log message includes recovery guidance to break the loop by pinning the previous image tag. Future enhancement: exponential backoff on repeated migration failure (not in scope for this ADR).
@@ -278,13 +278,13 @@ Deployment sequence:
 **Revisit conditions:**
 
 - If sqlx merges [#3770](https://github.com/launchbadge/sqlx/discussions/3770) (batch transaction mode), evaluate replacing the custom runner with the upstream feature
-- If [UNK-299](https://linear.app/unkos/issue/UNK-299) evaluation is positive, extract the runner as a standalone crate
-- If [UNK-296](https://linear.app/unkos/issue/UNK-296) (lock strategy ADR) changes the recommended `lock_timeout`, update the hardcoded 30s default
-- If [UNK-297](https://linear.app/unkos/issue/UNK-297) (logging conventions ADR) changes level semantics, update the logging table
+- If the evaluation of extracting batch migration runner as public crate evaluation is positive, extract the runner as a standalone crate
+- If the database lock and timeout strategy (lock strategy ADR) changes the recommended `lock_timeout`, update the hardcoded 30s default
+- If the project-wide logging conventions (logging conventions ADR) changes level semantics, update the logging table
 
 **Linear issues:**
 
-- [UNK-296](https://linear.app/unkos/issue/UNK-296) — ADR: database lock and timeout strategy
-- [UNK-297](https://linear.app/unkos/issue/UNK-297) — ADR: project-wide logging conventions
-- [UNK-298](https://linear.app/unkos/issue/UNK-298) — review ADR cluster collectively
-- [UNK-299](https://linear.app/unkos/issue/UNK-299) — evaluate extracting batch migration runner as public crate
+- the database lock and timeout strategy, ADR: database lock and timeout strategy
+- the project-wide logging conventions, ADR: project-wide logging conventions
+- the collective review of the ADR cluster, review ADR cluster collectively
+- the evaluation of extracting batch migration runner as public crate, evaluate extracting batch migration runner as public crate

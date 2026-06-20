@@ -53,7 +53,7 @@ idle connections, and applies acquire timeouts; for a single-instance
 deployment a second pooling tier is redundant. It would add a component and a
 SPOF to solve a fan-out problem the deployment contract does not have, and a
 transaction-multiplexing tier would break the `LISTEN`/`NOTIFY`
-settings-reload path and the session-level migration lock — both first-party
+settings-reload path and the session-level migration lock, both first-party
 invariants.
 
 This does not constrain an operator: per the
@@ -63,7 +63,7 @@ with a pooler externally. Reverie simply does not ship or depend on one.
 
 ### Consequences
 
-- Good, because no new component and no new SPOF — this ratifies what already
+- Good, because no new component and no new SPOF, which ratifies what already
   ships rather than adding code.
 - Good, because `LISTEN`/`NOTIFY` settings reload, session-level advisory
   locks, and prepared-statement caching all keep working natively; an
@@ -76,7 +76,7 @@ with a pooler externally. Reverie simply does not ship or depend on one.
   [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md)'s
   concern, where pool sizing or an operator-owned pooler would be revisited.
 - Neutral, because choosing not to _bundle_ a pooling tier does not forbid one
-  — an operator may add one externally with no Reverie change.
+  — as an operator may add one externally with no Reverie change.
 
 ### Confirmation
 
@@ -93,20 +93,19 @@ Compose deployment.
 - Good, because session-mode connections preserve `LISTEN`/`NOTIFY`, advisory
   locks, and prepared statements.
 - Neutral, because pool sizing becomes the one knob to get right per host.
-- Bad, because it offers no built-in answer for a multi-instance operator —
-  deferred to the scale-stance ADR by design.
+- Bad, because it offers no built-in answer for a multi-instance operator, deferred to the scale-stance ADR by design.
 
-### B — separate connection-pooling tier
+### B: separate connection-pooling tier
 
 - Good, because it would let many app processes share a small Postgres
-  connection budget — valuable _if_ Reverie were a horizontally-scaled fleet.
+  connection budget, which is valuable _if_ Reverie were a horizontally-scaled fleet.
 - Bad, because a transaction-multiplexing tier breaks `LISTEN`/`NOTIFY` and
   session-level locks Reverie relies on; a session-mode tier gives up most of
   the multiplexing benefit that would justify it.
 - Bad, because it adds a bundled component and a SPOF to a single-instance
   deployment that gains nothing from it.
 
-### C — connection per request
+### C: connection per request
 
 - Bad, because per-request connect/auth/TLS handshake latency and Postgres
   backend churn make this strictly worse than a pool at any load; no upside.
@@ -114,11 +113,11 @@ Compose deployment.
 ## More Information
 
 - Pairs with [scale stance: stateless app, enable-don't-own HA](2026-06-08-scale-stance-stateless-enable-not-own.md)
-  — that ADR owns the multi-instance pool-sizing question this one defers.
-- [Migration model ADR](2026-06-02-hybrid-migration-entrypoints-and-role.md) —
+  — which owns the multi-instance pool-sizing question this one defers.
+- [Migration model ADR](2026-06-02-hybrid-migration-entrypoints-and-role.md):
   the single-instance contract and the `reverie_app` / `reverie_ingestion` /
   `reverie_readonly` role split the per-role pools follow.
-- [Persisted-settings ADR](2026-05-26-persisted-settings.md) — the
+- [Persisted-settings ADR](2026-05-26-persisted-settings.md): the
   `LISTEN`/`NOTIFY` reload path that a transaction-multiplexing tier would
   break.
 - Revisit trigger: if a multi-instance / HA topology becomes a _supported_

@@ -9,7 +9,7 @@ decision-makers: john
 
 ## Context and Problem Statement
 
-[UNK-163](https://linear.app/unkos/issue/UNK-163) replaces the
+The redeploy session-eviction work replaces the
 in-process `MemoryStore` with a Postgres-backed `SessionStore` so
 that sessions survive container restarts. The MVP staging deploy
 hits the LXC redeploy cycle frequently enough that forced re-login
@@ -61,7 +61,7 @@ must move in lockstep. Renovate Cargo PR #128 has been blocked on
 exactly this since 2026-04-26 — `axum-login@0.18.0` peer-pins
 `tower-sessions = "0.14"` and the upstream tracker
 [`maxcountryman/axum-login#320`](https://github.com/maxcountryman/axum-login/issues/320)
-is the unblock. [UNK-101](https://linear.app/unkos/issue/UNK-101)
+is the unblock. the coordinated upgrade task
 tracks the eventual coordinated bump and references this ADR for
 the framework-pair invariant.
 
@@ -74,13 +74,13 @@ schema sits under the project's standard sqlx migration pipeline
 rather than crate-bundled DDL.
 
 - `CREATE TABLE tower_sessions.session (id, data bytea, expiry_date)`
-  — schema and column names exactly match the
+  : schema and column names exactly match the
   `tower-sessions-sqlx-store@0.15.0` defaults so no
   `with_schema_name` / `with_table_name` override is needed at
   `PostgresStore::new` construction.
 - No RLS on the session table. `SessionStore::load` runs before
-  any auth context exists — the cookie's session id is the
-  bootstrap that resolves the user — so RLS-gating the session
+  any auth context exists: the cookie's session id is the
+  bootstrap that resolves the user, so RLS-gating the session
   lookup is chicken-and-egg. Access is enforced at the
   role-grant boundary instead.
 - `reverie_app` gets full DML on `tower_sessions.session`.
@@ -119,7 +119,7 @@ the contract:
 
 ## Consequences
 
-- Good — sessions survive backend restarts. Eliminates the LXC
+- Good: sessions survive backend restarts. Eliminates the LXC
   redeploy → forced re-login friction that motivated the swap.
 - Good — column-scoped grant on `reverie_readonly` lets the
   diagnostic role do session-count queries without exposing
@@ -129,7 +129,7 @@ the contract:
   recorded here and inline at `backend/Cargo.toml`. Future
   agents and contributors do not have to re-discover the pairing
   rule.
-- Bad — adds a new Cargo dependency to the runtime tree.
+- Bad: adds a new Cargo dependency to the runtime tree.
   `tower-sessions-sqlx-store` is a thin wrapper around the
   storage layer; the maintenance burden is small but non-zero.
 - Bad — coupled version bumps. `tower-sessions` 0.14 → 0.15 is
@@ -137,8 +137,8 @@ the contract:
   `tower-sessions`, `tower-sessions-sqlx-store`,
   `tower-sessions-core`, and the downstream `axum-login`
   consumer. The coordination cost is real and tracked under
-  UNK-101.
-- Neutral — no production migration of existing session data.
+  the coordinated upgrade task.
+- Neutral: no production migration of existing session data.
   The MemoryStore was always restart-eviction by definition, so
   the swap is a strict improvement; no users had a "long-lived"
   session under the old store to migrate.
@@ -146,7 +146,7 @@ the contract:
 ## Alternatives Considered
 
 - **Stick with `MemoryStore`.** Rejected — does not solve the
-  redeploy-eviction problem that motivated UNK-163.
+  redeploy-eviction problem that motivated the session-eviction work.
 - **Roll a hand-written sqlx-backed `SessionStore` impl.**
   Rejected — `SessionStore` is a 4-method trait, but the
   serialization, expiry sweep, and SQL upsert semantics are non-
@@ -167,26 +167,26 @@ the contract:
   bundled DDL with project-managed DDL fragments the migration
   history and complicates rollback semantics.
 - **Defer the Postgres swap until `tower-sessions` 0.15 lands.**
-  Rejected — the redeploy-eviction friction is concrete today,
+  Rejected: the redeploy-eviction friction is concrete today,
   the 0.15 bump is blocked on
   [`axum-login#320`](https://github.com/maxcountryman/axum-login/issues/320)
-  with no projected timeline. UNK-101 captures the upgrade path
+  with no projected timeline. The coordinated upgrade task captures the upgrade path
   without blocking the current need.
 
 ## More Information
 
-- [UNK-163](https://linear.app/unkos/issue/UNK-163) — the work
+- The redeploy session-eviction work:
   this ADR records the dependency decision for
-- [UNK-101](https://linear.app/unkos/issue/UNK-101) — coordinated
+- the coordinated upgrade task: coordinated
   `tower-sessions` 0.14 → 0.15 bump, blocked on
   `axum-login@0.18.0` peer-pin
 - [`adr/2026-05-04-greptile-trial.md`](../2026-05-04-greptile-trial.md)
-  — Greptile's "No new direct dependencies without an ADR" rule
+  — as Greptile's "No new direct dependencies without an ADR" rule
   flagged the original PR #180 missing this ADR
 - `backend/Cargo.toml:39-44` — inline pin rationale, cross-
   references this ADR
 - `backend/migrations/20260526000000_initial_schema.up.sql`
-  — the schema + grants this ADR ratifies (tower_sessions schema section)
+  : the schema + grants this ADR ratifies (tower_sessions schema section)
 - `tower-sessions` upstream:
   <https://github.com/maxcountryman/tower-sessions>
 - `tower-sessions-sqlx-store` upstream:

@@ -15,7 +15,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Step 11 of the Reverie blueprint (UNK-80) introduces the first
+Step 11 of the Reverie blueprint (the API conventions work) introduces the first
 JSON REST surface a browser will consume: `/api/books`,
 `/api/books/{id}`, `/api/works/{id}`, plus search, shelves, series,
 manifest metadata, users, and persisted settings across six
@@ -62,7 +62,7 @@ serde attribute that would otherwise be the load-bearing line in
 every handler. The cost is one `eslint-plugin-camelcase` carve-out
 on the frontend's API client surface.
 
-### Date format — RFC 3339
+### Date format: RFC 3339
 
 Timestamps serialise as RFC 3339 strings (e.g.
 `"2026-05-22T13:42:00.123Z"`). Backend uses the `time` crate
@@ -159,7 +159,7 @@ breaks JSON Merge Patch (RFC 7396) semantics in 11c where
 unchanged". The existing `User` struct in `backend/src/models/`
 already follows this pattern (no `skip_serializing_if` anywhere).
 
-### Pagination model — opaque base64url cursor
+### Pagination model: opaque base64url cursor
 
 `/api/books` and every list endpoint paginates with cursors, not
 offsets. Cursors are opaque base64url-encoded payloads carrying
@@ -198,7 +198,7 @@ frontend's react-query infinite-query helper consumes a body
 field with less ceremony than a parsed Link header. The two are
 guaranteed to carry the same information; either is sufficient.
 
-### CSRF defense — OWASP synchronizer token pattern (CHANGED)
+### CSRF defense: RFC 8288 CSRF defense: OWASP synchronizer token pattern (CHANGED)
 
 `SameSite=Lax` cookies alone are insufficient per the OWASP CSRF
 prevention cheat sheet (cited as P0 reading in the Sub-phase 11a
@@ -250,7 +250,7 @@ existing cookie-authed mutating endpoints (`POST /api/enrichment/*`,
 `POST /api/tokens`) in dev between merge of token-gen and merge
 of frontend reader.
 
-### Existence-not-leaked — 404 (not 403) when RLS hides a row
+### Existence-not-leaked: 404 (not 403) when RLS hides a row
 
 When a request targets a resource the user lacks RLS visibility
 on (`GET /api/books/{id}` where the manifestation row is filtered
@@ -266,7 +266,7 @@ table has no RLS, so the handler must explicitly gate on whether
 the user can see ≥1 `manifestation` for the work, returning 404
 when zero are visible. Tested explicitly for child accounts.
 
-### Mutating-verb body shape — RFC 7396 (JSON Merge Patch)
+### Mutating-verb body shape: RFC 7396 (JSON Merge Patch)
 
 `PATCH` endpoints accept RFC 7396 JSON Merge Patch bodies. A
 missing key means "leave unchanged"; an explicit `null` means
@@ -301,7 +301,7 @@ or its `updated_at`).
 convention is fixed here so 11d's shelf-reorder can implement it
 without re-litigating.
 
-### Content negotiation — RFC 9110 §12
+### Content negotiation: RFC 9110 §12
 
 `Accept: application/json` is the default for the API surface.
 Errors emit `application/problem+json`. OPDS routes remain on
@@ -312,7 +312,7 @@ content negotiation, the handler picks it up at that point.
 
 ## Consequences
 
-- **Good** — every convention is an IETF or OWASP standard. New
+- **Good**: every convention is an IETF or OWASP standard. New
   contributors and external integrators find every shape decision
   already grounded in a public spec; reviewer ceremony around
   "why this shape" collapses.
@@ -323,11 +323,11 @@ content negotiation, the handler picks it up at that point.
 - **Good** — the migration from `{"error": "<msg>"}` to RFC 7807
   is the only inherited-divergence-to-standard move; it is
   surgical (single `IntoResponse` impl + a `test_support` helper).
-- **Good** — adopting the synchronizer token during the
+- **Good**: adopting the synchronizer token during the
   greenfield phase is cheap. Retrofitting after production
   cookie-authed mutation traffic existed would be a months-long
   rollout.
-- **Bad** — RFC 7807 migration breaks every existing test that
+- **Bad**: RFC 7807 migration breaks every existing test that
   asserts `body["error"]`. The `assert_problem` helper collapses
   the diff but the PR still touches several existing test files
   (auth, ingestion, enrichment, metadata, tokens). Sub-phase 11a's
@@ -350,7 +350,7 @@ content negotiation, the handler picks it up at that point.
   `Result<Query<T>, QueryRejection>` (`axum_extra`) and `?`-propagate, so a
   malformed query returns `application/problem+json`
   (`type` `.../malformed-query`, HTTP 400), never axum's plaintext 400.
-- OPDS query handlers (out of scope per §"Content negotiation" — their feeds
+- OPDS query handlers (out of scope per §"Content negotiation": their feeds
   stay `application/atom+xml`) return the same problem+json on a malformed
   query via their existing `Result<_, AppError>` path, not by this ADR.
 
@@ -401,7 +401,7 @@ negligible.
 
 Simpler client code: `?page=N&size=20`.
 
-Rejected on correctness grounds — Reverie's enrichment pipeline
+Rejected on correctness grounds: Reverie's enrichment pipeline
 writes asynchronously, so the row count of the `manifestations`
 table shifts mid-scroll. Offset pagination would display
 duplicates and skip rows under that workload. Cursor is the
@@ -412,7 +412,7 @@ correct answer.
 Treat the API as if it were a public API: require `Authorization:
 Bearer <token>` on every request, skip CSRF entirely.
 
-Rejected — the browser UI uses cookie sessions for the same
+Rejected: the browser UI uses cookie sessions for the same
 reason the existing `/auth/login` and `/auth/me` flows do
 (OIDC-driven login, no per-request token management on the
 client side). Hybrid stacks need browser-CSRF defense for the
@@ -420,7 +420,7 @@ cookie surface AND token-auth for the API client surface. We
 ship CSRF for browser cookies; bearer tokens exist on a separate
 endpoint set (`/api/tokens` issues device tokens; those endpoints
 sit behind `BasicOnly`/`Bearer` extractors that bypass the cookie
-session entirely and thus don't need CSRF — verified in
+session entirely and thus don't need CSRF, verified in
 [`backend/src/auth/middleware.rs`](../backend/src/auth/middleware.rs)).
 
 ### Custom problem-type host (not `reverie.example`)
@@ -437,12 +437,12 @@ their slugs.
 
 ## More Information
 
-- Revisit trigger — the query-rejection invariant above is review-enforced;
+- Revisit trigger: the query-rejection invariant above is review-enforced;
   a repo-wide lint guard (deliberately out of scope for any single
-  convention) is tracked in UNK-431.
+  convention) is tracked in the API linting task.
 - Parent (security stance):
   [`project_open_source_security_stance.md`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md)
-  — threat model is the multi-user exposed instance.
+  : threat model is the multi-user exposed instance.
 - Industry-standard default principle:
   [`feedback_industry_standard_default.md`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md).
 - IETF specs cited: RFC 7807 (Problem Details),
@@ -453,4 +453,4 @@ their slugs.
 - Implementation plan ingest:
   `.claude/PRPs/plans/library-ui.plan.md` (Sub-phase 11a Tasks
   1, 1b, 1c).
-- Linear: [UNK-80](https://linear.app/unkos/issue/UNK-80).
+- Tracker: the Step 11 API conventions work

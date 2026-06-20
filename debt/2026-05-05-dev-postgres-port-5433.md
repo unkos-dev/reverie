@@ -4,7 +4,7 @@ surfaces: [developer, server-operator]
 adopted: 2026-05-05
 adopted-because: Coder workspace's shared-postgres container occupies host port 5432; project compose used 5433 to coexist; recognised as debt 2026-05-05
 lift-when-class: external-standard
-lift-when: UNK-169 (revert to OSS-convention 5432) merged to main
+lift-when: the postgres port revert task (revert to OSS-convention 5432) merged to main
 ---
 
 # Dev postgres host port 5433
@@ -60,7 +60,7 @@ The right shape:
 
 ## Lift conditions
 
-[UNK-169](https://linear.app/unkos/issue/UNK-169) — revert host port
+The postgres port revert task: revert host port
 to `5432`, update connection-string examples, add a one-line README
 note for the host-collision case. Cross-repo coordination with the
 Coder workspace template (homelab repo) for the workspace-side
@@ -75,7 +75,7 @@ When that PR merges:
 
 ## Related
 
-- [UNK-169](https://linear.app/unkos/issue/UNK-169) — the revert
+- The postgres port revert task: the revert
   ticket (lift trigger)
 - `docker/compose.dev.yml` — workaround site
 - `backend/CLAUDE.md` — connection-string examples that will need

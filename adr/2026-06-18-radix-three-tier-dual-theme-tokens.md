@@ -13,7 +13,7 @@ informed: "Reverie contributors"
 
 Reverie's frontend renders in both a light and a dark theme, and every text and
 UI-control role must meet WCAG 2.2 AA contrast in each. Achieving that with
-hand-picked per-theme hex values means tuning — and re-tuning — each value by
+hand-picked per-theme hex values means tuning (and re-tuning) each value by
 hand and re-checking its contrast against every surface it lands on; the two
 themes drift apart as values are adjusted independently, and the set of one-off
 color tokens grows without bound. The system also needs raw color confined to a
@@ -28,7 +28,7 @@ decorative color cannot leak into UI chrome?
 
 ## Decision Drivers
 
-- Light and dark must derive from one source and stay in lockstep — no
+- Light and dark must derive from one source and stay in lockstep, with no
   independently hand-maintained second palette.
 - WCAG 2.2 AA contrast for text and non-text UI roles, guaranteed by
   construction rather than per-value review.
@@ -42,16 +42,16 @@ decorative color cannot leak into UI chrome?
 
 - Radix Colors (`generateRadixColors`) — generated 12-step perceptual scales,
   consumed through two semantic tiers, with a sealed atmosphere tier.
-- Radix Themes — the Radix component library with its own theming.
+- Radix Themes: the Radix component library with its own theming.
 - Hand-tuned per-theme hex ramps.
 
 ## Decision Outcome
 
 Chosen option: **Radix Colors generated scales consumed through a three-tier
-contract — generated primitives, a semantic role layer, and a sealed atmosphere
+contract: generated primitives, a semantic role layer, and a sealed atmosphere
 tier**, because it satisfies every driver at once. The generator produces matched light and dark 12-step
 scales from the same anchors, with per-step roles whose contrast holds by
-construction — so AA is structural and the two themes cannot drift — and its
+construction, so AA is structural and the two themes cannot drift, and its
 output is plain CSS custom properties, vendored as a static file, so there is no
 runtime dependency and nothing to fetch.
 
@@ -77,12 +77,12 @@ tokens.
 
 ### Consequences
 
-- Good, because contrast for each role holds by construction in both themes — no
+- Good, because contrast for each role holds by construction in both themes: no
   per-value AA bookkeeping and no light/dark drift.
 - Good, because raw color is confined to one generated file, lint-enforceable,
   and the rest of the UI is `var()` references to named roles.
-- Good, because there is no runtime dependency — the generated scales are static
-  CSS, CSP-clean — and shadcn components re-skin with no per-component work.
+- Good, because there is no runtime dependency: the generated scales are static
+  CSS, CSP-clean, and shadcn components re-skin with no per-component work.
 - Bad, because changing or adding a color requires regenerating the scales (no
   quick one-off hex edit), and the generated primitive file is large and not
   meant to be hand-edited.
@@ -95,7 +95,7 @@ Stylelint `color-no-hex` confines raw hex to the generated primitive file and th
 art-directed atmosphere file; the Tier 2 semantic file is hex-banned. A contract
 test asserts every semantic token resolves to an existing primitive and that
 role-pair contrasts meet their AA floor. Chrome consuming `--atm-*` is caught in
-review — atmosphere is read only by art-directed surfaces.
+review: atmosphere is read only by art-directed surfaces.
 
 ## Pros and Cons of the Options
 
@@ -103,7 +103,7 @@ review — atmosphere is read only by art-directed surfaces.
 
 - Good, because step number is a fixed UI role with contrast guaranteed by
   construction, and both themes come from one generation.
-- Good, because the output is plain CSS custom properties — vendorable, no runtime
+- Good, because the output is plain CSS custom properties (vendorable, no runtime)
   dependency, framework-agnostic.
 - Neutral, because it introduces a regeneration step (output vendored).
 - Bad, because it is color only; focus-ring and other remedies are layered on top
@@ -113,14 +113,14 @@ review — atmosphere is read only by art-directed surfaces.
 
 - Good, because it bundles a complete themed component system.
 - Bad, because it imposes its own components and styling model on top of the
-  existing shadcn/Tailwind UI — far more than a color foundation needs, and a
+  existing shadcn/Tailwind UI, far more than a color foundation needs, and a
   large surface to adopt and override.
 - Bad, because it is a runtime dependency, against the CSP-clean / vendored-color
   driver.
 
 ### Hand-tuned per-theme hex ramps
 
-- Good, because it is maximally direct — any value can be set by hand.
+- Good, because it is maximally direct: any value can be set by hand.
 - Bad, because each value's contrast must be checked and re-checked by hand per
   surface; the two themes drift as values change independently; the set of
   one-off tokens grows without bound.

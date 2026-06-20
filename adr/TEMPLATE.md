@@ -19,7 +19,7 @@ informed: "{everyone kept up-to-date}"
 issues/tickets/prior ADRs. Enough context that a first-time reader needs no
 follow-up.}
 
-<!-- Optional — remove if unused -->
+<!-- Optional, remove if unused -->
 
 ## Decision Drivers
 
@@ -32,7 +32,7 @@ follow-up.}
 
 ## Decision Outcome
 
-Chosen option: "{option}", because {justification — reference drivers and tradeoffs}.
+Chosen option: "{option}", because {justification: reference drivers and tradeoffs}.
 
 ### Consequences
 
@@ -42,11 +42,11 @@ Chosen option: "{option}", because {justification — reference drivers and trad
 
 ### Confirmation
 
-{How compliance with this decision is or was confirmed — the load-bearing
+{How compliance with this decision is or was confirmed: the load-bearing
 invariant(s), not a build checklist. One to three lines, e.g. "Enforced by
 clippy lint X" or "No raw SQL outside `src/db/`." Remove if none.}
 
-<!-- Optional — remove if unused -->
+<!-- Optional, remove if unused -->
 
 ## Pros and Cons of the Options
 
@@ -56,7 +56,7 @@ clippy lint X" or "No raw SQL outside `src/db/`." Remove if none.}
 - Neutral, because {argument}
 - Bad, because {argument}
 
-<!-- Optional — remove if unused -->
+<!-- Optional, remove if unused -->
 
 ## More Information
 

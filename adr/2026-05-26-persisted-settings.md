@@ -25,7 +25,7 @@ Related: [JSON API conventions](2026-05-22-json-api-conventions.md) (error envel
 - **Single-process today, multi-worker plausible**: the reload mechanism must not architecturally preclude horizontal scaling.
 - **Strongly typed codebase**: Rust + sqlx compile-time checks; settings should be schema-enforced, not stringly-typed.
 - **Minimal restart surface**: operators shouldn't restart for enrichment tuning, format reordering, or cover limits.
-- **Industry alignment**: follow patterns proven in production at PostgREST, Hasura, Grafana, GitLab — not bespoke invention.
+- **Industry alignment**: follow patterns proven in production at PostgREST, Hasura, Grafana, GitLab, not bespoke invention.
 
 ## Considered Options
 
@@ -36,14 +36,14 @@ Related: [JSON API conventions](2026-05-22-json-api-conventions.md) (error envel
 
 ### Precedence
 
-1. **Env beats DB (12-factor)** — env is deploy override, DB is runtime knob
-2. **DB beats env (UI-first)** — env provides initial seed; once operator sets via UI, DB value wins
+1. **Env beats DB (12-factor)**: env is deploy override, DB is runtime knob
+2. **DB beats env (UI-first)**: env provides initial seed; once operator sets via UI, DB value wins
 
 ### Reload mechanism
 
-1. **RwLock + write-through** — PUT writes DB + updates in-process RwLock; stale in other processes
-2. **RwLock + periodic poll** — poll DB every N seconds; bounded staleness
-3. **LISTEN/NOTIFY + local RwLock cache** — zero-poll propagation to all connected processes; fallback periodic poll for connection-drop resilience
+1. **RwLock + write-through**: PUT writes DB + updates in-process RwLock; stale in other processes
+2. **RwLock + periodic poll**: poll DB every N seconds; bounded staleness
+3. **LISTEN/NOTIFY + local RwLock cache**: zero-poll propagation to all connected processes; fallback periodic poll for connection-drop resilience
 
 ## Decision Outcome
 
@@ -59,11 +59,11 @@ Chosen because: Reverie's audience manages via browser UI. If an operator sets a
 
 Env-beats-DB rejected because: while 12-factor canonical, it optimises for the wrong audience. Kubernetes operators who pin via env can simply not expose those fields in the UI (the "restart-required" classification handles this naturally). Self-hosting operators using Docker Compose or bare-metal expect the UI to be authoritative.
 
-**Seed behaviour** (deferred to [UNK-294](https://linear.app/unkos/issue/UNK-294)): on first startup (empty `settings` row), the migration inserts defaults. A one-time seed function in `services/settings.rs` will run post-migration and populate columns from current env values where the column is still at its migration default. This gives env vars "first boot" authority without ongoing override semantics. Not needed pre-0.1.0 — no real operators to break yet; migration defaults are reasonable starting values.
+**Seed behaviour** (deferred to the settings seeding implementation): on first startup (empty `settings` row), the migration inserts defaults. A one-time seed function in `services/settings.rs` will run post-migration and populate columns from current env values where the column is still at its migration default. This gives env vars "first boot" authority without ongoing override semantics. Not needed pre-0.1.0 — no real operators to break yet; migration defaults are reasonable starting values.
 
 ### Reload: LISTEN/NOTIFY + local RwLock cache
 
-Chosen because: this is the PostgREST/Hasura pattern — proven at scale, zero per-request DB cost, instant propagation to all connected processes, and architecturally ready for multi-worker without code changes.
+Chosen because: this is the PostgREST/Hasura pattern, proven at scale, zero per-request DB cost, instant propagation to all connected processes, and architecturally ready for multi-worker without code changes.
 
 Shape:
 
@@ -98,8 +98,8 @@ The PUT response includes a `restart_required: bool` flag when the request mutat
 - Good, because type safety is preserved end-to-end (Rust struct ↔ typed PG columns ↔ TypeScript interface)
 - Good, because 60s fallback poll guarantees eventual consistency even after PG connection blip
 - Bad, because adding a new setting requires a migration (acceptable: migrations auto-run on startup)
-- Bad, because env vars lose authority after first boot — operators must use UI or direct DB access to change values post-seed
-- Neutral, because restart-required fields still need process restart — but this matches industry norms (Grafana, GitLab)
+- Bad, because env vars lose authority after first boot: operators must use UI or direct DB access to change values post-seed
+- Neutral, because restart-required fields still need process restart, but this matches industry norms (Grafana, GitLab)
 
 ## Per-user settings (future path)
 
@@ -118,7 +118,7 @@ This ADR covers **system/admin settings** only. Per-user settings (reading prefe
 - Good, because one `SELECT *` loads everything — trivial `FromRow`
 - Good, because `NOT NULL DEFAULT` auto-populates new settings without backfill
 - Good, because migrations are self-documenting
-- Neutral, because table gets wide (20+ columns eventually) — but single-row tables are tiny regardless
+- Neutral, because table gets wide (20+ columns eventually), but single-row tables are tiny regardless
 - Bad, because adding a setting requires a migration (3-line `ALTER TABLE ADD COLUMN`)
 
 ### Key-value table (jsonb)
@@ -134,7 +134,7 @@ This ADR covers **system/admin settings** only. Per-user settings (reading prefe
 
 - Good, because aligns with Kubernetes ConfigMap pattern
 - Good, because deploy-time pins can't be accidentally overridden via UI
-- Bad, because UI-set values silently ignored when env var present — surprising for self-hosting audience
+- Bad, because UI-set values silently ignored when env var present, which is surprising for self-hosting audience
 - Bad, because requires operators to understand env-var precedence model
 
 ### DB beats env (UI-first)

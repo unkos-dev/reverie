@@ -19,7 +19,7 @@ enforced any of this: no automated check, no defined manual cadence, no
 PR-time prompt. The invariant could drift from the shipped UI undetected.
 
 How should accessibility be enforced so the invariant is load-bearing rather
-than aspirational — what runs automatically, what stays a human audit, when
+than aspirational: what runs automatically, what stays a human audit, when
 does the human audit happen, and how is the one accepted carve-out documented
 so the gate does not simply mask it?
 
@@ -28,7 +28,7 @@ so the gate does not simply mask it?
 - The gate must be reproducible by contributors, not just in CI. The dev
   workspace is ARM64.
 - Automated tooling cannot catch everything a11y (keyboard order,
-  screen-reader semantics, focus management, motion budget) — the process must
+  screen-reader semantics, focus management, motion budget), the process must
   name what is left to humans, and when.
 - The accepted gold carve-out must be expressed precisely enough that the gate
   still fails on genuine misuse (e.g. small-text gold on a non-CTA surface).
@@ -37,7 +37,7 @@ so the gate does not simply mask it?
 
 ## Considered Options
 
-- **agent-browser (CDP) + axe-core, with a documented allowlist** — drive a
+- **agent-browser (CDP) + axe-core, with a documented allowlist**: drive a
   Chromium-family browser over CDP, inject axe-core, gate on the result.
 - **`@axe-core/cli`** — the off-the-shelf axe CLI (selenium + chromedriver).
 - **`@axe-core/playwright`** — axe on top of Playwright-managed browsers.
@@ -61,10 +61,10 @@ Concretely:
 - **Accepted carve-out.** The single allowlisted violation is `color-contrast`
   on **large CTAs** (primary `data-slot="button"` `data-size="lg"`), per
   DESIGN.md §2. The allowlist (`frontend/scripts/a11y/allowlist.mjs`) matches on
-  element role read from the node HTML — **not** background colour, because the
+  element role read from the node HTML, **not** background colour, because the
   permitted button and the (then non-permitted) default badge rendered the
   identical gold background; bg colour cannot reliably separate allow from deny.
-  The badge has since been de-gilded (UNK-345), but role-keyed matching stays
+  The badge contrast has since been corrected, but role-keyed matching stays
   the correct shape. Every allowlist entry carries an inline rationale.
 - **Manual audit cadence.** A manual a11y pass is run **at every release tag**
   and **before any net-new view ships**. Any team member may perform and sign
@@ -84,7 +84,7 @@ Concretely:
   frontend-touching PR and reproducible locally on ARM64.
 - Good, because the carve-out is explicit and role-keyed, so the gate still
   fails on genuine misuse (the default Badge variant's cream-on-gold contrast
-  failed the gate rather than being masked — UNK-345, fixed in PR #434).
+  failed the gate rather than being masked (role-keyed matching is detailed in the accessibility fixes, fixed in PR #434).
 - Bad, because the gate currently covers only the design showcase; post-login
   views (Home/Library/Detail) need an authenticated session and are not yet
   scanned. They are added to the run targets as that becomes possible.
@@ -142,7 +142,7 @@ cannot be mistaken for "0 violations".
   required and is hard-coded in the runner.
 - Rollout: the gate shipped **advisory** (`continue-on-error` on the `a11y`
   job's gate step) while the showcase baseline contained one known, deliberately
-  un-allowlisted violation (the default Badge contrast, UNK-345). UNK-345 shipped
+  un-allowlisted violation (the default Badge contrast). This violation shipped
   (PR #434) and the gate passes, so `continue-on-error` was removed and the gate
   now **blocks**. The `### Confirmation` invariant (fails on non-allowlisted
   violations) holds at both the runner and CI-gate level.
@@ -150,5 +150,5 @@ cannot be mistaken for "0 violations".
   publishes a linux-arm64 driver), re-evaluate whether `@axe-core/cli` becomes
   viable as a simpler off-the-shelf replacement for the first-party runner.
 - Related: `frontend/DESIGN.md` §2 (Light-Gold Restriction Rule),
-  `frontend/PRODUCT.md` § Accessibility, UNK-268 (this work), UNK-345 (default
-  Badge contrast fix).
+  `frontend/PRODUCT.md` § Accessibility, the accessibility review process work,
+  and the default Badge contrast fix.

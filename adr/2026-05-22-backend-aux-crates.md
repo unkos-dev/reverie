@@ -11,7 +11,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Step 11 of the Reverie blueprint (UNK-80) adds a JSON REST API
+Step 11 of the Reverie blueprint (the API conventions work) adds a JSON REST API
 surface (see sibling
 [`2026-05-22-json-api-conventions.md`](2026-05-22-json-api-conventions.md))
 across six sub-phases (11a–11f). The implementation requires
@@ -132,7 +132,7 @@ updated ADR or per-PR justification.
 
 `subtle = "2.6.1"` is already in tree (was added when
 `auth/token.rs` adopted constant-time SHA-256 hex compare for
-the device-token verifier — see
+the device-token verifier: see
 [`backend/src/auth/token.rs:50-56`](../backend/src/auth/token.rs)).
 
 Sub-phase 11a Task 1c introduces the **second** consumer:
@@ -231,7 +231,7 @@ is the path of least resistance.
 ## More Information
 
 - [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md)
-  — defaults to standard-library / audited-crate idioms over
+  : defaults to standard-library / audited-crate idioms over
   hand-rolled primitives.
 - [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md)
   — handling of `cargo audit` findings on these new packages.
@@ -244,4 +244,4 @@ is the path of least resistance.
   (frontend dependency adoptions for Step 11).
 - Implementation plan: `.claude/PRPs/plans/library-ui.plan.md`
   (Sub-phase 11a Tasks 1c + 4; 11c Task 1).
-- Linear: [UNK-80](https://linear.app/unkos/issue/UNK-80).
+- Tracker: the Step 11 API conventions work.

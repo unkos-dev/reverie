@@ -23,7 +23,7 @@ abandoned on crates.io:
   months). Its `tower-sessions-core` dependency pins `^0.14`.
 
 These are two independent peer-pins that jointly block
-[UNK-101](https://linear.app/unkos/issue/UNK-101) — the `tower-sessions`
+The coordinated `tower-sessions` upgrade issue: the `tower-sessions`
 0.14 → 0.15 bump (Renovate PR
 [#128](https://github.com/unkos-dev/reverie/pull/128)). Removing one does not
 unblock the bump; the other still holds 0.14. `tower-sessions` 0.15 (released
@@ -32,7 +32,7 @@ picking up, and Renovate re-surfaces the blocked PR every sweep at an ongoing
 human-attention cost.
 
 By contrast, `tower-sessions` **core is healthy**: current (0.15.0), 73
-crates.io dependents — the de-facto axum session standard and the maintained
+crates.io dependents: the de-facto axum session standard and the maintained
 successor to the abandoned `async-session` / `axum-sessions` lineage. The rot
 is in the wrappers, not the primitive.
 
@@ -55,7 +55,7 @@ code on the maintained `tower-sessions` core?
 
 ## Decision Drivers
 
-- Unblock UNK-101 permanently, not contingent on two unresponsive upstreams.
+- Unblock the coordinated upgrade permanently, not contingent on two unresponsive upstreams.
 - Minimize abandoned / single-maintainer dependency surface on the
   auth-critical path — OpenSSF Scorecard `Maintained` signal and supply-chain
   hardening for an OSS, multi-user-exposed threat model.
@@ -80,7 +80,7 @@ Chosen option: **A1+A2**. Keep `tower-sessions` core on its maintained release
 line; delete `axum-login` and `tower-sessions-sqlx-store`; reimplement the thin
 slice Reverie uses as first-party code. This unblocks the 0.15 bump without
 depending on either abandoned wrapper and takes the maxcountryman dependency
-count on the auth path from four crates to one — the healthy one.
+count on the auth path from four crates to one: the healthy one.
 
 `axum-login` is replaced by session login / logout helpers on
 `tower_sessions::Session` (login = `cycle_id()` then persist `user_id` and
@@ -95,13 +95,13 @@ table.
 The session-table schema, its RLS-exemption, the role grants (`reverie_app`
 DML; `reverie_readonly` column-scoped `SELECT (id, expiry_date)`;
 `reverie_ingestion` none), and the `expiry_date` index are **unchanged and
-remain in force** — the first-party store targets the identical table, so the
+remain in force**: the first-party store targets the identical table, so the
 data-layer decisions from the superseded sqlx-store ADR are carried forward
 intact.
 
 ### Consequences
 
-- Good, because UNK-101 unblocks permanently: `tower-sessions` 0.15 lands
+- Good, because the coordinated upgrade unblocks permanently: `tower-sessions` 0.15 lands
   without waiting on an `axum-login` 0.19 or a `tower-sessions-sqlx-store`
   release that may never come.
 - Good, because the auth-critical path drops from four maxcountryman crates to
@@ -118,7 +118,7 @@ intact.
   store identity under axum-login's data key the new code will not read, so the
   deploy logs every user out a single time. Acceptable for a v0.x
   single-instance deployment.
-- Neutral, because there is no session-table migration — schema and grants are
+- Neutral, because there is no session-table migration: schema and grants are
   unchanged.
 
 ### Confirmation
@@ -131,12 +131,12 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
 
 ## Pros and Cons of the Options
 
-### A1+A2 — first-party on tower-sessions core
+### A1+A2: first-party on tower-sessions core
 
 - Good, because it unblocks 0.15 with no dependency on either abandoned
   wrapper.
 - Good, because it stays on the 73-dependent ecosystem standard for the hard
-  part — the session-lifecycle middleware.
+  part: the session-lifecycle middleware.
 - Good, because it reuses the session table, grants, index, and reaper Reverie
   already owns.
 - Neutral, because Reverie writes ~150–200 lines it did not before, mostly
@@ -144,7 +144,7 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
   `session_sweep.rs`).
 - Bad, because it owns security-critical session-lifecycle and store code.
 
-### F — axum-session (AscendingCreations)
+### F: axum-session (AscendingCreations)
 
 - Good, because it is actively maintained (0.20.1, 2026-05) and org-backed.
 - Bad, because it relocates the abandonment risk: ~13 dependents versus
@@ -153,11 +153,11 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
 - Bad, because it is a full migration onto an unfamiliar API for no functional
   gain; Reverie uses the most basic session slice.
 
-### G — fully first-party (drop core too)
+### G: fully first-party (drop core too)
 
 - Good, because it leaves zero third-party session crates.
-- Bad, because it hand-rolls the request/response session lifecycle — the exact
-  place session-fixation and save-race bugs live — replacing a healthy
+- Bad, because it hand-rolls the request/response session lifecycle: the exact
+  place session-fixation and save-race bugs live, replacing a healthy
   maintained crate. Highest own-security-code for the weakest marginal risk
   reduction.
 
@@ -170,14 +170,14 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
 
 ## More Information
 
-- [UNK-101](https://linear.app/unkos/issue/UNK-101) — the `tower-sessions`
+- The coordinated `tower-sessions` upgrade issue: the `tower-sessions`
   0.14 → 0.15 bump this decision unblocks. Implementation is tracked there and
   in `prp-plan` output under `.claude/PRPs/plans/`, not in this ADR.
 - Supersedes
   [`superseded/2026-05-08-tower-sessions-sqlx-store.md`](superseded/2026-05-08-tower-sessions-sqlx-store.md)
   — that ADR adopted `tower-sessions-sqlx-store` and explicitly rejected a
   hand-written store; the context changed when the store became the second pin
-  blocking UNK-101. Its session-table schema, grants, RLS-exemption, and
+  blocking the coordinated upgrade. Its session-table schema, grants, RLS-exemption, and
   expiry-index decisions are carried forward in the Decision Outcome above.
 - The 0.14 pin was tracked in `debt/2026-05-21-tower-sessions-0-14-pin.md`
   (since purged — `git log --diff-filter=D -- debt/` recovers it): this
@@ -191,7 +191,7 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
 - Revisit trigger: if maintaining the first-party session lifecycle proves
   error-prone (recurring session bugs), reconsider adopting a maintained
   middleware.
-- OWASP Session Management Cheat Sheet — the invariant set the first-party code
+- OWASP Session Management Cheat Sheet: the invariant set the first-party code
   must preserve (high-entropy CSPRNG id, rotation on login, `HttpOnly` /
   `SameSite=Lax`, idle expiry, server-side invalidation).
 - `tower-sessions` upstream:

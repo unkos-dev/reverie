@@ -12,11 +12,9 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 `validation_status` is the last Postgres enum still read into Rust as a
-raw `String`. Every sibling enum — `user_role`, `ingestion_status`,
-`enrichment_status`, `manifestation_format`, `api_cache_kind` — was
-migrated to a `sqlx::Type` Rust enum under
-[UNK-107](https://linear.app/unkos/issue/UNK-107) /
-[UNK-173](https://linear.app/unkos/issue/UNK-173). UNK-276 closes the
+raw `String`. Every sibling enum (`user_role`, `ingestion_status`,
+`enrichment_status`, `manifestation_format`, `api_cache_kind`) was
+migrated to a `sqlx::Type` Rust enum under the user role and ingestion status enum tasks. The validation status vocabulary task closes the
 series.
 
 The blocker is not the type machinery; it is a vocabulary collision
@@ -61,7 +59,7 @@ deferred here.
   codify it.
 - Name the value set correctly: the stored label should not imply a
   false semantic (see Decision Outcome).
-- Simplicity — no speculative schema for unbuilt product surfaces.
+- Simplicity: no speculative schema for unbuilt product surfaces.
 - Pre-release schema is freely mutable
   ([`project_schema_evolution`](../.claude/projects/-home-coder-reverie/memory/project_schema_evolution.md)),
   so a rename costs no production data backfill.
@@ -76,7 +74,7 @@ deferred here.
   `availability_status` (`clean | quarantined`) column for a curation
   surface.
 - **Issue-as-written variant** — rename `pending` → `clean` and add
-  `quarantined`, per UNK-276's original Option-A text.
+  `quarantined`, per the validation status vocabulary's original Option-A text.
 
 ## Decision Outcome
 
@@ -117,10 +115,10 @@ corrected now because the rename makes its current listing wrong. See
 - **Good** — the frontend union tightens from `z.string()` to a closed
   set, so an unaccounted-for backend enum change surfaces as a
   `ZodError` at the boundary, not silent UI drift.
-- **Bad** — touches ~12 seed/test SQL call sites writing
+- **Bad**: touches ~12 seed/test SQL call sites writing
   `'valid'::validation_status`; mechanical but spread across several
   test files.
-- **Neutral** — pre-release, so the rename needs no production data
+- **Neutral**: pre-release, so the rename needs no production data
   backfill (`ALTER TYPE RENAME VALUE` rewrites the label in place).
 
 ### Confirmation
@@ -138,11 +136,11 @@ and the frontend lint/test suite. The closing PR flips
 
 ### Option A — rename `valid` → `clean` (chosen)
 
-- Good — kills the storage↔domain drift at its root; identity
+- Good: kills the storage↔domain drift at its root; identity
   orchestrator mapping; correct naming of the value set; tightens the
   wire contract via a typed enum.
-- Bad — one migration plus ~12 seed/test call-site edits.
-- Neutral — pre-release, so no production backfill.
+- Bad: one migration plus ~12 seed/test call-site edits.
+- Neutral: pre-release, so no production backfill.
 
 ### Option B — adopt DB vocabulary as-is (`valid`)
 
@@ -154,9 +152,9 @@ and the frontend lint/test suite. The closing PR flips
 
 ### Option C — separate `availability_status` column
 
-- Good — cleanly separates ingestion validity from a curation surface
+- Good: cleanly separates ingestion validity from a curation surface
   if quarantine ever becomes a retained state.
-- Bad — speculative: no quarantine-as-state product surface exists today
+- Bad: speculative: no quarantine-as-state product surface exists today
   (quarantine = file deleted, no row). Adds schema + DTO + frontend for
   an unbuilt concept; violates simplicity-first. Gets its own ADR if the
   feature becomes real.
@@ -171,19 +169,16 @@ and the frontend lint/test suite. The closing PR flips
 ## More Information
 
 - Value-set extension (2026-06-11,
-  [UNK-312](https://linear.app/unkos/issue/UNK-312)): `failed` added for
-  "the validator itself could not run" — previously that outcome borrowed
+  the validation failure states task): `failed` added for
+  "the validator itself could not run": previously that outcome borrowed
   `degraded`, hiding validator crashes from operators. The four original
   values and their semantics are unchanged; `quarantined` remains absent.
 - Implementation plan (committed):
   `.claude/PRPs/plans/unk-276-validation-status.plan.md`.
 - Tracked debt:
   [`debt/2026-05-23-validation-status-untyped.md`](../debt/2026-05-23-validation-status-untyped.md).
-- Enum-series precedent: [UNK-107](https://linear.app/unkos/issue/UNK-107),
-  [UNK-173](https://linear.app/unkos/issue/UNK-173),
-  [UNK-108](https://linear.app/unkos/issue/UNK-108).
-- Step 11 umbrella: [UNK-80](https://linear.app/unkos/issue/UNK-80);
-  this issue [UNK-276](https://linear.app/unkos/issue/UNK-276).
+- Enum-series precedent: the user role and ingestion status enum tasks.
+- Step 11 umbrella: the API conventions work; this issue is the validation status vocabulary task.
 - Domain source enum: `backend/src/services/epub/mod.rs:177`
   (`ValidationOutcome`).
 - Operator-rationale-in-docs principle:

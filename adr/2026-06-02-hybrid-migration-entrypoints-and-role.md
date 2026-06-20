@@ -29,13 +29,12 @@ This ADR supersedes an earlier migration decision; see
 
 Related: [persisted settings ADR](2026-05-26-persisted-settings.md),
 [tower-sessions ADR](superseded/2026-05-08-tower-sessions-sqlx-store.md),
-[UNK-296](https://linear.app/unkos/issue/UNK-296) (lock/timeout strategy),
-[UNK-297](https://linear.app/unkos/issue/UNK-297) (logging conventions).
+the database lock/timeout strategy and project-wide logging conventions.
 
 ## Decision Drivers
 
 - **Least privilege.** The web process should hold no credential it does not need
-  at runtime — ideally none for schema management.
+  at runtime, ideally none for schema management.
 - **Migrations need only DDL + trusted extensions.** `pg_trgm` and `pgcrypto` are
   trusted (PG13+), installable by any non-superuser role with `CREATE` on the
   database; no migration performs a superuser-only operation. A dedicated
@@ -69,12 +68,12 @@ Related: [persisted settings ADR](2026-05-26-persisted-settings.md),
 
 1. **All-or-nothing batch** — all pending migrations in one `BEGIN`/`COMMIT`; any
    failure rolls the whole batch back.
-2. **Per-migration transactions** (sqlx default) — a failure leaves partial state.
-3. **Dry-run preflight** — run, verify, roll back, then run for real.
+2. **Per-migration transactions** (sqlx default): a failure leaves partial state.
+3. **Dry-run preflight**: run, verify, roll back, then run for real.
 
 ### Schema-version safety
 
-1. **Schema-ahead detection** — refuse startup if the database holds migrations
+1. **Schema-ahead detection**: refuse startup if the database holds migrations
    unknown to the binary.
 2. **No version check.**
 
@@ -93,7 +92,7 @@ Cluster superuser rejected: it places the highest-privilege credential in a
 long-lived process for no functional gain. Reusing a runtime role rejected: it
 collapses the privilege separation the architecture relies on.
 
-### Invocation — hybrid, out-of-band default (option 3)
+### Invocation: hybrid, out-of-band default (option 3)
 
 Both entrypoints delegate to one `db::run_migrations`. The shipped
 `docker-compose.yml` runs a one-shot `reverie-migrate` service, with the app
@@ -117,13 +116,13 @@ Even when it does not migrate, the app's startup retains the schema-ahead /
 checksum read check (below), so an app older than the database refuses to serve
 with a clear message instead of cryptic SQL errors.
 
-### Transaction semantics — all-or-nothing batch (option 1)
+### Transaction semantics: all-or-nothing batch (option 1)
 
 A custom runner wraps sqlx's embedded `Migrator`; all pending migrations execute
 in one `BEGIN`/`COMMIT`, and any failure rolls the batch back to the
 pre-migration state. This is the decisive operator-experience property: a
 partial failure (e.g. 3 of 5 applied) would leave the database in a state where
-neither the old nor the new image works, requiring manual SQL — with
+neither the old nor the new image works, requiring manual SQL. With
 all-or-nothing the operator pins the previous tag, restarts, and the app works
 because the database was never mutated. PostgreSQL transactional DDL makes this
 reliable.
@@ -138,11 +137,11 @@ review when a `-- no-transaction` migration is added.
 Per-migration and dry-run rejected: partial-state failure and doubled migration
 time respectively (see Pros and Cons).
 
-### Schema-version safety — bidirectional schema-divergence detection + checksum (option 1)
+### Schema-version safety: bidirectional schema-divergence detection + checksum (option 1)
 
 On startup the runner compares the binary's embedded migration list against
 `_sqlx_migrations`; if the database holds rows unknown to the binary, startup
-fails with a clear "schema is newer than this application — upgrade the image or
+fails with a clear "schema is newer than this application: upgrade the image or
 roll back the database" message. It also verifies each applied migration's stored
 checksum against the embedded file's SHA-384 hash, failing on mismatch and
 naming the offending version.
@@ -150,7 +149,7 @@ naming the offending version.
 In the out-of-band default (`REVERIE_AUTO_MIGRATE=false`) the application does not
 migrate, so at startup it instead runs a read-only schema check that is
 fail-closed in **both** directions: it refuses to serve when the database is ahead
-of the binary (as above) AND when the binary is ahead of the database — an
+of the binary (as above) AND when the binary is ahead of the database: an
 operator who deployed a new image but has not yet run `reverie migrate`. The
 schema-behind direction is the more common operator error and, left undetected,
 surfaces as scattered runtime SQL failures against missing columns rather than a
@@ -161,17 +160,17 @@ so this check is the only backstop there. The check is read-only (SELECT on
 ### Connection and concurrency
 
 The runner opens an ephemeral pool (max 1 connection), migrates, then drops it
-before runtime pools initialise — the migration identity holds no connection
+before runtime pools initialise: the migration identity holds no connection
 during request serving. Concurrent starts are serialised by a PostgreSQL
 advisory lock matching sqlx's internal lock ID, acquired via
 `pg_try_advisory_lock` in a bounded retry loop (~30s) rather than a blocking
 `pg_advisory_lock`; failure to acquire fails startup with a clear error. The
 ephemeral connection sets `lock_timeout=30s` to bound heavyweight lock waits — an
-interim default pending [UNK-296](https://linear.app/unkos/issue/UNK-296).
+interim default pending a project-wide database lock and timeout strategy.
 
 ### Logging
 
-Interim levels pending [UNK-297](https://linear.app/unkos/issue/UNK-297):
+Interim levels pending project-wide logging conventions:
 
 | Scenario                                     | Level | Message                                                                                    |
 | -------------------------------------------- | ----- | ------------------------------------------------------------------------------------------ |
@@ -185,10 +184,10 @@ Interim levels pending [UNK-297](https://linear.app/unkos/issue/UNK-297):
 | No-tx migration SQL failure                  | ERROR | `no-transaction migration failed: {version} ({name})` + no-tx recovery                     |
 | No-tx tracking INSERT failure                | ERROR | `no-transaction migration {version} ({name}) applied but tracking failed`                  |
 
-Recovery guidance distinguishes batch failure ("pin the previous image tag —
+Recovery guidance distinguishes batch failure ("pin the previous image tag:
 database is untouched"), no-tx SQL failure ("transactional migrations already
-committed — fix forward"), and no-tx tracking failure ("the migration IS applied;
-do NOT revert — manually insert the tracking row").
+committed; fix forward"), and no-tx tracking failure ("the migration IS applied;
+do NOT revert: manually insert the tracking row").
 
 ### Consequences
 
@@ -205,7 +204,7 @@ do NOT revert — manually insert the tracking row").
 - Bad, because bare `docker run` operators must run two steps on a migration
   upgrade or set `REVERIE_AUTO_MIGRATE` (then carry the migration credential in
   the app environ).
-- Bad, because two invocation paths exist over one runner — more surface than a
+- Bad, because two invocation paths exist over one runner: more surface than a
   single always-on path.
 - Bad, because the custom runner couples to sqlx's `_sqlx_migrations` schema and
   must be re-verified on sqlx bumps.
@@ -246,7 +245,7 @@ do NOT revert — manually insert the tracking row").
 
 - Good, because zero new roles or secrets.
 - Bad, because the highest-privilege credential ends up in the application process
-  environ — unacceptable for the threat model.
+  environ: unacceptable for the threat model.
 
 ### Hybrid invocation
 
@@ -263,7 +262,7 @@ do NOT revert — manually insert the tracking row").
 
 ### All-or-nothing batch transaction
 
-- Good, because failure leaves the DB untouched — pin the old image to recover.
+- Good, because failure leaves the DB untouched: pin the old image to recover.
 - Neutral, because ~60–80 lines of custom runner code.
 - Bad, because `-- no-transaction` migrations cannot join the batch.
 
@@ -295,7 +294,7 @@ data-backfill migrations should document expected duration in release notes.
 
 - If sqlx merges batch-transaction mode
   ([#3770](https://github.com/launchbadge/sqlx/discussions/3770)), evaluate
-  replacing the custom runner; [UNK-299](https://linear.app/unkos/issue/UNK-299).
+  replacing the custom runner; evaluation of extracting batch migration runner as a public crate.
 - If a "bring your own managed Postgres" path is added, re-examine
   `reverie_migrator`'s grants (PG15+ needs `CREATE` on schema `public` for
   `CREATE EXTENSION ... WITH SCHEMA public`) and trusted-extension availability.
