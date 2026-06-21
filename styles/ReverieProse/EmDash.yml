@@ -1,13 +1,13 @@
 extends: existence
-# Prose em dashes only. A word character on the same line as the em dash (any run
-# of spaces or tabs between them, but not a line break) marks prose. Standalone
-# markers (a `| — |` "n/a" cell, the MADR `consulted: "—"` placeholder) have no
-# adjacent word and stay silent, so no location-based scope exclusion is needed.
-# Bare standalone em dashes in flowing prose are intentionally not gated
-# (vanishingly rare; not the AI-tell shape).
+# Gate every em dash in prose. Bare token, not a word-adjacency heuristic, so no
+# Markdown formatting around the dash (bold, italic, code) can slip the gate. Two
+# structural exemptions remain, neither pattern-based: the MADR `consulted`
+# frontmatter placeholder value (field-scoped below), and inline code spans (Vale
+# lints prose, not code, so an em dash inside backticks is ignored).
 message: "Avoid em dashes in prose. Recast with a comma, colon, or full stop."
 level: error
 nonword: true
+scope:
+  - ~text.frontmatter.consulted
 tokens:
-  - '\w[ \t]*\x{2014}'
-  - '\x{2014}[ \t]*\w'
+  - '\x{2014}'

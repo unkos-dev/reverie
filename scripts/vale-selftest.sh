@@ -71,20 +71,19 @@ expect_silent "The \`a ${emdash} b\` operator is code, not prose."
 # Near miss: "deep" without "dive" must not trip BusinessJargon.
 expect_silent "We dug deep into the schema before the migration."
 
-# Word-adjacency contract: EmDash fires only when a word character sits next to
-# the em dash (optionally one space). Standalone markers have no adjacent word
-# and stay silent without any location-based scope exclusion.
-# MADR `consulted: "—"` placeholder: standalone, no adjacent word, stays silent.
+# Em-dash contract: a bare token gates every em dash in prose, so no Markdown
+# formatting around the dash (bold, italic, code) can slip the gate. Two
+# structural exemptions, not pattern heuristics: the frontmatter `consulted`
+# field, and inline code spans (line 70). Markers are recast at source, not
+# pattern-exempted, so a table-cell em dash fires like any other prose.
+# MADR `consulted` placeholder value: field-scoped, stays silent.
 expect_silent "$(printf -- '---\nconsulted: "%s"\n---\n\nClean body prose.\n' "$emdash")"
-# A `description:` frontmatter value with a word-adjacent em dash fires.
+# Any other frontmatter prose (e.g. a `description:`) is not exempt and fires.
 expect_fires EmDash "$(printf -- '---\ndescription: Prose %s description.\n---\n\nClean body prose.\n' "$emdash")"
-# Standalone `| — |` marker cell: no adjacent word, stays silent.
-expect_silent "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
-# Word-adjacent em dash in a table cell fires (prose in a cell is still prose).
-expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| word %s word |\n' "$emdash")"
-# Multi-space prose em dash fires: the token spans any run of same-line spaces,
-# so `word  —  word` (two spaces each side) is not a bypass.
-expect_fires EmDash "The reader loads the spine  ${emdash}  then renders."
+# Formatting around the dash is no bypass: an emphasised em dash still fires.
+expect_fires EmDash "This decision **${emdash}** owns the contract."
+# A table-cell em dash fires too: table cells are not exempt (markers recast).
+expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
 
 # Path-scoped behaviour can't be exercised over stdin (no file path), so build a
 # throwaway mini-repo from the real .vale.ini + styles, with one Wh-opener line
