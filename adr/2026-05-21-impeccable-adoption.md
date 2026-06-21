@@ -281,7 +281,7 @@ inline` resolves OKLCH tokens at render time; static scan sees
 - **Anti-patterns only visible after JS interaction**: open
   dialog, hovered state, focused field, mounted Suspense boundary.
 - **State-after-React-render checks.** Static scan sees JSX source,
-  URL-scan sees what the user actually sees.
+  URL-scan sees what the user sees.
 
 ### Mechanism (when enabled)
 

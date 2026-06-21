@@ -2,9 +2,11 @@
 #
 # Self-test for the ReverieProse Vale style. Feeds known-bad and known-clean
 # snippets to Vale over stdin and asserts that each rule fires on its target
-# and stays silent on clean prose. Snippets are passed in-memory (no fixture
-# files on disk), so the other tree-walking linters (markdownlint, prettier,
-# typos, no-issue-refs) never see deliberately bad prose.
+# and stays silent on clean prose. Stdin snippets are passed in-memory; the
+# path-scoped cases (the [adr/**] WhStarter exemption) need real file paths, so
+# they use a throwaway mini-repo under a tempdir. Either way no deliberately bad
+# prose lands in the repo tree, so the other tree-walking linters (markdownlint,
+# prettier, typos, no-issue-refs) never see it.
 #
 # Run from anywhere; it resolves the repo root so Vale finds .vale.ini. Exits
 # non-zero on any mismatch so it can gate in CI.
@@ -68,6 +70,75 @@ expect_silent "# How the reader caches pages"
 expect_silent "The \`a ${emdash} b\` operator is code, not prose."
 # Near miss: "deep" without "dive" must not trip BusinessJargon.
 expect_silent "We dug deep into the schema before the migration."
+
+# Em-dash contract: a bare token gates every em dash in prose, so no Markdown
+# formatting around the dash (bold, italic, code) can slip the gate. Two
+# structural exemptions, not pattern heuristics: the frontmatter `consulted`
+# field (exercised on real files in the mini-repo below, so the file parser and
+# field scope match scripts/vale-lint.sh), and inline code spans (line 70).
+# Markers are recast at source, not pattern-exempted, so a table-cell em dash
+# fires like any other prose.
+# Formatting around the dash is no bypass: an emphasised em dash still fires.
+expect_fires EmDash "This decision **${emdash}** owns the contract."
+# A table-cell em dash fires too: table cells are not exempt (markers recast).
+expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
+
+# Path-scoped behaviour can't be exercised over stdin (no file path), so build a
+# throwaway mini-repo from the real .vale.ini + styles, with one Wh-opener line
+# under both adr/ (WhStarter exempt) and docs/src/ (WhStarter fires). Deleting
+# the [adr/**] exemption from .vale.ini makes the first assertion fail.
+scope_root=$(mktemp -d)
+trap 'rm -rf "$scope_root"' EXIT
+cp .vale.ini "$scope_root/"
+cp -r styles "$scope_root/styles"
+mkdir -p "$scope_root/adr" "$scope_root/docs/src"
+wh_opener="The store is durable. What makes this work is the log."
+printf '%s\n' "$wh_opener" >"$scope_root/adr/decision.md"
+printf '%s\n' "$wh_opener" >"$scope_root/docs/src/page.md"
+
+# checks_for <relpath> -> sorted, unique fired checks for a file in the mini-repo.
+checks_for() {
+  ( cd "$scope_root" && vale --no-exit --output=JSON "$1" ) | jq -r '.[][].Check' | sort -u
+}
+
+got=$(checks_for adr/decision.md)
+if [ -z "$got" ]; then
+  echo "ok   WhStarter exempt under adr/"
+else
+  echo "FAIL adr/ should be WhStarter-exempt, fired [$got]" >&2
+  fail=1
+fi
+
+got=$(checks_for docs/src/page.md)
+if [ "$got" = "ReverieProse.WhStarter" ]; then
+  echo "ok   WhStarter fires outside the adr/ exemption (docs/src/)"
+else
+  echo "FAIL docs/src/ should fire only WhStarter, got [${got:-<none>}]" >&2
+  fail=1
+fi
+
+# Frontmatter scope on real files (same parser and field scope as vale-lint.sh,
+# not just stdin): the MADR `consulted` placeholder is field-scoped silent; a
+# prose `description` is not exempt and fires. Deleting `~text.frontmatter.consulted`
+# from .vale.ini makes the first assertion fail.
+printf -- '---\nconsulted: "%s"\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-consulted.md"
+printf -- '---\ndescription: Shell organised %s the rail.\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-desc.md"
+
+got=$(checks_for docs/src/fm-consulted.md)
+if [ -z "$got" ]; then
+  echo "ok   consulted frontmatter field-scoped silent (real file)"
+else
+  echo "FAIL consulted should be silent, fired [$got]" >&2
+  fail=1
+fi
+
+got=$(checks_for docs/src/fm-desc.md)
+if [ "$got" = "ReverieProse.EmDash" ]; then
+  echo "ok   description frontmatter fires EmDash (real file)"
+else
+  echo "FAIL description should fire EmDash, got [${got:-<none>}]" >&2
+  fail=1
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo "vale self-test: FAILED" >&2

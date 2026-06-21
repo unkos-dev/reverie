@@ -1,6 +1,13 @@
 extends: existence
+# Gate every em dash in prose. Bare token, not a word-adjacency heuristic, so no
+# Markdown formatting around the dash (bold, italic, code) can slip the gate. Two
+# structural exemptions remain, neither pattern-based: the MADR `consulted`
+# frontmatter placeholder value (field-scoped below), and inline code spans (Vale
+# lints prose, not code, so an em dash inside backticks is ignored).
 message: "Avoid em dashes in prose. Recast with a comma, colon, or full stop."
-level: warning
+level: error
 nonword: true
+scope:
+  - ~text.frontmatter.consulted
 tokens:
   - '\x{2014}'

@@ -46,8 +46,8 @@ module.exports = {
   // Markdown gets two prose passes: the issue-ref guard, then the Vale prose
   // linter. vale-lint.sh owns the in-scope set (docs/src, adr, repo-root
   // Markdown, minus agent-process files) and runs the same locally and in CI.
-  // Advisory while the docs backlog is triaged: the rules emit at `warning`,
-  // so Vale exits zero and never blocks the commit. Vale is pinned in the
-  // workspace image (hard-rule-8).
+  // Hard gate: every ReverieProse rule emits at `error`, so Vale exits non-zero
+  // on any finding and blocks the commit (CI gates the same way). Vale is pinned
+  // in the workspace image (hard-rule-8).
   "**/*.{md,mdx}": ["scripts/no-issue-refs.sh", "scripts/vale-lint.sh"],
 };

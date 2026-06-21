@@ -20,8 +20,8 @@ use validator::{Validate, ValidationError};
 /// strings from validated inputs and panic on the impossible case (a
 /// programming invariant has been violated and we want to know).
 ///
-/// A `SecurityConfig` obtained directly from the config pipeline — without the
-/// CSP-finalisation pass — emits no `Content-Security-Policy` on either
+/// A `SecurityConfig` obtained directly from the config pipeline (without the
+/// CSP-finalisation pass) emits no `Content-Security-Policy` on either
 /// route class (both fields stay `None`); HSTS and Reporting-Endpoints
 /// are still applied because they are derived on demand.
 #[derive(Debug, Clone, Default, serde::Deserialize, schemars::JsonSchema, Validate)]
@@ -30,7 +30,7 @@ use validator::{Validate, ValidationError};
 pub struct SecurityConfig {
     /// Whether the deployment is fronted by a TLS-terminating reverse
     /// proxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS
-    /// emission — never emitted on plaintext HTTP because the browser
+    /// emission: never emitted on plaintext HTTP because the browser
     /// would refuse the next TLS-less request to this host.
     pub behind_https: bool,
     /// Whether the HSTS header carries `; includeSubDomains`

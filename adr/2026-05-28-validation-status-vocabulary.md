@@ -98,7 +98,7 @@ one valid state plus two error states.
 Renaming to `clean` additionally makes the orchestrator mapping an
 identity (`Clean => "clean"`), eliminating the translation seam that
 produced the drift, and realigns the stored string with
-`ValidationOutcome`: the only place validation semantics are actually
+`ValidationOutcome`: the only place validation semantics are
 decided.
 
 The operator-facing explanation of these states is deferred to a

@@ -107,6 +107,16 @@ OSS audience (external contributors, security auditors, self-hosting operators) 
 
 Anti-patterns (skip docstring rather than commit these): clipping or replacing existing leading comments (new docstring goes _above_, never in place of); pure signature restatement; generic boilerplate ("@param x The x parameter").
 
+### Docstring content
+
+Rules for docstrings (`///` / `//!` in Rust, JSDoc in TS):
+
+- **No em dashes (`—`).** Recast with a comma, colon, or full stop. Plain hyphens in `kebab-case` and ranges are fine.
+- **No external references.** No Linear IDs (`UNK-XXX`), PR/issue numbers (`#123`), or tracker URLs.
+- **No history / backstory.** Describe current behaviour and invariants, not what the code used to do, what it replaced, or when it changed ("formerly", "the old X", "now rejects"). Change-narrative belongs in the commit or ADR.
+
+Enforcement: hard-gated where docstrings surface publicly (Markdown via Vale, `config.schema.json` via CI); convention elsewhere, cleaned when a file is touched.
+
 ---
 
 ## Project Structure

@@ -1,6 +1,6 @@
 extends: existence
 message: "'%s' asserts importance without naming the specific thing. Name it or cut it."
-level: warning
+level: error
 ignorecase: true
 tokens:
   - "the implications are significant"

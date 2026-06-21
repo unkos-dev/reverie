@@ -53,7 +53,7 @@ pub fn reference_markdown() -> anyhow::Result<String> {
 
 const FRONTMATTER: &str = "---\ntitle: Configuration\ndescription: Environment variables that configure a Reverie instance.\n---\n\n";
 
-const INTRO: &str = "import { Aside } from \"@astrojs/starlight/components\";\n\n<Aside type=\"caution\" title=\"Generated file\">\nThis page is generated from the backend configuration schema. Do not edit it by\nhand — regenerate with `REGEN=1 cargo test --test gen_config_ref` and commit the\nresult. The drift test fails CI if it is stale.\n</Aside>\n\nReverie is configured entirely through environment variables, read once at\nstartup. Secret-bearing variables are listed by name only; their values never\nappear here. A required variable left unset refuses startup with a clear error.\n";
+const INTRO: &str = "import { Aside } from \"@astrojs/starlight/components\";\n\n<Aside type=\"caution\" title=\"Generated file\">\nThis page is generated from the backend configuration schema. Do not edit it by\nhand. Regenerate with `REGEN=1 cargo test --test gen_config_ref` and commit the\nresult. The drift test fails CI if it is stale.\n</Aside>\n\nReverie is configured entirely through environment variables, read once at\nstartup. Secret-bearing variables are listed by name only; their values never\nappear here. A required variable left unset refuses startup with a clear error.\n";
 
 /// Resolve a `$ref` node to its `$defs` target; pass any other node through.
 fn resolve<'a>(node: &'a Value, defs: &'a Value) -> &'a Value {

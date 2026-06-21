@@ -25,7 +25,7 @@ OPDS series-_editions_ feed is a capped single page. But several lists issue
 `LIMIT`-less `SELECT`s whose row count grows with library or user size:
 `/api/shelves`, `/api/users`, `GET /api/shelves/{id}` items, and the OPDS
 authors- and series-_navigation_ feeds all return the entire set with no cap. So
-today the surface is a mix of keyset, capped single-page, and genuinely
+today the surface is a mix of keyset, capped single-page, and
 unbounded queries, with no recorded rule distinguishing them.
 
 This matters at scale (the blueprint targets 50k+ libraries) and for the threat
@@ -76,7 +76,7 @@ Chosen option: **A**.
   `GET /api/shelves/{id}` items, and the OPDS authors- and series-_navigation_
   feeds currently return uncapped sets and are not yet compliant: each must be
   brought to keyset pagination, or to a defensive cap only where a small ceiling
-  is genuinely justified.
+  is justified.
 - **Accepted tradeoffs (eyes open).** Keyset gives up two things the project
   consciously forgoes: cheap random access (no "jump to page N", only
   next/prev from a cursor) and an exact total inline. A total count, where

@@ -65,6 +65,7 @@
   `helper={flag ? "x" : undefined}`.
 - `import type` separate from value imports.
 - No `@ts-ignore` / `@ts-expect-error` without a comment explaining why.
+- **JSDoc docstrings follow the root [Comment Policy](../CLAUDE.md#docstring-content) docstring-content rules**: no em dashes, external references, or backstory.
 
 ## State & data
 

@@ -1,6 +1,6 @@
 extends: existence
 message: "'%s' is empty emphasis. Delete it or show the point instead."
-level: warning
+level: error
 ignorecase: true
 tokens:
   - really

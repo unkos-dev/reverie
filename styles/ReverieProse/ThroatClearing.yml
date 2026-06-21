@@ -1,6 +1,6 @@
 extends: existence
 message: "'%s' is throat-clearing. Cut the preamble and state the point."
-level: warning
+level: error
 ignorecase: true
 tokens:
   - "here's the thing"

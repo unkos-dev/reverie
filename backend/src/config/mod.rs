@@ -8,7 +8,7 @@
 //! security gates, and `validator` runs range + cross-field checks.
 //! [`Config::from_env`] is the production entry point; tests inject env as
 //! in-memory pairs via [`EnvProvider::from_pairs`] so test setup never
-//! mutates the process environment (UNK-100). Subsystem configs
+//! mutates the process environment. Subsystem configs
 //! ([`OpdsConfig`], [`EnrichmentConfig`], [`CoverConfig`],
 //! [`WritebackConfig`], [`SecurityConfig`]) nest as owned sub-structs.
 //!
@@ -99,17 +99,17 @@ pub struct Config {
     /// `REVERIE_*` operator namespace wins on conflict so staging docs
     /// stay coherent; `RUST_LOG` is honoured as the ecosystem default for
     /// developer convenience. The subscriber filter in [`crate::run`]
-    /// parses this string directly — no further env re-read — so the
+    /// parses this string directly (no further env re-read), so the
     /// precedence resolved here is the single source of truth for the
     /// process lifetime.
     pub log_level: String,
     /// Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default
     /// `10`); applied identically to the primary, ingestion, and
-    /// writeback pools. Must be ≥ 1 — a zero cap yields a pool that can
+    /// writeback pools. Must be ≥ 1: a zero cap yields a pool that can
     /// never hand out a connection (`PoolTimedOut` on the first query).
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub db_max_connections: u32,
-    /// OIDC issuer URL (`OIDC_ISSUER_URL`, required) — the trust seam
+    /// OIDC issuer URL (`OIDC_ISSUER_URL`, required): the trust seam
     /// for the entire authentication subsystem. The boundary control
     /// is `reqwest`'s TLS validation against the bundled
     /// webpki/Mozilla root store (`reqwest` is built with the
@@ -119,7 +119,7 @@ pub struct Config {
     /// OIDC client id (`OIDC_CLIENT_ID`, required).
     pub oidc_client_id: String,
     /// OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as
-    /// secret material — never logged.
+    /// secret material; never logged.
     ///
     /// NOTE: any new secret-bearing field must also be added to the
     /// `SECRET_FIELDS` list so a deserialize error never echoes its value
@@ -130,7 +130,7 @@ pub struct Config {
     pub oidc_redirect_uri: String,
     /// Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`
     /// credentials for the ephemeral migration pool. `None` on the default
-    /// server path — the application process holds no migration credential
+    /// server path: the application process holds no migration credential
     /// unless [`Self::auto_migrate`] is set. Required (else
     /// [`ConfigError::MissingVar`]) only when `auto_migrate` is true.
     pub migration_database_url: Option<String>,
@@ -210,12 +210,12 @@ pub struct Config {
 /// Post-ingestion cleanup behaviour selector for the watcher's
 /// "after a successful batch" hook.
 ///
-/// Wire format (JSON, DB `text` column): lowercase string —
+/// Wire format (JSON, DB `text` column): lowercase string, one of
 /// `"all"` | `"ingested"` | `"none"`.
 ///
 /// Deliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it
 /// exhaustively, so adding a variant is a compile error at the match site
-/// rather than a silent fall-through — the same property the `Command` enum
+/// rather than a silent fall-through, the same property the `Command` enum
 /// relies on.
 #[derive(
     Debug,
@@ -234,7 +234,7 @@ pub enum CleanupMode {
     All,
     /// Delete only files that were actually ingested (selected by format priority).
     Ingested,
-    /// Never delete source files — user handles cleanup manually.
+    /// Never delete source files; the user handles cleanup manually.
     None,
 }
 
@@ -608,8 +608,9 @@ impl Default for Config {
 mod tests {
     use super::*;
 
-    /// Build a `Config` through the figment pipeline from in-memory env pairs —
-    /// the process-env-free, parallel-safe test seam (UNK-100, GOTCHA-TESTSEAM).
+    /// Build a `Config` through the figment pipeline from in-memory env pairs:
+    /// the process-env-free, parallel-safe test seam (GOTCHA-TESTSEAM); never
+    /// mutates global env.
     /// Strings flow through `EnvProvider`'s parse/coerce path, exercising the
     /// real production deserialization (GOTCHA-TESTFIDELITY): no pre-typed
     /// `Serialized(struct)` shortcut that would bypass where the bugs live.
@@ -667,7 +668,7 @@ mod tests {
     /// declarative [`ENV_MAP`] (the structured replacement for the former
     /// textual `get("KEY")` source scan).
     ///
-    /// Guards the operator-facing failure class in UNK-250: an example var
+    /// Guards the [`ENV_MAP`] consistency invariant: an example var
     /// whose name diverges from the loader either hard-fails startup with a
     /// misleading `MissingVar` (loud) or is silently ignored while a fallback
     /// takes over (silent — e.g. ingestion DSN falling back to the app role,
@@ -1098,8 +1099,8 @@ mod tests {
 
     #[test]
     fn security_parse_bool_rejects_legacy_truthy() {
-        // UNK-110: strict form rejects the old "1"/"yes" spellings — native
-        // now (EnvProvider parses "yes" to a `Str`, which a `bool` field
+        // Strict form rejects the old "1"/"yes" spellings natively now
+        // (EnvProvider parses "yes" to a `Str`, which a `bool` field
         // refuses), no custom bool deserializer (GOTCHA-BOOL, Task 9).
         let err = security_from(&[("REVERIE_BEHIND_HTTPS", "yes")]).unwrap_err();
         assert!(err.to_string().contains("REVERIE_BEHIND_HTTPS"));

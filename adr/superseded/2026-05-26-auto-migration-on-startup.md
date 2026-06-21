@@ -186,7 +186,7 @@ Future: the evaluation of extracting batch migration runner as public crate trac
 
 | Env var                  | Required | Default | Purpose                         |
 | ------------------------ | -------- | ------- | ------------------------------- |
-| `DATABASE_URL_MIGRATION` | Yes      | —       | Schema-owner DSN for migrations |
+| `DATABASE_URL_MIGRATION` | Yes      | none    | Schema-owner DSN for migrations |
 
 No other new env vars. `lock_timeout` is hardcoded at 30s (interim, pending the database lock and timeout strategy).
 

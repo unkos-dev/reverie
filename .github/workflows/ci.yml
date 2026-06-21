@@ -302,6 +302,20 @@ jobs:
       - name: Check config schema freshness
         run: cargo run --quiet --locked -- print-config-schema | diff -u config.schema.json -
 
+      # The schema descriptions are the config structs' doc-comments (schemars
+      # folds them in). The Vale gate covers Markdown but not this generated
+      # JSON, so a doc-comment em dash that surfaces only here would otherwise
+      # escape. Match the raw U+2014 UTF-8 bytes (`LC_ALL=C` + fixed-string) so
+      # the check never depends on grep's PCRE or locale support: a PCRE-mode
+      # grep that rejected `\x{2014}` would exit non-zero and let the `if` pass
+      # the gate open. Fix: recast the source doc-comment and regenerate.
+      - name: Guard against em dashes in the config schema
+        run: |
+          if LC_ALL=C grep -nF $'\xe2\x80\x94' config.schema.json; then
+            echo "::error::config.schema.json contains an em dash (lines above); recast the source doc-comment in backend/src/config and regenerate." >&2
+            exit 1
+          fi
+
       # UNK-172: grep-guard against new runtime `sqlx::query[*](...)`
       # invocations creeping back in. Allowlist documents legitimate
       # carve-outs (DDL, dynamic SQL, set_config GUC, enum-drift probes).
@@ -1008,12 +1022,12 @@ jobs:
       - name: Prose lint scope test (vale-lint.sh)
         run: scripts/vale-scope-test.sh
 
-      # The prose pass over the docs is advisory because every rule emits at
-      # `warning`, so Vale exits zero and this step passes while the existing
-      # backlog is triaged (mirrors the impeccable-detect rollout below). The
-      # Phase 3 flip raises the rule levels to `error`: Vale then exits non-zero
-      # and this step fails the build, with no other change needed.
-      - name: Prose lint (Vale, advisory)
+      # The prose pass is a hard gate: every rule emits at `error`, so Vale
+      # exits non-zero on any finding and fails the build. Scope is prose only
+      # (YAML frontmatter and table structure excluded; the ADR tree is exempt
+      # from the Wh-opener rule). New slop in the Starlight docs, ADRs, or
+      # repo-root Markdown fails CI.
+      - name: Prose lint (Vale)
         run: scripts/vale-lint.sh --all
 
       # Authoritative formatting gate. lint-staged runs `prettier --write` on

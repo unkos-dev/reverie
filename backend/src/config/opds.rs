@@ -3,7 +3,7 @@
 use validator::{Validate, ValidationError};
 
 /// OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a
-/// Basic-only extractor and `public_url` must be set — feeds emit absolute URLs
+/// Basic-only extractor and `public_url` must be set: feeds emit absolute URLs
 /// rooted at `public_url`.
 ///
 /// Note: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are

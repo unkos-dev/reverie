@@ -177,7 +177,7 @@ owns the task sequence, the offload boundary, and the verification checklist.
   lowercase `true`/`false`, rejecting `1`/`yes`) native too, so the per-field
   bool/number deserializers first anticipated are unnecessary; enum, `url::Url`,
   and `PathBuf` deserialize natively. The surviving custom surface is therefore
-  narrower than a hand-rolled reader's, concentrated on the two genuinely
+  narrower than a hand-rolled reader's, concentrated on the two
   non-standard fields.
 - Neutral, because the environment-variable-name-to-nested-struct mapping is not
   solved declaratively by serde for sub-struct fields (a uniform `_` split cannot

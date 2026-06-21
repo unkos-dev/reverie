@@ -35,7 +35,7 @@ between the application and Postgres?
   ([persisted-settings ADR](2026-05-26-persisted-settings.md)); the migration
   path takes a session-level advisory lock. A transaction-multiplexing pooler
   tier breaks both.
-- **Enable, don't own.** An operator who genuinely scales out can place their
+- **Enable, don't own.** An operator who scales out can place their
   own pooler in front of Postgres; Reverie should not preclude that, but it
   should not own that infrastructure.
 
@@ -59,7 +59,7 @@ invariants.
 This does not constrain an operator: per the
 [scale-stance ADR](2026-06-08-scale-stance-stateless-enable-not-own.md)'s
 "enable, don't own", an operator who runs their own fleet may front Postgres
-with a pooler externally. Reverie simply does not ship or depend on one.
+with a pooler externally. Reverie does not ship or depend on one.
 
 ### Consequences
 

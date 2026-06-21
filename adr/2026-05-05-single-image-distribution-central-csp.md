@@ -98,7 +98,7 @@ Concretely:
   meaningful reduction in attack surface and operational complexity
 - Good: **simple self-hoster install**. `docker run` plus a Postgres
   container is the entire baseline. Matches how the target audience
-  (homelabbers and small self-hosting communities) actually consume
+  (homelabbers and small self-hosting communities) consume
   software
 - Good: **atomic deploy unit**. One image tag = one rollback target.
   No version-skew possible between a `frontend@vX` and a
