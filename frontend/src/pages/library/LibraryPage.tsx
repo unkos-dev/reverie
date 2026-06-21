@@ -445,9 +445,9 @@ function BookCard({ book }: BookCardProps): ReactElement {
           ) : null}
         </div>
         <div className="flex flex-col gap-1">
-          <h3 className="font-display text-fg line-clamp-2 text-sm font-medium leading-tight">
+          <h2 className="font-display text-fg line-clamp-2 text-sm font-medium leading-tight">
             {book.title}
-          </h3>
+          </h2>
           <p className="text-fg-muted line-clamp-1 text-xs leading-tight">
             {book.authors.join(", ")}
           </p>

@@ -193,6 +193,12 @@ describe("LibraryPage", () => {
     expect(within(grid).getByText("Annihilation")).toBeInTheDocument();
   });
 
+  test("book card title is an h2 so the heading order does not skip h1 to h3", async () => {
+    renderLibrary({ items: [bookFixture({ id: "a", title: "Stoner" })], nextCursor: null });
+    const grid = await screen.findByTestId("library-grid");
+    expect(within(grid).getByRole("heading", { level: 2, name: "Stoner" })).toBeInTheDocument();
+  });
+
   test("does NOT show Load more when next_cursor is null", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     await screen.findByRole("heading", { name: "Library" });
