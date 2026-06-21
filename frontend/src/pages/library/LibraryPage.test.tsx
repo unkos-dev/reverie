@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import type { BookListItem, BookListResponse, ListBooksParams } from "@/api";
+import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 import { LibraryPage } from "./LibraryPage";
@@ -26,6 +27,19 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   };
 }
 
+function meFixture(overrides: Partial<AuthMe> = {}): AuthMe {
+  return {
+    id: "33333333-3333-3333-3333-333333333333",
+    display_name: "Operator",
+    email: null,
+    role: "admin",
+    is_child: false,
+    theme_preference: "system",
+    csrf_token: null,
+    ...overrides,
+  };
+}
+
 interface RenderOpts {
   items: BookListItem[];
   nextCursor: string | null;
@@ -34,6 +48,8 @@ interface RenderOpts {
   cacheParams?: ListBooksParams;
   /** Additional cache slots to prefill (e.g. a post-interaction sort key). */
   extraCacheParams?: ListBooksParams[];
+  /** Prefill the `/auth/me` cache so role-gated UI renders without a fetch. */
+  me?: AuthMe;
 }
 
 function renderLibrary({
@@ -42,6 +58,7 @@ function renderLibrary({
   initialEntries,
   cacheParams,
   extraCacheParams = [],
+  me,
 }: RenderOpts): {
   client: QueryClient;
 } {
@@ -56,6 +73,7 @@ function renderLibrary({
       pageParams: [undefined],
     });
   }
+  if (me !== undefined) client.setQueryData(queryKeys.auth.me(), me);
 
   function Wrapper(): ReactElement {
     const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
@@ -273,5 +291,106 @@ describe("LibraryPage", () => {
     const user = userEvent.setup();
     await user.click(chip);
     expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
+  });
+
+  test("an active series chip shows the resolved series name, not a raw id", async () => {
+    renderLibrary({
+      items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+      nextCursor: null,
+      initialEntries: ["/library?series=s-1"],
+      cacheParams: { series: "s-1" },
+    });
+    const chips = await screen.findByTestId("active-filters");
+    expect(within(chips).getByRole("button", { name: /Discworld/ })).toBeInTheDocument();
+    expect(within(chips).queryByText(/s-1/)).not.toBeInTheDocument();
+  });
+
+  test("an active author chip shows the full author name, not a truncated id", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?author=Fyodor%20Dostoevsky"],
+      cacheParams: { author: "Fyodor Dostoevsky" },
+    });
+    const chips = await screen.findByTestId("active-filters");
+    expect(within(chips).getByRole("button", { name: /Fyodor Dostoevsky/ })).toBeInTheDocument();
+  });
+
+  test("filtered-empty shows its own copy and a clear-all action, not the true-empty copy", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?series=s-1"],
+      cacheParams: { series: "s-1" },
+      extraCacheParams: [{}],
+    });
+    expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
+    expect(screen.queryByText("No books yet")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear all filters/i })).toBeInTheDocument();
+  });
+
+  test("clearing all filters from the filtered-empty state drops the filter params", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?series=s-1&cursor=eyJ4Ijox"],
+      cacheParams: { series: "s-1" },
+      extraCacheParams: [{}],
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
+    // Filters gone → the true-empty state takes over.
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+  });
+
+  test("true-empty state shows no clear-filters action", async () => {
+    renderLibrary({ items: [], nextCursor: null });
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /clear all filters/i })).not.toBeInTheDocument();
+  });
+
+  test("true-empty offers an ingestion link to admins", async () => {
+    renderLibrary({ items: [], nextCursor: null, me: meFixture({ role: "admin" }) });
+    const link = await screen.findByRole("link", { name: /ingestion/i });
+    expect(link.getAttribute("href")).toBe("/admin/dashboard");
+  });
+
+  test("true-empty hides the ingestion link from non-admin readers", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      me: meFixture({ role: "child", is_child: true }),
+    });
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /ingestion/i })).not.toBeInTheDocument();
+  });
+
+  test("a failed Load more surfaces an inline error and a Retry control", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+    // staleTime Infinity so the cached first page never background-refetches
+    // and consumes the mock — only the explicit Load more fetch should fail.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(queryKeys.books.list({}), {
+      pages: [{ items: [bookFixture()], next_cursor: "eyJ4Ijox" }],
+      pageParams: [undefined],
+    });
+    function Wrapper(): ReactElement {
+      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+      const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+      return (
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      );
+    }
+    render(<Wrapper />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /load more/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't load more/i);
+    expect(await screen.findByRole("button", { name: /retry/i })).toBeInTheDocument();
+    fetchSpy.mockRestore();
   });
 });
