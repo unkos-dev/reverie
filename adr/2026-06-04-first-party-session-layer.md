@@ -55,7 +55,7 @@ code on the maintained `tower-sessions` core?
 ## Decision Drivers
 
 - Unblock the coordinated upgrade permanently, not contingent on two unresponsive upstreams.
-- Minimize abandoned / single-maintainer dependency surface on the
+- Minimise abandoned / single-maintainer dependency surface on the
   auth-critical path: OpenSSF Scorecard `Maintained` signal and supply-chain
   hardening for an OSS, multi-user-exposed threat model.
 - Preserve the OWASP Session Management invariants already in place and

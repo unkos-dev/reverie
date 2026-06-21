@@ -80,6 +80,12 @@ expect_silent "Reverie uses the Parchment theme."
 # short entries do not silently swallow typos.
 expect_fires Spelling "The configg value is wrong."
 
+# House style is Australian: an American spelling of a common word warns (it is
+# not accept-listed), while the Australian form stays silent. Guards against the
+# accept-list re-admitting American common words and bypassing the AU nudge.
+expect_fires Spelling "We Minimize the payload."
+expect_silent "We minimise the payload."
+
 # Edge cases that lock in deliberate design choices.
 # WhStarter is paragraph-scoped, so a Wh- word in a heading is exempt.
 expect_silent "# How the reader caches pages"

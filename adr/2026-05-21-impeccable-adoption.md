@@ -299,7 +299,7 @@ Adopt URL-scan when **all** of the following are true:
 1. **≥5 rendered Reverie surfaces shipped** (library hub, reader,
    settings, auth, ingestion status, etc.): the design system
    showcase doesn't count
-2. **Design system stabilized**: no token churn for 30 consecutive
+2. **Design system stabilised**: no token churn for 30 consecutive
    days
 3. **A target host exists in CI**: either ephemeral dev server
    boot inside the frontend job, or PR-preview deployment lane

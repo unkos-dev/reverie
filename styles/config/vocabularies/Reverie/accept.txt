@@ -15,6 +15,11 @@ Parchment
 gilt
 Unkos
 #
+# Australian-English forms the bundled en_AU dictionary happens to lack, so the
+# correct AU spelling is not flagged. The American spelling is NOT accepted, so
+# it still warns and nudges toward these forms.
+sanitisation
+#
 # Identifiers, libraries, services, and technical jargon.
 accreted
 adapter
@@ -210,7 +215,6 @@ maxcountryman
 MDN
 middleware
 migrator
-Minimize
 mitigations
 Monorepo
 Muzz
@@ -225,7 +229,6 @@ OAuth
 observability
 OOMs
 operability
-optimization
 orchestrator
 outsized
 oxlint
@@ -262,7 +265,6 @@ refactor
 refetch
 refetches
 regenerations
-Regularizing
 rehydration
 reimplement
 reimplementation
@@ -286,7 +288,6 @@ rollup
 roundtrip
 ruleset
 rustdoc
-sanitization
 Satoshi
 sccache
 schemaless
@@ -308,7 +309,6 @@ sortable
 sqlite
 sqlx
 src
-stabilized
 stateful
 stdout
 strawman
