@@ -115,6 +115,8 @@ Rules for docstrings (`///` / `//!` in Rust, JSDoc in TS):
 - **No external references.** No Linear IDs (`UNK-XXX`), PR/issue numbers (`#123`), or tracker URLs.
 - **No history / backstory.** Describe current behaviour and invariants, not what the code used to do, what it replaced, or when it changed ("formerly", "the old X", "now rejects"). Change-narrative belongs in the commit or ADR.
 
+Enforcement: hard-gated where docstrings surface publicly (Markdown via Vale, `config.schema.json` via CI); convention elsewhere, cleaned when a file is touched.
+
 ---
 
 ## Project Structure
