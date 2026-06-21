@@ -49,6 +49,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -87,7 +88,14 @@ function LibraryContent(): ReactElement {
   const cacheParams = { ...params };
   delete cacheParams.cursor;
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSuspenseInfiniteQuery<
+  const {
+    data,
+    error: fetchNextPageError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useSuspenseInfiniteQuery<
     BookListResponse,
     Error,
     InfiniteData<BookListResponse, string | undefined>,
@@ -104,12 +112,27 @@ function LibraryContent(): ReactElement {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
 
+  // The user-facing Load-more error is rendered below; this routes the raw
+  // error to the console too (QueryCache.onError only forwards 401s), so a
+  // 500 / parse failure leaves a developer breadcrumb. Mirrors the shelves
+  // handler in ActiveFilterChips.
+  useEffect(() => {
+    if (isFetchNextPageError)
+      console.error("[LibraryContent] failed to load the next page", fetchNextPageError);
+  }, [isFetchNextPageError, fetchNextPageError]);
+
   const items: BookListItem[] = data.pages.flatMap((p) => p.items);
 
   function setView(next: ViewMode): void {
     const updated = new URLSearchParams(searchParams);
     if (next === "grid") updated.delete("view");
     else updated.set("view", next);
+    setSearchParams(updated, { replace: true });
+  }
+
+  function clearAllFilters(): void {
+    const updated = new URLSearchParams(searchParams);
+    for (const key of ["author", "series", "shelf", "tag", "q", "cursor"]) updated.delete(key);
     setSearchParams(updated, { replace: true });
   }
 
@@ -156,7 +179,11 @@ function LibraryContent(): ReactElement {
             <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-2">
                 <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
-                <ActiveFilterChips searchParams={searchParams} setSearchParams={setSearchParams} />
+                <ActiveFilterChips
+                  searchParams={searchParams}
+                  setSearchParams={setSearchParams}
+                  seriesNames={seriesById}
+                />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
@@ -201,7 +228,11 @@ function LibraryContent(): ReactElement {
             <Separator className="mb-8" />
 
             {items.length === 0 ? (
-              <EmptyState />
+              hasActiveFilters(searchParams) ? (
+                <FilteredEmptyState onClear={clearAllFilters} />
+              ) : (
+                <EmptyState />
+              )
             ) : viewMode === "grid" ? (
               <BookGrid items={items} />
             ) : (
@@ -209,7 +240,16 @@ function LibraryContent(): ReactElement {
             )}
 
             {hasNextPage ? (
-              <div className="mt-10 flex justify-center">
+              <div className="mt-10 flex flex-col items-center gap-3">
+                {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
+                    error is hue-less (One-Accent rule — the danger hue is reserved
+                    for unrecoverable errors, and this one is retryable) and carried
+                    by copy + the Retry control. `role="alert"` announces it. */}
+                {isFetchNextPageError ? (
+                  <p role="alert" className="text-fg-muted text-sm">
+                    Couldn&apos;t load more books. Check your connection and try again.
+                  </p>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
@@ -223,6 +263,8 @@ function LibraryContent(): ReactElement {
                       <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
                       Loading…
                     </>
+                  ) : isFetchNextPageError ? (
+                    "Retry"
                   ) : (
                     "Load more"
                   )}
@@ -415,13 +457,66 @@ function BookCard({ book }: BookCardProps): ReactElement {
   );
 }
 
+/**
+ * True-empty state: the library genuinely holds no books. An admin can
+ * reach ingestion in one hop, so offer the link; non-admin readers (adult
+ * and child alike) see the holding copy only and get no dead-end action.
+ */
 function EmptyState(): ReactElement {
+  const { data: me } = useAuthMe();
   return (
     <div className="border-border text-fg-muted flex min-h-[40vh] flex-col items-center justify-center rounded-md border border-dashed py-16 text-center">
       <p className="font-display text-fg mb-2 text-xl font-semibold">No books yet</p>
       <p className="text-sm">Once ingestion completes, books appear here.</p>
+      {me?.role === "admin" ? (
+        <Button asChild variant="outline" size="sm" className="mt-6">
+          <Link to="/admin/dashboard">Go to ingestion</Link>
+        </Button>
+      ) : null}
     </div>
   );
+}
+
+interface FilteredEmptyStateProps {
+  /** Drops every filter param, returning the browse to the full library. */
+  onClear: () => void;
+}
+
+/**
+ * Filtered-empty state: the library has books, but the active filters
+ * exclude all of them. Distinct from {@link EmptyState} (a genuinely
+ * empty library) — same shell, accurate copy, plus a one-click escape so
+ * an over-narrow filter is never a dead-end.
+ */
+function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement {
+  return (
+    <div className="border-border text-fg-muted flex min-h-[40vh] flex-col items-center justify-center rounded-md border border-dashed py-16 text-center">
+      <p className="font-display text-fg mb-2 text-xl font-semibold">
+        No books match these filters
+      </p>
+      <p className="text-sm">Try removing a filter to widen your search.</p>
+      <Button type="button" variant="outline" size="sm" className="mt-6" onClick={onClear}>
+        Clear all filters
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * True when any browse filter (author / series / shelf / tag / q) is
+ * active. Drives the empty-state split: filters present means a
+ * zero-result set is "filtered to nothing", not "library is empty".
+ */
+function hasActiveFilters(search: URLSearchParams): boolean {
+  for (const key of ["author", "series", "shelf", "q"]) {
+    const value = search.get(key);
+    if (value !== null && value !== "") return true;
+  }
+  // `tag` is multi-value (`?tag=a&tag=b`), so `getAll`, not `get`. Keep this
+  // key set in sync with `clearAllFilters` and `paramsFromSearch`: `?tag=` is
+  // currently URL-only (the API filter is not wired yet), so a tag-only URL
+  // does not narrow the query — the chip and clear affordance still work.
+  return search.getAll("tag").some((tag) => tag !== "");
 }
 
 /**
@@ -441,6 +536,8 @@ function EmptyState(): ReactElement {
 interface ActiveFilterChipsProps {
   searchParams: URLSearchParams;
   setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
+  /** Series id → display name, from the loaded pages, for chip labels. */
+  seriesNames: ReadonlyMap<string, string>;
 }
 
 type ChipKey = "author" | "series" | "shelf" | "tag";
@@ -459,6 +556,7 @@ interface ActiveChip {
 function ActiveFilterChips({
   searchParams,
   setSearchParams,
+  seriesNames,
 }: ActiveFilterChipsProps): ReactElement | null {
   // 11d: resolve shelf id → name via the shelves cache when present
   // so the chip reads "shelf: Wishlist" instead of "shelf: a1b2c3d4…".
@@ -487,10 +585,15 @@ function ActiveFilterChips({
   const filters: ActiveChip[] = [];
   for (const key of ["author", "series", "shelf"] as const) {
     const value = searchParams.get(key);
-    if (value !== null && value !== "") {
-      const label = key === "shelf" ? `Shelf: ${shelfNameFor(value)}` : `${key}: ${shortId(value)}`;
-      filters.push({ id: key, key, label });
-    }
+    if (value === null || value === "") continue;
+    // Resolve ids to readable names: shelf via its cache, series via the
+    // loaded-pages map. `?author=` already carries a display name, so show
+    // it whole rather than truncating a readable value through `shortId`.
+    let label: string;
+    if (key === "shelf") label = `shelf: ${shelfNameFor(value)}`;
+    else if (key === "series") label = `series: ${seriesNames.get(value) ?? shortId(value)}`;
+    else label = `author: ${value}`;
+    filters.push({ id: key, key, label });
   }
   // `?tag=a&tag=b` repeats — one chip per value so the user can clear
   // them independently. Mirrors the backend's multi-value AND-match
