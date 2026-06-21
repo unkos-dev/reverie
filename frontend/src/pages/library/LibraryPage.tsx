@@ -88,23 +88,38 @@ function LibraryContent(): ReactElement {
   const cacheParams = { ...params };
   delete cacheParams.cursor;
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } =
-    useSuspenseInfiniteQuery<
-      BookListResponse,
-      Error,
-      InfiniteData<BookListResponse, string | undefined>,
-      ReturnType<typeof queryKeys.books.list>,
-      string | undefined
-    >({
-      queryKey: queryKeys.books.list(cacheParams),
-      queryFn: ({ signal, pageParam }) =>
-        listBooks(
-          pageParam === undefined ? cacheParams : { ...cacheParams, cursor: pageParam },
-          signal,
-        ),
-      initialPageParam: undefined,
-      getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    });
+  const {
+    data,
+    error: fetchNextPageError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useSuspenseInfiniteQuery<
+    BookListResponse,
+    Error,
+    InfiniteData<BookListResponse, string | undefined>,
+    ReturnType<typeof queryKeys.books.list>,
+    string | undefined
+  >({
+    queryKey: queryKeys.books.list(cacheParams),
+    queryFn: ({ signal, pageParam }) =>
+      listBooks(
+        pageParam === undefined ? cacheParams : { ...cacheParams, cursor: pageParam },
+        signal,
+      ),
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+
+  // The user-facing Load-more error is rendered below; this routes the raw
+  // error to the console too (QueryCache.onError only forwards 401s), so a
+  // 500 / parse failure leaves a developer breadcrumb. Mirrors the shelves
+  // handler in ActiveFilterChips.
+  useEffect(() => {
+    if (isFetchNextPageError)
+      console.error("[LibraryContent] failed to load the next page", fetchNextPageError);
+  }, [isFetchNextPageError, fetchNextPageError]);
 
   const items: BookListItem[] = data.pages.flatMap((p) => p.items);
 
@@ -444,8 +459,8 @@ function BookCard({ book }: BookCardProps): ReactElement {
 
 /**
  * True-empty state: the library genuinely holds no books. An admin can
- * reach ingestion in one hop, so offer the link; dependent readers (who
- * cannot ingest) see the holding copy only and get no dead-end action.
+ * reach ingestion in one hop, so offer the link; non-admin readers (adult
+ * and child alike) see the holding copy only and get no dead-end action.
  */
 function EmptyState(): ReactElement {
   const { data: me } = useAuthMe();
@@ -497,6 +512,10 @@ function hasActiveFilters(search: URLSearchParams): boolean {
     const value = search.get(key);
     if (value !== null && value !== "") return true;
   }
+  // `tag` is multi-value (`?tag=a&tag=b`), so `getAll`, not `get`. Keep this
+  // key set in sync with `clearAllFilters` and `paramsFromSearch`: `?tag=` is
+  // currently URL-only (the API filter is not wired yet), so a tag-only URL
+  // does not narrow the query — the chip and clear affordance still work.
   return search.getAll("tag").some((tag) => tag !== "");
 }
 
@@ -518,7 +537,7 @@ interface ActiveFilterChipsProps {
   searchParams: URLSearchParams;
   setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
   /** Series id → display name, from the loaded pages, for chip labels. */
-  seriesNames: Map<string, string>;
+  seriesNames: ReadonlyMap<string, string>;
 }
 
 type ChipKey = "author" | "series" | "shelf" | "tag";
@@ -571,7 +590,7 @@ function ActiveFilterChips({
     // loaded-pages map. `?author=` already carries a display name, so show
     // it whole rather than truncating a readable value through `shortId`.
     let label: string;
-    if (key === "shelf") label = `Shelf: ${shelfNameFor(value)}`;
+    if (key === "shelf") label = `shelf: ${shelfNameFor(value)}`;
     else if (key === "series") label = `series: ${seriesNames.get(value) ?? shortId(value)}`;
     else label = `author: ${value}`;
     filters.push({ id: key, key, label });

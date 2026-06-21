@@ -393,4 +393,93 @@ describe("LibraryPage", () => {
     expect(await screen.findByRole("button", { name: /retry/i })).toBeInTheDocument();
     fetchSpy.mockRestore();
   });
+
+  test("Retry after a failed Load more re-fetches, recovers, and keeps the loaded pages", async () => {
+    // Deliberately triggered failure logs to console — silence it for clean output.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const page2: BookListResponse = {
+      items: [bookFixture({ id: "p2", title: "Crime and Punishment" })],
+      next_cursor: null,
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page2), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(queryKeys.books.list({}), {
+      pages: [
+        { items: [bookFixture({ title: "The Brothers Karamazov" })], next_cursor: "eyJ4Ijox" },
+      ],
+      pageParams: [undefined],
+    });
+    // Prefill the shelves cache so the rail's on-mount shelves fetch does not
+    // consume the first (rejected) mock before the Load more click does.
+    client.setQueryData(queryKeys.shelves.list(), []);
+    function Wrapper(): ReactElement {
+      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+      const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+      return (
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      );
+    }
+    render(<Wrapper />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /load more/i }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    // Page 1 survives the failure.
+    expect(screen.getByText("The Brothers Karamazov")).toBeInTheDocument();
+
+    // Network heals: Retry clears the error and appends page 2.
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("Crime and Punishment")).toBeInTheDocument();
+    expect(screen.getByText("The Brothers Karamazov")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+
+    fetchSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  test("clearing all filters preserves the active view and sort params", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?series=s-1&sort=title&view=list"],
+      cacheParams: { series: "s-1", sort: "title" },
+      extraCacheParams: [{ sort: "title" }],
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
+    // Filter gone (true-empty takes over), but view (list) and sort (title)
+    // survive — assert via the persisted controls, not the list table (which
+    // an empty result set does not render).
+    expect(await screen.findByRole("button", { name: /Sort: Title/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "List", pressed: true })).toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+  });
+
+  test("series chip falls back to a short id when the id is absent from the loaded pages", async () => {
+    const longId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: [`/library?series=${longId}`],
+      cacheParams: { series: longId },
+    });
+    const chips = await screen.findByTestId("active-filters");
+    // No matching series in the loaded pages, so shortId (first 8 + ellipsis),
+    // never "undefined".
+    expect(within(chips).getByRole("button", { name: /aaaabbbb…/ })).toBeInTheDocument();
+    expect(within(chips).queryByRole("button", { name: /undefined/ })).not.toBeInTheDocument();
+  });
 });
