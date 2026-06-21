@@ -303,13 +303,15 @@ jobs:
         run: cargo run --quiet --locked -- print-config-schema | diff -u config.schema.json -
 
       # The schema descriptions are the config structs' doc-comments (schemars
-      # folds them in). Em dashes are an AI-writing tell kept out of prose; the
-      # Vale gate covers Markdown but not this generated JSON, so a doc-comment
-      # em dash that surfaces only here would otherwise escape. Guard the
-      # artifact directly: recast the source doc-comment and regenerate.
+      # folds them in). The Vale gate covers Markdown but not this generated
+      # JSON, so a doc-comment em dash that surfaces only here would otherwise
+      # escape. Match the raw U+2014 UTF-8 bytes (`LC_ALL=C` + fixed-string) so
+      # the check never depends on grep's PCRE or locale support: a PCRE-mode
+      # grep that rejected `\x{2014}` would exit non-zero and let the `if` pass
+      # the gate open. Fix: recast the source doc-comment and regenerate.
       - name: Guard against em dashes in the config schema
         run: |
-          if grep -Pn '\x{2014}' config.schema.json; then
+          if LC_ALL=C grep -nF $'\xe2\x80\x94' config.schema.json; then
             echo "::error::config.schema.json contains an em dash (lines above); recast the source doc-comment in backend/src/config and regenerate." >&2
             exit 1
           fi

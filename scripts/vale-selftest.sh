@@ -74,12 +74,10 @@ expect_silent "We dug deep into the schema before the migration."
 # Em-dash contract: a bare token gates every em dash in prose, so no Markdown
 # formatting around the dash (bold, italic, code) can slip the gate. Two
 # structural exemptions, not pattern heuristics: the frontmatter `consulted`
-# field, and inline code spans (line 70). Markers are recast at source, not
-# pattern-exempted, so a table-cell em dash fires like any other prose.
-# MADR `consulted` placeholder value: field-scoped, stays silent.
-expect_silent "$(printf -- '---\nconsulted: "%s"\n---\n\nClean body prose.\n' "$emdash")"
-# Any other frontmatter prose (e.g. a `description:`) is not exempt and fires.
-expect_fires EmDash "$(printf -- '---\ndescription: Prose %s description.\n---\n\nClean body prose.\n' "$emdash")"
+# field (exercised on real files in the mini-repo below, so the file parser and
+# field scope match scripts/vale-lint.sh), and inline code spans (line 70).
+# Markers are recast at source, not pattern-exempted, so a table-cell em dash
+# fires like any other prose.
 # Formatting around the dash is no bypass: an emphasised em dash still fires.
 expect_fires EmDash "This decision **${emdash}** owns the contract."
 # A table-cell em dash fires too: table cells are not exempt (markers recast).
@@ -116,6 +114,29 @@ if [ "$got" = "ReverieProse.WhStarter" ]; then
   echo "ok   WhStarter fires outside the adr/ exemption (docs/src/)"
 else
   echo "FAIL docs/src/ should fire only WhStarter, got [${got:-<none>}]" >&2
+  fail=1
+fi
+
+# Frontmatter scope on real files (same parser and field scope as vale-lint.sh,
+# not just stdin): the MADR `consulted` placeholder is field-scoped silent; a
+# prose `description` is not exempt and fires. Deleting `~text.frontmatter.consulted`
+# from .vale.ini makes the first assertion fail.
+printf -- '---\nconsulted: "%s"\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-consulted.md"
+printf -- '---\ndescription: Shell organised %s the rail.\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-desc.md"
+
+got=$(checks_for docs/src/fm-consulted.md)
+if [ -z "$got" ]; then
+  echo "ok   consulted frontmatter field-scoped silent (real file)"
+else
+  echo "FAIL consulted should be silent, fired [$got]" >&2
+  fail=1
+fi
+
+got=$(checks_for docs/src/fm-desc.md)
+if [ "$got" = "ReverieProse.EmDash" ]; then
+  echo "ok   description frontmatter fires EmDash (real file)"
+else
+  echo "FAIL description should fire EmDash, got [${got:-<none>}]" >&2
   fail=1
 fi
 
