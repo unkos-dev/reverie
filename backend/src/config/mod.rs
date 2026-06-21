@@ -667,7 +667,7 @@ mod tests {
     /// declarative [`ENV_MAP`] (the structured replacement for the former
     /// textual `get("KEY")` source scan).
     ///
-    /// Guards the ENV_MAP consistency invariant: an example var
+    /// Guards the [`ENV_MAP`] consistency invariant: an example var
     /// whose name diverges from the loader either hard-fails startup with a
     /// misleading `MissingVar` (loud) or is silently ignored while a fallback
     /// takes over (silent — e.g. ingestion DSN falling back to the app role,
