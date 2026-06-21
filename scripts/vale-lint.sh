@@ -7,8 +7,8 @@
 #   - agent-process instructions (CLAUDE.md / AGENTS.md / GEMINI.md, any dir),
 #   - the archival .claude tree.
 #
-# Posture is advisory: the rules emit at `warning`, so Vale exits zero and this
-# wrapper does not block a commit. The scope policy lives here so lint-staged
+# Posture is a hard gate: the rules emit at `error`, so Vale exits non-zero on
+# any finding and blocks the commit. The scope policy lives here so lint-staged
 # (staged files) and CI (`--all`) share one source of truth, mirroring
 # scripts/no-issue-refs.sh.
 #

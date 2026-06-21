@@ -80,7 +80,7 @@ Update `frontend/eslint.config.js`:
   "No `enum`: prefer `as const` objects + union types."
 - Add `no-restricted-syntax` for inline `style={{ ... }}` JSX
   attributes per CLAUDE.md "No inline style objects (except for
-  genuinely dynamic values)."
+  dynamic values)."
 
 Existing carve-outs (Lockup hex literals, shadcn/ui type assertions,
 test fixture casts) remain.

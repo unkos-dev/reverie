@@ -188,7 +188,7 @@ preference, Audiobookshelf, Jellyfin, Kavita) and the shared-device
 rationale: a device's user-distinct theme survives a session sign-out
 without leaking identity.
 
-When the client persists a preference change, a failed `PATCH` is handled
+A failed `PATCH` on a persisted preference change is handled
 by response class. A 401 (anonymous), 403 (expired session or missing
 CSRF), or 5xx (backend unavailable) keeps the optimistic value (the theme
 must not flip mid-visit on an auth lapse or outage) and the reconcile on

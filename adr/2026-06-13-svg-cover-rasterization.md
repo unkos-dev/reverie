@@ -95,7 +95,7 @@ Concrete shape of the decision:
   long edge (`Pixmap::new` over/zero-size → error).
 - **Parser stack overflow.** Both `roxmltree`'s parser **and** `usvg`'s tree
   conversion recurse on element nesting with no depth guard and _abort the
-  process_ (stack overflow, uncatchable) on deeply nested SVG: observed at a few
+  process_ (stack overflow, uncatchable) on SVG with deep nesting: observed at a few
   hundred levels on a 2 MiB stack, reachable by a few-KB cover. Because the parser
   itself overflows, the depth bound runs on the **raw bytes before any parse**: a
   flat byte scan (no parse, no recursion, so it cannot itself overflow) rejects
@@ -200,7 +200,7 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 - Bad: stored-XSS surface (SVG carries script); needs a sanitization story and
   CSP changes on the cover route.
 - Bad: collapses the thumb/full size tiers: resizing an SVG means rasterizing
-  it anyway, so this does not actually avoid a renderer.
+  it anyway, so this does not avoid a renderer.
 
 ### Prefer the raster sibling only
 

@@ -57,7 +57,7 @@ Key-value rejected because: type validation would live entirely in app code; doe
 
 Chosen because: Reverie's audience manages via browser UI. If an operator sets a value in the settings page, that value must take effect, having an invisible env var silently override it is surprising and frustrating UX. Env vars provide the initial seed (migration `DEFAULT` values come from env at first boot via a seed step), but once persisted, the DB value is authoritative.
 
-Env-beats-DB rejected because: while 12-factor canonical, it optimises for the wrong audience. Kubernetes operators who pin via env can simply not expose those fields in the UI (the "restart-required" classification handles this naturally). Self-hosting operators using Docker Compose or bare-metal expect the UI to be authoritative.
+Env-beats-DB rejected because: while 12-factor canonical, it optimises for the wrong audience. Kubernetes operators who pin via env can omit those fields from the UI (the "restart-required" classification handles this naturally). Self-hosting operators using Docker Compose or bare-metal expect the UI to be authoritative.
 
 **Seed behaviour** (deferred to the settings seeding implementation): on first startup (empty `settings` row), the migration inserts defaults. A one-time seed function in `services/settings.rs` will run post-migration and populate columns from current env values where the column is still at its migration default. This gives env vars "first boot" authority without ongoing override semantics. Not needed pre-0.1.0, no real operators to break yet; migration defaults are reasonable starting values.
 

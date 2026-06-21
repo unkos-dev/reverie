@@ -1,6 +1,6 @@
 extends: substitution
 message: "Prefer '%s' over business jargon."
-level: warning
+level: error
 ignorecase: true
 swap:
   game-changer: significant

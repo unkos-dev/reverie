@@ -103,7 +103,7 @@ UI action is acceptable operational cost.
 ## Consequences
 
 - Good: **release lifecycle stays semver-pure**. PR #33 can be held
-  until the app is genuinely v0.1.0-worthy. No pressure to merge it
+  until the app is v0.1.0-worthy. No pressure to merge it
   for unrelated reasons. The first semver release means what it says
 - Good: **staging gets continuous images at zero extra release
   cadence**. Every main merge produces a pullable artefact. Homelab

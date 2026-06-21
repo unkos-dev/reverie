@@ -1008,12 +1008,12 @@ jobs:
       - name: Prose lint scope test (vale-lint.sh)
         run: scripts/vale-scope-test.sh
 
-      # The prose pass over the docs is advisory because every rule emits at
-      # `warning`, so Vale exits zero and this step passes while the existing
-      # backlog is triaged (mirrors the impeccable-detect rollout below). The
-      # Phase 3 flip raises the rule levels to `error`: Vale then exits non-zero
-      # and this step fails the build, with no other change needed.
-      - name: Prose lint (Vale, advisory)
+      # The prose pass is a hard gate: every rule emits at `error`, so Vale
+      # exits non-zero on any finding and fails the build. Scope is prose only
+      # (YAML frontmatter and table structure excluded; the ADR tree is exempt
+      # from the Wh-opener rule). New slop in the Starlight docs, ADRs, or
+      # repo-root Markdown fails CI.
+      - name: Prose lint (Vale)
         run: scripts/vale-lint.sh --all
 
       # Authoritative formatting gate. lint-staged runs `prettier --write` on

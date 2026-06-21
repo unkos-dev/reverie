@@ -21,7 +21,7 @@ PR-time prompt. The invariant could drift from the shipped UI undetected.
 How should accessibility be enforced so the invariant is load-bearing rather
 than aspirational: what runs automatically, what stays a human audit, when
 does the human audit happen, and how is the one accepted carve-out documented
-so the gate does not simply mask it?
+so the gate does not mask it?
 
 ## Decision Drivers
 
@@ -96,7 +96,7 @@ Concretely:
 
 Enforced by the CI `a11y` job: `npm run a11y` fails (exit non-zero) on any WCAG
 2.2 AA violation whose nodes are not covered by
-`frontend/scripts/a11y/allowlist.mjs`. The runner also asserts the scan actually
+`frontend/scripts/a11y/allowlist.mjs`. The runner also asserts the scan
 ran (axe testEngine present, URL matched, non-trivial passes/inapplicable) and
 fails closed otherwise, so an empty result from a crashed browser or blank page
 cannot be mistaken for "0 violations".

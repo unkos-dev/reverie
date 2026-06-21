@@ -1,6 +1,6 @@
 extends: existence
 message: "Avoid em dashes in prose. Recast with a comma, colon, or full stop."
-level: warning
+level: error
 nonword: true
 # Prose only: skip YAML frontmatter values (e.g. the MADR `consulted: "—"`
 # placeholder) and table cells (em dashes used as column markers are structure,
