@@ -24,7 +24,7 @@
       "default": ""
     },
     "db_max_connections": {
-      "description": "Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default\n`10`); applied identically to the primary, ingestion, and\nwriteback pools. Must be ≥ 1 — a zero cap yields a pool that can\nnever hand out a connection (`PoolTimedOut` on the first query).",
+      "description": "Per-pool connection cap (`REVERIE_DB_MAX_CONNECTIONS`, default\n`10`); applied identically to the primary, ingestion, and\nwriteback pools. Must be ≥ 1: a zero cap yields a pool that can\nnever hand out a connection (`PoolTimedOut` on the first query).",
       "type": "integer",
       "format": "uint32",
       "default": 10,
@@ -91,12 +91,12 @@
       "default": "./library"
     },
     "log_level": {
-      "description": "Log-filter directive resolved from the environment with cascading\nprecedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `\"info\"`. The\n`REVERIE_*` operator namespace wins on conflict so staging docs\nstay coherent; `RUST_LOG` is honoured as the ecosystem default for\ndeveloper convenience. The subscriber filter in [`crate::run`]\nparses this string directly — no further env re-read — so the\nprecedence resolved here is the single source of truth for the\nprocess lifetime.",
+      "description": "Log-filter directive resolved from the environment with cascading\nprecedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `\"info\"`. The\n`REVERIE_*` operator namespace wins on conflict so staging docs\nstay coherent; `RUST_LOG` is honoured as the ecosystem default for\ndeveloper convenience. The subscriber filter in [`crate::run`]\nparses this string directly (no further env re-read), so the\nprecedence resolved here is the single source of truth for the\nprocess lifetime.",
       "type": "string",
       "default": "info"
     },
     "migration_database_url": {
-      "description": "Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`\ncredentials for the ephemeral migration pool. `None` on the default\nserver path — the application process holds no migration credential\nunless [`Self::auto_migrate`] is set. Required (else\n[`ConfigError::MissingVar`]) only when `auto_migrate` is true.",
+      "description": "Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`\ncredentials for the ephemeral migration pool. `None` on the default\nserver path: the application process holds no migration credential\nunless [`Self::auto_migrate`] is set. Required (else\n[`ConfigError::MissingVar`]) only when `auto_migrate` is true.",
       "type": [
         "string",
         "null"
@@ -109,12 +109,12 @@
       "default": ""
     },
     "oidc_client_secret": {
-      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material — never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
+      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material; never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
       "type": "string",
       "default": ""
     },
     "oidc_issuer_url": {
-      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`, required) — the trust seam\nfor the entire authentication subsystem. The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
+      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`, required): the trust seam\nfor the entire authentication subsystem. The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
       "type": "string",
       "default": ""
     },
@@ -188,21 +188,21 @@
       "type": "object",
       "properties": {
         "download_timeout_secs": {
-          "description": "Per-download HTTP timeout\n(`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`). Must be ≥ 1 —\na zero timeout would abort every download immediately.",
+          "description": "Per-download HTTP timeout\n(`REVERIE_COVER_DOWNLOAD_TIMEOUT_SECS`, default `30`). Must be ≥ 1:\na zero timeout would abort every download immediately.",
           "type": "integer",
           "format": "uint64",
           "default": 30,
           "minimum": 1
         },
         "max_bytes": {
-          "description": "Maximum bytes accepted per cover image\n(`REVERIE_COVER_MAX_BYTES`, default `10_485_760` — 10 MiB). Must be\n≥ 1 — a zero cap would reject every cover.",
+          "description": "Maximum bytes accepted per cover image\n(`REVERIE_COVER_MAX_BYTES`, default `10_485_760`, 10 MiB). Must be\n≥ 1: a zero cap would reject every cover.",
           "type": "integer",
           "format": "uint64",
           "default": 10485760,
           "minimum": 1
         },
         "min_long_edge_px": {
-          "description": "Minimum long-edge pixel dimension; smaller images are rejected\n(`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`). Must be ≥ 1 — a\nzero floor would defeat the quality filter and accept any image.",
+          "description": "Minimum long-edge pixel dimension; smaller images are rejected\n(`REVERIE_COVER_MIN_LONG_EDGE_PX`, default `1000`). Must be ≥ 1:\na zero floor would defeat the quality filter and accept any image.",
           "type": "integer",
           "format": "uint32",
           "default": 1000,
@@ -358,7 +358,7 @@
       "type": "object",
       "properties": {
         "behind_https": {
-          "description": "Whether the deployment is fronted by a TLS-terminating reverse\nproxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS\nemission — never emitted on plaintext HTTP because the browser\nwould refuse the next TLS-less request to this host.",
+          "description": "Whether the deployment is fronted by a TLS-terminating reverse\nproxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS\nemission: never emitted on plaintext HTTP because the browser\nwould refuse the next TLS-less request to this host.",
           "type": "boolean",
           "default": false
         },
