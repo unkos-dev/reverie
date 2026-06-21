@@ -30,7 +30,7 @@ use validator::{Validate, ValidationError};
 pub struct SecurityConfig {
     /// Whether the deployment is fronted by a TLS-terminating reverse
     /// proxy (`REVERIE_BEHIND_HTTPS`, default `false`). Gates HSTS
-    /// emission — never emitted on plaintext HTTP because the browser
+    /// emission: never emitted on plaintext HTTP because the browser
     /// would refuse the next TLS-less request to this host.
     pub behind_https: bool,
     /// Whether the HSTS header carries `; includeSubDomains`

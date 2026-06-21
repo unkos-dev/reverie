@@ -1,11 +1,12 @@
 extends: existence
+# Prose em dashes only. A word character adjacent to the em dash (optionally one
+# space) marks prose; standalone markers — a `| — |` "n/a" cell, the MADR
+# `consulted: "—"` placeholder — have no adjacent word and stay silent, so no
+# location-based scope exclusion is needed. Bare standalone em dashes in flowing
+# prose are intentionally NOT gated (vanishingly rare; not the AI-tell shape).
 message: "Avoid em dashes in prose. Recast with a comma, colon, or full stop."
 level: error
 nonword: true
-# Prose only: skip YAML frontmatter values (e.g. the MADR `consulted: "—"`
-# placeholder) and table cells (em dashes used as column markers are structure,
-# not prose). Vale exposes frontmatter fields as `text.frontmatter.*` scopes.
-scope:
-  - ~text.frontmatter & ~table.cell & ~table.header
 tokens:
-  - '\x{2014}'
+  - '\w ?\x{2014}'
+  - '\x{2014} ?\w'

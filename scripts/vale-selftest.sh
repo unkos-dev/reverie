@@ -71,14 +71,17 @@ expect_silent "The \`a ${emdash} b\` operator is code, not prose."
 # Near miss: "deep" without "dive" must not trip BusinessJargon.
 expect_silent "We dug deep into the schema before the migration."
 
-# Scope exclusions: EmDash is prose-only. These exercise the scope selector
-# (~text.frontmatter & ~table.cell & ~table.header) over multi-line stdin, so
-# structure stays silent while body prose still fires (locked in at line 57).
-# Deleting the scope block from EmDash.yml makes one of these fire.
-# Em dash in a YAML frontmatter value (the MADR `consulted` placeholder).
+# Word-adjacency contract: EmDash fires only when a word character sits next to
+# the em dash (optionally one space). Standalone markers have no adjacent word
+# and stay silent without any location-based scope exclusion.
+# MADR `consulted: "—"` placeholder: standalone, no adjacent word, stays silent.
 expect_silent "$(printf -- '---\nconsulted: "%s"\n---\n\nClean body prose.\n' "$emdash")"
-# Em dash inside a table cell (a column marker, not prose).
-expect_silent "$(printf -- '| Head |\n| --- |\n| a %s b |\n' "$emdash")"
+# A `description:` frontmatter value with a word-adjacent em dash fires.
+expect_fires EmDash "$(printf -- '---\ndescription: Prose %s description.\n---\n\nClean body prose.\n' "$emdash")"
+# Standalone `| — |` marker cell: no adjacent word, stays silent.
+expect_silent "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
+# Word-adjacent em dash in a table cell fires (prose in a cell is still prose).
+expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| word %s word |\n' "$emdash")"
 
 # Path-scoped behaviour can't be exercised over stdin (no file path), so build a
 # throwaway mini-repo from the real .vale.ini + styles, with one Wh-opener line

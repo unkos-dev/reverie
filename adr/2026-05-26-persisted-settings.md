@@ -80,12 +80,12 @@ Periodic-poll-only rejected because: unnecessary staleness (up to poll interval)
 
 All settings are hot-reloadable **except** four infrastructure fields that require process restart:
 
-| Field                                                                          | Why restart-required                                                                                                 |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `port`                                                                         | Requires TcpListener rebind; axum::serve doesn't support hot swap                                                    |
-| `database_url`                                                                 | Requires pool reconstruction + drain coordination                                                                    |
-| `oidc_issuer_url`, `oidc_client_id`, `oidc_client_secret`, `oidc_redirect_uri` | Requires OIDC re-discovery (async HTTP) + client rebuild                                                             |
-| `library_path`                                                                 | Worker reads from settings each cycle — could be hot, but path change mid-scan risks partial-state. Restart is safer |
+| Field                                                                          | Why restart-required                                                                                                |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `port`                                                                         | Requires TcpListener rebind; axum::serve doesn't support hot swap                                                   |
+| `database_url`                                                                 | Requires pool reconstruction + drain coordination                                                                   |
+| `oidc_issuer_url`, `oidc_client_id`, `oidc_client_secret`, `oidc_redirect_uri` | Requires OIDC re-discovery (async HTTP) + client rebuild                                                            |
+| `library_path`                                                                 | Worker reads from settings each cycle; could be hot, but path change mid-scan risks partial-state. Restart is safer |
 
 All other fields (enrichment, cover, writeback, OPDS, format priority, cleanup mode, API base URLs, operator contact) are hot-reloadable. Workers and handlers read from the RwLock on each request/job cycle.
 

@@ -1,6 +1,6 @@
 ---
 title: Navigating Reverie
-description: How the app shell is organised — the navigation rail, contextual filters, search, and the thinking behind them.
+description: "How the app shell is organised: the navigation rail, contextual filters, search, and the thinking behind them."
 ---
 
 Every screen in Reverie wears the same chrome: a navigation rail on the

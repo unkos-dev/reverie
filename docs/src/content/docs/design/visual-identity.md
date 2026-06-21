@@ -40,10 +40,10 @@ resolve to brand variables.
 | `--color-fg`            | `#0E0D0A` (Ink)         | `#E8E0D0` (Cream)       | Primary text                                                        |
 | `--color-fg-muted`      | `#5A5244`               | `#A8A090`               | Secondary text                                                      |
 | `--color-fg-faint`      | `#8A8170`               | `#6E6858`               | Tertiary text                                                       |
-| `--color-accent`        | `#8E6F38`               | `#C9A961` (Gold)        | Accent / focus / CTA — primary affordances only, never hover        |
+| `--color-accent`        | `#8E6F38`               | `#C9A961` (Gold)        | Accent / focus / CTA: primary affordances only, never hover         |
 | `--color-accent-soft`   | `#DCC890`               | `#4A3C24`               | Selected backgrounds (pair with `text-fg`, not `text-fg-on-accent`) |
 | `--color-accent-strong` | `#6E5424`               | `#D4B070`               | Pressed accent                                                      |
-| `--color-fg-on-accent`  | `#E8DCC2`               | `#0E0D0A`               | Text on saturated `bg-accent` only — fails AA on `bg-accent-soft`   |
+| `--color-fg-on-accent`  | `#E8DCC2`               | `#0E0D0A`               | Text on saturated `bg-accent` only; fails AA on `bg-accent-soft`    |
 | `--color-hover`         | `#E5D8BC` (= surface-2) | `#2A261D` (= surface-2) | shadcn-primitive hover/focus lift; decoupled from gold              |
 
 **No state-color tokens.** `--color-success`, `--color-warning`,
@@ -111,19 +111,19 @@ ambient pulses.
 State communicates through typography weight, surface opacity, motion,
 and the gold accent, never a state-coded hue. The canonical mapping:
 
-| State                | Expression                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                                                     |
-| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                                              |
-| Hover (in-list item) | `bg-hover` (= `bg-surface-2`)                                                                                                              |
-| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                                                          |
-| Selected             | `bg-accent-soft` background + `text-fg`                                                                                                    |
-| Disabled             | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only — opacity-50 × fg-faint drops below AA)                                 |
-| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                             |
-| Error                | `text-fg font-semibold` + gold recovery action                                                                                             |
-| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                           |
-| Link                 | underline + `text-accent` on hover; no permanent colour difference                                                                         |
-| Focus (keyboard)     | single 2px `gold-11` outline + 2px offset, no halo — global `:focus-visible` rule (`--focus-ring: var(--accent-text)`, `box-shadow: none`) |
+| State                | Expression                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                                                    |
+| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                                             |
+| Hover (in-list item) | `bg-hover` (= `bg-surface-2`)                                                                                                             |
+| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                                                         |
+| Selected             | `bg-accent-soft` background + `text-fg`                                                                                                   |
+| Disabled             | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only; opacity-50 × fg-faint drops below AA)                                 |
+| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                            |
+| Error                | `text-fg font-semibold` + gold recovery action                                                                                            |
+| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                          |
+| Link                 | underline + `text-accent` on hover; no permanent colour difference                                                                        |
+| Focus (keyboard)     | single 2px `gold-11` outline + 2px offset, no halo; global `:focus-visible` rule (`--focus-ring: var(--accent-text)`, `box-shadow: none`) |
 
 Charts and code blocks are scoped exceptions; when they ship, the
 deviation is documented here and constrained to the surface that

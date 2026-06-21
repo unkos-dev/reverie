@@ -1,6 +1,6 @@
 ---
 title: Color Token System
-description: The three-tier editorial color contract — generated Radix primitives, reverie semantic roles, and the sealed atmosphere layer.
+description: "The three-tier editorial color contract: generated Radix primitives, reverie semantic roles, and the sealed atmosphere layer."
 ---
 
 Reverie's color system is a **three-tier contract**: raw color exists in exactly
@@ -14,11 +14,11 @@ remains the source of truth for the palette.
 
 ## The three tiers
 
-| Tier           | Where                             | Contents                                                                             | Raw color?                         |
-| -------------- | --------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------- |
-| 1 — Primitives | `themes/primitives.generated.css` | `--sand-*` / `--gold-*` / `--danger-*` 12-step ramps (+ alpha, P3, contrast, `--bg`) | Yes — generated, never hand-edited |
-| 2 — Semantic   | `themes/index.css`                | `--canvas` / `--fg` / `--accent` / `--danger` / `--border` … + shadcn aliases        | No — `var()` references only       |
-| 3 — Atmosphere | `themes/atmosphere.css`           | `--atm-*` / `--cover-*` art-directed editorial constants                             | Yes — art-directed                 |
+| Tier          | Where                             | Contents                                                                             | Raw color?                        |
+| ------------- | --------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- |
+| 1: Primitives | `themes/primitives.generated.css` | `--sand-*` / `--gold-*` / `--danger-*` 12-step ramps (+ alpha, P3, contrast, `--bg`) | Yes, generated, never hand-edited |
+| 2: Semantic   | `themes/index.css`                | `--canvas` / `--fg` / `--accent` / `--danger` / `--border` … + shadcn aliases        | No, `var()` references only       |
+| 3: Atmosphere | `themes/atmosphere.css`           | `--atm-*` / `--cover-*` art-directed editorial constants                             | Yes, art-directed                 |
 
 The rule in one line: **components → semantic → primitive; raw color literals
 live only in Tier 1 (and the named exceptions). Atmosphere is a sealed parallel
