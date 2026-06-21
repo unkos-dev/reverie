@@ -7,6 +7,10 @@ extend-ignore-re = [
   # the exact phrase so the underlying dictionary stays active elsewhere.
   "pre-empted",
   "mis-aliasing",
+  # Intentional misspelling in the Vale spelling self-test fixture. Scoped to the
+  # fixture phrase, not a repo-wide allow of the bare word, so a genuine
+  # `reciever` typo elsewhere is still caught.
+  "reciever drops the frame",
 ]
 
 [default.extend-words]
@@ -18,10 +22,6 @@ criticals = "criticals"
 
 # Intentional typo in settings test (deny_unknown_fields coverage)
 concurency = "concurency"
-
-# Intentional misspelling in the Vale spelling self-test fixture (asserts the
-# Australian-English spelling check fires on a plain misspelling).
-reciever = "reciever"
 
 # Color spaces / design tokens
 oklch = "oklch"

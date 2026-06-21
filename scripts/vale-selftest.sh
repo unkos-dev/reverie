@@ -75,6 +75,10 @@ expect_silent "The cache behaviour is configurable."
 # (a base term also covers its possessive form).
 expect_silent "The axum handler reads from sqlx."
 expect_silent "Reverie uses the Parchment theme."
+# Accept-list entries match whole tokens, not substrings: a misspelling that
+# merely contains a short accepted term (config) still fires, so unanchored
+# short entries do not silently swallow typos.
+expect_fires Spelling "The configg value is wrong."
 
 # Edge cases that lock in deliberate design choices.
 # WhStarter is paragraph-scoped, so a Wh- word in a heading is exempt.
