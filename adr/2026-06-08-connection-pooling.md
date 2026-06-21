@@ -28,7 +28,7 @@ between the application and Postgres?
 - **Single-instance deployment.** The shipped topology is one app process. The
   problem a separate pooling tier solves, many app processes exhausting
   Postgres `max_connections`: does not exist by default.
-- **Minimize component count and SPOF** for a self-hosted operator. Every
+- **Minimise component count and SPOF** for a self-hosted operator. Every
   bundled component is one more thing to run, monitor, and have fail.
 - **Session-level Postgres features are load-bearing.** Reverie's persisted
   settings use `LISTEN`/`NOTIFY` over a `PgListener`

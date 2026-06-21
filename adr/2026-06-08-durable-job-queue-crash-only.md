@@ -96,7 +96,7 @@ the **instance** boundary, not on worker count.
   idempotent.
 - **Workers are crash-only.** Correctness never depends on a graceful shutdown
   having run. A SIGTERM drain (stop claiming, finish in-flight;
-  the graceful-shutdown drain task) is an _optimization_ that
+  the graceful-shutdown drain task) is an _optimisation_ that
   avoids needless re-runs on a planned restart (politeness, not correctness).
 - **No distribution.** Durability and mutual exclusion come from Postgres; there
   is no external broker, distributed scheduler, or cross-node coordination.

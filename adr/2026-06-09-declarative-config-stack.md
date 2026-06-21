@@ -195,7 +195,7 @@ owns the task sequence, the offload boundary, and the verification checklist.
 - Neutral, because the operator env-var surface is deliberately mixed: bare
   ecosystem-canonical names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) alongside
   `REVERIE_`-namespaced app-specific knobs: rather than a uniform scheme.
-  Regularizing every var to mirror the struct nesting (e.g. `__`-separated,
+  Regularising every var to mirror the struct nesting (e.g. `__`-separated,
   `REVERIE_OPDS__PUBLIC_URL`) would let stock `figment::Env::split("__")` drop
   most of the per-key map, but was rejected: it spends pre-v1.0 latitude to
   degrade operator ergonomics (longer, `__`-typo-prone names) and to make the

@@ -16,3 +16,9 @@
 *.pdf   binary
 *.epub  binary
 *.zip   binary
+
+# Vendored Vale spelling dictionary (Australian English Hunspell data): a 50k-word
+# list, not authored source. Keep it out of language stats and suppress its diff
+# so it never dominates a review.
+styles/config/dictionaries/en_AU.dic linguist-vendored linguist-generated -diff
+styles/config/dictionaries/en_AU.aff linguist-vendored linguist-generated -diff

@@ -149,7 +149,7 @@ and Reverie's threat model
 a timing-leak in CSRF compare lets an attacker who can issue
 many requests against the gateway narrow the valid-token search
 space byte by byte, in the same way they can attack a
-non-constant-time HMAC verifier. Reverie pins this defense for
+non-constant-time HMAC verifier. Reverie pins this defence for
 every secret-vs-presented comparison; the precedent is
 `auth/token.rs::verify_device_token`.
 

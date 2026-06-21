@@ -197,7 +197,7 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 ### Serve SVG pass-through
 
 - Good: no rendering dependency.
-- Bad: stored-XSS surface (SVG carries script); needs a sanitization story and
+- Bad: stored-XSS surface (SVG carries script); needs a sanitisation story and
   CSP changes on the cover route.
 - Bad: collapses the thumb/full size tiers: resizing an SVG means rasterizing
   it anyway, so this does not avoid a renderer.

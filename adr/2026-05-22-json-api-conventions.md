@@ -177,7 +177,7 @@ so offset pagination would shift the page boundary mid-scroll.
 Cursors are also O(log N) per page at scale; offsets degrade as
 the table grows, and the blueprint targets 50K+ library sizes.
 
-### Pagination signaling: RFC 8288 `Link` header + body `next_cursor`
+### Pagination signalling: RFC 8288 `Link` header + body `next_cursor`
 
 Every paginated response includes:
 
@@ -198,7 +198,7 @@ frontend's react-query infinite-query helper consumes a body
 field with less ceremony than a parsed Link header. The two are
 guaranteed to carry the same information; either is sufficient.
 
-### CSRF defense: OWASP synchronizer token pattern (CHANGED)
+### CSRF defence: OWASP synchronizer token pattern (CHANGED)
 
 `SameSite=Lax` cookies alone are insufficient per the OWASP CSRF
 prevention cheat sheet (cited as P0 reading in the Sub-phase 11a
@@ -224,11 +224,11 @@ plan). Reverie adopts the OWASP synchronizer-token pattern:
   session and therefore the token; a logged-out user has no
   session to attach a token to.
 
-This is a **CHANGE** from the implicit-only defenses Reverie
+This is a **CHANGE** from the implicit-only defences Reverie
 relied on previously (`SameSite=Lax` + CSP API layer + Bearer
-token requirement for older API surfaces). Both prior defenses
+token requirement for older API surfaces). Both prior defences
 remain in place as belt-and-braces; the synchronizer token is
-the new primary CSRF defense for browser cookie-authed
+the new primary CSRF defence for browser cookie-authed
 operations.
 
 Rationale for the migration: the OWASP cheat sheet is explicit
@@ -236,7 +236,7 @@ that `SameSite=Lax` is necessary but not sufficient (it does not
 block top-level GET CSRF that returns sensitive state, and it
 does not block CSRF when a cookie is set with `SameSite=None`
 for any reason during the session). The synchronizer token is
-the OWASP-blessed primary defense. Adopting it during the
+the OWASP-blessed primary defence. Adopting it during the
 greenfield phase (before any production browser-cookie-authed
 mutation traffic exists) is cheaper than retrofitting later.
 
@@ -255,7 +255,7 @@ of frontend reader.
 When a request targets a resource the user lacks RLS visibility
 on (`GET /api/books/{id}` where the manifestation row is filtered
 out), the handler returns 404 Not Found, not 403 Forbidden. OWASP
-defense-in-depth: 403 confirms the resource exists, which is
+defence-in-depth: 403 confirms the resource exists, which is
 information disclosure. Backend implementation: under
 `acquire_with_rls`, the row is invisible to the query, so the
 existing zero-rows → `AppError::NotFound` mapping produces the
@@ -379,7 +379,7 @@ Rejected because Reverie's threat model is the
 per
 [`project_open_source_security_stance`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md).
 External contributors and self-hosters audit Reverie expecting
-OWASP-default defenses. Synchronizer token is the OWASP-blessed
+OWASP-default defences. Synchronizer token is the OWASP-blessed
 primary; not adopting it is a deviation that would require its
 own ADR. We adopt the standard.
 
@@ -407,7 +407,7 @@ table shifts mid-scroll. Offset pagination would display
 duplicates and skip rows under that workload. Cursor is the
 correct answer.
 
-### Bearer-token CSRF defense only
+### Bearer-token CSRF defence only
 
 Treat the API as if it were a public API: require `Authorization:
 Bearer <token>` on every request, skip CSRF entirely.
@@ -415,7 +415,7 @@ Bearer <token>` on every request, skip CSRF entirely.
 Rejected: the browser UI uses cookie sessions for the same
 reason the existing `/auth/login` and `/auth/me` flows do
 (OIDC-driven login, no per-request token management on the
-client side). Hybrid stacks need browser-CSRF defense for the
+client side). Hybrid stacks need browser-CSRF defence for the
 cookie surface AND token-auth for the API client surface. We
 ship CSRF for browser cookies; bearer tokens exist on a separate
 endpoint set (`/api/tokens` issues device tokens; those endpoints

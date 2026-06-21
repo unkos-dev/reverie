@@ -7,6 +7,10 @@ extend-ignore-re = [
   # the exact phrase so the underlying dictionary stays active elsewhere.
   "pre-empted",
   "mis-aliasing",
+  # Intentional misspelling in the Vale spelling self-test fixture. Scoped to the
+  # fixture phrase, not a repo-wide allow of the bare word, so a genuine
+  # `reciever` typo elsewhere is still caught.
+  "reciever drops the frame",
 ]
 
 [default.extend-words]
@@ -41,6 +45,11 @@ extend-exclude = [
   # Vendored codeguard security context — frozen as authored (see
   # docs/security/codeguard/README.md governance note).
   "docs/security/codeguard/",
+  # Vale spelling assets: the vendored Australian-English Hunspell dictionary is
+  # a 50k-word list, and the vocabulary accept-list holds brand terms and
+  # identifiers. Both are word data, not prose, so typos must not scan them.
+  "styles/config/dictionaries/",
+  "styles/config/vocabularies/",
   "*.lock",
   "package-lock.json",
 ]
