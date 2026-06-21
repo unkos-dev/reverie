@@ -1,0 +1,9 @@
+# Reverie vocabulary accept-list (Vale Vocab). One case-insensitive regex per
+# line; lines starting with '#' are comments. Anchor short tokens with \b so a
+# bare term does not partial-match a longer word. Do NOT use [..] character
+# classes here: a bracketed Vocab entry can disable Vale.Spelling entirely.
+#
+# Brand and product vocabulary.
+Reverie
+Parchment
+Unkos

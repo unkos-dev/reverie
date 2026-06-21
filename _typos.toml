@@ -41,6 +41,11 @@ extend-exclude = [
   # Vendored codeguard security context — frozen as authored (see
   # docs/security/codeguard/README.md governance note).
   "docs/security/codeguard/",
+  # Vale spelling assets: the vendored Australian-English Hunspell dictionary is
+  # a 50k-word list, and the vocabulary accept-list holds brand terms and
+  # identifiers. Both are word data, not prose, so typos must not scan them.
+  "styles/config/dictionaries/",
+  "styles/config/vocabularies/",
   "*.lock",
   "package-lock.json",
 ]
