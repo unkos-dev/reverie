@@ -19,6 +19,10 @@ criticals = "criticals"
 # Intentional typo in settings test (deny_unknown_fields coverage)
 concurency = "concurency"
 
+# Intentional misspelling in the Vale spelling self-test fixture (asserts the
+# Australian-English spelling check fires on a plain misspelling).
+reciever = "reciever"
+
 # Color spaces / design tokens
 oklch = "oklch"
 

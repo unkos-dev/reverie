@@ -63,6 +63,19 @@ expect_fires WhStarter "The store is durable. What makes this work is the log."
 expect_silent "The parser extracts EPUB 3 metadata from the OPF package."
 expect_silent "Run the database migration before starting the server."
 
+# The spelling check (Australian English, en_AU dictionary) is advisory: it fires
+# at `warning`, so the exact-match assertion also proves it does not co-trip a
+# mechanical rule on a plain misspelling.
+expect_fires Spelling "The reciever drops the frame."
+# Replace policy: en_AU is the house spelling, so the American form fires while
+# the Australian form stays silent.
+expect_fires Spelling "The cache behavior is configurable."
+expect_silent "The cache behaviour is configurable."
+# The vocabulary accept-list silences identifiers, library names, and brand terms
+# (a base term also covers its possessive form).
+expect_silent "The axum handler reads from sqlx."
+expect_silent "Reverie uses the Parchment theme."
+
 # Edge cases that lock in deliberate design choices.
 # WhStarter is paragraph-scoped, so a Wh- word in a heading is exempt.
 expect_silent "# How the reader caches pages"
