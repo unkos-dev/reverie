@@ -82,6 +82,9 @@ expect_fires EmDash "$(printf -- '---\ndescription: Prose %s description.\n---\n
 expect_silent "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
 # Word-adjacent em dash in a table cell fires (prose in a cell is still prose).
 expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| word %s word |\n' "$emdash")"
+# Multi-space prose em dash fires: the token spans any run of same-line spaces,
+# so `word  —  word` (two spaces each side) is not a bypass.
+expect_fires EmDash "The reader loads the spine  ${emdash}  then renders."
 
 # Path-scoped behaviour can't be exercised over stdin (no file path), so build a
 # throwaway mini-repo from the real .vale.ini + styles, with one Wh-opener line
