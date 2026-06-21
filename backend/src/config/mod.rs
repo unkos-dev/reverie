@@ -210,12 +210,12 @@ pub struct Config {
 /// Post-ingestion cleanup behaviour selector for the watcher's
 /// "after a successful batch" hook.
 ///
-/// Wire format (JSON, DB `text` column): lowercase string —
+/// Wire format (JSON, DB `text` column): lowercase string, one of
 /// `"all"` | `"ingested"` | `"none"`.
 ///
 /// Deliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it
 /// exhaustively, so adding a variant is a compile error at the match site
-/// rather than a silent fall-through — the same property the `Command` enum
+/// rather than a silent fall-through, the same property the `Command` enum
 /// relies on.
 #[derive(
     Debug,
@@ -234,7 +234,7 @@ pub enum CleanupMode {
     All,
     /// Delete only files that were actually ingested (selected by format priority).
     Ingested,
-    /// Never delete source files — user handles cleanup manually.
+    /// Never delete source files; the user handles cleanup manually.
     None,
 }
 

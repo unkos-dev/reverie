@@ -20,8 +20,8 @@ use validator::{Validate, ValidationError};
 /// strings from validated inputs and panic on the impossible case (a
 /// programming invariant has been violated and we want to know).
 ///
-/// A `SecurityConfig` obtained directly from the config pipeline — without the
-/// CSP-finalisation pass — emits no `Content-Security-Policy` on either
+/// A `SecurityConfig` obtained directly from the config pipeline (without the
+/// CSP-finalisation pass) emits no `Content-Security-Policy` on either
 /// route class (both fields stay `None`); HSTS and Reporting-Endpoints
 /// are still applied because they are derived on demand.
 #[derive(Debug, Clone, Default, serde::Deserialize, schemars::JsonSchema, Validate)]

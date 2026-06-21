@@ -164,7 +164,7 @@
   },
   "$defs": {
     "CleanupMode": {
-      "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string —\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through — the same property the `Command` enum\nrelies on.",
+      "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
       "oneOf": [
         {
           "description": "Delete all files in the ingestion directory after a successful batch.",
@@ -177,7 +177,7 @@
           "const": "ingested"
         },
         {
-          "description": "Never delete source files — user handles cleanup manually.",
+          "description": "Never delete source files; the user handles cleanup manually.",
           "type": "string",
           "const": "none"
         }
@@ -321,7 +321,7 @@
       ]
     },
     "OpdsConfig": {
-      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set — feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI (Step 10) needs them\nregardless of OPDS availability.",
+      "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set: feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI (Step 10) needs them\nregardless of OPDS availability.",
       "type": "object",
       "properties": {
         "enabled": {
@@ -354,7 +354,7 @@
       }
     },
     "SecurityConfig": {
-      "description": "Response-header policy.\n\nCSP values are stored as precomputed `HeaderValue`s. They depend on\n`validate_frontend_dist` reading the on-disk FOUC script to derive its\nhash, so `csp_api_header` and `csp_html_header` are left as `None` after\ndeserialization and finalised by `main()` via\n[`crate::security::csp::build_api_csp`] /\n[`crate::security::csp::build_html_csp`]. A non-conformant CSP string\npanics in `main()` rather than silently dropping the header at request\ntime.\n\nHSTS and Reporting-Endpoints are derived from the booleans / URL stored\nhere via [`Self::hsts_header_value`] and\n[`Self::reporting_endpoints_header_value`]. Both compose static-ASCII\nstrings from validated inputs and panic on the impossible case (a\nprogramming invariant has been violated and we want to know).\n\nA `SecurityConfig` obtained directly from the config pipeline — without the\nCSP-finalisation pass — emits no `Content-Security-Policy` on either\nroute class (both fields stay `None`); HSTS and Reporting-Endpoints\nare still applied because they are derived on demand.",
+      "description": "Response-header policy.\n\nCSP values are stored as precomputed `HeaderValue`s. They depend on\n`validate_frontend_dist` reading the on-disk FOUC script to derive its\nhash, so `csp_api_header` and `csp_html_header` are left as `None` after\ndeserialization and finalised by `main()` via\n[`crate::security::csp::build_api_csp`] /\n[`crate::security::csp::build_html_csp`]. A non-conformant CSP string\npanics in `main()` rather than silently dropping the header at request\ntime.\n\nHSTS and Reporting-Endpoints are derived from the booleans / URL stored\nhere via [`Self::hsts_header_value`] and\n[`Self::reporting_endpoints_header_value`]. Both compose static-ASCII\nstrings from validated inputs and panic on the impossible case (a\nprogramming invariant has been violated and we want to know).\n\nA `SecurityConfig` obtained directly from the config pipeline (without the\nCSP-finalisation pass) emits no `Content-Security-Policy` on either\nroute class (both fields stay `None`); HSTS and Reporting-Endpoints\nare still applied because they are derived on demand.",
       "type": "object",
       "properties": {
         "behind_https": {
