@@ -220,6 +220,7 @@ Project-specific hard rules. Broader Rust idioms (ownership, iterators,
 trait design, pattern matching, lifetime minimization) live in
 `rust-patterns` skill — invoke for deep patterns.
 
+- **Docstrings (`///` / `//!`) follow the root [Comment Policy](../CLAUDE.md#docstring-content) docstring-content rules**: no em dashes, external references, or backstory. Config doc-comments feed the CI-guarded `config.schema.json`.
 - **No `unwrap()` or `expect()` in non-test code** — compiler-enforced
   via `clippy::unwrap_used = "deny"` / `expect_used = "deny"` in
   `Cargo.toml`. Propagate with `?` or handle explicitly. Tests may use
