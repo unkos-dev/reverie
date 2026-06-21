@@ -608,8 +608,9 @@ impl Default for Config {
 mod tests {
     use super::*;
 
-    /// Build a `Config` through the figment pipeline from in-memory env pairs —
-    /// a process-env-free, parallel-safe test seam; never mutates global env.
+    /// Build a `Config` through the figment pipeline from in-memory env pairs:
+    /// the process-env-free, parallel-safe test seam (GOTCHA-TESTSEAM); never
+    /// mutates global env.
     /// Strings flow through `EnvProvider`'s parse/coerce path, exercising the
     /// real production deserialization (GOTCHA-TESTFIDELITY): no pre-typed
     /// `Serialized(struct)` shortcut that would bypass where the bugs live.
@@ -1098,8 +1099,8 @@ mod tests {
 
     #[test]
     fn security_parse_bool_rejects_legacy_truthy() {
-        // Strict form rejects the old "1"/"yes" spellings — EnvProvider
-        // now (EnvProvider parses "yes" to a `Str`, which a `bool` field
+        // Strict form rejects the old "1"/"yes" spellings natively now
+        // (EnvProvider parses "yes" to a `Str`, which a `bool` field
         // refuses), no custom bool deserializer (GOTCHA-BOOL, Task 9).
         let err = security_from(&[("REVERIE_BEHIND_HTTPS", "yes")]).unwrap_err();
         assert!(err.to_string().contains("REVERIE_BEHIND_HTTPS"));
