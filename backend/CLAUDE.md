@@ -1,359 +1,67 @@
-# Backend — Rust + Axum
+# Backend Agent Operating Manual
 
-## Dev Database
+_(Operator/DB detail: see `./README.md`)_
 
-**DB-backed tests are CI-first.** CI provisions its own postgres:18 service
-container, seeds roles via `docker/init-roles.sql`, and points `DATABASE_URL`
-at the schema owner (see `.github/workflows/ci.yml`) — that is the
-authoritative runtime for the `#[sqlx::test]` suite. Run it locally only when
-a provisioning-capable (schema-owner) Postgres cluster is reachable from your
-shell. When none is reachable, local verification deliberately stops at
-`cargo fmt --check`, `cargo clippy`, `SQLX_OFFLINE=true cargo check --tests`,
-and the generated-artifact drift tests — push and let CI run the tests.
+<cardinal_rules>
+These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
-**Symptom key:** every DB-backed test failing identically with
-`failed to connect to setup test database: PoolTimedOut` means the harness
-cannot reach a cluster it can create per-test databases on. Environment
-condition, not a code regression — fix reachability or defer to CI; don't
-debug the tests.
+1. **No Blind Clones:** Do not sprinkle `.clone()` to satisfy the borrow checker. Understand the root cause of ownership issues; borrow (`&T`) by default.
+2. **No unwrap():** `unwrap()` and `expect()` are banned in production code. Propagate with `?` or handle explicitly. Tests are exempt.
+3. **No Silent Failures:** Do not discard errors. `let _ = <Result>`, converting to `.ok()` without checking, and `.unwrap_or_default()` on critical operations are banned. Log the error or propagate it.
+4. **No N+1 Queries:** Use set-based queries. Do not issue per-row follow-up database queries in a loop.
+   </cardinal_rules>
 
-**Optional local cluster:** `docker compose -f docker/compose.dev.yml up -d`
-from the repo root stands up a
-dev postgres on host port 5433 (see `debt/2026-05-05-dev-postgres-port-5433.md`
-for the port choice). This only helps where the Docker daemon shares your
-machine's network namespace. With a remote or Docker-out-of-Docker daemon the
-published port binds on the daemon's host — `localhost:5433` is unreachable
-from your shell and the container's "healthy" status is a red herring; treat
-the suite as CI-first per above.
+<rust_and_architecture>
 
-**Roles** (created by `docker/init-roles.sql` on first start of the compose
-cluster; DSNs below are the compose cluster's):
+- **Parse, Don't Validate:** Convert unstructured data to typed structs at the system boundary. Make invalid states unrepresentable using enums and the Newtype pattern (e.g., `struct UserId(u64)`).
+- **Error Boundaries:** Use `thiserror` for library boundaries and `anyhow` for application logic. When propagating errors with `?`, attach context using `.context("...")` or `.with_context(|| ...)`. Axum handlers must map errors to generic client responses by implementing `IntoResponse` on your custom `AppError` type. NEVER expose internal database errors, paths, or stack traces to the API client.
+- **Enums over Bools:** Use enums for distinct states with different behavior, never boolean flags.
+- **Iterators:** Prefer declarative iterator chains (`.filter().map()`) over mutable `for` loops for data transformations.
+- **Parallel Async:** Never await independent async tasks sequentially. You MUST use `tokio::join!` to execute them in parallel.
+- **Unsafe Code:** `unsafe` requires a `// SAFETY:` comment per block explaining the invariant. It is forbidden unless strictly necessary and explicitly allowed via `#[allow(unsafe_code)]`.
+- **Secrets Management:** Never hardcode credentials, tokens, or API keys. Always use environment variables.
+  </rust_and_architecture>
 
-| Role                | Connection                                                                  | Purpose                                                                        |
-| ------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `reverie`           | `postgres://reverie:reverie@localhost:5433/reverie_dev`                     | Cluster bootstrap (provisions roles). Never used at runtime or for migrations. |
-| `reverie_migrator`  | `postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev`   | Runs migrations (`reverie migrate`). Least-privilege; owns schema objects.     |
-| `reverie_app`       | `postgres://reverie_app:reverie_app@localhost:5433/reverie_dev`             | Web application. RLS enforced.                                                 |
-| `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev` | Background pipeline. Scoped RLS.                                               |
-| `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5433/reverie_dev`   | Debug/reporting. SELECT only.                                                  |
+<api_design>
 
-`tower_sessions` schema (created by the consolidated
-`20260526000000_initial_schema` migration) RLS-exempt — session
-rows not user-scoped like application data. Session id
-(cryptographically random `tower_sessions::session::Id`) bootstraps
-user resolution, so RLS-gating lookup is chicken-and-egg. Access
-controlled at role-grant boundary: `reverie_app` gets DML,
-`reverie_readonly` gets SELECT, `reverie_ingestion` gets nothing.
+- **RESTful Naming:** URLs must be plural, kebab-case nouns. NEVER use verbs in URLs (e.g., `/getUsers`).
+- **Semantic Status Codes:** Return 201 for creation, 422 for validation, 204 for deletion. Do not return 200 for everything.
+  </api_design>
 
-Migrations run as the least-privilege `reverie_migrator` role, out-of-band via
-the `reverie migrate` subcommand (the shipped default). The runner connects an
-ephemeral single-connection pool with `DATABASE_URL_MIGRATION`, applies pending
-migrations in a batch transaction (all-or-nothing), then drops the pool. The
-long-lived server holds no migration credential by default: with
-`REVERIE_AUTO_MIGRATE` off (default), `run()` instead calls
-`db::verify_schema_current()` on the app pool and refuses to start on any schema
-divergence (ahead, behind, or never-migrated). `REVERIE_AUTO_MIGRATE=true` opts
-into in-process migration at startup (server then carries the migration DSN).
-See `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`.
+<axum_invariants>
 
-Dev: set `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev`
-and run `cargo run -- migrate` to apply (bare `cargo run` only verifies and
-refuses on divergence). `#[sqlx::test]` still uses sqlx's built-in
-migrator for most tests. Exception: migration-runner tests that need a
-fresh database use `#[sqlx::test(migrations = false)]` to suppress
-sqlx's automatic migration pass.
+- **Extractor Order:** The request body extractor (e.g., `Json<T>`, `String`, `Bytes`) MUST be the absolute last argument in the handler function signature.
+- **State Injection:** Use `axum::extract::State` for dependency injection. Do not use the legacy `Extension` extractor unless integrating with third-party middleware that strictly requires it.
+- **No Manual Responses:** Handlers should return `Result<impl IntoResponse, AppError>`. Rely on the `IntoResponse` trait. Do not manually construct `Response` objects using builders in the handler.
+  </axum_invariants>
 
-**`MigrationError` failure modes** (operator-facing, with recovery):
+<database_and_sqlx>
 
-| Variant              | Meaning                                                  | Recovery                                                                    |
-| -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `Connection`         | Bad DSN, auth failure, unreachable host                  | Fix `DATABASE_URL_MIGRATION`                                                |
-| `SessionSetup`       | Post-connect init failed (lock_timeout, lock acq)        | Check DB permissions and concurrent connections                             |
-| `BatchFailed`        | SQL error in transactional migration                     | DB untouched — pin previous image                                           |
-| `NoTxFailed`         | `-- no-transaction` migration SQL failed                 | TX migrations committed — fix failing SQL, re-deploy                        |
-| `NoTxTrackingFailed` | No-tx migration applied but tracking INSERT failed       | Migration IS applied — manually insert tracking row                         |
-| `SchemaAhead`        | DB has migrations unknown to binary                      | Upgrade image or roll back DB                                               |
-| `SchemaBehind`       | Binary has migrations not applied to DB (startup verify) | Run `reverie migrate` before starting the server                            |
-| `NotInitialized`     | DB never migrated (`_sqlx_migrations` absent)            | Run `reverie migrate` first                                                 |
-| `VerificationRead`   | App pool can't read `_sqlx_migrations` (startup verify)  | Grant `reverie_app` SELECT (re-run `reverie migrate`); check `DATABASE_URL` |
-| `ChecksumMismatch`   | Migration file modified after application                | Restore original migration file                                             |
-| `LockTimeout`        | Advisory lock not acquired (30s budget)                  | Another instance running migrations                                         |
+- **No ORM:** Use explicit `sqlx` queries.
+- **Compile-Time SQL:** `query!`, `query_as!`, and `query_scalar!` are mandatory for the data path. If the macro fails because of a missing schema change, update the `.sqlx` cache (`DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests` from `backend/`). DO NOT downgrade to runtime `sqlx::query()` to bypass the compiler.
+- **Transaction Binding:** When executing a query inside a transaction, you MUST pass the transaction reference (e.g., `&mut *tx`) to the query executor. Passing the connection `&pool` will execute outside the transaction and silently break atomicity.
+- **Runtime SQL Ban:** Runtime `sqlx::query(...)` is strictly reserved for DDL, dynamic SQL, Postgres GUCs, and enum-drift tests.
+- **Transactions:** Wrap multi-statement state changes in an atomic transaction.
+- **Bounded Queries:** Every list must be bounded by construction (keyset/cursor or hard limit). No unbounded scans.
+- **Migration Mutations:** If altering an Enum column type, you must `DROP DEFAULT` before `ALTER COLUMN TYPE`, then `SET DEFAULT` after.
+  </database_and_sqlx>
 
-### Upgrade note: postgres:18 mount path
+<local_environment>
 
-Volume mount changed from `pgdata:/var/lib/postgresql/data` to
-`pgdata:/var/lib/postgresql` to match postgres:18 major-version
-subdirectory layout. Existing dev volumes from before change must be
-dropped:
+- **Database Reachability:** Local dev DB runs on port 5433. You must use `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev` to run migrations. See `./README.md` for full connection tables and role details.
+  </local_environment>
 
-```bash
-docker compose -f docker/compose.dev.yml down
-docker volume rm reverie_pgdata
-docker compose -f docker/compose.dev.yml up -d
-# Re-apply migrations on the fresh volume: `cargo run -- migrate`
-```
+<testing_standards>
 
-### Remote-daemon (DooD) caveat
+- **Integration Tests:** Use `axum-test`.
+- **Database Tests:** Use `#[sqlx::test(migrations = "./migrations")]`. It provisions a fresh isolated database per test.
+- **OIDC Mocking:** Use `crate::test_support::oidc_mock` for auth flows.
+  </testing_standards>
 
-With a Docker-out-of-Docker setup the compose cluster is doubly broken as a
-test target: published ports bind on the daemon host (not `localhost`), and
-file bind-mounts don't resolve (`init-roles.sql` mounts as a directory, so
-role seeding silently fails). Don't work around either — that environment is
-exactly the CI-first case above.
+<tool_standards>
 
-## Conventions
-
-- **Error handling:** `thiserror` for library errors, `anyhow` for
-  application errors. Axum handlers return
-  `Result<impl IntoResponse, AppError>` where `AppError` implements
-  `IntoResponse`.
-- **Database:** `sqlx` with compile-time checked queries — `query!`,
-  `query_as!`, `query_scalar!` macros validate SQL + types against live
-  dev DB at compile time, then check against committed `backend/.sqlx/`
-  cache for offline builds (CI, Docker). Data-path queries went
-  all-macro under [UNK-167](https://linear.app/unkos/issue/UNK-167)
-  (PR series #157–#162, closer #163). Runtime `sqlx::query(...)`
-  reserved for documented carve-outs only; CI grep-guard
-  (`.github/sqlx-runtime-allowlist.txt`) fails any new invocation
-  outside registry. Carve-out classes:
-  - **DDL** (`CREATE`, `DROP`, `ALTER TYPE`) — macros can't validate
-    against schema not existing yet at prepare time.
-  - **Dynamic SQL** built from runtime input (rare; flag in review).
-  - **`SELECT set_config(...)`** — Postgres GUC calls for RLS context
-    injection (`app.current_user_id`, transaction-local — RLS
-    enforcement seam consumed by every user-facing query) and
-    writeback pool identity (`app.system_context`, session-scoped —
-    seam `manifestations_*_system` policies match against). Not data
-    access; macros can't validate GUC mutation against schema at
-    prepare time.
-  - **Enum-drift test probes** — `models/manifestation_format.rs`,
-    `models/user.rs`, and `models/validation_status.rs` use
-    `ALTER TYPE ... ADD VALUE` + cast to detect code-vs-schema enum
-    drift at test time; all three need runtime SQL.
-
-  Canonical carve-out registry: `.github/sqlx-runtime-allowlist.txt`.
-  New entry needs reviewer justification in PR adding it.
-
-  Established type-binding tactics (see `backend/src/models/work.rs`
-  and `backend/src/models/user.rs`):
-  - Custom Postgres ENUMs from string params: bind as text, cast in
-    SQL — `($N::text)::enum_type`. Avoids Rust→PG-enum mapping for
-    `&str`.
-  - NUMERIC columns from `f64` / `Option<f64>`: bind as `float8`, let
-    Postgres implicitly cast — `$N::float8`. Avoids sqlx's
-    `bigdecimal` feature.
-  - `query_as!` struct fields with custom enum types: use column-type
-    override syntax — `column AS "name: Type"`. Forces macro to
-    validate column's PG OID against Rust type's `sqlx::Type` impl at
-    prepare time.
-  - `format!()`-injected column lists are dynamic SQL, incompatible
-    with macros. Inline columns at each call site; macro validation
-    catches column drift independently per site.
-
-  Cache regeneration: `DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests`
-  from `backend/`, against a reachable cluster with current schema — same
-  reachability rule as `#[sqlx::test]` (see Dev Database). With the compose
-  cluster: `postgres://reverie:reverie@localhost:5433/reverie_dev`.
-  CI guards against stale cache via
-  `cargo sqlx prepare --check -- --tests`. Migrations in
-  `backend/migrations/`.
-
-- **Testing:** `axum-test` for integration tests. Unit tests live
-  alongside code in `#[cfg(test)]` modules.
-- **DB-backed tests use `#[sqlx::test(migrations = "./migrations")]`.**
-  Macro provisions fresh isolated database per test, runs every
-  migration, injects `PgPool` owned by schema owner (`reverie` —
-  bypasses RLS). Tests needing runtime roles (`reverie_app`,
-  `reverie_ingestion`) build secondary pools against same per-test DB
-  via `crate::test_support::db::{app_pool_for, ingestion_pool_for}`.
-  Tests run parallel via database isolation; no manual fixture cleanup
-  required. `DATABASE_URL` must point at schema owner so `sqlx::test`
-  can create per-test databases (compose cluster:
-  `postgres://reverie:reverie@localhost:5433/reverie_dev`; reachability
-  caveats under Dev Database).
-- **OIDC integration tests use `crate::test_support::oidc_mock`.**
-  Spins up `wiremock` server with `/jwks` + `/token` endpoints,
-  generates per-test 2048-bit RSA keypair, exposes `OidcClient` with
-  JWKS embedded so `id_token_verifier` needs no network IO. Tests
-  needing OIDC `nonce` set in session by `/auth/login` build router
-  via `crate::build_router_with_session_store(state, store)`
-  with shared `tower_sessions::MemoryStore` so test can read back
-  before driving `/auth/callback`.
-- **Logging:** `tracing` with structured fields. Never `println!` or
-  `eprintln!`.
-- **Operator env-var namespacing:** when introducing operator-facing
-  knob overlapping with Rust ecosystem default (e.g. `RUST_LOG`),
-  prefer `REVERIE_*` name and cascade with `REVERIE_*` taking
-  precedence over ecosystem name. Resolve cascade once in `config/provider.rs`
-  so precedence is single source of truth. Rationale: operators read
-  `REVERIE_*` namespace from staging docs; devs reach for ecosystem
-  default. Cascading honours both without forcing either audience to
-  learn the other. Exception: ecosystem names that _are_ canonical
-  operator surface (e.g. `DATABASE_URL` — URL-spec name, no namespace
-  alternative) honoured directly without cascade.
-- **Formatting:** `cargo fmt` enforced by CI. Don't fight formatter.
-- **Linting:** `cargo clippy --workspace --all-targets --locked -- -D warnings`
-  enforced by CI. Fix warnings, don't suppress with `#[allow(...)]`
-  unless documented reason.
-- **Pre-push hook:** `.husky/pre-push` runs `cargo fmt --all -- --check`
-  then `cargo clippy --workspace --all-targets --locked -- -D warnings`
-  on every push, catching the fmt/clippy CI round-trip locally. Budget:
-  ~35s warm on Coder workspace baseline. `cargo test` is deliberately
-  excluded — 3–5 min wall-time plus shared dev-DB contention across
-  worktrees (CI remains the authoritative test gate). Frontend is not
-  mirrored: `pre-commit` lint-staged already runs frontend checks on
-  staged changes, so a frontend pre-push would duplicate that. The
-  hook's clippy invocation is identical to CI's (`ci.yml` Lint step):
-  both run `cargo clippy --workspace --all-targets --locked -- -D warnings`.
-  The hook exists to catch the fmt/clippy CI round-trip locally, not to
-  lint a wider surface — CI is the authoritative gate.
-- **Time:** use `time` crate, not `chrono`. Blueprint mentions chrono
-  but scaffold predates that decision — don't reintroduce chrono in
-  first-party code. Single documented exception:
-  `test_support.rs::oidc_mock`, where `openidconnect` v4 public API
-  (`CoreIdTokenClaims::new`) forces chrono types on call site. That
-  use is contained to OIDC mock, must not spread elsewhere.
-
-## Rust Code Rules
-
-Project-specific hard rules. Broader Rust idioms (ownership, iterators,
-trait design, pattern matching, lifetime minimization) live in
-`rust-patterns` skill — invoke for deep patterns.
-
-- **Docstrings (`///` / `//!`) follow the root [Comment Policy](../CLAUDE.md#docstring-content) docstring-content rules**: no em dashes, external references, or backstory. Config doc-comments feed the CI-guarded `config.schema.json`.
-- **No `unwrap()` or `expect()` in non-test code** — compiler-enforced
-  via `clippy::unwrap_used = "deny"` / `expect_used = "deny"` in
-  `Cargo.toml`. Propagate with `?` or handle explicitly. Tests may use
-  them freely because `backend/clippy.toml` sets
-  `allow-unwrap-in-tests = true` and `allow-expect-in-tests = true`;
-  exemption covers `#[test]` functions, `#[cfg(test)]` modules, and
-  integration tests under `tests/`.
-- **No `let _ = <Result>`.** Either log and continue via
-  `if let Err(e) = ... { tracing::warn!(…); }`, or propagate with `?`.
-  Silently discarding errors is forbidden.
-- **No wildcard imports** (`use foo::*`). Name what you import.
-- **`&str` over `String` in function parameters** when function doesn't
-  need ownership. Callers pass owned strings via auto-deref.
-- **`#[non_exhaustive]` on public enums and structs that may grow** at
-  crate boundaries — protects downstream `match` exhaustiveness from
-  breakage.
-- **Enums over boolean flags** for distinct states with different
-  behaviour (`enum Mode { Read, Write, ReadWrite }`, not
-  `read: bool, write: bool`).
-- **`From<SourceError>` via `thiserror`'s `#[from]`** for `?`
-  propagation across error boundaries.
-- **`unsafe` requires `// SAFETY:` comment per block** explaining
-  invariant. Adjacent unsafe blocks under same invariant each get own
-  comment. Crate-level `unsafe_code = "deny"` (see `Cargo.toml`)
-  enforces scope at boundary; only `#[allow(unsafe_code)]`-marked code
-  may use unsafe, marking requires reviewer justification.
-
-## Security headers (UNK-106)
-
-Backend owns response-header policy. Every response carries XCTO,
-Referrer-Policy, Permissions-Policy, X-Frame-Options unconditionally,
-and route-class-differentiated `Content-Security-Policy`: HTML routes
-get hash-based CSP (one inline FOUC script pinned via `'sha256-...'`),
-API routes get `default-src 'none'`.
-
-- Implementation: `backend/src/security/` (`csp.rs` builders,
-  `dist_validation.rs` startup check, `headers.rs` middleware +
-  composite fallback).
-- Wiring: `backend/src/lib.rs::run` precomputes CSP strings on
-  `SecurityConfig` at startup; `build_router_with_session_store`
-  applies per-router `.layer(api_csp_layer)` / `.layer(html_csp_layer)`
-  plus outermost `security_headers` uniform middleware; single
-  composite `.fallback(composite_fallback)` manually attaches CSP to
-  unmatched paths. `build_router` is thin wrapper calling
-  `build_router_with_session_store` with `PostgresStore` (backed by
-  `state.pool`) for production; tests pass own `MemoryStore` to share
-  session state with harness (see Testing in `## Conventions`).
-- Operator surface: `docs/security/content-security-policy.md`.
-- Tests: `backend/src/security/**/tests` co-located; integration tests
-  in `security::headers::tests` use `test_server_with_security()` to
-  inject custom `SecurityConfig` fixtures.
-
-**Never add inline `<script>` tags to `frontend/index.html` without
-matching CSP hash.** Vite plugin `frontend/vite-plugins/csp-hash.ts`
-hashes one specific script (`frontend/src/fouc/fouc.js`) at build
-time. Additional inline scripts need either new hash source in plugin
-or overhaul to nonce-based CSP (out of scope pre-v1.0).
-
-**Never emit duplicate CSP headers from reverse proxy.** Reverie's CSP
-is route-class-differentiated; stacking proxy-level CSP on top
-nullifies differentiation.
-
-## Database Migration Rules
-
-- **Pre-v1.0 schema freely mutable.** Add migrations and constraints
-  now rather than deferring for future cleanup PR.
-- **Enum column type changes:** `DROP DEFAULT` before
-  `ALTER COLUMN TYPE`, then `SET DEFAULT` after. Postgres requires
-  default expression to type-check against current column type.
-- **Test data for `find_or_create` with `pg_trgm`:** titles must use
-  distinct vocabulary. Shared words push trigram similarity above 0.6
-  match threshold, cause false-positive de-duplication in tests.
-
-## Performance & Data-Access Invariants
-
-Several of these invariants pair with an ADR that records the _why_; the rule
-here is the day-to-day enforcement.
-
-- **No N+1 queries.** Use set-based queries; never issue per-row follow-up
-  queries in a loop. New list/detail paths add **query-count assertions** in
-  tests so a regression fails CI. Large-library optimisation must not degrade
-  small-library UX. (Verified at scale by the synthetic perf fixture, UNK-369.)
-- **No unbounded queries.** Every list is bounded by construction — keyset /
-  cursor-paginated (the default) or a single page with a hard `LIMIT` (justified
-  naturally-bounded sets only); no `LIMIT`-less scans, no offset pagination.
-  Total-count is a separate approximate/cached query, never an exact `COUNT(*)`
-  on the hot path. Mechanism: `adr/2026-05-22-json-api-conventions.md`;
-  project-wide contract + tradeoffs:
-  `adr/2026-06-08-keyset-pagination-list-contract.md`.
-- **Timeouts + backpressure everywhere.** Request, pool-acquire, DB statement,
-  and outbound-HTTP calls all carry a timeout. A slow query with no statement
-  timeout pins the pool regardless of rate limiting. DB-side timeout values are
-  decided in UNK-296 (lock/timeout ADR).
-- **Indexing discipline.** Index FKs and frequent WHERE / ORDER BY / JOIN
-  columns (incl. keyset sort keys); don't over-index write-heavy columns. Use
-  the `database-reviewer` agent. (Review tracked in UNK-368.)
-- **Atomic transactions for multi-write invariants.** Wrap any multi-statement
-  state change that must be all-or-nothing in a transaction; don't rely on
-  statement ordering. (Decision recorded in
-  `adr/2026-06-08-postgres-backed-crash-safe-state.md`.)
-- **Stateless application.** No critical state in process memory — durable state
-  lives in Postgres so an instant kill is safe and an operator can scale out /
-  run HA if they choose. (`adr/2026-06-08-postgres-backed-crash-safe-state.md`
-  crash-safe state; `adr/2026-06-08-scale-stance-stateless-enable-not-own.md`
-  scale stance.)
-- **Async by default.** tokio / Axum / sqlx async top to bottom; no blocking IO
-  on the async runtime (use `spawn_blocking` for unavoidable blocking work).
-- **No ORM — explicit `sqlx` queries.** ORMs hide N+1 behind implicit relation
-  traversal; explicit compile-time-checked queries keep it visible. See the
-  `sqlx` convention under **## Conventions** for the macro + carve-out rules.
-
-## Project Structure (as it grows)
-
-```text
-backend/
-├── Cargo.toml           # [lib] reverie_api + [[bin]] reverie-api
-├── migrations/          # sqlx migrations
-├── src/
-│   ├── lib.rs           # Library crate root: modules, build_router, run()
-│   ├── main.rs          # Thin binary entry: #[tokio::main] reverie_api::run()
-│   ├── auth/            # Authentication subsystem
-│   │   ├── basic_only.rs # BasicOnly extractor (OPDS Basic-only auth)
-│   │   ├── middleware.rs # CurrentUser extractor (session + Basic auth)
-│   │   ├── oidc.rs      # OIDC client init and discovery
-│   │   ├── session.rs   # First-party login/logout helpers on tower_sessions::Session
-│   │   ├── store.rs     # First-party Postgres SessionStore + ExpiredDeletion
-│   │   ├── theme_cookie.rs # FOUC theme cookie (set_theme_cookie, attribute parity)
-│   │   └── token.rs     # Device token generation and sha256 constant-time verification
-│   ├── routes/          # Axum route handlers, grouped by domain
-│   ├── models/          # Database models and queries
-│   ├── services/        # Business logic
-│   ├── config/          # Declarative config module (figment+serde+validator+schemars)
-│   ├── state.rs         # AppState (shared across handlers)
-│   └── error.rs         # AppError type
-└── tests/               # Integration tests (if separate from unit tests)
-```
+- **Formatting & Linting:** You must respect `cargo fmt` and `cargo clippy`. Do not fight the formatter. Fix warnings, do not suppress them with `#[allow(...)]` unless heavily justified.
+- **Time Crate:** Use the `time` crate. The `chrono` crate is strictly forbidden in first-party code.
+- **Logging:** Use `tracing` with structured fields. Never use `println!`.
+- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts — run `REGEN=1 cargo test --test gen_openapi --test gen_config_ref` and commit them in the same PR; drift tests gate CI.
+  </tool_standards>
