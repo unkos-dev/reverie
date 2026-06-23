@@ -1,73 +1,35 @@
-# React + TypeScript + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This directory contains the Vite React frontend.
 
-Currently, two official plugins are available:
+## Environment Variables
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Configure the development environment using these variables.
 
-## React Compiler
+**REVERIE_DEV_HOSTS**
+Vite rejects unknown non-loopback hostnames to prevent DNS rebinding. Loopback hosts work without configuration. Set `REVERIE_DEV_HOSTS` to a comma-separated list of hostnames when using cloud development environments like Coder or Codespaces. The `vite-plugins/allowed-hosts.ts` script parses this value. The `vite-plugins/dev-csp.ts` script adds each hostname to the `connect-src` policy, allowing the HMR websocket to connect through TLS. Format hostnames without schemes, paths, whitespace, or semicolons.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+**REVERIE_DEV_HMR_CLIENT_PORT**
+The HMR websocket client defaults to port 5173. Set `REVERIE_DEV_HMR_CLIENT_PORT` to 443 when a reverse proxy fronts the dev server. The `vite-plugins/hmr-config.ts` script reads this value.
 
-## Expanding the ESLint configuration
+## Project Structure
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
-
-You can also install [@eslint-react/eslint-plugin](https://eslint-react.xyz) and [eslint-plugin-react-dom](https://eslint-react.xyz) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from "@eslint-react/eslint-plugin";
-import reactDom from "eslint-plugin-react-dom";
-
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```text
+frontend/
+├── public/              # Static assets
+├── src/
+│   ├── api/             # API client functions
+│   ├── components/      # Reusable UI components
+│   │   └── ui/          # generated shadcn/ui components
+│   ├── fouc/            # Pre-paint script hashed into HTML CSP at build
+│   ├── hooks/           # Custom React hooks
+│   ├── pages/           # Route-level page components
+│   ├── lib/             # Utilities
+│   ├── App.tsx          # Root component
+│   └── main.tsx         # Entrypoint
+├── vite-plugins/        # Custom Vite plugins
+├── tests/               # Vitest setup
+├── index.html
+├── tsconfig.json
+└── vite.config.ts       # Tailwind v4 and Vitest configuration
 ```
