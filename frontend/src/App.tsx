@@ -41,6 +41,12 @@ function App(): ReactElement {
     };
   }, []);
 
+  // Load-bearing order: this call must stay AFTER the handler-wiring effect
+  // above. React runs effects in declaration order, so the wiring effect
+  // commits before useSessionRecovery's internal effect. Moving this up would
+  // let recovery fire against the no-op handler on a first render that is
+  // already settled (e.g. a stale cached 401 after HMR), silently dropping the
+  // redirect.
   useSessionRecovery();
 
   return (

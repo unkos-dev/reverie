@@ -10,7 +10,11 @@
  * to the backend OIDC initiator at `/auth/login` — silent re-auth when the
  * upstream SSO is still valid, the IdP login otherwise.
  *
- * Mount this only inside the auth-required shell. It piggybacks on the cached
+ * Mount this only inside the auth-required shell, and only after the effect that
+ * wires the handler via `setUnauthenticatedHandler`: React runs effects in
+ * declaration order, so wiring must commit before this hook's effect or a
+ * first-render-settled query (e.g. a stale cached 401) would fire recovery
+ * against the no-op handler and drop the redirect. It piggybacks on the cached
  * `/auth/me` query (no extra request) and fires no navigation while the query
  * is loading or has errored operationally.
  */
