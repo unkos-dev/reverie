@@ -38,16 +38,40 @@ import { ApiError } from "@/api";
 let unauthenticatedHandler: () => void = () => {};
 
 /**
+ * Once-guard for {@link invokeUnauthenticatedHandler}. Ensures a lapsed
+ * session that trips several queries at once produces a single
+ * navigation rather than a burst. Reset whenever a new handler is wired
+ * via {@link setUnauthenticatedHandler}.
+ */
+let redirecting = false;
+
+/**
  * Replace the 401 handler installed on {@link queryClient}'s cache.
  *
  * Called once from the `<App/>` mount effect with
- * `() => navigate("/login")`. Subsequent calls (e.g. on route remount
- * during hot reload) replace the previous handler.
+ * `() => window.location.assign("/auth/login")`. Subsequent calls (e.g.
+ * on route remount during hot reload) replace the previous handler and
+ * reset the once-guard so a re-wired tree can navigate again.
  *
  * @param fn - The new handler. Pass a no-op `() => {}` to disable.
  */
 export function setUnauthenticatedHandler(fn: () => void): void {
   unauthenticatedHandler = fn;
+  redirecting = false;
+}
+
+/**
+ * Invoke the wired unauthenticated handler at most once per page lifetime.
+ *
+ * Both the `QueryCache.onError` 401 branch and `useSessionRecovery` route
+ * through here so a lapsed session that trips several queries at once still
+ * produces a single navigation. The guard resets when a new handler is wired
+ * via {@link setUnauthenticatedHandler} (mount, HMR, test setup).
+ */
+export function invokeUnauthenticatedHandler(): void {
+  if (redirecting) return;
+  redirecting = true;
+  unauthenticatedHandler();
 }
 
 /**
@@ -59,7 +83,7 @@ export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (err) => {
       if (err instanceof ApiError && err.status === 401) {
-        unauthenticatedHandler();
+        invokeUnauthenticatedHandler();
       }
     },
   }),
