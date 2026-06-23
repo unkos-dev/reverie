@@ -58,6 +58,7 @@ backoff
 backports
 backpressure
 balancer
+bcrypt
 bg
 Biome
 blocklist
@@ -192,6 +193,7 @@ JSDoc
 jsdom
 jsonb
 junkovich
+JWTs
 Kavita
 keyframe
 keyless
@@ -215,6 +217,7 @@ maxcountryman
 MDN
 middleware
 migrator
+mintable
 mitigations
 Monorepo
 Muzz
@@ -237,6 +240,7 @@ parseable
 perf
 pixmap
 plaintext
+pluggable
 pooler
 Postgres
 postinstall
@@ -276,6 +280,7 @@ renderable
 renderer
 repo
 repos
+representable
 repro
 resvg
 revalidated
@@ -348,6 +353,7 @@ uninitialized
 Unkovich
 unlayered
 unresolvable
+unscoped
 untyped
 unversioned
 upsert

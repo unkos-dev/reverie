@@ -56,3 +56,5 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Cover cache headers, ingest pre-warm, and JPEG thumbnails](2026-06-14-cover-cache-headers-and-thumbnail-encoding.md) (accepted, 2026-06-14)
 - [Radix-generated three-tier dual-theme color tokens](2026-06-18-radix-three-tier-dual-theme-tokens.md) (accepted, 2026-06-18)
 - [A single danger hue amends the no-hue-states policy](2026-06-18-single-danger-hue-amends-no-hue-philosophy.md) (accepted, 2026-06-18)
+- [Authentication and identity model: unified identity with pluggable providers](2026-06-23-auth-identity-pluggable-providers.md) (proposed, 2026-06-23)
+- [API authorization model: orthogonal scope, role, and ownership axes enforced server-side](2026-06-23-api-authorization-orthogonal-axes.md) (proposed, 2026-06-23)
