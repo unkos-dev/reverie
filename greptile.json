@@ -4,6 +4,7 @@
   "triggerOnUpdates": true,
   "shouldUpdateDescription": false,
   "statusCommentsEnabled": true,
+  "statusCheck": true,
   "fixWithAI": false,
   "summarySection": {
     "included": true,
