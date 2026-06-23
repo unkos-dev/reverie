@@ -12,7 +12,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
    </cardinal_rules>
 
 <accessibility>
-- **No Div-Buttons:** You are forbidden from adding `onClick` to non-interactive elements like `<div>` or `<span>`. Use semantic `<button>` tags, or you must provide `role="button"` and a keyboard event handler (`onKeyDown`).
+- **No Div-Buttons:** You are forbidden from adding `onClick` to non-interactive elements like `<div>` or `<span>`. Use semantic `<button>` tags; if you must use a non-interactive element, provide `role="button"`, `tabIndex={0}`, and keyboard handlers for both Enter and Space.
 </accessibility>
 
 <react_and_components>

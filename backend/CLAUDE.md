@@ -17,7 +17,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 - **Error Boundaries:** Use `thiserror` for library boundaries and `anyhow` for application logic. When propagating errors with `?`, attach context using `.context("...")` or `.with_context(|| ...)`. Axum handlers must map errors to generic client responses by implementing `IntoResponse` on your custom `AppError` type. NEVER expose internal database errors, paths, or stack traces to the API client.
 - **Enums over Bools:** Use enums for distinct states with different behavior, never boolean flags.
 - **Iterators:** Prefer declarative iterator chains (`.filter().map()`) over mutable `for` loops for data transformations.
-- **Parallel Async:** Never await independent async tasks sequentially. You MUST use `tokio::join!` to execute them in parallel.
+- **Parallel Async:** Never await independent async tasks sequentially. Run them concurrently with `tokio::join!` (awaits all), or `try_join!` when a failure should short-circuit the rest.
 - **Unsafe Code:** `unsafe` requires a `// SAFETY:` comment per block explaining the invariant. It is forbidden unless strictly necessary and explicitly allowed via `#[allow(unsafe_code)]`.
 - **Secrets Management:** Never hardcode credentials, tokens, or API keys. Always use environment variables.
   </rust_and_architecture>
@@ -40,7 +40,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 - **No ORM:** Use explicit `sqlx` queries.
 - **Compile-Time SQL:** `query!`, `query_as!`, and `query_scalar!` are mandatory for the data path. If the macro fails because of a missing schema change, update the `.sqlx` cache (`DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests` from `backend/`). DO NOT downgrade to runtime `sqlx::query()` to bypass the compiler.
 - **Transaction Binding:** When executing a query inside a transaction, you MUST pass the transaction reference (e.g., `&mut *tx`) to the query executor. Passing the connection `&pool` will execute outside the transaction and silently break atomicity.
-- **Runtime SQL Ban:** Runtime `sqlx::query(...)` is strictly reserved for DDL, dynamic SQL, Postgres GUCs, and enum-drift tests.
+- **Runtime SQL Ban:** Runtime `sqlx::query(...)` is strictly reserved for DDL, dynamic SQL, Postgres GUCs, and enum-drift tests. A CI grep-gate rejects every other invocation: add a justified entry to `.github/sqlx-runtime-allowlist.txt` (with reviewer rationale in the PR) in the same PR, or CI fails.
 - **Transactions:** Wrap multi-statement state changes in an atomic transaction.
 - **Bounded Queries:** Every list must be bounded by construction (keyset/cursor or hard limit). No unbounded scans.
 - **Migration Mutations:** If altering an Enum column type, you must `DROP DEFAULT` before `ALTER COLUMN TYPE`, then `SET DEFAULT` after.
