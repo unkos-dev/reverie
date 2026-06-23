@@ -1039,6 +1039,15 @@ jobs:
       - name: Format check (prettier)
         run: npx --no-install prettier --check .
 
+      # Validate the Greptile review-context config: greptile.json must parse and
+      # every customContext.files[] path it pins must still resolve. A pin to a
+      # moved or superseded file degrades reviews silently, so this turns a stale
+      # pin into a loud failure. Unconditional (not changed-files gated) so a PR
+      # that deletes or moves a pinned file fails here even if it never touches
+      # greptile.json. jq ships on ubuntu-latest.
+      - name: Validate greptile.json
+        run: scripts/validate-greptile-config.sh
+
       # Reject issue-tracker references (UNK- + digits) in public-facing source
       # and docs — they describe the codebase/product, not a private tracker,
       # and such a reference is usually a symptom that the whole comment/passage
