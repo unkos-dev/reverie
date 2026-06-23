@@ -5,6 +5,7 @@ import { RouterProvider, createMemoryRouter, type RouteObject } from "react-rout
 import type { ReactElement, ReactNode } from "react";
 
 import { ApiError } from "@/api";
+import { STUB_ME } from "@/__fixtures__/auth";
 
 import App from "./App";
 import { queryClient, setUnauthenticatedHandler } from "./lib/query/client";
@@ -17,16 +18,6 @@ vi.mock("@/components/shell/AppShell", () => ({
 }));
 
 const originalLocation = window.location;
-
-const STUB_ME = {
-  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  display_name: "Alice",
-  email: "alice@example.com",
-  role: "admin" as const,
-  is_child: false,
-  theme_preference: "system",
-  csrf_token: null,
-};
 
 // `App` now consumes the shared `/auth/me` query via useSessionRecovery, so
 // every test must answer it. Default to an authenticated 200 so recovery stays

@@ -3,17 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { useAuthMe } from "./useAuthMe";
+import { STUB_ME } from "@/__fixtures__/auth";
 
-const STUB_ME = {
-  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  display_name: "Alice",
-  email: "alice@example.com",
-  role: "admin" as const,
-  is_child: false,
-  theme_preference: "system",
-  csrf_token: null,
-};
+import { useAuthMe } from "./useAuthMe";
 
 function makeWrapper() {
   const client = new QueryClient({
