@@ -4,6 +4,7 @@
   "triggerOnUpdates": true,
   "shouldUpdateDescription": false,
   "statusCommentsEnabled": true,
+  "statusCheck": true,
   "fixWithAI": false,
   "summarySection": {
     "included": true,
@@ -22,7 +23,7 @@
     "docs/openapi.json",
     "docs/src/content/docs/reference/configuration.mdx"
   ],
-  "instructions": "ADRs in adr/ are authoritative architectural constraints, not background reading. Before flagging a pattern as wrong, check whether a relevant ADR in adr/ already decided it — a change that conforms to an accepted ADR is correct even if it looks unusual; a change that contradicts one is a finding. Cross-cutting ADRs (JSON:API conventions, validation-status vocabulary, keyset pagination, first-party session layer, standards-first integrations) are pinned below; consult the others in adr/ by filename when a diff touches their area.",
+  "instructions": "ADRs in adr/ are authoritative architectural constraints, not background reading. Before flagging a pattern as wrong, check whether a relevant ADR in adr/ already decided it — a change that conforms to an accepted ADR is correct even if it looks unusual; a change that contradicts one is a finding. Cross-cutting ADRs (JSON:API conventions, API versioning and OpenAPI, validation-status vocabulary, keyset pagination, first-party session layer, standards-first integrations) are pinned below; consult the others in adr/ by filename when a diff touches their area.",
   "customContext": {
     "files": [
       {
@@ -31,7 +32,7 @@
       },
       {
         "path": "backend/CLAUDE.md",
-        "description": "Backend Rust conventions: error handling with thiserror, sqlx for queries, time crate (not chrono), explicit module boundaries, RLS-aware DB access."
+        "description": "Backend Rust conventions and cardinal rules (do not deviate): no unwrap()/expect() in production code, no silent error-swallowing (no `let _ = <Result>`, `.ok()`, or `.unwrap_or_default()` on critical operations), no blind `.clone()` to satisfy the borrow checker, no N+1 queries (set-based only). Parse-don't-validate at boundaries with newtypes, enums over bools, thiserror at library boundaries and anyhow with .context() in app logic, sqlx for queries, time crate (not chrono), RLS-aware DB access, and never expose internal DB errors or stack traces to clients."
       },
       {
         "path": "frontend/CLAUDE.md",
@@ -60,6 +61,22 @@
       {
         "path": "adr/2026-06-08-standards-first-integrations.md",
         "description": "Cross-cutting: default to IETF/W3C/OWASP standards; deviation requires a conscious decision recorded in an ADR or debt entry."
+      },
+      {
+        "path": "adr/2026-06-08-api-versioning-openapi.md",
+        "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated docs/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
+      },
+      {
+        "path": "adr/2026-06-05-accessibility-review-process.md",
+        "description": "Accessibility review process and the WCAG 2.2 Level AA target for the frontend. Treat a11y findings on interactive UI (semantics, ARIA, focus, keyboard) as load-bearing, not nice-to-have."
+      },
+      {
+        "path": "docs/astro.config.mjs",
+        "description": "Starlight (Astro) documentation-site config: site nav, sidebar, and integrations. Changes to docs structure or the docs build go through here."
+      },
+      {
+        "path": "docs/src/content.config.ts",
+        "description": "Astro content-collection schema for the Starlight docs site; governs the frontmatter shape of docs pages."
       },
       {
         "path": "docs/security/codeguard/codeguard-0-authentication-mfa.md",
