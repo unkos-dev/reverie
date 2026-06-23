@@ -18,9 +18,37 @@ vi.mock("@/components/shell/AppShell", () => ({
 
 const originalLocation = window.location;
 
+const STUB_ME = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  display_name: "Alice",
+  email: "alice@example.com",
+  role: "admin" as const,
+  is_child: false,
+  theme_preference: "system",
+  csrf_token: null,
+};
+
+// `App` now consumes the shared `/auth/me` query via useSessionRecovery, so
+// every test must answer it. Default to an authenticated 200 so recovery stays
+// quiet and the QueryCache.onError funnel tests below stay isolated; the
+// cold-load test overrides this with a 401.
+function mockAuthMe(status: number): void {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/auth/me")) {
+      const body = status === 200 ? JSON.stringify(STUB_ME) : null;
+      return Promise.resolve(
+        new Response(body, { status, headers: { "Content-Type": "application/json" } }),
+      );
+    }
+    return Promise.reject(new Error(`unexpected fetch: ${url}`));
+  });
+}
+
 beforeEach(() => {
   queryClient.clear();
   setUnauthenticatedHandler(() => {});
+  mockAuthMe(200);
 });
 
 afterEach(() => {
@@ -107,5 +135,38 @@ describe("App — auth boundary", () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(loc.assign).not.toHaveBeenCalled();
+  });
+
+  test("cold-load lapsed session (GET /auth/me 401) redirects to /auth/login", async () => {
+    mockAuthMe(401);
+    const loc = mockLocation();
+    renderApp();
+
+    await waitFor(() => {
+      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+    });
+  });
+
+  test("navigates once when the me-query 401s and an ApiError 401 also fires", async () => {
+    mockAuthMe(401);
+    const loc = mockLocation();
+    renderApp();
+
+    await waitFor(() => {
+      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+    });
+
+    await queryClient
+      .fetchQuery({
+        queryKey: ["__app-test", "concurrent-401"],
+        queryFn: () => {
+          throw new ApiError(401, null, "Unauthorized", "");
+        },
+        retry: false,
+      })
+      .catch(() => {});
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(loc.assign).toHaveBeenCalledTimes(1);
   });
 });

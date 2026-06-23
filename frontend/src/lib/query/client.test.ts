@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ApiError } from "@/api";
 
-import { queryClient, setUnauthenticatedHandler } from "./client";
+import { invokeUnauthenticatedHandler, queryClient, setUnauthenticatedHandler } from "./client";
 
 beforeEach(() => {
   queryClient.clear();
@@ -86,6 +86,41 @@ describe("queryClient — QueryCache onError", () => {
       .catch(() => {});
 
     expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("invokeUnauthenticatedHandler — once-guard", () => {
+  test("fires the wired handler once", () => {
+    const handler = vi.fn();
+    setUnauthenticatedHandler(handler);
+
+    invokeUnauthenticatedHandler();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  test("is guarded — repeated calls navigate once", () => {
+    const handler = vi.fn();
+    setUnauthenticatedHandler(handler);
+
+    invokeUnauthenticatedHandler();
+    invokeUnauthenticatedHandler();
+    invokeUnauthenticatedHandler();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  test("setUnauthenticatedHandler resets the once-guard", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+
+    setUnauthenticatedHandler(first);
+    invokeUnauthenticatedHandler();
+    expect(first).toHaveBeenCalledTimes(1);
+
+    setUnauthenticatedHandler(second);
+    invokeUnauthenticatedHandler();
     expect(second).toHaveBeenCalledTimes(1);
   });
 });
