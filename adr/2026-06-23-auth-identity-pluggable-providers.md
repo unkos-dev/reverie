@@ -115,16 +115,26 @@ random high-entropy device tokens keep their SHA-256 hashing, which is correct f
 that input. Passwords are never run through the token path.
 
 **Bootstrap.** A first-run setup screen creates the first administrator, gated by
-an instance-uninitialized check (the users table is empty); the setup path closes
-once an administrator exists and reopens automatically when no administrator
-exists. An environment seed and a CLI command are the headless and recovery
+a single predicate: no administrator exists. The same predicate governs both the
+initial gate and the automatic recovery reopen, so the setup path closes once an
+administrator exists and reopens whenever none does. The gate keys on
+no-administrator-exists rather than an empty users table, because with
+self-registration enabled a non-admin user can exist before the first
+administrator is created, or after every administrator is removed; an empty-table
+check would then fail to reopen setup in exactly the recovery case it is meant to
+cover. An environment seed and a CLI command are the headless and recovery
 alternatives. There is no setup token at this stage; the first-run exposure window
 is handled as a documented configure-before-exposing note rather than a token gate.
 
 **Recovery, without email.** A forgot-password flow writes a single-use,
-short-lived PIN to a server-side file (proving host access) and resets through the
-UI. Automatic first-run reopen covers the no-administrator case, and a CLI command
-is the floor for when the UI cannot serve.
+short-lived PIN to a server-side file, which proves host access, and resets through
+the UI. The PIN is generated with a CSPRNG and stored hashed, not in clear, at an
+operator-readable-only path outside any web-served directory, and is removed on
+consumption or on expiry, so it is never world-readable and never lingers after
+use. A successful reset forces re-authentication and does not auto-log-in the user,
+and the flow returns a generic response that does not reveal whether an account
+exists. Automatic first-run reopen covers the no-administrator case, and a CLI
+command is the floor for when the UI cannot serve.
 
 **Account linking.** Email is unique per instance. An OIDC login auto-links to an
 existing local account only when the asserted email is verified; otherwise an
@@ -182,7 +192,7 @@ a file-based variant in addition to environment variables.
 
 ### Confirmation
 
-Two load-bearing invariants carry this decision and must be covered by tests.
+Three load-bearing invariants carry this decision and must be covered by tests.
 
 1. **Single first-administrator path.** Bootstrap (first-run setup, environment
    seed, or CLI) is the only way to create the first administrator. OIDC login and
@@ -199,6 +209,11 @@ Two load-bearing invariants carry this decision and must be covered by tests.
    session created by local login carries a non-null CSRF token, so a
    locally-logged-in session is not blocked by the CSRF validating layer on its
    first mutation.
+3. **Single-use, time-bounded recovery PIN.** A forgot-password PIN is invalidated
+   on first use and rejected once its lifetime has elapsed. Tests assert that a
+   second presentation of a consumed PIN fails and that a PIN presented after
+   expiry is rejected, so neither reuse nor a PIN that never expires can ship
+   unnoticed.
 
 Account linking is also test-locked: an OIDC login auto-links to a local account
 only when the asserted email is verified.
