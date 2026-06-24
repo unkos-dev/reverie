@@ -39,7 +39,7 @@ them lands. The dev-facing reference in
 ### OIDC `email` claim: addr-spec validation and degrade-to-NULL
 
 **Source:** `backend/src/models/user.rs`
-(`is_addr_spec`, `upsert_from_oidc_and_maybe_promote`), which is tracked in the email validation task
+(`is_addr_spec`, `upsert_from_oidc`), which is tracked in the email validation task
 
 The OIDC `email` claim is signature-verified but not format-checked
 upstream. Reverie validates it against RFC 5322 _addr-spec_ rules before

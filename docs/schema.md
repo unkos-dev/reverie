@@ -9,6 +9,10 @@ separation allows multiple editions, formats, and translations to share metadata
 ```text
 users ─────────┬──── shelves ──── shelf_items ────┐
                │                                   │
+               ├──── user_identities               │
+               │                                   │
+               ├──── local_credentials             │
+               │                                   │
                ├──── device_tokens                 │
                │                                   │
                └──── webhooks ──── webhook_deliveries
@@ -35,13 +39,13 @@ ingestion_jobs     (standalone)
 
 ### Core (FRBR Model)
 
-| Table            | Purpose                    | Key Columns                                                                                                           |
-| ---------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `users`          | User accounts (OIDC)       | `oidc_subject`, `role`, `is_child`, `theme_preference`                                                                |
-| `works`          | Abstract titles            | `title`, `sort_title`, `search_vector`                                                                                |
-| `authors`        | Author/contributor records | `name`, `sort_name`                                                                                                   |
-| `work_authors`   | Work-Author join (M:N)     | `work_id`, `author_id`, `role`, `position`                                                                            |
-| `manifestations` | Concrete files             | `work_id`, `format`, `file_path`, `ingestion_file_hash`, `current_file_hash`, `validation_status`, `ingestion_status` |
+| Table            | Purpose                    | Key Columns                                                                                                                         |
+| ---------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `users`          | Canonical user identity    | `role`, `is_child`, `theme_preference`, `email` (`oidc_subject` is vestigial/nullable; identity resolves through `user_identities`) |
+| `works`          | Abstract titles            | `title`, `sort_title`, `search_vector`                                                                                              |
+| `authors`        | Author/contributor records | `name`, `sort_name`                                                                                                                 |
+| `work_authors`   | Work-Author join (M:N)     | `work_id`, `author_id`, `role`, `position`                                                                                          |
+| `manifestations` | Concrete files             | `work_id`, `format`, `file_path`, `ingestion_file_hash`, `current_file_hash`, `validation_status`, `ingestion_status`               |
 
 ### Series & Metadata
 
@@ -56,11 +60,18 @@ ingestion_jobs     (standalone)
 
 ### User Features
 
-| Table           | Purpose                  | Key Columns                                |
-| --------------- | ------------------------ | ------------------------------------------ |
-| `shelves`       | Per-user collections     | `user_id`, `name`, `is_system`             |
-| `shelf_items`   | Shelf-Manifestation join | `shelf_id`, `manifestation_id`, `position` |
-| `device_tokens` | OPDS/reader device auth  | `user_id`, `token_hash`, `revoked_at`      |
+| Table           | Purpose                  | Key Columns                                     |
+| --------------- | ------------------------ | ----------------------------------------------- |
+| `shelves`       | Per-user collections     | `user_id`, `name`, `is_system`                  |
+| `shelf_items`   | Shelf-Manifestation join | `shelf_id`, `manifestation_id`, `position`      |
+| `device_tokens` | OPDS/reader device auth  | `user_id`, `token_hash`, `revoked_at`, `scopes` |
+
+### Auth & Identity
+
+| Table               | Purpose                                  | Key Columns                                                                              |
+| ------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `user_identities`   | External-provider identity links         | `user_id`, `provider`, `issuer`, `subject`, `email_verified`; `UNIQUE (issuer, subject)` |
+| `local_credentials` | Local password credential (one per user) | `user_id` (PK), `password_hash` (Argon2id PHC; secret, app-grant only)                   |
 
 ### System
 
@@ -84,6 +95,7 @@ ingestion_jobs     (standalone)
 | Type                     | Values                                          | Used By                            |
 | ------------------------ | ----------------------------------------------- | ---------------------------------- |
 | `user_role`              | admin, adult, child                             | `users.role`                       |
+| `identity_provider`      | oidc                                            | `user_identities.provider`         |
 | `author_role`            | author, editor, translator, narrator            | `work_authors.role`                |
 | `manifestation_format`   | epub, pdf, mobi, azw3, cbz, cbr                 | `manifestations.format`            |
 | `validation_status`      | pending, clean, repaired, degraded              | `manifestations.validation_status` |
@@ -100,13 +112,13 @@ separate, as a job can fail while individual files succeeded, and vice versa.
 
 ## Database Role Architecture
 
-| Role                | Purpose                              | Privileges                                                 | RLS                              |
-| ------------------- | ------------------------------------ | ---------------------------------------------------------- | -------------------------------- |
-| `reverie`           | Cluster bootstrap — provisions roles | Superuser; not used at runtime or for migrations           | Bypasses (superuser)             |
-| `reverie_migrator`  | Runs migrations (`reverie migrate`)  | CREATE on database + schema `public`; owns created objects | Enforced — NOBYPASSRLS           |
-| `reverie_app`       | Web app, OPDS, webhooks              | DML on all tables                                          | Enforced — user-scoped           |
-| `reverie_ingestion` | Background pipeline                  | DML on pipeline tables only                                | Own permissive policy            |
-| `reverie_readonly`  | Debugging, reporting                 | SELECT on most tables (excludes `device_tokens`)           | Enforced — same as `reverie_app` |
+| Role                | Purpose                              | Privileges                                                            | RLS                              |
+| ------------------- | ------------------------------------ | --------------------------------------------------------------------- | -------------------------------- |
+| `reverie`           | Cluster bootstrap — provisions roles | Superuser; not used at runtime or for migrations                      | Bypasses (superuser)             |
+| `reverie_migrator`  | Runs migrations (`reverie migrate`)  | CREATE on database + schema `public`; owns created objects            | Enforced — NOBYPASSRLS           |
+| `reverie_app`       | Web app, OPDS, webhooks              | DML on all tables                                                     | Enforced — user-scoped           |
+| `reverie_ingestion` | Background pipeline                  | DML on pipeline tables only                                           | Own permissive policy            |
+| `reverie_readonly`  | Debugging, reporting                 | SELECT on most tables (excludes `device_tokens`, `local_credentials`) | Enforced — same as `reverie_app` |
 
 Migrations run as the dedicated least-privilege `reverie_migrator`
 (`NOSUPERUSER NOCREATEROLE NOBYPASSRLS`), **not** the cluster superuser.
@@ -122,8 +134,9 @@ Has DML on: `works`, `authors`, `work_authors`, `manifestations`, `series`,
 `series_works`, `omnibus_contents`, `metadata_versions`, `tags`, `manifestation_tags`,
 `api_cache`, `ingestion_jobs`.
 
-Denied: `users`, `shelves`, `shelf_items`, `device_tokens`, `webhooks`,
-`webhook_deliveries`, `reading_sessions`, `reading_positions`.
+Denied: `users`, `user_identities`, `local_credentials`, `shelves`, `shelf_items`,
+`device_tokens`, `webhooks`, `webhook_deliveries`, `reading_sessions`,
+`reading_positions`.
 
 ## Row Level Security (RLS)
 
