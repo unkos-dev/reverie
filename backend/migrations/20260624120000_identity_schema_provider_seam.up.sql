@@ -34,15 +34,14 @@ CREATE TYPE public.identity_provider AS ENUM ('oidc');
 -- same person regardless of the mechanism that asserted it, so a future SAML
 -- link for an existing OIDC (issuer, subject) maps to the same user rather than
 -- forking a second account.
--- `email_verified` carries the per-identity verification state seeded false
--- (fail-closed; the real OIDC claim capture is a later step).
+-- Per-identity verification state (e.g. email_verified) is added together with
+-- its write path in a later slice, not shipped here as a column nothing sets.
 CREATE TABLE public.user_identities (
     id uuid DEFAULT uuidv7() NOT NULL,
     user_id uuid NOT NULL,
     provider public.identity_provider NOT NULL,
     issuer text NOT NULL,
     subject text NOT NULL,
-    email_verified boolean DEFAULT false NOT NULL,
     created_at timestamptz DEFAULT now() NOT NULL,
     updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT user_identities_pkey PRIMARY KEY (id),

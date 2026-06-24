@@ -68,10 +68,10 @@ ingestion_jobs     (standalone)
 
 ### Auth & Identity
 
-| Table               | Purpose                                  | Key Columns                                                                              |
-| ------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `user_identities`   | External-provider identity links         | `user_id`, `provider`, `issuer`, `subject`, `email_verified`; `UNIQUE (issuer, subject)` |
-| `local_credentials` | Local password credential (one per user) | `user_id` (PK), `password_hash` (Argon2id PHC; secret, app-grant only)                   |
+| Table               | Purpose                                  | Key Columns                                                            |
+| ------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `user_identities`   | External-provider identity links         | `user_id`, `provider`, `issuer`, `subject`; `UNIQUE (issuer, subject)` |
+| `local_credentials` | Local password credential (one per user) | `user_id` (PK), `password_hash` (Argon2id PHC; secret, app-grant only) |
 
 ### System
 

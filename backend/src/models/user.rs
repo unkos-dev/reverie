@@ -289,10 +289,9 @@ pub async fn upsert_from_oidc(
         .fetch_one(&mut *tx)
         .await?;
 
-        // email_verified seeded false (fail-closed; the verified-email claim is
-        // captured in a later step).
-        crate::models::user_identities::insert_oidc(&mut *tx, user_id, issuer, subject, false)
-            .await?;
+        // Per-identity verification state is added with its write path in a
+        // later slice; the link carries no verification column yet.
+        crate::models::user_identities::insert_oidc(&mut *tx, user_id, issuer, subject).await?;
 
         sqlx::query_as!(
             UserRow,

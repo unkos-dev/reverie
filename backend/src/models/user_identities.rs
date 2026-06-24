@@ -20,7 +20,6 @@ struct UserIdentityRow {
     provider: IdentityProvider,
     issuer: String,
     subject: String,
-    email_verified: bool,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -38,10 +37,6 @@ pub struct UserIdentity {
     pub issuer: String,
     /// Provider-asserted subject (`sub`), unique only within `issuer`.
     pub subject: String,
-    /// Whether the provider asserted a verified email for this identity.
-    /// Seeded `false` until the verified-email claim is captured in a later
-    /// step; carries the per-identity verification state.
-    pub email_verified: bool,
     /// Row insert timestamp.
     pub created_at: OffsetDateTime,
     /// `now()` of the most recent change to this link.
@@ -56,7 +51,6 @@ impl From<UserIdentityRow> for UserIdentity {
             provider: row.provider,
             issuer: row.issuer,
             subject: row.subject,
-            email_verified: row.email_verified,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -88,8 +82,7 @@ pub async fn find_user_id_by_oidc(
     .await
 }
 
-/// Insert an OIDC identity link for `user_id`. `email_verified` records the
-/// provider's verification state for this identity.
+/// Insert an OIDC identity link for `user_id`.
 ///
 /// # Errors
 ///
@@ -100,15 +93,13 @@ pub async fn insert_oidc(
     user_id: Uuid,
     issuer: &str,
     subject: &str,
-    email_verified: bool,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO user_identities (user_id, provider, issuer, subject, email_verified) \
-         VALUES ($1, 'oidc'::public.identity_provider, $2, $3, $4)",
+        "INSERT INTO user_identities (user_id, provider, issuer, subject) \
+         VALUES ($1, 'oidc'::public.identity_provider, $2, $3)",
         user_id,
         issuer,
         subject,
-        email_verified,
     )
     .execute(executor)
     .await
@@ -129,7 +120,7 @@ pub async fn find_by_oidc(
     sqlx::query_as!(
         UserIdentityRow,
         "SELECT id, user_id, provider AS \"provider: IdentityProvider\", \
-                issuer, subject, email_verified, created_at, updated_at \
+                issuer, subject, created_at, updated_at \
          FROM user_identities \
          WHERE issuer = $1 AND subject = $2 \
            AND provider = 'oidc'::public.identity_provider",
@@ -162,7 +153,7 @@ mod tests {
         let issuer = "https://issuer.example.com";
         let user_id = insert_user(&pool, &subject).await;
 
-        insert_oidc(&pool, user_id, issuer, &subject, true)
+        insert_oidc(&pool, user_id, issuer, &subject)
             .await
             .expect("insert identity");
 
@@ -178,7 +169,7 @@ mod tests {
         assert_eq!(identity.user_id, user_id);
         assert_eq!(identity.provider, IdentityProvider::Oidc);
         assert_eq!(identity.issuer, issuer);
-        assert!(identity.email_verified, "email_verified must round-trip");
+        assert_eq!(identity.subject, subject);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -198,24 +189,12 @@ mod tests {
         let user_a = insert_user(&pool, &format!("a-{subject}")).await;
         let user_b = insert_user(&pool, &format!("b-{subject}")).await;
 
-        insert_oidc(
-            &pool,
-            user_a,
-            "https://issuer-a.example.com",
-            &subject,
-            false,
-        )
-        .await
-        .expect("insert a");
-        insert_oidc(
-            &pool,
-            user_b,
-            "https://issuer-b.example.com",
-            &subject,
-            false,
-        )
-        .await
-        .expect("insert b");
+        insert_oidc(&pool, user_a, "https://issuer-a.example.com", &subject)
+            .await
+            .expect("insert a");
+        insert_oidc(&pool, user_b, "https://issuer-b.example.com", &subject)
+            .await
+            .expect("insert b");
 
         let resolved_a = find_user_id_by_oidc(&pool, "https://issuer-a.example.com", &subject)
             .await
@@ -235,10 +214,10 @@ mod tests {
         let user_a = insert_user(&pool, &format!("a-{subject}")).await;
         let user_b = insert_user(&pool, &format!("b-{subject}")).await;
 
-        insert_oidc(&pool, user_a, issuer, &subject, false)
+        insert_oidc(&pool, user_a, issuer, &subject)
             .await
             .expect("first insert");
-        let err = insert_oidc(&pool, user_b, issuer, &subject, false)
+        let err = insert_oidc(&pool, user_b, issuer, &subject)
             .await
             .expect_err("duplicate (issuer, subject) must be rejected");
         assert_eq!(
@@ -250,12 +229,14 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn update_advances_updated_at_via_trigger(pool: PgPool) {
         // The BEFORE UPDATE trigger must bump updated_at on mutation; without it
-        // the column keeps its insert-time value. Guards the first UPDATE path a
-        // later step adds (email_verified capture, credential rotation).
+        // the column keeps its insert-time value. user_identities has no
+        // app-mutable non-key column yet, so rotate `subject` purely to exercise
+        // the trigger; this guards the first real UPDATE path a later slice adds.
         let subject = format!("touch-{}", Uuid::new_v4());
+        let rotated = format!("rotated-{}", Uuid::new_v4());
         let issuer = "https://issuer.example.com";
         let user_id = insert_user(&pool, &subject).await;
-        insert_oidc(&pool, user_id, issuer, &subject, false)
+        insert_oidc(&pool, user_id, issuer, &subject)
             .await
             .expect("insert identity");
 
@@ -269,21 +250,20 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 
         sqlx::query!(
-            "UPDATE user_identities SET email_verified = true \
-             WHERE issuer = $1 AND subject = $2",
-            issuer,
-            subject,
+            "UPDATE user_identities SET subject = $2 WHERE id = $1",
+            before.id,
+            rotated,
         )
         .execute(&pool)
         .await
         .expect("update identity");
 
-        let after = find_by_oidc(&pool, issuer, &subject)
+        let after = find_by_oidc(&pool, issuer, &rotated)
             .await
             .expect("fetch after")
             .expect("identity present");
 
-        assert!(after.email_verified, "update must persist");
+        assert_eq!(after.id, before.id, "same row mutated");
         assert!(
             after.updated_at > before.updated_at,
             "BEFORE UPDATE trigger must advance updated_at"
