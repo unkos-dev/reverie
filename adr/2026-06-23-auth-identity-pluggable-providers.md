@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-23
 supersedes: []
 decision-makers: "John Unkovich"
@@ -95,13 +95,15 @@ both resolve to the same `users` row and establish the same first-party session,
 so identity gating and ownership stay enforced once.
 
 **Unified identity.** The `users` row remains the canonical identity. A new
-`user_identities` table (user, provider, subject, verification state) holds
-external-provider links, and a new `local_credentials` table (user, password hash,
-timestamps) holds local secrets. `users.oidc_subject` becomes nullable and its
-existing values migrate into `user_identities`, so a credential-only account is
-representable and a user can hold multiple identities without a later schema
-rework. Migrations are consolidated before the first release, so no production
-back-compatibility step is required.
+`user_identities` table (user, provider, issuer, subject, verification state)
+holds external-provider links, keyed on `(issuer, subject)`: an OIDC `sub` is
+unique only within its issuer (OIDC Core), so the issuer namespaces the subject
+and the schema stays correct across multiple issuers and identity-provider
+migration. A new `local_credentials` table (user, password hash, timestamps)
+holds local secrets. `users.oidc_subject` becomes nullable and ceases to be the
+identity key, so a credential-only account is representable and a user can hold
+multiple identities without a later schema rework. Migrations are consolidated
+before the first release, so no production back-compatibility step is required.
 
 **Pluggable providers, one session.** `GET /auth/oidc/login` initiates OIDC;
 `POST /auth/local/login` accepts credentials in the request body. Credentials are
@@ -226,7 +228,7 @@ only when the asserted email is verified.
   to, so gating and ownership are enforced once.
 - Good, because multiple identities per user and credential-only accounts are
   representable without a later schema rework.
-- Neutral, because it adds two tables and a migration of `oidc_subject` values.
+- Neutral, because it adds two tables and makes `oidc_subject` vestigial.
 
 ### Widen the `users` row with nullable password columns
 
@@ -304,7 +306,13 @@ only when the asserted email is verified.
   and is out of scope here.
 - Deferred to later work, named here so the boundary is explicit: multi-factor
   authentication, email-based self-service reset, recovery codes, a first-run
-  setup token, trusting edge-asserted identity, and administrator impersonation.
+  setup token, trusting edge-asserted identity, administrator impersonation,
+  WebAuthn/FIDO2 passkeys, and a multi-issuer runtime. Passkeys land in their
+  own credentials table (one user to many), never in `user_identities`
+  (federated links) or `local_credentials` (one password hash); the canonical
+  `users` design absorbs them with no identity rework. The multi-issuer runtime
+  (multiple configured issuers, provider selection) is future work; the schema
+  is already issuer-keyed, but only one issuer is configured at runtime.
 - The authentication changes (retirement of first-user auto-promotion, the
   bootstrap and recovery model, account linking) require updates to the
   authentication entries in the security control set as part of the
