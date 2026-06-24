@@ -30,6 +30,10 @@ CREATE TYPE public.identity_provider AS ENUM ('oidc');
 -- External-provider identity links. One canonical user may hold several rows
 -- (one per provider identity). UNIQUE (issuer, subject) is the spec-correct
 -- identity key; the same `sub` under two issuers is two distinct identities.
+-- `provider` is deliberately NOT part of the key: one (issuer, subject) is the
+-- same person regardless of the mechanism that asserted it, so a future SAML
+-- link for an existing OIDC (issuer, subject) maps to the same user rather than
+-- forking a second account.
 -- `email_verified` carries the per-identity verification state seeded false
 -- (fail-closed; the real OIDC claim capture is a later step).
 CREATE TABLE public.user_identities (

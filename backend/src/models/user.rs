@@ -197,6 +197,14 @@ pub async fn upsert_from_oidc(
     // per-identity advisory lock makes the second wait for the first to commit;
     // `UNIQUE (issuer, subject)` on user_identities is the backstop. Keyed on
     // the identity, not the fixed `42` the retired promotion count used.
+    //
+    // `hashtext` is a 32-bit hash widened to bigint, so the lock keyspace is
+    // ~2^32: two distinct identities can collide and serialize against each
+    // other. That is benign (a false-positive wait, never a wrong row) because
+    // correctness rests on the UNIQUE backstop, not the lock. The post-lock
+    // resolve below also assumes READ COMMITTED (the pool default) so it sees a
+    // concurrent committed insert; under a stricter isolation level it would
+    // miss it and fall through to the UNIQUE violation instead.
     let lock_key = format!("{issuer}|{subject}");
     sqlx::query!(
         "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
@@ -430,6 +438,38 @@ mod tests {
             .expect("b present");
         assert_eq!(resolved_a.id, a.id);
         assert_eq!(resolved_b.id, b.id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn find_by_oidc_identity_absent_resolves_to_none(pool: PgPool) {
+        // The public resolver returns Ok(None) for an identity that was never
+        // provisioned, distinct from surfacing an error.
+        let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, "never-provisioned")
+            .await
+            .expect("no db error");
+        assert!(resolved.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn first_login_with_duplicate_email_collides(pool: PgPool) {
+        // The migration documents that on an existing pre-release DB a first
+        // login whose IdP releases an email already held by another user
+        // collides on idx_users_email_lower and fails. Reproduce that shape: two
+        // distinct identities carrying the same email; the second is a first
+        // login whose users INSERT violates the case-insensitive email index.
+        let email = "dupe@example.com";
+        upsert_from_oidc(&pool, TEST_ISSUER, "collide-a", "A", Some(email))
+            .await
+            .expect("first identity provisions");
+
+        let err = upsert_from_oidc(&pool, TEST_ISSUER, "collide-b", "B", Some(email))
+            .await
+            .expect_err("duplicate email on a first login must fail");
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("idx_users_email_lower"),
+            "collision must be the case-insensitive email index"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
