@@ -130,7 +130,9 @@ pub async fn find_by_oidc(
         UserIdentityRow,
         "SELECT id, user_id, provider AS \"provider: IdentityProvider\", \
                 issuer, subject, email_verified, created_at, updated_at \
-         FROM user_identities WHERE issuer = $1 AND subject = $2",
+         FROM user_identities \
+         WHERE issuer = $1 AND subject = $2 \
+           AND provider = 'oidc'::public.identity_provider",
         issuer,
         subject,
     )

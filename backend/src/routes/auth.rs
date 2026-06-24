@@ -692,10 +692,11 @@ mod tests {
     /// End-to-end happy path through `/auth/login` → `/auth/callback`. Exercises:
     /// PKCE/CSRF/nonce session round-trip, mock token exchange against a
     /// signed ID token whose nonce matches what `/auth/login` stored,
-    /// upsert-and-promote-to-admin (first user), session login (cookie cycled),
-    /// and the FOUC theme cookie seeded from the freshly-loaded user record.
+    /// identity provisioning without auto-promotion (first user stays a
+    /// non-administrator), session login (cookie cycled), and the FOUC theme
+    /// cookie seeded from the freshly-loaded user record.
     #[sqlx::test(migrations = "./migrations")]
-    async fn callback_succeeds_first_user_promoted_to_admin(pool: sqlx::PgPool) {
+    async fn callback_succeeds_first_user_not_promoted(pool: sqlx::PgPool) {
         use crate::models::role::Role;
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
@@ -835,8 +836,8 @@ mod tests {
         let me_body: serde_json::Value = me_resp.json();
         assert_eq!(
             me_body.get("role").and_then(|v| v.as_str()),
-            Some("admin"),
-            "expected /auth/me role=admin, got body: {me_body}"
+            Some("adult"),
+            "expected /auth/me role=adult, got body: {me_body}"
         );
         assert_eq!(
             me_body.get("email").and_then(|v| v.as_str()),

@@ -207,10 +207,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn create_list_revoke_lifecycle(pool: PgPool) {
-        let oidc_subject = format!("token-test-{}", Uuid::new_v4());
+        let display_name = format!("token-test-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Token Test') RETURNING id",
-            oidc_subject,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(&pool)
         .await
@@ -237,10 +237,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn list_for_user_excludes_revoked(pool: PgPool) {
-        let oidc_subject = format!("revoke-filter-{}", Uuid::new_v4());
+        let display_name = format!("revoke-filter-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Revoke Filter') RETURNING id",
-            oidc_subject,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(&pool)
         .await
@@ -261,10 +261,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn create_with_limit_returns_limit_exceeded_at_cap(pool: PgPool) {
-        let oidc_subject = format!("limit-cap-{}", Uuid::new_v4());
+        let display_name = format!("limit-cap-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Limit Cap') RETURNING id",
-            oidc_subject,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(&pool)
         .await
@@ -286,10 +286,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn create_with_limit_excludes_revoked_from_count(pool: PgPool) {
-        let oidc_subject = format!("limit-revoked-{}", Uuid::new_v4());
+        let display_name = format!("limit-revoked-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Limit Revoked') RETURNING id",
-            oidc_subject,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(&pool)
         .await
@@ -313,10 +313,10 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn update_last_used_debounced_within_window(pool: PgPool) {
-        let oidc_subject = format!("debounce-{}", Uuid::new_v4());
+        let display_name = format!("debounce-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Debounce') RETURNING id",
-            oidc_subject,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(&pool)
         .await
@@ -358,10 +358,10 @@ mod tests {
         // S1 adds device_tokens.scopes as a column-only seam (no Rust struct
         // field yet). Assert the DB default lands, read via raw SQL rather than
         // the DeviceToken struct, which deliberately does not carry scopes.
-        let oidc_subject = format!("scopes-default-{}", Uuid::new_v4());
+        let display_name = format!("scopes-default-{}", Uuid::new_v4());
         let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Scopes') RETURNING id",
-            oidc_subject,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(&pool)
         .await
