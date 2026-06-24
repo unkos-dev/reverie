@@ -30,12 +30,15 @@ die() {
 command -v reverie-dev >/dev/null 2>&1 \
   || die "reverie-dev wrapper not on PATH (expected ~/.local/bin/reverie-dev)"
 
-# Reset the public schema to the state migrations expect. Superuser only: public
-# is owned by pg_database_owner and reverie_migrator is not the database owner,
-# so the drop runs as the postgres role. tower_sessions is a separate schema and
-# is intentionally left intact. The regrants restore the schema owner and the
-# migrator CREATE privilege that the initial migration (USAGE only) omits.
+# Reset the schemas to what the migrations build from a clean slate. Superuser
+# only: public is owned by pg_database_owner and reverie_migrator is not the
+# database owner, so the drop runs as the postgres role. Both migration-owned
+# schemas are dropped: public, and tower_sessions (its session table is a plain
+# CREATE TABLE, so leaving it makes re-migration fail with "already exists").
+# The regrants restore the public schema owner and the migrator CREATE privilege
+# the initial migration (USAGE only) omits; migrations recreate tower_sessions.
 RESET_SQL="DROP SCHEMA public CASCADE; \
+DROP SCHEMA IF EXISTS tower_sessions CASCADE; \
 CREATE SCHEMA public; \
 ALTER SCHEMA public OWNER TO pg_database_owner; \
 GRANT USAGE, CREATE ON SCHEMA public TO reverie_migrator;"
@@ -62,9 +65,15 @@ cmd_recreate() {
     [[ "$reply" == "recreate" ]] || die "aborted"
   fi
 
-  printf '==> dropping and recreating the public schema (postgres superuser)\n'
+  # Target whatever database the wrapper (and so `migrate`) uses, rather than
+  # hard-coding a name that differs between dev setups.
+  local db_name
+  db_name="$(reverie-dev psql -tAc 'SELECT current_database();' | tr -d '[:space:]')"
+  [[ -n "$db_name" ]] || die "could not determine the dev database name"
+
+  printf '==> dropping and recreating schemas on %s (postgres superuser)\n' "$db_name"
   printf '%s\n' "$RESET_SQL" \
-    | reverie-dev shell sudo -u postgres psql -d reverie -v ON_ERROR_STOP=1 -f -
+    | reverie-dev shell sudo -u postgres psql -d "$db_name" -v ON_ERROR_STOP=1 -f -
 
   printf '==> applying migrations\n'
   reverie-dev migrate
@@ -90,7 +99,7 @@ cmd_promote_admin() {
   # statement. is_child rows are excluded because chk_child_role_sync forbids an
   # admin child; a zero-row result means the email did not match (log in first).
   reverie-dev psql-rw -v ON_ERROR_STOP=1 -v email="$email" -c \
-    "UPDATE users SET role = 'admin' \
+    "UPDATE public.users SET role = 'admin' \
      WHERE lower(email) = lower(:'email') AND NOT is_child \
      RETURNING id, email, role;"
   printf 'If the result shows UPDATE 0, no matching adult user exists yet.\n'
