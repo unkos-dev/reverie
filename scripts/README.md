@@ -12,6 +12,24 @@ EPUBs from Standard Ebooks for backend integration tests and frontend
 onboarding flows. No binaries are committed to the repo — the script
 fetches at runtime.
 
+### `recreate-dev-db.sh`
+
+Recreates the disposable reverie dev database, and grants admin afterwards.
+
+When a branch rewrites an already-applied migration, the dev database
+drifts from the tree and `reverie-dev migrate` fails on a
+migration-checksum mismatch. `recreate` drops the `public` schema and
+re-applies every migration from a clean slate.
+
+```bash
+./scripts/recreate-dev-db.sh recreate [--yes] [--fixtures]
+./scripts/recreate-dev-db.sh promote-admin <email>
+```
+
+A recreated database has no administrator: OIDC first-login no longer
+auto-promotes, and the bootstrap admin-grant path is not built yet. Log in
+once to create your user row, then run `promote-admin <email>`.
+
 ## Environment variables
 
 ### `REVERIE_DEV_HOSTS`
