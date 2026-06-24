@@ -398,6 +398,39 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn same_subject_distinct_issuers_are_distinct_users(pool: PgPool) {
+        // The identity key is (issuer, subject): one subject string asserted by
+        // two issuers is two independent users, never collapsed. upsert_from_oidc
+        // must honour that, not only the user_identities insert path.
+        let subject = format!("multi-issuer-{}", Uuid::new_v4());
+        let issuer_a = "https://issuer-a.example.com";
+        let issuer_b = "https://issuer-b.example.com";
+
+        let a = upsert_from_oidc(&pool, issuer_a, &subject, "A", None)
+            .await
+            .expect("upsert under issuer a");
+        let b = upsert_from_oidc(&pool, issuer_b, &subject, "B", None)
+            .await
+            .expect("upsert under issuer b");
+        assert_ne!(
+            a.id, b.id,
+            "same subject under distinct issuers must be distinct users"
+        );
+
+        // Each identity link resolves independently to its own user.
+        let resolved_a = find_by_oidc_identity(&pool, issuer_a, &subject)
+            .await
+            .expect("resolve a")
+            .expect("a present");
+        let resolved_b = find_by_oidc_identity(&pool, issuer_b, &subject)
+            .await
+            .expect("resolve b")
+            .expect("b present");
+        assert_eq!(resolved_a.id, a.id);
+        assert_eq!(resolved_b.id, b.id);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn concurrent_same_identity_resolves_to_one_user(pool: PgPool) {
         // The two-table create lost the atomic single-table upsert; the
         // per-identity advisory lock plus the UNIQUE (issuer, subject) backstop

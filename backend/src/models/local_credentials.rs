@@ -2,22 +2,21 @@
 //!
 //! This step ships the table and a read-only lookup only: no password
 //! hashing, write, or verification path exists yet. One hash per user (the PK
-//! is `user_id`). The hash is a SECRET, so it is `#[serde(skip)]`, never
+//! is `user_id`). The hash is a SECRET: the model deliberately does not derive
+//! `Serialize` (so it cannot leak through an API by accident), is never
 //! logged, and the table is granted to `reverie_app` only (no readonly,
 //! mirroring `device_tokens`).
 
-use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// A user's local password credential row.
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct LocalCredential {
     /// Owning [`crate::models::user::User`]; also the primary key.
     pub user_id: Uuid,
-    /// Argon2id PHC string. Never serialised, never logged.
-    #[serde(skip)]
+    /// Argon2id PHC string. Never logged; the model is not serialisable.
     pub password_hash: String,
     /// Row insert timestamp.
     pub created_at: OffsetDateTime,

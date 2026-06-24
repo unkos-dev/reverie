@@ -346,11 +346,13 @@ pub mod db {
         )
         .await
         .expect("upsert user");
-        sqlx::query("UPDATE users SET role = 'admin'::user_role WHERE id = $1")
-            .bind(user.id)
-            .execute(app_pool)
-            .await
-            .expect("promote to admin");
+        sqlx::query!(
+            "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
+            user.id,
+        )
+        .execute(app_pool)
+        .await
+        .expect("promote to admin");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
         crate::models::device_token::create(app_pool, user.id, "admin-test", &hash)
             .await
@@ -524,11 +526,13 @@ pub mod db {
         )
         .await
         .expect("upsert user");
-        sqlx::query("UPDATE users SET role = 'child'::user_role, is_child = TRUE WHERE id = $1")
-            .bind(user.id)
-            .execute(app_pool)
-            .await
-            .expect("demote to child");
+        sqlx::query!(
+            "UPDATE users SET role = 'child'::user_role, is_child = TRUE WHERE id = $1",
+            user.id,
+        )
+        .execute(app_pool)
+        .await
+        .expect("demote to child");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
         crate::models::device_token::create(app_pool, user.id, "child-test", &hash)
             .await

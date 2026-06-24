@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET session_version = session_version + 1 WHERE id = (SELECT user_id FROM user_identities WHERE issuer = $1 AND subject = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4c69bee63db3ce0beeb0b4d90a443a0ed0a3572a06bb17e40884e418e825bbf5"
+}

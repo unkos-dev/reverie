@@ -809,13 +809,14 @@ mod tests {
 
         // Step 6: user row exists and is NOT auto-promoted (S1 retires
         // first-user promotion). Identity resolves through user_identities;
-        // users.oidc_subject is left NULL, so match on the identity subject
-        // (the per-test DB holds one user under the mock's single issuer).
+        // users.oidc_subject is left NULL, so match on the full identity key
+        // (issuer, subject) that the schema's UNIQUE index uses.
         let row = sqlx::query!(
             "SELECT u.role AS \"role: Role\", u.email \
              FROM users u \
              JOIN user_identities ui ON ui.user_id = u.id \
-             WHERE ui.subject = $1",
+             WHERE ui.issuer = $1 AND ui.subject = $2",
+            "https://fake-issuer.example.com",
             "test-subject-123",
         )
         .fetch_one(&app_pool)
@@ -1120,10 +1121,12 @@ mod tests {
         );
 
         // Bump session_version in the DB (admin role change / security event).
-        // Resolve the user via its identity subject (oidc_subject is now NULL).
+        // Resolve the user via its full identity key (oidc_subject is now NULL).
         sqlx::query!(
             "UPDATE users SET session_version = session_version + 1 \
-             WHERE id = (SELECT user_id FROM user_identities WHERE subject = $1)",
+             WHERE id = (SELECT user_id FROM user_identities \
+                         WHERE issuer = $1 AND subject = $2)",
+            "https://fake-issuer.example.com",
             "force-logout-subject",
         )
         .execute(&app_pool)
@@ -1237,7 +1240,9 @@ mod tests {
         // cascades on the users delete.
         sqlx::query!(
             "DELETE FROM users \
-             WHERE id = (SELECT user_id FROM user_identities WHERE subject = $1)",
+             WHERE id = (SELECT user_id FROM user_identities \
+                         WHERE issuer = $1 AND subject = $2)",
+            "https://fake-issuer.example.com",
             "deleted-user-subject"
         )
         .execute(&app_pool)
