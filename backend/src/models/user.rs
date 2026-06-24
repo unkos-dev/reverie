@@ -1,7 +1,10 @@
-//! User accounts and OIDC-driven upsert / first-user promotion.
+//! User accounts and OIDC-driven upsert.
 //!
 //! Two row shapes coexist: a private `UserRow` decoded from the DB and
-//! the public [`crate::models::user::User`] returned to callers.
+//! the public [`crate::models::user::User`] returned to callers. Identity is
+//! resolved through [`crate::models::user_identities`] keyed on
+//! `(issuer, subject)`; `users.oidc_subject` is a vestigial nullable column,
+//! no longer the identity key, and OIDC login no longer auto-promotes.
 
 use email_address::{EmailAddress, Options};
 use serde::Serialize;
@@ -16,7 +19,7 @@ use crate::models::theme_preference::ThemePreference;
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct UserRow {
     id: Uuid,
-    oidc_subject: String,
+    oidc_subject: Option<String>,
     display_name: String,
     email: Option<String>,
     role: Role,
@@ -36,9 +39,11 @@ struct UserRow {
 pub struct User {
     /// Primary key.
     pub id: Uuid,
-    /// `sub` claim from the trusted OIDC issuer; the cross-`IdP`-stable
-    /// identity used for upsert lookup.
-    pub oidc_subject: String,
+    /// Vestigial nullable column. Identity is resolved through
+    /// [`crate::models::user_identities`] keyed on `(issuer, subject)`; new
+    /// users are provisioned with this `NULL`. Retained, not dropped, so a
+    /// future read path can still observe legacy values.
+    pub oidc_subject: Option<String>,
     /// User-facing display name; sourced from the OIDC `name` claim.
     pub display_name: String,
     /// User's email if the `IdP` released the `email` claim, else `None`.
@@ -86,7 +91,7 @@ impl From<UserRow> for User {
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as!(
         UserRow,
-        "SELECT id, oidc_subject, display_name, email, \
+        "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                 role AS \"role: Role\", is_child, created_at, updated_at, \
                 session_version, theme_preference AS \"theme_preference: ThemePreference\" \
          FROM users WHERE id = $1",
@@ -97,27 +102,24 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
     .map(|opt| opt.map(User::from))
 }
 
-/// Fetch a user by OIDC `sub` claim. Returns `Ok(None)` if no such row exists.
+/// Fetch a user by OIDC identity `(issuer, subject)`, resolved through
+/// [`crate::models::user_identities`]. Returns `Ok(None)` if no link exists.
 ///
 /// # Errors
 ///
-/// Returns [`sqlx::Error`] from the underlying `SELECT`.
+/// Returns [`sqlx::Error`] from the identity lookup or the user `SELECT`.
 #[allow(dead_code)] // Used by admin user management in future steps
-pub async fn find_by_oidc_subject(
+pub async fn find_by_oidc_identity(
     pool: &PgPool,
+    issuer: &str,
     subject: &str,
 ) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as!(
-        UserRow,
-        "SELECT id, oidc_subject, display_name, email, \
-                role AS \"role: Role\", is_child, created_at, updated_at, \
-                session_version, theme_preference AS \"theme_preference: ThemePreference\" \
-         FROM users WHERE oidc_subject = $1",
-        subject,
-    )
-    .fetch_optional(pool)
-    .await
-    .map(|opt| opt.map(User::from))
+    let Some(user_id) =
+        crate::models::user_identities::find_user_id_by_oidc(pool, issuer, subject).await?
+    else {
+        return Ok(None);
+    };
+    find_by_id(pool, user_id).await
 }
 
 /// Whether `e` parses as an RFC-5322 *addr-spec* with display-name and
@@ -128,7 +130,7 @@ pub async fn find_by_oidc_subject(
 /// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and
 /// would store those angle/bracket-bearing strings raw in `users.email`. This
 /// helper disables both options, so every write path to that column (OIDC upsert
-/// + admin `PATCH /api/v1/users/{id}`) rejects those two shapes (UNK-309).
+/// + admin `PATCH /api/v1/users/{id}`) rejects those two shapes.
 ///
 /// This is *not* full normalisation. A quoted local-part
 /// (`"john doe"@example.com`) is a valid addr-spec and is still accepted, so the
@@ -146,40 +148,47 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
     .is_ok()
 }
 
-/// Insert or update a user from OIDC claims, then auto-promote to admin if first user.
-/// Runs upsert + promotion in a single transaction to prevent race conditions where
-/// concurrent first logins result in no admin.
+/// Insert or update a user from verified OIDC claims, resolving identity
+/// through [`crate::models::user_identities`] keyed on `(issuer, subject)`.
+/// Does NOT promote: a fresh instance's first login is a non-administrator
+/// (the first administrator is granted only through bootstrap). Identity
+/// resolution and the two-table create run in a single transaction so
+/// concurrent same-identity logins cannot orphan a `users` row.
 ///
 /// THREAT: `email` carries a case-insensitive uniqueness constraint
-/// (`idx_users_email_lower`); login identity itself rides on `sub`/`oidc_subject`
-/// (this upsert keys on `ON CONFLICT (oidc_subject)`), not on `email`. The OIDC JWT
-/// is signature-verified, but the `email` *string* is not format-checked upstream,
-/// so a misconfigured or non-standard `IdP` could release a malformed value that
-/// violates the column invariant. Both write paths to this column (here and the
-/// admin `PATCH /api/v1/users/{id}` path) guard with [`is_addr_spec`], so both uphold
-/// the RFC-5322 addr-spec invariant (UNK-309). Per
-/// OIDC Core §5.7 the `email` claim is optional and non-identifying, so an invalid
-/// claim degrades to `NULL` rather than failing authentication — login never depends
-/// on an optional claim's format. On a returning user the
-/// `ON CONFLICT … DO UPDATE SET email = EXCLUDED.email` clause overwrites a
-/// previously-stored valid email with `NULL` when the `IdP` later emits a malformed
-/// claim (Option B: never persist a junk value in the column); identity is preserved
-/// because the conflict key is `oidc_subject`. The rejected value is logged by shape
-/// only (length), never verbatim (Hard Rule 7); the `had_prior_email` log field lets
-/// operators distinguish that overwrite from a first-login with a malformed claim.
+/// (`idx_users_email_lower`); login identity rides on the verified
+/// `(issuer, subject)` resolved via `user_identities`, never on `email`. The
+/// OIDC JWT is signature-verified, but the `email` *string* is not
+/// format-checked upstream, so a misconfigured or non-standard `IdP` could
+/// release a malformed value that violates the column invariant. Both write
+/// paths to this column (here and the admin `PATCH /api/v1/users/{id}` path)
+/// guard with [`is_addr_spec`], so both uphold the RFC-5322 addr-spec
+/// invariant. Per OIDC Core §5.7 the `email` claim is optional and
+/// non-identifying, so an invalid claim degrades to `NULL` rather than failing
+/// authentication — login never depends on an optional claim's format. On a
+/// returning user the `UPDATE … SET email = $email` overwrites a
+/// previously-stored valid email with `NULL` when the `IdP` later emits a
+/// malformed claim (Option B: never persist a junk value in the column);
+/// identity is preserved because resolution keys on `(issuer, subject)`. The
+/// rejected value is logged by shape only (length), never verbatim (Hard Rule
+/// 7); the `had_prior_email` log field lets operators distinguish that
+/// overwrite from a first-login with a malformed claim.
 ///
 /// # Errors
 ///
-/// Returns [`sqlx::Error`] from any step of the transaction (advisory
-/// lock, `INSERT … ON CONFLICT`, conditional promotion `UPDATE`,
-/// re-fetch, or commit).
-pub async fn upsert_from_oidc_and_maybe_promote(
+/// Returns [`sqlx::Error`] from any step of the transaction (advisory lock,
+/// identity resolution, `INSERT`/`UPDATE`, identity-link insert, re-fetch, or
+/// commit). A concurrent first-login losing the race to the
+/// `UNIQUE (issuer, subject)` backstop is serialised by the advisory lock and
+/// resolves to the same row rather than erroring.
+pub async fn upsert_from_oidc(
     pool: &PgPool,
+    issuer: &str,
     subject: &str,
     display_name: &str,
     email: Option<&str>,
 ) -> Result<User, sqlx::Error> {
-    // Validate the OIDC email claim before persisting (UNK-309). Trim first so a
+    // Validate the OIDC email claim before persisting. Trim first so a
     // whitespace-only claim reads as absence; degrade a non-empty-but-invalid
     // value to NULL with a shape-only warning.
     let email = match email.map(str::trim) {
@@ -197,11 +206,17 @@ pub async fn upsert_from_oidc_and_maybe_promote(
         Some(e) if is_addr_spec(e) => Some(e),
         Some(e) => {
             // Non-empty but not a valid addr-spec: degrade to NULL. On a returning
-            // user the ON CONFLICT path overwrites a previously-stored valid email,
-            // so surface `had_prior_email` to distinguish an IdP misconfiguration
-            // wiping a known-good value from a first-login carrying junk.
+            // user the UPDATE path overwrites a previously-stored valid email, so
+            // surface `had_prior_email` to distinguish an IdP misconfiguration
+            // wiping a known-good value from a first-login carrying junk. Resolve
+            // the prior-email check through `user_identities` (the identity key),
+            // since `users.oidc_subject` is no longer populated for new users.
             let had_prior_email = sqlx::query_scalar!(
-                "SELECT email IS NOT NULL AS \"had_email!\" FROM users WHERE oidc_subject = $1",
+                "SELECT u.email IS NOT NULL AS \"had_email!\" \
+                 FROM users u \
+                 JOIN user_identities ui ON ui.user_id = u.id \
+                 WHERE ui.issuer = $1 AND ui.subject = $2",
+                issuer,
                 subject,
             )
             .fetch_optional(pool)
@@ -211,7 +226,7 @@ pub async fn upsert_from_oidc_and_maybe_promote(
                 oidc_subject = %subject,
                 rejected_email_len = e.len(),
                 had_prior_email,
-                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub (UNK-309)"
+                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub"
             );
             None
         }
@@ -220,51 +235,63 @@ pub async fn upsert_from_oidc_and_maybe_promote(
 
     let mut tx = pool.begin().await?;
 
-    // Serialize concurrent first-user promotion attempts. Without this lock,
-    // two concurrent transactions under READ COMMITTED could both see count=1
-    // (their own uncommitted insert) and both promote to admin.
-    sqlx::query!("SELECT pg_advisory_xact_lock(42)")
+    // Serialize concurrent provisioning of the same identity. Replacing the
+    // atomic single-table `ON CONFLICT (oidc_subject)` upsert with a two-table
+    // create (users + user_identities) reopens a race: two concurrent first
+    // logins for one identity could both miss the resolve and both insert. The
+    // per-identity advisory lock makes the second wait for the first to commit;
+    // `UNIQUE (issuer, subject)` on user_identities is the backstop. Keyed on
+    // the identity, not the fixed `42` the retired promotion count used.
+    let lock_key = format!("{issuer}|{subject}");
+    sqlx::query!("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", lock_key)
         .execute(&mut *tx)
         .await?;
 
-    let row = sqlx::query_as!(
-        UserRow,
-        "INSERT INTO users (oidc_subject, display_name, email) \
-         VALUES ($1, $2, $3) \
-         ON CONFLICT (oidc_subject) DO UPDATE \
-           SET display_name = EXCLUDED.display_name, \
-               email = EXCLUDED.email, \
-               updated_at = now() \
-         RETURNING id, oidc_subject, display_name, email, \
-                   role AS \"role: Role\", is_child, created_at, updated_at, \
-                   session_version, theme_preference AS \"theme_preference: ThemePreference\"",
-        subject,
-        display_name,
-        email,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let row = if let Some(user_id) =
+        crate::models::user_identities::find_user_id_by_oidc(&mut *tx, issuer, subject).await?
+    {
+        // Returning identity: refresh the canonical user's mutable fields.
+        sqlx::query_as!(
+            UserRow,
+            "UPDATE users \
+             SET display_name = $2, email = $3, updated_at = now() \
+             WHERE id = $1 \
+             RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
+                       role AS \"role: Role\", is_child, created_at, updated_at, \
+                       session_version, theme_preference AS \"theme_preference: ThemePreference\"",
+            user_id,
+            display_name,
+            email,
+        )
+        .fetch_one(&mut *tx)
+        .await?
+    } else {
+        // First login for this identity: create the canonical user (no
+        // oidc_subject — identity lives in user_identities) and the link.
+        let user_id: Uuid = sqlx::query_scalar!(
+            "INSERT INTO users (display_name, email) VALUES ($1, $2) RETURNING id",
+            display_name,
+            email,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
 
-    // Promote to admin if this is the only user in the table.
-    sqlx::query!(
-        "UPDATE users SET role = 'admin'::user_role, updated_at = now() \
-         WHERE id = $1 AND (SELECT count(*) FROM users) = 1",
-        row.id,
-    )
-    .execute(&mut *tx)
-    .await?;
+        // email_verified seeded false (fail-closed; the verified-email claim is
+        // captured in a later step).
+        crate::models::user_identities::insert_oidc(&mut *tx, user_id, issuer, subject, false)
+            .await?;
 
-    // Re-fetch to get potentially updated role
-    let row = sqlx::query_as!(
-        UserRow,
-        "SELECT id, oidc_subject, display_name, email, \
-                role AS \"role: Role\", is_child, created_at, updated_at, \
-                session_version, theme_preference AS \"theme_preference: ThemePreference\" \
-         FROM users WHERE id = $1",
-        row.id,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+        sqlx::query_as!(
+            UserRow,
+            "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
+                    role AS \"role: Role\", is_child, created_at, updated_at, \
+                    session_version, theme_preference AS \"theme_preference: ThemePreference\" \
+             FROM users WHERE id = $1",
+            user_id,
+        )
+        .fetch_one(&mut *tx)
+        .await?
+    };
 
     tx.commit().await?;
     Ok(User::from(row))
@@ -278,7 +305,7 @@ mod tests {
     fn is_addr_spec_accepts_plain_address_rejects_display_and_literal_forms() {
         // Bare addr-spec passes.
         assert!(is_addr_spec("user@example.com"));
-        // UNK-309: the default `EmailAddress::is_valid` would accept these
+        // The default `EmailAddress::is_valid` would accept these
         // display-name and domain-literal forms and store the bracket/angle/
         // space-bearing string raw. `is_addr_spec` rejects them so the column
         // only ever holds a plain `local@domain`.
@@ -287,43 +314,147 @@ mod tests {
         assert!(!is_addr_spec("not-an-email"));
     }
 
+    const TEST_ISSUER: &str = "https://test-issuer.example.com";
+
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_creates_and_updates_user(pool: PgPool) {
         let subject = format!("test-subject-{}", Uuid::new_v4());
         let user =
-            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Alice", Some("alice@example.com"))
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Alice", Some("alice@example.com"))
                 .await
                 .expect("upsert");
         assert_eq!(user.display_name, "Alice");
         assert_eq!(user.email.as_deref(), Some("alice@example.com"));
-        // First user in a fresh DB is auto-promoted to admin.
-        assert_eq!(user.role, Role::Admin);
+        // Invariant 1: first login on a fresh instance is NOT auto-promoted;
+        // the user takes the default non-administrator role.
+        assert_ne!(user.role, Role::Admin);
+        assert_eq!(user.role, Role::Adult);
         assert_eq!(user.session_version, 0);
+        // The canonical user carries no oidc_subject; identity lives in
+        // user_identities.
+        assert_eq!(user.oidc_subject, None);
 
-        let updated = upsert_from_oidc_and_maybe_promote(
-            &pool,
-            &subject,
-            "Alice B",
-            Some("alice-b@example.com"),
-        )
-        .await
-        .expect("upsert update");
+        let updated =
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Alice B", Some("alice-b@example.com"))
+                .await
+                .expect("upsert update");
+        // Same (issuer, subject) resolves to the same row, fields updated.
         assert_eq!(updated.id, user.id);
         assert_eq!(updated.display_name, "Alice B");
 
         let found = find_by_id(&pool, user.id).await.expect("find").unwrap();
-        assert_eq!(found.oidc_subject, subject);
+        assert_eq!(found.oidc_subject, None);
 
-        let found = find_by_oidc_subject(&pool, &subject)
+        // Identity resolves through user_identities, not the vestigial column.
+        let found = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
             .await
-            .expect("find by subject")
+            .expect("find by identity")
             .unwrap();
         assert_eq!(found.id, user.id);
+
+        // Exactly one identity link and one users row for this identity.
+        let identity_count = sqlx::query_scalar!(
+            "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
+            TEST_ISSUER,
+            subject,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count identities");
+        assert_eq!(identity_count, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn first_oidc_login_is_not_admin(pool: PgPool) {
+        // Invariant 1, explicit: neither the first login nor any subsequent
+        // login is auto-promoted. Admin is granted only via bootstrap.
+        let first = upsert_from_oidc(&pool, TEST_ISSUER, "subject-one", "First", None)
+            .await
+            .expect("first login");
+        assert_ne!(first.role, Role::Admin, "first OIDC login must not be admin");
+
+        let second = upsert_from_oidc(&pool, TEST_ISSUER, "subject-two", "Second", None)
+            .await
+            .expect("second login");
+        assert_ne!(second.role, Role::Admin);
+        assert_ne!(first.id, second.id, "distinct subjects are distinct users");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn concurrent_same_identity_resolves_to_one_user(pool: PgPool) {
+        // The two-table create lost the atomic single-table upsert; the
+        // per-identity advisory lock plus the UNIQUE (issuer, subject) backstop
+        // must keep concurrent same-identity provisioning to a single users row.
+        let subject = format!("race-{}", Uuid::new_v4());
+        let (r1, r2) = tokio::join!(
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Race A", None),
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Race B", None),
+        );
+        let u1 = r1.expect("first concurrent upsert");
+        let u2 = r2.expect("second concurrent upsert");
+        assert_eq!(u1.id, u2.id, "concurrent same-identity logins resolve to one user");
+
+        let identity_count = sqlx::query_scalar!(
+            "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
+            TEST_ISSUER,
+            subject,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count identities");
+        assert_eq!(identity_count, 1, "no orphaned identity link");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn nullable_subject_with_local_credential_decodes(pool: PgPool) {
+        // A credential-only user (NULL oidc_subject + a local_credentials row)
+        // is representable and decodes through the Option<String> column.
+        let user_id = sqlx::query_scalar!(
+            "INSERT INTO users (display_name) VALUES ('Credential Only') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert user");
+        sqlx::query!(
+            "INSERT INTO local_credentials (user_id, password_hash) VALUES ($1, $2)",
+            user_id,
+            "$argon2id$v=19$m=19456,t=2,p=1$fake$fakehash",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert credential");
+
+        let user = find_by_id(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("user present");
+        assert_eq!(user.oidc_subject, None, "NULL oidc_subject decodes as None");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn child_role_sync_constraint_still_enforced(pool: PgPool) {
+        // The migration is column-only on device_tokens and leaves the users
+        // CHECK intact: setting role=child without is_child=true is rejected.
+        let subject = format!("child-sync-{}", Uuid::new_v4());
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Sync", None)
+            .await
+            .expect("upsert");
+        let err = sqlx::query!(
+            "UPDATE users SET role = 'child'::user_role WHERE id = $1",
+            user.id,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("role=child without is_child must violate chk_child_role_sync");
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("chk_child_role_sync"),
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_drops_malformed_oidc_email_to_none(pool: PgPool) {
-        // UNK-309: the OIDC email claim is signature-verified but not
+        // The OIDC email claim is signature-verified but not
         // format-checked upstream. A non-standard IdP releasing a malformed
         // value must not land it in `users.email` (the RFC-5322 invariant the
         // admin PATCH path already enforces). Per OIDC Core §5.7 email is an
@@ -331,21 +462,27 @@ mod tests {
         // failing login — identity still resolves via `sub`.
         let subject = format!("malformed-email-{}", Uuid::new_v4());
         let user =
-            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Mallory", Some("not-an-email"))
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Mallory", Some("not-an-email"))
                 .await
                 .expect("upsert");
         assert_eq!(
             user.email, None,
             "malformed email claim must persist as NULL"
         );
-        assert_eq!(user.oidc_subject, subject, "identity still keyed on sub");
+        // Identity resolves through user_identities; the column stays NULL.
+        assert_eq!(user.oidc_subject, None);
+        let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
+            .await
+            .expect("resolve")
+            .expect("user present");
+        assert_eq!(resolved.id, user.id, "identity still resolves via (issuer, subject)");
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_treats_empty_oidc_email_as_none(pool: PgPool) {
         // Empty / whitespace-only claim is absence, not a value — store NULL.
         let subject = format!("empty-email-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Eve", Some("   "))
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Eve", Some("   "))
             .await
             .expect("upsert");
         assert_eq!(user.email, None, "empty email claim must persist as NULL");
@@ -356,7 +493,7 @@ mod tests {
         // Valid claim with surrounding whitespace: trimmed and persisted.
         let subject = format!("valid-email-{}", Uuid::new_v4());
         let user =
-            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Val", Some("  val@example.com "))
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Val", Some("  val@example.com "))
                 .await
                 .expect("upsert");
         assert_eq!(user.email.as_deref(), Some("val@example.com"));
@@ -364,21 +501,20 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_overwrites_valid_email_to_none_when_claim_becomes_malformed(pool: PgPool) {
-        // UNK-309 conflict-path consequence: the upsert is
-        // `ON CONFLICT (oidc_subject) DO UPDATE SET email = EXCLUDED.email`, so a
-        // returning user whose IdP later emits a malformed claim has their
-        // previously-stored valid email overwritten to NULL. Consistent with
-        // Option-B (never persist junk in the column); identity is preserved
-        // because matching keys on `sub`, not `email`.
+        // Returning-user consequence: the upsert updates the resolved row's
+        // email, so a returning user whose IdP later emits a malformed claim
+        // has their previously-stored valid email overwritten to NULL.
+        // Consistent with Option-B (never persist junk in the column); identity
+        // is preserved because resolution keys on `(issuer, subject)`, not email.
         let subject = format!("email-overwrite-{}", Uuid::new_v4());
         let first =
-            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Bob", Some("bob@example.com"))
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("bob@example.com"))
                 .await
                 .expect("first upsert");
         assert_eq!(first.email.as_deref(), Some("bob@example.com"));
 
         let second =
-            upsert_from_oidc_and_maybe_promote(&pool, &subject, "Bob", Some("not-an-email"))
+            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("not-an-email"))
                 .await
                 .expect("second upsert");
         assert_eq!(
@@ -386,10 +522,10 @@ mod tests {
             "malformed claim on re-login must overwrite the previously valid email to NULL"
         );
         assert_eq!(second.id, first.id, "same row updated, not a new insert");
-        assert_eq!(second.oidc_subject, subject, "identity preserved on sub");
+        assert_eq!(second.oidc_subject, None, "oidc_subject stays vestigial NULL");
     }
 
-    /// Loud-failure regression for UNK-108. Simulates the failure mode
+    /// Loud-failure regression for role-enum drift. Simulates the failure mode
     /// where the DB `user_role` enum gains a value that has no Rust
     /// counterpart (e.g. an operator runs an out-of-band `ALTER TYPE`,
     /// or a future migration lands ahead of the matching Rust change).
@@ -398,7 +534,7 @@ mod tests {
     /// boundary rather than a polite suggestion.
     #[sqlx::test(migrations = "./migrations")]
     async fn role_decode_fails_for_unknown_db_variant(pool: PgPool) {
-        // CARVE-OUT (UNK-167): runtime sqlx::query is intentional. The two
+        // CARVE-OUT: runtime sqlx::query is intentional. The two
         // runtime calls in this test (the ALTER TYPE below and the subsequent
         // UPDATE referencing the new 'superadmin' variant) cannot be expressed
         // as compile-time macros: ALTER TYPE is DDL, and the UPDATE references
@@ -411,7 +547,7 @@ mod tests {
             .expect("alter user_role enum");
 
         let subject = format!("drift-test-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Drift", None)
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Drift", None)
             .await
             .expect("upsert");
 
@@ -435,7 +571,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn session_version_check_rejects_negative(pool: PgPool) {
         let subject = format!("check-subject-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "Check", None)
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Check", None)
             .await
             .expect("create user");
 
@@ -458,11 +594,11 @@ mod tests {
     // columns: `time` without `large-dates` only decodes years -9999..=9999,
     // so a year-10000+ row (out-of-band mutation only) would panic at
     // `row.get::<OffsetDateTime>` on every read path. The write must be
-    // rejected at the schema boundary instead (UNK-310).
+    // rejected at the schema boundary instead.
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_rejects_beyond_decode_upper_bound(pool: PgPool) {
         let subject = format!("ts-upper-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsUpper", None)
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsUpper", None)
             .await
             .expect("create user");
 
@@ -486,7 +622,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_rejects_positive_infinity(pool: PgPool) {
         let subject = format!("ts-posinf-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsPosInf", None)
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsPosInf", None)
             .await
             .expect("create user");
 
@@ -508,7 +644,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_rejects_negative_infinity(pool: PgPool) {
         let subject = format!("ts-lower-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsLower", None)
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsLower", None)
             .await
             .expect("create user");
 
@@ -531,7 +667,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_accepts_max_decodable_year(pool: PgPool) {
         let subject = format!("ts-max-{}", Uuid::new_v4());
-        let user = upsert_from_oidc_and_maybe_promote(&pool, &subject, "TsMax", None)
+        let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "TsMax", None)
             .await
             .expect("create user");
 

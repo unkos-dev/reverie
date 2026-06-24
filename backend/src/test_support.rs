@@ -335,8 +335,11 @@ pub mod db {
     /// `(user_id, "Basic ...")` ready for use as an `Authorization` header.
     pub async fn create_admin_and_basic_auth(app_pool: &PgPool) -> (Uuid, String) {
         let subject = format!("admin-test-{}", Uuid::new_v4());
-        let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
+        // Auto-promotion is retired; grant admin explicitly. `admin` is not a
+        // child role, so this respects chk_child_role_sync.
+        let user = crate::models::user::upsert_from_oidc(
             app_pool,
+            "https://test-issuer.example.com",
             &subject,
             "Admin Test",
             None,
@@ -512,10 +515,15 @@ pub mod db {
     /// `Authorization` header.
     pub async fn create_child_user_and_basic_auth(app_pool: &PgPool, name: &str) -> (Uuid, String) {
         let subject = format!("child-test-{}-{}", name, Uuid::new_v4());
-        let user =
-            crate::models::user::upsert_from_oidc_and_maybe_promote(app_pool, &subject, name, None)
-                .await
-                .expect("upsert user");
+        let user = crate::models::user::upsert_from_oidc(
+            app_pool,
+            "https://test-issuer.example.com",
+            &subject,
+            name,
+            None,
+        )
+        .await
+        .expect("upsert user");
         sqlx::query("UPDATE users SET role = 'child'::user_role, is_child = TRUE WHERE id = $1")
             .bind(user.id)
             .execute(app_pool)
@@ -535,17 +543,16 @@ pub mod db {
     /// mint a device token, return `(user_id, "Basic …")`.
     pub async fn create_adult_and_basic_auth(app_pool: &PgPool, name: &str) -> (Uuid, String) {
         let subject = format!("adult-test-{}-{}", name, Uuid::new_v4());
-        let user =
-            crate::models::user::upsert_from_oidc_and_maybe_promote(app_pool, &subject, name, None)
-                .await
-                .expect("upsert user");
-        // If upsert_from_oidc_and_maybe_promote promoted this user to admin
-        // (it does so for the first user in the DB), forcibly downgrade.
-        sqlx::query("UPDATE users SET role = 'adult'::user_role WHERE id = $1")
-            .bind(user.id)
-            .execute(app_pool)
-            .await
-            .expect("demote to adult");
+        // No auto-promotion to undo: a fresh upsert defaults to the adult role.
+        let user = crate::models::user::upsert_from_oidc(
+            app_pool,
+            "https://test-issuer.example.com",
+            &subject,
+            name,
+            None,
+        )
+        .await
+        .expect("upsert user");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
         crate::models::device_token::create(app_pool, user.id, "adult-test", &hash)
             .await

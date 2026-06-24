@@ -352,4 +352,32 @@ mod tests {
             "second update within 5-minute window must be a no-op"
         );
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn new_device_token_defaults_scopes_to_read(pool: PgPool) {
+        // S1 adds device_tokens.scopes as a column-only seam (no Rust struct
+        // field yet). Assert the DB default lands, read via raw SQL rather than
+        // the DeviceToken struct, which deliberately does not carry scopes.
+        let oidc_subject = format!("scopes-default-{}", Uuid::new_v4());
+        let user_id = sqlx::query_scalar!(
+            "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Scopes') RETURNING id",
+            oidc_subject,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("create user");
+
+        let token = create(&pool, user_id, "scoped", "hash-scopes")
+            .await
+            .expect("create token");
+
+        let scopes: Vec<String> = sqlx::query_scalar!(
+            "SELECT scopes AS \"scopes!\" FROM device_tokens WHERE id = $1",
+            token.id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch scopes");
+        assert_eq!(scopes, vec!["read".to_string()]);
+    }
 }
