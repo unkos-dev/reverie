@@ -7,10 +7,21 @@
 -- namespaces the subject and the schema is correct across multiple issuers and
 -- IdP migration. See adr/2026-06-23-auth-identity-pluggable-providers.md.
 --
--- No backfill: a SQL migration cannot read the configured issuer, so
--- `user_identities` starts empty and existing accounts re-provision on next
--- OIDC login. `users.oidc_subject` is kept as a vestigial nullable column (not
--- dropped) and is no longer a source of truth or a write target for new users.
+-- No backfill: a SQL migration cannot read the configured issuer (it is not
+-- stored on the old `users` row), so `user_identities` starts empty. This is a
+-- pre-release migration with no back-compatibility guarantee. A fresh install
+-- runs every migration on an empty `users` table, so it never holds a
+-- pre-migration row to reconcile and the legacy path below is unreachable
+-- there. An existing pre-release database is NOT migrated automatically: a
+-- pre-existing user (`oidc_subject` set, no identity link) is not adopted on
+-- next login. With an email set, the first-login INSERT collides on
+-- `idx_users_email_lower` and login fails; with a NULL email, a new row is
+-- created and the old account is orphaned. Such databases are reseeded
+-- out-of-band (a one-shot link of existing rows under the configured issuer)
+-- before the next login. After the first release this pattern does not
+-- generalise: a later identity migration must perform a real backfill.
+-- `users.oidc_subject` is kept as a vestigial nullable column (not dropped) and
+-- is no longer a source of truth or a write target for new users.
 
 -- Mechanism tag for an external identity link. Static today (federated OIDC
 -- only); local password credentials live in `local_credentials`, not here.
