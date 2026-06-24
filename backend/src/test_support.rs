@@ -821,6 +821,13 @@ pub mod oidc_mock {
             }
         }
 
+        /// The issuer (`iss`) this mock signs into its ID tokens, which the
+        /// callback persists to `user_identities.issuer`. Dynamic (the mock
+        /// server's URI), so tests must read it here rather than hard-code it.
+        pub fn issuer(&self) -> &str {
+            &self.issuer
+        }
+
         /// Build an `OidcClient` bound to this mock with embedded JWKS, so
         /// `id_token_verifier` does not need network IO.
         pub fn client(&self, redirect_uri: &str) -> OidcClient {

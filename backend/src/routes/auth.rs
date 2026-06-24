@@ -816,7 +816,7 @@ mod tests {
              FROM users u \
              JOIN user_identities ui ON ui.user_id = u.id \
              WHERE ui.issuer = $1 AND ui.subject = $2",
-            "https://fake-issuer.example.com",
+            mock.issuer(),
             "test-subject-123",
         )
         .fetch_one(&app_pool)
@@ -1126,7 +1126,7 @@ mod tests {
             "UPDATE users SET session_version = session_version + 1 \
              WHERE id = (SELECT user_id FROM user_identities \
                          WHERE issuer = $1 AND subject = $2)",
-            "https://fake-issuer.example.com",
+            mock.issuer(),
             "force-logout-subject",
         )
         .execute(&app_pool)
@@ -1242,7 +1242,7 @@ mod tests {
             "DELETE FROM users \
              WHERE id = (SELECT user_id FROM user_identities \
                          WHERE issuer = $1 AND subject = $2)",
-            "https://fake-issuer.example.com",
+            mock.issuer(),
             "deleted-user-subject"
         )
         .execute(&app_pool)
