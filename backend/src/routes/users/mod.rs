@@ -74,7 +74,7 @@ struct UserResponse {
     updated_at: OffsetDateTime,
 }
 
-/// Defensive bound on the users list (UNK-374, the justified
+/// Defensive bound on the users list (the justified
 /// single-page exception of `adr/2026-06-08-keyset-pagination-list-contract.md`). A household/self-hosted instance's user
 /// table has a genuinely small natural ceiling — a multi-hundred-user
 /// deployment is outside Reverie's design scope — so a hard `LIMIT`
@@ -425,7 +425,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
             admin_id = %admin_id,
             target_user_id = %target_user_id,
             rejected_email_len = trimmed.len(),
-            "admin PATCH rejected malformed email value (UNK-309)"
+            "admin PATCH rejected malformed email value"
         );
         return Err(AppError::Validation("email must be a valid address".into()));
     }
@@ -510,8 +510,8 @@ async fn update_user(
         .map_err(|e| AppError::Internal(e.into()))?;
     }
 
-    // Email is not an access-control input: login identity is the OIDC `sub`
-    // (the upsert keys on `oidc_subject`, not email), RLS keys on user
+    // Email is not an access-control input: login identity resolves through
+    // user_identities keyed on `(issuer, subject)`, not email; RLS keys on user
     // id/role/`is_child`, and the session auth hash is `session_version` only.
     // So changing or clearing email does not bump `session_version` — no active
     // session needs invalidating. The uniqueness constraint is still enforced

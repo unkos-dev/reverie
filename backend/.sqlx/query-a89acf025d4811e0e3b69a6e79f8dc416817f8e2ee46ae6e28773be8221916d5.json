@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Token Test') RETURNING id",
+  "query": "INSERT INTO users (display_name, email) VALUES ($1, $2) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,7 @@
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
@@ -24,5 +25,5 @@
       false
     ]
   },
-  "hash": "8dfdc7757dfdc579f137e228199b3c1bcf82e3c331af5c603a5c112e70e7ef69"
+  "hash": "a89acf025d4811e0e3b69a6e79f8dc416817f8e2ee46ae6e28773be8221916d5"
 }

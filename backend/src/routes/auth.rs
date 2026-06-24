@@ -180,6 +180,10 @@ async fn callback(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("ID token validation failed: {e}")))?;
 
     let subject = claims.subject().as_str();
+    // Verified `iss` from the ID-token claims namespaces the subject. For a
+    // single configured issuer this matches config; using the verified claim is
+    // the spec-correct source and keeps the schema multi-issuer-correct.
+    let issuer = claims.issuer().as_str();
     let display_name = claims
         .name()
         .and_then(|n: &openidconnect::LocalizedClaim<openidconnect::EndUserName>| n.get(None))
@@ -188,9 +192,10 @@ async fn callback(
         .email()
         .map(|e: &openidconnect::EndUserEmail| e.as_str());
 
-    // Upsert the user directly (first-user promotion handled inside). The
-    // OIDC claims are already signature-verified by `openidconnect` above.
-    let user = user::upsert_from_oidc_and_maybe_promote(&state.pool, subject, display_name, email)
+    // Provision/resolve the user through user_identities keyed on
+    // (issuer, subject). No auto-promotion: the first administrator is granted
+    // only via bootstrap. The OIDC claims are signature-verified above.
+    let user = user::upsert_from_oidc(&state.pool, issuer, subject, display_name, email)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("user upsert failed: {e}")))?;
 
@@ -687,10 +692,11 @@ mod tests {
     /// End-to-end happy path through `/auth/login` → `/auth/callback`. Exercises:
     /// PKCE/CSRF/nonce session round-trip, mock token exchange against a
     /// signed ID token whose nonce matches what `/auth/login` stored,
-    /// upsert-and-promote-to-admin (first user), session login (cookie cycled),
-    /// and the FOUC theme cookie seeded from the freshly-loaded user record.
+    /// identity provisioning without auto-promotion (first user stays a
+    /// non-administrator), session login (cookie cycled), and the FOUC theme
+    /// cookie seeded from the freshly-loaded user record.
     #[sqlx::test(migrations = "./migrations")]
-    async fn callback_succeeds_first_user_promoted_to_admin(pool: sqlx::PgPool) {
+    async fn callback_succeeds_first_user_not_promoted(pool: sqlx::PgPool) {
         use crate::models::role::Role;
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
@@ -801,10 +807,16 @@ mod tests {
             "expected reverie_theme=system, got: {theme_cookie}"
         );
 
-        // Step 6: user row exists and was promoted to admin (first user).
+        // Step 6: user row exists and is NOT auto-promoted (S1 retires
+        // first-user promotion). Identity resolves through user_identities;
+        // users.oidc_subject is left NULL, so match on the full identity key
+        // (issuer, subject) that the schema's UNIQUE index uses.
         let row = sqlx::query!(
-            "SELECT role AS \"role: Role\", email \
-             FROM users WHERE oidc_subject = $1",
+            "SELECT u.role AS \"role: Role\", u.email \
+             FROM users u \
+             JOIN user_identities ui ON ui.user_id = u.id \
+             WHERE ui.issuer = $1 AND ui.subject = $2",
+            mock.issuer(),
             "test-subject-123",
         )
         .fetch_one(&app_pool)
@@ -812,8 +824,8 @@ mod tests {
         .expect("user row inserted by callback");
         assert_eq!(
             row.role,
-            Role::Admin,
-            "first user must be promoted to admin"
+            Role::Adult,
+            "first OIDC login must be a non-administrator"
         );
         assert_eq!(row.email.as_deref(), Some("alice@example.com"));
 
@@ -825,8 +837,8 @@ mod tests {
         let me_body: serde_json::Value = me_resp.json();
         assert_eq!(
             me_body.get("role").and_then(|v| v.as_str()),
-            Some("admin"),
-            "expected /auth/me role=admin, got body: {me_body}"
+            Some("adult"),
+            "expected /auth/me role=adult, got body: {me_body}"
         );
         assert_eq!(
             me_body.get("email").and_then(|v| v.as_str()),
@@ -1109,8 +1121,12 @@ mod tests {
         );
 
         // Bump session_version in the DB (admin role change / security event).
+        // Resolve the user via its full identity key (oidc_subject is now NULL).
         sqlx::query!(
-            "UPDATE users SET session_version = session_version + 1 WHERE oidc_subject = $1",
+            "UPDATE users SET session_version = session_version + 1 \
+             WHERE id = (SELECT user_id FROM user_identities \
+                         WHERE issuer = $1 AND subject = $2)",
+            mock.issuer(),
             "force-logout-subject",
         )
         .execute(&app_pool)
@@ -1219,9 +1235,14 @@ mod tests {
             "session must authenticate before the user is deleted"
         );
 
-        // Delete the user row out from under the live session.
+        // Delete the user row out from under the live session. Resolve via the
+        // identity subject (oidc_subject is now NULL); the identity link
+        // cascades on the users delete.
         sqlx::query!(
-            "DELETE FROM users WHERE oidc_subject = $1",
+            "DELETE FROM users \
+             WHERE id = (SELECT user_id FROM user_identities \
+                         WHERE issuer = $1 AND subject = $2)",
+            mock.issuer(),
             "deleted-user-subject"
         )
         .execute(&app_pool)

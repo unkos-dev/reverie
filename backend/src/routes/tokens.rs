@@ -221,8 +221,9 @@ mod tests {
         let pool = test_support::db::app_pool_for(&pool).await;
 
         let subject = format!("token-route-test-{}", uuid::Uuid::new_v4());
-        let user = crate::models::user::upsert_from_oidc_and_maybe_promote(
+        let user = crate::models::user::upsert_from_oidc(
             &pool,
+            "https://token-test-issuer.example.com",
             &subject,
             "Token Test User",
             None,

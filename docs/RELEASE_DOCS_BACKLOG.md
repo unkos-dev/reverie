@@ -39,7 +39,7 @@ them lands. The dev-facing reference in
 ### OIDC `email` claim: addr-spec validation and degrade-to-NULL
 
 **Source:** `backend/src/models/user.rs`
-(`is_addr_spec`, `upsert_from_oidc_and_maybe_promote`), which is tracked in the email validation task
+(`is_addr_spec`, `upsert_from_oidc`), which is tracked in the email validation task
 
 The OIDC `email` claim is signature-verified but not format-checked
 upstream. Reverie validates it against RFC 5322 _addr-spec_ rules before
@@ -48,9 +48,9 @@ persisting. Two operator-visible behaviours:
 - **Invalid format degrades to NULL, not a login failure.** A malformed
   claim (display-name form `Alice <alice@example.com>`, domain-literal
   `alice@[127.0.0.1]`, or a non-email string) is discarded and
-  `users.email` stored as `NULL`. Login still succeeds, identity is the
-  OIDC `sub`, not the email claim (OIDC Core §5.7: email is optional and
-  non-identifying).
+  `users.email` stored as `NULL`. Login still succeeds, identity is
+  `(issuer, subject)` resolved through `user_identities`, not the email
+  claim (OIDC Core §5.7: email is optional and non-identifying).
 - **Malformed claim on re-login overwrites a previously-stored valid
   email to NULL.** If an IdP changes from a valid to an invalid claim, the
   stored email is cleared on next login. The rejection is logged at `warn`
@@ -59,6 +59,21 @@ persisting. Two operator-visible behaviours:
 
 Write an operator-facing Starlight page covering email-claim validation
 behaviour when the admin user-management surface lands.
+
+### First-user auto-promotion retired; bootstrap model
+
+**Source:** `backend/src/models/user.rs` (`upsert_from_oidc`),
+[`adr/2026-06-23-auth-identity-pluggable-providers.md`](./adr/2026-06-23-auth-identity-pluggable-providers.md)
+
+The first OIDC login no longer becomes an administrator. A fresh instance
+has no admin until one is granted through a bootstrap path that ships in a
+later slice. This closes the escalation route where any caller reaching
+OIDC login before setup could self-promote. Operators upgrading from a
+pre-S1 instance keep their existing admin row.
+
+Write an operator-facing Starlight page covering the bootstrap and recovery
+model (how the first admin is granted, and recovery when no admin exists)
+when that surface lands.
 
 ### Admin `PATCH /api/v1/users/{id}`: addr-spec email validation
 
@@ -70,8 +85,9 @@ against the same RFC 5322 _addr-spec_ rules as the OIDC path
 which accepted display-name (`Alice <alice@example.com>`) and
 domain-literal (`alice@[127.0.0.1]`) forms: both now rejected with 422.
 Email changes and clears do **not** bump `session_version`: email is not
-an access-control input (login identity is the OIDC `sub`, RLS keys on
-user id/role/`is_child`), so no active session needs invalidating.
+an access-control input (login identity is the `(issuer, subject)` pair in
+`user_identities`, RLS keys on user id/role/`is_child`), so no active
+session needs invalidating.
 
 Write an operator-facing Starlight page documenting these constraints when
 the admin user-management UI lands.

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Revoke Filter') RETURNING id",
+  "query": "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "23249f487fea17c3f8436b3e9f02f4629ddaec01c3b55630fb784551dd23d57e"
+  "hash": "6342b5ed89d7e3d07bb4b3798c42de085be04528adff9e0eb8caf50819aaee85"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO users (oidc_subject, display_name) VALUES ($1, 'Debounce') RETURNING id",
+  "query": "INSERT INTO users (display_name) VALUES ('Credential Only') RETURNING id",
   "describe": {
     "columns": [
       {
@@ -16,13 +16,11 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Text"
-      ]
+      "Left": []
     },
     "nullable": [
       false
     ]
   },
-  "hash": "ec4286138644eeb6ec7d2665fbc4ce57d229b42ab3ad2d5494a42414833cb687"
+  "hash": "003c3ce6596397d334a4874b3ee05786eb0d217b83d695b6c2124be462f87a69"
 }

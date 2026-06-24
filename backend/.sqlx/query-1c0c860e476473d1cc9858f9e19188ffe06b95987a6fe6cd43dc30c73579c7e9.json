@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_identities (user_id, provider, issuer, subject) VALUES ($1, 'oidc'::public.identity_provider, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c0c860e476473d1cc9858f9e19188ffe06b95987a6fe6cd43dc30c73579c7e9"
+}

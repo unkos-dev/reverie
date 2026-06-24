@@ -163,14 +163,10 @@ mod tests {
     }
 
     async fn a_user(pool: &PgPool) -> Uuid {
-        let subject = Uuid::new_v4().to_string();
-        let email = format!("lock-test-{}@example.com", Uuid::new_v4());
+        let display_name = format!("lock-test-{}", Uuid::new_v4());
         sqlx::query_scalar!(
-            "INSERT INTO users (oidc_subject, email, display_name, role, is_child) \
-             VALUES ($1, $2, 'lock-test', 'adult'::user_role, false) \
-             RETURNING id",
-            subject,
-            email,
+            "INSERT INTO users (display_name) VALUES ($1) RETURNING id",
+            display_name,
         )
         .fetch_one(pool)
         .await
