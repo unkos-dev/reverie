@@ -246,4 +246,51 @@ mod tests {
             Some("user_identities_issuer_subject_key"),
         );
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn update_advances_updated_at_via_trigger(pool: PgPool) {
+        // The BEFORE UPDATE trigger must bump updated_at on mutation; without it
+        // the column keeps its insert-time value. Guards the first UPDATE path a
+        // later step adds (email_verified capture, credential rotation).
+        let subject = format!("touch-{}", Uuid::new_v4());
+        let issuer = "https://issuer.example.com";
+        let user_id = insert_user(&pool, &subject).await;
+        insert_oidc(&pool, user_id, issuer, &subject, false)
+            .await
+            .expect("insert identity");
+
+        let before = find_by_oidc(&pool, issuer, &subject)
+            .await
+            .expect("fetch before")
+            .expect("identity present");
+
+        // Separate the two transaction timestamps so the strict comparison
+        // below proves the trigger fired rather than passing on equal clocks.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+
+        sqlx::query!(
+            "UPDATE user_identities SET email_verified = true \
+             WHERE issuer = $1 AND subject = $2",
+            issuer,
+            subject,
+        )
+        .execute(&pool)
+        .await
+        .expect("update identity");
+
+        let after = find_by_oidc(&pool, issuer, &subject)
+            .await
+            .expect("fetch after")
+            .expect("identity present");
+
+        assert!(after.email_verified, "update must persist");
+        assert!(
+            after.updated_at > before.updated_at,
+            "BEFORE UPDATE trigger must advance updated_at"
+        );
+        assert_eq!(
+            after.created_at, before.created_at,
+            "created_at must not change on update"
+        );
+    }
 }

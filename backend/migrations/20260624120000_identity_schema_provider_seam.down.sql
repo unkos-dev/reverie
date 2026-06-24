@@ -12,6 +12,9 @@ ALTER TABLE public.users
     ADD CONSTRAINT users_oidc_subject_key UNIQUE (oidc_subject);
 ALTER TABLE public.users ALTER COLUMN oidc_subject SET NOT NULL;
 
+DROP TRIGGER IF EXISTS trg_local_credentials_updated_at ON public.local_credentials;
+DROP TRIGGER IF EXISTS trg_user_identities_updated_at ON public.user_identities;
+
 DROP TABLE public.local_credentials;
 DROP TABLE public.user_identities;
 DROP TYPE public.identity_provider;

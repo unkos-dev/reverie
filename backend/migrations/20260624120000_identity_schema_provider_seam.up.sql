@@ -73,6 +73,18 @@ CREATE TABLE public.local_credentials (
         CHECK (updated_at >= '0001-01-01 00:00:00+00' AND updated_at < '10000-01-01 00:00:00+00')
 );
 
+-- Maintain updated_at on row mutation, mirroring the trigger every other
+-- mutable table carries (users, works, shelves, ...). Without it the column
+-- keeps its insert-time value on the first UPDATE path a later step adds
+-- (email_verified capture, credential rotation).
+CREATE TRIGGER trg_user_identities_updated_at
+    BEFORE UPDATE ON public.user_identities
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER trg_local_credentials_updated_at
+    BEFORE UPDATE ON public.local_credentials
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 -- `oidc_subject` stops being the identity key. Make it nullable (a
 -- credential-only or freshly-provisioned user has none) and drop the unique
 -- constraint; the identity key now lives on user_identities (issuer, subject).

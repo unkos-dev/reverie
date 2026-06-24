@@ -1,4 +1,4 @@
-//! Local password credentials — the seam for local-account login.
+//! Local password credentials: the seam for local-account login.
 //!
 //! This step ships the table and a read-only lookup only: no password
 //! hashing, write, or verification path exists yet. One hash per user (the PK

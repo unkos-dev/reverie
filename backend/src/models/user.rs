@@ -165,13 +165,13 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
 /// guard with [`is_addr_spec`], so both uphold the RFC-5322 addr-spec
 /// invariant. Per OIDC Core §5.7 the `email` claim is optional and
 /// non-identifying, so an invalid claim degrades to `NULL` rather than failing
-/// authentication — login never depends on an optional claim's format. On a
+/// authentication; login never depends on an optional claim's format. On a
 /// returning user the `UPDATE … SET email = $email` overwrites a
 /// previously-stored valid email with `NULL` when the `IdP` later emits a
 /// malformed claim (Option B: never persist a junk value in the column);
 /// identity is preserved because resolution keys on `(issuer, subject)`. The
-/// rejected value is logged by shape only (length), never verbatim (Hard Rule
-/// 7); the `had_prior_email` log field lets operators distinguish that
+/// rejected value is logged by shape only (length), never verbatim (n 7);
+/// the `had_prior_email` log field lets operators distinguish that
 /// overwrite from a first-login with a malformed claim.
 ///
 /// # Errors
@@ -188,9 +188,28 @@ pub async fn upsert_from_oidc(
     display_name: &str,
     email: Option<&str>,
 ) -> Result<User, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Serialize concurrent provisioning of the same identity. Replacing the
+    // atomic single-table `ON CONFLICT (oidc_subject)` upsert with a two-table
+    // create (users + user_identities) reopens a race: two concurrent first
+    // logins for one identity could both miss the resolve and both insert. The
+    // per-identity advisory lock makes the second wait for the first to commit;
+    // `UNIQUE (issuer, subject)` on user_identities is the backstop. Keyed on
+    // the identity, not the fixed `42` the retired promotion count used.
+    let lock_key = format!("{issuer}|{subject}");
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+        lock_key
+    )
+    .execute(&mut *tx)
+    .await?;
+
     // Validate the OIDC email claim before persisting. Trim first so a
     // whitespace-only claim reads as absence; degrade a non-empty-but-invalid
-    // value to NULL with a shape-only warning.
+    // value to NULL with a shape-only warning. Runs inside the transaction and
+    // under the advisory lock so the `had_prior_email` diagnostic reflects the
+    // same serialized state the upsert below acts on.
     let email = match email.map(str::trim) {
         Some("") => {
             // Claim present but whitespace-only: absence, not a value. (A truly
@@ -219,7 +238,7 @@ pub async fn upsert_from_oidc(
                 issuer,
                 subject,
             )
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await?
             .unwrap_or(false);
             tracing::warn!(
@@ -232,23 +251,6 @@ pub async fn upsert_from_oidc(
         }
         None => None,
     };
-
-    let mut tx = pool.begin().await?;
-
-    // Serialize concurrent provisioning of the same identity. Replacing the
-    // atomic single-table `ON CONFLICT (oidc_subject)` upsert with a two-table
-    // create (users + user_identities) reopens a race: two concurrent first
-    // logins for one identity could both miss the resolve and both insert. The
-    // per-identity advisory lock makes the second wait for the first to commit;
-    // `UNIQUE (issuer, subject)` on user_identities is the backstop. Keyed on
-    // the identity, not the fixed `42` the retired promotion count used.
-    let lock_key = format!("{issuer}|{subject}");
-    sqlx::query!(
-        "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
-        lock_key
-    )
-    .execute(&mut *tx)
-    .await?;
 
     let row = if let Some(user_id) =
         crate::models::user_identities::find_user_id_by_oidc(&mut *tx, issuer, subject).await?

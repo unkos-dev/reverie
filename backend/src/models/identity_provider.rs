@@ -1,4 +1,4 @@
-//! `IdentityProvider` — closed value set for the `user_identities.provider`
+//! `IdentityProvider`: closed value set for the `user_identities.provider`
 //! column, mapping the Postgres `identity_provider` ENUM.
 //!
 //! Mirrors [`crate::models::role::Role`]: a typed [`sqlx::Type`] wrapper so a
@@ -8,7 +8,7 @@
 //!
 //! Wire formats:
 //! - Postgres: `identity_provider` ENUM type.
-//! - JSON: lowercase string literal — "oidc".
+//! - JSON: lowercase string literal, "oidc".
 
 /// Mechanism backing an external identity link on
 /// [`crate::models::user_identities::UserIdentity`].
