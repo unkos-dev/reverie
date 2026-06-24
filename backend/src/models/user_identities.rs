@@ -196,12 +196,24 @@ mod tests {
         let user_a = insert_user(&pool, &format!("a-{subject}")).await;
         let user_b = insert_user(&pool, &format!("b-{subject}")).await;
 
-        insert_oidc(&pool, user_a, "https://issuer-a.example.com", &subject, false)
-            .await
-            .expect("insert a");
-        insert_oidc(&pool, user_b, "https://issuer-b.example.com", &subject, false)
-            .await
-            .expect("insert b");
+        insert_oidc(
+            &pool,
+            user_a,
+            "https://issuer-a.example.com",
+            &subject,
+            false,
+        )
+        .await
+        .expect("insert a");
+        insert_oidc(
+            &pool,
+            user_b,
+            "https://issuer-b.example.com",
+            &subject,
+            false,
+        )
+        .await
+        .expect("insert b");
 
         let resolved_a = find_user_id_by_oidc(&pool, "https://issuer-a.example.com", &subject)
             .await

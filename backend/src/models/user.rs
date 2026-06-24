@@ -243,9 +243,12 @@ pub async fn upsert_from_oidc(
     // `UNIQUE (issuer, subject)` on user_identities is the backstop. Keyed on
     // the identity, not the fixed `42` the retired promotion count used.
     let lock_key = format!("{issuer}|{subject}");
-    sqlx::query!("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", lock_key)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+        lock_key
+    )
+    .execute(&mut *tx)
+    .await?;
 
     let row = if let Some(user_id) =
         crate::models::user_identities::find_user_id_by_oidc(&mut *tx, issuer, subject).await?
@@ -319,10 +322,15 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_creates_and_updates_user(pool: PgPool) {
         let subject = format!("test-subject-{}", Uuid::new_v4());
-        let user =
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Alice", Some("alice@example.com"))
-                .await
-                .expect("upsert");
+        let user = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Alice",
+            Some("alice@example.com"),
+        )
+        .await
+        .expect("upsert");
         assert_eq!(user.display_name, "Alice");
         assert_eq!(user.email.as_deref(), Some("alice@example.com"));
         // Invariant 1: first login on a fresh instance is NOT auto-promoted;
@@ -334,10 +342,15 @@ mod tests {
         // user_identities.
         assert_eq!(user.oidc_subject, None);
 
-        let updated =
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Alice B", Some("alice-b@example.com"))
-                .await
-                .expect("upsert update");
+        let updated = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Alice B",
+            Some("alice-b@example.com"),
+        )
+        .await
+        .expect("upsert update");
         // Same (issuer, subject) resolves to the same row, fields updated.
         assert_eq!(updated.id, user.id);
         assert_eq!(updated.display_name, "Alice B");
@@ -371,7 +384,11 @@ mod tests {
         let first = upsert_from_oidc(&pool, TEST_ISSUER, "subject-one", "First", None)
             .await
             .expect("first login");
-        assert_ne!(first.role, Role::Admin, "first OIDC login must not be admin");
+        assert_ne!(
+            first.role,
+            Role::Admin,
+            "first OIDC login must not be admin"
+        );
 
         let second = upsert_from_oidc(&pool, TEST_ISSUER, "subject-two", "Second", None)
             .await
@@ -392,7 +409,10 @@ mod tests {
         );
         let u1 = r1.expect("first concurrent upsert");
         let u2 = r2.expect("second concurrent upsert");
-        assert_eq!(u1.id, u2.id, "concurrent same-identity logins resolve to one user");
+        assert_eq!(
+            u1.id, u2.id,
+            "concurrent same-identity logins resolve to one user"
+        );
 
         let identity_count = sqlx::query_scalar!(
             "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
@@ -461,10 +481,15 @@ mod tests {
         // optional, non-identifying claim, so we degrade to NULL rather than
         // failing login — identity still resolves via `sub`.
         let subject = format!("malformed-email-{}", Uuid::new_v4());
-        let user =
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Mallory", Some("not-an-email"))
-                .await
-                .expect("upsert");
+        let user = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Mallory",
+            Some("not-an-email"),
+        )
+        .await
+        .expect("upsert");
         assert_eq!(
             user.email, None,
             "malformed email claim must persist as NULL"
@@ -475,7 +500,10 @@ mod tests {
             .await
             .expect("resolve")
             .expect("user present");
-        assert_eq!(resolved.id, user.id, "identity still resolves via (issuer, subject)");
+        assert_eq!(
+            resolved.id, user.id,
+            "identity still resolves via (issuer, subject)"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -492,10 +520,15 @@ mod tests {
     async fn upsert_persists_valid_oidc_email_trimmed(pool: PgPool) {
         // Valid claim with surrounding whitespace: trimmed and persisted.
         let subject = format!("valid-email-{}", Uuid::new_v4());
-        let user =
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Val", Some("  val@example.com "))
-                .await
-                .expect("upsert");
+        let user = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Val",
+            Some("  val@example.com "),
+        )
+        .await
+        .expect("upsert");
         assert_eq!(user.email.as_deref(), Some("val@example.com"));
     }
 
@@ -507,22 +540,23 @@ mod tests {
         // Consistent with Option-B (never persist junk in the column); identity
         // is preserved because resolution keys on `(issuer, subject)`, not email.
         let subject = format!("email-overwrite-{}", Uuid::new_v4());
-        let first =
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("bob@example.com"))
-                .await
-                .expect("first upsert");
+        let first = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("bob@example.com"))
+            .await
+            .expect("first upsert");
         assert_eq!(first.email.as_deref(), Some("bob@example.com"));
 
-        let second =
-            upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("not-an-email"))
-                .await
-                .expect("second upsert");
+        let second = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("not-an-email"))
+            .await
+            .expect("second upsert");
         assert_eq!(
             second.email, None,
             "malformed claim on re-login must overwrite the previously valid email to NULL"
         );
         assert_eq!(second.id, first.id, "same row updated, not a new insert");
-        assert_eq!(second.oidc_subject, None, "oidc_subject stays vestigial NULL");
+        assert_eq!(
+            second.oidc_subject, None,
+            "oidc_subject stays vestigial NULL"
+        );
     }
 
     /// Loud-failure regression for role-enum drift. Simulates the failure mode

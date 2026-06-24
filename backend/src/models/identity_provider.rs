@@ -27,7 +27,7 @@
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "identity_provider", rename_all = "lowercase")]
 pub enum IdentityProvider {
-    /// OpenID Connect federated identity, keyed on `(issuer, subject)`.
+    /// `OpenID` Connect federated identity, keyed on `(issuer, subject)`.
     Oidc,
 }
 

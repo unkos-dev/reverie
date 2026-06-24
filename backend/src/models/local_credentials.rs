@@ -51,12 +51,10 @@ mod tests {
     use super::*;
 
     async fn insert_user(pool: &PgPool) -> Uuid {
-        sqlx::query_scalar!(
-            "INSERT INTO users (display_name) VALUES ('Cred Test') RETURNING id",
-        )
-        .fetch_one(pool)
-        .await
-        .expect("insert user")
+        sqlx::query_scalar!("INSERT INTO users (display_name) VALUES ('Cred Test') RETURNING id",)
+            .fetch_one(pool)
+            .await
+            .expect("insert user")
     }
 
     #[sqlx::test(migrations = "./migrations")]

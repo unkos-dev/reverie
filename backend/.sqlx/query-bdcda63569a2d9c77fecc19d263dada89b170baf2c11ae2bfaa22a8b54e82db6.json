@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT role AS \"role: Role\", email FROM users WHERE oidc_subject = $1",
+  "query": "SELECT u.role AS \"role: Role\", u.email FROM users u JOIN user_identities ui ON ui.user_id = u.id WHERE ui.subject = $1",
   "describe": {
     "columns": [
       {
@@ -47,5 +47,5 @@
       true
     ]
   },
-  "hash": "e1e16df676b3910ef1c59eb55cb519218dd81243ec01bfbf5a2ca583b8d8fbee"
+  "hash": "bdcda63569a2d9c77fecc19d263dada89b170baf2c11ae2bfaa22a8b54e82db6"
 }

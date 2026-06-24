@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.email IS NOT NULL AS \"had_email!\" FROM users u JOIN user_identities ui ON ui.user_id = u.id WHERE ui.issuer = $1 AND ui.subject = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "had_email!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b6a6e956cb1e21ddefe19f3cfd623502d516b8b2922d5b1023c40f288f62d689"
+}

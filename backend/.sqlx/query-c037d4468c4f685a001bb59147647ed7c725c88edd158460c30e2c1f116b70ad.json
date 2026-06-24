@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM users WHERE id = (SELECT user_id FROM user_identities WHERE subject = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c037d4468c4f685a001bb59147647ed7c725c88edd158460c30e2c1f116b70ad"
+}
