@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO instance_bootstrap (id) VALUES (true)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d3eeb8fd7e430baa78dc2dff61af4494e06caf2c438c51b12b5ab2da50808a1a"
+}

@@ -45,6 +45,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
         "login_throttle_base_secs",
     ),
     ("REVERIE_LOGIN_THROTTLE_CAP_SECS", "login_throttle_cap_secs"),
+    ("REVERIE_PASSWORD_MIN_LENGTH", "password_min_length"),
     (
         "REVERIE_TRUSTED_CLIENT_IP_HEADER",
         "trusted_client_ip_header",

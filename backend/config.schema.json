@@ -166,6 +166,13 @@
       ],
       "default": null
     },
+    "password_min_length": {
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). Enforced at first-run setup and password reset. S2 ships only the\nlength floor; breach (HIBP) and strength (zxcvbn) checks are S3.",
+      "type": "integer",
+      "format": "uint",
+      "default": 8,
+      "minimum": 8
+    },
     "port": {
       "description": "HTTP listen port (`REVERIE_PORT`, default `3000`).",
       "type": "integer",

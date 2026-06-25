@@ -133,6 +133,12 @@ pub struct Config {
     /// default `900`). Upper bound on the escalating per-account delay.
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub login_throttle_cap_secs: i32,
+    /// Minimum length for a local-account password
+    /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic
+    /// floor). Enforced at first-run setup and password reset. S2 ships only the
+    /// length floor; breach (HIBP) and strength (zxcvbn) checks are S3.
+    #[validate(range(min = 8, message = "must be at least 8 (NIST SP 800-63B)"))]
+    pub password_min_length: usize,
     /// Optional forwarded-for header to trust for the client IP behind a reverse
     /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
     /// by default: the TCP peer is used. An unauthenticated forwarded header is
@@ -641,6 +647,7 @@ impl Default for Config {
             login_rate_per_min: 10,
             login_throttle_base_secs: 2,
             login_throttle_cap_secs: 900,
+            password_min_length: 8,
             trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),

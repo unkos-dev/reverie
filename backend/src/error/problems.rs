@@ -66,6 +66,10 @@ pub const MALFORMED_QUERY: &str = "malformed-query";
 /// ([`crate::error::AppError::RateLimited`]). HTTP 429.
 pub const RATE_LIMITED: &str = "rate-limited";
 
+/// First-run setup attempted after an administrator already exists
+/// ([`crate::error::AppError::SetupAlreadyComplete`]). HTTP 409.
+pub const SETUP_ALREADY_COMPLETE: &str = "setup-already-complete";
+
 /// Generic internal error (anything wrapped in
 /// [`crate::error::AppError::Internal`]). `detail` is a fixed
 /// non-leaking string; the inner cause is `tracing::error!`-logged

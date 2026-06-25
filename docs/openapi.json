@@ -2741,6 +2741,79 @@
         ]
       }
     },
+    "/auth/setup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`POST /auth/setup` — first-run bootstrap: mint the first administrator.",
+        "description": "THREAT (invariant 1): bootstrap is the ONLY first-admin path. The race\nguarantee is the DB `instance_bootstrap` singleton insert inside\n[`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only\na cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under\nREAD COMMITTED). A second concurrent setup loses the marker-row race and maps\nto 409. Setup does NOT auto-login (parity with recovery; the session contract\nlives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::SetupAlreadyComplete`] (409) when an administrator already\n  exists (fast-reject or the marker-row race).\n- [`AppError::Validation`] (422) on a malformed email or too-short password.\n- [`AppError::Internal`] on hashing or database failure.",
+        "operationId": "setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "First administrator created (no auto-login)"
+          },
+          "409": {
+            "description": "An administrator already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/setup/status": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`GET /auth/setup/status` — public provider/bootstrap state for the SPA.",
+        "description": "# Errors\n- [`AppError::Internal`] on database failure.",
+        "operationId": "setup_status",
+        "responses": {
+          "200": {
+            "description": "Setup and provider state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -5244,6 +5317,52 @@
           }
         ],
         "description": "Response shape for `GET /api/v1/settings`."
+      },
+      "SetupRequest": {
+        "type": "object",
+        "description": "Request body for `POST /auth/setup`. Explicit allow-list (no mass-assignment).",
+        "required": [
+          "email",
+          "display_name",
+          "password"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Display name."
+          },
+          "email": {
+            "type": "string",
+            "description": "First administrator's email (RFC 5322 addr-spec)."
+          },
+          "password": {
+            "type": "string",
+            "description": "Plaintext password; enforced against `password_min_length`, then hashed."
+          }
+        }
+      },
+      "SetupStatusResponse": {
+        "type": "object",
+        "description": "Public first-run status for the SPA: whether setup is required and which\nproviders are usable.",
+        "required": [
+          "setup_required",
+          "local_auth_enabled",
+          "oidc_enabled"
+        ],
+        "properties": {
+          "local_auth_enabled": {
+            "type": "boolean",
+            "description": "Whether local email+password login is enabled."
+          },
+          "oidc_enabled": {
+            "type": "boolean",
+            "description": "Whether OIDC is configured (computed from the issuer; decision 11). Drives\nthe SPA's provider-aware redirect and the \"Sign in with OIDC\" action."
+          },
+          "setup_required": {
+            "type": "boolean",
+            "description": "`true` when no administrator exists yet, so the SPA shows the setup form."
+          }
+        }
       },
       "Shelf": {
         "type": "object",

@@ -719,6 +719,7 @@ mod tests {
             login_rate_per_min: 10,
             login_throttle_base_secs: 2,
             login_throttle_cap_secs: 900,
+            password_min_length: 8,
             trusted_client_ip_header: None,
             migration_database_url: None,
             auto_migrate: false,

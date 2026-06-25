@@ -145,6 +145,96 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, s
     .map(|opt| opt.map(User::from))
 }
 
+/// Typed outcome of the first-admin bootstrap transaction.
+#[derive(Debug)]
+pub enum BootstrapError {
+    /// The `instance_bootstrap` singleton already exists: an administrator was
+    /// minted by a prior or concurrent bootstrap. Maps to HTTP 409.
+    AlreadyBootstrapped,
+    /// The email collides with an existing account (`idx_users_email_lower`).
+    EmailTaken,
+    /// Any other database failure.
+    Db(sqlx::Error),
+}
+
+/// Atomically mint the first administrator: insert the `instance_bootstrap`
+/// singleton marker, the admin `users` row, and its local credential in one
+/// transaction.
+///
+/// THREAT (TOCTOU, CWE-367): the singleton insert is the DB-enforced zero->one
+/// gate (decision 9), not an app-layer `admin_exists` re-check, because three
+/// writers can mint the first admin (HTTP setup, CLI bootstrap, env-seed) and a
+/// `SELECT EXISTS ... INSERT` does not serialize under READ COMMITTED. Inserting
+/// the marker FIRST means a second concurrent bootstrap collides on its primary
+/// key and the whole transaction aborts, so exactly one admin can ever be the
+/// first. It is a one-shot transition guard, not a permanent uniqueness rule
+/// (multiple admins are allowed later).
+///
+/// `password_hash` is an Argon2id PHC ([`crate::auth::password`]); this never
+/// sees a clear password.
+///
+/// # Errors
+///
+/// [`BootstrapError::AlreadyBootstrapped`] when the marker already exists,
+/// [`BootstrapError::EmailTaken`] on an email collision, or
+/// [`BootstrapError::Db`] for any other failure.
+pub async fn create_first_admin(
+    pool: &PgPool,
+    email: &str,
+    display_name: &str,
+    password_hash: &str,
+) -> Result<User, BootstrapError> {
+    let mut tx = pool.begin().await.map_err(BootstrapError::Db)?;
+
+    // Gate first: the singleton marker. A second concurrent insert of the single
+    // `true` row collides on the PK and aborts the whole transaction.
+    if let Err(e) = sqlx::query!("INSERT INTO instance_bootstrap (id) VALUES (true)")
+        .execute(&mut *tx)
+        .await
+    {
+        return Err(match &e {
+            sqlx::Error::Database(db) if db.is_unique_violation() => {
+                BootstrapError::AlreadyBootstrapped
+            }
+            _ => BootstrapError::Db(e),
+        });
+    }
+
+    let row = match sqlx::query_as!(
+        UserRow,
+        "INSERT INTO users (display_name, email, role) \
+         VALUES ($1, $2, 'admin'::user_role) \
+         RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
+                   role AS \"role: Role\", is_child, created_at, updated_at, \
+                   session_version, theme_preference AS \"theme_preference: ThemePreference\"",
+        display_name,
+        email,
+    )
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            return Err(match &e {
+                sqlx::Error::Database(db) if db.is_unique_violation() => BootstrapError::EmailTaken,
+                _ => BootstrapError::Db(e),
+            });
+        }
+    };
+
+    sqlx::query!(
+        "INSERT INTO local_credentials (user_id, password_hash) VALUES ($1, $2)",
+        row.id,
+        password_hash,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(BootstrapError::Db)?;
+
+    tx.commit().await.map_err(BootstrapError::Db)?;
+    Ok(User::from(row))
+}
+
 /// Fetch a user by OIDC identity `(issuer, subject)`, resolved through
 /// [`crate::models::user_identities`]. Returns `Ok(None)` if no link exists.
 ///
@@ -835,5 +925,51 @@ mod tests {
             .expect("decode of max in-range created_at must succeed")
             .expect("user still present");
         assert_eq!(reloaded.created_at.year(), 9999);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn first_admin_created_then_second_is_rejected(pool: PgPool) {
+        let phc = crate::auth::password::hash_password(b"a strong password").expect("hash");
+        let admin = create_first_admin(&pool, "admin@example.com", "Admin", &phc)
+            .await
+            .expect("first admin");
+        assert!(matches!(admin.role, Role::Admin), "first user is an admin");
+
+        let second = create_first_admin(&pool, "other@example.com", "Other", &phc).await;
+        assert!(
+            matches!(second, Err(BootstrapError::AlreadyBootstrapped)),
+            "a second bootstrap is rejected once the marker exists"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn concurrent_first_admin_yields_exactly_one(pool: PgPool) {
+        // Invariant 1 (decision 9): the instance_bootstrap singleton serializes
+        // the zero->one transition. Two overlapping bootstraps must yield exactly
+        // one administrator, not two.
+        let phc = crate::auth::password::hash_password(b"a strong password").expect("hash");
+        let (p1, p2, h1, h2) = (pool.clone(), pool.clone(), phc.clone(), phc);
+        let (r1, r2) = tokio::join!(
+            async move { create_first_admin(&p1, "a@example.com", "Admin A", &h1).await },
+            async move { create_first_admin(&p2, "b@example.com", "Admin B", &h2).await },
+        );
+
+        let wins = [r1.is_ok(), r2.is_ok()].into_iter().filter(|&b| b).count();
+        assert_eq!(wins, 1, "exactly one concurrent bootstrap succeeds");
+        assert!(
+            matches!(
+                (&r1, &r2),
+                (Ok(_), Err(BootstrapError::AlreadyBootstrapped))
+                    | (Err(BootstrapError::AlreadyBootstrapped), Ok(_))
+            ),
+            "the losing bootstrap is rejected as AlreadyBootstrapped"
+        );
+
+        let admin_count: Option<i64> =
+            sqlx::query_scalar!(r#"SELECT COUNT(*) FROM users WHERE role = 'admin'::user_role"#)
+                .fetch_one(&pool)
+                .await
+                .expect("count admins");
+        assert_eq!(admin_count, Some(1), "exactly one administrator exists");
     }
 }

@@ -134,6 +134,13 @@ pub enum AppError {
     /// the login / recovery handlers; the per-account backoff is separate.
     #[error("too many requests")]
     RateLimited,
+    /// First-run setup (bootstrap) attempted when an administrator already
+    /// exists. RFC 9457 `type` [`problems::SETUP_ALREADY_COMPLETE`]. HTTP 409
+    /// Conflict. The authoritative guard is the `instance_bootstrap` singleton
+    /// insert losing the race, mapped here; a separate `SystemShelfImmutable`
+    /// (also 409) is deliberately NOT reused.
+    #[error("setup already complete")]
+    SetupAlreadyComplete,
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 9457 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
@@ -143,6 +150,10 @@ pub enum AppError {
 }
 
 impl IntoResponse for AppError {
+    // A flat, exhaustive variant -> RFC 9457 dispatcher: one trivial arm per
+    // error variant. Splitting it would scatter the status/slug/title mapping
+    // without reducing complexity, so the length lint is allowed here.
+    #[allow(clippy::too_many_lines)]
     fn into_response(self) -> Response {
         // BasicAuthRequired keeps its pre-Problem-Details shape: empty body +
         // WWW-Authenticate per RFC 7617. OPDS clients depend on this
@@ -227,6 +238,12 @@ impl IntoResponse for AppError {
                 problems::RATE_LIMITED,
                 "Too Many Requests",
                 "Too many login attempts; please try again later.".to_owned(),
+            ),
+            Self::SetupAlreadyComplete => (
+                StatusCode::CONFLICT,
+                problems::SETUP_ALREADY_COMPLETE,
+                "Conflict",
+                "An administrator already exists; first-run setup is closed.".to_owned(),
             ),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");

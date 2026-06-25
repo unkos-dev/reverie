@@ -37,6 +37,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(oidc_login))
         .routes(routes!(callback))
         .routes(routes!(local_login))
+        .routes(routes!(setup_status))
+        .routes(routes!(setup))
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(update_theme))
@@ -397,6 +399,114 @@ async fn local_login(
         .map_err(|e| AppError::Internal(e.into()))?;
     }
     Err(AppError::Validation("invalid email or password".to_owned()))
+}
+
+/// Public first-run status for the SPA: whether setup is required and which
+/// providers are usable.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct SetupStatusResponse {
+    /// `true` when no administrator exists yet, so the SPA shows the setup form.
+    setup_required: bool,
+    /// Whether local email+password login is enabled.
+    local_auth_enabled: bool,
+    /// Whether OIDC is configured (computed from the issuer; decision 11). Drives
+    /// the SPA's provider-aware redirect and the "Sign in with OIDC" action.
+    oidc_enabled: bool,
+}
+
+/// `GET /auth/setup/status` — public provider/bootstrap state for the SPA.
+///
+/// # Errors
+/// - [`AppError::Internal`] on database failure.
+#[utoipa::path(
+    get,
+    path = "/auth/setup/status",
+    tag = "auth",
+    security(()),
+    responses((status = 200, description = "Setup and provider state", body = SetupStatusResponse))
+)]
+async fn setup_status(
+    State(state): State<AppState>,
+) -> Result<Json<SetupStatusResponse>, AppError> {
+    let admin = user::admin_exists(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(Json(SetupStatusResponse {
+        setup_required: !admin,
+        local_auth_enabled: state.config.local_auth_enabled,
+        oidc_enabled: state.config.oidc_configured(),
+    }))
+}
+
+/// Request body for `POST /auth/setup`. Explicit allow-list (no mass-assignment).
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct SetupRequest {
+    /// First administrator's email (RFC 5322 addr-spec).
+    email: String,
+    /// Display name.
+    display_name: String,
+    /// Plaintext password; enforced against `password_min_length`, then hashed.
+    password: String,
+}
+
+/// `POST /auth/setup` — first-run bootstrap: mint the first administrator.
+///
+/// THREAT (invariant 1): bootstrap is the ONLY first-admin path. The race
+/// guarantee is the DB `instance_bootstrap` singleton insert inside
+/// [`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only
+/// a cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under
+/// READ COMMITTED). A second concurrent setup loses the marker-row race and maps
+/// to 409. Setup does NOT auto-login (parity with recovery; the session contract
+/// lives only at `/auth/local/login`).
+///
+/// # Errors
+/// - [`AppError::SetupAlreadyComplete`] (409) when an administrator already
+///   exists (fast-reject or the marker-row race).
+/// - [`AppError::Validation`] (422) on a malformed email or too-short password.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/setup",
+    tag = "auth",
+    security(()),
+    request_body = SetupRequest,
+    responses(
+        (status = 201, description = "First administrator created (no auto-login)"),
+        (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn setup(
+    State(state): State<AppState>,
+    Json(body): Json<SetupRequest>,
+) -> Result<StatusCode, AppError> {
+    // Cheap fast-reject; the authoritative guard is the marker insert below.
+    if user::admin_exists(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+    {
+        return Err(AppError::SetupAlreadyComplete);
+    }
+    if !user::is_addr_spec(&body.email) {
+        return Err(AppError::Validation("invalid email address".to_owned()));
+    }
+    if body.password.chars().count() < state.config.password_min_length {
+        return Err(AppError::Validation(format!(
+            "password must be at least {} characters",
+            state.config.password_min_length
+        )));
+    }
+    let phc = crate::auth::password::hash_password(body.password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    match user::create_first_admin(&state.pool, &body.email, &body.display_name, &phc).await {
+        Ok(_admin) => Ok(StatusCode::CREATED),
+        Err(user::BootstrapError::AlreadyBootstrapped) => Err(AppError::SetupAlreadyComplete),
+        Err(user::BootstrapError::EmailTaken) => {
+            Err(AppError::Validation("email already in use".to_owned()))
+        }
+        Err(user::BootstrapError::Db(e)) => Err(AppError::Internal(e.into())),
+    }
 }
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
@@ -1657,6 +1767,83 @@ mod tests {
             with_token.status_code(),
             StatusCode::FORBIDDEN,
             "a valid token must not be rejected by the CSRF layer"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn setup_creates_admin_then_rejects_second_attempt(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // Uninitialised instance: setup is required.
+        let status: serde_json::Value = server.get("/auth/setup/status").await.json();
+        assert_eq!(
+            status
+                .get("setup_required")
+                .and_then(serde_json::Value::as_bool),
+            Some(true),
+            "a fresh instance requires setup"
+        );
+
+        let first = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "admin@example.com",
+                "display_name": "Admin",
+                "password": "a strong password",
+            }))
+            .await;
+        assert_eq!(
+            first.status_code(),
+            StatusCode::CREATED,
+            "first setup mints the administrator"
+        );
+
+        // setup_required flips false after bootstrap.
+        let status2: serde_json::Value = server.get("/auth/setup/status").await.json();
+        assert_eq!(
+            status2
+                .get("setup_required")
+                .and_then(serde_json::Value::as_bool),
+            Some(false),
+            "setup_required is false once an admin exists"
+        );
+
+        // Invariant 1: a second setup is rejected (409) once an admin exists.
+        let second = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "other@example.com",
+                "display_name": "Other",
+                "password": "another strong one",
+            }))
+            .await;
+        assert_eq!(
+            second.status_code(),
+            StatusCode::CONFLICT,
+            "first-run setup is closed once an administrator exists"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn setup_enforces_password_min_length(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "admin@example.com",
+                "display_name": "Admin",
+                "password": "short",
+            }))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a password below the minimum length is rejected"
         );
     }
 }
