@@ -1,5 +1,5 @@
 /**
- * `/login` — local credential sign-in (S2).
+ * `/login` — local credential sign-in.
  *
  * A user-facing page (the auth API/protocol lives under `/auth/*`). Reads
  * provider state from `GET /auth/setup/status`: shows the local
@@ -7,12 +7,11 @@
  * action when OIDC is configured, and bounces to `/setup` on a fresh
  * instance with no administrator yet.
  *
- * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`; the plan
- * snippet's controlled inputs are a conscious deviation in favour of the
- * binding doc. On success the local login establishes a session (CSRF
- * token minted server-side, hydrated by `loginLocal`), so the redirect
- * to `/library` is a full-page navigation that reloads with the live
- * session rather than a client-side route change.
+ * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`. On success
+ * the local login establishes a session (CSRF token minted server-side,
+ * hydrated by `loginLocal`), so the redirect to `/library` is a full-page
+ * navigation that reloads with the live session rather than a client-side
+ * route change.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";

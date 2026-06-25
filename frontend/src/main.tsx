@@ -55,7 +55,7 @@ const routes: RouteObject[] = [
       adminDashboardRoute,
     ],
   },
-  // Pre-auth screens (S2). Siblings of the app-shell root, NOT children:
+  // Pre-auth screens. Siblings of the app-shell root, NOT children:
   // they must render without the shell and outside the `useSessionRecovery`
   // redirect funnel, or an unauthenticated visitor would loop. They live at
   // top-level page paths (not under `/auth/*`) so the backend's reserved-prefix

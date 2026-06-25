@@ -1,5 +1,5 @@
 /**
- * `/forgot-password` — email-less PIN recovery (S2).
+ * `/forgot-password` — email-less PIN recovery.
  *
  * Two phases. The request phase posts the email and always returns a
  * generic success (no account enumeration); the operator reads the

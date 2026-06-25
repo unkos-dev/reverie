@@ -2767,7 +2767,7 @@
           "auth"
         ],
         "summary": "`GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.",
-        "description": "Renamed from `/auth/login` so the SPA can own `/auth/login` as a real login\npage (decision 2). The OIDC callback path deliberately stays `/auth/callback`\n(NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured (decision 11).\n- [`AppError::Internal`] when session storage fails.",
+        "description": "Renamed from `/auth/login` so the user-facing login page (a SPA route served\nat `/login`) does not collide with this auth-protocol endpoint; `/auth/*` is\nthe auth API namespace. The OIDC callback path deliberately stays\n`/auth/callback` (NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured (decision 11).\n- [`AppError::Internal`] when session storage fails.",
         "operationId": "oidc_login",
         "responses": {
           "307": {

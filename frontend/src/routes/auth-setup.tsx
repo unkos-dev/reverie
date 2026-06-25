@@ -1,5 +1,5 @@
 /**
- * `/setup` — first-run administrator bootstrap (S2).
+ * `/setup` — first-run administrator bootstrap.
  *
  * The only page that mints the first administrator (the bootstrap API is
  * `POST /auth/setup`). Shown when no administrator exists yet

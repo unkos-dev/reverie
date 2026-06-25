@@ -11,7 +11,7 @@ import { queryKeys } from "@/lib/query/keys";
 /**
  * Resolve where an unauthenticated/lapsed session should be sent.
  *
- * Provider-aware (S2): when OIDC is enabled the redirect targets the
+ * Provider-aware: when OIDC is enabled the redirect targets the
  * backend OIDC initiator `/auth/oidc/login`, so a session lapse against
  * a still-live upstream SSO re-authenticates silently. Otherwise it
  * targets the SPA local login form at `/login`. Provider state is read

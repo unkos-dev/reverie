@@ -60,9 +60,10 @@ pub struct CallbackParams {
 
 /// `GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.
 ///
-/// Renamed from `/auth/login` so the SPA can own `/auth/login` as a real login
-/// page (decision 2). The OIDC callback path deliberately stays `/auth/callback`
-/// (NOT `/auth/oidc/callback`) so operators need not reconfigure
+/// Renamed from `/auth/login` so the user-facing login page (a SPA route served
+/// at `/login`) does not collide with this auth-protocol endpoint; `/auth/*` is
+/// the auth API namespace. The OIDC callback path deliberately stays
+/// `/auth/callback` (NOT `/auth/oidc/callback`) so operators need not reconfigure
 /// `OIDC_REDIRECT_URI` at their `IdP`.
 ///
 /// # Errors
