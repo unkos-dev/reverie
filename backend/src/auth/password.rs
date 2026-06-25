@@ -2,7 +2,7 @@
 //!
 //! # Tier 2 — security-critical
 //!
-//! [`Argon2::default`] is Argon2id with the RustCrypto-recommended parameters
+//! [`argon2::Argon2::default`] is Argon2id with the RustCrypto-recommended parameters
 //! (m=19456 KiB, t=2, p=1). Hashes are PHC strings: the algorithm, parameters,
 //! salt, and digest travel together, so a future parameter change verifies old
 //! hashes without a schema migration. Verification is constant-time internally.
@@ -18,7 +18,7 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 /// # Errors
 ///
 /// Returns [`argon2::password_hash::Error`] if hashing fails (e.g. an invalid
-/// parameter set); not expected with [`Argon2::default`].
+/// parameter set); not expected with [`argon2::Argon2::default`].
 pub fn hash_password(password: &[u8]) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
     Ok(Argon2::default()

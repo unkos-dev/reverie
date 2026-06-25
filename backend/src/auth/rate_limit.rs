@@ -12,8 +12,9 @@
 //! THREAT (client-IP spoofing): behind a reverse proxy the TCP peer is the
 //! proxy, not the client, so a naive per-peer limiter would throttle the whole
 //! deployment as one key. The standard fix is a configurable trusted-proxy
-//! boundary: [`client_ip`] trusts a forwarded-for header ONLY when the operator
-//! has explicitly named one (`trusted_client_ip_header`), because an
+//! boundary: [`client_ip`](crate::auth::rate_limit::client_ip) trusts a
+//! forwarded-for header ONLY when the operator has explicitly named one
+//! (`trusted_client_ip_header`), because an
 //! unauthenticated forwarded header is attacker-spoofable (RFC 7239 security
 //! considerations). With no header configured it keys on the TCP peer.
 

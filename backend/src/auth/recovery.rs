@@ -106,12 +106,13 @@ mod tests {
 
     #[test]
     fn pin_file_is_written_0600_with_pin_then_removed() {
-        let dir = std::env::temp_dir().join(format!("reverie-recovery-test-{}", generate_pin()));
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let dir = tmp.path();
         let user_id = Uuid::new_v4();
         let expires = OffsetDateTime::now_utc() + time::Duration::minutes(15);
 
-        write_pin_file(&dir, user_id, "user@example.com", "1234567890", expires).expect("write");
-        let path = pin_file_path(&dir, user_id);
+        write_pin_file(dir, user_id, "user@example.com", "1234567890", expires).expect("write");
+        let path = pin_file_path(dir, user_id);
         let meta = fs::metadata(&path).expect("metadata");
         assert_eq!(
             meta.permissions().mode() & 0o777,
@@ -128,9 +129,9 @@ mod tests {
             "email is in the file"
         );
 
-        remove_pin_file(&dir, user_id).expect("remove");
+        remove_pin_file(dir, user_id).expect("remove");
         assert!(!path.exists(), "file removed on cleanup");
         // Idempotent: removing an absent file is success.
-        remove_pin_file(&dir, user_id).expect("remove-absent is ok");
+        remove_pin_file(dir, user_id).expect("remove-absent is ok");
     }
 }

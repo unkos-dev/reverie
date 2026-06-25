@@ -11,9 +11,10 @@
 //!
 //! THREAT (lockout DoS): this escalating per-account backoff must
 //! NOT block a correct password. The login handler verifies the password first
-//! and only calls [`record_failure`] on a *failed* attempt; a success calls
-//! [`reset`]. Per-source (per-IP) rate limiting does the hard blocking; this is
-//! the IP-independent backstop.
+//! and only calls [`record_failure`](crate::models::login_throttle::record_failure)
+//! on a *failed* attempt; a success calls
+//! [`reset`](crate::models::login_throttle::reset). Per-source (per-IP) rate
+//! limiting does the hard blocking; this is the IP-independent backstop.
 
 use sqlx::PgPool;
 use time::OffsetDateTime;
