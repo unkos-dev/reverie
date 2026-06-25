@@ -290,6 +290,12 @@ pub async fn run() -> anyhow::Result<()> {
     // schema-dependent query before this runs.
     apply_or_verify_schema(&config, &pool).await?;
 
+    // First-run env seed: create the first administrator from REVERIE_BOOTSTRAP_*
+    // if configured and none exists. Idempotent; honours the single-admin gate.
+    seed_admin_if_configured(&pool, config.password_min_length)
+        .await
+        .context("bootstrap the first administrator from the environment seed")?;
+
     // OIDC is optional (decision 11): discover the client only when configured.
     // A local-only instance carries no OIDC client and the initiate/callback
     // handlers 404. Gate 4 has already guaranteed at least one provider is usable.
@@ -559,6 +565,23 @@ pub enum Command {
     /// then exit. A build/docs utility (regenerates the committed
     /// `config.schema.json`); reads no environment and touches no database.
     PrintConfigSchema,
+    /// `reverie bootstrap` — create the first administrator from the
+    /// `REVERIE_BOOTSTRAP_*` environment seed, then exit. No-op if an
+    /// administrator already exists (honours the same single-admin gate as HTTP
+    /// setup). No positional arguments.
+    Bootstrap,
+    /// `reverie reset-password <email>` — issue a recovery PIN for an account to
+    /// the operator host file, then exit.
+    ResetPassword {
+        /// Email of the account to issue a recovery PIN for.
+        email: String,
+    },
+    /// `reverie unlock-account <email>` — clear the per-account login throttle
+    /// for an account, then exit.
+    UnlockAccount {
+        /// Email of the account to unlock.
+        email: String,
+    },
     /// No subcommand — run the long-lived HTTP server.
     Serve,
 }
@@ -582,11 +605,20 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [] => Ok(Command::Serve),
         [cmd] if cmd == "migrate" => Ok(Command::Migrate),
         [cmd] if cmd == "print-config-schema" => Ok(Command::PrintConfigSchema),
+        [cmd] if cmd == "bootstrap" => Ok(Command::Bootstrap),
+        [cmd, email] if cmd == "reset-password" => Ok(Command::ResetPassword {
+            email: email.clone(),
+        }),
+        [cmd, email] if cmd == "unlock-account" => Ok(Command::UnlockAccount {
+            email: email.clone(),
+        }),
         [cmd] => Err(anyhow::anyhow!(
-            "unknown subcommand: {cmd:?}; valid subcommands: migrate, print-config-schema"
+            "unknown or incomplete subcommand: {cmd:?}; valid subcommands: migrate, \
+             print-config-schema, bootstrap, reset-password <email>, unlock-account <email>"
         )),
         [cmd, ..] => Err(anyhow::anyhow!(
-            "unexpected trailing arguments after {cmd:?}; usage: reverie [migrate|print-config-schema]"
+            "unexpected arguments after {cmd:?}; usage: reverie [migrate | print-config-schema | \
+             bootstrap | reset-password <email> | unlock-account <email>]"
         )),
     }
 }
@@ -683,6 +715,164 @@ pub async fn run_migrate() -> anyhow::Result<()> {
     } else {
         tracing::info!("database schema is already up to date");
     }
+    Ok(())
+}
+
+/// Read the first-administrator seed from the environment. Returns
+/// `(email, display_name, password)` only when all three are present and
+/// non-blank; a partial seed yields `None`.
+///
+/// Read directly from the environment rather than through the config pipeline:
+/// the bootstrap password is a one-shot startup credential, so it is never
+/// retained on the long-lived [`Config`].
+fn read_bootstrap_seed() -> Option<(String, String, String)> {
+    let get = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+    Some((
+        get("REVERIE_BOOTSTRAP_EMAIL")?,
+        get("REVERIE_BOOTSTRAP_DISPLAY_NAME")?,
+        get("REVERIE_BOOTSTRAP_PASSWORD")?,
+    ))
+}
+
+/// Create the first administrator from the `REVERIE_BOOTSTRAP_*` environment
+/// seed when one is configured and no administrator exists. Returns whether an
+/// administrator was created. Idempotent: a no-op when an admin already exists or
+/// no seed is set. Shared by the `reverie bootstrap` CLI and server startup;
+/// both honour the DB-enforced single-admin gate in
+/// [`models::user::create_first_admin`].
+///
+/// THREAT: the seed password is never logged (hard rule 3); only the resulting
+/// account email is.
+///
+/// # Errors
+///
+/// Returns an error on an invalid seed email, a too-short password, hashing
+/// failure, or a database error other than the benign already-bootstrapped race.
+async fn seed_admin_if_configured(
+    pool: &sqlx::PgPool,
+    password_min_length: usize,
+) -> anyhow::Result<bool> {
+    if models::user::admin_exists(pool)
+        .await
+        .context("check for an existing administrator")?
+    {
+        return Ok(false);
+    }
+    let Some((email, display_name, password)) = read_bootstrap_seed() else {
+        return Ok(false);
+    };
+    if !models::user::is_addr_spec(&email) {
+        anyhow::bail!("REVERIE_BOOTSTRAP_EMAIL is not a valid email address");
+    }
+    if password.chars().count() < password_min_length {
+        anyhow::bail!(
+            "REVERIE_BOOTSTRAP_PASSWORD must be at least {password_min_length} characters"
+        );
+    }
+    let phc = auth::password::hash_password(password.as_bytes())
+        .map_err(|e| anyhow::anyhow!("failed to hash the bootstrap password: {e}"))?;
+    match models::user::create_first_admin(pool, &email, &display_name, &phc).await {
+        Ok(_) => {
+            tracing::info!(email = %email, "created the first administrator from the environment seed");
+            Ok(true)
+        }
+        Err(models::user::BootstrapError::AlreadyBootstrapped) => Ok(false),
+        Err(models::user::BootstrapError::EmailTaken) => {
+            anyhow::bail!("REVERIE_BOOTSTRAP_EMAIL is already in use")
+        }
+        Err(models::user::BootstrapError::Db(e)) => Err(anyhow::anyhow!("bootstrap failed: {e}")),
+    }
+}
+
+/// `reverie bootstrap` — create the first administrator from the
+/// `REVERIE_BOOTSTRAP_*` environment seed, then exit. A no-op if one already
+/// exists; an error if no seed is configured and none exists.
+///
+/// # Errors
+///
+/// Returns an error on configuration load, database connection, or seed failure.
+pub async fn run_bootstrap() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+    tracing_subscriber::fmt().try_init().ok();
+    let config = config::Config::from_env().context("load configuration")?;
+    let pool = db::init_pool(&config.database_url, 1)
+        .await
+        .context("connect to the database")?;
+    if seed_admin_if_configured(&pool, config.password_min_length).await? {
+        return Ok(());
+    }
+    if models::user::admin_exists(&pool).await? {
+        tracing::info!("an administrator already exists; bootstrap is a no-op");
+        return Ok(());
+    }
+    anyhow::bail!(
+        "set REVERIE_BOOTSTRAP_EMAIL, REVERIE_BOOTSTRAP_DISPLAY_NAME, and \
+         REVERIE_BOOTSTRAP_PASSWORD to create the first administrator"
+    )
+}
+
+/// `reverie reset-password <email>` — issue a recovery PIN for an account to the
+/// operator host file (mode 0600), then exit. The operator relays the PIN to the
+/// user, who completes the reset at `/auth/reset-password`.
+///
+/// # Errors
+///
+/// Returns an error when the account is unknown, or on configuration, database,
+/// hashing, or file-write failure.
+pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+    tracing_subscriber::fmt().try_init().ok();
+    let config = config::Config::from_env().context("load configuration")?;
+    let pool = db::init_pool(&config.database_url, 1)
+        .await
+        .context("connect to the database")?;
+    let user = models::user::find_by_email(&pool, email)
+        .await
+        .context("look up the account")?
+        .ok_or_else(|| anyhow::anyhow!("no account with email {email:?}"))?;
+    models::password_reset_pin::supersede_active(&pool, user.id)
+        .await
+        .context("supersede prior recovery PINs")?;
+    let pin = auth::recovery::generate_pin();
+    let pin_hash = auth::password::hash_password(pin.as_bytes())
+        .map_err(|e| anyhow::anyhow!("failed to hash the recovery PIN: {e}"))?;
+    let expires_at =
+        time::OffsetDateTime::now_utc() + time::Duration::seconds(config.recovery_pin_ttl_secs);
+    models::password_reset_pin::insert(&pool, user.id, &pin_hash, expires_at)
+        .await
+        .context("persist the recovery PIN")?;
+    auth::recovery::write_pin_file(
+        std::path::Path::new(&config.recovery_pin_file_path),
+        email,
+        &pin,
+        expires_at,
+    )
+    .context("write the recovery PIN file")?;
+    tracing::info!(
+        email = %email,
+        path = %config.recovery_pin_file_path,
+        "wrote a recovery PIN; share it with the user to reset their password"
+    );
+    Ok(())
+}
+
+/// `reverie unlock-account <email>` — clear the per-account login throttle for an
+/// account (DB-backed, so this out-of-band process can clear it), then exit.
+///
+/// # Errors
+///
+/// Returns an error on configuration, database connection, or update failure.
+pub async fn run_unlock_account(email: &str) -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+    tracing_subscriber::fmt().try_init().ok();
+    let config = config::Config::from_env().context("load configuration")?;
+    let pool = db::init_pool(&config.database_url, 1)
+        .await
+        .context("connect to the database")?;
+    models::login_throttle::reset(&pool, email)
+        .await
+        .context("clear the login throttle")?;
+    tracing::info!(email = %email, "cleared the per-account login throttle");
     Ok(())
 }
 
@@ -783,7 +973,7 @@ mod tests {
         let unknown = vec!["migration".to_string()];
         let err = parse_command(&unknown).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("unknown subcommand"), "got: {msg}");
+        assert!(msg.contains("unknown"), "got: {msg}");
         assert!(
             msg.contains("migration"),
             "should echo the bad token: {msg}"
@@ -793,9 +983,35 @@ mod tests {
         let trailing = vec!["migrate".to_string(), "typo".to_string()];
         let err = parse_command(&trailing).unwrap_err();
         assert!(
-            err.to_string().contains("trailing"),
+            err.to_string().contains("arguments"),
             "trailing args must be rejected, got: {err}"
         );
+    }
+
+    #[test]
+    fn parse_command_accepts_auth_subcommands() {
+        assert_eq!(
+            parse_command(&["bootstrap".to_string()]).unwrap(),
+            Command::Bootstrap
+        );
+        assert_eq!(
+            parse_command(&["reset-password".to_string(), "a@b.com".to_string()]).unwrap(),
+            Command::ResetPassword {
+                email: "a@b.com".to_string()
+            }
+        );
+        assert_eq!(
+            parse_command(&["unlock-account".to_string(), "a@b.com".to_string()]).unwrap(),
+            Command::UnlockAccount {
+                email: "a@b.com".to_string()
+            }
+        );
+
+        // bootstrap takes no positional args.
+        assert!(parse_command(&["bootstrap".to_string(), "x".to_string()]).is_err());
+        // The arg-bearing subcommands require their email.
+        assert!(parse_command(&["reset-password".to_string()]).is_err());
+        assert!(parse_command(&["unlock-account".to_string()]).is_err());
     }
 
     #[test]
