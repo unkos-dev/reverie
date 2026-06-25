@@ -129,6 +129,11 @@ pub enum AppError {
     /// context.
     #[error("{0}")]
     MalformedQuery(String),
+    /// Per-source login rate limit exceeded (governor, per client IP). RFC 9457
+    /// `type` [`problems::RATE_LIMITED`]. HTTP 429 Too Many Requests. Raised by
+    /// the login / recovery handlers; the per-account backoff is separate.
+    #[error("too many requests")]
+    RateLimited,
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 9457 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
@@ -216,6 +221,12 @@ impl IntoResponse for AppError {
                 problems::MALFORMED_QUERY,
                 "Bad Request",
                 msg,
+            ),
+            Self::RateLimited => (
+                StatusCode::TOO_MANY_REQUESTS,
+                problems::RATE_LIMITED,
+                "Too Many Requests",
+                "Too many login attempts; please try again later.".to_owned(),
             ),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");

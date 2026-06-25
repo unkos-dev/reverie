@@ -100,6 +100,27 @@
       "type": "string",
       "default": "info"
     },
+    "login_rate_per_min": {
+      "description": "Per-source login rate limit, attempts per minute per client IP\n(`REVERIE_LOGIN_RATE_PER_MIN`, default `10`). The hard blocker against\ncredential-stuffing; must be at least 1 (a zero quota locks everyone out).",
+      "type": "integer",
+      "format": "uint32",
+      "default": 10,
+      "minimum": 1
+    },
+    "login_throttle_base_secs": {
+      "description": "Per-account backoff base, seconds (`REVERIE_LOGIN_THROTTLE_BASE_SECS`,\ndefault `2`). The first failed login for an account waits the lesser of\nbase and cap; each further failure doubles the base up to the cap.",
+      "type": "integer",
+      "format": "int32",
+      "default": 2,
+      "minimum": 1
+    },
+    "login_throttle_cap_secs": {
+      "description": "Per-account backoff cap, seconds (`REVERIE_LOGIN_THROTTLE_CAP_SECS`,\ndefault `900`). Upper bound on the escalating per-account delay.",
+      "type": "integer",
+      "format": "int32",
+      "default": 900,
+      "minimum": 1
+    },
     "migration_database_url": {
       "description": "Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`\ncredentials for the ephemeral migration pool. `None` on the default\nserver path: the application process holds no migration credential\nunless [`Self::auto_migrate`] is set. Required (else\n[`ConfigError::MissingVar`]) only when `auto_migrate` is true.",
       "type": [
@@ -161,6 +182,14 @@
     "security": {
       "description": "Response-header policy (CSP, HSTS, reporting endpoint, dist\npath). `csp_*_header` fields are finalised by [`crate::run`]\nafter construction.",
       "$ref": "#/$defs/SecurityConfig"
+    },
+    "trusted_client_ip_header": {
+      "description": "Optional forwarded-for header to trust for the client IP behind a reverse\nproxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset\nby default: the TCP peer is used. An unauthenticated forwarded header is\nattacker-spoofable, so it is honoured only when an operator names it.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
     },
     "writeback": {
       "description": "Writeback worker knobs (concurrency, retry cap).",

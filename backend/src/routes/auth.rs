@@ -3,6 +3,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect};
 use axum_extra::extract::cookie::CookieJar;
 use axum_extra::extract::{Query, QueryRejection};
@@ -35,6 +36,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(oidc_login))
         .routes(routes!(callback))
+        .routes(routes!(local_login))
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(update_theme))
@@ -54,7 +56,7 @@ pub struct CallbackParams {
 
 /// `GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.
 ///
-/// Renamed from `/auth/oidc/login` so the SPA can own `/auth/oidc/login` as a real login
+/// Renamed from `/auth/login` so the SPA can own `/auth/login` as a real login
 /// page (decision 2). The OIDC callback path deliberately stays `/auth/callback`
 /// (NOT `/auth/oidc/callback`) so operators need not reconfigure
 /// `OIDC_REDIRECT_URI` at their `IdP`.
@@ -261,6 +263,140 @@ async fn callback(
     let jar = set_theme_cookie(jar, user.theme_preference);
 
     Ok((jar, Redirect::temporary("/")))
+}
+
+/// Request body for `POST /auth/local/login`. Explicit allow-list (no
+/// mass-assignment): only the two credential fields are accepted.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct LocalLoginRequest {
+    /// Account email; matched case-insensitively against `users.email`.
+    email: String,
+    /// Plaintext password, verified against the stored Argon2id hash.
+    password: String,
+}
+
+/// `POST /auth/local/login` — email + password sign-in, establishing the same
+/// session contract as the OIDC callback (invariant 2).
+///
+/// THREAT (enumeration): unknown email and wrong password return the identical
+/// generic 422, and both spend equivalent Argon2 work (decision 10), so neither
+/// the response nor the timing distinguishes a non-existent account.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when local authentication is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a
+///   failed attempt arrives during an active per-account backoff.
+/// - [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).
+/// - [`AppError::Internal`] on session-store or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/local/login",
+    tag = "auth",
+    security(()),
+    request_body = LocalLoginRequest,
+    responses(
+        (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
+        (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Invalid credentials (generic; identical for unknown email and wrong password)", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn local_login(
+    State(state): State<AppState>,
+    session: Session,
+    jar: CookieJar,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<LocalLoginRequest>,
+) -> Result<(CookieJar, StatusCode), AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+
+    // Per-source hard block (governor). Tolerates a missing peer (the test
+    // harness supplies none); the per-account backoff is the IP-independent
+    // backstop.
+    let peer = peer.0.map(|addr| addr.ip());
+    if let Some(ip) = crate::auth::rate_limit::client_ip(
+        &headers,
+        peer,
+        state.config.trusted_client_ip_header.as_deref(),
+    ) && state.login_limiter.check_key(&ip).is_err()
+    {
+        return Err(AppError::RateLimited);
+    }
+
+    // Resolve the account, then verify. On an unknown email or an account with
+    // no local credential, spend equivalent Argon2 work against a dummy hash so
+    // login latency does not leak account existence (decision 10).
+    let account = user::find_by_email(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let credential = match &account {
+        Some(u) => crate::models::local_credentials::find_by_user_id(&state.pool, u.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?,
+        None => None,
+    };
+    let verified = if let Some(cred) = &credential {
+        crate::auth::password::verify_password(body.password.as_bytes(), &cred.password_hash)
+            .is_ok()
+    } else {
+        // Spend equivalent Argon2 work and discard the (always false) result so
+        // an unknown account is timing-indistinguishable from a wrong password.
+        crate::auth::password::verify_against_dummy(body.password.as_bytes());
+        false
+    };
+
+    let account_exists = account.is_some();
+    // Decision 6: a correct password succeeds even during an active backoff
+    // (which it then clears). Verify-first means backoff never blocks a
+    // legitimate login; it only rejects continued *wrong* attempts.
+    let session_user = if verified { account } else { None };
+    if let Some(user) = session_user {
+        crate::models::login_throttle::reset(&state.pool, &body.email)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
+        // Session contract (invariant 2): rotate id + persist identity, mint the
+        // CSRF synchronizer token, seed the theme cookie. Identical to the OIDC
+        // callback, returning 204 rather than a redirect.
+        crate::auth::session::login(&session, &user)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
+        let mut csrf_bytes = [0u8; 32];
+        rand::fill(&mut csrf_bytes);
+        let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
+        session
+            .insert("csrf_token", &csrf_token)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let jar = set_theme_cookie(jar, user.theme_preference);
+        return Ok((jar, StatusCode::NO_CONTENT));
+    }
+
+    // Failed attempt. Escalate the per-account backoff, but only for a real
+    // account, so an unknown email cannot grow the throttle table unbounded (the
+    // per-source limiter covers unknown-email spray). A wrong attempt during an
+    // active backoff is rejected hard without further growing the counter.
+    if account_exists {
+        if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+            .is_some()
+        {
+            return Err(AppError::RateLimited);
+        }
+        crate::models::login_throttle::record_failure(
+            &state.pool,
+            &body.email,
+            state.config.login_throttle_base_secs,
+            state.config.login_throttle_cap_secs,
+        )
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    }
+    Err(AppError::Validation("invalid email or password".to_owned()))
 }
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
@@ -727,6 +863,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -919,6 +1056,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1066,6 +1204,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1183,6 +1322,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1297,6 +1437,7 @@ mod tests {
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1367,6 +1508,155 @@ mod tests {
             expiry_after > expiry_before,
             "an authenticated read must slide the inactivity expiry \
              (before={expiry_before}, after={expiry_after})"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_succeeds_and_establishes_session(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "local-happy",
+            "happy@example.com",
+            "correct horse battery staple",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "happy@example.com",
+                "password": "correct horse battery staple",
+            }))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::NO_CONTENT,
+            "correct credentials establish a session"
+        );
+
+        // Invariant 2: the local-login session carries through and a non-empty
+        // CSRF synchronizer token was minted (same contract as the OIDC callback).
+        let me = server.get("/auth/me").await;
+        assert_eq!(me.status_code(), StatusCode::OK, "session carries through");
+        let body: serde_json::Value = me.json();
+        let csrf = body.get("csrf_token").and_then(|v| v.as_str());
+        assert!(
+            csrf.is_some_and(|t| !t.is_empty()),
+            "local login mints a CSRF token; got: {body}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_wrong_password_is_generic_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "local-wrong",
+            "wrong@example.com",
+            "the right one",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "wrong@example.com", "password": "the WRONG one"}))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_unknown_email_matches_wrong_password(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // No such account exists: the response must be the identical generic 422
+        // a wrong password yields (no enumeration; decision 10).
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "ghost@example.com", "password": "anything"}))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "an unknown email returns the same generic 422 as a wrong password"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_session_is_csrf_enforced(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "csrf",
+            "csrf@example.com",
+            "a good password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "csrf@example.com", "password": "a good password"}))
+            .await;
+
+        // A session-authenticated mutation with no token is blocked (428).
+        let no_token = server
+            .post("/api/v1/shelves")
+            .json(&serde_json::json!({"name": "Shelf"}))
+            .await;
+        assert_eq!(
+            no_token.status_code(),
+            StatusCode::PRECONDITION_REQUIRED,
+            "CSRF layer blocks a session mutation with no X-CSRF-Token"
+        );
+
+        // A wrong token is rejected (403).
+        let wrong = server
+            .post("/api/v1/shelves")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_static("not-the-token"),
+            )
+            .json(&serde_json::json!({"name": "Shelf"}))
+            .await;
+        assert_eq!(
+            wrong.status_code(),
+            StatusCode::FORBIDDEN,
+            "a mismatched CSRF token is rejected"
+        );
+
+        // The minted token passes the CSRF layer (invariant 2): the request
+        // reaches the handler rather than being blocked at 428/403.
+        let me: serde_json::Value = server.get("/auth/me").await.json();
+        let token = me
+            .get("csrf_token")
+            .and_then(|v| v.as_str())
+            .expect("csrf token minted")
+            .to_owned();
+        let with_token = server
+            .post("/api/v1/shelves")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_str(&token).expect("valid header"),
+            )
+            .json(&serde_json::json!({"name": "Shelf"}))
+            .await;
+        assert_ne!(
+            with_token.status_code(),
+            StatusCode::PRECONDITION_REQUIRED,
+            "a valid token must not be blocked by the CSRF layer"
+        );
+        assert_ne!(
+            with_token.status_code(),
+            StatusCode::FORBIDDEN,
+            "a valid token must not be rejected by the CSRF layer"
         );
     }
 }

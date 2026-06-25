@@ -117,10 +117,17 @@ where
     if let Some(opds) = routes::opds::router_enabled(&state.config.opds) {
         api_like = api_like.merge(opds);
     }
-    let api_like = api_like.layer(axum::middleware::from_fn_with_state(
-        state.clone(),
-        security::headers::api_csp_layer,
-    ));
+    let api_like = api_like
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            security::headers::api_csp_layer,
+        ))
+        // CSRF synchronizer-token enforcement (Phase 2). Self-exempts safe
+        // methods and non-session-authenticated callers, so pre-auth `/auth/*`
+        // POSTs and Basic-auth OPDS callers pass through; it gates
+        // session-authenticated mutations on `/api/v1/*`. Session state is
+        // provided by the `session_layer` wrapping the composite below.
+        .layer(axum::middleware::from_fn(security::csrf::csrf_required));
 
     // SPA assets router (None in API-only dev — Vite owns the HTML).
     let spa =
@@ -306,11 +313,20 @@ pub async fn run() -> anyhow::Result<()> {
     let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
     let last_settings_reload = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 
+    // Per-IP login limiter. `login_rate_per_min` is validated `>= 1` at config
+    // load, so the NonZeroU32 conversion cannot fail here; surface a startup
+    // error rather than panic on the validated-impossible case.
+    let login_limiter = auth::rate_limit::build_login_limiter(
+        std::num::NonZeroU32::new(config.login_rate_per_min)
+            .ok_or_else(|| anyhow::anyhow!("login_rate_per_min must be >= 1"))?,
+    );
+
     let state = AppState {
         pool,
         ingestion_pool,
         config: config.clone(),
         oidc_client,
+        login_limiter,
         settings,
         last_settings_reload,
     };
@@ -399,10 +415,18 @@ pub async fn run() -> anyhow::Result<()> {
     // already cancelled it) and the workers drained before run() returns —
     // otherwise the error path leaks live tasks for the runtime to abort
     // mid-IO, the exact unclean exit graceful shutdown closes.
-    let serve_result = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(cancel_token.clone()))
-        .await
-        .map_err(|e| anyhow::anyhow!("server error: {e}"));
+    // `into_make_service_with_connect_info` exposes the TCP peer as
+    // `ConnectInfo<SocketAddr>` so the login rate limiter can key on the client
+    // IP. The auth handlers extract it as `Option<ConnectInfo<..>>` and fall
+    // back to the per-account backoff when absent (the test harness supplies no
+    // peer).
+    let serve_result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal(cancel_token.clone()))
+    .await
+    .map_err(|e| anyhow::anyhow!("server error: {e}"));
 
     cancel_token.cancel();
     drain_workers(

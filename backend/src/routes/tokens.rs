@@ -240,6 +240,7 @@ mod tests {
             ingestion_pool: pool.clone(),
             config: test_support::test_config(),
             oidc_client: Some(test_support::test_oidc_client()),
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };

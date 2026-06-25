@@ -119,6 +119,25 @@ pub struct Config {
     /// never hand out a connection (`PoolTimedOut` on the first query).
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub db_max_connections: u32,
+    /// Per-source login rate limit, attempts per minute per client IP
+    /// (`REVERIE_LOGIN_RATE_PER_MIN`, default `10`). The hard blocker against
+    /// credential-stuffing; must be at least 1 (a zero quota locks everyone out).
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub login_rate_per_min: u32,
+    /// Per-account backoff base, seconds (`REVERIE_LOGIN_THROTTLE_BASE_SECS`,
+    /// default `2`). The first failed login for an account waits the lesser of
+    /// base and cap; each further failure doubles the base up to the cap.
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub login_throttle_base_secs: i32,
+    /// Per-account backoff cap, seconds (`REVERIE_LOGIN_THROTTLE_CAP_SECS`,
+    /// default `900`). Upper bound on the escalating per-account delay.
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub login_throttle_cap_secs: i32,
+    /// Optional forwarded-for header to trust for the client IP behind a reverse
+    /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
+    /// by default: the TCP peer is used. An unauthenticated forwarded header is
+    /// attacker-spoofable, so it is honoured only when an operator names it.
+    pub trusted_client_ip_header: Option<String>,
     /// OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC
     /// authentication path. OIDC is enabled iff this is set (decision 11); when
     /// present, the other three `OIDC_*` fields become required together (Gate
@@ -619,6 +638,10 @@ impl Default for Config {
             quarantine_path: "./quarantine".into(),
             log_level: "info".into(),
             db_max_connections: 10,
+            login_rate_per_min: 10,
+            login_throttle_base_secs: 2,
+            login_throttle_cap_secs: 900,
+            trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),
             oidc_client_id: String::new(),

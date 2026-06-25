@@ -56,8 +56,8 @@ static DUMMY_PHC: LazyLock<String> =
 /// returns faster than the wrong-password path. The login handler calls this on
 /// the no-account path so latency is independent of account existence (OWASP
 /// Authentication Cheat Sheet: uniform response AND timing). The boolean is
-/// always `false`; callers spend the work and ignore the value.
-#[must_use]
+/// always `false`; callers spend the work and ignore the value (it is not
+/// `#[must_use]` precisely because discarding it is the intended use).
 pub fn verify_against_dummy(password: &[u8]) -> bool {
     verify_password(password, &DUMMY_PHC).is_ok()
 }

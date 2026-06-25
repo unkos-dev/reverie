@@ -17,12 +17,38 @@
 //! unauthenticated forwarded header is attacker-spoofable (RFC 7239 security
 //! considerations). With no header configured it keys on the TCP peer.
 
-use std::net::IpAddr;
+use std::convert::Infallible;
+use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::HeaderMap;
+use axum::http::request::Parts;
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
+
+/// Never-rejecting extractor for the TCP peer address.
+///
+/// `Option<ConnectInfo<_>>` does not work as an axum 0.8 extractor (it requires
+/// `OptionalFromRequestParts`, which `ConnectInfo` does not implement), so this
+/// reads the `ConnectInfo` out of the request extensions directly and yields
+/// `None` when absent. The test harness (`axum_test`) supplies no peer, so a
+/// non-optional `ConnectInfo` extractor would 500 every request; the per-account
+/// backoff is the IP-independent backstop when the peer is unknown.
+pub struct PeerAddr(pub Option<SocketAddr>);
+
+impl<S: Send + Sync> FromRequestParts<S> for PeerAddr {
+    type Rejection = Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self(
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ci| ci.0),
+        ))
+    }
+}
 
 /// Per-IP login limiter. Keyed on the resolved client [`IpAddr`].
 pub type LoginLimiter = DefaultKeyedRateLimiter<IpAddr>;

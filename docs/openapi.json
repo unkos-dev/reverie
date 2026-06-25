@@ -2553,6 +2553,64 @@
         ]
       }
     },
+    "/auth/local/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`POST /auth/local/login` — email + password sign-in, establishing the same\nsession contract as the OIDC callback (invariant 2).",
+        "description": "THREAT (enumeration): unknown email and wrong password return the identical\ngeneric 422, and both spend equivalent Argon2 work (decision 10), so neither\nthe response nor the timing distinguishes a non-existent account.\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a\n  failed attempt arrives during an active per-account backoff.\n- [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).\n- [`AppError::Internal`] on session-store or database failure.",
+        "operationId": "local_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"
+          },
+          "404": {
+            "description": "Local authentication is disabled on this instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid credentials (generic; identical for unknown email and wrong password)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many login attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/auth/logout": {
       "post": {
         "tags": [
@@ -2661,7 +2719,7 @@
           "auth"
         ],
         "summary": "`GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.",
-        "description": "Renamed from `/auth/oidc/login` so the SPA can own `/auth/oidc/login` as a real login\npage (decision 2). The OIDC callback path deliberately stays `/auth/callback`\n(NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured (decision 11).\n- [`AppError::Internal`] when session storage fails.",
+        "description": "Renamed from `/auth/login` so the SPA can own `/auth/login` as a real login\npage (decision 2). The OIDC callback path deliberately stays `/auth/callback`\n(NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured (decision 11).\n- [`AppError::Internal`] when session storage fails.",
         "operationId": "oidc_login",
         "responses": {
           "307": {
@@ -4456,6 +4514,24 @@
           "failed",
           "skipped"
         ]
+      },
+      "LocalLoginRequest": {
+        "type": "object",
+        "description": "Request body for `POST /auth/local/login`. Explicit allow-list (no\nmass-assignment): only the two credential fields are accepted.",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Account email; matched case-insensitively against `users.email`."
+          },
+          "password": {
+            "type": "string",
+            "description": "Plaintext password, verified against the stored Argon2id hash."
+          }
+        }
       },
       "LockPayload": {
         "type": "object",

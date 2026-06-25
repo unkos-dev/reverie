@@ -62,6 +62,10 @@ pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
 /// HTTP 400 Bad Request.
 pub const MALFORMED_QUERY: &str = "malformed-query";
 
+/// Per-source login rate limit exceeded
+/// ([`crate::error::AppError::RateLimited`]). HTTP 429.
+pub const RATE_LIMITED: &str = "rate-limited";
+
 /// Generic internal error (anything wrapped in
 /// [`crate::error::AppError::Internal`]). `detail` is a fixed
 /// non-leaking string; the inner cause is `tracing::error!`-logged
