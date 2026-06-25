@@ -39,6 +39,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(local_login))
         .routes(routes!(setup_status))
         .routes(routes!(setup))
+        .routes(routes!(forgot_password))
+        .routes(routes!(reset_password))
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(update_theme))
@@ -507,6 +509,206 @@ async fn setup(
         }
         Err(user::BootstrapError::Db(e)) => Err(AppError::Internal(e.into())),
     }
+}
+
+/// Resolve the client IP and enforce the per-source login/recovery rate limit.
+/// Tolerates a missing peer (test harness); shared by the login and recovery
+/// handlers.
+fn enforce_source_rate_limit(
+    state: &AppState,
+    headers: &HeaderMap,
+    peer: &crate::auth::rate_limit::PeerAddr,
+) -> Result<(), AppError> {
+    let ip = peer.0.map(|addr| addr.ip());
+    if let Some(ip) = crate::auth::rate_limit::client_ip(
+        headers,
+        ip,
+        state.config.trusted_client_ip_header.as_deref(),
+    ) && state.login_limiter.check_key(&ip).is_err()
+    {
+        return Err(AppError::RateLimited);
+    }
+    Ok(())
+}
+
+/// Request body for `POST /auth/forgot-password`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct ForgotPasswordRequest {
+    /// Account email to start recovery for.
+    email: String,
+}
+
+/// `POST /auth/forgot-password` — start email-less PIN recovery.
+///
+/// THREAT (codeguard #2): always returns a generic 200 — the response never
+/// reveals whether the email exists. When it does, a fresh CSPRNG PIN is
+/// generated, prior active PINs for the user are superseded (at most one active
+/// PIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written
+/// to the operator-readable host file (mode 0600). A failed file write leaves an
+/// unconsumed-but-unusable row that simply expires; it is never a cleartext PIN
+/// with no consuming row. On an unknown email, equivalent Argon2 work is spent so
+/// timing does not leak existence (decision 10; a small DB/file residual is
+/// accepted).
+///
+/// # Errors
+/// - [`AppError::NotFound`] when local authentication is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/forgot-password",
+    tag = "auth",
+    security(()),
+    request_body = ForgotPasswordRequest,
+    responses(
+        (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn forgot_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<ForgotPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    let user = user::find_by_email(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    if let Some(user) = user {
+        crate::models::password_reset_pin::supersede_active(&state.pool, user.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let pin = crate::auth::recovery::generate_pin();
+        let pin_hash = crate::auth::password::hash_password(pin.as_bytes())
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("pin hash failed: {e}")))?;
+        let expires_at = time::OffsetDateTime::now_utc()
+            + time::Duration::seconds(state.config.recovery_pin_ttl_secs);
+        // DB row first: a later file-write failure leaves only an unusable row.
+        crate::models::password_reset_pin::insert(&state.pool, user.id, &pin_hash, expires_at)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let email = user.email.as_deref().unwrap_or(&body.email);
+        if let Err(e) = crate::auth::recovery::write_pin_file(
+            std::path::Path::new(&state.config.recovery_pin_file_path),
+            email,
+            &pin,
+            expires_at,
+        ) {
+            // Never surface to the client; the row expires harmlessly.
+            tracing::error!(error = %e, "failed to write recovery PIN file");
+        }
+    } else {
+        // Unknown email: spend comparable Argon2 work so response timing does not
+        // reveal account existence (decision 10).
+        crate::auth::password::verify_against_dummy(body.email.as_bytes());
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// Request body for `POST /auth/reset-password`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct ResetPasswordRequest {
+    /// Account email.
+    email: String,
+    /// The recovery PIN from the host file.
+    pin: String,
+    /// New plaintext password; enforced against `password_min_length`.
+    new_password: String,
+}
+
+/// `POST /auth/reset-password` — complete recovery with a PIN.
+///
+/// THREAT (codeguard #2): the PIN is single-use (race-safe consume), short-lived,
+/// and verified constant-time via Argon2. Any failure (unknown email, no active
+/// PIN, wrong PIN, expired, too-short password) returns one generic 422, so the
+/// response never distinguishes which part failed; the no-PIN path spends
+/// equivalent work. Reset does NOT establish a session (no auto-login) and forces
+/// re-authentication. The PIN row is consumed before the password is set and the
+/// host file is then removed.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when local authentication is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
+/// - [`AppError::Validation`] (422) generic failure.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/reset-password",
+    tag = "auth",
+    security(()),
+    request_body = ResetPasswordRequest,
+    responses(
+        (status = 200, description = "Password reset; no session established (re-authentication required)"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn reset_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<ResetPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    let generic = || AppError::Validation("invalid or expired reset request".to_owned());
+
+    if body.new_password.chars().count() < state.config.password_min_length {
+        return Err(generic());
+    }
+
+    let user = user::find_by_email(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let active = match &user {
+        Some(u) => crate::models::password_reset_pin::find_active_by_user(&state.pool, u.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?,
+        None => None,
+    };
+    let verified = if let Some(pin) = &active {
+        crate::auth::password::verify_password(body.pin.as_bytes(), &pin.pin_hash).is_ok()
+    } else {
+        // Spend equivalent work on the no-PIN path (timing parity).
+        crate::auth::password::verify_against_dummy(body.pin.as_bytes());
+        false
+    };
+
+    if verified && let (Some(user), Some(pin)) = (&user, &active) {
+        // Single-use: consume first (race-safe). A losing concurrent reset gets
+        // `false` and falls through to the generic failure.
+        let consumed = crate::models::password_reset_pin::consume(&state.pool, pin.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        if consumed {
+            let phc = crate::auth::password::hash_password(body.new_password.as_bytes())
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+            crate::models::local_credentials::set_password(&state.pool, user.id, &phc)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+            if let Err(e) = crate::auth::recovery::remove_pin_file(std::path::Path::new(
+                &state.config.recovery_pin_file_path,
+            )) {
+                tracing::warn!(error = %e, "failed to remove recovery PIN file after reset");
+            }
+            // No session established: the user must sign in with the new password.
+            return Ok(StatusCode::OK);
+        }
+    }
+
+    Err(generic())
 }
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
@@ -1845,5 +2047,121 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY,
             "a password below the minimum length is rejected"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn forgot_password_is_generic_for_unknown_email(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // No such account: still a generic 200 (no enumeration). This path writes
+        // no PIN file, so it cannot race the happy-path test below.
+        let resp = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "ghost@example.com"}))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_with_invalid_pin_is_generic_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "reset-bad",
+            "reset-bad@example.com",
+            "original password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // No PIN was ever issued: any reset attempt is the generic 422.
+        let resp = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "reset-bad@example.com",
+                "pin": "0000000000",
+                "new_password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn forgot_then_reset_changes_the_password(pool: sqlx::PgPool) {
+        // The ONLY test that issues a PIN for a real account, so it is the sole
+        // writer of the shared recovery PIN file (no cross-test race).
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "recover",
+            "recover@example.com",
+            "the old password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let forgot = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "recover@example.com"}))
+            .await;
+        assert_eq!(forgot.status_code(), StatusCode::OK);
+
+        // Read the clear PIN from the operator host file (the model stores only
+        // its hash).
+        let pin_path = test_support::test_config().recovery_pin_file_path;
+        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
+        let pin = contents
+            .lines()
+            .find_map(|l| l.strip_prefix("pin: "))
+            .expect("PIN line in file")
+            .to_owned();
+
+        let reset = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "recover@example.com",
+                "pin": pin,
+                "new_password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(
+            reset.status_code(),
+            StatusCode::OK,
+            "a valid PIN resets the password"
+        );
+
+        // No auto-login: the new password works, the old one does not.
+        let with_new = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "recover@example.com",
+                "password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(
+            with_new.status_code(),
+            StatusCode::NO_CONTENT,
+            "the new password authenticates"
+        );
+
+        // A consumed PIN cannot be reused.
+        let reuse = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "recover@example.com",
+                "pin": pin,
+                "new_password": "yet another password",
+            }))
+            .await;
+        assert_eq!(
+            reuse.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a consumed PIN is single-use"
+        );
+        // The successful reset already removed the PIN file; nothing to clean up.
     }
 }

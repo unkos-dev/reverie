@@ -186,6 +186,18 @@
       "type": "string",
       "default": "./quarantine"
     },
+    "recovery_pin_file_path": {
+      "description": "Filesystem path the clear recovery PIN is written to (mode 0600), for an\noperator to read and relay (`REVERIE_RECOVERY_PIN_FILE_PATH`, default\n`./reverie-recovery.pin`). MUST be outside any web-served directory; the\ndatabase stores only the PIN's Argon2id hash.",
+      "type": "string",
+      "default": "./reverie-recovery.pin"
+    },
+    "recovery_pin_ttl_secs": {
+      "description": "Lifetime of a forgot-password recovery PIN, seconds\n(`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by\ndesign: the PIN is single-use and rate-limited.",
+      "type": "integer",
+      "format": "int64",
+      "default": 900,
+      "minimum": 60
+    },
     "security": {
       "description": "Response-header policy (CSP, HSTS, reporting endpoint, dist\npath). `csp_*_header` fields are finalised by [`crate::run`]\nafter construction.",
       "$ref": "#/$defs/SecurityConfig"

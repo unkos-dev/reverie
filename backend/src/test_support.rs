@@ -26,6 +26,8 @@ pub fn test_config() -> Config {
         login_throttle_base_secs: 2,
         login_throttle_cap_secs: 900,
         password_min_length: 8,
+        recovery_pin_ttl_secs: 900,
+        recovery_pin_file_path: "./reverie-recovery.pin".into(),
         trusted_client_ip_header: None,
         migration_database_url: None,
         auto_migrate: false,
