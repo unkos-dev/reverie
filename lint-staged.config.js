@@ -35,14 +35,14 @@ module.exports = {
   // `|| true` at the same time as the bg-black fix lands, alongside
   // flipping the CI `continue-on-error` flag.
   "frontend/src/**/*.{ts,tsx,html,css}": () => "sh -c 'npm --prefix frontend run detect || true'",
-  // Reject issue-tracker references (UNK- + digits) in public-facing source
-  // and docs — they describe the codebase/product, not a private tracker.
-  // lint-staged passes only the staged files, so this is changed-files only;
-  // scripts/no-issue-refs.sh owns the in-scope policy (source + Markdown,
-  // minus agent-process / vendored / archival files). The pre-release sweep
-  // clears the pre-existing references in untouched files.
-  "backend/src/**/*.rs": "scripts/no-issue-refs.sh",
-  "frontend/src/**/*.{ts,tsx,js,jsx,css}": "scripts/no-issue-refs.sh",
+  // Reject issue-tracker references (UNK- + digits) and plan-artifact labels
+  // ((S2), decision/invariant numbering, Phase N) in public-facing source —
+  // both describe planning artifacts, not the codebase. lint-staged passes only
+  // the staged files, so these are changed-files only; each script owns its
+  // in-scope policy (no-issue-refs covers source + Markdown; no-plan-refs covers
+  // source only, since plans/ADRs/docs legitimately cite plan steps).
+  "backend/src/**/*.rs": ["scripts/no-issue-refs.sh", "scripts/no-plan-refs.sh"],
+  "frontend/src/**/*.{ts,tsx,js,jsx,css}": ["scripts/no-issue-refs.sh", "scripts/no-plan-refs.sh"],
   // Markdown gets two prose passes: the issue-ref guard, then the Vale prose
   // linter. vale-lint.sh owns the in-scope set (docs/src, adr, repo-root
   // Markdown, minus agent-process files) and runs the same locally and in CI.
