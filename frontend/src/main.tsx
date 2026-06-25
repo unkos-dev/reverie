@@ -55,6 +55,33 @@ const routes: RouteObject[] = [
       adminDashboardRoute,
     ],
   },
+  // Pre-auth screens (S2). Siblings of the app-shell root, NOT children:
+  // they must render without the shell and outside the `useSessionRecovery`
+  // redirect funnel, or an unauthenticated visitor would loop.
+  {
+    path: "/auth/login",
+    errorElement: <RootErrorBoundary />,
+    lazy: async () => {
+      const mod = await import("./routes/auth-login");
+      return { Component: mod.Component };
+    },
+  },
+  {
+    path: "/auth/setup",
+    errorElement: <RootErrorBoundary />,
+    lazy: async () => {
+      const mod = await import("./routes/auth-setup");
+      return { Component: mod.Component };
+    },
+  },
+  {
+    path: "/auth/forgot-password",
+    errorElement: <RootErrorBoundary />,
+    lazy: async () => {
+      const mod = await import("./routes/auth-forgot-password");
+      return { Component: mod.Component };
+    },
+  },
 ];
 
 if (import.meta.env.DEV) {

@@ -1,10 +1,37 @@
 import { useEffect, type ReactElement } from "react";
 import { Outlet } from "react-router";
 
+import { fetchSetupStatus } from "@/api/auth";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AppShell } from "@/components/shell/AppShell";
 import { useSessionRecovery } from "@/hooks/useSessionRecovery";
-import { setUnauthenticatedHandler } from "@/lib/query/client";
+import { queryClient, setUnauthenticatedHandler } from "@/lib/query/client";
+import { queryKeys } from "@/lib/query/keys";
+
+/**
+ * Resolve where an unauthenticated/lapsed session should be sent.
+ *
+ * Provider-aware (S2): when OIDC is enabled the redirect targets the
+ * backend OIDC initiator `/auth/oidc/login`, so a session lapse against
+ * a still-live upstream SSO re-authenticates silently. Otherwise it
+ * targets the SPA local login form at `/auth/login`. Provider state is
+ * read from the cached `GET /auth/setup/status` (shared with the auth
+ * screens); any failure to read it falls back to the always-valid local
+ * form rather than stranding the user.
+ */
+async function resolveLoginRedirect(): Promise<string> {
+  try {
+    const status = await queryClient.ensureQueryData({
+      queryKey: queryKeys.auth.setupStatus(),
+      queryFn: ({ signal }) => fetchSetupStatus(signal),
+      retry: false,
+      staleTime: Infinity,
+    });
+    return status.oidc_enabled ? "/auth/oidc/login" : "/auth/login";
+  } catch {
+    return "/auth/login";
+  }
+}
 
 /**
  * Root route component (`/`).
@@ -16,25 +43,29 @@ import { setUnauthenticatedHandler } from "@/lib/query/client";
  * transitions.
  *
  * Owns one cross-cutting effect: wiring the `QueryClient`'s 401
- * handler to a full-page redirect at `/auth/login`. The backend OIDC
- * initiator lives at that path (no SPA `/login` route exists), so the
- * redirect must be a `window.location.assign(...)` — a client-side
- * `navigate()` would never hit the backend. The handler lives in the
- * query module to avoid a router import there; injecting it on mount
- * keeps the two providers decoupled (see `lib/query/client.ts`). On
- * unmount the handler is reset to a no-op so a remounted router tree
- * (e.g. during HMR) cannot navigate via a stale closure.
+ * handler to a provider-aware full-page redirect (see
+ * {@link resolveLoginRedirect}). OIDC-enabled deployments go to the
+ * backend initiator `/auth/oidc/login` (silent re-auth); otherwise to
+ * the SPA local login form `/auth/login`. Either way the redirect is a
+ * `window.location.assign(...)` so an OIDC initiation actually hits the
+ * backend. The handler lives in the query module to avoid a router
+ * import there; injecting it on mount keeps the two providers
+ * decoupled (see `lib/query/client.ts`). On unmount the handler is
+ * reset to a no-op so a remounted router tree (e.g. during HMR) cannot
+ * navigate via a stale closure.
  *
  * It also drives session recovery via `useSessionRecovery`: when the
  * shared `/auth/me` query settles unauthenticated, that hook funnels
- * into the same `/auth/login` redirect, so a lapsed first-party session
- * recovers (silent re-auth, or the IdP login) instead of stranding the
- * user on a degraded shell.
+ * into the same redirect, so a lapsed first-party session recovers
+ * (silent re-auth, or the local form) instead of stranding the user on
+ * a degraded shell.
  */
 function App(): ReactElement {
   useEffect(() => {
     setUnauthenticatedHandler(() => {
-      window.location.assign("/auth/login");
+      void resolveLoginRedirect().then((target) => {
+        window.location.assign(target);
+      });
     });
     return () => {
       setUnauthenticatedHandler(() => {});

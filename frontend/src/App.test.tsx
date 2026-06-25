@@ -9,6 +9,7 @@ import { STUB_ME } from "@/__fixtures__/auth";
 
 import App from "./App";
 import { queryClient, setUnauthenticatedHandler } from "./lib/query/client";
+import { queryKeys } from "./lib/query/keys";
 
 // The shell's own behavior (rail, drawer, admin zone) is covered in
 // components/shell/*.test.tsx — here it would only drag auth/shelves
@@ -39,6 +40,14 @@ function mockAuthMe(status: number): void {
 beforeEach(() => {
   queryClient.clear();
   setUnauthenticatedHandler(() => {});
+  // Seed provider state so the provider-aware redirect resolves without a
+  // fetch (the redirect reads `/auth/setup/status` via `ensureQueryData`).
+  // Default is OIDC-off, so the redirect target stays `/auth/login`.
+  queryClient.setQueryData(queryKeys.auth.setupStatus(), {
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+  });
   mockAuthMe(200);
 });
 
@@ -135,6 +144,21 @@ describe("App — auth boundary", () => {
 
     await waitFor(() => {
       expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+    });
+  });
+
+  test("OIDC-on lapse redirects to /auth/oidc/login (silent re-auth preserved)", async () => {
+    queryClient.setQueryData(queryKeys.auth.setupStatus(), {
+      setup_required: false,
+      local_auth_enabled: true,
+      oidc_enabled: true,
+    });
+    mockAuthMe(401);
+    const loc = mockLocation();
+    renderApp();
+
+    await waitFor(() => {
+      expect(loc.assign).toHaveBeenCalledWith("/auth/oidc/login");
     });
   });
 
