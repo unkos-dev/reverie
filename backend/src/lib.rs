@@ -810,9 +810,9 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
     )
 }
 
-/// `reverie reset-password <email>` — issue a recovery PIN for an account to the
-/// operator host file (mode 0600), then exit. The operator relays the PIN to the
-/// user, who completes the reset at `/auth/reset-password`.
+/// `reverie reset-password <email>` — issue a recovery PIN for an account to a
+/// per-user operator file (mode 0600), then exit. The operator relays the PIN to
+/// the user, who completes the reset at `/auth/reset-password`.
 ///
 /// # Errors
 ///
@@ -841,7 +841,8 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
         .await
         .context("persist the recovery PIN")?;
     auth::recovery::write_pin_file(
-        std::path::Path::new(&config.recovery_pin_file_path),
+        std::path::Path::new(&config.recovery_pin_dir),
+        user.id,
         email,
         &pin,
         expires_at,
@@ -849,7 +850,7 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
     .context("write the recovery PIN file")?;
     tracing::info!(
         email = %email,
-        path = %config.recovery_pin_file_path,
+        path = %config.recovery_pin_dir,
         "wrote a recovery PIN; share it with the user to reset their password"
     );
     Ok(())

@@ -180,9 +180,11 @@ MFA is a planned later step.
 **Override:** Standard recovery guidance assumes an email-based reset link.
 Reverie has no outbound email and must be recoverable on an isolated host.
 
-**Reverie's position:** Forgot-password writes a CSPRNG PIN to an
-operator-readable host file (mode 0600, outside any web-served directory) as
-proof-of-host-access; the user completes the reset with that PIN. See
+**Reverie's position:** Forgot-password writes a CSPRNG PIN to a per-user
+operator-readable file (`<recovery_pin_dir>/<user_id>.pin`, mode 0600, in a
+directory created mode 0700, outside any web-served directory) as
+proof-of-host-access; the user completes the reset with that PIN. The per-user
+path keeps concurrent recoveries for different accounts from colliding. See
 `backend/src/auth/recovery.rs` and the `/auth/forgot-password` +
 `/auth/reset-password` handlers.
 

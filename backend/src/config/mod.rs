@@ -144,11 +144,13 @@ pub struct Config {
     /// design: the PIN is single-use and rate-limited.
     #[validate(range(min = 60, message = "must be at least 60"))]
     pub recovery_pin_ttl_secs: i64,
-    /// Filesystem path the clear recovery PIN is written to (mode 0600), for an
-    /// operator to read and relay (`REVERIE_RECOVERY_PIN_FILE_PATH`, default
-    /// `./reverie-recovery.pin`). MUST be outside any web-served directory; the
-    /// database stores only the PIN's Argon2id hash.
-    pub recovery_pin_file_path: String,
+    /// Directory the clear recovery PIN is written into, one file per user at
+    /// `<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an
+    /// operator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default
+    /// `./reverie-recovery`). Per-user files keep concurrent recoveries from
+    /// colliding. MUST be outside any web-served directory; the database stores
+    /// only the PIN's Argon2id hash.
+    pub recovery_pin_dir: String,
     /// Optional forwarded-for header to trust for the client IP behind a reverse
     /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
     /// by default: the TCP peer is used. An unauthenticated forwarded header is
@@ -659,7 +661,7 @@ impl Default for Config {
             login_throttle_cap_secs: 900,
             password_min_length: 8,
             recovery_pin_ttl_secs: 900,
-            recovery_pin_file_path: "./reverie-recovery.pin".into(),
+            recovery_pin_dir: "./reverie-recovery".into(),
             trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),

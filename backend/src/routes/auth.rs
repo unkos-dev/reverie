@@ -553,7 +553,7 @@ struct ForgotPasswordRequest {
 /// reveals whether the email exists. When it does, a fresh CSPRNG PIN is
 /// generated, prior active PINs for the user are superseded (at most one active
 /// PIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written
-/// to the operator-readable host file (mode 0600). A failed file write leaves an
+/// to a per-user operator-readable file (mode 0600). A failed file write leaves an
 /// unconsumed-but-unusable row that simply expires; it is never a cleartext PIN
 /// with no consuming row. On an unknown email, equivalent Argon2 work is spent so
 /// timing does not leak existence (a small DB/file residual is
@@ -605,7 +605,8 @@ async fn forgot_password(
             .map_err(|e| AppError::Internal(e.into()))?;
         let email = user.email.as_deref().unwrap_or(&body.email);
         if let Err(e) = crate::auth::recovery::write_pin_file(
-            std::path::Path::new(&state.config.recovery_pin_file_path),
+            std::path::Path::new(&state.config.recovery_pin_dir),
+            user.id,
             email,
             &pin,
             expires_at,
@@ -641,7 +642,7 @@ struct ResetPasswordRequest {
 /// response never distinguishes which part failed; the no-PIN path spends
 /// equivalent work. Reset does NOT establish a session (no auto-login) and forces
 /// re-authentication. The PIN row is consumed before the password is set and the
-/// host file is then removed.
+/// user's PIN file is then removed.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when local authentication is disabled.
@@ -707,9 +708,10 @@ async fn reset_password(
             crate::models::local_credentials::set_password(&state.pool, user.id, &phc)
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
-            if let Err(e) = crate::auth::recovery::remove_pin_file(std::path::Path::new(
-                &state.config.recovery_pin_file_path,
-            )) {
+            if let Err(e) = crate::auth::recovery::remove_pin_file(
+                std::path::Path::new(&state.config.recovery_pin_dir),
+                user.id,
+            ) {
                 tracing::warn!(error = %e, "failed to remove recovery PIN file after reset");
             }
             // No session established: the user must sign in with the new password.
@@ -2098,11 +2100,9 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn forgot_then_reset_changes_the_password(pool: sqlx::PgPool) {
-        // The ONLY test that issues a PIN for a real account, so it is the sole
-        // writer of the shared recovery PIN file (no cross-test race).
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        test_support::db::create_adult_with_password(
+        let user_id = test_support::db::create_adult_with_password(
             &app_pool,
             "recover",
             "recover@example.com",
@@ -2117,9 +2117,10 @@ mod tests {
             .await;
         assert_eq!(forgot.status_code(), StatusCode::OK);
 
-        // Read the clear PIN from the operator host file (the model stores only
+        // Read the clear PIN from the user's operator file (the model stores only
         // its hash).
-        let pin_path = test_support::test_config().recovery_pin_file_path;
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
         let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
         let pin = contents
             .lines()

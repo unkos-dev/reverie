@@ -459,7 +459,7 @@ mod tests {
             login_throttle_cap_secs: 900,
             password_min_length: 8,
             recovery_pin_ttl_secs: 900,
-            recovery_pin_file_path: "./reverie-recovery.pin".into(),
+            recovery_pin_dir: "./reverie-recovery".into(),
             trusted_client_ip_header: None,
             migration_database_url: None,
             auto_migrate: false,
