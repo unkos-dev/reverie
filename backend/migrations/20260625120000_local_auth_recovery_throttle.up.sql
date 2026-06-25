@@ -28,7 +28,9 @@ CREATE TABLE public.password_reset_pins (
     CONSTRAINT password_reset_pins_created_at_ts_decode_range
         CHECK (created_at >= '0001-01-01 00:00:00+00' AND created_at < '10000-01-01 00:00:00+00'),
     CONSTRAINT password_reset_pins_expires_at_ts_decode_range
-        CHECK (expires_at >= '0001-01-01 00:00:00+00' AND expires_at < '10000-01-01 00:00:00+00')
+        CHECK (expires_at >= '0001-01-01 00:00:00+00' AND expires_at < '10000-01-01 00:00:00+00'),
+    CONSTRAINT password_reset_pins_consumed_at_ts_decode_range
+        CHECK (consumed_at >= '0001-01-01 00:00:00+00' AND consumed_at < '10000-01-01 00:00:00+00')
 );
 
 -- Active-PIN lookup and FK-cascade enumeration are keyed on user_id.
@@ -48,6 +50,8 @@ CREATE TABLE public.local_login_throttle (
     locked_until timestamptz,
     updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT local_login_throttle_pkey PRIMARY KEY (email_lower),
+    CONSTRAINT local_login_throttle_locked_until_ts_decode_range
+        CHECK (locked_until >= '0001-01-01 00:00:00+00' AND locked_until < '10000-01-01 00:00:00+00'),
     CONSTRAINT local_login_throttle_updated_at_ts_decode_range
         CHECK (updated_at >= '0001-01-01 00:00:00+00' AND updated_at < '10000-01-01 00:00:00+00')
 );
