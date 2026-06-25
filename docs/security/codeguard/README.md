@@ -36,14 +36,14 @@ Hard Rules), reverie's rule wins — document the deviation in this README's
 | `codeguard-0-file-handling-and-uploads.md` | EPUB ingestion path, magic-byte validation, safe storage |
 | `codeguard-0-xml-and-serialization.md` | OPDS feed generation, EPUB XML parsing, XXE prevention |
 | `codeguard-0-logging.md` | tracing discipline, redaction, no-secret-leakage |
-| `codeguard-0-client-side-web-security.md` | Foundation for frontend hardening (see also UNK-106) |
+| `codeguard-0-client-side-web-security.md` | Foundation for frontend hardening |
 
 ### OWASP deep-dives (attack-specific)
 
 | File | Relevance to reverie |
 |---|---|
-| `codeguard-0-content-security-policy.md` | UNK-106 direct input |
-| `codeguard-0-http-headers.md` | UNK-106 direct input |
+| `codeguard-0-content-security-policy.md` | CSP and header hardening input |
+| `codeguard-0-http-headers.md` | CSP and header hardening input |
 | `codeguard-0-http-strict-transport-security.md` | HSTS posture behind reverse proxy |
 | `codeguard-0-clickjacking-defense.md` | Frame-ancestors / X-Frame-Options |
 
@@ -150,7 +150,57 @@ function without parsing them.
 - Cleanup deletion bounded to the ingestion root: `cleanup_batch` rejects any
   caller-supplied path whose canonicalised parent (files) or canonicalised self
   (directories) resolves outside the ingestion tree — directory pruning landed
-  in PR #387 (UNK-235), file deletion in PR #388 (UNK-325)
+  in PR #387, file deletion in PR #388
 
 Any of these currently missing is a security bug. Verification tracked
 separately — see the conflict-check comment on PR #40.
+
+### 5. First-party MFA deferred
+
+**Override:** `codeguard-0-authentication-mfa.md` expects multi-factor
+authentication on the authentication path.
+
+**Reverie's position:** Reverie ships no first-party MFA (TOTP, WebAuthn, or
+recovery codes). The OIDC path delegates step-up and second factors to the
+external identity provider; the local password path is single-factor.
+
+**Rationale:** Reverie is a self-hosted personal-library application. The
+local-account path exists so an operator can run it without an external IdP at
+all; mandating a second factor there would block the out-of-the-box case. An
+operator who needs MFA configures OIDC and enforces it at the provider.
+
+**Compensating controls:** Argon2id password hashing (m=19456, t=2, p=1);
+per-source rate limiting plus a DB-backed per-account backoff on login;
+constant-work verification so login latency does not reveal account existence;
+the bootstrap path is the only way to mint the first administrator. First-party
+MFA is a planned later step.
+
+### 6. Email-less PIN password recovery
+
+**Override:** Standard recovery guidance assumes an email-based reset link.
+Reverie has no outbound email and must be recoverable on an isolated host.
+
+**Reverie's position:** Forgot-password writes a CSPRNG PIN to an
+operator-readable host file (mode 0600, outside any web-served directory) as
+proof-of-host-access; the user completes the reset with that PIN. See
+`backend/src/auth/recovery.rs` and the `/auth/forgot-password` +
+`/auth/reset-password` handlers.
+
+**Rationale:** Recovery must work with no email provider and no external
+dependency, while still requiring possession of a host-access secret rather than
+just knowledge of an email address.
+
+**Compensating controls:**
+
+- PIN generated from the OS CSPRNG; stored at rest only as an Argon2id hash, never
+  in clear in the database
+- Single-use: consumption is a row-atomic guarded update, so a PIN cannot be
+  redeemed twice
+- Short expiry (`recovery_pin_ttl_secs`, default 15 minutes); at most one active
+  PIN per user (a new request supersedes the prior one)
+- DB-row-before-file on issue and consume-before-file-removal on reset, so a
+  crash never leaves a usable cleartext PIN without a live row
+- Per-source rate limiting on both recovery endpoints
+- Generic responses on both endpoints and equivalent cryptographic work on the
+  unknown-account path, so neither response nor timing enumerates accounts
+- No auto-login after reset: the user must re-authenticate with the new password
