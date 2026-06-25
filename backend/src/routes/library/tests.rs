@@ -35,7 +35,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
         pool: app_pool.clone(),
         ingestion_pool: ingestion_pool.clone(),
         config,
-        oidc_client: test_support::test_oidc_client(),
+        oidc_client: Some(test_support::test_oidc_client()),
         settings: test_support::test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     };
@@ -1697,7 +1697,7 @@ async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
     );
 }
 
-/// PR1 (`/api`→`/api/v1`, UNK-376): the prefix change is a *move*, not an
+/// PR1 (`/api`→`/api/v1`): the prefix change is a *move*, not an
 /// additive alias. The new versioned path serves; the old unversioned path is
 /// gone and — critically — falls through to the reserved-prefix JSON `404`
 /// Problem, never the SPA `index.html`, so stale API clients receive a

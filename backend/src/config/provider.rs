@@ -29,6 +29,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("OIDC_CLIENT_ID", "oidc_client_id"),
     ("OIDC_CLIENT_SECRET", "oidc_client_secret"),
     ("OIDC_REDIRECT_URI", "oidc_redirect_uri"),
+    ("REVERIE_LOCAL_AUTH_ENABLED", "local_auth_enabled"),
     ("REVERIE_PORT", "port"),
     ("REVERIE_LIBRARY_PATH", "library_path"),
     ("REVERIE_INGESTION_PATH", "ingestion_path"),
@@ -129,14 +130,14 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 ///    that makes `set_var` `unsafe`. `from_pairs` touches no process env.
 ///    Production
 ///    ([`Self::from_process_env`]) runs through the same code so tests exercise
-///    the real parse path (UNK-100).
+///    the real parse path.
 /// 2. **A frozen, irregular var→field contract.** The operator surface mixes
 ///    bare ecosystem names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) with
 ///    `REVERIE_`-namespaced knobs, and several map to a nested path the var
 ///    name doesn't spell (`REVERIE_PUBLIC_URL` → `opds.public_url`). No
 ///    uniform separator rule derives that, so `ENV_MAP` is the explicit
 ///    registry — which also doubles as the introspectable var↔field source the
-///    config-reference generator consumes (UNK-370).
+///    config-reference generator consumes.
 ///
 /// Value parsing mirrors stock `Env` exactly (see [`Self::data`]); the custom
 /// surface is only the two facts above. The pipeline is built in

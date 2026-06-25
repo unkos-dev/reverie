@@ -1045,6 +1045,7 @@ mod tests {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
@@ -1537,7 +1538,7 @@ mod tests {
         );
     }
 
-    // ── Phase-direct tests (UNK-96 follow-up) ────────────────────────────
+    // ── Phase-direct tests ────────────────────────────
     //
     // The phase decomposition makes it cheap to exercise tail-of-distribution
     // scenarios that would otherwise need three configured wiremock servers

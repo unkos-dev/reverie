@@ -267,7 +267,7 @@ enum ProcessResult {
 // file content, since malformed bytes surface as `Quarantined` issues, not
 // `Err`. In test builds, a library file whose name contains
 // `force-validator-error` short-circuits to `Err` so the validator-crash
-// arm can be exercised end-to-end (UNK-312). Compiled out of non-test
+// arm can be exercised end-to-end. Compiled out of non-test
 // builds; no global state, so parallel tests cannot interfere.
 fn run_validator(path: &Path) -> Result<epub::ValidationReport, epub::EpubError> {
     #[cfg(test)]
@@ -402,7 +402,7 @@ async fn process_file(
     // Step 4.5: EPUB structural validation and auto-repair.
     // Only EPUB has a structural validator; other formats keep the
     // 'pending' column default — "validation has not run" — rather than
-    // claiming 'clean' for a check that never happened (UNK-313). If a
+    // claiming 'clean' for a check that never happened. If a
     // validator for another format ships later, its files are already in
     // the truthful pre-validation state.
     let (validation_status, accessibility_metadata, opf_data): (
@@ -461,7 +461,7 @@ async fn process_file(
                 // crash) — nothing is known about the file's structural
                 // quality, so don't borrow `degraded` ("validator ran,
                 // found tolerable issues"). `failed` is the monitorable
-                // validator-crash state (UNK-312); the file is still
+                // validator-crash state; the file is still
                 // ingested and served.
                 tracing::warn!(error = %e, "epub validation error; storing validation_status=failed");
                 (ValidationStatus::Failed, None, None)
@@ -784,6 +784,7 @@ mod tests {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
@@ -896,7 +897,7 @@ mod tests {
 
         // Non-EPUB formats have no structural validator, so the row must
         // stay Pending ("validation has not run") — not claim Clean for a
-        // check that never happened (UNK-313).
+        // check that never happened.
         use crate::models::validation_status::ValidationStatus;
         let status = sqlx::query_scalar!(
             "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
@@ -1309,7 +1310,7 @@ mod tests {
         // run_validator fault-injection seam (filename marker): the file is
         // still ingested, but the row must record `failed` — not borrow
         // `degraded`, which means "validator ran, found tolerable issues"
-        // (UNK-312).
+        //.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
         let ingestion = tempfile::tempdir().unwrap();

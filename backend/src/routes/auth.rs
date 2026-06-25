@@ -33,7 +33,7 @@ use crate::state::AppState;
 /// halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(login))
+        .routes(routes!(oidc_login))
         .routes(routes!(callback))
         .routes(routes!(logout))
         .routes(routes!(me))
@@ -48,31 +48,42 @@ pub struct CallbackParams {
     /// Authorization code minted by the `IdP`.
     code: String,
     /// OIDC anti-forgery state echoed back by the `IdP`; must match the
-    /// value `/auth/login` stored in the session.
+    /// value `/auth/oidc/login` stored in the session.
     state: String,
 }
 
-/// `GET /auth/login` — start the OIDC authorization-code + PKCE flow.
+/// `GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.
+///
+/// Renamed from `/auth/oidc/login` so the SPA can own `/auth/oidc/login` as a real login
+/// page (decision 2). The OIDC callback path deliberately stays `/auth/callback`
+/// (NOT `/auth/oidc/callback`) so operators need not reconfigure
+/// `OIDC_REDIRECT_URI` at their `IdP`.
 ///
 /// # Errors
+/// - [`AppError::NotFound`] when OIDC is not configured (decision 11).
 /// - [`AppError::Internal`] when session storage fails.
 #[utoipa::path(
     get,
-    path = "/auth/login",
+    path = "/auth/oidc/login",
     tag = "auth",
     security(()),
     responses(
-        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session")
+        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"),
+        (status = 404, description = "OIDC is not configured on this instance", body = crate::openapi::ProblemDetails)
     )
 )]
-async fn login(
+async fn oidc_login(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<impl IntoResponse, AppError> {
+    // OIDC is optional (decision 11). When unconfigured this handler is
+    // unreachable in practice (the SPA hides the OIDC action), but guard so a
+    // direct hit 404s cleanly rather than acting on an absent client.
+    let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
+
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-    let (auth_url, csrf_token, nonce) = state
-        .oidc_client
+    let (auth_url, csrf_token, nonce) = oidc_client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             CsrfToken::new_random,
@@ -131,8 +142,10 @@ async fn callback(
     params: Result<Query<CallbackParams>, QueryRejection>,
 ) -> Result<(CookieJar, Redirect), AppError> {
     let Query(params) = params?;
+    // OIDC optional (decision 11): a callback without a configured client 404s.
+    let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
     // Validate OIDC anti-forgery state (the `state` query param echoed
-    // back by the IdP must match the value `/auth/login` stored under
+    // back by the IdP must match the value `/auth/oidc/login` stored under
     // `oidc_csrf_state`). This is the OIDC transient — distinct from
     // the long-lived `csrf_token` that the synchronizer-token defense
     // writes after `auth::session::login()` below.
@@ -159,8 +172,7 @@ async fn callback(
 
     // Exchange code for tokens
     let http_client = oidc::exchange_http_client().map_err(AppError::Internal)?;
-    let token_response = state
-        .oidc_client
+    let token_response = oidc_client
         .exchange_code(AuthorizationCode::new(params.code))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("exchange_code config error: {e}")))?
         .set_pkce_verifier(PkceCodeVerifier::new(stored_verifier))
@@ -173,10 +185,7 @@ async fn callback(
         .id_token()
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("missing ID token")))?;
     let claims = id_token
-        .claims(
-            &state.oidc_client.id_token_verifier(),
-            &Nonce::new(stored_nonce),
-        )
+        .claims(&oidc_client.id_token_verifier(), &Nonce::new(stored_nonce))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("ID token validation failed: {e}")))?;
 
     let subject = claims.subject().as_str();
@@ -232,7 +241,7 @@ async fn callback(
     //
     // Stored under session key `csrf_token`. Disjoint from the OIDC
     // anti-forgery state (`oidc_csrf_state`, removed above) so a
-    // logged-in user re-hitting `/auth/login` cannot overwrite this
+    // logged-in user re-hitting `/auth/oidc/login` cannot overwrite this
     // value with a transient OIDC parameter and confuse a future
     // reader. Re-running `/auth/callback` deliberately rotates this
     // token (each login overwrites the prior session's value).
@@ -321,7 +330,7 @@ async fn me(
     // THREAT: surfaces the session-bound CSRF synchronizer token to the
     // first-party SPA (see adr/2026-05-22-json-api-conventions.md). The
     // session key `csrf_token` is disjoint from the OIDC transient
-    // `oidc_csrf_state` used by `/auth/login`, so this value is always
+    // `oidc_csrf_state` used by `/auth/oidc/login`, so this value is always
     // the long-lived app token (or absent for sessions that never went
     // through `/auth/callback`, e.g. Basic-auth OPDS callers). Treat
     // the missing case as `null` rather than 500: the response shape
@@ -411,7 +420,7 @@ mod tests {
     #[tokio::test]
     async fn login_redirects_to_oidc_provider() {
         let server = test_support::test_server();
-        let response = server.get("/auth/login").await;
+        let response = server.get("/auth/oidc/login").await;
         // Should redirect to the fake OIDC provider's auth URL
         assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
         let location = response.header("location").to_str().unwrap().to_owned();
@@ -473,14 +482,14 @@ mod tests {
             .iter()
             .filter_map(|v| v.to_str().ok())
             .find(|c| c.starts_with("id="))
-            .expect("session `id` cookie emitted by /auth/login")
+            .expect("session `id` cookie emitted by /auth/oidc/login")
             .to_owned()
     }
 
     #[tokio::test]
     async fn session_cookie_carries_httponly_lax_and_no_secure_by_default() {
         let server = test_support::test_server();
-        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
         assert!(
             cookie.contains("HttpOnly"),
             "session cookie must be HttpOnly; got: {cookie}"
@@ -502,7 +511,7 @@ mod tests {
         let app =
             crate::build_router_with_session_store(state, tower_sessions::MemoryStore::default());
         let server = axum_test::TestServer::new(app);
-        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
         assert!(
             cookie.contains("Secure"),
             "session cookie must be Secure when behind_https=true; got: {cookie}"
@@ -689,9 +698,9 @@ mod tests {
         );
     }
 
-    /// End-to-end happy path through `/auth/login` → `/auth/callback`. Exercises:
+    /// End-to-end happy path through `/auth/oidc/login` → `/auth/callback`. Exercises:
     /// PKCE/CSRF/nonce session round-trip, mock token exchange against a
-    /// signed ID token whose nonce matches what `/auth/login` stored,
+    /// signed ID token whose nonce matches what `/auth/oidc/login` stored,
     /// identity provisioning without auto-promotion (first user stays a
     /// non-administrator), session login (cookie cycled), and the FOUC theme
     /// cookie seeded from the freshly-loaded user record.
@@ -709,9 +718,9 @@ mod tests {
         // Mock IdP: spins up wiremock + signs a key + serves /jwks.
         // client_id matches `test_config().oidc_client_id` (empty string).
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
 
-        // Shared session store so the test can read what /auth/login wrote.
+        // Shared session store so the test can read what /auth/oidc/login wrote.
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
@@ -725,9 +734,9 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        // Step 1: drive /auth/login. Server stores csrf_token, nonce,
+        // Step 1: drive /auth/oidc/login. Server stores csrf_token, nonce,
         // pkce_verifier in the session and 307-redirects to the IdP.
-        let login_resp = server.get("/auth/login").await;
+        let login_resp = server.get("/auth/oidc/login").await;
         assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
 
         // Step 2: extract the session ID from the issued cookie and load
@@ -762,7 +771,7 @@ mod tests {
         .await;
 
         // Step 4: drive /auth/callback. Cookie jar carries the session id
-        // from the login response; CSRF state is the value /auth/login stored.
+        // from the login response; CSRF state is the value /auth/oidc/login stored.
         let cb_resp = server
             .get("/auth/callback")
             .add_query_param("code", "mock-auth-code")
@@ -784,7 +793,7 @@ mod tests {
 
         // Session-fixation defence: our login() (auth::session::login →
         // cycle_id) must rotate the session id, so the cookie value after
-        // callback differs from the one issued by /auth/login. A regression
+        // callback differs from the one issued by /auth/oidc/login. A regression
         // where login() stops cycling would let a pre-auth attacker plant a
         // session id that becomes authenticated post-login.
         let new_session_value = cb_resp.cookie("id").value().to_string();
@@ -882,7 +891,7 @@ mod tests {
         );
     }
 
-    /// A logged-in user re-hitting `/auth/login` (e.g. mistaken click,
+    /// A logged-in user re-hitting `/auth/oidc/login` (e.g. mistaken click,
     /// stale tab) must NOT overwrite their long-lived synchronizer
     /// token. The OIDC transient state lives under `oidc_csrf_state`
     /// and the app token under `csrf_token` — disjoint keys. This
@@ -903,7 +912,7 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
@@ -918,7 +927,7 @@ mod tests {
         server.save_cookies();
 
         // Step 1: drive /login → /callback to mint the app csrf_token.
-        let login_resp = server.get("/auth/login").await;
+        let login_resp = server.get("/auth/oidc/login").await;
         assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
@@ -931,13 +940,13 @@ mod tests {
             record
                 .data
                 .get("oidc_csrf_state")
-                .expect("oidc_csrf_state present after /auth/login")
+                .expect("oidc_csrf_state present after /auth/oidc/login")
                 .clone(),
         )
         .expect("oidc_csrf_state is string");
         assert!(
             !record.data.contains_key("csrf_token"),
-            "/auth/login must NOT write the app-level csrf_token key — that \
+            "/auth/oidc/login must NOT write the app-level csrf_token key — that \
              would clobber a returning user's existing app token",
         );
         let nonce: String =
@@ -971,21 +980,21 @@ mod tests {
             .to_owned();
         assert_eq!(token_a.len(), 43, "token A must be 43-char base64url");
 
-        // Step 2: same authenticated cookie jar — drive /auth/login
+        // Step 2: same authenticated cookie jar — drive /auth/oidc/login
         // AGAIN (no callback). This writes a fresh OIDC transient
         // under `oidc_csrf_state`. The app token under `csrf_token`
         // MUST be preserved; otherwise the Phase-2 frontend reader
         // would see /auth/me return the OIDC transient pretending
         // to be the app token.
-        let login_resp_2 = server.get("/auth/login").await;
+        let login_resp_2 = server.get("/auth/oidc/login").await;
         assert_eq!(login_resp_2.status_code(), StatusCode::TEMPORARY_REDIRECT);
         let session_cookie_2 = login_resp_2.cookie("id").value().to_string();
         let session_id_2: SessionId = session_cookie_2.parse().expect("parse session id 2");
         let record_2 = store
             .load(&session_id_2)
             .await
-            .expect("load session record after second /auth/login")
-            .expect("session record present after second /auth/login");
+            .expect("load session record after second /auth/oidc/login")
+            .expect("session record present after second /auth/oidc/login");
 
         // The new OIDC transient must be present and must differ from
         // the first login's transient (otherwise CSRF state is being
@@ -1000,24 +1009,24 @@ mod tests {
         .expect("oidc_csrf_state 2 is string");
         assert_ne!(
             oidc_state_1, oidc_state_2,
-            "OIDC anti-forgery state must rotate per /auth/login call"
+            "OIDC anti-forgery state must rotate per /auth/oidc/login call"
         );
 
         // The app token under `csrf_token` must survive the re-login
-        // intact. If this fires, /auth/login is shadowing the app
+        // intact. If this fires, /auth/oidc/login is shadowing the app
         // token with OIDC transient state (D1 regression).
         let preserved_app_token: String = serde_json::from_value(
             record_2
                 .data
                 .get("csrf_token")
-                .expect("app csrf_token must survive /auth/login re-entry")
+                .expect("app csrf_token must survive /auth/oidc/login re-entry")
                 .clone(),
         )
         .expect("preserved csrf_token is string");
         assert_eq!(
             preserved_app_token, token_a,
             "app csrf_token must equal the value minted by the previous \
-             /auth/callback; mismatch indicates /auth/login wrote to the \
+             /auth/callback; mismatch indicates /auth/oidc/login wrote to the \
              app-token key and clobbered the long-lived value",
         );
 
@@ -1050,7 +1059,7 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
@@ -1064,8 +1073,8 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        // Drive /auth/login → /auth/callback to establish an authenticated session.
-        let login_resp = server.get("/auth/login").await;
+        // Drive /auth/oidc/login → /auth/callback to establish an authenticated session.
+        let login_resp = server.get("/auth/oidc/login").await;
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
         let record = store
@@ -1167,7 +1176,7 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
@@ -1181,8 +1190,8 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        // Establish an authenticated session via /auth/login → /auth/callback.
-        let login_resp = server.get("/auth/login").await;
+        // Establish an authenticated session via /auth/oidc/login → /auth/callback.
+        let login_resp = server.get("/auth/oidc/login").await;
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
         let record = store
@@ -1281,7 +1290,7 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
@@ -1295,7 +1304,7 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        let login_resp = server.get("/auth/login").await;
+        let login_resp = server.get("/auth/oidc/login").await;
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
         let record = store

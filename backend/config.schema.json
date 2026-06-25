@@ -90,6 +90,11 @@
       "type": "string",
       "default": "./library"
     },
+    "local_auth_enabled": {
+      "description": "Whether local email+password authentication is enabled\n(`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out\nof the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this\ndefaults on. Setting it `false` without configuring OIDC is rejected at\nstartup (Gate 4): at least one auth provider must remain usable or the\ninstance locks everyone out.",
+      "type": "boolean",
+      "default": true
+    },
     "log_level": {
       "description": "Log-filter directive resolved from the environment with cascading\nprecedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `\"info\"`. The\n`REVERIE_*` operator namespace wins on conflict so staging docs\nstay coherent; `RUST_LOG` is honoured as the ecosystem default for\ndeveloper convenience. The subscriber filter in [`crate::run`]\nparses this string directly (no further env re-read), so the\nprecedence resolved here is the single source of truth for the\nprocess lifetime.",
       "type": "string",
@@ -114,12 +119,12 @@
       "default": ""
     },
     "oidc_issuer_url": {
-      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`, required): the trust seam\nfor the entire authentication subsystem. The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
+      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC\nauthentication path. OIDC is enabled iff this is set (decision 11); when\npresent, the other three `OIDC_*` fields become required together (Gate\n4). The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
       "type": "string",
       "default": ""
     },
     "oidc_redirect_uri": {
-      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match\nthe value registered with the issuer.",
+      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured\n(Gate 4); must match the value registered with the issuer.",
       "type": "string",
       "default": ""
     },

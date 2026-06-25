@@ -298,6 +298,7 @@ mod tests {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),

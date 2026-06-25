@@ -73,7 +73,7 @@ pub fn build_router(state: AppState) -> Router {
 /// Used by **in-crate integration tests** (under `src/**/tests` modules
 /// gated on `#[cfg(test)]`) to inject a `tower_sessions::MemoryStore` so
 /// the test harness can read server-written session state — e.g. the
-/// OIDC `nonce` set by `/auth/login` that the callback test needs to
+/// OIDC `nonce` set by `/auth/oidc/login` that the callback test needs to
 /// embed in a matching mock-issued ID token. External-crate tests under
 /// `backend/tests/` cannot reach this function; intentional, since the
 /// shared-store seam is only required by tests that exercise routing
@@ -207,7 +207,7 @@ fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
 /// - `axum::serve` returns an error during the serving loop.
 #[allow(
     clippy::too_many_lines,
-    reason = "Phase 0 of the comment-policy rollout (UNK-191) is structural-only: this body was verbatim moved from the pre-split `main.rs` and lightly extended (3 lines for try_init error propagation + the `# Errors` docstring section). UNK-193 (typed `StartupError`) will reshape startup error handling and is the natural place to extract phase helpers (`setup_tracing`, `init_csp_headers`, `spawn_workers`)."
+    reason = "Phase 0 of the comment-policy rollout is structural-only: this body was verbatim moved from the pre-split `main.rs` and lightly extended (3 lines for try_init error propagation + the `# Errors` docstring section). a typed `StartupError` will reshape startup error handling and is the natural place to extract phase helpers (`setup_tracing`, `init_csp_headers`, `spawn_workers`)."
 )]
 pub async fn run() -> anyhow::Result<()> {
     let mut config =
@@ -283,9 +283,18 @@ pub async fn run() -> anyhow::Result<()> {
     // schema-dependent query before this runs.
     apply_or_verify_schema(&config, &pool).await?;
 
-    let oidc_client = auth::oidc::init_oidc_client(&config)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to initialize OIDC client: {e}"))?;
+    // OIDC is optional (decision 11): discover the client only when configured.
+    // A local-only instance carries no OIDC client and the initiate/callback
+    // handlers 404. Gate 4 has already guaranteed at least one provider is usable.
+    let oidc_client = if config.oidc_configured() {
+        Some(
+            auth::oidc::init_oidc_client(&config)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to initialize OIDC client: {e}"))?,
+        )
+    } else {
+        None
+    };
 
     let ingestion_pool = db::init_pool(&config.ingestion_database_url, config.db_max_connections)
         .await
@@ -389,7 +398,7 @@ pub async fn run() -> anyhow::Result<()> {
     // cancelled here (idempotent on the clean path, where shutdown_signal
     // already cancelled it) and the workers drained before run() returns —
     // otherwise the error path leaks live tasks for the runtime to abort
-    // mid-IO, the exact unclean exit UNK-194 closes.
+    // mid-IO, the exact unclean exit graceful shutdown closes.
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(cancel_token.clone()))
         .await
@@ -561,7 +570,7 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 /// Emit the [`config::Config`] JSON Schema to stdout — the
 /// `print-config-schema` subcommand. The output is the committed
 /// `backend/config.schema.json` artifact (CI drift-checks a fresh emit against
-/// it), and the source the UNK-370 configuration reference renders from.
+/// it), and the source the configuration reference renders from.
 ///
 /// Reads no environment and opens no database — it is `schema_for!` over the
 /// config structs, so it runs in any context. Deterministic: `schemars`

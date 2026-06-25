@@ -2516,7 +2516,7 @@
           {
             "name": "state",
             "in": "query",
-            "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/login` stored in the session.",
+            "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/oidc/login` stored in the session.",
             "required": true,
             "schema": {
               "type": "string"
@@ -2546,24 +2546,6 @@
                 }
               }
             }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/auth/login": {
-      "get": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "`GET /auth/login` — start the OIDC authorization-code + PKCE flow.",
-        "description": "# Errors\n- [`AppError::Internal`] when session storage fails.",
-        "operationId": "login",
-        "responses": {
-          "307": {
-            "description": "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"
           }
         },
         "security": [
@@ -2671,6 +2653,34 @@
             }
           }
         }
+      }
+    },
+    "/auth/oidc/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.",
+        "description": "Renamed from `/auth/oidc/login` so the SPA can own `/auth/oidc/login` as a real login\npage (decision 2). The OIDC callback path deliberately stays `/auth/callback`\n(NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured (decision 11).\n- [`AppError::Internal`] when session storage fails.",
+        "operationId": "oidc_login",
+        "responses": {
+          "307": {
+            "description": "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"
+          },
+          "404": {
+            "description": "OIDC is not configured on this instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/health": {

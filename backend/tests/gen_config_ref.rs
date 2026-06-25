@@ -54,11 +54,18 @@ fn required_and_secret_vars_render_correctly() {
     // A required, non-secret scalar appears by name and is marked required.
     assert!(row(&md, "DATABASE_URL").contains("| Yes |"));
 
-    // A secret variable is documented by name, marked required, with an EMPTY
-    // default cell — its value is never rendered.
+    // A secret variable is documented by name, with an EMPTY default cell — its
+    // value is never rendered. OIDC is conditionally required (decision 11), so
+    // its secret renders Conditional, not Yes.
     let secret = row(&md, "OIDC_CLIENT_SECRET");
-    assert!(secret.contains("| Yes |"), "secret marked required");
-    assert!(secret.contains("Yes |  |"), "secret default cell is empty");
+    assert!(
+        secret.contains("| Conditional |"),
+        "OIDC secret is conditional"
+    );
+    assert!(
+        secret.contains("Conditional |  |"),
+        "secret default cell is empty"
+    );
 
     // A non-required scalar keeps its real default.
     assert!(row(&md, "REVERIE_PORT").contains("`3000`"));

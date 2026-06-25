@@ -21,6 +21,7 @@ pub fn test_config() -> Config {
         oidc_client_id: String::new(),
         oidc_client_secret: String::new(),
         oidc_redirect_uri: String::new(),
+        local_auth_enabled: true,
         migration_database_url: None,
         auto_migrate: false,
         ingestion_database_url: String::new(),
@@ -150,7 +151,7 @@ pub fn test_state() -> AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         config: test_config(),
-        oidc_client: test_oidc_client(),
+        oidc_client: Some(test_oidc_client()),
         settings: test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     }
@@ -383,7 +384,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config: super::test_config(),
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -418,7 +419,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -442,7 +443,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -473,7 +474,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };

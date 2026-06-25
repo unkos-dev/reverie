@@ -62,8 +62,18 @@ type RequiredFieldAccessor = fn(&Config) -> &str;
 /// `DATABASE_URL_MIGRATION` is deliberately absent: it is *conditionally*
 /// required (only when `REVERIE_AUTO_MIGRATE=true`, enforced by Gate 1) and is
 /// documented as such by the reference rather than listed here.
-pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
-    ("DATABASE_URL", |c| c.database_url.as_str()),
+pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
+    &[("DATABASE_URL", |c| c.database_url.as_str())];
+
+/// OIDC fields that become required *together* once OIDC is configured (the
+/// issuer URL is present). OIDC is enabled iff configured — there is no separate
+/// `oidc_enabled` flag (decision 11) — so these are conditionally, not
+/// unconditionally, required: a fully-unset OIDC block is valid (local-only
+/// instance), but a partially-configured one (issuer set, secret missing) is a
+/// `MissingVar` for the absent field. Gate 4 in [`Config::from_figment`] enforces
+/// this; the issuer accessor is listed first so an issuer-only block still
+/// reports the next missing field rather than itself.
+const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
     ("OIDC_ISSUER_URL", |c| c.oidc_issuer_url.as_str()),
     ("OIDC_CLIENT_ID", |c| c.oidc_client_id.as_str()),
     ("OIDC_CLIENT_SECRET", |c| c.oidc_client_secret.as_str()),
@@ -109,8 +119,10 @@ pub struct Config {
     /// never hand out a connection (`PoolTimedOut` on the first query).
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub db_max_connections: u32,
-    /// OIDC issuer URL (`OIDC_ISSUER_URL`, required): the trust seam
-    /// for the entire authentication subsystem. The boundary control
+    /// OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC
+    /// authentication path. OIDC is enabled iff this is set (decision 11); when
+    /// present, the other three `OIDC_*` fields become required together (Gate
+    /// 4). The boundary control
     /// is `reqwest`'s TLS validation against the bundled
     /// webpki/Mozilla root store (`reqwest` is built with the
     /// `rustls` feature, which uses `webpki-roots`, not OS system
@@ -125,9 +137,16 @@ pub struct Config {
     /// `SECRET_FIELDS` list so a deserialize error never echoes its value
     /// (hard rule 7).
     pub oidc_client_secret: String,
-    /// OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match
-    /// the value registered with the issuer.
+    /// OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured
+    /// (Gate 4); must match the value registered with the issuer.
     pub oidc_redirect_uri: String,
+    /// Whether local email+password authentication is enabled
+    /// (`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out
+    /// of the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this
+    /// defaults on. Setting it `false` without configuring OIDC is rejected at
+    /// startup (Gate 4): at least one auth provider must remain usable or the
+    /// instance locks everyone out.
+    pub local_auth_enabled: bool,
     /// Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`
     /// credentials for the ephemeral migration pool. `None` on the default
     /// server path: the application process holds no migration credential
@@ -369,10 +388,40 @@ impl Config {
             }
         }
 
+        // Gate 4 — provider availability (decisions 5, 11). OIDC is enabled iff
+        // configured (its issuer is set); a partially-configured OIDC block is a
+        // MissingVar for the absent field, so an instance never half-enables a
+        // provider. At least one provider (local or OIDC) must remain usable, or
+        // the instance would refuse every login.
+        if cfg.oidc_configured() {
+            for &(var, field) in OIDC_FIELDS {
+                if field(&cfg).trim().is_empty() {
+                    return Err(ConfigError::MissingVar(var.into()));
+                }
+            }
+        }
+        if !cfg.local_auth_enabled && !cfg.oidc_configured() {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_LOCAL_AUTH_ENABLED".into(),
+                reason: "at least one auth provider must be enabled: set \
+                         REVERIE_LOCAL_AUTH_ENABLED=true or configure OIDC (OIDC_ISSUER_URL)"
+                    .into(),
+            });
+        }
+
         // Declarative validation (range + cross-field). Aggregated.
         cfg.validate().map_err(|e| map_validation_errors(&e))?;
 
         Ok(cfg)
+    }
+
+    /// Whether the OIDC authentication path is enabled. OIDC is enabled iff it is
+    /// configured, signalled by a non-blank issuer URL (decision 11); there is no
+    /// separate `oidc_enabled` flag that could disagree with the actual config.
+    /// Gate 4 guarantees that when this is `true`, all four `OIDC_*` fields are
+    /// present, so callers can treat a configured instance as fully usable.
+    pub fn oidc_configured(&self) -> bool {
+        !self.oidc_issuer_url.trim().is_empty()
     }
 
     /// `User-Agent` string for outbound metadata API requests.  `OpenLibrary`
@@ -575,6 +624,8 @@ impl Default for Config {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            // Local-first default (decision 11); Gate 4 guards the lock-out case.
+            local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
             // Falls back to database_url at post-deserialize time (Task 6).
@@ -1266,6 +1317,65 @@ mod tests {
                 "required var {var} absent from ENV_MAP"
             );
         }
+    }
+
+    #[test]
+    fn oidc_unconfigured_loads_as_local_only() {
+        // OIDC fully unset is valid (decision 11): local auth defaults on, so a
+        // fresh instance is usable without an external IdP.
+        let vars = without_keys(&[
+            "OIDC_ISSUER_URL",
+            "OIDC_CLIENT_ID",
+            "OIDC_CLIENT_SECRET",
+            "OIDC_REDIRECT_URI",
+        ]);
+        let config = cfg_from_owned(&vars).expect("local-only config loads");
+        assert!(
+            !config.oidc_configured(),
+            "OIDC is disabled when its issuer is unset"
+        );
+        assert!(config.local_auth_enabled, "local auth defaults on");
+    }
+
+    #[test]
+    fn local_disabled_without_oidc_is_rejected() {
+        // Both providers off would lock everyone out (decision 5): refuse boot.
+        let mut vars = without_keys(&[
+            "OIDC_ISSUER_URL",
+            "OIDC_CLIENT_ID",
+            "OIDC_CLIENT_SECRET",
+            "OIDC_REDIRECT_URI",
+        ]);
+        vars.push(("REVERIE_LOCAL_AUTH_ENABLED".into(), "false".into()));
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::Invalid { var, .. } if var == "REVERIE_LOCAL_AUTH_ENABLED"),
+            "expected Invalid(REVERIE_LOCAL_AUTH_ENABLED), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn partial_oidc_block_is_rejected_when_configured() {
+        // Once the issuer is set OIDC is "configured", so each remaining OIDC
+        // field becomes required together (Gate 4): a half-configured block is a
+        // MissingVar for the absent field, never a silent half-enable.
+        for var in ["OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI"] {
+            let vars = without_keys(&[var]); // issuer stays set via BASE_VARS
+            let err = cfg_from_owned(&vars).unwrap_err();
+            assert!(
+                matches!(&err, ConfigError::MissingVar(v) if v == var),
+                "omitting {var} with OIDC configured should yield MissingVar({var}), got: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn local_disabled_with_oidc_configured_is_ok() {
+        // Disabling local auth is fine while OIDC remains usable (one provider).
+        let vars = with_overrides(&[("REVERIE_LOCAL_AUTH_ENABLED", "false")]);
+        let config = cfg_from_owned(&vars).expect("OIDC-only config loads");
+        assert!(!config.local_auth_enabled);
+        assert!(config.oidc_configured());
     }
 
     #[test]

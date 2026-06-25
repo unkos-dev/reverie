@@ -230,7 +230,7 @@ async fn finish(
     // fails, the event still fires (a transient DB hiccup on the final
     // update otherwise silently dropped the webhook forever).  A DB
     // failure followed by crash-recovery retry re-fires the same terminal
-    // event; `events::dispatch` dedupes on the stable event id (UNK-98).
+    // event; `events::dispatch` dedupes on the stable event id.
     match result {
         Ok(RunOutcome::Success {
             manifestation_id,
@@ -453,6 +453,7 @@ mod tests {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
@@ -1030,7 +1031,7 @@ mod tests {
         assert_eq!(row.error.as_deref(), Some("regression"));
     }
 
-    /// Double-dispatch path (UNK-98): a DB failure on the `mark_*` UPDATE
+    /// Double-dispatch path: a DB failure on the `mark_*` UPDATE
     /// followed by crash-recovery retry re-runs `finish` for a job whose
     /// terminal event already fired.  The dispatcher must deliver exactly
     /// once — `seen_at` is only written on delivery, so an unchanged
@@ -1136,9 +1137,9 @@ mod tests {
         );
     }
 
-    /// UNK-99: a `reverie_app` connection without `app.system_context` set
+    /// A `reverie_app` connection without `app.system_context` set
     /// AND without `app.current_user_id` set matches zero policies and is
-    /// denied.  This is the failure mode UNK-99 prevents: a future Axum
+    /// denied.  This is the failure mode this guard prevents: a future Axum
     /// handler that forgets `SET LOCAL app.current_user_id` cannot reach
     /// the system policy because that policy now requires an explicit
     /// `app.system_context = 'writeback'` signal that user-facing pools
@@ -1191,7 +1192,7 @@ mod tests {
         let imposter = Uuid::new_v4();
 
         let mut tx = app_pool.begin().await.unwrap();
-        // CARVE-OUT (UNK-167): SELECT set_config(...) is the documented
+        // CARVE-OUT: SELECT set_config(...) is the documented
         // GUC-mutation carve-out — sqlx macros cannot validate Postgres
         // session-config calls against the schema at prepare time. The
         // BEGIN/ROLLBACK shell around it is the proper sqlx transaction
