@@ -1,11 +1,11 @@
 /**
- * `/auth/login` — local credential sign-in (S2).
+ * `/login` — local credential sign-in (S2).
  *
- * Replaces the backend OIDC initiator that used to own this path. Reads
+ * A user-facing page (the auth API/protocol lives under `/auth/*`). Reads
  * provider state from `GET /auth/setup/status`: shows the local
  * email/password form when local auth is enabled, a "Sign in with OIDC"
- * action when OIDC is configured, and bounces to `/auth/setup` on a
- * fresh instance with no administrator yet.
+ * action when OIDC is configured, and bounces to `/setup` on a fresh
+ * instance with no administrator yet.
  *
  * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`; the plan
  * snippet's controlled inputs are a conscious deviation in favour of the
@@ -29,7 +29,7 @@ import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
 
-/** Route component for `/auth/login`. */
+/** Route component for `/login`. */
 export function Component(): ReactElement {
   const qc = useQueryClient();
   const {
@@ -79,7 +79,7 @@ export function Component(): ReactElement {
   }
 
   if (status.setup_required) {
-    return <Navigate to="/auth/setup" replace />;
+    return <Navigate to="/setup" replace />;
   }
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
@@ -145,7 +145,7 @@ export function Component(): ReactElement {
       title="Sign in"
       footer={
         status.local_auth_enabled ? (
-          <Link to="/auth/forgot-password" className="hover:text-fg underline underline-offset-4">
+          <Link to="/forgot-password" className="hover:text-fg underline underline-offset-4">
             Forgot password?
           </Link>
         ) : undefined

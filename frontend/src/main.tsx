@@ -57,9 +57,12 @@ const routes: RouteObject[] = [
   },
   // Pre-auth screens (S2). Siblings of the app-shell root, NOT children:
   // they must render without the shell and outside the `useSessionRecovery`
-  // redirect funnel, or an unauthenticated visitor would loop.
+  // redirect funnel, or an unauthenticated visitor would loop. They live at
+  // top-level page paths (not under `/auth/*`) so the backend's reserved-prefix
+  // fallback serves the SPA for them: `/auth/*` is the auth API/protocol
+  // namespace, these are user-facing pages.
   {
-    path: "/auth/login",
+    path: "/login",
     errorElement: <RootErrorBoundary />,
     lazy: async () => {
       const mod = await import("./routes/auth-login");
@@ -67,7 +70,7 @@ const routes: RouteObject[] = [
     },
   },
   {
-    path: "/auth/setup",
+    path: "/setup",
     errorElement: <RootErrorBoundary />,
     lazy: async () => {
       const mod = await import("./routes/auth-setup");
@@ -75,7 +78,7 @@ const routes: RouteObject[] = [
     },
   },
   {
-    path: "/auth/forgot-password",
+    path: "/forgot-password",
     errorElement: <RootErrorBoundary />,
     lazy: async () => {
       const mod = await import("./routes/auth-forgot-password");

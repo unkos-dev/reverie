@@ -1,12 +1,12 @@
 /**
- * `/auth/setup` — first-run administrator bootstrap (S2).
+ * `/setup` — first-run administrator bootstrap (S2).
  *
- * The only path that mints the first administrator. Shown when no
- * administrator exists yet (`setup_required`); once the instance is
- * initialized it bounces back to `/auth/login` so a direct visit cannot
- * present a form that would only 409 on submit. Setup does not establish
- * a session (parity with recovery), so on success it routes to the login
- * screen to sign in.
+ * The only page that mints the first administrator (the bootstrap API is
+ * `POST /auth/setup`). Shown when no administrator exists yet
+ * (`setup_required`); once the instance is initialized it bounces back to
+ * `/login` so a direct visit cannot present a form that would only 409 on
+ * submit. Setup does not establish a session (parity with recovery), so on
+ * success it routes to the login screen to sign in.
  *
  * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`.
  */
@@ -25,7 +25,7 @@ import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
 
-/** Route component for `/auth/setup`. */
+/** Route component for `/setup`. */
 export function Component(): ReactElement {
   const navigate = useNavigate();
   const {
@@ -53,7 +53,7 @@ export function Component(): ReactElement {
     }) => setupAdmin(email, displayName, password),
     onSuccess: () => {
       toast.success("Administrator created. Sign in to continue.");
-      void navigate("/auth/login");
+      void navigate("/login");
     },
     onError: (err) => {
       const message =
@@ -82,7 +82,7 @@ export function Component(): ReactElement {
   }
 
   if (!status.setup_required) {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {

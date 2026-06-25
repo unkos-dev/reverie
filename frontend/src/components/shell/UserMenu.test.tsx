@@ -101,7 +101,7 @@ describe("UserChip", () => {
     expect(setPreferenceMock).toHaveBeenCalledWith("dark");
   });
 
-  test("sign out calls the logout endpoint then hard-navigates to /auth/login", async () => {
+  test("sign out calls the logout endpoint then hard-navigates to /login", async () => {
     const loc = mockLocation();
     render(<UserChip />);
     const user = userEvent.setup();
@@ -109,11 +109,11 @@ describe("UserChip", () => {
     await user.click(await screen.findByRole("menuitem", { name: /Sign out/ }));
     await waitFor(() => {
       expect(logoutMock).toHaveBeenCalledTimes(1);
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
   });
 
-  test("still navigates to /auth/login when logout fails", async () => {
+  test("still navigates to /login when logout fails", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     logoutMock.mockRejectedValue(new Error("network down"));
     const loc = mockLocation();
@@ -122,7 +122,7 @@ describe("UserChip", () => {
     await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
     await user.click(await screen.findByRole("menuitem", { name: /Sign out/ }));
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
     expect(consoleSpy).toHaveBeenCalled();
   });

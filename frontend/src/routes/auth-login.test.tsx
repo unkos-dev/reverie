@@ -33,10 +33,10 @@ function renderLogin(status: Status): void {
   client.setQueryData(queryKeys.auth.setupStatus(), status);
 
   const routes: RouteObject[] = [
-    { path: "/auth/login", element: <AuthLogin /> },
-    { path: "/auth/setup", element: <div data-testid="setup-page">Setup</div> },
+    { path: "/login", element: <AuthLogin /> },
+    { path: "/setup", element: <div data-testid="setup-page">Setup</div> },
   ];
-  const router = createMemoryRouter(routes, { initialEntries: ["/auth/login"] });
+  const router = createMemoryRouter(routes, { initialEntries: ["/login"] });
 
   function Wrapper(): ReactElement {
     return (
@@ -108,7 +108,7 @@ describe("auth-login", () => {
     expect(loc.assign).toHaveBeenCalledWith("/auth/oidc/login");
   });
 
-  test("bounces to /auth/setup on a fresh instance", async () => {
+  test("bounces to /setup on a fresh instance", async () => {
     renderLogin({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
     expect(await screen.findByTestId("setup-page")).toBeInTheDocument();
   });

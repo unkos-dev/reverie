@@ -14,8 +14,8 @@ import { queryKeys } from "@/lib/query/keys";
  * Provider-aware (S2): when OIDC is enabled the redirect targets the
  * backend OIDC initiator `/auth/oidc/login`, so a session lapse against
  * a still-live upstream SSO re-authenticates silently. Otherwise it
- * targets the SPA local login form at `/auth/login`. Provider state is
- * read from the cached `GET /auth/setup/status` (shared with the auth
+ * targets the SPA local login form at `/login`. Provider state is read
+ * from the cached `GET /auth/setup/status` (shared with the auth
  * screens); any failure to read it falls back to the always-valid local
  * form rather than stranding the user.
  */
@@ -27,9 +27,9 @@ async function resolveLoginRedirect(): Promise<string> {
       retry: false,
       staleTime: Infinity,
     });
-    return status.oidc_enabled ? "/auth/oidc/login" : "/auth/login";
+    return status.oidc_enabled ? "/auth/oidc/login" : "/login";
   } catch {
-    return "/auth/login";
+    return "/login";
   }
 }
 
@@ -46,7 +46,7 @@ async function resolveLoginRedirect(): Promise<string> {
  * handler to a provider-aware full-page redirect (see
  * {@link resolveLoginRedirect}). OIDC-enabled deployments go to the
  * backend initiator `/auth/oidc/login` (silent re-auth); otherwise to
- * the SPA local login form `/auth/login`. Either way the redirect is a
+ * the SPA local login form `/login`. Either way the redirect is a
  * `window.location.assign(...)` so an OIDC initiation actually hits the
  * backend. The handler lives in the query module to avoid a router
  * import there; injecting it on mount keeps the two providers

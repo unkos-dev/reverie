@@ -1,5 +1,5 @@
 /**
- * `/auth/forgot-password` — email-less PIN recovery (S2).
+ * `/forgot-password` — email-less PIN recovery (S2).
  *
  * Two phases. The request phase posts the email and always returns a
  * generic success (no account enumeration); the operator reads the
@@ -26,7 +26,7 @@ import { AuthShell } from "./auth-shell";
 const RECOVERY_NOTICE =
   "If that account exists, a recovery PIN was written to the server. Enter it below with a new password.";
 
-/** Route component for `/auth/forgot-password`. */
+/** Route component for `/forgot-password`. */
 export function Component(): ReactElement {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export function Component(): ReactElement {
       resetPassword(email ?? "", pin, newPassword),
     onSuccess: () => {
       toast.success("Password reset. Sign in with your new password.");
-      void navigate("/auth/login");
+      void navigate("/login");
     },
     onError: (err) => {
       const message =
@@ -144,7 +144,7 @@ export function Component(): ReactElement {
 
 function BackToSignIn(): ReactElement {
   return (
-    <Link to="/auth/login" className="hover:text-fg underline underline-offset-4">
+    <Link to="/login" className="hover:text-fg underline underline-offset-4">
       Back to sign in
     </Link>
   );

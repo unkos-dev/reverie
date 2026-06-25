@@ -21,10 +21,10 @@ function renderForgot(): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   const routes: RouteObject[] = [
-    { path: "/auth/forgot-password", element: <AuthForgot /> },
-    { path: "/auth/login", element: <div data-testid="login-page">Login</div> },
+    { path: "/forgot-password", element: <AuthForgot /> },
+    { path: "/login", element: <div data-testid="login-page">Login</div> },
   ];
-  const router = createMemoryRouter(routes, { initialEntries: ["/auth/forgot-password"] });
+  const router = createMemoryRouter(routes, { initialEntries: ["/forgot-password"] });
 
   function Wrapper(): ReactElement {
     return (
@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe("auth-forgot-password", () => {
-  test("requests a PIN, advances to the reset phase, then resets and routes to /auth/login", async () => {
+  test("requests a PIN, advances to the reset phase, then resets and routes to /login", async () => {
     vi.mocked(requestPasswordReset).mockResolvedValue(undefined);
     vi.mocked(resetPassword).mockResolvedValue(undefined);
     renderForgot();

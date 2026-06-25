@@ -42,7 +42,7 @@ beforeEach(() => {
   setUnauthenticatedHandler(() => {});
   // Seed provider state so the provider-aware redirect resolves without a
   // fetch (the redirect reads `/auth/setup/status` via `ensureQueryData`).
-  // Default is OIDC-off, so the redirect target stays `/auth/login`.
+  // Default is OIDC-off, so the redirect target is the local form `/login`.
   queryClient.setQueryData(queryKeys.auth.setupStatus(), {
     setup_required: false,
     local_auth_enabled: true,
@@ -98,7 +98,7 @@ function renderApp(): void {
 }
 
 describe("App — auth boundary", () => {
-  test("redirects to /auth/login (full page nav) on ApiError 401", async () => {
+  test("redirects to /login (full page nav) on ApiError 401", async () => {
     const loc = mockLocation();
     renderApp();
     expect(await screen.findByText("HOME_ROUTE_RENDERED")).toBeInTheDocument();
@@ -114,7 +114,7 @@ describe("App — auth boundary", () => {
       .catch(() => {});
 
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
   });
 
@@ -137,13 +137,13 @@ describe("App — auth boundary", () => {
     expect(loc.assign).not.toHaveBeenCalled();
   });
 
-  test("cold-load lapsed session (GET /auth/me 401) redirects to /auth/login", async () => {
+  test("cold-load lapsed session (GET /auth/me 401) redirects to /login", async () => {
     mockAuthMe(401);
     const loc = mockLocation();
     renderApp();
 
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
   });
 
@@ -168,7 +168,7 @@ describe("App — auth boundary", () => {
     renderApp();
 
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
 
     await queryClient

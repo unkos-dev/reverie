@@ -58,7 +58,7 @@ export function UserChip(): ReactElement | null {
         // either way; keep the operator-actionable detail in console.
         console.error("[UserMenu] logout request failed", error);
       }
-      window.location.assign("/auth/login");
+      window.location.assign("/login");
     })();
   }
 

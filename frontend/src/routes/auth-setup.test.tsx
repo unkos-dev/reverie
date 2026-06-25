@@ -25,10 +25,10 @@ function renderSetup(status: Status): void {
   client.setQueryData(queryKeys.auth.setupStatus(), status);
 
   const routes: RouteObject[] = [
-    { path: "/auth/setup", element: <AuthSetup /> },
-    { path: "/auth/login", element: <div data-testid="login-page">Login</div> },
+    { path: "/setup", element: <AuthSetup /> },
+    { path: "/login", element: <div data-testid="login-page">Login</div> },
   ];
-  const router = createMemoryRouter(routes, { initialEntries: ["/auth/setup"] });
+  const router = createMemoryRouter(routes, { initialEntries: ["/setup"] });
 
   function Wrapper(): ReactElement {
     return (
@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe("auth-setup", () => {
-  test("submitting creates the admin then routes to /auth/login", async () => {
+  test("submitting creates the admin then routes to /login", async () => {
     vi.mocked(setupAdmin).mockResolvedValue(undefined);
     renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
     const user = userEvent.setup();
@@ -79,7 +79,7 @@ describe("auth-setup", () => {
     expect(vi.mocked(toast.error)).toHaveBeenCalled();
   });
 
-  test("bounces to /auth/login once an administrator exists", async () => {
+  test("bounces to /login once an administrator exists", async () => {
     renderSetup({ setup_required: false, local_auth_enabled: true, oidc_enabled: false });
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
   });
