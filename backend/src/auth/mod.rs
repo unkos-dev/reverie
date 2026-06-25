@@ -28,6 +28,9 @@ pub mod oidc;
 /// Argon2id password hashing/verification for local accounts.
 pub mod password;
 
+/// Per-source (per-IP) login rate limiting (keyed governor + client-IP helper).
+pub mod rate_limit;
+
 /// Session login / logout helpers on `tower_sessions::Session`.
 pub mod session;
 
