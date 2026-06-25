@@ -102,6 +102,49 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
     .map(|opt| opt.map(User::from))
 }
 
+/// Whether any administrator account exists.
+///
+/// The bootstrap gate's cheap fast-reject check (decision 9): a `false` here is
+/// the common path that lets first-run setup proceed. It is NOT the race guard
+/// on its own; a `SELECT EXISTS` then `INSERT` does not serialize under READ
+/// COMMITTED. The authoritative zero->one transition guard is the
+/// `instance_bootstrap` singleton insert in the same transaction as the admin.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `SELECT`.
+#[allow(dead_code)] // Consumed by bootstrap/setup + CLI in this PR
+pub async fn admin_exists(pool: &PgPool) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM users WHERE role = 'admin'::user_role) AS "exists!""#
+    )
+    .fetch_one(pool)
+    .await
+}
+
+/// Fetch a user by email, compared case-insensitively on `lower(email)` (the
+/// `idx_users_email_lower` key). Returns `Ok(None)` if no row matches. Returns
+/// the row whether or not a local credential exists for it; the caller decides
+/// whether a credential is required.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `SELECT`.
+#[allow(dead_code)] // Consumed by local login + recovery in this PR
+pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as!(
+        UserRow,
+        "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
+                role AS \"role: Role\", is_child, created_at, updated_at, \
+                session_version, theme_preference AS \"theme_preference: ThemePreference\" \
+         FROM users WHERE lower(email) = lower($1)",
+        email,
+    )
+    .fetch_optional(pool)
+    .await
+    .map(|opt| opt.map(User::from))
+}
+
 /// Fetch a user by OIDC identity `(issuer, subject)`, resolved through
 /// [`crate::models::user_identities`]. Returns `Ok(None)` if no link exists.
 ///

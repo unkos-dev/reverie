@@ -45,6 +45,37 @@ pub async fn find_by_user_id(
     .await
 }
 
+/// Insert or replace a user's local password credential. Used by first-run
+/// setup, the headless env seed, and password reset. The argument is an Argon2id
+/// PHC string (see [`crate::auth::password`]); this layer never sees a clear
+/// password. On replace, the `trg_local_credentials_updated_at` trigger bumps
+/// `updated_at`.
+///
+/// For the bootstrap path the credential insert runs inside the same
+/// transaction as the `users` row and the `instance_bootstrap` marker; that
+/// transactional insert is written at its call site so it can bind `&mut *tx`.
+/// This helper is the non-transactional reset/seed path.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the `INSERT ... ON CONFLICT`.
+#[allow(dead_code)] // Consumed by setup/reset/seed in this PR
+pub async fn set_password(
+    pool: &PgPool,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO local_credentials (user_id, password_hash) VALUES ($1, $2) \
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash",
+        user_id,
+        password_hash,
+    )
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

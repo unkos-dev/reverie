@@ -25,6 +25,9 @@ pub mod middleware;
 /// OIDC provider discovery and `OidcClient` construction.
 pub mod oidc;
 
+/// Argon2id password hashing/verification for local accounts.
+pub mod password;
+
 /// Session login / logout helpers on `tower_sessions::Session`.
 pub mod session;
 

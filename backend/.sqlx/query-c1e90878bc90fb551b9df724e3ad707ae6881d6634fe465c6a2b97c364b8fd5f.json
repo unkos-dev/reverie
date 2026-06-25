@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM local_login_throttle WHERE email_lower = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c1e90878bc90fb551b9df724e3ad707ae6881d6634fe465c6a2b97c364b8fd5f"
+}
