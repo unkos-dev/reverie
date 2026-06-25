@@ -384,6 +384,14 @@ async fn local_login(
     // account, so an unknown email cannot grow the throttle table unbounded (the
     // per-source limiter covers unknown-email spray). A wrong attempt during an
     // active backoff is rejected hard without further growing the counter.
+    //
+    // Keyed on account existence ONLY, deliberately not on whether a local
+    // credential is set. Gating on credential presence would let an attacker
+    // distinguish "has a local password" from "OIDC-only / no password" by
+    // observing whether a backoff appears, reintroducing the enumeration oracle
+    // the constant-work verify paths close. An OIDC-only account never completes
+    // a local login, so the backoff is harmless and self-clears on a later
+    // success.
     if account_exists {
         if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
             .await
