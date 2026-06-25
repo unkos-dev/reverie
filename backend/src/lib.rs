@@ -5,8 +5,7 @@
 //! thin entry that calls [`run`] under a `#[tokio::main]` runtime; the split
 //! exists so that `missing_docs` and clippy pedantic doc lints fire on
 //! externally-reachable items (a binary-only crate has no external API and
-//! the lints are silent — see `adr/2026-05-08-tiered-comment-policy.md`
-//! Phase 0).
+//! the lints are silent — see `adr/2026-05-08-tiered-comment-policy.md`).
 //!
 //! Embedders mounting Reverie under their own server may use
 //! [`build_router`] directly with a fully-initialised [`state::AppState`].
@@ -122,7 +121,7 @@ where
             state.clone(),
             security::headers::api_csp_layer,
         ))
-        // CSRF synchronizer-token enforcement (Phase 2). Self-exempts safe
+        // CSRF synchronizer-token enforcement. Self-exempts safe
         // methods and non-session-authenticated callers, so pre-auth `/auth/*`
         // POSTs and Basic-auth OPDS callers pass through; it gates
         // session-authenticated mutations on `/api/v1/*`. Session state is
@@ -214,7 +213,7 @@ fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
 /// - `axum::serve` returns an error during the serving loop.
 #[allow(
     clippy::too_many_lines,
-    reason = "Phase 0 of the comment-policy rollout is structural-only: this body was verbatim moved from the pre-split `main.rs` and lightly extended (3 lines for try_init error propagation + the `# Errors` docstring section). a typed `StartupError` will reshape startup error handling and is the natural place to extract phase helpers (`setup_tracing`, `init_csp_headers`, `spawn_workers`)."
+    reason = "This body was verbatim moved from the pre-split `main.rs` and lightly extended (3 lines for try_init error propagation + the `# Errors` docstring section). a typed `StartupError` will reshape startup error handling and is the natural place to extract phase helpers (`setup_tracing`, `init_csp_headers`, `spawn_workers`)."
 )]
 pub async fn run() -> anyhow::Result<()> {
     let mut config =
@@ -296,7 +295,7 @@ pub async fn run() -> anyhow::Result<()> {
         .await
         .context("bootstrap the first administrator from the environment seed")?;
 
-    // OIDC is optional (decision 11): discover the client only when configured.
+    // OIDC is optional: discover the client only when configured.
     // A local-only instance carries no OIDC client and the initiate/callback
     // handlers 404. Gate 4 has already guaranteed at least one provider is usable.
     let oidc_client = if config.oidc_configured() {

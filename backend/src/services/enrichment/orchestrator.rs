@@ -987,7 +987,7 @@ mod tests {
         }
     }
 
-    /// Adversarial-review D2 + C5: a hung provider must NOT discard
+    /// A hung provider must NOT discard
     /// completed siblings, and every unfinished provider must be reported
     /// as `SourceError::Timeout` so the queue marks the row `failed`
     /// (eligible for retry) instead of silently `complete`.

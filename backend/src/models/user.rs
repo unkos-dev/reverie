@@ -104,7 +104,7 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
 
 /// Whether any administrator account exists.
 ///
-/// The bootstrap gate's cheap fast-reject check (decision 9): a `false` here is
+/// The bootstrap gate's cheap fast-reject check: a `false` here is
 /// the common path that lets first-run setup proceed. It is NOT the race guard
 /// on its own; a `SELECT EXISTS` then `INSERT` does not serialize under READ
 /// COMMITTED. The authoritative zero->one transition guard is the
@@ -162,7 +162,7 @@ pub enum BootstrapError {
 /// transaction.
 ///
 /// THREAT (TOCTOU, CWE-367): the singleton insert is the DB-enforced zero->one
-/// gate (decision 9), not an app-layer `admin_exists` re-check, because three
+/// gate, not an app-layer `admin_exists` re-check, because three
 /// writers can mint the first admin (HTTP setup, CLI bootstrap, env-seed) and a
 /// `SELECT EXISTS ... INSERT` does not serialize under READ COMMITTED. Inserting
 /// the marker FIRST means a second concurrent bootstrap collides on its primary
@@ -944,7 +944,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn concurrent_first_admin_yields_exactly_one(pool: PgPool) {
-        // Invariant 1 (decision 9): the instance_bootstrap singleton serializes
+        // Single-admin invariant: the instance_bootstrap singleton serializes
         // the zero->one transition. Two overlapping bootstraps must yield exactly
         // one administrator, not two.
         let phc = crate::auth::password::hash_password(b"a strong password").expect("hash");

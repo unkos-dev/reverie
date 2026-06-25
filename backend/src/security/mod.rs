@@ -19,7 +19,7 @@
 /// Pure CSP header-value builders. Called once at startup.
 pub mod csp;
 
-/// CSRF synchronizer-token validating middleware (Phase 2 of the rollout).
+/// CSRF synchronizer-token validating middleware.
 pub mod csrf;
 
 /// Frontend dist + CSP-hash sidecar validation. Called once at startup.

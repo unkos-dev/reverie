@@ -9,7 +9,7 @@
 //! throttle exists independent of whether the email resolves to an account,
 //! keeping the failed-login path account-existence uniform.
 //!
-//! THREAT (lockout DoS, decision 6): this escalating per-account backoff must
+//! THREAT (lockout DoS): this escalating per-account backoff must
 //! NOT block a correct password. The login handler verifies the password first
 //! and only calls [`record_failure`] on a *failed* attempt; a success calls
 //! [`reset`]. Per-source (per-IP) rate limiting does the hard blocking; this is
@@ -58,7 +58,7 @@ pub async fn record_failure(
     .await
 }
 
-/// Clear an email's throttle row. Called on a successful login (decision 6) and
+/// Clear an email's throttle row. Called on a successful login and
 /// by the `reverie unlock-account` CLI command.
 ///
 /// # Errors

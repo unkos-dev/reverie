@@ -41,7 +41,7 @@ pub struct AppState {
     pub config: Config,
     /// Pre-discovered OIDC client (issuer metadata + JWKS) for the
     /// login and callback routes, or `None` when OIDC is not configured
-    /// (local-only instance; decision 11). Discovery happens once at startup
+    /// (local-only instance). Discovery happens once at startup
     /// in [`crate::auth::oidc::init_oidc_client`] and only when
     /// [`crate::config::Config::oidc_configured`] is true; clones are cheap
     /// (the underlying `openidconnect::Client` derives `Clone`). The OIDC

@@ -1,10 +1,10 @@
-//! CSRF synchronizer-token validating middleware (Phase 2 of the CSRF rollout).
+//! CSRF synchronizer-token validating middleware.
 //!
 //! # Tier 2 — security-critical
 //!
-//! Phase 1 (already shipped) mints a per-session `csrf_token` at login and
-//! exposes it via `GET /auth/me`; the frontend echoes it as `X-CSRF-Token` on
-//! mutating requests. This middleware is Phase 2: it enforces that token on
+//! Token issuance (already shipped) mints a per-session `csrf_token` at login
+//! and exposes it via `GET /auth/me`; the frontend echoes it as `X-CSRF-Token`
+//! on mutating requests. This middleware enforces that token on
 //! session-authenticated mutating requests.
 //!
 //! THREAT (CSRF): `SameSite=Lax` cookies do not cover every cross-site mutating
@@ -60,7 +60,7 @@ pub async fn csrf_required(
     }
 
     // Exemption keys on auth method: only a session-authenticated caller is
-    // subject to CSRF (decision 4). No session user => Basic/Bearer or pre-auth.
+    // subject to CSRF. No session user => Basic/Bearer or pre-auth.
     let session_user: Option<Uuid> = session
         .get(SESSION_KEY_USER_ID)
         .await

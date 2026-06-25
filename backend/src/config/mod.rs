@@ -67,7 +67,7 @@ pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
 
 /// OIDC fields that become required *together* once OIDC is configured (the
 /// issuer URL is present). OIDC is enabled iff configured — there is no separate
-/// `oidc_enabled` flag (decision 11) — so these are conditionally, not
+/// `oidc_enabled` flag — so these are conditionally, not
 /// unconditionally, required: a fully-unset OIDC block is valid (local-only
 /// instance), but a partially-configured one (issuer set, secret missing) is a
 /// `MissingVar` for the absent field. Gate 4 in [`Config::from_figment`] enforces
@@ -155,7 +155,7 @@ pub struct Config {
     /// attacker-spoofable, so it is honoured only when an operator names it.
     pub trusted_client_ip_header: Option<String>,
     /// OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC
-    /// authentication path. OIDC is enabled iff this is set (decision 11); when
+    /// authentication path. OIDC is enabled iff this is set; when
     /// present, the other three `OIDC_*` fields become required together (Gate
     /// 4). The boundary control
     /// is `reqwest`'s TLS validation against the bundled
@@ -451,7 +451,7 @@ impl Config {
     }
 
     /// Whether the OIDC authentication path is enabled. OIDC is enabled iff it is
-    /// configured, signalled by a non-blank issuer URL (decision 11); there is no
+    /// configured, signalled by a non-blank issuer URL; there is no
     /// separate `oidc_enabled` flag that could disagree with the actual config.
     /// Gate 4 guarantees that when this is `true`, all four `OIDC_*` fields are
     /// present, so callers can treat a configured instance as fully usable.
@@ -666,7 +666,7 @@ impl Default for Config {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
-            // Local-first default (decision 11); Gate 4 guards the lock-out case.
+            // Local-first default; Gate 4 guards the lock-out case.
             local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
@@ -1363,7 +1363,7 @@ mod tests {
 
     #[test]
     fn oidc_unconfigured_loads_as_local_only() {
-        // OIDC fully unset is valid (decision 11): local auth defaults on, so a
+        // OIDC fully unset is valid: local auth defaults on, so a
         // fresh instance is usable without an external IdP.
         let vars = without_keys(&[
             "OIDC_ISSUER_URL",
@@ -1381,7 +1381,7 @@ mod tests {
 
     #[test]
     fn local_disabled_without_oidc_is_rejected() {
-        // Both providers off would lock everyone out (decision 5): refuse boot.
+        // Both providers off would lock everyone out: refuse boot.
         let mut vars = without_keys(&[
             "OIDC_ISSUER_URL",
             "OIDC_CLIENT_ID",

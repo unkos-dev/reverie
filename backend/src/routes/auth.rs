@@ -67,7 +67,7 @@ pub struct CallbackParams {
 /// `OIDC_REDIRECT_URI` at their `IdP`.
 ///
 /// # Errors
-/// - [`AppError::NotFound`] when OIDC is not configured (decision 11).
+/// - [`AppError::NotFound`] when OIDC is not configured.
 /// - [`AppError::Internal`] when session storage fails.
 #[utoipa::path(
     get,
@@ -83,7 +83,7 @@ async fn oidc_login(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<impl IntoResponse, AppError> {
-    // OIDC is optional (decision 11). When unconfigured this handler is
+    // OIDC is optional. When unconfigured this handler is
     // unreachable in practice (the SPA hides the OIDC action), but guard so a
     // direct hit 404s cleanly rather than acting on an absent client.
     let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
@@ -104,7 +104,7 @@ async fn oidc_login(
     // Store OIDC flow state in the underlying session. The OIDC
     // transient anti-forgery state lives under `oidc_csrf_state` — a
     // dedicated key so it can never shadow or be confused with the
-    // long-lived app-level `csrf_token` (synchronizer-token Phase 1)
+    // long-lived app-level `csrf_token` (the synchronizer token)
     // that `/auth/callback` writes after a successful login. See
     // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
     session
@@ -149,7 +149,7 @@ async fn callback(
     params: Result<Query<CallbackParams>, QueryRejection>,
 ) -> Result<(CookieJar, Redirect), AppError> {
     let Query(params) = params?;
-    // OIDC optional (decision 11): a callback without a configured client 404s.
+    // OIDC optional: a callback without a configured client 404s.
     let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
     // Validate OIDC anti-forgery state (the `state` query param echoed
     // back by the IdP must match the value `/auth/oidc/login` stored under
@@ -234,9 +234,9 @@ async fn callback(
         tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
     }
 
-    // OWASP CSRF synchronizer token (Phase 1: token issuance only;
-    // Phase 2 enables the validating middleware — see
-    // adr/2026-05-22-json-api-conventions.md §"CSRF defense" and the
+    // OWASP CSRF synchronizer token. This mints and exposes the token;
+    // a separate validating middleware enforces it on mutating requests
+    // (see adr/2026-05-22-json-api-conventions.md §"CSRF defense" and the
     // order-of-operations note). 32 bytes from the OS CSPRNG, encoded
     // as 43-char base64url-unpadded; mirrors `auth::token::generate_device_token`.
     //
@@ -281,10 +281,10 @@ struct LocalLoginRequest {
 }
 
 /// `POST /auth/local/login` — email + password sign-in, establishing the same
-/// session contract as the OIDC callback (invariant 2).
+/// session contract as the OIDC callback.
 ///
 /// THREAT (enumeration): unknown email and wrong password return the identical
-/// generic 422, and both spend equivalent Argon2 work (decision 10), so neither
+/// generic 422, and both spend equivalent Argon2 work, so neither
 /// the response nor the timing distinguishes a non-existent account.
 ///
 /// # Errors
@@ -333,7 +333,7 @@ async fn local_login(
 
     // Resolve the account, then verify. On an unknown email or an account with
     // no local credential, spend equivalent Argon2 work against a dummy hash so
-    // login latency does not leak account existence (decision 10).
+    // login latency does not leak account existence.
     let account = user::find_by_email(&state.pool, &body.email)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -363,7 +363,7 @@ async fn local_login(
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
 
-        // Session contract (invariant 2): rotate id + persist identity, mint the
+        // Session contract: rotate id + persist identity, mint the
         // CSRF synchronizer token, seed the theme cookie. Identical to the OIDC
         // callback, returning 204 rather than a redirect.
         crate::auth::session::login(&session, &user)
@@ -412,7 +412,7 @@ struct SetupStatusResponse {
     setup_required: bool,
     /// Whether local email+password login is enabled.
     local_auth_enabled: bool,
-    /// Whether OIDC is configured (computed from the issuer; decision 11). Drives
+    /// Whether OIDC is configured (computed from the issuer). Drives
     /// the SPA's provider-aware redirect and the "Sign in with OIDC" action.
     oidc_enabled: bool,
 }
@@ -454,7 +454,7 @@ struct SetupRequest {
 
 /// `POST /auth/setup` — first-run bootstrap: mint the first administrator.
 ///
-/// THREAT (invariant 1): bootstrap is the ONLY first-admin path. The race
+/// THREAT: bootstrap is the ONLY first-admin path. The race
 /// guarantee is the DB `instance_bootstrap` singleton insert inside
 /// [`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only
 /// a cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under
@@ -548,7 +548,7 @@ struct ForgotPasswordRequest {
 /// to the operator-readable host file (mode 0600). A failed file write leaves an
 /// unconsumed-but-unusable row that simply expires; it is never a cleartext PIN
 /// with no consuming row. On an unknown email, equivalent Argon2 work is spent so
-/// timing does not leak existence (decision 10; a small DB/file residual is
+/// timing does not leak existence (a small DB/file residual is
 /// accepted).
 ///
 /// # Errors
@@ -607,7 +607,7 @@ async fn forgot_password(
         }
     } else {
         // Unknown email: spend comparable Argon2 work so response timing does not
-        // reveal account existence (decision 10).
+        // reveal account existence.
         crate::auth::password::verify_against_dummy(body.email.as_bytes());
     }
 
@@ -783,7 +783,7 @@ async fn me(
     // the long-lived app token (or absent for sessions that never went
     // through `/auth/callback`, e.g. Basic-auth OPDS callers). Treat
     // the missing case as `null` rather than 500: the response shape
-    // stays stable, and the Phase 2 middleware (not this handler) is
+    // stays stable, and the validating middleware (not this handler) is
     // what refuses unsafe verbs without a token.
     let csrf_token: Option<String> = session
         .get("csrf_token")
@@ -1032,7 +1032,7 @@ mod tests {
         );
         // Basic-auth sessions skip `/auth/callback`, so the CSRF
         // synchronizer token is never seeded. The field must still be
-        // present (shape stability) but null. Phase 2's `csrf_required`
+        // present (shape stability) but null. The `csrf_required`
         // middleware exempts Basic-auth callers (OPDS clients) from
         // mutating-verb gating; this assertion locks that contract so
         // a future "always populate csrf_token" refactor cannot
@@ -1305,10 +1305,10 @@ mod tests {
         );
 
         // Step 8: /auth/me carries a session-stored CSRF synchronizer
-        // token (43-char base64url-unpadded ≙ 32 random bytes). Phase 2
-        // wires the middleware that validates `X-CSRF-Token`; Phase 1
-        // ships token issuance + exposure here so the frontend can
-        // start reading it before the middleware turns on. See
+        // token (43-char base64url-unpadded ≙ 32 random bytes). The
+        // validating middleware checks `X-CSRF-Token`; token issuance +
+        // exposure ship here so the frontend can start reading it before
+        // the middleware turns on. See
         // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
         let token = me_body
             .get("csrf_token")
@@ -1327,10 +1327,10 @@ mod tests {
             "csrf_token must be base64url charset; got: {token}"
         );
 
-        // Step 9: token is stable across reads within a session. Phase
-        // 2 will rotate on role change; Phase 1 must NOT rotate per
-        // request — otherwise the frontend's cached token races every
-        // mutating request.
+        // Step 9: token is stable across reads within a session. A
+        // future change may rotate it on role change, but issuance must
+        // NOT rotate per request — otherwise the frontend's cached token
+        // races every mutating request.
         let me_resp_2 = server.get("/auth/me").await;
         assert_eq!(me_resp_2.status_code(), StatusCode::OK);
         let me_body_2: serde_json::Value = me_resp_2.json();
@@ -1349,8 +1349,6 @@ mod tests {
     /// the two keys breaks here rather than silently shipping a
     /// confused-deputy where `/auth/me` returns the OIDC transient
     /// value pretending to be the app token.
-    ///
-    /// Locks Pass-1 finding D1 from the PR #306 adversarial review.
     #[sqlx::test(migrations = "./migrations")]
     async fn re_login_preserves_app_csrf_token(pool: sqlx::PgPool) {
         use crate::state::AppState;
@@ -1465,7 +1463,7 @@ mod tests {
 
         // The app token under `csrf_token` must survive the re-login
         // intact. If this fires, /auth/oidc/login is shadowing the app
-        // token with OIDC transient state (D1 regression).
+        // token with OIDC transient state.
         let preserved_app_token: String = serde_json::from_value(
             record_2
                 .data
@@ -1889,7 +1887,7 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
         // No such account exists: the response must be the identical generic 422
-        // a wrong password yields (no enumeration; decision 10).
+        // a wrong password yields (no enumeration).
         let resp = server
             .post("/auth/local/login")
             .json(&serde_json::json!({"email": "ghost@example.com", "password": "anything"}))
@@ -1945,7 +1943,7 @@ mod tests {
             "a mismatched CSRF token is rejected"
         );
 
-        // The minted token passes the CSRF layer (invariant 2): the request
+        // The minted token passes the CSRF layer: the request
         // reaches the handler rather than being blocked at 428/403.
         let me: serde_json::Value = server.get("/auth/me").await.json();
         let token = me
