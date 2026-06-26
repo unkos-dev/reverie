@@ -2249,16 +2249,31 @@ mod tests {
             )
             .await;
         assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        let me = server.get("/auth/me").await;
         assert_eq!(
-            server.get("/auth/me").await.status_code(),
+            me.status_code(),
             StatusCode::OK,
             "the session authenticates before the reset"
         );
+        // csrf_required gates mutating verbs by auth method, and this caller now
+        // holds a session, so the recovery POSTs below must carry the token.
+        // Anonymous recovery (the common case) is exempt; this stolen-cookie
+        // scenario is not.
+        let csrf_token = me
+            .json::<serde_json::Value>()
+            .get("csrf_token")
+            .and_then(|v| v.as_str())
+            .expect("login mints a csrf token")
+            .to_owned();
 
         // Recover and reset the password. A session that predates the reset (e.g.
         // an attacker's stolen cookie) must not survive it.
         let forgot = server
             .post("/auth/forgot-password")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_str(&csrf_token).expect("valid header"),
+            )
             .json(&serde_json::json!({"email": "stale@example.com"}))
             .await;
         assert_eq!(forgot.status_code(), StatusCode::OK);
@@ -2272,6 +2287,10 @@ mod tests {
             .to_owned();
         let reset = server
             .post("/auth/reset-password")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_str(&csrf_token).expect("valid header"),
+            )
             .json(&serde_json::json!({
                 "email": "stale@example.com",
                 "pin": pin,
