@@ -135,7 +135,7 @@
       "default": ""
     },
     "oidc_client_secret": {
-      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material; never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
+      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required when OIDC is\nconfigured). Treated as secret material; never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
       "type": "string",
       "default": ""
     },
