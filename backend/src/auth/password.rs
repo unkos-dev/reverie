@@ -10,7 +10,7 @@
 use std::sync::LazyLock;
 
 use argon2::Argon2;
-use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::rand_core::{OsRng, RngCore};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 
 /// Hash a password into an Argon2id PHC string with a fresh random salt.
@@ -38,23 +38,26 @@ pub fn verify_password(password: &[u8], phc: &str) -> Result<(), argon2::passwor
     Argon2::default().verify_password(password, &PasswordHash::new(phc)?)
 }
 
-/// Process-stable dummy PHC, hashed once on first use. Built at runtime so it is
-/// always a well-formed PHC under the current parameters (no hand-authored
-/// base64 to drift).
+/// Process-stable dummy PHC, hashed once on first use from random bytes. Built at
+/// runtime so it is always a well-formed PHC under the current parameters (no
+/// hand-authored base64 to drift) and carries no hard-coded secret.
 ///
 /// THREAT (CWE-208, timing side channel): this hash IS the anti-enumeration
 /// timing control. An empty or malformed value would make [`verify_against_dummy`]
 /// return in microseconds, so the no-account path would run measurably faster
-/// than the wrong-password path and leak account existence. Hashing a fixed
-/// secret with default Argon2 params cannot fail except on an unrecoverable
-/// environment fault, so this fails loud at startup rather than silently shipping
-/// the degraded control.
+/// than the wrong-password path and leak account existence. The input plaintext is
+/// never recovered or compared against a credential, so it is random rather than
+/// fixed; hashing it with default Argon2 params cannot fail except on an
+/// unrecoverable environment fault, so this fails loud at startup rather than
+/// silently shipping the degraded control.
 static DUMMY_PHC: LazyLock<String> = LazyLock::new(|| {
+    let mut secret = [0u8; 32];
+    OsRng.fill_bytes(&mut secret);
     #[allow(
         clippy::expect_used,
-        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash a fixed secret with default Argon2 params is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
+        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash random bytes with default Argon2 params is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
     )]
-    let phc = hash_password(b"reverie-anti-enumeration-dummy-secret")
+    let phc = hash_password(&secret)
         .expect("DUMMY_PHC: Argon2 must hash the anti-enumeration dummy secret");
     phc
 });
