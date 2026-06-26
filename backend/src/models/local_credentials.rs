@@ -129,4 +129,60 @@ mod tests {
         let found = find_by_user_id(&pool, user_id).await.expect("find");
         assert!(found.is_none(), "user with no password has no credential");
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn set_password_inserts_first_credential(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let hash = "$argon2id$v=19$m=19456,t=2,p=1$first$firsthash";
+        set_password(&pool, user_id, hash)
+            .await
+            .expect("first set_password");
+
+        let found = find_by_user_id(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("credential present after first set_password");
+        assert_eq!(found.user_id, user_id);
+        assert_eq!(found.password_hash, hash);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn set_password_replaces_on_conflict(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        set_password(&pool, user_id, "$argon2id$v=19$m=19456,t=2,p=1$old$oldhash")
+            .await
+            .expect("seed credential");
+        let before = find_by_user_id(&pool, user_id)
+            .await
+            .expect("find before")
+            .expect("credential present");
+
+        // The updated_at trigger fires on UPDATE; sleep so the replace lands at a
+        // strictly later instant and the assertion below proves the bump.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        let new_hash = "$argon2id$v=19$m=19456,t=2,p=1$new$newhash";
+        set_password(&pool, user_id, new_hash)
+            .await
+            .expect("replace credential");
+
+        let after = find_by_user_id(&pool, user_id)
+            .await
+            .expect("find after")
+            .expect("credential present");
+        assert_eq!(
+            after.password_hash, new_hash,
+            "ON CONFLICT replaces the stored hash"
+        );
+        assert_eq!(
+            after.created_at, before.created_at,
+            "created_at is preserved across a replace"
+        );
+        assert!(
+            after.updated_at > before.updated_at,
+            "the trigger advances updated_at on replace (before={}, after={})",
+            before.updated_at,
+            after.updated_at
+        );
+    }
 }
