@@ -1,7 +1,7 @@
--- Local-auth recovery + throttle + first-admin gate (S2 of the auth/authz arc).
+-- Local-auth recovery + throttle + first-admin gate.
 --
--- Three tables backing the local-account-default capability that S2 builds on
--- top of S1's identity schema: email-less PIN password recovery, login
+-- Three tables backing the local-account-default capability on top of the
+-- existing identity schema: email-less PIN password recovery, login
 -- throttling that a separate CLI process can clear, and the database-enforced
 -- single-first-admin bootstrap gate. No Rust query code ships in this commit
 -- (tables only): the query path and the regenerated .sqlx cache land after this
@@ -56,7 +56,7 @@ CREATE TABLE public.local_login_throttle (
         CHECK (updated_at >= '0001-01-01 00:00:00+00' AND updated_at < '10000-01-01 00:00:00+00')
 );
 
--- Database-enforced first-administrator gate (invariant 1). A boolean PK
+-- Database-enforced first-administrator gate. A boolean PK
 -- pinned to true by the singleton CHECK admits at most one row: the first-admin
 -- transaction inserts the single true row in the SAME transaction as the admin
 -- user, so a second concurrent bootstrap collides on the primary key and fails.
@@ -64,7 +64,7 @@ CREATE TABLE public.local_login_throttle (
 -- setup, CLI bootstrap, startup env-seed) without each cooperating on an
 -- app-layer lock, closing the READ COMMITTED TOCTOU (CWE-367) that a
 -- SELECT-EXISTS-then-INSERT leaves open. It is a one-shot transition guard, NOT
--- a permanent uniqueness rule: multiple admins are allowed later (S3). Holds
+-- a permanent uniqueness rule: multiple admins are allowed later. Holds
 -- security-gate state: app only, NO reverie_readonly grant.
 CREATE TABLE public.instance_bootstrap (
     id boolean NOT NULL DEFAULT true,

@@ -55,7 +55,7 @@ fn required_and_secret_vars_render_correctly() {
     assert!(row(&md, "DATABASE_URL").contains("| Yes |"));
 
     // A secret variable is documented by name, with an EMPTY default cell — its
-    // value is never rendered. OIDC is conditionally required (decision 11), so
+    // value is never rendered. OIDC is conditionally required, so
     // its secret renders Conditional, not Yes.
     let secret = row(&md, "OIDC_CLIENT_SECRET");
     assert!(

@@ -426,7 +426,7 @@ impl Config {
             }
         }
 
-        // Gate 4 — provider availability (decisions 5, 11). OIDC is enabled iff
+        // Gate 4: provider availability. OIDC is enabled iff
         // configured (its issuer is set); a partially-configured OIDC block is a
         // MissingVar for the absent field, so an instance never half-enables a
         // provider. At least one provider (local or OIDC) must remain usable, or
