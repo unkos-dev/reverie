@@ -145,6 +145,31 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, s
     .map(|opt| opt.map(User::from))
 }
 
+/// Increment a user's `session_version`, invalidating all of their existing
+/// sessions. This is the force-logout lever: the auth middleware rejects any
+/// session whose stored version is stale.
+///
+/// Takes an executor so the caller can bind it to a transaction (e.g. the
+/// password-reset flow bumps the version in the same transaction that writes
+/// the new credential) or run it standalone against a pool.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the `UPDATE`.
+#[allow(dead_code)] // Consumed by the password-reset route in this PR
+pub async fn increment_session_version(
+    executor: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE users SET session_version = session_version + 1, updated_at = now() WHERE id = $1",
+        user_id,
+    )
+    .execute(executor)
+    .await
+    .map(|_| ())
+}
+
 /// Typed outcome of the first-admin bootstrap transaction.
 #[derive(Debug)]
 pub enum BootstrapError {

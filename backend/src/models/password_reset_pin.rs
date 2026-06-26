@@ -101,13 +101,13 @@ pub async fn find_active_by_user(
 ///
 /// Returns [`sqlx::Error`] from the `UPDATE`.
 #[allow(dead_code)] // Consumed by the reset-password route in this PR
-pub async fn consume(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn consume(executor: impl sqlx::PgExecutor<'_>, id: Uuid) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE password_reset_pins SET consumed_at = now() \
          WHERE id = $1 AND consumed_at IS NULL",
         id,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)
 }

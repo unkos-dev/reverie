@@ -640,9 +640,11 @@ struct ResetPasswordRequest {
 /// and verified constant-time via Argon2. Any failure (unknown email, no active
 /// PIN, wrong PIN, expired, too-short password) returns one generic 422, so the
 /// response never distinguishes which part failed; the no-PIN path spends
-/// equivalent work. Reset does NOT establish a session (no auto-login) and forces
-/// re-authentication. The PIN row is consumed before the password is set and the
-/// user's PIN file is then removed.
+/// equivalent work. Reset does NOT establish a session (no auto-login). Consuming
+/// the PIN, writing the new credential, and bumping `session_version` (which
+/// invalidates every session predating the reset) run in one transaction, so a
+/// partial apply cannot leave the account locked out or a stale session live.
+/// The PIN file is removed after the transaction commits.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when local authentication is disabled.
@@ -697,17 +699,38 @@ async fn reset_password(
     };
 
     if verified && let (Some(user), Some(pin)) = (&user, &active) {
+        // Hash before opening the transaction: Argon2 is CPU-bound (~100 ms) and
+        // must not be held across an open DB connection/locks.
+        let phc = crate::auth::password::hash_password(body.new_password.as_bytes())
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+        // One transaction: consume the PIN, write the new credential, and
+        // invalidate existing sessions atomically. A partial apply (PIN spent
+        // but password unchanged) would lock the user out with no usable PIN.
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
         // Single-use: consume first (race-safe). A losing concurrent reset gets
-        // `false` and falls through to the generic failure.
-        let consumed = crate::models::password_reset_pin::consume(&state.pool, pin.id)
+        // `false`; rolling back keeps that branch a no-op.
+        let consumed = crate::models::password_reset_pin::consume(&mut *tx, pin.id)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
         if consumed {
-            let phc = crate::auth::password::hash_password(body.new_password.as_bytes())
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
-            crate::models::local_credentials::set_password(&state.pool, user.id, &phc)
+            crate::models::local_credentials::set_password(&mut *tx, user.id, &phc)
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
+            // THREAT (CWE-613): a password reset must terminate sessions that
+            // predate it, or a session stolen before recovery survives the reset.
+            crate::models::user::increment_session_version(&mut *tx, user.id)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+
             if let Err(e) = crate::auth::recovery::remove_pin_file(
                 std::path::Path::new(&state.config.recovery_pin_dir),
                 user.id,
@@ -1920,7 +1943,11 @@ mod tests {
             "a good password",
         )
         .await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        // Persist the session cookie set by login so the later mutations are
+        // session-authenticated; without it the CSRF layer correctly exempts an
+        // anonymous request and the assertions below would see 401, not 428.
+        server.save_cookies();
 
         server
             .post("/auth/local/login")
@@ -2171,5 +2198,66 @@ mod tests {
             "a consumed PIN is single-use"
         );
         // The successful reset already removed the PIN file; nothing to clean up.
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_invalidates_existing_sessions(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let user_id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "stale",
+            "stale@example.com",
+            "the old password",
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server.save_cookies();
+
+        // Establish a session and confirm it is live before the reset.
+        let login = server
+            .post("/auth/local/login")
+            .json(
+                &serde_json::json!({"email": "stale@example.com", "password": "the old password"}),
+            )
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::OK,
+            "the session authenticates before the reset"
+        );
+
+        // Recover and reset the password. A session that predates the reset (e.g.
+        // an attacker's stolen cookie) must not survive it.
+        let forgot = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "stale@example.com"}))
+            .await;
+        assert_eq!(forgot.status_code(), StatusCode::OK);
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
+        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
+        let pin = contents
+            .lines()
+            .find_map(|l| l.strip_prefix("pin: "))
+            .expect("PIN line in file")
+            .to_owned();
+        let reset = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "stale@example.com",
+                "pin": pin,
+                "new_password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(reset.status_code(), StatusCode::OK);
+
+        // The pre-reset session is now rejected: the reset bumped session_version.
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a session established before the reset is invalidated by it"
+        );
     }
 }

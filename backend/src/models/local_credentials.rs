@@ -51,17 +51,19 @@ pub async fn find_by_user_id(
 /// password. On replace, the `trg_local_credentials_updated_at` trigger bumps
 /// `updated_at`.
 ///
-/// For the bootstrap path the credential insert runs inside the same
-/// transaction as the `users` row and the `instance_bootstrap` marker; that
-/// transactional insert is written at its call site so it can bind `&mut *tx`.
-/// This helper is the non-transactional reset/seed path.
+/// Takes an executor so the caller can bind it to a transaction (the
+/// password-reset flow writes the credential in the same transaction that
+/// consumes the PIN and bumps `session_version`) or run it against a pool (the
+/// headless env seed). The bootstrap path writes its own transactional insert
+/// at the call site alongside the `users` row and the `instance_bootstrap`
+/// marker.
 ///
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `INSERT ... ON CONFLICT`.
 #[allow(dead_code)] // Consumed by setup/reset/seed in this PR
 pub async fn set_password(
-    pool: &PgPool,
+    executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     password_hash: &str,
 ) -> Result<(), sqlx::Error> {
@@ -71,7 +73,7 @@ pub async fn set_password(
         user_id,
         password_hash,
     )
-    .execute(pool)
+    .execute(executor)
     .await
     .map(|_| ())
 }
