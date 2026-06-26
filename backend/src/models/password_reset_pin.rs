@@ -47,7 +47,7 @@ impl std::fmt::Debug for PasswordResetPin {
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `DELETE`.
-#[allow(dead_code)] // Consumed by the forgot-password route in this PR
+#[allow(dead_code)] // Consumed by `rotate`, the sole caller for both recovery paths
 pub async fn supersede_active(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
@@ -66,7 +66,7 @@ pub async fn supersede_active(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `INSERT`.
-#[allow(dead_code)] // Consumed by the forgot-password route in this PR
+#[allow(dead_code)] // Consumed by `rotate`, the sole caller for both recovery paths
 pub async fn insert(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
@@ -82,6 +82,30 @@ pub async fn insert(
     )
     .fetch_one(executor)
     .await
+}
+
+/// Atomically supersede a user's prior active PINs and persist a fresh one,
+/// returning the new row id. The [`supersede_active`] delete and the [`insert`]
+/// share one transaction, so a failure between them cannot leave the user with
+/// no active PIN (codeguard #2: at most one active PIN per user). Hash the PIN
+/// before calling so the CPU-bound work stays outside the transaction.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] if the transaction cannot begin, either statement
+/// fails, or the commit fails. On any failure the transaction rolls back, so the
+/// prior active PIN is preserved.
+pub async fn rotate(
+    pool: &PgPool,
+    user_id: Uuid,
+    pin_hash: &str,
+    expires_at: OffsetDateTime,
+) -> Result<Uuid, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    supersede_active(&mut *tx, user_id).await?;
+    let id = insert(&mut *tx, user_id, pin_hash, expires_at).await?;
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Fetch the single active (unconsumed, unexpired) PIN for a user, newest first
@@ -209,6 +233,61 @@ mod tests {
         assert_eq!(
             active.id, second,
             "only the newest PIN is active after supersede"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rotate_replaces_the_active_pin(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let first = insert(&pool, user_id, "$argon2id$first", expires)
+            .await
+            .expect("seed first pin");
+
+        let second = rotate(&pool, user_id, "$argon2id$second", expires)
+            .await
+            .expect("rotate");
+
+        let active = find_active_by_user(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("one active remains");
+        assert_eq!(active.id, second, "rotate leaves the new PIN active");
+        assert_ne!(active.id, first, "the prior PIN is superseded");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rotate_rolls_back_when_insert_fails(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let original = insert(&pool, user_id, "$argon2id$original", expires)
+            .await
+            .expect("seed original pin");
+
+        // A pre-0001 expiry trips the timestamptz decode-range CHECK, so the
+        // INSERT inside rotate fails after the supersede DELETE has run. An
+        // atomic rotate must roll that DELETE back and leave the original PIN
+        // active; a non-atomic supersede would destroy it and lock the user out
+        // of recovery.
+        let out_of_range = OffsetDateTime::new_utc(
+            time::Date::from_calendar_date(0, time::Month::January, 1).expect("year-0 date"),
+            time::Time::MIDNIGHT,
+        );
+        let err = rotate(&pool, user_id, "$argon2id$replacement", out_of_range)
+            .await
+            .expect_err("insert must violate the expires_at CHECK constraint");
+        assert!(
+            matches!(err, sqlx::Error::Database(_)),
+            "expected a database constraint violation, got {err:?}"
+        );
+
+        let active = find_active_by_user(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("the original PIN must survive the rolled-back rotate");
+        assert_eq!(
+            active.id, original,
+            "rotate must preserve the prior PIN when the insert fails"
         );
     }
 }

@@ -829,17 +829,16 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
         .await
         .context("look up the account")?
         .ok_or_else(|| anyhow::anyhow!("no account with email {email:?}"))?;
-    models::password_reset_pin::supersede_active(&pool, user.id)
-        .await
-        .context("supersede prior recovery PINs")?;
     let pin = auth::recovery::generate_pin();
     let pin_hash = auth::password::hash_password(pin.as_bytes())
         .map_err(|e| anyhow::anyhow!("failed to hash the recovery PIN: {e}"))?;
     let expires_at =
         time::OffsetDateTime::now_utc() + time::Duration::seconds(config.recovery_pin_ttl_secs);
-    models::password_reset_pin::insert(&pool, user.id, &pin_hash, expires_at)
+    // Atomically supersede prior PINs and persist the new one; a failure cannot
+    // leave the user with no active PIN. Hashing stays outside the transaction.
+    models::password_reset_pin::rotate(&pool, user.id, &pin_hash, expires_at)
         .await
-        .context("persist the recovery PIN")?;
+        .context("rotate the recovery PIN")?;
     auth::recovery::write_pin_file(
         std::path::Path::new(&config.recovery_pin_dir),
         user.id,

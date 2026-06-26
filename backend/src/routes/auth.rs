@@ -596,20 +596,9 @@ async fn forgot_password(
         let expires_at = time::OffsetDateTime::now_utc()
             + time::Duration::seconds(state.config.recovery_pin_ttl_secs);
 
-        // Supersede prior PINs and insert the new one atomically, so a failure
-        // between them cannot leave the user with no active PIN.
-        let mut tx = state
-            .pool
-            .begin()
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        crate::models::password_reset_pin::supersede_active(&mut *tx, user.id)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        crate::models::password_reset_pin::insert(&mut *tx, user.id, &pin_hash, expires_at)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        tx.commit()
+        // Atomically supersede prior PINs and persist the new one, so a failure
+        // cannot leave the user with no active PIN.
+        crate::models::password_reset_pin::rotate(&state.pool, user.id, &pin_hash, expires_at)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
 
