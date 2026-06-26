@@ -130,7 +130,7 @@
       "default": null
     },
     "oidc_client_id": {
-      "description": "OIDC client id (`OIDC_CLIENT_ID`, required).",
+      "description": "OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).",
       "type": "string",
       "default": ""
     },
@@ -140,7 +140,7 @@
       "default": ""
     },
     "oidc_issuer_url": {
-      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC\nauthentication path. OIDC is enabled iff this is set; when\npresent, the other three `OIDC_*` fields become required together (Gate\n4). The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
+      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC\nauthentication path. OIDC is enabled iff this is set; when\npresent, the other three `OIDC_*` fields become required together. The\nboundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
       "type": "string",
       "default": ""
     },
@@ -167,7 +167,7 @@
       "default": null
     },
     "password_min_length": {
-      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). Enforced at first-run setup and password reset. S2 ships only the\nlength floor; breach (HIBP) and strength (zxcvbn) checks are S3.",
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). Enforced at first-run setup and password reset. Only the length\nfloor is enforced; breach (HIBP) and strength (zxcvbn) checks are planned\nfor a later release.",
       "type": "integer",
       "format": "uint",
       "default": 8,
