@@ -1864,7 +1864,7 @@ mod tests {
             &app_pool,
             "local-happy",
             "happy@example.com",
-            "correct horse battery staple",
+            "a perfectly valid passphrase",
         )
         .await;
         let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
@@ -1877,7 +1877,7 @@ mod tests {
             .post("/auth/local/login")
             .json(&serde_json::json!({
                 "email": "happy@example.com",
-                "password": "correct horse battery staple",
+                "password": "a perfectly valid passphrase",
             }))
             .await;
         assert_eq!(
