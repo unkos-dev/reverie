@@ -253,8 +253,8 @@ async fn callback(
     // reader. Re-running `/auth/callback` deliberately rotates this
     // token (each login overwrites the prior session's value).
     // Failure here aborts the login because an unguarded session
-    // would leave the browser unable to mutate state once the Phase
-    // 2 middleware turns on.
+    // would leave the browser unable to mutate state once the
+    // validating CSRF middleware is in place.
     let mut csrf_bytes = [0u8; 32];
     rand::fill(&mut csrf_bytes);
     let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
@@ -353,10 +353,9 @@ async fn local_login(
         false
     };
 
-    let account_exists = account.is_some();
-    // Decision 6: a correct password succeeds even during an active backoff
-    // (which it then clears). Verify-first means backoff never blocks a
-    // legitimate login; it only rejects continued *wrong* attempts.
+    // A correct password succeeds even during an active backoff (which it then
+    // clears). Verify-first means backoff never blocks a legitimate login; it
+    // only rejects continued *wrong* attempts.
     let session_user = if verified { account } else { None };
     if let Some(user) = session_user {
         crate::models::login_throttle::reset(&state.pool, &body.email)
@@ -380,35 +379,33 @@ async fn local_login(
         return Ok((jar, StatusCode::NO_CONTENT));
     }
 
-    // Failed attempt. Escalate the per-account backoff, but only for a real
-    // account, so an unknown email cannot grow the throttle table unbounded (the
-    // per-source limiter covers unknown-email spray). A wrong attempt during an
-    // active backoff is rejected hard without further growing the counter.
+    // Failed attempt. Escalate the per-account backoff for ANY email, whether or
+    // not it resolves to an account.
     //
-    // Keyed on account existence ONLY, deliberately not on whether a local
-    // credential is set. Gating on credential presence would let an attacker
-    // distinguish "has a local password" from "OIDC-only / no password" by
-    // observing whether a backoff appears, reintroducing the enumeration oracle
-    // the constant-work verify paths close. An OIDC-only account never completes
-    // a local login, so the backoff is harmless and self-clears on a later
-    // success.
-    if account_exists {
-        if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?
-            .is_some()
-        {
-            return Err(AppError::RateLimited);
-        }
-        crate::models::login_throttle::record_failure(
-            &state.pool,
-            &body.email,
-            state.config.login_throttle_base_secs,
-            state.config.login_throttle_cap_secs,
-        )
+    // THREAT (enumeration, CWE-204): gating this on account existence would let
+    // two quick wrong attempts distinguish a known email (which hits the backoff
+    // and returns 429) from an unknown one (which never would), reintroducing the
+    // account-enumeration oracle the constant-work verify paths close. The
+    // throttle table is email-keyed with no FK, so an unknown email simply gets
+    // its own row; record_failure upserts on that key, so repeated attempts on
+    // one email update a single row, and the per-source limiter bounds how fast
+    // distinct rows can be created. A correct password still succeeds during an
+    // active backoff (verify-first, above) and clears the row.
+    if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+        .map_err(|e| AppError::Internal(e.into()))?
+        .is_some()
+    {
+        return Err(AppError::RateLimited);
     }
+    crate::models::login_throttle::record_failure(
+        &state.pool,
+        &body.email,
+        state.config.login_throttle_base_secs,
+        state.config.login_throttle_cap_secs,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
     Err(AppError::Validation("invalid email or password".to_owned()))
 }
 
@@ -591,18 +588,33 @@ async fn forgot_password(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     if let Some(user) = user {
-        crate::models::password_reset_pin::supersede_active(&state.pool, user.id)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+        // Hash before opening the transaction (Argon2 is CPU-bound; do not hold a
+        // connection across it).
         let pin = crate::auth::recovery::generate_pin();
         let pin_hash = crate::auth::password::hash_password(pin.as_bytes())
             .map_err(|e| AppError::Internal(anyhow::anyhow!("pin hash failed: {e}")))?;
         let expires_at = time::OffsetDateTime::now_utc()
             + time::Duration::seconds(state.config.recovery_pin_ttl_secs);
-        // DB row first: a later file-write failure leaves only an unusable row.
-        crate::models::password_reset_pin::insert(&state.pool, user.id, &pin_hash, expires_at)
+
+        // Supersede prior PINs and insert the new one atomically, so a failure
+        // between them cannot leave the user with no active PIN.
+        let mut tx = state
+            .pool
+            .begin()
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
+        crate::models::password_reset_pin::supersede_active(&mut *tx, user.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        crate::models::password_reset_pin::insert(&mut *tx, user.id, &pin_hash, expires_at)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        tx.commit()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
+        // DB committed; the file comes last so a write failure leaves only an
+        // unusable row that expiry sweeps.
         let email = user.email.as_deref().unwrap_or(&body.email);
         if let Err(e) = crate::auth::recovery::write_pin_file(
             std::path::Path::new(&state.config.recovery_pin_dir),
@@ -1465,7 +1477,7 @@ mod tests {
         // Step 2: same authenticated cookie jar — drive /auth/oidc/login
         // AGAIN (no callback). This writes a fresh OIDC transient
         // under `oidc_csrf_state`. The app token under `csrf_token`
-        // MUST be preserved; otherwise the Phase-2 frontend reader
+        // MUST be preserved; otherwise the frontend reader
         // would see /auth/me return the OIDC transient pretending
         // to be the app token.
         let login_resp_2 = server.get("/auth/oidc/login").await;
@@ -1881,8 +1893,8 @@ mod tests {
             "correct credentials establish a session"
         );
 
-        // Invariant 2: the local-login session carries through and a non-empty
-        // CSRF synchronizer token was minted (same contract as the OIDC callback).
+        // The local-login session carries through and a non-empty CSRF
+        // synchronizer token was minted (same contract as the OIDC callback).
         let me = server.get("/auth/me").await;
         assert_eq!(me.status_code(), StatusCode::OK, "session carries through");
         let body: serde_json::Value = me.json();
@@ -1917,18 +1929,40 @@ mod tests {
     async fn local_login_unknown_email_matches_wrong_password(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "known",
+            "known@example.com",
+            "the real password",
+        )
+        .await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-        // No such account exists: the response must be the identical generic 422
-        // a wrong password yields (no enumeration).
-        let resp = server
+        // An unknown email and a wrong password for a real account must be
+        // indistinguishable: identical status AND identical body, or the
+        // difference is an account-enumeration oracle (CWE-204).
+        let unknown = server
             .post("/auth/local/login")
             .json(&serde_json::json!({"email": "ghost@example.com", "password": "anything"}))
             .await;
+        let wrong = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "known@example.com", "password": "wrong password"}))
+            .await;
         assert_eq!(
-            resp.status_code(),
+            unknown.status_code(),
             StatusCode::UNPROCESSABLE_ENTITY,
-            "an unknown email returns the same generic 422 as a wrong password"
+            "an unknown email returns a generic 422"
+        );
+        assert_eq!(
+            wrong.status_code(),
+            unknown.status_code(),
+            "a wrong password returns the same status as an unknown email"
+        );
+        assert_eq!(
+            unknown.text(),
+            wrong.text(),
+            "unknown-email and wrong-password bodies must be byte-identical"
         );
     }
 
@@ -2048,7 +2082,7 @@ mod tests {
             "setup_required is false once an admin exists"
         );
 
-        // Invariant 1: a second setup is rejected (409) once an admin exists.
+        // A second setup is rejected (409) once an admin exists.
         let second = server
             .post("/auth/setup")
             .json(&serde_json::json!({

@@ -14,7 +14,10 @@ use uuid::Uuid;
 
 /// An active (unconsumed, unexpired) password-reset PIN, as needed to verify a
 /// reset attempt. Holds a SECRET (`pin_hash`); not serialisable, never logged.
-#[derive(Debug, Clone, sqlx::FromRow)]
+///
+/// `Debug` is implemented by hand to redact `pin_hash`: deriving it would emit
+/// the Argon2id PHC through any `?value` tracing span (CWE-532).
+#[derive(Clone, sqlx::FromRow)]
 pub struct PasswordResetPin {
     /// Primary key, used to [`consume`] the row after a successful verify.
     pub id: Uuid,
@@ -26,6 +29,17 @@ pub struct PasswordResetPin {
     pub expires_at: OffsetDateTime,
 }
 
+impl std::fmt::Debug for PasswordResetPin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PasswordResetPin")
+            .field("id", &self.id)
+            .field("user_id", &self.user_id)
+            .field("pin_hash", &"[REDACTED]")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
+}
+
 /// Delete any unconsumed PIN rows for a user so at most one stays live. Call
 /// before [`insert`] on each new forgot-password request: a re-request
 /// invalidates the prior PIN (codeguard #2: at most one active PIN per user).
@@ -34,12 +48,15 @@ pub struct PasswordResetPin {
 ///
 /// Returns [`sqlx::Error`] from the `DELETE`.
 #[allow(dead_code)] // Consumed by the forgot-password route in this PR
-pub async fn supersede_active(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+pub async fn supersede_active(
+    executor: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "DELETE FROM password_reset_pins WHERE user_id = $1 AND consumed_at IS NULL",
         user_id,
     )
-    .execute(pool)
+    .execute(executor)
     .await
     .map(|_| ())
 }
@@ -51,7 +68,7 @@ pub async fn supersede_active(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::
 /// Returns [`sqlx::Error`] from the `INSERT`.
 #[allow(dead_code)] // Consumed by the forgot-password route in this PR
 pub async fn insert(
-    pool: &PgPool,
+    executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     pin_hash: &str,
     expires_at: OffsetDateTime,
@@ -63,7 +80,7 @@ pub async fn insert(
         pin_hash,
         expires_at,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
 }
 

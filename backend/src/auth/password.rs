@@ -40,12 +40,24 @@ pub fn verify_password(password: &[u8], phc: &str) -> Result<(), argon2::passwor
 
 /// Process-stable dummy PHC, hashed once on first use. Built at runtime so it is
 /// always a well-formed PHC under the current parameters (no hand-authored
-/// base64 to drift). If the one-time hash somehow failed it is left empty, which
-/// makes [`verify_against_dummy`] error out immediately; that is acceptable
-/// because the dummy only narrows a timing side channel and the generic response
-/// is the primary control.
-static DUMMY_PHC: LazyLock<String> =
-    LazyLock::new(|| hash_password(b"reverie-anti-enumeration-dummy-secret").unwrap_or_default());
+/// base64 to drift).
+///
+/// THREAT (CWE-208, timing side channel): this hash IS the anti-enumeration
+/// timing control. An empty or malformed value would make [`verify_against_dummy`]
+/// return in microseconds, so the no-account path would run measurably faster
+/// than the wrong-password path and leak account existence. Hashing a fixed
+/// secret with default Argon2 params cannot fail except on an unrecoverable
+/// environment fault, so this fails loud at startup rather than silently shipping
+/// the degraded control.
+static DUMMY_PHC: LazyLock<String> = LazyLock::new(|| {
+    #[allow(
+        clippy::expect_used,
+        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash a fixed secret with default Argon2 params is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
+    )]
+    let phc = hash_password(b"reverie-anti-enumeration-dummy-secret")
+        .expect("DUMMY_PHC: Argon2 must hash the anti-enumeration dummy secret");
+    phc
+});
 
 /// Spend Argon2id-verification-equivalent work on a login attempt whose email
 /// resolves to no account (or no local credential), then report the (always

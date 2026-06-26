@@ -135,8 +135,9 @@ pub struct Config {
     pub login_throttle_cap_secs: i32,
     /// Minimum length for a local-account password
     /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic
-    /// floor). Enforced at first-run setup and password reset. S2 ships only the
-    /// length floor; breach (HIBP) and strength (zxcvbn) checks are S3.
+    /// floor). Enforced at first-run setup and password reset. Only the length
+    /// floor is enforced; breach (HIBP) and strength (zxcvbn) checks are planned
+    /// for a later release.
     #[validate(range(min = 8, message = "must be at least 8 (NIST SP 800-63B)"))]
     pub password_min_length: usize,
     /// Lifetime of a forgot-password recovery PIN, seconds
@@ -158,17 +159,17 @@ pub struct Config {
     pub trusted_client_ip_header: Option<String>,
     /// OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC
     /// authentication path. OIDC is enabled iff this is set; when
-    /// present, the other three `OIDC_*` fields become required together (Gate
-    /// 4). The boundary control
+    /// present, the other three `OIDC_*` fields become required together. The
+    /// boundary control
     /// is `reqwest`'s TLS validation against the bundled
     /// webpki/Mozilla root store (`reqwest` is built with the
     /// `rustls` feature, which uses `webpki-roots`, not OS system
     /// roots).
     pub oidc_issuer_url: String,
-    /// OIDC client id (`OIDC_CLIENT_ID`, required).
+    /// OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).
     pub oidc_client_id: String,
-    /// OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as
-    /// secret material; never logged.
+    /// OIDC client secret (`OIDC_CLIENT_SECRET`, required when OIDC is
+    /// configured). Treated as secret material; never logged.
     ///
     /// NOTE: any new secret-bearing field must also be added to the
     /// `SECRET_FIELDS` list so a deserialize error never echoes its value

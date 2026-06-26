@@ -12,7 +12,10 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// A user's local password credential row.
-#[derive(Debug, Clone, sqlx::FromRow)]
+///
+/// `Debug` is implemented by hand to redact `password_hash`: deriving it would
+/// emit the Argon2id PHC through any `?value` tracing span (CWE-532).
+#[derive(Clone, sqlx::FromRow)]
 pub struct LocalCredential {
     /// Owning [`crate::models::user::User`]; also the primary key.
     pub user_id: Uuid,
@@ -22,6 +25,17 @@ pub struct LocalCredential {
     pub created_at: OffsetDateTime,
     /// `now()` of the most recent password change.
     pub updated_at: OffsetDateTime,
+}
+
+impl std::fmt::Debug for LocalCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalCredential")
+            .field("user_id", &self.user_id)
+            .field("password_hash", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
 }
 
 /// Fetch a user's local credential. Returns `Ok(None)` when the user has no

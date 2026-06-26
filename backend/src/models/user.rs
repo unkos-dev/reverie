@@ -500,8 +500,8 @@ mod tests {
         .expect("upsert");
         assert_eq!(user.display_name, "Alice");
         assert_eq!(user.email.as_deref(), Some("alice@example.com"));
-        // Invariant 1: first login on a fresh instance is NOT auto-promoted;
-        // the user takes the default non-administrator role.
+        // A first login on a fresh instance is NOT auto-promoted; the user
+        // takes the default non-administrator role.
         assert_ne!(user.role, Role::Admin);
         assert_eq!(user.role, Role::Adult);
         assert_eq!(user.session_version, 0);
@@ -546,8 +546,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn first_oidc_login_is_not_admin(pool: PgPool) {
-        // Invariant 1, explicit: neither the first login nor any subsequent
-        // login is auto-promoted. Admin is granted only via bootstrap.
+        // Explicit: neither the first login nor any subsequent login is
+        // auto-promoted. Admin is granted only via bootstrap.
         let first = upsert_from_oidc(&pool, TEST_ISSUER, "subject-one", "First", None)
             .await
             .expect("first login");
