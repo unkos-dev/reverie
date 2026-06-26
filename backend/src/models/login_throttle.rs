@@ -1,7 +1,7 @@
 //! Per-account login throttle: DB-backed escalating backoff keyed on normalized
 //! email.
 //!
-//! # Tier 2 — security-critical
+//! # Tier 2: security-critical
 //!
 //! State lives in Postgres, not memory, so an out-of-band `reverie
 //! unlock-account` CLI process can clear it (an in-memory map cannot be cleared

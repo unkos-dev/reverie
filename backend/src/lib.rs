@@ -5,7 +5,7 @@
 //! thin entry that calls [`run`] under a `#[tokio::main]` runtime; the split
 //! exists so that `missing_docs` and clippy pedantic doc lints fire on
 //! externally-reachable items (a binary-only crate has no external API and
-//! the lints are silent — see `adr/2026-05-08-tiered-comment-policy.md`).
+//! the lints are silent; see `adr/2026-05-08-tiered-comment-policy.md`).
 //!
 //! Embedders mounting Reverie under their own server may use
 //! [`build_router`] directly with a fully-initialised [`state::AppState`].
@@ -564,18 +564,18 @@ pub enum Command {
     /// then exit. A build/docs utility (regenerates the committed
     /// `config.schema.json`); reads no environment and touches no database.
     PrintConfigSchema,
-    /// `reverie bootstrap` — create the first administrator from the
+    /// `reverie bootstrap`: create the first administrator from the
     /// `REVERIE_BOOTSTRAP_*` environment seed, then exit. No-op if an
     /// administrator already exists (honours the same single-admin gate as HTTP
     /// setup). No positional arguments.
     Bootstrap,
-    /// `reverie reset-password <email>` — issue a recovery PIN for an account to
+    /// `reverie reset-password <email>`: issue a recovery PIN for an account to
     /// the operator host file, then exit.
     ResetPassword {
         /// Email of the account to issue a recovery PIN for.
         email: String,
     },
-    /// `reverie unlock-account <email>` — clear the per-account login throttle
+    /// `reverie unlock-account <email>`: clear the per-account login throttle
     /// for an account, then exit.
     UnlockAccount {
         /// Email of the account to unlock.
@@ -783,7 +783,7 @@ async fn seed_admin_if_configured(
     }
 }
 
-/// `reverie bootstrap` — create the first administrator from the
+/// `reverie bootstrap`: create the first administrator from the
 /// `REVERIE_BOOTSTRAP_*` environment seed, then exit. A no-op if one already
 /// exists; an error if no seed is configured and none exists.
 ///
@@ -810,7 +810,7 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
     )
 }
 
-/// `reverie reset-password <email>` — issue a recovery PIN for an account to a
+/// `reverie reset-password <email>`: issue a recovery PIN for an account to a
 /// per-user operator file (mode 0600), then exit. The operator relays the PIN to
 /// the user, who completes the reset at `/auth/reset-password`.
 ///
@@ -855,7 +855,7 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `reverie unlock-account <email>` — clear the per-account login throttle for an
+/// `reverie unlock-account <email>`: clear the per-account login throttle for an
 /// account (DB-backed, so this out-of-band process can clear it), then exit.
 ///
 /// # Errors

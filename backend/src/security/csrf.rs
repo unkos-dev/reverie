@@ -1,6 +1,6 @@
 //! CSRF synchronizer-token validating middleware.
 //!
-//! # Tier 2 — security-critical
+//! # Tier 2: security-critical
 //!
 //! Token issuance (already shipped) mints a per-session `csrf_token` at login
 //! and exposes it via `GET /auth/me`; the frontend echoes it as `X-CSRF-Token`

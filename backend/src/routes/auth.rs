@@ -58,7 +58,7 @@ pub struct CallbackParams {
     state: String,
 }
 
-/// `GET /auth/oidc/login` — start the OIDC authorization-code + PKCE flow.
+/// `GET /auth/oidc/login`: start the OIDC authorization-code + PKCE flow.
 ///
 /// Renamed from `/auth/login` so the user-facing login page (a SPA route served
 /// at `/login`) does not collide with this auth-protocol endpoint; `/auth/*` is
@@ -280,7 +280,7 @@ struct LocalLoginRequest {
     password: String,
 }
 
-/// `POST /auth/local/login` — email + password sign-in, establishing the same
+/// `POST /auth/local/login`: email + password sign-in, establishing the same
 /// session contract as the OIDC callback.
 ///
 /// THREAT (enumeration): unknown email and wrong password return the identical
@@ -422,7 +422,7 @@ struct SetupStatusResponse {
     oidc_enabled: bool,
 }
 
-/// `GET /auth/setup/status` — public provider/bootstrap state for the SPA.
+/// `GET /auth/setup/status`: public provider/bootstrap state for the SPA.
 ///
 /// # Errors
 /// - [`AppError::Internal`] on database failure.
@@ -457,7 +457,7 @@ struct SetupRequest {
     password: String,
 }
 
-/// `POST /auth/setup` — first-run bootstrap: mint the first administrator.
+/// `POST /auth/setup`: first-run bootstrap: mint the first administrator.
 ///
 /// THREAT: bootstrap is the ONLY first-admin path. The race
 /// guarantee is the DB `instance_bootstrap` singleton insert inside
@@ -544,9 +544,9 @@ struct ForgotPasswordRequest {
     email: String,
 }
 
-/// `POST /auth/forgot-password` — start email-less PIN recovery.
+/// `POST /auth/forgot-password`: start email-less PIN recovery.
 ///
-/// THREAT (codeguard #2): always returns a generic 200 — the response never
+/// THREAT (codeguard #2): always returns a generic 200; the response never
 /// reveals whether the email exists. When it does, a fresh CSPRNG PIN is
 /// generated, prior active PINs for the user are superseded (at most one active
 /// PIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written
@@ -635,7 +635,7 @@ struct ResetPasswordRequest {
     new_password: String,
 }
 
-/// `POST /auth/reset-password` — complete recovery with a PIN.
+/// `POST /auth/reset-password`: complete recovery with a PIN.
 ///
 /// THREAT (codeguard #2): the PIN is single-use (race-safe consume), short-lived,
 /// and verified constant-time via Argon2. Any failure (unknown email, no active
@@ -1363,7 +1363,7 @@ mod tests {
 
         // Step 9: token is stable across reads within a session. A
         // future change may rotate it on role change, but issuance must
-        // NOT rotate per request — otherwise the frontend's cached token
+        // NOT rotate per request; otherwise the frontend's cached token
         // races every mutating request.
         let me_resp_2 = server.get("/auth/me").await;
         assert_eq!(me_resp_2.status_code(), StatusCode::OK);
@@ -1429,7 +1429,7 @@ mod tests {
         .expect("oidc_csrf_state is string");
         assert!(
             !record.data.contains_key("csrf_token"),
-            "/auth/oidc/login must NOT write the app-level csrf_token key — that \
+            "/auth/oidc/login must NOT write the app-level csrf_token key; that \
              would clobber a returning user's existing app token",
         );
         let nonce: String =
@@ -1463,7 +1463,7 @@ mod tests {
             .to_owned();
         assert_eq!(token_a.len(), 43, "token A must be 43-char base64url");
 
-        // Step 2: same authenticated cookie jar — drive /auth/oidc/login
+        // Step 2: same authenticated cookie jar; drive /auth/oidc/login
         // AGAIN (no callback). This writes a fresh OIDC transient
         // under `oidc_csrf_state`. The app token under `csrf_token`
         // MUST be preserved; otherwise the frontend reader

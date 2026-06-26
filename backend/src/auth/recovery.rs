@@ -1,7 +1,7 @@
 //! Forgot-password recovery: CSPRNG PIN generation and the operator-readable
 //! per-user host file.
 //!
-//! # Tier 2 — security-critical
+//! # Tier 2: security-critical
 //!
 //! The clear PIN is written to a per-user file `<dir>/<user_id>.pin` (mode 0600,
 //! inside a recovery directory created mode 0700, outside any web-served

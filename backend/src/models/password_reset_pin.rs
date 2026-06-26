@@ -1,6 +1,6 @@
 //! Password-reset PIN records: hashed, single-use, short-lived recovery tokens.
 //!
-//! # Tier 2 — security-critical
+//! # Tier 2: security-critical
 //!
 //! The clear PIN is never stored here; only its Argon2id hash, an expiry, and a
 //! consumed marker. A row is single-use (`consumed_at`) and short-lived

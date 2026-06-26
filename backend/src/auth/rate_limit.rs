@@ -1,6 +1,6 @@
 //! Per-source (per-IP) login rate limiting.
 //!
-//! # Tier 2 — security-critical
+//! # Tier 2: security-critical
 //!
 //! A keyed [`governor`] limiter caps login/recovery attempts per client IP. It
 //! is the hard blocker against credential-stuffing and unknown-email spray; the

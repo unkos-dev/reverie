@@ -1,6 +1,6 @@
 //! Argon2id password hashing and verification for local accounts.
 //!
-//! # Tier 2 — security-critical
+//! # Tier 2: security-critical
 //!
 //! [`argon2::Argon2::default`] is Argon2id with the RustCrypto-recommended parameters
 //! (m=19456 KiB, t=2, p=1). Hashes are PHC strings: the algorithm, parameters,

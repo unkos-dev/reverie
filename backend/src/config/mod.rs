@@ -66,8 +66,8 @@ pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
     &[("DATABASE_URL", |c| c.database_url.as_str())];
 
 /// OIDC fields that become required *together* once OIDC is configured (the
-/// issuer URL is present). OIDC is enabled iff configured — there is no separate
-/// `oidc_enabled` flag — so these are conditionally, not
+/// issuer URL is present). OIDC is enabled iff configured; there is no separate
+/// `oidc_enabled` flag, so these are conditionally, not
 /// unconditionally, required: a fully-unset OIDC block is valid (local-only
 /// instance), but a partially-configured one (issuer set, secret missing) is a
 /// `MissingVar` for the absent field. Gate 4 in [`Config::from_figment`] enforces
