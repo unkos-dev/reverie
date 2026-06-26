@@ -1867,7 +1867,11 @@ mod tests {
             "correct horse battery staple",
         )
         .await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        // Persist the session cookie login sets so the follow-up /auth/me is
+        // session-authenticated; axum-test drops cookies between requests
+        // otherwise, making the read anonymous (401).
+        server.save_cookies();
 
         let resp = server
             .post("/auth/local/login")
