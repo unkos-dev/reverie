@@ -130,13 +130,17 @@ pub async fn find_active_by_user(
     .await
 }
 
-/// Mark a PIN consumed, but only if it is still unconsumed. Returns `true` iff
-/// this call performed the consumption.
+/// Mark a PIN consumed, but only if it is still unconsumed and unexpired.
+/// Returns `true` iff this call performed the consumption.
 ///
 /// THREAT (single-use under concurrency): the guarded `WHERE consumed_at IS
 /// NULL` makes consumption atomic at the row level, so two concurrent resets
 /// presenting the same PIN cannot both succeed. The caller MUST treat `false`
-/// as a failed reset (the PIN was already used).
+/// as a failed reset (the PIN was already used or has expired).
+///
+/// THREAT (expired-PIN reuse): `expires_at > now()` is re-checked inside the
+/// atomic `UPDATE` so a PIN that expires between `find_active_by_user` and
+/// `consume` cannot be consumed after expiry.
 ///
 /// # Errors
 ///
@@ -145,7 +149,7 @@ pub async fn find_active_by_user(
 pub async fn consume(executor: impl sqlx::PgExecutor<'_>, id: Uuid) -> Result<bool, sqlx::Error> {
     let result = sqlx::query!(
         "UPDATE password_reset_pins SET consumed_at = now() \
-         WHERE id = $1 AND consumed_at IS NULL",
+         WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()",
         id,
     )
     .execute(executor)
@@ -254,6 +258,32 @@ mod tests {
             .expect("one active remains");
         assert_eq!(active.id, second, "rotate leaves the new PIN active");
         assert_ne!(active.id, first, "the prior PIN is superseded");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn consume_rejects_expired_pin(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        // Insert a PIN that expired 1 second ago (unconsumed).
+        let expired = OffsetDateTime::now_utc() - Duration::seconds(1);
+        let id = insert(&pool, user_id, "$argon2id$hash", expired)
+            .await
+            .expect("insert expired pin");
+
+        // consume must refuse an expired PIN even when consumed_at is still NULL.
+        assert!(
+            !consume(&pool, id).await.expect("consume"),
+            "an expired PIN cannot be consumed"
+        );
+
+        // The row must not be marked consumed so a fresh PIN can be issued.
+        let consumed_at = sqlx::query_scalar!(
+            "SELECT consumed_at FROM password_reset_pins WHERE id = $1",
+            id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch");
+        assert!(consumed_at.is_none(), "expired PIN row was not consumed");
     }
 
     #[sqlx::test(migrations = "./migrations")]

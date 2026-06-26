@@ -10,13 +10,13 @@
  *
  * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`.
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
-import { fetchSetupStatus, setupAdmin } from "@/api/auth";
+import { fetchSetupStatus, setupAdmin, type SetupStatus } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import { AuthShell } from "./auth-shell";
 /** Route component for `/setup`. */
 export function Component(): ReactElement {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const {
     data: status,
     isPending,
@@ -52,6 +53,9 @@ export function Component(): ReactElement {
       password: string;
     }) => setupAdmin(email, displayName, password),
     onSuccess: () => {
+      queryClient.setQueryData<SetupStatus>(queryKeys.auth.setupStatus(), (old) =>
+        old !== undefined ? { ...old, setup_required: false } : old,
+      );
       toast.success("Administrator created. Sign in to continue.");
       void navigate("/login");
     },

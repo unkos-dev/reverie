@@ -20,7 +20,7 @@ vi.mock("@/api/auth");
 
 type Status = { setup_required: boolean; local_auth_enabled: boolean; oidc_enabled: boolean };
 
-function renderSetup(status: Status): void {
+function renderSetup(status: Status): { client: QueryClient } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(queryKeys.auth.setupStatus(), status);
 
@@ -38,6 +38,7 @@ function renderSetup(status: Status): void {
     );
   }
   render(<Wrapper />);
+  return { client };
 }
 
 beforeEach(() => {
@@ -82,5 +83,23 @@ describe("auth-setup", () => {
   test("bounces to /login once an administrator exists", async () => {
     renderSetup({ setup_required: false, local_auth_enabled: true, oidc_enabled: false });
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
+  });
+
+  test("sets setup_required to false in cache on success", async () => {
+    vi.mocked(setupAdmin).mockResolvedValue(undefined);
+    const { client } = renderSetup({
+      setup_required: true,
+      local_auth_enabled: true,
+      oidc_enabled: false,
+    });
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Display name"), "Ada");
+    await user.type(screen.getByLabelText("Email"), "ada@example.com");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.click(screen.getByRole("button", { name: "Create administrator" }));
+
+    await screen.findByTestId("login-page");
+    expect(client.getQueryData<Status>(queryKeys.auth.setupStatus())?.setup_required).toBe(false);
   });
 });
