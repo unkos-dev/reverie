@@ -78,4 +78,16 @@ describe("auth-forgot-password", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Try again later.");
     expect(vi.mocked(toast.error)).toHaveBeenCalled();
   });
+
+  test("blocks a blank email submit with an inline error and never requests recovery", async () => {
+    renderForgot();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(requestPasswordReset).not.toHaveBeenCalled();
+    // Still on the request phase: the PIN field has not appeared.
+    expect(screen.queryByLabelText("Recovery PIN")).not.toBeInTheDocument();
+  });
 });

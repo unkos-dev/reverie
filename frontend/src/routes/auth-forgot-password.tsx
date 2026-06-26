@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { requestPasswordReset, resetPassword } from "@/api/auth";
+import { emailField, newPasswordField, pinField } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -65,17 +66,29 @@ export function Component(): ReactElement {
     e.preventDefault();
     setError(null);
     const data = new FormData(e.currentTarget);
-    requestMutation.mutate(formString(data, "email"));
+    const parsed = emailField.safeParse(formString(data, "email"));
+    if (!parsed.success) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    requestMutation.mutate(parsed.data);
   }
 
   function handleReset(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
     setError(null);
     const data = new FormData(e.currentTarget);
-    resetMutation.mutate({
-      pin: formString(data, "pin"),
-      newPassword: formString(data, "new_password"),
-    });
+    const pin = pinField.safeParse(formString(data, "pin"));
+    if (!pin.success) {
+      setError("Enter the recovery PIN.");
+      return;
+    }
+    const newPassword = newPasswordField.safeParse(formString(data, "new_password"));
+    if (!newPassword.success) {
+      setError("Use at least 8 characters for the new password.");
+      return;
+    }
+    resetMutation.mutate({ pin: pin.data, newPassword: newPassword.data });
   }
 
   if (email === null) {

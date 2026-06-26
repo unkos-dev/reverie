@@ -183,3 +183,29 @@ describe("resetPassword", () => {
     });
   });
 });
+
+describe("request payload validation", () => {
+  test("loginLocal rejects an invalid email without calling fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(loginLocal("not-an-email", "secret")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("setupAdmin rejects a blank display name without calling fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(setupAdmin("admin@example.com", "   ", "a strong password")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("requestPasswordReset rejects an empty email without calling fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(requestPasswordReset("")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("resetPassword rejects a too-short new password without calling fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(resetPassword("user@example.com", "0123456789", "short")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

@@ -102,4 +102,16 @@ describe("auth-setup", () => {
     await screen.findByTestId("login-page");
     expect(client.getQueryData<Status>(queryKeys.auth.setupStatus())?.setup_required).toBe(false);
   });
+
+  test("blocks a blank display name with an inline error and never calls setup", async () => {
+    renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Email"), "ada@example.com");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.click(screen.getByRole("button", { name: "Create administrator" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(setupAdmin).not.toHaveBeenCalled();
+  });
 });

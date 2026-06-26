@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, setupAdmin, type SetupStatus } from "@/api/auth";
+import { displayNameField, emailField, newPasswordField } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -93,10 +94,25 @@ export function Component(): ReactElement {
     e.preventDefault();
     setError(null);
     const data = new FormData(e.currentTarget);
+    const displayName = displayNameField.safeParse(formString(data, "display_name"));
+    if (!displayName.success) {
+      setError("Enter a display name.");
+      return;
+    }
+    const email = emailField.safeParse(formString(data, "email"));
+    if (!email.success) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    const password = newPasswordField.safeParse(formString(data, "password"));
+    if (!password.success) {
+      setError("Use at least 8 characters for the password.");
+      return;
+    }
     setupMutation.mutate({
-      email: formString(data, "email"),
-      displayName: formString(data, "display_name"),
-      password: formString(data, "password"),
+      email: email.data,
+      displayName: displayName.data,
+      password: password.data,
     });
   }
 

@@ -13,6 +13,12 @@
  */
 import { z } from "zod";
 
+import {
+  ForgotPasswordSchema,
+  LoginLocalSchema,
+  ResetPasswordSchema,
+  SetupAdminSchema,
+} from "./auth.schemas";
 import { refreshCsrfToken } from "./csrf";
 import { apiFetch } from "./fetch";
 
@@ -59,9 +65,10 @@ export async function fetchSetupStatus(signal?: AbortSignal): Promise<SetupStatu
  * disabled local auth (404).
  */
 export async function loginLocal(email: string, password: string): Promise<void> {
+  const body = LoginLocalSchema.parse({ email, password });
   await apiFetch("/auth/local/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(body),
   });
   await refreshCsrfToken();
 }
@@ -79,9 +86,10 @@ export async function setupAdmin(
   displayName: string,
   password: string,
 ): Promise<void> {
+  const body = SetupAdminSchema.parse({ email, display_name: displayName, password });
   await apiFetch("/auth/setup", {
     method: "POST",
-    body: JSON.stringify({ email, display_name: displayName, password }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -93,9 +101,10 @@ export async function setupAdmin(
  * Throws {@link ApiError} on rate limiting (429) or disabled local auth (404).
  */
 export async function requestPasswordReset(email: string): Promise<void> {
+  const body = ForgotPasswordSchema.parse({ email });
   await apiFetch("/auth/forgot-password", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -112,8 +121,9 @@ export async function resetPassword(
   pin: string,
   newPassword: string,
 ): Promise<void> {
+  const body = ResetPasswordSchema.parse({ email, pin, new_password: newPassword });
   await apiFetch("/auth/reset-password", {
     method: "POST",
-    body: JSON.stringify({ email, pin, new_password: newPassword }),
+    body: JSON.stringify(body),
   });
 }
