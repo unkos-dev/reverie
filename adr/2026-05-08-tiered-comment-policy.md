@@ -300,3 +300,10 @@ maintainer before landing.
   #180): adjacent observation that documentation visible at
   the call site matters more than documentation in PR review
   history
+
+**2026-06-27 amendment**: frontend docstring presence is no longer
+machine-enforced. The `eslint-plugin-jsdoc` floor was removed with the ESLint
+toolchain, so the frontend tier floor is now a reviewed convention rather than a
+lint gate. The tier definitions in this record are unchanged; the backend
+`#![deny(missing_docs)]` floor still holds. See
+[Adopt oxlint](2026-06-27-adopt-oxlint-toolchain.md).
