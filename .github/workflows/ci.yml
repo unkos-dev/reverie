@@ -861,7 +861,7 @@ jobs:
 
       # --error exits non-zero on any finding. Security packs only — the
       # full language packs bundle best-practice and portability rules
-      # (props-spreading, i18n) that are eslint's remit and pure style
+      # (props-spreading, i18n) that are the linter's remit and pure style
       # noise here; this gate is a security scanner, not a second linter.
       #
       # Tests are not excluded wholesale: a blanket file drop is a coverage

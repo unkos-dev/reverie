@@ -97,10 +97,8 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
   // public `setPreference` (line below) is the async callback that wraps
   // the optimistic-update + PATCH + rollback flow. Renaming would collide
   // with that public API.
-  /* eslint-disable @eslint-react/use-state -- naming collides with public setPreference callback */
   const [preference, setPreferenceState] = useState<ThemePreference>(initial.preference);
   const [effective, setEffectiveState] = useState<EffectiveTheme>(initial.effective);
-  /* eslint-enable @eslint-react/use-state */
   const channelRef = useRef<BroadcastChannel | null>(null);
   // Captures preference at mount so the reconcile effect can compare
   // server vs. mount-time without re-firing on every preference change.
@@ -169,7 +167,6 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
     channelRef.current = channel;
     // BroadcastChannel.close() in the cleanup releases the listener;
     // explicit removeEventListener + named handler would be redundant.
-    // eslint-disable-next-line @eslint-react/web-api-no-leaked-event-listener -- channel.close() in cleanup releases the listener
     channel.addEventListener("message", (event) => {
       const msg = event.data as { preference?: unknown };
       const candidate = msg.preference;
@@ -266,7 +263,7 @@ export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
  *   `setPreference` triggers the optimistic-update + PATCH flow.
  * @throws Error if no `ThemeProvider` is mounted above the caller.
  */
-// eslint-disable-next-line react-refresh/only-export-components -- co-locating the hook with the provider keeps the public API discoverable.
+// oxlint-disable-next-line react/only-export-components -- co-locating the hook with the provider keeps the public API discoverable.
 export function useTheme(): ThemeContextValue {
   const ctx = use(ThemeContext);
   if (!ctx) {

@@ -6,7 +6,7 @@
  * mount, and any chrome (the utility strip's search affordance) calls
  * {@link openCommandPalette} without holding a ref into the palette's
  * React tree. Keeping the registry outside the component module avoids
- * a `react-refresh/only-export-components` violation in
+ * a `react/only-export-components` violation in
  * `CommandPalette.tsx`.
  */
 

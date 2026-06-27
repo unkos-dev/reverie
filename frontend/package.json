@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -42,8 +42,6 @@
     "qs": "^6.15.2"
   },
   "devDependencies": {
-    "@eslint-react/eslint-plugin": "^5.8.8",
-    "@eslint/js": "^10.0.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query-devtools": "^5.100.14",
     "@testing-library/jest-dom": "^6.9.1",
@@ -55,19 +53,15 @@
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4.1.8",
     "axe-core": "^4.11.4",
-    "eslint": "^10.4.1",
-    "eslint-plugin-jsdoc": "^63.0.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
     "impeccable": "^2.3.2",
     "jsdom": "^29.1.1",
+    "oxlint": "1.71.0",
+    "oxlint-tsgolint": "0.23.0",
     "shadcn": "^4.9.0",
     "stylelint": "^17.12.0",
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.60.0",
     "vite": "^8.0.14",
     "vitest": "^4.1.7"
   }

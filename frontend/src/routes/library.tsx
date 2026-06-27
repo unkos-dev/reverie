@@ -10,7 +10,7 @@
  * export-components`; the rule is disabled at the file scope because
  * data routes have no fast-refresh-friendly alternative.
  */
-/* eslint-disable react-refresh/only-export-components */
+/* oxlint-disable react/only-export-components */
 import type { LoaderFunctionArgs } from "react-router";
 
 import { listBooks, type ListBooksParams } from "@/api";

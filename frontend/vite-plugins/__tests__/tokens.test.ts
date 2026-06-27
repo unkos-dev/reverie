@@ -91,10 +91,9 @@ describe("primitive role-pair contrast (spec §6)", () => {
   }
 });
 
-/* eslint-disable no-restricted-syntax -- brand-anchor assertions intentionally
-   compare against literal hex (#c9a961 gold, #b91c1c danger, #0e0d0a ink):
-   verifying the generated primitives match the locked anchors is this block's
-   purpose. The no-raw-hex rule targets component/style source, not value tests. */
+/* Brand-anchor assertions intentionally compare against literal hex
+   (#c9a961 gold, #b91c1c danger, #0e0d0a ink): verifying the generated
+   primitives match the locked anchors is this block's purpose. */
 describe("brand anchors land verbatim", () => {
   it("gold-9 dark == #c9a961", () => {
     expect(dark["gold-9"].toLowerCase()).toBe("#c9a961");
@@ -108,7 +107,6 @@ describe("brand anchors land verbatim", () => {
     expect(light["gold-contrast"].toLowerCase()).toBe("#0e0d0a");
   });
 });
-/* eslint-enable no-restricted-syntax */
 
 describe("semantic tokens reference existing primitives", () => {
   // every `--x: var(--y)` semantic definition whose target is a primitive
