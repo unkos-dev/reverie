@@ -184,7 +184,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised."
+            "message": "Direct fetch is banned outside src/api/. Use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised."
           }
         ],
         "no-restricted-properties": [
@@ -192,12 +192,12 @@
           {
             "object": "window",
             "property": "fetch",
-            "message": "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised."
+            "message": "Direct fetch is banned outside src/api/. Use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised."
           },
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "Direct fetch is banned outside src/api/ — use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised."
+            "message": "Direct fetch is banned outside src/api/. Use apiFetch (src/api/fetch.ts) so cookies, CSRF and Problem Details handling stay centralised."
           }
         ],
         "typescript/consistent-type-assertions": [

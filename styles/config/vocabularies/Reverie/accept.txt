@@ -234,6 +234,7 @@ OOMs
 operability
 orchestrator
 outsized
+oxfmt
 oxlint
 params
 parseable
@@ -344,6 +345,7 @@ tower_sessions
 tradeoff
 tradeoffs
 Traefik
+tsgolint
 UAs
 ubuntu
 unapplied
@@ -372,6 +374,7 @@ verifier
 viewport
 Vite
 Vitest
+VoidZero
 WAFs
 wayfinding
 webhooks

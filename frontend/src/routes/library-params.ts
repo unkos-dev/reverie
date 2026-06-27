@@ -2,8 +2,8 @@
  * URL-search → API-params parser for the `/library` route.
  *
  * Lives outside `routes/library.tsx` so the route module can keep
- * its single-component export shape (react-refresh / fast-refresh
- * requires component-only exports per the project's ESLint config).
+ * its single-component export shape (the `react/only-export-components`
+ * rule requires component-only exports).
  */
 import type { ListBooksParams, ListSort } from "@/api";
 

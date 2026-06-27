@@ -40,7 +40,7 @@
       },
       {
         "path": "adr/2026-05-03-strict-lint-policy.md",
-        "description": "Strict lint policy ratified for both stacks. Backend: clippy::pedantic + nursery + cargo-deny. Frontend: oxlint with type-aware (tsgolint) strict rules + native react rules. Style nits should already be machine-caught — flag what slipped past."
+        "description": "Strict lint policy ratified for both stacks. Backend: clippy::pedantic + nursery + cargo-deny. Frontend: oxlint with type-aware (tsgolint) strict rules + native react rules. Style nits should already be machine-caught, so flag what slipped past."
       },
       {
         "path": "adr/2026-05-22-json-api-conventions.md",

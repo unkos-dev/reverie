@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
  * (`bg-cover-ink`, `fill-cover-gold`, etc.) map to the `--cover-*` CSS
  * variables declared once on `:root` in `styles/themes/index.css` with
  * no `[data-theme]` override, which gives us the constants without
- * inlining hex literals here (which would also trip the no-hex-in-tsx
- * ESLint rule).
+ * inlining hex literals here (raw hex in components is banned; see the
+ * frontend authoring rules).
  *
  * Variant is deterministic by book id so the same book renders the
  * same cover every render. The hash is intentionally cheap and stable,

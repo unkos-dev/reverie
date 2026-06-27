@@ -4,9 +4,9 @@
  * `Component` (the page renderer).
  *
  * react-router data-mode requires loader and component in the same
- * module — the `react/only-export-components` rule is
- * disabled at file scope because data routes have no fast-refresh-
- * friendly alternative.
+ * module, so the `react/only-export-components` rule is disabled at
+ * file scope because data routes have no fast-refresh-friendly
+ * alternative.
  */
 /* oxlint-disable react/only-export-components */
 import type { LoaderFunctionArgs } from "react-router";
