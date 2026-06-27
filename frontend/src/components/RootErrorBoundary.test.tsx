@@ -46,7 +46,7 @@ function renderRouterWithFailure(loader: LoaderFunction): void {
 describe("RootErrorBoundary", () => {
   test("renders a branded 'Not found' surface when the loader throws a 404 Response", async () => {
     renderRouterWithFailure(() => {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error -- react-router loaders bail out via `throw new Response(...)`.
+      // oxlint-disable-next-line typescript/only-throw-error -- react-router loaders bail out via `throw new Response(...)`.
       throw new Response("nope", { status: 404 });
     });
 
@@ -56,7 +56,7 @@ describe("RootErrorBoundary", () => {
 
   test("renders a numbered 'Error N' surface for other route response statuses", async () => {
     renderRouterWithFailure(() => {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error -- react-router loaders bail out via `throw new Response(...)`.
+      // oxlint-disable-next-line typescript/only-throw-error -- react-router loaders bail out via `throw new Response(...)`.
       throw new Response("server fault", { status: 500, statusText: "Server Fault" });
     });
 

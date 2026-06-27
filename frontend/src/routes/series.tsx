@@ -4,11 +4,11 @@
  * `Component` (the page renderer).
  *
  * react-router data-mode requires loader and component in the same
- * module — the `react-refresh/only-export-components` rule is
- * disabled at file scope because data routes have no fast-refresh-
- * friendly alternative.
+ * module, so the `react/only-export-components` rule is disabled at
+ * file scope because data routes have no fast-refresh-friendly
+ * alternative.
  */
-/* eslint-disable react-refresh/only-export-components */
+/* oxlint-disable react/only-export-components */
 import type { LoaderFunctionArgs } from "react-router";
 
 import { getSeries, type SeriesDetail } from "@/api";
@@ -31,7 +31,7 @@ import { SeriesPage } from "@/pages/series/SeriesPage";
 export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData | null> {
   const id = params.id;
   if (typeof id !== "string" || id.length === 0) {
-    // eslint-disable-next-line @typescript-eslint/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
+    // oxlint-disable-next-line typescript/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
     throw new Response("Missing series id", { status: 404 });
   }
   await queryClient.prefetchQuery({

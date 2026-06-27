@@ -11,17 +11,13 @@ const INK = "#0E0D0A";
 const CREAM = "#E8E0D0";
 
 /**
- * Brand lockup (glyph + wordmark "Reverie"). Documented exemption from the
- * `no-restricted-syntax` hex-literal ban — the philosophy spec § 11C
- * invariant requires the lockup to render correctly even when the theme
- * tree has not resolved yet (e.g. on the OIDC error page where the
- * canonical token CSS may not yet be on the wire). Hex constants are
- * carved out for exactly this component plus its test in
- * `frontend/eslint.config.js`.
- *
- * Self-contained inline `style` blocks are used for the same reason: the
- * lockup must paint even when no stylesheet has resolved. Two-token glyph
- * (gold square + ink slot) and the Satoshi wordmark are baked in.
+ * Brand lockup (glyph + wordmark "Reverie"). The hex brand constants and
+ * the self-contained inline `style` blocks are intentional: the lockup must
+ * render correctly even when the theme tree has not resolved yet (e.g. on
+ * the OIDC error page where the canonical token CSS may not yet be on the
+ * wire), so it cannot rely on token CSS variables or an external stylesheet.
+ * Two-token glyph (gold square + ink slot) and the Satoshi wordmark are
+ * baked in.
  *
  * @param props.size - Wordmark font-size in pixels. Glyph scales to
  *   `0.95 * size` and the column gap to `0.5 * size`. Defaults to 28px to

@@ -16,7 +16,7 @@ function runFouc(): void {
   // The script is an IIFE; evaluating it in the current jsdom realm via
   // `new Function` is identical to how the browser would run it inline,
   // and it can read/write `document` and `window` from this scope.
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  // oxlint-disable-next-line typescript/no-implied-eval
   (new Function(FOUC_BODY) as () => void)();
 }
 

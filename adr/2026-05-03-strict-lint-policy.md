@@ -166,3 +166,7 @@ Both stacks already gate `cargo clippy -- -D warnings` and
 - Related: `frontend/CLAUDE.md` "TypeScript" + "Hooks" sections
 - Future ADR planned: Greptile AI code review trial (separate decision
   with its own context, consequences, and revisit gate)
+
+**2026-06-27 amendment**: the frontend lint engine moved from ESLint to oxlint.
+The strict-tier policy in this record is unchanged; only the engine changed. See
+[Adopt oxlint](2026-06-27-adopt-oxlint-toolchain.md).

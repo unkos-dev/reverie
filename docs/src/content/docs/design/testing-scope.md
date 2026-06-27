@@ -23,8 +23,6 @@ The Step 10 design system is tested at two distinct bars.
   - Theme provider: initial resolution from cookie/DB/`prefers-color-scheme`,
     persistence, and API sync.
   - Theme cookie helpers (read, write, expiry).
-  - The custom ESLint hex-literal rule fixtures (raw-hex outside token
-    files is a lint error).
   - Route-gating production-build structural assertion (the `/design/*`
     explore tree is excluded from production bundles).
 

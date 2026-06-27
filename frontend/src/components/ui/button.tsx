@@ -64,5 +64,5 @@ function Button({
   )
 }
 
-// eslint-disable-next-line react-refresh/only-export-components -- shadcn pattern: cva const + component co-located.
+// oxlint-disable-next-line react/only-export-components -- shadcn pattern: cva const + component co-located.
 export { Button, buttonVariants }

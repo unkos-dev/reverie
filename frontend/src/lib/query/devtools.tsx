@@ -6,7 +6,7 @@
  * is unreachable, Vite tree-shakes the import). Living in its own
  * module keeps `main.tsx` exporting nothing but the side-effecting
  * `createRoot()` call, which avoids the
- * `react-refresh/only-export-components` rule.
+ * `react/only-export-components` rule.
  */
 import { lazy, Suspense, type ComponentType, type ReactElement } from "react";
 

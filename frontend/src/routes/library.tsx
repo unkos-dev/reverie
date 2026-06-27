@@ -6,11 +6,11 @@
  *
  * react-router data-mode requires the loader and the component to
  * live in the same module so a single dynamic `import()` resolves
- * both. The mixed export shape conflicts with `react-refresh/only-
- * export-components`; the rule is disabled at the file scope because
- * data routes have no fast-refresh-friendly alternative.
+ * both. The mixed export shape conflicts with
+ * `react/only-export-components`; the rule is disabled at the file scope
+ * because data routes have no fast-refresh-friendly alternative.
  */
-/* eslint-disable react-refresh/only-export-components */
+/* oxlint-disable react/only-export-components */
 import type { LoaderFunctionArgs } from "react-router";
 
 import { listBooks, type ListBooksParams } from "@/api";
