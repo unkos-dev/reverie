@@ -62,6 +62,8 @@ export const queryKeys = {
   auth: {
     /** `/auth/me` — current authenticated user identity. */
     me: () => ["auth", "me"] as const,
+    /** `/auth/setup/status` — first-run + provider state for the auth screens and the redirect. */
+    setupStatus: () => ["auth", "setup-status"] as const,
   },
   dashboard: {
     /** Root namespace; invalidate to refetch every dashboard-* slot. */

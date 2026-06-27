@@ -29,6 +29,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("OIDC_CLIENT_ID", "oidc_client_id"),
     ("OIDC_CLIENT_SECRET", "oidc_client_secret"),
     ("OIDC_REDIRECT_URI", "oidc_redirect_uri"),
+    ("REVERIE_LOCAL_AUTH_ENABLED", "local_auth_enabled"),
     ("REVERIE_PORT", "port"),
     ("REVERIE_LIBRARY_PATH", "library_path"),
     ("REVERIE_INGESTION_PATH", "ingestion_path"),
@@ -38,6 +39,19 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("REVERIE_LOG_LEVEL", "log_level"),
     ("RUST_LOG", "log_level"),
     ("REVERIE_DB_MAX_CONNECTIONS", "db_max_connections"),
+    ("REVERIE_LOGIN_RATE_PER_MIN", "login_rate_per_min"),
+    (
+        "REVERIE_LOGIN_THROTTLE_BASE_SECS",
+        "login_throttle_base_secs",
+    ),
+    ("REVERIE_LOGIN_THROTTLE_CAP_SECS", "login_throttle_cap_secs"),
+    ("REVERIE_PASSWORD_MIN_LENGTH", "password_min_length"),
+    ("REVERIE_RECOVERY_PIN_TTL_SECS", "recovery_pin_ttl_secs"),
+    ("REVERIE_RECOVERY_PIN_DIR", "recovery_pin_dir"),
+    (
+        "REVERIE_TRUSTED_CLIENT_IP_HEADER",
+        "trusted_client_ip_header",
+    ),
     ("REVERIE_AUTO_MIGRATE", "auto_migrate"),
     ("REVERIE_FORMAT_PRIORITY", "format_priority"),
     ("REVERIE_CLEANUP_MODE", "cleanup_mode"),
@@ -129,14 +143,14 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 ///    that makes `set_var` `unsafe`. `from_pairs` touches no process env.
 ///    Production
 ///    ([`Self::from_process_env`]) runs through the same code so tests exercise
-///    the real parse path (UNK-100).
+///    the real parse path.
 /// 2. **A frozen, irregular var→field contract.** The operator surface mixes
 ///    bare ecosystem names (`DATABASE_URL`, `OIDC_*`, `RUST_LOG`) with
 ///    `REVERIE_`-namespaced knobs, and several map to a nested path the var
 ///    name doesn't spell (`REVERIE_PUBLIC_URL` → `opds.public_url`). No
 ///    uniform separator rule derives that, so `ENV_MAP` is the explicit
 ///    registry — which also doubles as the introspectable var↔field source the
-///    config-reference generator consumes (UNK-370).
+///    config-reference generator consumes.
 ///
 /// Value parsing mirrors stock `Env` exactly (see [`Self::data`]); the custom
 /// surface is only the two facts above. The pipeline is built in

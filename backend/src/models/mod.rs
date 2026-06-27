@@ -18,8 +18,12 @@ pub mod ingestion_status;
 pub mod library;
 /// Local password credentials (seam for local-account login).
 pub mod local_credentials;
+/// DB-backed per-account login throttle (escalating backoff, CLI-clearable).
+pub mod login_throttle;
 /// Closed value set for the `manifestation_format` Postgres `ENUM`.
 pub mod manifestation_format;
+/// Hashed, single-use, short-lived password-reset PIN records.
+pub mod password_reset_pin;
 /// Per-`(user, manifestation)` reading-progress and last-read timestamp.
 pub mod reading_state;
 /// Closed value set for the `user_role` Postgres `ENUM`.

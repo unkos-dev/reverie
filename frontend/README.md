@@ -24,6 +24,7 @@ frontend/
 │   ├── fouc/            # Pre-paint script hashed into HTML CSP at build
 │   ├── hooks/           # Custom React hooks
 │   ├── pages/           # Route-level page components
+│   ├── routes/          # Lazy route modules (incl. pre-auth /login, /setup, /forgot-password)
 │   ├── lib/             # Utilities
 │   ├── App.tsx          # Root component
 │   └── main.tsx         # Entrypoint

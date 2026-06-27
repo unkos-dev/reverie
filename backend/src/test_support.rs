@@ -21,6 +21,14 @@ pub fn test_config() -> Config {
         oidc_client_id: String::new(),
         oidc_client_secret: String::new(),
         oidc_redirect_uri: String::new(),
+        local_auth_enabled: true,
+        login_rate_per_min: 10,
+        login_throttle_base_secs: 2,
+        login_throttle_cap_secs: 900,
+        password_min_length: 8,
+        recovery_pin_ttl_secs: 900,
+        recovery_pin_dir: "./reverie-recovery".into(),
+        trusted_client_ip_header: None,
         migration_database_url: None,
         auto_migrate: false,
         ingestion_database_url: String::new(),
@@ -112,6 +120,11 @@ pub fn test_oidc_client() -> OidcClient {
     .set_redirect_uri(RedirectUrl::new("http://localhost:3000/auth/callback".into()).unwrap())
 }
 
+pub fn test_login_limiter() -> std::sync::Arc<crate::auth::rate_limit::LoginLimiter> {
+    // A high per-minute quota so fixtures are never throttled by the limiter.
+    crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1000).expect("nonzero"))
+}
+
 pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>> {
     use crate::models::settings::Settings;
     std::sync::Arc::new(tokio::sync::RwLock::new(Settings {
@@ -150,7 +163,8 @@ pub fn test_state() -> AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         config: test_config(),
-        oidc_client: test_oidc_client(),
+        oidc_client: Some(test_oidc_client()),
+        login_limiter: test_login_limiter(),
         settings: test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     }
@@ -383,7 +397,8 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config: super::test_config(),
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
+            login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -418,7 +433,8 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
+            login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -442,7 +458,8 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
+            login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -473,7 +490,8 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: super::test_oidc_client(),
+            oidc_client: Some(super::test_oidc_client()),
+            login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -565,6 +583,32 @@ pub mod db {
         let basic =
             base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
         (user.id, format!("Basic {basic}"))
+    }
+
+    /// Insert an `adult`-role user with an email and a local password
+    /// credential (Argon2id hash of `password`). Returns the user id. For
+    /// `/auth/local/login` tests.
+    pub async fn create_adult_with_password(
+        app_pool: &PgPool,
+        name: &str,
+        email: &str,
+        password: &str,
+    ) -> Uuid {
+        let subject = format!("local-test-{}-{}", name, Uuid::new_v4());
+        let user = crate::models::user::upsert_from_oidc(
+            app_pool,
+            "https://test-issuer.example.com",
+            &subject,
+            name,
+            Some(email),
+        )
+        .await
+        .expect("upsert user");
+        let phc = crate::auth::password::hash_password(password.as_bytes()).expect("hash password");
+        crate::models::local_credentials::set_password(app_pool, user.id, &phc)
+            .await
+            .expect("set password");
+        user.id
     }
 
     pub async fn create_shelf(app_pool: &PgPool, user_id: Uuid, name: &str) -> Uuid {

@@ -90,10 +90,36 @@
       "type": "string",
       "default": "./library"
     },
+    "local_auth_enabled": {
+      "description": "Whether local email+password authentication is enabled\n(`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out\nof the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this\ndefaults on. Setting it `false` without configuring OIDC is rejected at\nstartup (Gate 4): at least one auth provider must remain usable or the\ninstance locks everyone out.",
+      "type": "boolean",
+      "default": true
+    },
     "log_level": {
       "description": "Log-filter directive resolved from the environment with cascading\nprecedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `\"info\"`. The\n`REVERIE_*` operator namespace wins on conflict so staging docs\nstay coherent; `RUST_LOG` is honoured as the ecosystem default for\ndeveloper convenience. The subscriber filter in [`crate::run`]\nparses this string directly (no further env re-read), so the\nprecedence resolved here is the single source of truth for the\nprocess lifetime.",
       "type": "string",
       "default": "info"
+    },
+    "login_rate_per_min": {
+      "description": "Per-source login rate limit, attempts per minute per client IP\n(`REVERIE_LOGIN_RATE_PER_MIN`, default `10`). The hard blocker against\ncredential-stuffing; must be at least 1 (a zero quota locks everyone out).",
+      "type": "integer",
+      "format": "uint32",
+      "default": 10,
+      "minimum": 1
+    },
+    "login_throttle_base_secs": {
+      "description": "Per-account backoff base, seconds (`REVERIE_LOGIN_THROTTLE_BASE_SECS`,\ndefault `2`). The first failed login for an account waits the lesser of\nbase and cap; each further failure doubles the base up to the cap.",
+      "type": "integer",
+      "format": "int32",
+      "default": 2,
+      "minimum": 1
+    },
+    "login_throttle_cap_secs": {
+      "description": "Per-account backoff cap, seconds (`REVERIE_LOGIN_THROTTLE_CAP_SECS`,\ndefault `900`). Upper bound on the escalating per-account delay.",
+      "type": "integer",
+      "format": "int32",
+      "default": 900,
+      "minimum": 1
     },
     "migration_database_url": {
       "description": "Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`\ncredentials for the ephemeral migration pool. `None` on the default\nserver path: the application process holds no migration credential\nunless [`Self::auto_migrate`] is set. Required (else\n[`ConfigError::MissingVar`]) only when `auto_migrate` is true.",
@@ -104,22 +130,22 @@
       "default": null
     },
     "oidc_client_id": {
-      "description": "OIDC client id (`OIDC_CLIENT_ID`, required).",
+      "description": "OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).",
       "type": "string",
       "default": ""
     },
     "oidc_client_secret": {
-      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as\nsecret material; never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
+      "description": "OIDC client secret (`OIDC_CLIENT_SECRET`, required when OIDC is\nconfigured). Treated as secret material; never logged.\n\nNOTE: any new secret-bearing field must also be added to the\n`SECRET_FIELDS` list so a deserialize error never echoes its value\n(hard rule 7).",
       "type": "string",
       "default": ""
     },
     "oidc_issuer_url": {
-      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`, required): the trust seam\nfor the entire authentication subsystem. The boundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
+      "description": "OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC\nauthentication path. OIDC is enabled iff this is set; when\npresent, the other three `OIDC_*` fields become required together. The\nboundary control\nis `reqwest`'s TLS validation against the bundled\nwebpki/Mozilla root store (`reqwest` is built with the\n`rustls` feature, which uses `webpki-roots`, not OS system\nroots).",
       "type": "string",
       "default": ""
     },
     "oidc_redirect_uri": {
-      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match\nthe value registered with the issuer.",
+      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured\n(Gate 4); must match the value registered with the issuer.",
       "type": "string",
       "default": ""
     },
@@ -140,6 +166,13 @@
       ],
       "default": null
     },
+    "password_min_length": {
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). Enforced at first-run setup and password reset. Only the length\nfloor is enforced; breach (HIBP) and strength (zxcvbn) checks are planned\nfor a later release.",
+      "type": "integer",
+      "format": "uint",
+      "default": 8,
+      "minimum": 8
+    },
     "port": {
       "description": "HTTP listen port (`REVERIE_PORT`, default `3000`).",
       "type": "integer",
@@ -153,9 +186,29 @@
       "type": "string",
       "default": "./quarantine"
     },
+    "recovery_pin_dir": {
+      "description": "Directory the clear recovery PIN is written into, one file per user at\n`<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an\noperator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default\n`./reverie-recovery`). Per-user files keep concurrent recoveries from\ncolliding. MUST be outside any web-served directory; the database stores\nonly the PIN's Argon2id hash.",
+      "type": "string",
+      "default": "./reverie-recovery"
+    },
+    "recovery_pin_ttl_secs": {
+      "description": "Lifetime of a forgot-password recovery PIN, seconds\n(`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by\ndesign: the PIN is single-use and rate-limited.",
+      "type": "integer",
+      "format": "int64",
+      "default": 900,
+      "minimum": 60
+    },
     "security": {
       "description": "Response-header policy (CSP, HSTS, reporting endpoint, dist\npath). `csp_*_header` fields are finalised by [`crate::run`]\nafter construction.",
       "$ref": "#/$defs/SecurityConfig"
+    },
+    "trusted_client_ip_header": {
+      "description": "Optional forwarded-for header to trust for the client IP behind a reverse\nproxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset\nby default: the TCP peer is used. An unauthenticated forwarded header is\nattacker-spoofable, so it is honoured only when an operator names it.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
     },
     "writeback": {
       "description": "Writeback worker knobs (concurrency, retry cap).",

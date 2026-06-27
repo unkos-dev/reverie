@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO local_login_throttle (email_lower, fail_count, locked_until)\n           VALUES ($1, 1, now() + make_interval(secs => LEAST($3::double precision,\n                                                              $2::double precision)))\n           ON CONFLICT (email_lower) DO UPDATE SET\n             fail_count = local_login_throttle.fail_count + 1,\n             locked_until = now() + make_interval(secs => LEAST($3::double precision,\n                 $2::double precision * power(2, local_login_throttle.fail_count)))\n           RETURNING locked_until AS \"locked_until!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locked_until!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "local_login_throttle",
+            "name": "locked_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f316e071f55fec28b24201aeddd27451e39ba11ac0080ffb36329e3097ed355f"
+}

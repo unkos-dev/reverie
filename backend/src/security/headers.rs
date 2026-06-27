@@ -1,4 +1,4 @@
-//! Response-header middleware wiring for Reverie (UNK-106).
+//! Response-header middleware wiring for Reverie.
 //!
 //! Three concerns, three surfaces:
 //!
@@ -25,7 +25,7 @@
 //! between the per-router CSP layers and the composite fallback (or
 //! adding a second CSP source from a reverse proxy) silently breaks
 //! the route-class differentiation that motivates having two policies.
-//! `backend/CLAUDE.md` § "Security headers (UNK-106)" warns against
+//! `backend/CLAUDE.md` § "Security headers" warns against
 //! duplicate CSP emission from a proxy; that warning lives or dies by
 //! what is wired here.
 
@@ -50,7 +50,7 @@ const PERMISSIONS_POLICY_VALUE: &str = "camera=(), microphone=(), geolocation=()
 ///
 /// Matched by prefix, so the bare `/api` entry also covers the versioned
 /// `/api/v1/*` routes — it MUST stay `/api` (not be narrowed to `/api/v1`)
-/// even though the data routes moved under `/api/v1` (UNK-376): it is what
+/// even though the data routes moved under `/api/v1`: it is what
 /// keeps the now-gone `/api/*` paths returning a Problem instead of the SPA.
 const RESERVED_PREFIXES: &[&str] = &["/api", "/auth", "/health", "/opds"];
 
@@ -324,7 +324,8 @@ mod tests {
             pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             config,
-            oidc_client: test_support::test_oidc_client(),
+            oidc_client: Some(test_support::test_oidc_client()),
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };

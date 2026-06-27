@@ -3,6 +3,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect};
 use axum_extra::extract::cookie::CookieJar;
 use axum_extra::extract::{Query, QueryRejection};
@@ -33,8 +34,13 @@ use crate::state::AppState;
 /// halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(login))
+        .routes(routes!(oidc_login))
         .routes(routes!(callback))
+        .routes(routes!(local_login))
+        .routes(routes!(setup_status))
+        .routes(routes!(setup))
+        .routes(routes!(forgot_password))
+        .routes(routes!(reset_password))
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(update_theme))
@@ -48,31 +54,43 @@ pub struct CallbackParams {
     /// Authorization code minted by the `IdP`.
     code: String,
     /// OIDC anti-forgery state echoed back by the `IdP`; must match the
-    /// value `/auth/login` stored in the session.
+    /// value `/auth/oidc/login` stored in the session.
     state: String,
 }
 
-/// `GET /auth/login` — start the OIDC authorization-code + PKCE flow.
+/// `GET /auth/oidc/login`: start the OIDC authorization-code + PKCE flow.
+///
+/// Renamed from `/auth/login` so the user-facing login page (a SPA route served
+/// at `/login`) does not collide with this auth-protocol endpoint; `/auth/*` is
+/// the auth API namespace. The OIDC callback path deliberately stays
+/// `/auth/callback` (NOT `/auth/oidc/callback`) so operators need not reconfigure
+/// `OIDC_REDIRECT_URI` at their `IdP`.
 ///
 /// # Errors
+/// - [`AppError::NotFound`] when OIDC is not configured.
 /// - [`AppError::Internal`] when session storage fails.
 #[utoipa::path(
     get,
-    path = "/auth/login",
+    path = "/auth/oidc/login",
     tag = "auth",
     security(()),
     responses(
-        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session")
+        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"),
+        (status = 404, description = "OIDC is not configured on this instance", body = crate::openapi::ProblemDetails)
     )
 )]
-async fn login(
+async fn oidc_login(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<impl IntoResponse, AppError> {
+    // OIDC is optional. When unconfigured this handler is
+    // unreachable in practice (the SPA hides the OIDC action), but guard so a
+    // direct hit 404s cleanly rather than acting on an absent client.
+    let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
+
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-    let (auth_url, csrf_token, nonce) = state
-        .oidc_client
+    let (auth_url, csrf_token, nonce) = oidc_client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             CsrfToken::new_random,
@@ -86,7 +104,7 @@ async fn login(
     // Store OIDC flow state in the underlying session. The OIDC
     // transient anti-forgery state lives under `oidc_csrf_state` — a
     // dedicated key so it can never shadow or be confused with the
-    // long-lived app-level `csrf_token` (synchronizer-token Phase 1)
+    // long-lived app-level `csrf_token` (the synchronizer token)
     // that `/auth/callback` writes after a successful login. See
     // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
     session
@@ -131,8 +149,10 @@ async fn callback(
     params: Result<Query<CallbackParams>, QueryRejection>,
 ) -> Result<(CookieJar, Redirect), AppError> {
     let Query(params) = params?;
+    // OIDC optional: a callback without a configured client 404s.
+    let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
     // Validate OIDC anti-forgery state (the `state` query param echoed
-    // back by the IdP must match the value `/auth/login` stored under
+    // back by the IdP must match the value `/auth/oidc/login` stored under
     // `oidc_csrf_state`). This is the OIDC transient — distinct from
     // the long-lived `csrf_token` that the synchronizer-token defense
     // writes after `auth::session::login()` below.
@@ -159,8 +179,7 @@ async fn callback(
 
     // Exchange code for tokens
     let http_client = oidc::exchange_http_client().map_err(AppError::Internal)?;
-    let token_response = state
-        .oidc_client
+    let token_response = oidc_client
         .exchange_code(AuthorizationCode::new(params.code))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("exchange_code config error: {e}")))?
         .set_pkce_verifier(PkceCodeVerifier::new(stored_verifier))
@@ -173,10 +192,7 @@ async fn callback(
         .id_token()
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("missing ID token")))?;
     let claims = id_token
-        .claims(
-            &state.oidc_client.id_token_verifier(),
-            &Nonce::new(stored_nonce),
-        )
+        .claims(&oidc_client.id_token_verifier(), &Nonce::new(stored_nonce))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("ID token validation failed: {e}")))?;
 
     let subject = claims.subject().as_str();
@@ -218,9 +234,9 @@ async fn callback(
         tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
     }
 
-    // OWASP CSRF synchronizer token (Phase 1: token issuance only;
-    // Phase 2 enables the validating middleware — see
-    // adr/2026-05-22-json-api-conventions.md §"CSRF defense" and the
+    // OWASP CSRF synchronizer token. This mints and exposes the token;
+    // a separate validating middleware enforces it on mutating requests
+    // (see adr/2026-05-22-json-api-conventions.md §"CSRF defense" and the
     // order-of-operations note). 32 bytes from the OS CSPRNG, encoded
     // as 43-char base64url-unpadded; mirrors `auth::token::generate_device_token`.
     //
@@ -232,13 +248,13 @@ async fn callback(
     //
     // Stored under session key `csrf_token`. Disjoint from the OIDC
     // anti-forgery state (`oidc_csrf_state`, removed above) so a
-    // logged-in user re-hitting `/auth/login` cannot overwrite this
+    // logged-in user re-hitting `/auth/oidc/login` cannot overwrite this
     // value with a transient OIDC parameter and confuse a future
     // reader. Re-running `/auth/callback` deliberately rotates this
     // token (each login overwrites the prior session's value).
     // Failure here aborts the login because an unguarded session
-    // would leave the browser unable to mutate state once the Phase
-    // 2 middleware turns on.
+    // would leave the browser unable to mutate state once the
+    // validating CSRF middleware is in place.
     let mut csrf_bytes = [0u8; 32];
     rand::fill(&mut csrf_bytes);
     let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
@@ -252,6 +268,482 @@ async fn callback(
     let jar = set_theme_cookie(jar, user.theme_preference);
 
     Ok((jar, Redirect::temporary("/")))
+}
+
+/// Request body for `POST /auth/local/login`. Explicit allow-list (no
+/// mass-assignment): only the two credential fields are accepted.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct LocalLoginRequest {
+    /// Account email; matched case-insensitively against `users.email`.
+    email: String,
+    /// Plaintext password, verified against the stored Argon2id hash.
+    password: String,
+}
+
+/// `POST /auth/local/login`: email + password sign-in, establishing the same
+/// session contract as the OIDC callback.
+///
+/// THREAT (enumeration): unknown email and wrong password return the identical
+/// generic 422, and both spend equivalent Argon2 work, so neither
+/// the response nor the timing distinguishes a non-existent account.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when local authentication is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a
+///   failed attempt arrives during an active per-account backoff.
+/// - [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).
+/// - [`AppError::Internal`] on session-store or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/local/login",
+    tag = "auth",
+    security(()),
+    request_body = LocalLoginRequest,
+    responses(
+        (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
+        (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Invalid credentials (generic; identical for unknown email and wrong password)", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn local_login(
+    State(state): State<AppState>,
+    session: Session,
+    jar: CookieJar,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<LocalLoginRequest>,
+) -> Result<(CookieJar, StatusCode), AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+
+    // Per-source hard block (governor). Tolerates a missing peer (the test
+    // harness supplies none); the per-account backoff is the IP-independent
+    // backstop.
+    let peer = peer.0.map(|addr| addr.ip());
+    if let Some(ip) = crate::auth::rate_limit::client_ip(
+        &headers,
+        peer,
+        state.config.trusted_client_ip_header.as_deref(),
+    ) && state.login_limiter.check_key(&ip).is_err()
+    {
+        return Err(AppError::RateLimited);
+    }
+
+    // Resolve the account, then verify. On an unknown email or an account with
+    // no local credential, spend equivalent Argon2 work against a dummy hash so
+    // login latency does not leak account existence.
+    let account = user::find_by_email(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let credential = match &account {
+        Some(u) => crate::models::local_credentials::find_by_user_id(&state.pool, u.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?,
+        None => None,
+    };
+    let verified = if let Some(cred) = &credential {
+        crate::auth::password::verify_password(body.password.as_bytes(), &cred.password_hash)
+            .is_ok()
+    } else {
+        // Spend equivalent Argon2 work and discard the (always false) result so
+        // an unknown account is timing-indistinguishable from a wrong password.
+        crate::auth::password::verify_against_dummy(body.password.as_bytes());
+        false
+    };
+
+    // A correct password succeeds even during an active backoff (which it then
+    // clears). Verify-first means backoff never blocks a legitimate login; it
+    // only rejects continued *wrong* attempts.
+    let session_user = if verified { account } else { None };
+    if let Some(user) = session_user {
+        crate::models::login_throttle::reset(&state.pool, &body.email)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
+        // Session contract: rotate id + persist identity, mint the
+        // CSRF synchronizer token, seed the theme cookie. Identical to the OIDC
+        // callback, returning 204 rather than a redirect.
+        crate::auth::session::login(&session, &user)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
+        let mut csrf_bytes = [0u8; 32];
+        rand::fill(&mut csrf_bytes);
+        let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
+        session
+            .insert("csrf_token", &csrf_token)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let jar = set_theme_cookie(jar, user.theme_preference);
+        return Ok((jar, StatusCode::NO_CONTENT));
+    }
+
+    // Failed attempt. Escalate the per-account backoff for ANY email, whether or
+    // not it resolves to an account.
+    //
+    // THREAT (enumeration, CWE-204): gating this on account existence would let
+    // two quick wrong attempts distinguish a known email (which hits the backoff
+    // and returns 429) from an unknown one (which never would), reintroducing the
+    // account-enumeration oracle the constant-work verify paths close. The
+    // throttle table is email-keyed with no FK, so an unknown email simply gets
+    // its own row; record_failure upserts on that key, so repeated attempts on
+    // one email update a single row, and the per-source limiter bounds how fast
+    // distinct rows can be created. A correct password still succeeds during an
+    // active backoff (verify-first, above) and clears the row.
+    if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .is_some()
+    {
+        return Err(AppError::RateLimited);
+    }
+    crate::models::login_throttle::record_failure(
+        &state.pool,
+        &body.email,
+        state.config.login_throttle_base_secs,
+        state.config.login_throttle_cap_secs,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Err(AppError::Validation("invalid email or password".to_owned()))
+}
+
+/// Public first-run status for the SPA: whether setup is required and which
+/// providers are usable.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct SetupStatusResponse {
+    /// `true` when no administrator exists yet, so the SPA shows the setup form.
+    setup_required: bool,
+    /// Whether local email+password login is enabled.
+    local_auth_enabled: bool,
+    /// Whether OIDC is configured (computed from the issuer). Drives
+    /// the SPA's provider-aware redirect and the "Sign in with OIDC" action.
+    oidc_enabled: bool,
+}
+
+/// `GET /auth/setup/status`: public provider/bootstrap state for the SPA.
+///
+/// # Errors
+/// - [`AppError::Internal`] on database failure.
+#[utoipa::path(
+    get,
+    path = "/auth/setup/status",
+    tag = "auth",
+    security(()),
+    responses((status = 200, description = "Setup and provider state", body = SetupStatusResponse))
+)]
+async fn setup_status(
+    State(state): State<AppState>,
+) -> Result<Json<SetupStatusResponse>, AppError> {
+    let admin = user::admin_exists(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(Json(SetupStatusResponse {
+        setup_required: !admin,
+        local_auth_enabled: state.config.local_auth_enabled,
+        oidc_enabled: state.config.oidc_configured(),
+    }))
+}
+
+/// Request body for `POST /auth/setup`. Explicit allow-list (no mass-assignment).
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct SetupRequest {
+    /// First administrator's email (RFC 5322 addr-spec).
+    email: String,
+    /// Display name.
+    display_name: String,
+    /// Plaintext password; enforced against `password_min_length`, then hashed.
+    password: String,
+}
+
+/// `POST /auth/setup`: first-run bootstrap: mint the first administrator.
+///
+/// THREAT: bootstrap is the ONLY first-admin path. The race
+/// guarantee is the DB `instance_bootstrap` singleton insert inside
+/// [`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only
+/// a cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under
+/// READ COMMITTED). A second concurrent setup loses the marker-row race and maps
+/// to 409. Setup does NOT auto-login (parity with recovery; the session contract
+/// lives only at `/auth/local/login`).
+///
+/// # Errors
+/// - [`AppError::SetupAlreadyComplete`] (409) when an administrator already
+///   exists (fast-reject or the marker-row race).
+/// - [`AppError::Validation`] (422) on a malformed email or too-short password.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/setup",
+    tag = "auth",
+    security(()),
+    request_body = SetupRequest,
+    responses(
+        (status = 201, description = "First administrator created (no auto-login)"),
+        (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn setup(
+    State(state): State<AppState>,
+    Json(body): Json<SetupRequest>,
+) -> Result<StatusCode, AppError> {
+    // Cheap fast-reject; the authoritative guard is the marker insert below.
+    if user::admin_exists(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+    {
+        return Err(AppError::SetupAlreadyComplete);
+    }
+    if !user::is_addr_spec(&body.email) {
+        return Err(AppError::Validation("invalid email address".to_owned()));
+    }
+    if body.password.chars().count() < state.config.password_min_length {
+        return Err(AppError::Validation(format!(
+            "password must be at least {} characters",
+            state.config.password_min_length
+        )));
+    }
+    let phc = crate::auth::password::hash_password(body.password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    match user::create_first_admin(&state.pool, &body.email, &body.display_name, &phc).await {
+        Ok(_admin) => Ok(StatusCode::CREATED),
+        Err(user::BootstrapError::AlreadyBootstrapped) => Err(AppError::SetupAlreadyComplete),
+        Err(user::BootstrapError::EmailTaken) => {
+            Err(AppError::Validation("email already in use".to_owned()))
+        }
+        Err(user::BootstrapError::Db(e)) => Err(AppError::Internal(e.into())),
+    }
+}
+
+/// Resolve the client IP and enforce the per-source login/recovery rate limit.
+/// Tolerates a missing peer (test harness); shared by the login and recovery
+/// handlers.
+fn enforce_source_rate_limit(
+    state: &AppState,
+    headers: &HeaderMap,
+    peer: &crate::auth::rate_limit::PeerAddr,
+) -> Result<(), AppError> {
+    let ip = peer.0.map(|addr| addr.ip());
+    if let Some(ip) = crate::auth::rate_limit::client_ip(
+        headers,
+        ip,
+        state.config.trusted_client_ip_header.as_deref(),
+    ) && state.login_limiter.check_key(&ip).is_err()
+    {
+        return Err(AppError::RateLimited);
+    }
+    Ok(())
+}
+
+/// Request body for `POST /auth/forgot-password`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct ForgotPasswordRequest {
+    /// Account email to start recovery for.
+    email: String,
+}
+
+/// `POST /auth/forgot-password`: start email-less PIN recovery.
+///
+/// THREAT (codeguard #2): always returns a generic 200; the response never
+/// reveals whether the email exists. When it does, a fresh CSPRNG PIN is
+/// generated, prior active PINs for the user are superseded (at most one active
+/// PIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written
+/// to a per-user operator-readable file (mode 0600). A failed file write leaves an
+/// unconsumed-but-unusable row that simply expires; it is never a cleartext PIN
+/// with no consuming row. On an unknown email, equivalent Argon2 work is spent so
+/// timing does not leak existence (a small DB/file residual is
+/// accepted).
+///
+/// # Errors
+/// - [`AppError::NotFound`] when local authentication is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/forgot-password",
+    tag = "auth",
+    security(()),
+    request_body = ForgotPasswordRequest,
+    responses(
+        (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn forgot_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<ForgotPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    let user = user::find_by_email(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    if let Some(user) = user {
+        // Hash before opening the transaction (Argon2 is CPU-bound; do not hold a
+        // connection across it).
+        let pin = crate::auth::recovery::generate_pin();
+        let pin_hash = crate::auth::password::hash_password(pin.as_bytes())
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("pin hash failed: {e}")))?;
+        let expires_at = time::OffsetDateTime::now_utc()
+            + time::Duration::seconds(state.config.recovery_pin_ttl_secs);
+
+        // Atomically supersede prior PINs and persist the new one, so a failure
+        // cannot leave the user with no active PIN.
+        crate::models::password_reset_pin::rotate(&state.pool, user.id, &pin_hash, expires_at)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
+        // DB committed; the file comes last so a write failure leaves only an
+        // unusable row that expiry sweeps.
+        let email = user.email.as_deref().unwrap_or(&body.email);
+        if let Err(e) = crate::auth::recovery::write_pin_file(
+            std::path::Path::new(&state.config.recovery_pin_dir),
+            user.id,
+            email,
+            &pin,
+            expires_at,
+        ) {
+            // Never surface to the client; the row expires harmlessly.
+            tracing::error!(error = %e, "failed to write recovery PIN file");
+        }
+    } else {
+        // Unknown email: spend comparable Argon2 work so response timing does not
+        // reveal account existence.
+        crate::auth::password::verify_against_dummy(body.email.as_bytes());
+    }
+
+    Ok(StatusCode::OK)
+}
+
+/// Request body for `POST /auth/reset-password`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct ResetPasswordRequest {
+    /// Account email.
+    email: String,
+    /// The recovery PIN from the host file.
+    pin: String,
+    /// New plaintext password; enforced against `password_min_length`.
+    new_password: String,
+}
+
+/// `POST /auth/reset-password`: complete recovery with a PIN.
+///
+/// THREAT (codeguard #2): the PIN is single-use (race-safe consume), short-lived,
+/// and verified constant-time via Argon2. Any failure (unknown email, no active
+/// PIN, wrong PIN, expired, too-short password) returns one generic 422, so the
+/// response never distinguishes which part failed; the no-PIN path spends
+/// equivalent work. Reset does NOT establish a session (no auto-login). Consuming
+/// the PIN, writing the new credential, and bumping `session_version` (which
+/// invalidates every session predating the reset) run in one transaction, so a
+/// partial apply cannot leave the account locked out or a stale session live.
+/// The PIN file is removed after the transaction commits.
+///
+/// # Errors
+/// - [`AppError::NotFound`] when local authentication is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
+/// - [`AppError::Validation`] (422) generic failure.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/reset-password",
+    tag = "auth",
+    security(()),
+    request_body = ResetPasswordRequest,
+    responses(
+        (status = 200, description = "Password reset; no session established (re-authentication required)"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn reset_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<ResetPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    let generic = || AppError::Validation("invalid or expired reset request".to_owned());
+
+    if body.new_password.chars().count() < state.config.password_min_length {
+        return Err(generic());
+    }
+
+    let user = user::find_by_email(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let active = match &user {
+        Some(u) => crate::models::password_reset_pin::find_active_by_user(&state.pool, u.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?,
+        None => None,
+    };
+    let verified = if let Some(pin) = &active {
+        crate::auth::password::verify_password(body.pin.as_bytes(), &pin.pin_hash).is_ok()
+    } else {
+        // Spend equivalent work on the no-PIN path (timing parity).
+        crate::auth::password::verify_against_dummy(body.pin.as_bytes());
+        false
+    };
+
+    if verified && let (Some(user), Some(pin)) = (&user, &active) {
+        // Hash before opening the transaction: Argon2 is CPU-bound (~100 ms) and
+        // must not be held across an open DB connection/locks.
+        let phc = crate::auth::password::hash_password(body.new_password.as_bytes())
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+        // One transaction: consume the PIN, write the new credential, and
+        // invalidate existing sessions atomically. A partial apply (PIN spent
+        // but password unchanged) would lock the user out with no usable PIN.
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+
+        // Single-use: consume first (race-safe). A losing concurrent reset gets
+        // `false`; rolling back keeps that branch a no-op.
+        let consumed = crate::models::password_reset_pin::consume(&mut *tx, pin.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        if consumed {
+            crate::models::local_credentials::set_password(&mut *tx, user.id, &phc)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+            // THREAT (CWE-613): a password reset must terminate sessions that
+            // predate it, or a session stolen before recovery survives the reset.
+            crate::models::user::increment_session_version(&mut *tx, user.id)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+
+            if let Err(e) = crate::auth::recovery::remove_pin_file(
+                std::path::Path::new(&state.config.recovery_pin_dir),
+                user.id,
+            ) {
+                tracing::warn!(error = %e, "failed to remove recovery PIN file after reset");
+            }
+            // No session established: the user must sign in with the new password.
+            return Ok(StatusCode::OK);
+        }
+    }
+
+    Err(generic())
 }
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
@@ -321,11 +813,11 @@ async fn me(
     // THREAT: surfaces the session-bound CSRF synchronizer token to the
     // first-party SPA (see adr/2026-05-22-json-api-conventions.md). The
     // session key `csrf_token` is disjoint from the OIDC transient
-    // `oidc_csrf_state` used by `/auth/login`, so this value is always
+    // `oidc_csrf_state` used by `/auth/oidc/login`, so this value is always
     // the long-lived app token (or absent for sessions that never went
     // through `/auth/callback`, e.g. Basic-auth OPDS callers). Treat
     // the missing case as `null` rather than 500: the response shape
-    // stays stable, and the Phase 2 middleware (not this handler) is
+    // stays stable, and the validating middleware (not this handler) is
     // what refuses unsafe verbs without a token.
     let csrf_token: Option<String> = session
         .get("csrf_token")
@@ -411,7 +903,7 @@ mod tests {
     #[tokio::test]
     async fn login_redirects_to_oidc_provider() {
         let server = test_support::test_server();
-        let response = server.get("/auth/login").await;
+        let response = server.get("/auth/oidc/login").await;
         // Should redirect to the fake OIDC provider's auth URL
         assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
         let location = response.header("location").to_str().unwrap().to_owned();
@@ -473,14 +965,14 @@ mod tests {
             .iter()
             .filter_map(|v| v.to_str().ok())
             .find(|c| c.starts_with("id="))
-            .expect("session `id` cookie emitted by /auth/login")
+            .expect("session `id` cookie emitted by /auth/oidc/login")
             .to_owned()
     }
 
     #[tokio::test]
     async fn session_cookie_carries_httponly_lax_and_no_secure_by_default() {
         let server = test_support::test_server();
-        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
         assert!(
             cookie.contains("HttpOnly"),
             "session cookie must be HttpOnly; got: {cookie}"
@@ -502,7 +994,7 @@ mod tests {
         let app =
             crate::build_router_with_session_store(state, tower_sessions::MemoryStore::default());
         let server = axum_test::TestServer::new(app);
-        let cookie = session_set_cookie(&server.get("/auth/login").await);
+        let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
         assert!(
             cookie.contains("Secure"),
             "session cookie must be Secure when behind_https=true; got: {cookie}"
@@ -574,7 +1066,7 @@ mod tests {
         );
         // Basic-auth sessions skip `/auth/callback`, so the CSRF
         // synchronizer token is never seeded. The field must still be
-        // present (shape stability) but null. Phase 2's `csrf_required`
+        // present (shape stability) but null. The `csrf_required`
         // middleware exempts Basic-auth callers (OPDS clients) from
         // mutating-verb gating; this assertion locks that contract so
         // a future "always populate csrf_token" refactor cannot
@@ -689,9 +1181,9 @@ mod tests {
         );
     }
 
-    /// End-to-end happy path through `/auth/login` → `/auth/callback`. Exercises:
+    /// End-to-end happy path through `/auth/oidc/login` → `/auth/callback`. Exercises:
     /// PKCE/CSRF/nonce session round-trip, mock token exchange against a
-    /// signed ID token whose nonce matches what `/auth/login` stored,
+    /// signed ID token whose nonce matches what `/auth/oidc/login` stored,
     /// identity provisioning without auto-promotion (first user stays a
     /// non-administrator), session login (cookie cycled), and the FOUC theme
     /// cookie seeded from the freshly-loaded user record.
@@ -709,15 +1201,16 @@ mod tests {
         // Mock IdP: spins up wiremock + signs a key + serves /jwks.
         // client_id matches `test_config().oidc_client_id` (empty string).
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
 
-        // Shared session store so the test can read what /auth/login wrote.
+        // Shared session store so the test can read what /auth/oidc/login wrote.
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -725,9 +1218,9 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        // Step 1: drive /auth/login. Server stores csrf_token, nonce,
+        // Step 1: drive /auth/oidc/login. Server stores csrf_token, nonce,
         // pkce_verifier in the session and 307-redirects to the IdP.
-        let login_resp = server.get("/auth/login").await;
+        let login_resp = server.get("/auth/oidc/login").await;
         assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
 
         // Step 2: extract the session ID from the issued cookie and load
@@ -762,7 +1255,7 @@ mod tests {
         .await;
 
         // Step 4: drive /auth/callback. Cookie jar carries the session id
-        // from the login response; CSRF state is the value /auth/login stored.
+        // from the login response; CSRF state is the value /auth/oidc/login stored.
         let cb_resp = server
             .get("/auth/callback")
             .add_query_param("code", "mock-auth-code")
@@ -784,7 +1277,7 @@ mod tests {
 
         // Session-fixation defence: our login() (auth::session::login →
         // cycle_id) must rotate the session id, so the cookie value after
-        // callback differs from the one issued by /auth/login. A regression
+        // callback differs from the one issued by /auth/oidc/login. A regression
         // where login() stops cycling would let a pre-auth attacker plant a
         // session id that becomes authenticated post-login.
         let new_session_value = cb_resp.cookie("id").value().to_string();
@@ -846,10 +1339,10 @@ mod tests {
         );
 
         // Step 8: /auth/me carries a session-stored CSRF synchronizer
-        // token (43-char base64url-unpadded ≙ 32 random bytes). Phase 2
-        // wires the middleware that validates `X-CSRF-Token`; Phase 1
-        // ships token issuance + exposure here so the frontend can
-        // start reading it before the middleware turns on. See
+        // token (43-char base64url-unpadded ≙ 32 random bytes). The
+        // validating middleware checks `X-CSRF-Token`; token issuance +
+        // exposure ship here so the frontend can start reading it before
+        // the middleware turns on. See
         // adr/2026-05-22-json-api-conventions.md §"CSRF defense".
         let token = me_body
             .get("csrf_token")
@@ -868,10 +1361,10 @@ mod tests {
             "csrf_token must be base64url charset; got: {token}"
         );
 
-        // Step 9: token is stable across reads within a session. Phase
-        // 2 will rotate on role change; Phase 1 must NOT rotate per
-        // request — otherwise the frontend's cached token races every
-        // mutating request.
+        // Step 9: token is stable across reads within a session. A
+        // future change may rotate it on role change, but issuance must
+        // NOT rotate per request; otherwise the frontend's cached token
+        // races every mutating request.
         let me_resp_2 = server.get("/auth/me").await;
         assert_eq!(me_resp_2.status_code(), StatusCode::OK);
         let me_body_2: serde_json::Value = me_resp_2.json();
@@ -882,7 +1375,7 @@ mod tests {
         );
     }
 
-    /// A logged-in user re-hitting `/auth/login` (e.g. mistaken click,
+    /// A logged-in user re-hitting `/auth/oidc/login` (e.g. mistaken click,
     /// stale tab) must NOT overwrite their long-lived synchronizer
     /// token. The OIDC transient state lives under `oidc_csrf_state`
     /// and the app token under `csrf_token` — disjoint keys. This
@@ -890,8 +1383,6 @@ mod tests {
     /// the two keys breaks here rather than silently shipping a
     /// confused-deputy where `/auth/me` returns the OIDC transient
     /// value pretending to be the app token.
-    ///
-    /// Locks Pass-1 finding D1 from the PR #306 adversarial review.
     #[sqlx::test(migrations = "./migrations")]
     async fn re_login_preserves_app_csrf_token(pool: sqlx::PgPool) {
         use crate::state::AppState;
@@ -903,13 +1394,14 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -918,7 +1410,7 @@ mod tests {
         server.save_cookies();
 
         // Step 1: drive /login → /callback to mint the app csrf_token.
-        let login_resp = server.get("/auth/login").await;
+        let login_resp = server.get("/auth/oidc/login").await;
         assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
@@ -931,13 +1423,13 @@ mod tests {
             record
                 .data
                 .get("oidc_csrf_state")
-                .expect("oidc_csrf_state present after /auth/login")
+                .expect("oidc_csrf_state present after /auth/oidc/login")
                 .clone(),
         )
         .expect("oidc_csrf_state is string");
         assert!(
             !record.data.contains_key("csrf_token"),
-            "/auth/login must NOT write the app-level csrf_token key — that \
+            "/auth/oidc/login must NOT write the app-level csrf_token key; that \
              would clobber a returning user's existing app token",
         );
         let nonce: String =
@@ -971,21 +1463,21 @@ mod tests {
             .to_owned();
         assert_eq!(token_a.len(), 43, "token A must be 43-char base64url");
 
-        // Step 2: same authenticated cookie jar — drive /auth/login
+        // Step 2: same authenticated cookie jar; drive /auth/oidc/login
         // AGAIN (no callback). This writes a fresh OIDC transient
         // under `oidc_csrf_state`. The app token under `csrf_token`
-        // MUST be preserved; otherwise the Phase-2 frontend reader
+        // MUST be preserved; otherwise the frontend reader
         // would see /auth/me return the OIDC transient pretending
         // to be the app token.
-        let login_resp_2 = server.get("/auth/login").await;
+        let login_resp_2 = server.get("/auth/oidc/login").await;
         assert_eq!(login_resp_2.status_code(), StatusCode::TEMPORARY_REDIRECT);
         let session_cookie_2 = login_resp_2.cookie("id").value().to_string();
         let session_id_2: SessionId = session_cookie_2.parse().expect("parse session id 2");
         let record_2 = store
             .load(&session_id_2)
             .await
-            .expect("load session record after second /auth/login")
-            .expect("session record present after second /auth/login");
+            .expect("load session record after second /auth/oidc/login")
+            .expect("session record present after second /auth/oidc/login");
 
         // The new OIDC transient must be present and must differ from
         // the first login's transient (otherwise CSRF state is being
@@ -1000,24 +1492,24 @@ mod tests {
         .expect("oidc_csrf_state 2 is string");
         assert_ne!(
             oidc_state_1, oidc_state_2,
-            "OIDC anti-forgery state must rotate per /auth/login call"
+            "OIDC anti-forgery state must rotate per /auth/oidc/login call"
         );
 
         // The app token under `csrf_token` must survive the re-login
-        // intact. If this fires, /auth/login is shadowing the app
-        // token with OIDC transient state (D1 regression).
+        // intact. If this fires, /auth/oidc/login is shadowing the app
+        // token with OIDC transient state.
         let preserved_app_token: String = serde_json::from_value(
             record_2
                 .data
                 .get("csrf_token")
-                .expect("app csrf_token must survive /auth/login re-entry")
+                .expect("app csrf_token must survive /auth/oidc/login re-entry")
                 .clone(),
         )
         .expect("preserved csrf_token is string");
         assert_eq!(
             preserved_app_token, token_a,
             "app csrf_token must equal the value minted by the previous \
-             /auth/callback; mismatch indicates /auth/login wrote to the \
+             /auth/callback; mismatch indicates /auth/oidc/login wrote to the \
              app-token key and clobbered the long-lived value",
         );
 
@@ -1050,13 +1542,14 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1064,8 +1557,8 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        // Drive /auth/login → /auth/callback to establish an authenticated session.
-        let login_resp = server.get("/auth/login").await;
+        // Drive /auth/oidc/login → /auth/callback to establish an authenticated session.
+        let login_resp = server.get("/auth/oidc/login").await;
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
         let record = store
@@ -1167,13 +1660,14 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1181,8 +1675,8 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        // Establish an authenticated session via /auth/login → /auth/callback.
-        let login_resp = server.get("/auth/login").await;
+        // Establish an authenticated session via /auth/oidc/login → /auth/callback.
+        let login_resp = server.get("/auth/oidc/login").await;
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
         let record = store
@@ -1281,13 +1775,14 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = mock.client("http://localhost:3000/auth/callback");
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
             oidc_client,
+            login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -1295,7 +1790,7 @@ mod tests {
         let mut server = axum_test::TestServer::new(app);
         server.save_cookies();
 
-        let login_resp = server.get("/auth/login").await;
+        let login_resp = server.get("/auth/oidc/login").await;
         let session_cookie_value = login_resp.cookie("id").value().to_string();
         let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
         let record = store
@@ -1358,6 +1853,457 @@ mod tests {
             expiry_after > expiry_before,
             "an authenticated read must slide the inactivity expiry \
              (before={expiry_before}, after={expiry_after})"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_succeeds_and_establishes_session(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "local-happy",
+            "happy@example.com",
+            "correct horse battery staple",
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        // Persist the session cookie login sets so the follow-up /auth/me is
+        // session-authenticated; axum-test drops cookies between requests
+        // otherwise, making the read anonymous (401).
+        server.save_cookies();
+
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "happy@example.com",
+                "password": "correct horse battery staple",
+            }))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::NO_CONTENT,
+            "correct credentials establish a session"
+        );
+
+        // The local-login session carries through and a non-empty CSRF
+        // synchronizer token was minted (same contract as the OIDC callback).
+        let me = server.get("/auth/me").await;
+        assert_eq!(me.status_code(), StatusCode::OK, "session carries through");
+        let body: serde_json::Value = me.json();
+        let csrf = body.get("csrf_token").and_then(|v| v.as_str());
+        assert!(
+            csrf.is_some_and(|t| !t.is_empty()),
+            "local login mints a CSRF token; got: {body}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_wrong_password_is_generic_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "local-wrong",
+            "wrong@example.com",
+            "the right one",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "wrong@example.com", "password": "the WRONG one"}))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_unknown_email_matches_wrong_password(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "known",
+            "known@example.com",
+            "the real password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // An unknown email and a wrong password for a real account must be
+        // indistinguishable: identical status AND identical body, or the
+        // difference is an account-enumeration oracle (CWE-204).
+        let unknown = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "ghost@example.com", "password": "anything"}))
+            .await;
+        let wrong = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "known@example.com", "password": "wrong password"}))
+            .await;
+        assert_eq!(
+            unknown.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "an unknown email returns a generic 422"
+        );
+        assert_eq!(
+            wrong.status_code(),
+            unknown.status_code(),
+            "a wrong password returns the same status as an unknown email"
+        );
+        assert_eq!(
+            unknown.text(),
+            wrong.text(),
+            "unknown-email and wrong-password bodies must be byte-identical"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_session_is_csrf_enforced(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "csrf",
+            "csrf@example.com",
+            "a good password",
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        // Persist the session cookie set by login so the later mutations are
+        // session-authenticated; without it the CSRF layer correctly exempts an
+        // anonymous request and the assertions below would see 401, not 428.
+        server.save_cookies();
+
+        server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": "csrf@example.com", "password": "a good password"}))
+            .await;
+
+        // A session-authenticated mutation with no token is blocked (428).
+        let no_token = server
+            .post("/api/v1/shelves")
+            .json(&serde_json::json!({"name": "Shelf"}))
+            .await;
+        assert_eq!(
+            no_token.status_code(),
+            StatusCode::PRECONDITION_REQUIRED,
+            "CSRF layer blocks a session mutation with no X-CSRF-Token"
+        );
+
+        // A wrong token is rejected (403).
+        let wrong = server
+            .post("/api/v1/shelves")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_static("not-the-token"),
+            )
+            .json(&serde_json::json!({"name": "Shelf"}))
+            .await;
+        assert_eq!(
+            wrong.status_code(),
+            StatusCode::FORBIDDEN,
+            "a mismatched CSRF token is rejected"
+        );
+
+        // The minted token passes the CSRF layer: the request
+        // reaches the handler rather than being blocked at 428/403.
+        let me: serde_json::Value = server.get("/auth/me").await.json();
+        let token = me
+            .get("csrf_token")
+            .and_then(|v| v.as_str())
+            .expect("csrf token minted")
+            .to_owned();
+        let with_token = server
+            .post("/api/v1/shelves")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_str(&token).expect("valid header"),
+            )
+            .json(&serde_json::json!({"name": "Shelf"}))
+            .await;
+        assert_ne!(
+            with_token.status_code(),
+            StatusCode::PRECONDITION_REQUIRED,
+            "a valid token must not be blocked by the CSRF layer"
+        );
+        assert_ne!(
+            with_token.status_code(),
+            StatusCode::FORBIDDEN,
+            "a valid token must not be rejected by the CSRF layer"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn setup_creates_admin_then_rejects_second_attempt(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // Uninitialised instance: setup is required.
+        let status: serde_json::Value = server.get("/auth/setup/status").await.json();
+        assert_eq!(
+            status
+                .get("setup_required")
+                .and_then(serde_json::Value::as_bool),
+            Some(true),
+            "a fresh instance requires setup"
+        );
+
+        let first = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "admin@example.com",
+                "display_name": "Admin",
+                "password": "a strong password",
+            }))
+            .await;
+        assert_eq!(
+            first.status_code(),
+            StatusCode::CREATED,
+            "first setup mints the administrator"
+        );
+
+        // setup_required flips false after bootstrap.
+        let status2: serde_json::Value = server.get("/auth/setup/status").await.json();
+        assert_eq!(
+            status2
+                .get("setup_required")
+                .and_then(serde_json::Value::as_bool),
+            Some(false),
+            "setup_required is false once an admin exists"
+        );
+
+        // A second setup is rejected (409) once an admin exists.
+        let second = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "other@example.com",
+                "display_name": "Other",
+                "password": "another strong one",
+            }))
+            .await;
+        assert_eq!(
+            second.status_code(),
+            StatusCode::CONFLICT,
+            "first-run setup is closed once an administrator exists"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn setup_enforces_password_min_length(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "admin@example.com",
+                "display_name": "Admin",
+                "password": "short",
+            }))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a password below the minimum length is rejected"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn forgot_password_is_generic_for_unknown_email(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // No such account: still a generic 200 (no enumeration). This path writes
+        // no PIN file, so it cannot race the happy-path test below.
+        let resp = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "ghost@example.com"}))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_with_invalid_pin_is_generic_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "reset-bad",
+            "reset-bad@example.com",
+            "original password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // No PIN was ever issued: any reset attempt is the generic 422.
+        let resp = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "reset-bad@example.com",
+                "pin": "0000000000",
+                "new_password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn forgot_then_reset_changes_the_password(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let user_id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "recover",
+            "recover@example.com",
+            "the old password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let forgot = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "recover@example.com"}))
+            .await;
+        assert_eq!(forgot.status_code(), StatusCode::OK);
+
+        // Read the clear PIN from the user's operator file (the model stores only
+        // its hash).
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
+        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
+        let pin = contents
+            .lines()
+            .find_map(|l| l.strip_prefix("pin: "))
+            .expect("PIN line in file")
+            .to_owned();
+
+        let reset = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "recover@example.com",
+                "pin": pin,
+                "new_password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(
+            reset.status_code(),
+            StatusCode::OK,
+            "a valid PIN resets the password"
+        );
+
+        // No auto-login: the new password works, the old one does not.
+        let with_new = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "recover@example.com",
+                "password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(
+            with_new.status_code(),
+            StatusCode::NO_CONTENT,
+            "the new password authenticates"
+        );
+
+        // A consumed PIN cannot be reused.
+        let reuse = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "recover@example.com",
+                "pin": pin,
+                "new_password": "yet another password",
+            }))
+            .await;
+        assert_eq!(
+            reuse.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a consumed PIN is single-use"
+        );
+        // The successful reset already removed the PIN file; nothing to clean up.
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_invalidates_existing_sessions(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let user_id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "stale",
+            "stale@example.com",
+            "the old password",
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server.save_cookies();
+
+        // Establish a session and confirm it is live before the reset.
+        let login = server
+            .post("/auth/local/login")
+            .json(
+                &serde_json::json!({"email": "stale@example.com", "password": "the old password"}),
+            )
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        let me = server.get("/auth/me").await;
+        assert_eq!(
+            me.status_code(),
+            StatusCode::OK,
+            "the session authenticates before the reset"
+        );
+        // csrf_required gates mutating verbs by auth method, and this caller now
+        // holds a session, so the recovery POSTs below must carry the token.
+        // Anonymous recovery (the common case) is exempt; this stolen-cookie
+        // scenario is not.
+        let csrf_token = me
+            .json::<serde_json::Value>()
+            .get("csrf_token")
+            .and_then(|v| v.as_str())
+            .expect("login mints a csrf token")
+            .to_owned();
+
+        // Recover and reset the password. A session that predates the reset (e.g.
+        // an attacker's stolen cookie) must not survive it.
+        let forgot = server
+            .post("/auth/forgot-password")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_str(&csrf_token).expect("valid header"),
+            )
+            .json(&serde_json::json!({"email": "stale@example.com"}))
+            .await;
+        assert_eq!(forgot.status_code(), StatusCode::OK);
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
+        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
+        let pin = contents
+            .lines()
+            .find_map(|l| l.strip_prefix("pin: "))
+            .expect("PIN line in file")
+            .to_owned();
+        let reset = server
+            .post("/auth/reset-password")
+            .add_header(
+                axum::http::HeaderName::from_static("x-csrf-token"),
+                axum::http::HeaderValue::from_str(&csrf_token).expect("valid header"),
+            )
+            .json(&serde_json::json!({
+                "email": "stale@example.com",
+                "pin": pin,
+                "new_password": "a brand new password",
+            }))
+            .await;
+        assert_eq!(reset.status_code(), StatusCode::OK);
+
+        // The pre-reset session is now rejected: the reset bumped session_version.
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a session established before the reset is invalidated by it"
         );
     }
 }

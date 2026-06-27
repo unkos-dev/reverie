@@ -28,6 +28,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"
+argon2 = { version = "0.5.3", features = ["std"] }
 async-trait = "0.1.89"
 axum = "0.8.9"
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
@@ -37,7 +38,7 @@ dotenvy = "0.15.7"
 email_address = "0.2.9"
 encoding_rs = "0.8.35"
 futures = "0.3.32"
-governor = "0.10.4"
+governor = { version = "0.10.4", features = ["dashmap"] }
 hickory-resolver = "0.26.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 notify = "8.2.0"

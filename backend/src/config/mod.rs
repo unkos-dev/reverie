@@ -62,8 +62,18 @@ type RequiredFieldAccessor = fn(&Config) -> &str;
 /// `DATABASE_URL_MIGRATION` is deliberately absent: it is *conditionally*
 /// required (only when `REVERIE_AUTO_MIGRATE=true`, enforced by Gate 1) and is
 /// documented as such by the reference rather than listed here.
-pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
-    ("DATABASE_URL", |c| c.database_url.as_str()),
+pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
+    &[("DATABASE_URL", |c| c.database_url.as_str())];
+
+/// OIDC fields that become required *together* once OIDC is configured (the
+/// issuer URL is present). OIDC is enabled iff configured; there is no separate
+/// `oidc_enabled` flag, so these are conditionally, not
+/// unconditionally, required: a fully-unset OIDC block is valid (local-only
+/// instance), but a partially-configured one (issuer set, secret missing) is a
+/// `MissingVar` for the absent field. Gate 4 in [`Config::from_figment`] enforces
+/// this; the issuer accessor is listed first so an issuer-only block still
+/// reports the next missing field rather than itself.
+const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
     ("OIDC_ISSUER_URL", |c| c.oidc_issuer_url.as_str()),
     ("OIDC_CLIENT_ID", |c| c.oidc_client_id.as_str()),
     ("OIDC_CLIENT_SECRET", |c| c.oidc_client_secret.as_str()),
@@ -109,25 +119,72 @@ pub struct Config {
     /// never hand out a connection (`PoolTimedOut` on the first query).
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub db_max_connections: u32,
-    /// OIDC issuer URL (`OIDC_ISSUER_URL`, required): the trust seam
-    /// for the entire authentication subsystem. The boundary control
+    /// Per-source login rate limit, attempts per minute per client IP
+    /// (`REVERIE_LOGIN_RATE_PER_MIN`, default `10`). The hard blocker against
+    /// credential-stuffing; must be at least 1 (a zero quota locks everyone out).
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub login_rate_per_min: u32,
+    /// Per-account backoff base, seconds (`REVERIE_LOGIN_THROTTLE_BASE_SECS`,
+    /// default `2`). The first failed login for an account waits the lesser of
+    /// base and cap; each further failure doubles the base up to the cap.
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub login_throttle_base_secs: i32,
+    /// Per-account backoff cap, seconds (`REVERIE_LOGIN_THROTTLE_CAP_SECS`,
+    /// default `900`). Upper bound on the escalating per-account delay.
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub login_throttle_cap_secs: i32,
+    /// Minimum length for a local-account password
+    /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic
+    /// floor). Enforced at first-run setup and password reset. Only the length
+    /// floor is enforced; breach (HIBP) and strength (zxcvbn) checks are planned
+    /// for a later release.
+    #[validate(range(min = 8, message = "must be at least 8 (NIST SP 800-63B)"))]
+    pub password_min_length: usize,
+    /// Lifetime of a forgot-password recovery PIN, seconds
+    /// (`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by
+    /// design: the PIN is single-use and rate-limited.
+    #[validate(range(min = 60, message = "must be at least 60"))]
+    pub recovery_pin_ttl_secs: i64,
+    /// Directory the clear recovery PIN is written into, one file per user at
+    /// `<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an
+    /// operator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default
+    /// `./reverie-recovery`). Per-user files keep concurrent recoveries from
+    /// colliding. MUST be outside any web-served directory; the database stores
+    /// only the PIN's Argon2id hash.
+    pub recovery_pin_dir: String,
+    /// Optional forwarded-for header to trust for the client IP behind a reverse
+    /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
+    /// by default: the TCP peer is used. An unauthenticated forwarded header is
+    /// attacker-spoofable, so it is honoured only when an operator names it.
+    pub trusted_client_ip_header: Option<String>,
+    /// OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC
+    /// authentication path. OIDC is enabled iff this is set; when
+    /// present, the other three `OIDC_*` fields become required together. The
+    /// boundary control
     /// is `reqwest`'s TLS validation against the bundled
     /// webpki/Mozilla root store (`reqwest` is built with the
     /// `rustls` feature, which uses `webpki-roots`, not OS system
     /// roots).
     pub oidc_issuer_url: String,
-    /// OIDC client id (`OIDC_CLIENT_ID`, required).
+    /// OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).
     pub oidc_client_id: String,
-    /// OIDC client secret (`OIDC_CLIENT_SECRET`, required). Treated as
-    /// secret material; never logged.
+    /// OIDC client secret (`OIDC_CLIENT_SECRET`, required when OIDC is
+    /// configured). Treated as secret material; never logged.
     ///
     /// NOTE: any new secret-bearing field must also be added to the
     /// `SECRET_FIELDS` list so a deserialize error never echoes its value
     /// (hard rule 7).
     pub oidc_client_secret: String,
-    /// OIDC redirect URI (`OIDC_REDIRECT_URI`, required). Must match
-    /// the value registered with the issuer.
+    /// OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured
+    /// (Gate 4); must match the value registered with the issuer.
     pub oidc_redirect_uri: String,
+    /// Whether local email+password authentication is enabled
+    /// (`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out
+    /// of the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this
+    /// defaults on. Setting it `false` without configuring OIDC is rejected at
+    /// startup (Gate 4): at least one auth provider must remain usable or the
+    /// instance locks everyone out.
+    pub local_auth_enabled: bool,
     /// Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`
     /// credentials for the ephemeral migration pool. `None` on the default
     /// server path: the application process holds no migration credential
@@ -369,10 +426,40 @@ impl Config {
             }
         }
 
+        // Gate 4: provider availability. OIDC is enabled iff
+        // configured (its issuer is set); a partially-configured OIDC block is a
+        // MissingVar for the absent field, so an instance never half-enables a
+        // provider. At least one provider (local or OIDC) must remain usable, or
+        // the instance would refuse every login.
+        if cfg.oidc_configured() {
+            for &(var, field) in OIDC_FIELDS {
+                if field(&cfg).trim().is_empty() {
+                    return Err(ConfigError::MissingVar(var.into()));
+                }
+            }
+        }
+        if !cfg.local_auth_enabled && !cfg.oidc_configured() {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_LOCAL_AUTH_ENABLED".into(),
+                reason: "at least one auth provider must be enabled: set \
+                         REVERIE_LOCAL_AUTH_ENABLED=true or configure OIDC (OIDC_ISSUER_URL)"
+                    .into(),
+            });
+        }
+
         // Declarative validation (range + cross-field). Aggregated.
         cfg.validate().map_err(|e| map_validation_errors(&e))?;
 
         Ok(cfg)
+    }
+
+    /// Whether the OIDC authentication path is enabled. OIDC is enabled iff it is
+    /// configured, signalled by a non-blank issuer URL; there is no
+    /// separate `oidc_enabled` flag that could disagree with the actual config.
+    /// Gate 4 guarantees that when this is `true`, all four `OIDC_*` fields are
+    /// present, so callers can treat a configured instance as fully usable.
+    pub fn oidc_configured(&self) -> bool {
+        !self.oidc_issuer_url.trim().is_empty()
     }
 
     /// `User-Agent` string for outbound metadata API requests.  `OpenLibrary`
@@ -570,11 +657,20 @@ impl Default for Config {
             quarantine_path: "./quarantine".into(),
             log_level: "info".into(),
             db_max_connections: 10,
+            login_rate_per_min: 10,
+            login_throttle_base_secs: 2,
+            login_throttle_cap_secs: 900,
+            password_min_length: 8,
+            recovery_pin_ttl_secs: 900,
+            recovery_pin_dir: "./reverie-recovery".into(),
+            trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            // Local-first default; Gate 4 guards the lock-out case.
+            local_auth_enabled: true,
             migration_database_url: None,
             auto_migrate: false,
             // Falls back to database_url at post-deserialize time (Task 6).
@@ -1266,6 +1362,65 @@ mod tests {
                 "required var {var} absent from ENV_MAP"
             );
         }
+    }
+
+    #[test]
+    fn oidc_unconfigured_loads_as_local_only() {
+        // OIDC fully unset is valid: local auth defaults on, so a
+        // fresh instance is usable without an external IdP.
+        let vars = without_keys(&[
+            "OIDC_ISSUER_URL",
+            "OIDC_CLIENT_ID",
+            "OIDC_CLIENT_SECRET",
+            "OIDC_REDIRECT_URI",
+        ]);
+        let config = cfg_from_owned(&vars).expect("local-only config loads");
+        assert!(
+            !config.oidc_configured(),
+            "OIDC is disabled when its issuer is unset"
+        );
+        assert!(config.local_auth_enabled, "local auth defaults on");
+    }
+
+    #[test]
+    fn local_disabled_without_oidc_is_rejected() {
+        // Both providers off would lock everyone out: refuse boot.
+        let mut vars = without_keys(&[
+            "OIDC_ISSUER_URL",
+            "OIDC_CLIENT_ID",
+            "OIDC_CLIENT_SECRET",
+            "OIDC_REDIRECT_URI",
+        ]);
+        vars.push(("REVERIE_LOCAL_AUTH_ENABLED".into(), "false".into()));
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::Invalid { var, .. } if var == "REVERIE_LOCAL_AUTH_ENABLED"),
+            "expected Invalid(REVERIE_LOCAL_AUTH_ENABLED), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn partial_oidc_block_is_rejected_when_configured() {
+        // Once the issuer is set OIDC is "configured", so each remaining OIDC
+        // field becomes required together (Gate 4): a half-configured block is a
+        // MissingVar for the absent field, never a silent half-enable.
+        for var in ["OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI"] {
+            let vars = without_keys(&[var]); // issuer stays set via BASE_VARS
+            let err = cfg_from_owned(&vars).unwrap_err();
+            assert!(
+                matches!(&err, ConfigError::MissingVar(v) if v == var),
+                "omitting {var} with OIDC configured should yield MissingVar({var}), got: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn local_disabled_with_oidc_configured_is_ok() {
+        // Disabling local auth is fine while OIDC remains usable (one provider).
+        let vars = with_overrides(&[("REVERIE_LOCAL_AUTH_ENABLED", "false")]);
+        let config = cfg_from_owned(&vars).expect("OIDC-only config loads");
+        assert!(!config.local_auth_enabled);
+        assert!(config.oidc_configured());
     }
 
     #[test]

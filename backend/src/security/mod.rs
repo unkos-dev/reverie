@@ -1,4 +1,4 @@
-//! Response-header security surface (UNK-106) for Reverie.
+//! Response-header security surface for Reverie.
 //!
 //! - [`csp`]: pure builders for the HTML and API CSP header values.
 //! - [`dist_validation`]: startup validation of the frontend dist directory
@@ -18,6 +18,9 @@
 
 /// Pure CSP header-value builders. Called once at startup.
 pub mod csp;
+
+/// CSRF synchronizer-token validating middleware.
+pub mod csrf;
 
 /// Frontend dist + CSP-hash sidecar validation. Called once at startup.
 pub mod dist_validation;

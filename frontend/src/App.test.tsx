@@ -9,6 +9,7 @@ import { STUB_ME } from "@/__fixtures__/auth";
 
 import App from "./App";
 import { queryClient, setUnauthenticatedHandler } from "./lib/query/client";
+import { queryKeys } from "./lib/query/keys";
 
 // The shell's own behavior (rail, drawer, admin zone) is covered in
 // components/shell/*.test.tsx — here it would only drag auth/shelves
@@ -39,6 +40,14 @@ function mockAuthMe(status: number): void {
 beforeEach(() => {
   queryClient.clear();
   setUnauthenticatedHandler(() => {});
+  // Seed provider state so the provider-aware redirect resolves without a
+  // fetch (the redirect reads `/auth/setup/status` via `ensureQueryData`).
+  // Default is OIDC-off, so the redirect target is the local form `/login`.
+  queryClient.setQueryData(queryKeys.auth.setupStatus(), {
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+  });
   mockAuthMe(200);
 });
 
@@ -89,7 +98,7 @@ function renderApp(): void {
 }
 
 describe("App — auth boundary", () => {
-  test("redirects to /auth/login (full page nav) on ApiError 401", async () => {
+  test("redirects to /login (full page nav) on ApiError 401", async () => {
     const loc = mockLocation();
     renderApp();
     expect(await screen.findByText("HOME_ROUTE_RENDERED")).toBeInTheDocument();
@@ -105,7 +114,7 @@ describe("App — auth boundary", () => {
       .catch(() => {});
 
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
   });
 
@@ -128,13 +137,28 @@ describe("App — auth boundary", () => {
     expect(loc.assign).not.toHaveBeenCalled();
   });
 
-  test("cold-load lapsed session (GET /auth/me 401) redirects to /auth/login", async () => {
+  test("cold-load lapsed session (GET /auth/me 401) redirects to /login", async () => {
     mockAuthMe(401);
     const loc = mockLocation();
     renderApp();
 
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
+    });
+  });
+
+  test("OIDC-on lapse redirects to /auth/oidc/login (silent re-auth preserved)", async () => {
+    queryClient.setQueryData(queryKeys.auth.setupStatus(), {
+      setup_required: false,
+      local_auth_enabled: true,
+      oidc_enabled: true,
+    });
+    mockAuthMe(401);
+    const loc = mockLocation();
+    renderApp();
+
+    await waitFor(() => {
+      expect(loc.assign).toHaveBeenCalledWith("/auth/oidc/login");
     });
   });
 
@@ -144,7 +168,7 @@ describe("App — auth boundary", () => {
     renderApp();
 
     await waitFor(() => {
-      expect(loc.assign).toHaveBeenCalledWith("/auth/login");
+      expect(loc.assign).toHaveBeenCalledWith("/login");
     });
 
     await queryClient

@@ -48,10 +48,11 @@ let redirecting = false;
 /**
  * Replace the 401 handler installed on {@link queryClient}'s cache.
  *
- * Called once from the `<App/>` mount effect with
- * `() => window.location.assign("/auth/login")`. Subsequent calls (e.g.
- * on route remount during hot reload) replace the previous handler and
- * reset the once-guard so a re-wired tree can navigate again.
+ * Called once from the `<App/>` mount effect with a provider-aware redirect
+ * (the OIDC initiator when OIDC is enabled, else the local form `/login`).
+ * Subsequent calls (e.g. on route remount during hot reload) replace the
+ * previous handler and reset the once-guard so a re-wired tree can navigate
+ * again.
  *
  * @param fn - The new handler. Pass a no-op `() => {}` to disable.
  */

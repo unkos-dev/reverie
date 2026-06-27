@@ -25,6 +25,15 @@ pub mod middleware;
 /// OIDC provider discovery and `OidcClient` construction.
 pub mod oidc;
 
+/// Argon2id password hashing/verification for local accounts.
+pub mod password;
+
+/// Per-source (per-IP) login rate limiting (keyed governor + client-IP helper).
+pub mod rate_limit;
+
+/// Forgot-password recovery: PIN generation + operator-readable host file.
+pub mod recovery;
+
 /// Session login / logout helpers on `tower_sessions::Session`.
 pub mod session;
 

@@ -18,6 +18,7 @@ use tokio::sync::RwLock;
 use time::OffsetDateTime;
 
 use crate::auth::oidc::OidcClient;
+use crate::auth::rate_limit::LoginLimiter;
 use crate::config::Config;
 use crate::models::settings::Settings;
 
@@ -39,10 +40,18 @@ pub struct AppState {
     /// state is constructed).
     pub config: Config,
     /// Pre-discovered OIDC client (issuer metadata + JWKS) for the
-    /// login and callback routes. Discovery happens once at startup
-    /// in [`crate::auth::oidc::init_oidc_client`]; clones are cheap
-    /// (the underlying `openidconnect::Client` derives `Clone`).
-    pub oidc_client: OidcClient,
+    /// login and callback routes, or `None` when OIDC is not configured
+    /// (local-only instance). Discovery happens once at startup
+    /// in [`crate::auth::oidc::init_oidc_client`] and only when
+    /// [`crate::config::Config::oidc_configured`] is true; clones are cheap
+    /// (the underlying `openidconnect::Client` derives `Clone`). The OIDC
+    /// initiate/callback handlers guard on `Some` and 404 when this is `None`.
+    pub oidc_client: Option<OidcClient>,
+    /// Per-source (per-IP) login rate limiter, shared across the login,
+    /// forgot-password, and reset-password handlers. Built once at startup from
+    /// `config.login_rate_per_min`. The IP-independent per-account backoff lives
+    /// in the `local_login_throttle` table, not here.
+    pub login_limiter: Arc<LoginLimiter>,
     /// Operator-tunable settings loaded from the `settings` table.
     /// Refreshed via LISTEN/NOTIFY + 60s fallback poll. Handlers read
     /// via `state.settings.read().await`.

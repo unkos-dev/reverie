@@ -8,6 +8,13 @@ async fn main() -> anyhow::Result<()> {
     match reverie_api::parse_command(&args)? {
         reverie_api::Command::Migrate => reverie_api::run_migrate().await,
         reverie_api::Command::PrintConfigSchema => reverie_api::print_config_schema(),
+        reverie_api::Command::Bootstrap => reverie_api::run_bootstrap().await,
+        reverie_api::Command::ResetPassword { email } => {
+            reverie_api::run_reset_password(&email).await
+        }
+        reverie_api::Command::UnlockAccount { email } => {
+            reverie_api::run_unlock_account(&email).await
+        }
         reverie_api::Command::Serve => reverie_api::run().await,
     }
 }

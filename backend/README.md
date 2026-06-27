@@ -76,10 +76,11 @@ backend/
 ├── src/
 │   ├── lib.rs           # Library crate root
 │   ├── main.rs          # Thin binary entry
-│   ├── auth/            # Authentication subsystem
+│   ├── auth/            # Authentication subsystem (OIDC + local password, recovery, rate limiting)
 │   ├── routes/          # Axum route handlers
 │   ├── models/          # Database models and queries
 │   ├── services/        # Business logic
+│   ├── security/        # Response security headers + CSRF validating middleware
 │   ├── config/          # Declarative config module
 │   ├── state.rs         # AppState
 │   └── error.rs         # AppError type

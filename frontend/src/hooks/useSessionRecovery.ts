@@ -6,9 +6,10 @@
  * so the shell can render in a degraded state; on its own that strands a user
  * whose first-party session lapsed. This hook observes that settled state and
  * routes it into the same funnel an `apiFetch` 401 uses
- * ({@link invokeUnauthenticatedHandler}), which performs a full-page navigation
- * to the backend OIDC initiator at `/auth/login` — silent re-auth when the
- * upstream SSO is still valid, the IdP login otherwise.
+ * ({@link invokeUnauthenticatedHandler}), which performs a provider-aware
+ * full-page navigation: the backend OIDC initiator when OIDC is enabled (silent
+ * re-auth when the upstream SSO is still valid), the local login form `/login`
+ * otherwise.
  *
  * Mount this only inside the auth-required shell, and only after the effect that
  * wires the handler via `setUnauthenticatedHandler`: React runs effects in

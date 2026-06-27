@@ -987,7 +987,7 @@ mod tests {
         }
     }
 
-    /// Adversarial-review D2 + C5: a hung provider must NOT discard
+    /// A hung provider must NOT discard
     /// completed siblings, and every unfinished provider must be reported
     /// as `SourceError::Timeout` so the queue marks the row `failed`
     /// (eligible for retry) instead of silently `complete`.
@@ -1045,6 +1045,14 @@ mod tests {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
+            local_auth_enabled: true,
+            login_rate_per_min: 10,
+            login_throttle_base_secs: 2,
+            login_throttle_cap_secs: 900,
+            password_min_length: 8,
+            recovery_pin_ttl_secs: 900,
+            recovery_pin_dir: "./reverie-recovery".into(),
+            trusted_client_ip_header: None,
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
@@ -1537,7 +1545,7 @@ mod tests {
         );
     }
 
-    // ── Phase-direct tests (UNK-96 follow-up) ────────────────────────────
+    // ── Phase-direct tests ────────────────────────────
     //
     // The phase decomposition makes it cheap to exercise tail-of-distribution
     // scenarios that would otherwise need three configured wiremock servers
