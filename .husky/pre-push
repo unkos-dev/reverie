@@ -1,7 +1,11 @@
 #!/bin/sh
-# Backend pre-push verification: fmt + clippy.
-# Tests run in CI — keeping pre-push fast (~30-60s warm) avoids shared dev-DB
-# contention across worktrees. See debt/ and feedback in memory for rationale.
+# Backend pre-push verification: fmt + clippy + generated-artifact drift.
+# Database-backed tests run in CI — keeping pre-push fast (~30-60s warm) avoids
+# shared dev-DB contention across worktrees. See debt/ and feedback in memory
+# for rationale. The drift check below is exempt from that rule: the gen tests
+# render committed artifacts from source and run fully offline (no database), so
+# they are safe and cheap here, and catching staleness locally avoids a slow CI
+# round-trip when an API-surface or config doc-comment changes.
 
 set -eu
 
@@ -12,3 +16,11 @@ cargo fmt --all -- --check
 
 echo "→ cargo clippy --workspace --all-targets --locked -- -D warnings"
 cargo clippy --workspace --all-targets --locked -- -D warnings
+
+echo "→ generated-artifact drift (openapi.json + config reference)"
+if ! SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref; then
+	echo
+	echo "✗ Generated artifacts are stale. Regenerate BOTH and commit the result:"
+	echo "    (cd backend && REGEN=1 cargo test --test gen_openapi --test gen_config_ref)"
+	exit 1
+fi
