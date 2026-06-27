@@ -762,10 +762,19 @@ jobs:
   #
   # Allowlist mirrors deny.toml's permissive-only set, extended with the
   # permissive licenses actually present in the npm trees (BlueOak-1.0.0,
-  # Python-2.0). The one exception: sharp's platform-specific libvips
-  # prebuilts (@img/sharp-libvips-*) are LGPL-3.0 — build-time-only
-  # Astro image tooling, never shipped in the site output, and the
-  # package name varies by runner arch, hence the prefix exclude.
+  # Python-2.0). The exceptions below are all build-time-only native
+  # tooling whose compiled output (images, CSS) ships, but whose own
+  # code never lands in the site output, so their licenses do not bind
+  # the project. Each is excluded by name prefix, not by license, so the
+  # gate still fails any other package carrying these licenses:
+  #   - @img/sharp-libvips-* (LGPL-3.0): sharp's libvips image prebuilts.
+  #   - lightningcss* (MPL-2.0): Astro 7 / Vite 8 CSS transform; output is
+  #     plain CSS, the MPL-covered binary is not redistributed.
+  #   - satteri / @bruits/satteri-* (MIT upstream, no license field
+  #     published): Astro 7 default Markdown processor prebuilts. Upstream
+  #     bruits/satteri is MIT; the npm packages omit the field, reading as
+  #     UNKNOWN until that pre-1.0 packaging gap is fixed.
+  # The prefix form covers the per-arch package name variants.
   npm-license:
     name: npm license policy
     needs: changes
@@ -797,7 +806,7 @@ jobs:
               npx -y license-checker-rseidelsohn@5.0.1 \
                 --production \
                 --excludePrivatePackages \
-                --excludePackagesStartingWith "@img/sharp-libvips" \
+                --excludePackagesStartingWith "@img/sharp-libvips;@bruits/satteri;satteri;lightningcss" \
                 --onlyAllow "$allow"
             ) || rc=1
             echo "::endgroup::"
