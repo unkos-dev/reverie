@@ -93,7 +93,7 @@ reviews:
     # CI duplicates — explicitly disabled. CI is the authoritative lint
     # surface: the `lint`, `Workflow lint`, and `Repo lint` jobs in
     # ci.yml run on every pull_request — cargo clippy --deny warnings,
-    # eslint strictTypeChecked, prettier, stylelint, markdownlint-cli2,
+    # oxlint, oxfmt, stylelint, markdownlint-cli2,
     # actionlint, shellcheck, hadolint, and yamllint — each scoped to
     # git-tracked files with the repo's own pinned config. CodeRabbit's
     # bundled wrappers either duplicate the same diagnostics or run

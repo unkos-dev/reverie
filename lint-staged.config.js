@@ -3,17 +3,29 @@
 // and CI never drift. See CONTRIBUTING.md for install instructions.
 module.exports = {
   "*.md": "markdownlint-cli2",
-  "*.{ts,tsx,js,jsx,json,css,md}": "prettier --write",
-  // YAML is split out of the general prettier glob into its own sequential
+  // This glob plus the YAML key below cover every type oxfmt formats, so the
+  // local pre-commit pass matches the authoritative CI gate (`oxfmt --check .`
+  // over the whole tree); a type formatted in CI but skipped here would pass
+  // commit and fail CI. YAML is split onto its own key (see below) to order
+  // the formatter before yamllint.
+  //
+  // lint-staged appends the staged paths as positional args. When every staged
+  // match is excluded by `.oxfmtrc.json` ignorePatterns (e.g. a regenerated
+  // backend/config.schema.json committed on its own), oxfmt would otherwise exit
+  // non-zero ("all matched files excluded by ignore rules") and abort the commit;
+  // `--no-error-on-unmatched-pattern` makes that case a clean no-op.
+  "*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}":
+    "oxfmt --write --no-error-on-unmatched-pattern",
+  // YAML is split out of the general oxfmt glob into its own sequential
   // task array: lint-staged runs different glob keys concurrently, so leaving
-  // `yamllint` on a separate key could race it against `prettier --write` and
+  // `yamllint` on a separate key could race it against `oxfmt --write` and
   // lint pre-/mid-format YAML (flaky local failures). An array runs in order,
   // guaranteeing the formatter completes before the linter reads the file.
   // yamllint mirrors the `repo-lint` CI job against the same ruleset
   // (.yamllint.yaml, auto-discovered from the repo root); actionlint below is
   // workflow-syntax specific, yamllint is the general YAML semantic check.
   // Version pinned in the workspace image (hard-rule-8).
-  "*.{yml,yaml}": ["prettier --write", "yamllint"],
+  "*.{yml,yaml}": ["oxfmt --write --no-error-on-unmatched-pattern", "yamllint"],
   ".github/workflows/**/*.{yml,yaml}": "actionlint -color",
   "*.sh": "shellcheck",
   "Dockerfile*": "hadolint",
