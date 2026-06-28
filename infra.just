@@ -1,0 +1,80 @@
+# Infra plane: whole-tree repo-lint gates. Runs from the repo root (git ls-files is
+# repo-relative), so no working-directory. Tools are system-PATH / image-baked.
+# pipefail in `set shell` is load-bearing: without it a failing `git ls-files` in a
+# pipe would be masked by a passing xargs.
+
+set shell := ["bash", "-ueo", "pipefail", "-c"]
+
+# Shellcheck every tracked shell script.
+[group('infra')]
+shellcheck:
+    git ls-files -z '*.sh' | xargs -0 -r shellcheck
+
+# Hadolint every tracked Dockerfile.
+[group('infra')]
+hadolint:
+    git ls-files -z '*Dockerfile*' | xargs -0 -r hadolint
+
+# Spell check the tree (honours .gitignore and _typos.toml excludes).
+[group('infra')]
+typos:
+    typos
+
+# yamllint every tracked YAML file.
+[group('infra')]
+yamllint:
+    git ls-files -z '*.yml' '*.yaml' | xargs -0 -r yamllint
+
+# Lint GitHub Actions workflow files.
+[group('infra')]
+actionlint:
+    actionlint -color
+
+# Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).
+[group('infra')]
+prose:
+    scripts/vale-lint.sh --all
+
+# Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).
+[group('infra')]
+vale-selftest:
+    scripts/vale-selftest.sh
+
+# Test the vale-lint.sh scope policy (include/exclude classification).
+[group('infra')]
+vale-scope-test:
+    scripts/vale-scope-test.sh
+
+# Validate greptile.json parses and every pinned context path resolves.
+[group('infra')]
+greptile-config:
+    scripts/validate-greptile-config.sh
+
+# Args go through "$@" (shell-quoted) so a path with a space or a crafted name
+# cannot split or inject.
+#
+# Reject issue-tracker references in a passed file list.
+[group('infra')]
+[positional-arguments]
+no-issue-refs *files:
+    scripts/no-issue-refs.sh "$@"
+
+# Args go through "$@" (shell-quoted) so a path with a space or a crafted name
+# cannot split or inject.
+#
+# Reject plan-artifact references in a passed file list.
+[group('infra')]
+[positional-arguments]
+no-plan-refs *files:
+    scripts/no-plan-refs.sh "$@"
+
+# The two ref guards take a file list and are driven per-commit by hooks, so they
+# are excluded here.
+#
+# Whole repo-lint surface (mirrors the CI repo-lint job).
+[group('infra')]
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test greptile-config
+
+# Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
+[group('infra')]
+check: lint

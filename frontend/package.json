@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "stylelint": "stylelint 'src/**/*.css'",
+    "stylelint": "stylelint 'src/**/*.css' --max-warnings 0",
     "detect": "impeccable detect src",
     "a11y": "node scripts/a11y/axe-scan.mjs"
   },
