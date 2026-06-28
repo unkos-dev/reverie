@@ -10,8 +10,9 @@
 extends: default
 
 rules:
-  # oxfmt does not wrap long lines (URLs, SHA pins, prose comments) and
-  # owns line width. A width rule here would only ever fight the formatter.
+  # oxfmt leaves long scalar values (URLs, SHA pins) and prose comments
+  # unwrapped, and owns every other wrapping decision. A width rule here would
+  # only flag the lines oxfmt deliberately keeps long, fighting the formatter.
   line-length: disable
   # GitHub Actions workflow files never carry a `---` document start.
   document-start: disable
