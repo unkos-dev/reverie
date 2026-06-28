@@ -72,29 +72,24 @@ pre-commit:
           - name: impeccable
             glob: "frontend/src/**/*.{ts,tsx,html,css}"
             run: npm --prefix frontend run detect || true
-          - name: no-issue-refs-rust
-            glob: "backend/src/**/*.rs"
+          # Each guard self-scopes via its own is_gated(), so one job each is
+          # enough; the glob only pre-filters which commits invoke it. no-plan-refs
+          # omits Markdown by design (its scope is backend/src + frontend/src).
+          - name: no-issue-refs
+            glob: "{backend/src/**/*.rs,frontend/src/**/*.{ts,tsx,js,jsx,css},**/*.{md,mdx}}"
             run: scripts/no-issue-refs.sh {staged_files}
-          - name: no-plan-refs-rust
-            glob: "backend/src/**/*.rs"
+          - name: no-plan-refs
+            glob: "{backend/src/**/*.rs,frontend/src/**/*.{ts,tsx,js,jsx,css}}"
             run: scripts/no-plan-refs.sh {staged_files}
-          - name: no-issue-refs-frontend
-            glob: "frontend/src/**/*.{ts,tsx,js,jsx,css}"
-            run: scripts/no-issue-refs.sh {staged_files}
-          - name: no-plan-refs-frontend
-            glob: "frontend/src/**/*.{ts,tsx,js,jsx,css}"
-            run: scripts/no-plan-refs.sh {staged_files}
-          - name: no-issue-refs-md
-            glob: "**/*.{md,mdx}"
-            run: scripts/no-issue-refs.sh {staged_files}
           - name: vale
             glob: "**/*.{md,mdx}"
             run: scripts/vale-lint.sh {staged_files}
           # oxlint and stylelint route through the just recipes for their
           # frontend/ prefix-strip (repo-relative staged paths against a
           # frontend/ CWD). oxlint is type-aware: it loads the whole tsconfig
-          # graph, so it reports findings on staged files only, not the whole
-          # project (CI's whole-project lint remains the full backstop).
+          # graph for type context but reports only on the {staged_files} passed
+          # in, so a commit scans its own staged files (CI's whole-project lint
+          # remains the full backstop).
           - name: oxlint
             glob: "frontend/src/**/*.{ts,tsx}"
             run: just js::oxlint {staged_files}
@@ -102,14 +97,13 @@ pre-commit:
             glob: "frontend/src/**/*.css"
             run: just js::stylelint {staged_files}
 
-# Backend gate, always-run (each command cd's into backend rather than using
-# root:, so a frontend-only push still runs it, matching the old hook).
-# piped: true gives stop-on-first-failure (the old `set -eu`); in the jobs array
-# form, array order is the execution order, so fmt -> clippy -> drift means the
-# cheap check fails before the heavy clippy and cargo-test builds run on a
-# constrained host.
+# Backend gate, always-run: each command cd's into backend rather than using
+# root:, so a frontend-only push still runs it, and no job carries a glob: key,
+# so the gate fires on every push regardless of what changed.
+# piped: true gives stop-on-first-failure; in the jobs array form, array order is
+# the execution order, so fmt -> clippy -> drift means the cheap check fails
+# before the heavy clippy and cargo-test builds run on a constrained host.
 pre-push:
-  parallel: false
   piped: true
   jobs:
     - name: backend-fmt
