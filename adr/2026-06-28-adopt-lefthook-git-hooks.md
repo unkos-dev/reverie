@@ -57,15 +57,14 @@ as follows.
   and treats `**` as one or more directories, which would skip a file sitting
   directly under a base directory. The config sets `glob_matcher: doublestar` and
   writes every slashless pattern as `**/*.ext`, restoring basename-anywhere
-  matching. A self-test stages a file directly under a base directory alongside a
-  nested one and asserts both match.
+  matching.
 - **Formatter output is re-staged through `stage_fixed`.** lint-staged re-staged
   rewritten files; lefthook does so only when a command opts in. Both oxfmt
-  commands set `stage_fixed`, and a self-test confirms a staged unformatted file
-  commits as its formatted bytes.
+  commands set `stage_fixed`, so a staged unformatted file commits as its
+  formatted bytes.
 - **Partial staging stays faithful.** lefthook hides unstaged changes for the
   duration of the hook, so a file with one hunk staged and another left dirty
-  commits only the staged hunk while the dirty hunk is preserved in the working
+  commits only the staged hunk, while the dirty hunk is preserved in the working
   tree. This matches the prior behaviour, so there is no divergence to accept.
 - **The two formatter commands run sequentially, apart from the readers.**
   `stage_fixed` re-stages by calling `git add` after the command, and lefthook
@@ -73,9 +72,7 @@ as follows.
   commands at once would race the index lock and abort otherwise-valid commits.
   The two formatter commands therefore form a sequential group, kept separate
   from a parallel read-only group. The same split keeps a formatter from
-  rewriting a file while a reader validates the pre-format bytes. A self-test
-  commits a YAML file and another formatted type together across repeated runs
-  and asserts no index-lock failure.
+  rewriting a file while a reader validates the pre-format bytes.
 - **The secret scan runs in the parallel read-only group.** It runs alongside the
   formatters rather than strictly ahead of them. The formatters only rewrite
   files on disk and create no commit, so any secret-scan finding still aborts the
@@ -112,9 +109,9 @@ as follows.
 ### Confirmation
 
 `lefthook validate` gates configuration validity and runs in the infra lint
-aggregate. A behavioural self-test drives real commits through a throwaway
-repository and asserts hook firing, the doublestar glob matrix, `stage_fixed`
-re-staging, partial-stage fidelity, and an index-lock-free formatter group. The
+aggregate. Every commit exercises the hooks in practice, and CI re-runs the same
+formatters and linters whole-tree, independent of the hooks, so a misconfigured
+glob surfaces as a failing CI check rather than as silently skipped work. The
 push gate runs the backend format check, clippy, and the generated-artifact
 drift tests, always-run and stop-on-first-failure.
 

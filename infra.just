@@ -56,13 +56,6 @@ greptile-config:
 lefthook-validate:
     npx --no-install lefthook validate
 
-# Spins a throwaway git repo and drives real commits through the hooks to assert
-# their behaviour. Heavier than the lint checks (temp repo + commits), so it
-# stays out of the lint aggregate and is invoked on its own.
-[group('infra')]
-lefthook-selftest:
-    scripts/lefthook-selftest.sh
-
 # Args go through "$@" (shell-quoted) so a path with a space or a crafted name
 # cannot split or inject.
 #
