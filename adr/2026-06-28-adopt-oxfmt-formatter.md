@@ -89,11 +89,10 @@ The forcing details resolved as follows.
 
 ### Confirmation
 
-`oxfmt --check .` gates the CI `repo-lint` job, and lint-staged runs
-`oxfmt --write`. A search for `prettier` outside this ADR tree returns nothing.
-The four drift-gated files and `CHANGELOG.md` stay byte identical through a full
-format pass, and the backend drift tests stay green. markdownlint, stylelint, and
-Vale keep their own passes; oxfmt replaces only the format check.
+`oxfmt --check .` gates the CI `repo-lint` job and lint-staged runs
+`oxfmt --write`. The four drift-gated generated files and `CHANGELOG.md` stay
+byte identical through a full format pass. markdownlint, stylelint, and Vale keep
+their own passes; oxfmt owns only the format check.
 
 ## More Information
 

@@ -3,9 +3,11 @@
 // and CI never drift. See CONTRIBUTING.md for install instructions.
 module.exports = {
   "*.md": "markdownlint-cli2",
-  // The glob covers every type oxfmt formats so the local pre-commit pass
-  // matches the authoritative CI gate (`oxfmt --check .` over the whole tree);
-  // a type formatted in CI but skipped here would pass commit and fail CI.
+  // This glob plus the YAML key below cover every type oxfmt formats, so the
+  // local pre-commit pass matches the authoritative CI gate (`oxfmt --check .`
+  // over the whole tree); a type formatted in CI but skipped here would pass
+  // commit and fail CI. YAML is split onto its own key (see below) to order
+  // the formatter before yamllint.
   "*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}": "oxfmt --write",
   // YAML is split out of the general oxfmt glob into its own sequential
   // task array: lint-staged runs different glob keys concurrently, so leaving
