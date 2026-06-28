@@ -906,13 +906,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # This job calls the just recipes (infra.just / js.just) so each linter's
-      # globs and flags are defined once and shared with the local git hooks. The
-      # tool installs below stay in CI (a recipe runs the bare binary); the recipe
-      # owns only the invocation. just is a Rust crate install-action tracks, so
-      # it installs the same way as typos below, not via the manual curl path the
-      # Go linters need. Pinned to the version the workspace image ships
-      # (hard-rule-8), keeping local and CI on one just.
+      # just is a Rust crate (install-action tracks it directly, unlike the
+      # curl-tarball tools below). Pinned to the workspace-image version
+      # (hard-rule-8) to keep local and CI on one just. The lint steps below
+      # call the infra.just / js.just recipes, so each tool's globs and flags
+      # are CI's single definition instead of inline duplicates.
       - name: Install just
         uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
         with:
@@ -959,7 +957,7 @@ jobs:
           tool: typos@1.46.2
 
       # Scoping (git ls-files vs the typos tree-walk) lives in the infra.just
-      # recipes, so CI and the local git hooks share one definition.
+      # recipes; this job calls them rather than inlining the commands.
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
 
@@ -996,7 +994,7 @@ jobs:
 
       # markdownlint is a js-plane recipe (it runs the npm-local markdownlint-cli2
       # installed by the npm ci above). The .claude/ exclusion and pathspec scope
-      # live in the js::markdownlint recipe, shared with the local hooks.
+      # live in the js::markdownlint recipe.
       - name: Markdown lint (markdownlint-cli2)
         run: just js::markdownlint
 
@@ -1132,12 +1130,10 @@ jobs:
       - name: Install
         run: npm ci
 
-      # This job calls the js.just recipes so the frontend lint/format/test/build
-      # commands are defined once and shared with the local git hooks. just walks
-      # up to the repo-root justfile from this frontend/ working directory, and
-      # each js:: recipe re-enters frontend/ via its own [working-directory], so
-      # the calls resolve correctly. Installed via install-action like the
-      # repo-lint job (a uses: step ignores the frontend/ working-directory).
+      # just walks up to the repo-root justfile from this frontend/ working
+      # directory, and each js:: recipe re-enters frontend/ via its own
+      # [working-directory], so the calls resolve correctly. A uses: step
+      # ignores the job's working-directory, so install-action runs fine here.
       - name: Install just
         uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
         with:

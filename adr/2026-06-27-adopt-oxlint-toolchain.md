@@ -110,7 +110,7 @@ The three forcing decisions resolved as follows.
 
 ### Confirmation
 
-`npm run lint` runs `oxlint` and gates the CI `frontend` job; a search for
+`just js::oxlint` runs `oxlint` and gates the CI `frontend` job; a search for
 `eslint` under `frontend/` returns nothing. Each surviving enforcement (cardinal
 `as`, fetch, the type-aware class, and `react-compiler`) fires on a deliberate
 violation, and docstring-presence does not.
