@@ -906,6 +906,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # This job calls the just recipes (infra.just / js.just) so each linter's
+      # globs and flags are defined once and shared with the local git hooks. The
+      # tool installs below stay in CI (a recipe runs the bare binary); the recipe
+      # owns only the invocation. just is a Rust crate install-action tracks, so
+      # it installs the same way as typos below, not via the manual curl path the
+      # Go linters need. Pinned to the version the workspace image ships
+      # (hard-rule-8), keeping local and CI on one just.
+      - name: Install just
+        uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
+        with:
+          tool: just@1.53.0
+
       # Direct curl-tarball install pins the exact upstream release + SHA256,
       # mirroring the actionlint install above. taiki-e/install-action carries
       # neither shellcheck nor hadolint; both publish official release binaries.
@@ -946,19 +958,16 @@ jobs:
         with:
           tool: typos@1.46.2
 
-      # shellcheck and hadolint are scoped to git-tracked files (git ls-files)
-      # so gitignored scratch (e.g. /plans/) is skipped, and they pick up
-      # .hadolint.yaml / shell dialect from the repo root. typos instead walks
-      # the tree honouring .gitignore + the _typos.toml excludes — equivalent
-      # in a clean CI checkout, where every file is tracked.
+      # Scoping (git ls-files vs the typos tree-walk) lives in the infra.just
+      # recipes, so CI and the local git hooks share one definition.
       - name: Shell lint (shellcheck)
-        run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
+        run: just infra::shellcheck
 
       - name: Dockerfile lint (hadolint)
-        run: git ls-files -z '*Dockerfile*' | xargs -0 -r hadolint
+        run: just infra::hadolint
 
       - name: Spell check (typos)
-        run: typos
+        run: just infra::typos
 
       # yamllint is pip-only (no standalone release binary), so it installs via
       # pipx (preinstalled on ubuntu-latest) rather than the curl-tarball path
@@ -969,11 +978,8 @@ jobs:
       - name: Install yamllint 1.33.0
         run: pipx install yamllint==1.33.0
 
-      # Tracked YAML only (git ls-files), matching the shellcheck/hadolint
-      # scoping above so gitignored scratch is skipped. xargs -r no-ops on an
-      # empty set; a lint failure propagates a non-zero exit and fails the job.
       - name: YAML lint (yamllint)
-        run: git ls-files -z '*.yml' '*.yaml' | xargs -0 -r yamllint
+        run: just infra::yamllint
 
       # markdownlint-cli2 is npm-only (no standalone release binary), so unlike
       # shellcheck/hadolint/typos it needs Node + an install. `npm ci` off the
@@ -988,14 +994,11 @@ jobs:
       - name: Install markdownlint-cli2
         run: npm ci
 
-      # Tracked public markdown only. Archival .claude/ docs are excluded at the
-      # config level (.markdownlint-cli2.jsonc `ignores`) so lint-staged and CI
-      # stay consistent; the pathspec exclude keeps the two in lockstep here,
-      # since `git ls-files` does not read that config. xargs -r skips the run
-      # on an empty set; a lint failure propagates a non-zero exit and fails the
-      # job.
+      # markdownlint is a js-plane recipe (it runs the npm-local markdownlint-cli2
+      # installed by the npm ci above). The .claude/ exclusion and pathspec scope
+      # live in the js::markdownlint recipe, shared with the local hooks.
       - name: Markdown lint (markdownlint-cli2)
-        run: git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r npx --no-install markdownlint-cli2
+        run: just js::markdownlint
 
       # Vale prose linter. Catches mechanical AI-writing tells in Markdown docs.
       # Vale is a Go binary with official release archives, so it installs via
@@ -1023,13 +1026,13 @@ jobs:
       # it fails the build if a prose rule stops firing or starts matching clean
       # prose. jq ships on ubuntu-latest.
       - name: Prose lint self-test (Vale ruleset)
-        run: scripts/vale-selftest.sh
+        run: just infra::vale-selftest
 
       # Scope-policy test for vale-lint.sh: asserts the include/exclude
       # classification (agent-process docs, .claude, non-scope paths) and the
       # ./ path normalisation, the second half of the prose-lint gate.
       - name: Prose lint scope test (vale-lint.sh)
-        run: scripts/vale-scope-test.sh
+        run: just infra::vale-scope-test
 
       # The prose pass is a hard gate: every rule emits at `error`, so Vale
       # exits non-zero on any finding and fails the build. Scope is prose only
@@ -1037,17 +1040,17 @@ jobs:
       # from the Wh-opener rule). New slop in the Starlight docs, ADRs, or
       # repo-root Markdown fails CI.
       - name: Prose lint (Vale)
-        run: scripts/vale-lint.sh --all
+        run: just infra::prose
 
-      # Authoritative formatting gate. lint-staged runs `oxfmt --write` on
-      # staged files locally, but pre-commit is bypassable (`--no-verify`) and
-      # never runs on fork PRs; this `--check` over the whole tree is the
-      # surface that actually fails the build. The `ignorePatterns` in
-      # `.oxfmtrc.json` scope it (vendored shadcn/ui, archival .claude docs,
-      # build output). Uses the oxfmt installed by the `npm ci` above, in
-      # lockstep with local.
+      # Authoritative formatting gate. The pre-commit hook runs `oxfmt --write`
+      # on staged files locally, but pre-commit is bypassable (`--no-verify`)
+      # and never runs on fork PRs; this whole-tree `--check` is the surface
+      # that actually fails the build. The `js::fmt-check` recipe owns the
+      # invocation; the `ignorePatterns` in `.oxfmtrc.json` scope it (vendored
+      # shadcn/ui, archival .claude docs, build output). Uses the oxfmt from the
+      # `npm ci` above, in lockstep with local.
       - name: Format check (oxfmt)
-        run: npx --no-install oxfmt --check .
+        run: just js::fmt-check
 
       # Validate the Greptile review-context config: greptile.json must parse and
       # every customContext.files[] path it pins must still resolve. A pin to a
@@ -1056,7 +1059,14 @@ jobs:
       # that deletes or moves a pinned file fails here even if it never touches
       # greptile.json. jq ships on ubuntu-latest.
       - name: Validate greptile.json
-        run: scripts/validate-greptile-config.sh
+        run: just infra::greptile-config
+
+      # Validate lefthook.yml parses and its job graph is well-formed. This gate
+      # is net-new in CI (the recipe existed but nothing called it), so a broken
+      # hooks config now fails the build instead of only surfacing on the next
+      # local commit.
+      - name: Validate lefthook.yml
+        run: just infra::lefthook-validate
 
       # Reject issue-tracker references (UNK- + digits) in public-facing source
       # and docs — they describe the codebase/product, not a private tracker,
@@ -1096,7 +1106,7 @@ jobs:
           set -euo pipefail
           mapfile -d '' -t files < <(printf '%s' "$SOURCE_FILES" | jq -j '.[] + "\u0000"')
           if [ "${#files[@]}" -gt 0 ]; then
-            scripts/no-issue-refs.sh "${files[@]}"
+            just infra::no-issue-refs "${files[@]}"
           fi
 
   frontend:
@@ -1122,11 +1132,22 @@ jobs:
       - name: Install
         run: npm ci
 
+      # This job calls the js.just recipes so the frontend lint/format/test/build
+      # commands are defined once and shared with the local git hooks. just walks
+      # up to the repo-root justfile from this frontend/ working directory, and
+      # each js:: recipe re-enters frontend/ via its own [working-directory], so
+      # the calls resolve correctly. Installed via install-action like the
+      # repo-lint job (a uses: step ignores the frontend/ working-directory).
+      - name: Install just
+        uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
+        with:
+          tool: just@1.53.0
+
       - name: Lint
-        run: npm run lint
+        run: just js::oxlint
 
       - name: Test (with coverage)
-        run: npm run test:coverage
+        run: just js::test-coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
@@ -1139,22 +1160,21 @@ jobs:
           fail_ci_if_error: false
 
       - name: Stylelint
-        run: npx stylelint 'src/**/*.css' --max-warnings 0
+        run: just js::stylelint
 
       # impeccable design anti-pattern detector (advisory). Flip to
       # blocking once the 3 known `bg-black` findings in stock shadcn
       # overlays are addressed (see memory entry
       # `project_bg_black_overlays_deferred`).
       - name: Detect (impeccable, advisory)
-        run: npm run detect
+        run: just js::detect
         continue-on-error: true
 
       - name: Verify font integrity
-        working-directory: frontend/public/fonts/fontshare/files
-        run: sha256sum -c SHA256SUMS
+        run: just js::font-integrity
 
       - name: Build
-        run: npm run build
+        run: just js::build
 
   # UNK-268: WCAG 2.2 AA accessibility gate. Runs axe-core (via agent-browser
   # over CDP) against the dev-only design showcase and fails on any violation

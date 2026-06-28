@@ -3,7 +3,8 @@
 # (just settings do not propagate into submodules).
 #
 # This file is the canonical definition of "lint/format/test/build the repo".
-# Nothing consumes it yet (no hooks or CI wired here); local use only.
+# The lefthook git hooks and the CI lint/format jobs both invoke these recipes,
+# so each tool's flags and globs live here once rather than in three places.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set dotenv-load := false
