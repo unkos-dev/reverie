@@ -14,7 +14,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "markdownlint-cli2": "^0.22.1",
-    "prettier": "^3.8.3"
+    "oxfmt": "0.56.0"
   },
   "overrides": {
     "markdown-it": "14.2.0",

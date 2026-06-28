@@ -1039,14 +1039,15 @@ jobs:
       - name: Prose lint (Vale)
         run: scripts/vale-lint.sh --all
 
-      # Authoritative formatting gate. lint-staged runs `prettier --write` on
+      # Authoritative formatting gate. lint-staged runs `oxfmt --write` on
       # staged files locally, but pre-commit is bypassable (`--no-verify`) and
       # never runs on fork PRs; this `--check` over the whole tree is the
-      # surface that actually fails the build. `.prettierignore` scopes it
-      # (vendored shadcn/ui, archival .claude docs, build output). Uses the
-      # prettier installed by the `npm ci` above, in lockstep with local.
-      - name: Format check (prettier)
-        run: npx --no-install prettier --check .
+      # surface that actually fails the build. The `ignorePatterns` in
+      # `.oxfmtrc.json` scope it (vendored shadcn/ui, archival .claude docs,
+      # build output). Uses the oxfmt installed by the `npm ci` above, in
+      # lockstep with local.
+      - name: Format check (oxfmt)
+        run: npx --no-install oxfmt --check .
 
       # Validate the Greptile review-context config: greptile.json must parse and
       # every customContext.files[] path it pins must still resolve. A pin to a

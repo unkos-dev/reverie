@@ -125,7 +125,8 @@ Amends [strict lint policy](2026-05-03-strict-lint-policy.md), whose frontend
 engine is now oxlint, and [tiered comment policy](2026-05-08-tiered-comment-policy.md),
 whose frontend docstring floor is now review-level rather than lint-enforced.
 
-Deferred follow-ups, tracked outside this record: oxfmt replacing Prettier,
-enabling the React Compiler transform, the migration to the native TypeScript
-compiler with `oxlint-tsgolint` version-pairing, and a rule-by-rule review of
-the frontend authoring standards against current practice.
+Formatting moves to oxfmt in a paired record,
+[adopt oxfmt](2026-06-28-adopt-oxfmt-formatter.md). Deferred follow-ups, tracked
+outside this record: enabling the React Compiler transform, the migration to the
+native TypeScript compiler with `oxlint-tsgolint` version-pairing, and a
+rule-by-rule review of the frontend authoring standards against current practice.

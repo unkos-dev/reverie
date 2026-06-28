@@ -6,7 +6,7 @@
 # path-scoped cases (the [adr/**] WhStarter exemption) need real file paths, so
 # they use a throwaway mini-repo under a tempdir. Either way no deliberately bad
 # prose lands in the repo tree, so the other tree-walking linters (markdownlint,
-# prettier, typos, no-issue-refs) never see it.
+# oxfmt, typos, no-issue-refs) never see it.
 #
 # Run from anywhere; it resolves the repo root so Vale finds .vale.ini. Exits
 # non-zero on any mismatch so it can gate in CI.
