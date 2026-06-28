@@ -104,8 +104,8 @@ fi
 # 6. Partial-stage fidelity: with one hunk staged and another left dirty, the
 #    staged hunk is formatted and committed while the unstaged hunk is excluded
 #    from the commit AND preserved in the working tree. lefthook hides unstaged
-#    changes during the hook, matching lint-staged, so stage_fixed never leaks an
-#    unstaged hunk into the commit.
+#    changes during the hook, so stage_fixed never leaks an unstaged hunk into
+#    the commit.
 printf 'a = 1\nb = 2\nc = 3\n' >partial.toml
 git add partial.toml
 if ! commit -m "test: partial base"; then

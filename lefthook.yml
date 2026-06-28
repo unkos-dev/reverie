@@ -1,15 +1,15 @@
 # Git hooks for Reverie, driven by lefthook (a single Go binary, npm devDep).
 #
-# Replaces the husky + lint-staged stack. The pre-commit surface mirrors the old
-# lint-staged glob/command table file-for-file; pre-push reproduces the backend
-# verification gate verbatim; commit-msg runs commitlint.
+# One declarative file owns pre-commit, pre-push, and commit-msg. pre-commit
+# scopes each tool to the staged files it applies to; pre-push runs the backend
+# verification gate; commit-msg runs commitlint.
 #
 # glob_matcher: doublestar makes `**` match zero-or-more directories and lets a
 # slashless `**/*.ext` pattern match by basename at any depth, including files
 # directly under a base dir (e.g. `**/*.rs` matches `backend/src/main.rs`). The
 # default gobwas engine would silently skip those, so this key is load-bearing;
-# every slashless lint-staged glob is written as `**/*.ext` to preserve the
-# basename-anywhere semantics.
+# every slashless glob is written as `**/*.ext` to hold the basename-anywhere
+# semantics.
 glob_matcher: doublestar
 
 # pre-commit splits into two groups by design, not convenience:
@@ -30,7 +30,7 @@ pre-commit:
         jobs:
           # Covers every type oxfmt formats except YAML (split out below so the
           # formatter is ordered before yamllint). stage_fixed re-stages the
-          # rewrite into the commit, reproducing lint-staged's auto-restage.
+          # rewrite, so the formatted bytes are what the commit captures.
           # --no-error-on-unmatched-pattern keeps a commit of only ignored files
           # (e.g. a regenerated backend/config.schema.json) a clean no-op.
           - name: oxfmt
