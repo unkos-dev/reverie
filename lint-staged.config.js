@@ -8,7 +8,14 @@ module.exports = {
   // over the whole tree); a type formatted in CI but skipped here would pass
   // commit and fail CI. YAML is split onto its own key (see below) to order
   // the formatter before yamllint.
-  "*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}": "oxfmt --write",
+  //
+  // lint-staged appends the staged paths as positional args. When every staged
+  // match is excluded by `.oxfmtrc.json` ignorePatterns (e.g. a regenerated
+  // backend/config.schema.json committed on its own), oxfmt would otherwise exit
+  // non-zero ("all matched files excluded by ignore rules") and abort the commit;
+  // `--no-error-on-unmatched-pattern` makes that case a clean no-op.
+  "*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}":
+    "oxfmt --write --no-error-on-unmatched-pattern",
   // YAML is split out of the general oxfmt glob into its own sequential
   // task array: lint-staged runs different glob keys concurrently, so leaving
   // `yamllint` on a separate key could race it against `oxfmt --write` and
@@ -18,7 +25,7 @@ module.exports = {
   // (.yamllint.yaml, auto-discovered from the repo root); actionlint below is
   // workflow-syntax specific, yamllint is the general YAML semantic check.
   // Version pinned in the workspace image (hard-rule-8).
-  "*.{yml,yaml}": ["oxfmt --write", "yamllint"],
+  "*.{yml,yaml}": ["oxfmt --write --no-error-on-unmatched-pattern", "yamllint"],
   ".github/workflows/**/*.{yml,yaml}": "actionlint -color",
   "*.sh": "shellcheck",
   "Dockerfile*": "hadolint",
