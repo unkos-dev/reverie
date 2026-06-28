@@ -16,7 +16,7 @@
 # reached: callers only ever pass tracked / staged / changed files, so there
 # is nothing to exclude for performance.
 #
-# Callers (lint-staged staged files; CI changed files) pass a broad candidate
+# Callers (lefthook staged files; CI changed files) pass a broad candidate
 # list; this script applies the in-scope policy. Commit messages and PR bodies
 # may cite issues; this guard is files only.
 #
@@ -42,10 +42,10 @@ is_gated() {
   return 1
 }
 
-# lint-staged passes absolute paths to string commands; CI (paths-filter)
-# passes repo-relative ones. Normalise to repo-relative so the is_gated()
-# include/exclude patterns match in both cases, then keep only in-scope paths
-# that still exist — a changed-file list can name deletions.
+# lefthook and CI (paths-filter) both pass repo-relative paths. Normalise
+# anyway so the is_gated() include/exclude patterns match even if a path
+# arrives absolute, then keep only in-scope paths that still exist (a
+# changed-file list can name deletions).
 files=()
 for path in "$@"; do
   rel="${path#"$PWD/"}"

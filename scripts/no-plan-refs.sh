@@ -16,7 +16,7 @@
 #   - vendored UI primitives (frontend/src/components/ui),
 #   - the archival .claude tree.
 #
-# Callers (lint-staged staged files; CI changed files) pass a broad candidate
+# Callers (lefthook staged files; CI changed files) pass a broad candidate
 # list; this script applies the in-scope policy. Commit messages and PR bodies
 # may cite plan steps; this guard is files only.
 #
@@ -43,8 +43,8 @@ is_gated() {
   return 1
 }
 
-# lint-staged passes absolute paths; CI (paths-filter) passes repo-relative
-# ones. Normalise to repo-relative, then keep only in-scope paths that exist.
+# lefthook and CI (paths-filter) both pass repo-relative paths. Normalise
+# anyway (the strip tolerates an absolute path), then keep only paths that exist.
 files=()
 for path in "$@"; do
   rel="${path#"$PWD/"}"

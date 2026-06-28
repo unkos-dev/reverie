@@ -8,7 +8,7 @@
 #   - the archival .claude tree.
 #
 # Posture is a hard gate: the rules emit at `error`, so Vale exits non-zero on
-# any finding and blocks the commit. The scope policy lives here so lint-staged
+# any finding and blocks the commit. The scope policy lives here so lefthook
 # (staged files) and CI (`--all`) share one source of truth, mirroring
 # scripts/no-issue-refs.sh.
 #
@@ -44,10 +44,9 @@ main() {
     candidates=("$@")
   fi
 
-  # lint-staged passes absolute paths to string commands; CI passes
-  # repo-relative ones. Normalise to repo-relative so in_scope() matches in both
-  # cases, then keep only in-scope paths that still exist (a changed-file list
-  # can name deletions).
+  # lefthook and CI both pass repo-relative paths. Normalise anyway so
+  # in_scope() matches even if a path arrives absolute, then keep only in-scope
+  # paths that still exist (a changed-file list can name deletions).
   local files=() path rel
   for path in "${candidates[@]+"${candidates[@]}"}"; do
     rel="${path#"$PWD/"}"
