@@ -594,10 +594,8 @@ jobs:
 
   # UNK-245: catch syntax / context-availability violations in workflow
   # files before merge. Mirrors the `actionlint` invocation wired into
-  # the local pre-commit chain (lint-staged.config.js); both pin the same
-  # version so local + CI behaviour cannot drift. PR #224 shipped a
-  # `matrix.*` reference in a job-level `if:` that this check would have
-  # caught locally.
+  # the lefthook pre-commit hook; both pin the same version so local + CI
+  # behaviour cannot drift.
   workflow-lint:
     name: Workflow lint
     needs: changes
@@ -892,8 +890,8 @@ jobs:
             backend/src frontend/src
 
   # Server-side lint gate for shell scripts, the Dockerfile, spelling, YAML,
-  # and Markdown. lint-staged runs these locally pre-commit, but pre-commit is
-  # client-side: it is bypassable (`git commit --no-verify`) and never runs on
+  # and Markdown. The lefthook pre-commit hook runs these locally, but pre-commit
+  # is client-side: it is bypassable (`git commit --no-verify`) and never runs on
   # PRs opened from forks. This job is the authoritative surface for contributor
   # changes. Tool versions are pinned to match the workspace image so local
   # pre-commit and CI evaluate against the same binaries.
@@ -982,8 +980,7 @@ jobs:
       # markdownlint-cli2 is npm-only (no standalone release binary), so unlike
       # shellcheck/hadolint/typos it needs Node + an install. `npm ci` off the
       # committed root lockfile keeps the CI version in lockstep with the
-      # markdownlint-cli2 that lint-staged runs locally — the consistency the
-      # dedicated PR was split out to guarantee.
+      # markdownlint-cli2 the lefthook pre-commit hook runs locally.
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24.16.0
@@ -1074,7 +1071,7 @@ jobs:
       # scripts/no-issue-refs.sh applies the in-scope policy (source + Markdown,
       # minus agent-process / vendored / archival files) and greps them — so
       # pre-existing references in untouched files don't fail the build (a
-      # pre-release sweep clears those). lint-staged is the local mirror.
+      # pre-release sweep clears those). The lefthook pre-commit hook is the local mirror.
       - name: Detect changed source and docs
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: source-changed
