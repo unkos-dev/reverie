@@ -50,6 +50,12 @@ vale-scope-test:
 greptile-config:
     scripts/validate-greptile-config.sh
 
+# lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation is
+# cheap and offline, so it joins the lint aggregate.
+[group('infra')]
+lefthook-validate:
+    npx --no-install lefthook validate
+
 # Args go through "$@" (shell-quoted) so a path with a space or a crafted name
 # cannot split or inject.
 #
@@ -73,7 +79,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test greptile-config
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test greptile-config lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

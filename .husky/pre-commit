@@ -1,2 +1,0 @@
-gitleaks protect --staged --no-banner --redact || exit $?
-lint-staged

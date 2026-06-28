@@ -52,7 +52,16 @@ See [backend/CLAUDE.md](../backend/CLAUDE.md) and [frontend/CLAUDE.md](../fronte
 
 ### Pre-commit prerequisites
 
-The lint-staged pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit (version pinned to **v1.7.12** in [`lint-staged.config.js`](../lint-staged.config.js) and [`.github/workflows/ci.yml`](workflows/ci.yml)):
+Hooks are installed by lefthook through the `prepare` npm script, so a fresh
+clone wires them on `npm ci`. If you cloned before lefthook replaced husky and
+still have husky's local `core.hooksPath`, lefthook refuses to install until you
+clear it once:
+
+```bash
+git config --local --unset core.hooksPath
+```
+
+The lefthook pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit (version pinned to **v1.7.12** in [`.github/workflows/ci.yml`](workflows/ci.yml)):
 
 ```bash
 # Linux + macOS — pinned binary (Homebrew's formula is not version-pinned,
@@ -68,7 +77,13 @@ The hook also runs [`yamllint`](https://www.yamllint.com/) on changed `*.{yml,ya
 pipx install yamllint==1.33.0
 ```
 
-If `actionlint` or `yamllint` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
+The hook runs the frontend linters [`oxlint`](https://oxc.rs) and [`stylelint`](https://stylelint.io) through [`just`](https://just.systems), the repository's task runner, so the [`js.just`](../js.just) recipes stay the single source of truth for how each linter runs. Install `just` once (it is not version-pinned):
+
+```bash
+cargo install just   # or: brew install just, your distro package manager, https://just.systems
+```
+
+If `actionlint`, `yamllint`, or `just` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
 
 Workflow files are additionally scanned in CI by [zizmor](https://github.com/zizmorcore/zizmor) (the merge-blocking `workflow-security` job) for GitHub Actions security issues — credential persistence, template injection, cache poisoning, and dangerous triggers. It is a CI-only tool, so there is nothing to install locally; documented suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 
