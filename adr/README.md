@@ -60,3 +60,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [API authorization model: orthogonal scope, role, and ownership axes enforced server-side](2026-06-23-api-authorization-orthogonal-axes.md) (accepted, 2026-06-23)
 - [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md) (accepted, 2026-06-27)
 - [Adopt oxfmt, replacing Prettier](2026-06-28-adopt-oxfmt-formatter.md) (accepted, 2026-06-28)
+- [Adopt lefthook, replacing husky and lint-staged](2026-06-28-adopt-lefthook-git-hooks.md) (accepted, 2026-06-28)
