@@ -1,0 +1,128 @@
+# Git hooks for Reverie, driven by lefthook (a single Go binary, npm devDep).
+#
+# Replaces the husky + lint-staged stack. The pre-commit surface mirrors the old
+# lint-staged glob/command table file-for-file; pre-push reproduces the backend
+# verification gate verbatim; commit-msg runs commitlint.
+#
+# glob_matcher: doublestar makes `**` match zero-or-more directories and lets a
+# slashless `**/*.ext` pattern match by basename at any depth, including files
+# directly under a base dir (e.g. `**/*.rs` matches `backend/src/main.rs`). The
+# default gobwas engine would silently skip those, so this key is load-bearing;
+# every slashless lint-staged glob is written as `**/*.ext` to preserve the
+# basename-anywhere semantics.
+glob_matcher: doublestar
+
+# pre-commit splits into two groups by design, not convenience:
+#   1. A PIPED (sequential) formatter group. Both oxfmt commands set
+#      stage_fixed, which re-stages rewritten files via `git add`. lefthook has
+#      no cross-command coordination on the git index, so running two staging
+#      commands in parallel races `.git/index.lock` and intermittently aborts an
+#      otherwise-valid commit. Sequencing them removes the race. Sequencing also
+#      guarantees a formatter never rewrites a file while a reader in group 2 is
+#      validating the pre-format bytes.
+#   2. A PARALLEL read-only group. Nothing here writes the tree, so they run
+#      concurrently for speed.
+pre-commit:
+  jobs:
+    - name: format
+      group:
+        piped: true
+        jobs:
+          # Covers every type oxfmt formats except YAML (split out below so the
+          # formatter is ordered before yamllint). stage_fixed re-stages the
+          # rewrite into the commit, reproducing lint-staged's auto-restage.
+          # --no-error-on-unmatched-pattern keeps a commit of only ignored files
+          # (e.g. a regenerated backend/config.schema.json) a clean no-op.
+          - name: oxfmt
+            glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}"
+            run: npx --no-install oxfmt --write --no-error-on-unmatched-pattern {staged_files}
+            stage_fixed: true
+          # The `&&` orders oxfmt before yamllint within the one command, so the
+          # formatter always completes before the linter reads the file
+          # regardless of scheduling. Second stage_fixed command, hence in the
+          # piped group alongside oxfmt, never parallel with it.
+          - name: yaml
+            glob: "**/*.{yml,yaml}"
+            run: npx --no-install oxfmt --write --no-error-on-unmatched-pattern {staged_files} && yamllint {staged_files}
+            stage_fixed: true
+    - name: checks
+      group:
+        parallel: true
+        jobs:
+          - name: gitleaks
+            run: gitleaks protect --staged --no-banner --redact
+          - name: markdownlint
+            glob: "**/*.md"
+            run: npx --no-install markdownlint-cli2 {staged_files}
+          - name: actionlint
+            glob: ".github/workflows/**/*.{yml,yaml}"
+            run: actionlint -color {staged_files}
+          - name: shellcheck
+            glob: "**/*.sh"
+            run: shellcheck {staged_files}
+          - name: hadolint
+            glob: "**/Dockerfile*"
+            run: hadolint {staged_files}
+          - name: typos
+            glob: "**/*.{md,rs,ts,tsx,js,jsx,toml}"
+            run: typos {staged_files}
+          # Advisory and whole-tree: cross-file checks can change a verdict, so
+          # it scans frontend/src entirely (no {staged_files}) and never blocks
+          # (|| true). The glob only gates WHETHER it runs for this commit.
+          - name: impeccable
+            glob: "frontend/src/**/*.{ts,tsx,html,css}"
+            run: npm --prefix frontend run detect || true
+          - name: no-issue-refs-rust
+            glob: "backend/src/**/*.rs"
+            run: scripts/no-issue-refs.sh {staged_files}
+          - name: no-plan-refs-rust
+            glob: "backend/src/**/*.rs"
+            run: scripts/no-plan-refs.sh {staged_files}
+          - name: no-issue-refs-frontend
+            glob: "frontend/src/**/*.{ts,tsx,js,jsx,css}"
+            run: scripts/no-issue-refs.sh {staged_files}
+          - name: no-plan-refs-frontend
+            glob: "frontend/src/**/*.{ts,tsx,js,jsx,css}"
+            run: scripts/no-plan-refs.sh {staged_files}
+          - name: no-issue-refs-md
+            glob: "**/*.{md,mdx}"
+            run: scripts/no-issue-refs.sh {staged_files}
+          - name: vale
+            glob: "**/*.{md,mdx}"
+            run: scripts/vale-lint.sh {staged_files}
+          # oxlint and stylelint route through the just recipes for their
+          # frontend/ prefix-strip (repo-relative staged paths against a
+          # frontend/ CWD). oxlint is type-aware: it loads the whole tsconfig
+          # graph, so it reports findings on staged files only, not the whole
+          # project (CI's whole-project lint remains the full backstop).
+          - name: oxlint
+            glob: "frontend/src/**/*.{ts,tsx}"
+            run: just js::oxlint {staged_files}
+          - name: stylelint
+            glob: "frontend/src/**/*.css"
+            run: just js::stylelint {staged_files}
+
+# Backend gate, always-run (each command cd's into backend rather than using
+# root:, so a frontend-only push still runs it, matching the old hook).
+# piped: true gives stop-on-first-failure (the old `set -eu`); in the jobs array
+# form, array order is the execution order, so fmt -> clippy -> drift means the
+# cheap check fails before the heavy clippy and cargo-test builds run on a
+# constrained host.
+pre-push:
+  parallel: false
+  piped: true
+  jobs:
+    - name: backend-fmt
+      run: cd "$(git rev-parse --show-toplevel)/backend" && cargo fmt --all -- --check
+    - name: backend-clippy
+      run: cd "$(git rev-parse --show-toplevel)/backend" && cargo clippy --workspace --all-targets --locked -- -D warnings
+    - name: backend-drift
+      run: cd "$(git rev-parse --show-toplevel)/backend" && SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref
+      fail_text: "Generated artifacts stale. Regenerate BOTH and commit: (cd backend && REGEN=1 cargo test --test gen_openapi --test gen_config_ref)"
+
+# {1} is the commit-message file path git passes to the hook. commitlint config
+# lives in package.json and resolves automatically.
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: npx --no-install commitlint --edit {1}
