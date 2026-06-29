@@ -445,8 +445,11 @@ jobs:
       # sonar job consumes. cargo-llvm-cov uses a separate target dir
       # (target/llvm-cov-target), so it neither disturbs nor reuses the
       # regular build above.
+      # --remap-path-prefix yields workspace-relative SF: paths (not absolute
+      # runner paths), so the artifact is portable and the sonar job can treat
+      # both stacks alike.
       - name: Test (with coverage)
-        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --remap-path-prefix --lcov --output-path lcov.info
 
       # nextest does not run doctests. Reverie has none today, but the
       # tiered comment policy (`adr/2026-05-08-tiered-comment-policy.md`)
@@ -1672,9 +1675,12 @@ jobs:
   sonar:
     name: SonarQube Cloud
     needs: [changes, backend, frontend]
-    # A single-stack PR skips one stack's job; run anyway to refresh the
-    # touched stack (the other is preserved by incremental analysis).
-    if: always()
+    # Single-stack PRs skip one job; run anyway (incremental analysis keeps
+    # the other stack). Skip fork PRs: no SONAR_TOKEN, so the scan only fails.
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true
@@ -1686,19 +1692,21 @@ jobs:
 
       # Best-effort: the producing job may be skipped on a single-stack PR.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        id: dl_backend
         with:
           name: backend-coverage
           path: backend
         continue-on-error: true
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        id: dl_frontend
         with:
           name: frontend-coverage
           path: frontend/coverage
         continue-on-error: true
 
-      # cargo-llvm-cov and Vitest both emit bare SF:src/... paths; a single
-      # project resolves SF: against projectBaseDir (repo root), so they
-      # collide and report 0%. Prefix each report with its stack dir.
+      # Both reports carry stack-relative SF: paths; prepend each stack dir so
+      # a single project resolves them against projectBaseDir (repo root).
+      # Without this they match nothing and coverage reads 0%.
       - name: Normalize coverage paths to repo root
         run: |
           set -euo pipefail
@@ -1707,6 +1715,22 @@ jobs:
           fi
           if [ -f frontend/coverage/lcov.info ]; then
             sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
+          fi
+
+      # Advisory job: a missing artifact/token can't fail the build, so
+      # surface it as an annotation rather than break silently to the dashboard.
+      - name: Warn on degraded coverage inputs
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          BACKEND_DL: ${{ steps.dl_backend.outcome }}
+          FRONTEND_DL: ${{ steps.dl_frontend.outcome }}
+        run: |
+          if [ "${BACKEND_DL}" = 'failure' ] || [ "${FRONTEND_DL}" = 'failure' ]; then
+            echo "::warning title=Sonar coverage partial::A coverage artifact was absent (single-stack PR or upstream failure); Sonar scanned with incomplete coverage."
+          fi
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::warning title=SONAR_TOKEN missing::SonarQube scan ran without a token; coverage was not published."
           fi
 
       - name: SonarQube Cloud scan

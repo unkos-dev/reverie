@@ -115,6 +115,7 @@ jobs:
           # with the action SHA via the customManager keyed to this annotation.
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
           version: "3.95.6"
-          # Current syntax, not the legacy --only-verified. No base:/head: so a
-          # schedule run scans full history without tripping the base==head guard.
+          # verified-only keeps the daily sweep low-noise; gitleaks is the
+          # PR-time gate for unverified candidates. No base:/head: so the run
+          # scans full history without tripping the base==head guard.
           extra_args: --results=verified

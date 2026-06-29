@@ -105,7 +105,7 @@
       ]
     },
     {
-      "description": "trufflehog's pinned Docker-image tag lives in a `with: version:` value, not a `<TOOL>_VERSION` env var, so neither Renovate's github-actions manager (which reaches `uses:` SHAs only) nor the curl-tarball manager above sees it. Left unmanaged it freezes while the action SHA advances, drifting the two out of lockstep. The inline `# renovate:` annotation names the github-releases datasource; extractVersion strips the leading `v` because the action's `version:` input wants the bare image tag (3.95.6, not v3.95.6). Same caveat applies as the curl pins: a bump PR updates only this token, so a reviewer must move the action SHA in the same PR to keep them in lockstep.",
+      "description": "trufflehog's pinned Docker-image tag lives in a `with: version:` value, not a `<TOOL>_VERSION` env var, so neither Renovate's github-actions manager (which manages `uses:` refs but not their `with:` inputs) nor the curl-tarball manager above sees it. Left unmanaged it freezes while the action SHA advances, drifting the two out of lockstep. The inline `# renovate:` annotation names the github-releases datasource; extractVersion strips the leading `v` because the action's `version:` input wants the bare image tag (3.95.6, not v3.95.6). Same caveat applies as the curl pins: a bump PR updates only this token, so a reviewer must move the action SHA in the same PR to keep them in lockstep.",
       "customType": "regex",
       "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
       "matchStrings": [
