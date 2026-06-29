@@ -228,11 +228,11 @@ jobs:
       # Direct curl-tarball install pins the exact upstream release +
       # SHA256, mirroring the actionlint/shellcheck/gitleaks installs in
       # ci.yml (supply-chain discipline on a privileged publish workflow).
-      - name: Install trivy v0.71.0
+      - name: Install trivy v0.71.2
         env:
           # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
           TRIVY_VERSION: "0.71.2"
-          TRIVY_SHA256: "30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814"
+          TRIVY_SHA256: "0510e71e2fd39bf863856d499c8dc19feb4e7336546394c502a8f5cc7ab27460"
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
