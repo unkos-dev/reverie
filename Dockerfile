@@ -40,7 +40,7 @@ RUN cargo build --release
 # but package-lock.json is unchanged — buildkit reuses the mount within a single
 # build. GHA runners are ephemeral so the mount does not persist across runs;
 # cross-run npm reuse is provided by the gha layer cache instead.
-FROM node:24.16.0-slim@sha256:242549cd46785b480c832479a730f4f2a20865d61ea2e404fdb2a5c3d3b73ecf AS frontend-builder
+FROM node:24.16.0-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c574f736c476489d09f560a203 AS frontend-builder
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -49,7 +49,7 @@ RUN npm run build
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
-FROM debian:trixie-slim@sha256:4e401d95de7083948053197a9c3913343cd06b706bf15eb6a0c3ccd26f436a0e AS runtime
+FROM debian:trixie-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS runtime
 # UNK-165: curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before
