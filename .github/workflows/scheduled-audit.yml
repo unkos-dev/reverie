@@ -115,7 +115,8 @@ jobs:
           # with the action SHA via the customManager keyed to this annotation.
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
           version: "3.95.6"
-          # verified-only keeps the daily sweep low-noise; gitleaks is the
-          # PR-time gate for unverified candidates. No base:/head: so the run
-          # scans full history without tripping the base==head guard.
-          extra_args: --results=verified
+          # verified + unknown (verification errored) so the daily history
+          # sweep stays low-noise without dropping unconfirmable hits; gitleaks
+          # only sees the PR diff, not history. No base:/head: so the run scans
+          # full history without tripping the base==head guard.
+          extra_args: --results=verified,unknown
