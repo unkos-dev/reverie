@@ -41,7 +41,7 @@ jobs:
       # ci.yml. Version pinned; Renovate's install-action customManager keeps
       # both occurrences in lockstep. fallback:none fails closed if no prebuilt
       # is available rather than silently switching install source.
-      - uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
+      - uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
         with:
           tool: cargo-deny@0.19.8
           fallback: none
