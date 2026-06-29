@@ -89,8 +89,8 @@ The forcing details resolved as follows.
 
 ### Confirmation
 
-`oxfmt --check .` gates the CI `repo-lint` job and lint-staged runs
-`oxfmt --write`. The four drift-gated generated files and `CHANGELOG.md` stay
+`just js::fmt-check` runs `oxfmt --check .` and gates the CI `repo-lint` job;
+the pre-commit hook runs `oxfmt --write`. The four drift-gated generated files and `CHANGELOG.md` stay
 byte identical through a full format pass. markdownlint, stylelint, and Vale keep
 their own passes; oxfmt owns only the format check.
 

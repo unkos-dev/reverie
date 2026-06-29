@@ -3,7 +3,9 @@
 # (just settings do not propagate into submodules).
 #
 # This file is the canonical definition of "lint/format/test/build the repo".
-# Nothing consumes it yet (no hooks or CI wired here); local use only.
+# The CI lint/format jobs invoke these recipes, and the oxlint/stylelint git
+# hooks call js::oxlint/js::stylelint, so the CI command definitions live here
+# once rather than duplicated inline in the workflow.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set dotenv-load := false

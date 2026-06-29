@@ -131,6 +131,13 @@ test-coverage:
 build:
     npm run build
 
+# Verify the committed Fontshare woff2 files match their pinned checksums (the
+# CI frontend gate; cheap and offline, so locally runnable on its own).
+[group('js')]
+[working-directory('frontend/public/fonts/fontshare/files')]
+font-integrity:
+    sha256sum -c SHA256SUMS
+
 # Locally-runnable verify set: lint + format check (a11y and coverage excluded).
 [group('js')]
 check: lint fmt-check
