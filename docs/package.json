@@ -15,8 +15,5 @@
     "sharp": "^0.35.2",
     "starlight-openapi": "^0.25.3"
   },
-  "overrides": {
-    "form-data": "4.0.6"
-  },
   "private": true
 }
