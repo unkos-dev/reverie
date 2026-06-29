@@ -846,7 +846,7 @@ jobs:
       - name: Install opengrep v1.22.0
         env:
           # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.+)$
-          OPENGREP_VERSION: "1.22.0"
+          OPENGREP_VERSION: "1.23.0"
           OPENGREP_SHA256: "45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319"
         run: |
           set -euo pipefail
