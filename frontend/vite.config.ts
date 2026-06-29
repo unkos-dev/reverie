@@ -317,18 +317,20 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Route the dev-only design tree into its own chunk. main.tsx gates
-        // the import behind `if (import.meta.env.DEV)`; in production
+        // Route the dev-only design tree into its own named chunk. main.tsx
+        // gates the import behind `if (import.meta.env.DEV)`; in production
         // `import.meta.env.DEV` is replaced with literal `false`, the
-        // dynamic-import branch becomes dead code, Vite tree-shakes the
-        // chunk, and no `design-*.js` is emitted into `dist/assets/`.
-        // Substring-grepping the minified output is unreliable (Vite
-        // mangles names); the Level 4 gate in the plan checks for the
-        // chunk file's structural absence instead.
-        manualChunks(id) {
-          if (id.includes("/src/routes/design") || id.includes("/src/pages/design/")) {
-            return "design";
-          }
+        // dynamic-import branch becomes dead code, rolldown tree-shakes it,
+        // and no `design-*.js` is emitted into `dist/assets/`. The named
+        // group makes any leak surface as a `design-*.js` chunk, which
+        // scripts/assert-no-design-chunk.mjs fails the build on (substring-
+        // grepping minified output is unreliable, so the gate checks for the
+        // chunk file's structural presence instead). The `test` mirrors the
+        // prior manualChunks predicate: `routes/design` with no trailing
+        // slash matches design.tsx and the directory; `pages/design/` is
+        // directory-only.
+        codeSplitting: {
+          groups: [{ name: "design", test: /\/src\/(routes\/design|pages\/design\/)/ }],
         },
       },
     },
