@@ -843,11 +843,11 @@ jobs:
 
       # Standalone signed binary; SHA256-pinned like the other scanner
       # installs (actionlint/shellcheck/gitleaks/trivy pattern).
-      - name: Install opengrep v1.22.0
+      - name: Install opengrep v1.23.0
         env:
           # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.+)$
           OPENGREP_VERSION: "1.23.0"
-          OPENGREP_SHA256: "45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319"
+          OPENGREP_SHA256: "1f06548af379ab6080698a609612890ffad2d92dc2172f1e97d38d48096d5ef8"
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
