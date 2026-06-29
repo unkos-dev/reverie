@@ -90,3 +90,53 @@ jobs:
             echo "::endgroup::"
           done
           exit "$rc"
+
+  # gitleaks (hot path) only sees the working tree / PR diff. This cron
+  # sweeps full history daily so a history-buried or freshly-disclosed secret
+  # surfaces within a day.
+  trufflehog:
+    name: Secret history sweep (trufflehog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write # open/comment a failure alert (see final step)
+    steps:
+      # persist-credentials: false keeps GITHUB_TOKEN out of .git/config,
+      # which a full-history scan would otherwise surface.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: TruffleHog full-history scan
+        uses: trufflesecurity/trufflehog@30d5bb91af1a771378349dbbb0c82129392acf70 # v3.95.6
+        with:
+          # Pin the image (default is :latest). renovate keeps this in lockstep
+          # with the action SHA via the customManager keyed to this annotation.
+          # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
+          version: "3.95.6"
+          # verified-only: example/test Postgres DSNs error verification and
+          # would red the cron daily as unknown noise; a real live leak still
+          # verifies. No base:/head: so the schedule run scans full history.
+          extra_args: --results=verified
+
+      # A failed sweep otherwise only surfaces as a red run + GitHub's default
+      # email. Open an issue so the failure lands where it gets noticed. The
+      # body links the access-controlled run log and never copies findings, so
+      # a detected secret is not re-leaked into a readable issue. Deduped:
+      # comment on the open alert instead of one issue per day.
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="TruffleHog secret history sweep failed"
+          n=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Recurred: ${RUN_URL}"
+          else
+            gh issue create --title "$title" --body "Scheduled TruffleHog full-history sweep failed (verified secret found, or scan error). Findings are NOT copied here to avoid re-leaking secrets; review the access-controlled run log: ${RUN_URL}"
+          fi

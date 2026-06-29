@@ -1,10 +1,11 @@
 name: CI
 
 on:
-  # Run on pushes to main so coverage is uploaded for main's head commit.
+  # Run on pushes to main so coverage and analysis cover main's head commit.
   # PRs are squash-merged, which lands a new SHA on main that no
-  # pull_request run ever tested — without a push trigger, Codecov never
-  # receives a default-branch report and the coverage badge reads "unknown".
+  # pull_request run ever tested — without a push trigger, SonarQube Cloud
+  # never receives a default-branch baseline, so new-code detection has
+  # nothing to diff against and the coverage badge reads "unknown".
   push:
     branches: [main]
   pull_request:
@@ -440,12 +441,15 @@ jobs:
       # concurrent conns vs. Postgres's default `max_connections=100`).
       # Comfortable headroom; first cold-run on this PR validates it
       # empirically.
-      # Single pass: run the nextest suite under llvm-cov instrumentation
-      # and emit an LCOV report for Codecov. cargo-llvm-cov keeps its
-      # instrumented build in a separate target dir (target/llvm-cov-target),
-      # so it neither disturbs nor reuses the regular build above.
+      # Single pass: nextest under llvm-cov, emitting an LCOV report the
+      # sonar job consumes. cargo-llvm-cov uses a separate target dir
+      # (target/llvm-cov-target), so it neither disturbs nor reuses the
+      # regular build above.
+      # --remap-path-prefix yields workspace-relative SF: paths (not absolute
+      # runner paths), so the artifact is portable and the sonar job can treat
+      # both stacks alike.
       - name: Test (with coverage)
-        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --remap-path-prefix --lcov --output-path lcov.info
 
       # nextest does not run doctests. Reverie has none today, but the
       # tiered comment policy (`adr/2026-05-08-tiered-comment-policy.md`)
@@ -454,15 +458,14 @@ jobs:
       - name: Doctests
         run: cargo test --doc --workspace
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      # if-no-files-found: error so a missing report fails here rather than
+      # reporting 0% coverage downstream.
+      - name: Upload backend coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          files: backend/lcov.info
-          flags: backend
-          token: ${{ secrets.CODECOV_TOKEN }}
-          # Coverage is informational — a Codecov outage or a missing/expired
-          # token must never red-X the build.
-          fail_ci_if_error: false
+          name: backend-coverage
+          path: backend/lcov.info
+          if-no-files-found: error
 
   # UNK-327: MSRV floor enforcement. backend/Cargo.toml declares a
   # `rust-version`; this job compiles the whole workspace on exactly that
@@ -1142,15 +1145,14 @@ jobs:
       - name: Test (with coverage)
         run: just js::test-coverage
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      # if-no-files-found: error so a missing report fails here rather than
+      # reporting 0% coverage downstream.
+      - name: Upload frontend coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          files: frontend/coverage/lcov.info
-          flags: frontend
-          token: ${{ secrets.CODECOV_TOKEN }}
-          # Coverage is informational — a Codecov outage or a missing/expired
-          # token must never red-X the build.
-          fail_ci_if_error: false
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
+          if-no-files-found: error
 
       - name: Stylelint
         run: just js::stylelint
@@ -1666,6 +1668,75 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           # Advisory: never red. Flip to 'exit 1' to graduate to blocking.
           exit 0
+
+  # Advisory: absent from ci-gate.needs[] and continue-on-error, so a Sonar
+  # outage or missing token never fails the build (matching the prior
+  # informational coverage posture).
+  sonar:
+    name: SonarQube Cloud
+    needs: [changes, backend, frontend]
+    # Single-stack PRs skip one job; run anyway (incremental analysis keeps
+    # the other stack). Skip fork PRs: no SONAR_TOKEN, so the scan only fails.
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0 # blame-based new-code detection
+          persist-credentials: false
+
+      # Best-effort: the producing job may be skipped on a single-stack PR.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        id: dl_backend
+        with:
+          name: backend-coverage
+          path: backend
+        continue-on-error: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        id: dl_frontend
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+        continue-on-error: true
+
+      # Both reports carry stack-relative SF: paths; prepend each stack dir so
+      # a single project resolves them against projectBaseDir (repo root).
+      # Without this they match nothing and coverage reads 0%.
+      - name: Normalize coverage paths to repo root
+        run: |
+          set -euo pipefail
+          if [ -f backend/lcov.info ]; then
+            sed -i 's#^SF:#SF:backend/#' backend/lcov.info
+          fi
+          if [ -f frontend/coverage/lcov.info ]; then
+            sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
+          fi
+
+      # Advisory job: a missing artifact/token can't fail the build, so
+      # surface it as an annotation rather than break silently to the dashboard.
+      - name: Warn on degraded coverage inputs
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          BACKEND_DL: ${{ steps.dl_backend.outcome }}
+          FRONTEND_DL: ${{ steps.dl_frontend.outcome }}
+        run: |
+          if [ "${BACKEND_DL}" = 'failure' ] || [ "${FRONTEND_DL}" = 'failure' ]; then
+            echo "::warning title=Sonar coverage partial::A coverage artifact was absent (single-stack PR or upstream failure); Sonar scanned with incomplete coverage."
+          fi
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::warning title=SONAR_TOKEN missing::SonarQube scan ran without a token; coverage was not published."
+          fi
+
+      - name: SonarQube Cloud scan
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # Single required status check for the branch ruleset. Aggregates every CI
   # job so the ruleset requires only this one context. Path-conditional jobs

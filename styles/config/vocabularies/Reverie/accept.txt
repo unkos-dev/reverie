@@ -78,7 +78,6 @@ clippy
 closable
 Cloudflare
 codebase
-codecov
 codecs
 codegen
 Codium
@@ -311,6 +310,8 @@ signup
 Sigstore
 snake_case
 Snapshotting
+SonarCloud
+SonarQube
 sortable
 sqlite
 sqlx
@@ -345,6 +346,7 @@ tower_sessions
 tradeoff
 tradeoffs
 Traefik
+TruffleHog
 tsgolint
 UAs
 ubuntu
