@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+# syntax=docker/dockerfile:1.25@sha256:0adf442eae370b6087e08edc7c50b552d80ddf261576f4ebd6421006b2461f12
 
 # Stage 1a: chef base — pinned cargo-chef install shared across planner + cooker.
 # Version pin prevents recipe.json schema drift between planner emit and cooker
@@ -10,7 +10,7 @@
 # `:main` images with `GLIBC_2.38 not found` against a bookworm runner. Both
 # stages share the same codename so the dynamic linker can resolve every
 # symbol the release binary requests.
-FROM rust:1-slim-trixie@sha256:26abcef3d79b8d890c4ceb17093154573e1f6479cf6dd7c1450043b8458350f6 AS chef
+FROM rust:1-slim-trixie@sha256:6abf73f05806f36362d0ff2722f2250c6153398831edd0455e0e0baa1f78ecc7 AS chef
 RUN cargo install cargo-chef@0.1.77 --locked
 WORKDIR /build
 
@@ -40,7 +40,7 @@ RUN cargo build --release
 # but package-lock.json is unchanged — buildkit reuses the mount within a single
 # build. GHA runners are ephemeral so the mount does not persist across runs;
 # cross-run npm reuse is provided by the gha layer cache instead.
-FROM node:24.16.0-slim@sha256:242549cd46785b480c832479a730f4f2a20865d61ea2e404fdb2a5c3d3b73ecf AS frontend-builder
+FROM node:24.16.0-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c574f736c476489d09f560a203 AS frontend-builder
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -49,7 +49,7 @@ RUN npm run build
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
-FROM debian:trixie-slim@sha256:4e401d95de7083948053197a9c3913343cd06b706bf15eb6a0c3ccd26f436a0e AS runtime
+FROM debian:trixie-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS runtime
 # UNK-165: curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before

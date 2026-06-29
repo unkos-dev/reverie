@@ -39,7 +39,7 @@
   "overrides": {
     "hono": "^4.12.25",
     "ip-address": "^10.2.0",
-    "qs": "^6.15.2"
+    "qs": "^6.15.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -53,14 +53,14 @@
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4.1.8",
     "axe-core": "^4.11.4",
-    "impeccable": "^2.3.2",
+    "impeccable": "^3.1.0",
     "jsdom": "^29.1.1",
     "oxlint": "1.71.0",
     "oxlint-tsgolint": "0.23.0",
     "shadcn": "^4.9.0",
-    "stylelint": "^17.12.0",
+    "stylelint": "^17.14.0",
     "stylelint-config-standard": "^40.0.0",
-    "tailwindcss": "^4.3.0",
+    "tailwindcss": "^4.3.1",
     "typescript": "~6.0.3",
     "vite": "^8.0.14",
     "vitest": "^4.1.7"
