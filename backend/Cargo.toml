@@ -69,7 +69,7 @@ thiserror = "2.0.18"
 time = { version = "0.3.47", features = ["serde"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = "0.7.18"
-tower-http = { version = "0.6.11", features = ["cors", "fs", "trace"] }
+tower-http = { version = "0.7.0", features = ["cors", "fs", "trace"] }
 # tower-sessions core is the maintained session-lifecycle primitive (kept);
 # the abandoned axum-login + tower-sessions-sqlx-store wrappers were replaced
 # with first-party code (auth::store, auth::session, auth::middleware).
