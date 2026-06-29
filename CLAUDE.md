@@ -27,6 +27,7 @@ These are absolute invariants for the Reverie repository.
   - Tier 2 (Security/Auth): Add explicit threat annotations (`// THREAT:`).
   - Tier 3 (Internal): Comment only when WHY is non-obvious. Default to no comments.
   - Tier 4 (Tests): No docstrings on test functions.
+  - Density tiebreaker: New comments follow this tiered policy, not the density of surrounding legacy comments. Verbose nearby comments are legacy, not a target to match.
 - **Docstring Syntax:** No em dashes (`—`). No external references (PRs, Linear IDs). Describe current behavior, not history.
 - **Planning Artifacts:** Store design specs in `/plans/`. Implementation plans go in `.claude/PRPs/plans/`.
 - **ADRs:** Write an ADR (in `adr/`) for any new cross-stack pattern, major dependency, or architectural choice. Use the `adr` skill.
