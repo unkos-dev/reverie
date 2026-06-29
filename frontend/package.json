@@ -13,7 +13,7 @@
   },
   "scripts": {
     "dev": "vp dev",
-    "build": "tsc -b && vp build && node scripts/assert-no-design-chunk.mjs",
+    "build": "vp build && node scripts/assert-no-design-chunk.mjs",
     "lint": "vp lint --max-warnings 0",
     "preview": "vp preview",
     "test": "vp test run",

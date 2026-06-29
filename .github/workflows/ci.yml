@@ -1040,13 +1040,13 @@ jobs:
       - name: Prose lint (Vale)
         run: just infra::prose
 
-      # Authoritative formatting gate. The pre-commit hook runs `oxfmt --write`
+      # Authoritative formatting gate. The pre-commit hook runs `vp fmt --write`
       # on staged files locally, but pre-commit is bypassable (`--no-verify`)
       # and never runs on fork PRs; this whole-tree `--check` is the surface
       # that actually fails the build. The `js::fmt-check` recipe owns the
-      # invocation; the `ignorePatterns` in `.oxfmtrc.json` scope it (vendored
-      # shadcn/ui, archival .claude docs, build output). Uses the oxfmt from the
-      # `npm ci` above, in lockstep with local.
+      # invocation; the `ignorePatterns` in the root `vite.config.ts` fmt block
+      # scope it (vendored shadcn/ui, archival .claude docs, build output). Uses
+      # vp's bundled oxfmt from the `npm ci` above, in lockstep with local.
       - name: Format check (oxfmt)
         run: just js::fmt-check
 

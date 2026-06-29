@@ -35,7 +35,7 @@ pre-commit:
           # (e.g. a regenerated backend/config.schema.json) a clean no-op.
           - name: oxfmt
             glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}"
-            run: npx --no-install oxfmt --write --no-error-on-unmatched-pattern {staged_files}
+            run: npx --no-install vp fmt --write --no-error-on-unmatched-pattern {staged_files}
             stage_fixed: true
           # The `&&` orders oxfmt before yamllint within the one command, so the
           # formatter always completes before the linter reads the file
@@ -43,7 +43,7 @@ pre-commit:
           # piped group alongside oxfmt, never parallel with it.
           - name: yaml
             glob: "**/*.{yml,yaml}"
-            run: npx --no-install oxfmt --write --no-error-on-unmatched-pattern {staged_files} && yamllint {staged_files}
+            run: npx --no-install vp fmt --write --no-error-on-unmatched-pattern {staged_files} && yamllint {staged_files}
             stage_fixed: true
     - name: checks
       group:

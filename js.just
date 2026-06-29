@@ -67,17 +67,18 @@ detect:
     npm run detect
 
 # Runs at the repo root over every oxfmt-owned type; never a dependency of
-# check/lint.
+# check/lint. vp's bundled oxfmt is the one formatter; config is the root
+# vite.config.ts fmt block.
 #
 # Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.
 [group('js')]
 fmt:
-    npx --no-install oxfmt --write --no-error-on-unmatched-pattern .
+    npx --no-install vp fmt --write --no-error-on-unmatched-pattern .
 
 # Verify whole-tree formatting without writing (the authoritative CI gate form).
 [group('js')]
 fmt-check:
-    npx --no-install oxfmt --check .
+    npx --no-install vp fmt --check .
 
 # Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.
 [group('js')]
@@ -125,7 +126,7 @@ test:
 test-coverage:
     npm run test:coverage
 
-# Frontend production build (tsc -b && vite build).
+# Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
 [group('js')]
 [working-directory('frontend')]
 build:

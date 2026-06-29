@@ -14,20 +14,7 @@ import { parseHmrConfig } from "./vite-plugins/hmr-config";
 const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 
 export default defineConfig({
-  // Mirror the repo-wide oxfmt config (root .oxfmtrc.json) so vp's formatter
-  // agrees with the committed style; ignorePatterns carry the frontend-scoped
-  // carve-outs (shadcn primitives + the generated a11y report).
-  fmt: {
-    semi: true,
-    singleQuote: false,
-    trailingComma: "all",
-    printWidth: 100,
-    tabWidth: 2,
-    proseWrap: "preserve",
-    endOfLine: "lf",
-    sortPackageJson: false,
-    ignorePatterns: ["src/components/ui/", "a11y-results.json"],
-  },
+  // No fmt block: the root vite.config.ts owns formatting for the whole tree.
   lint: {
     plugins: ["typescript", "react"],
     categories: {
