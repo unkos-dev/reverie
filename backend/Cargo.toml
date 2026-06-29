@@ -89,7 +89,7 @@ percent-encoding = "2.3.2"
 # makes a handler routed without `#[utoipa::path]` a compile error.
 utoipa = { version = "5.5", features = ["axum_extras", "time", "uuid"] }
 utoipa-axum = "0.2"
-uuid = { version = "1.23.2", features = ["v4", "serde"] }
+uuid = { version = "1.23.4", features = ["v4", "serde"] }
 walkdir = "2.5.0"
 zip = "8.6.0"
 
