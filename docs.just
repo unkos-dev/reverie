@@ -1,14 +1,14 @@
-# Docs plane: Starlight site build and internal-link check. Runs from docs/, which
-# is a separate npm tree from frontend/. Build needs docs/node_modules present
-# (run `just docs::install` first on a cold checkout).
+# Docs plane: Starlight site build and internal-link check. Runs from docs/, an
+# npm workspace of the repo root. Deps install once at the root (`just docs::install`
+# or any root `npm ci`) and hoist into the root node_modules.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set working-directory := 'docs'
 
-# Install docs dependencies (separate npm tree from the frontend).
+# Install the whole workspace (frontend + docs) from the root lockfile.
 [group('docs')]
 install:
-    npm ci
+    cd "$(git rev-parse --show-toplevel)" && npm ci
 
 # Build the Starlight site (= astro build).
 [group('docs')]
