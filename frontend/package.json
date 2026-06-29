@@ -6,14 +6,19 @@
   "engines": {
     "node": ">=24.16.0"
   },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm"
+    }
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint --max-warnings 0",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "dev": "vp dev",
+    "build": "tsc -b && vp build",
+    "lint": "vp lint --max-warnings 0",
+    "preview": "vp preview",
+    "test": "vp test run",
+    "test:watch": "vp test",
+    "test:coverage": "vp test run --coverage",
     "stylelint": "stylelint 'src/**/*.css' --max-warnings 0",
     "detect": "impeccable detect src",
     "a11y": "node scripts/a11y/axe-scan.mjs"
@@ -39,7 +44,9 @@
   "overrides": {
     "hono": "^4.12.25",
     "ip-address": "^10.2.0",
-    "qs": "^6.15.3"
+    "qs": "^6.15.3",
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vitest": "4.1.9"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -55,14 +62,13 @@
     "axe-core": "^4.11.4",
     "impeccable": "^3.1.0",
     "jsdom": "^29.1.1",
-    "oxlint": "1.71.0",
-    "oxlint-tsgolint": "0.23.0",
     "shadcn": "^4.9.0",
     "stylelint": "^17.14.0",
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~6.0.3",
-    "vite": "^8.1.0",
-    "vitest": "^4.1.7"
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vitest": "4.1.9",
+    "vite-plus": "latest"
   }
 }

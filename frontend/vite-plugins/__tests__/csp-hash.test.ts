@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Plugin, ResolvedConfig } from "vite";
+import type { Plugin, ResolvedConfig } from "vite-plus";
 import { cspHashPlugin } from "../csp-hash";
 
 // Type guard — transformIndexHtml can be a function or an object with

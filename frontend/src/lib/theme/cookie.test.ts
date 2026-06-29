@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { THEME_COOKIE_NAME, readThemeCookie, writeThemeCookie } from "./cookie";
 
 const cookieDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, "cookie");

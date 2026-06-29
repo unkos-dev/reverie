@@ -5,7 +5,7 @@
 // because there was no jsdom evaluation of the script body. These tests
 // close that gap.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 // `?raw` is Vite's built-in raw-text import — works under Vitest because
 // it shares the Vite resolver. Importing the script body avoids needing
 // node:fs/path/url (and @types/node) in the jsdom test project.

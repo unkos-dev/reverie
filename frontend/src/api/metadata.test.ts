@@ -3,7 +3,7 @@
  * thin wrapper around `apiFetch`, so we assert URL + method + body
  * shape rather than re-testing the underlying transport.
  */
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { __resetCsrfTokenForTesting } from "./csrf";
 import { acceptVersion, rejectVersion, revertField } from "./metadata";

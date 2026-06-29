@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { __resetCsrfTokenForTesting, getCsrfToken, refreshCsrfToken } from "./csrf";
 
 const SAMPLE_TOKEN = "abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE"; // 43 chars
@@ -132,8 +132,9 @@ describe("refreshCsrfToken", () => {
 
   test("clears cache when csrf_token is empty string", async () => {
     // Empty-string token would otherwise inject a blank `X-CSRF-Token`
-    // header in Phase 2 → guaranteed 403 on every mutating request.
-    // Schema's `.min(1)` funnels this into the null-cache path.
+    // header that the enforcing middleware rejects → guaranteed 403 on
+    // every mutating request. Schema's `.min(1)` funnels this into the
+    // null-cache path.
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ csrf_token: "" }));
 
     expect(await refreshCsrfToken()).toBeNull();
