@@ -115,8 +115,7 @@ jobs:
           # with the action SHA via the customManager keyed to this annotation.
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
           version: "3.95.6"
-          # verified + unknown (verification errored) so the daily history
-          # sweep stays low-noise without dropping unconfirmable hits; gitleaks
-          # only sees the PR diff, not history. No base:/head: so the run scans
-          # full history without tripping the base==head guard.
-          extra_args: --results=verified,unknown
+          # verified-only: example/test Postgres DSNs error verification and
+          # would red the cron daily as unknown noise; a real live leak still
+          # verifies. No base:/head: so the schedule run scans full history.
+          extra_args: --results=verified
