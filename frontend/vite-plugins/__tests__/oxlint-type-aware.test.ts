@@ -1,29 +1,26 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 /**
- * Guards that oxlint's type-aware rule class is actually firing.
+ * Guards that the type-aware lint rule class is actually firing under `vp lint`.
  *
  * The `strictTypeChecked` rules (`no-floating-promises`, the `no-unsafe-*`
- * family) run through `oxlint-tsgolint`, which ships as a platform
- * `optionalDependency`. If that binary is ever absent (a new platform, or a
- * version-pair drift against oxlint), `npm ci` still succeeds and a plain
- * `oxlint` run still exits zero while those rules silently stop firing. The
- * native rules cannot regress this way: their loss is a diff-visible edit to
- * `.oxlintrc.json`, whereas a missing binary is invisible.
+ * family) run through tsgolint, which vp drives from the lint config in
+ * `vite.config.ts`. If tsgolint is ever absent or drifts against the bundled
+ * oxlint, `vp lint` can still exit zero while those rules silently stop firing.
+ * The native rules cannot regress this way: their loss is a diff-visible edit to
+ * the lint config, whereas a missing type-aware engine is invisible.
  *
  * A floating promise is the canonical type-aware violation: detecting it
- * requires type information, so a passing fixture proves the engine ran.
+ * requires type information, so a flagged fixture proves the engine ran.
  *
  * The fixtures live under `src` so tsgolint resolves `tsconfig.app.json` and
  * sees the types the rule needs. They are written and removed inside the test;
- * `--no-ignore` is deliberately not used because it panics tsgolint, so the
- * probe directory must not be git- or oxlint-ignored.
+ * the probe directory must not be git- or lint-ignored.
  */
 
-const OXLINT = join(process.cwd(), "node_modules", ".bin", "oxlint");
 const PROBE_DIR = join(process.cwd(), "src", "__tests__", "__type-aware-probe__");
 
 interface LintResult {
@@ -33,7 +30,7 @@ interface LintResult {
 
 function lint(file: string): LintResult {
   try {
-    const stdout = execFileSync(OXLINT, [file], {
+    const stdout = execFileSync("vp", ["lint", file], {
       cwd: process.cwd(),
       encoding: "utf8",
     });
@@ -53,7 +50,7 @@ function writeFixture(name: string, source: string): string {
   return file;
 }
 
-describe("oxlint type-aware enforcement", () => {
+describe("type-aware lint enforcement (vp lint)", () => {
   beforeAll(() => {
     rmSync(PROBE_DIR, { recursive: true, force: true });
     mkdirSync(PROBE_DIR, { recursive: true });
@@ -63,8 +60,8 @@ describe("oxlint type-aware enforcement", () => {
     rmSync(PROBE_DIR, { recursive: true, force: true });
   });
 
-  it("binary is resolvable", () => {
-    expect(existsSync(OXLINT)).toBe(true);
+  it("vp is resolvable", () => {
+    expect(() => execFileSync("vp", ["--version"], { encoding: "utf8" })).not.toThrow();
   });
 
   it("flags a floating promise (tsgolint present and active)", () => {
