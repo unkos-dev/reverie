@@ -90,3 +90,31 @@ jobs:
             echo "::endgroup::"
           done
           exit "$rc"
+
+  # gitleaks (hot path) only sees the working tree / PR diff. This cron
+  # sweeps full history daily so a history-buried or freshly-disclosed secret
+  # surfaces within a day.
+  trufflehog:
+    name: Secret history sweep (trufflehog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # persist-credentials: false keeps GITHUB_TOKEN out of .git/config,
+      # which a full-history scan would otherwise surface.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: TruffleHog full-history scan
+        uses: trufflesecurity/trufflehog@30d5bb91af1a771378349dbbb0c82129392acf70 # v3.95.6
+        with:
+          # Pin the image (default is :latest). renovate keeps this in lockstep
+          # with the action SHA via the customManager keyed to this annotation.
+          # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
+          version: "3.95.6"
+          # Current syntax, not the legacy --only-verified. No base:/head: so a
+          # schedule run scans full history without tripping the base==head guard.
+          extra_args: --results=verified
