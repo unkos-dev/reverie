@@ -231,7 +231,7 @@ jobs:
       - name: Install trivy v0.71.0
         env:
           # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
-          TRIVY_VERSION: "0.71.0"
+          TRIVY_VERSION: "0.71.2"
           TRIVY_SHA256: "30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814"
         run: |
           set -euo pipefail
