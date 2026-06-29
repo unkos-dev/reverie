@@ -100,6 +100,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      issues: write # open/comment a failure alert (see final step)
     steps:
       # persist-credentials: false keeps GITHUB_TOKEN out of .git/config,
       # which a full-history scan would otherwise surface.
@@ -119,3 +120,23 @@ jobs:
           # would red the cron daily as unknown noise; a real live leak still
           # verifies. No base:/head: so the schedule run scans full history.
           extra_args: --results=verified
+
+      # A failed sweep otherwise only surfaces as a red run + GitHub's default
+      # email. Open an issue so the failure lands where it gets noticed. The
+      # body links the access-controlled run log and never copies findings, so
+      # a detected secret is not re-leaked into a readable issue. Deduped:
+      # comment on the open alert instead of one issue per day.
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="TruffleHog secret history sweep failed"
+          n=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Recurred: ${RUN_URL}"
+          else
+            gh issue create --title "$title" --body "Scheduled TruffleHog full-history sweep failed (verified secret found, or scan error). Findings are NOT copied here to avoid re-leaking secrets; review the access-controlled run log: ${RUN_URL}"
+          fi
