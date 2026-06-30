@@ -85,6 +85,22 @@ const routes: RouteObject[] = [
       return { Component: mod.Component };
     },
   },
+  {
+    path: "/register",
+    errorElement: <RootErrorBoundary />,
+    lazy: async () => {
+      const mod = await import("./routes/auth-register");
+      return { Component: mod.Component };
+    },
+  },
+  {
+    path: "/account/password",
+    errorElement: <RootErrorBoundary />,
+    lazy: async () => {
+      const mod = await import("./routes/account-password");
+      return { Component: mod.Component };
+    },
+  },
 ];
 
 if (import.meta.env.DEV) {
