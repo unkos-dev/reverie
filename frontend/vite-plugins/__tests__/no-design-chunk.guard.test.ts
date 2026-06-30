@@ -56,6 +56,12 @@ describe("assert-no-design-chunk build gate", () => {
     expect(runIn(fixture(tmp, "anchor", ["designsystem-abc.js"])).code).toBe(0);
   });
 
+  it("exits 2 (loud) when dist/assets exists but is empty", () => {
+    const dir = join(tmp, "empty");
+    mkdirSync(join(dir, "dist", "assets"), { recursive: true });
+    expect(runIn(dir).code).toBe(2);
+  });
+
   it("exits 2 (loud) when dist/assets is missing", () => {
     const dir = join(tmp, "nobuild");
     mkdirSync(dir, { recursive: true });

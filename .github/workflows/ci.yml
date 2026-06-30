@@ -65,6 +65,12 @@ jobs:
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
+              # Root workspace inputs now drive the frontend job: the hoisted
+              # lockfile + shared overrides, and the root vite.config.ts that owns
+              # the frontend lint config.
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
               - 'Dockerfile'
               - '.github/workflows/ci.yml'
             staging:
@@ -113,6 +119,10 @@ jobs:
               # backend trigger needed (a stale-but-unregenerated artifact is
               # caught by the backend job's drift tests instead).
               - 'docs/**'
+              # docs is an npm workspace, so the hoisted lockfile + shared
+              # overrides in the root manifest affect the docs build too.
+              - 'package.json'
+              - 'package-lock.json'
               - '.github/workflows/ci.yml'
               # docs.yml carries its own astro build; a docs.yml-only PR must
               # still run the docs gate here rather than first failing on the
