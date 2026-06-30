@@ -414,6 +414,29 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
+    /// Same as [`server_with_real_pools`] but with self-registration enabled, for
+    /// `/auth/register` tests (the base `test_config()` has it off to match the
+    /// shipped default).
+    pub fn server_with_self_registration(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+    ) -> axum_test::TestServer {
+        use crate::state::AppState;
+        let mut config = super::test_config();
+        config.self_registration_enabled = true;
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
+            oidc_client: Some(super::test_oidc_client()),
+            login_limiter: super::test_login_limiter(),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
     /// Same as [`server_with_real_pools`] but with OPDS enabled. Tests that
     /// exercise `/opds/*` routes need this — the base `test_config()` has
     /// `opds.enabled = false` to match ordinary route tests.

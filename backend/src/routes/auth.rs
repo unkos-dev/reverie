@@ -39,6 +39,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(local_login))
         .routes(routes!(setup_status))
         .routes(routes!(setup))
+        .routes(routes!(register))
         .routes(routes!(forgot_password))
         .routes(routes!(reset_password))
         .routes(routes!(logout))
@@ -532,6 +533,92 @@ async fn setup(
             Err(AppError::Validation("email already in use".to_owned()))
         }
         Err(user::BootstrapError::Db(e)) => Err(AppError::Internal(e.into())),
+    }
+}
+
+/// Request body for `POST /auth/register`. Explicit allow-list (no
+/// mass-assignment): a self-registrant cannot smuggle a role or child flag.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct RegisterRequest {
+    /// New account email (RFC 5322 addr-spec).
+    email: String,
+    /// Display name.
+    display_name: String,
+    /// Plaintext password; enforced against the password policy, then hashed.
+    password: String,
+}
+
+/// `POST /auth/register`: config-gated self-service registration.
+///
+/// Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.
+/// Mirrors the repeatable pre-auth handlers (`forgot_password`/`reset_password`),
+/// NOT `setup`: it is unauthenticated and repeatable, and each call fires an
+/// Argon2 hash plus an outbound HIBP request, so the per-source rate limit is
+/// enforced BEFORE any policy/hash/breach work.
+///
+/// THREAT (privilege escalation): a self-registered account is
+/// always an `adult`, never an admin or child. The DTO carries no role, and
+/// `create_local` is called with [`Role::Adult`]; admin and child accounts are
+/// minted only by an existing administrator. No session is established (parity
+/// with setup/reset: the session contract lives only at `/auth/local/login`).
+///
+/// # Errors
+/// - [`AppError::NotFound`] when self-registration or local auth is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
+/// - [`AppError::Validation`] (422) on a malformed email or a policy failure.
+/// - [`AppError::EmailConflict`] (409) when the email is already in use.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/register",
+    tag = "auth",
+    security(()),
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "Account created (no auto-login)"),
+        (status = 404, description = "Self-registration is disabled on this instance", body = crate::openapi::ProblemDetails),
+        (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn register(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<RegisterRequest>,
+) -> Result<StatusCode, AppError> {
+    if !state.config.self_registration_enabled || !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    if !user::is_addr_spec(&body.email) {
+        return Err(AppError::Validation("invalid email address".to_owned()));
+    }
+    crate::auth::password_policy::enforce_from_config(
+        &state.config,
+        &body.password,
+        &[&body.email, &body.display_name],
+    )
+    .await
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+
+    let phc = crate::auth::password::hash_password(body.password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    match user::create_local(
+        &state.pool,
+        &body.email,
+        &body.display_name,
+        crate::models::role::Role::Adult,
+        Some(&phc),
+    )
+    .await
+    {
+        Ok(_user) => Ok(StatusCode::CREATED),
+        Err(user::CreateUserError::EmailExists) => Err(AppError::EmailConflict),
+        Err(user::CreateUserError::Db(e)) => Err(AppError::Internal(e.into())),
     }
 }
 
@@ -2434,5 +2521,103 @@ mod tests {
             StatusCode::UNAUTHORIZED,
             "a session established before the reset is invalidated by it"
         );
+    }
+
+    // ---------- POST /auth/register ----------
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_creates_adult_when_enabled(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "self-reg@example.com",
+                "display_name": "Self Reg",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED);
+
+        // A self-registered account is an adult, never an admin or
+        // child, and it does not flip the first-admin gate.
+        let role: String = sqlx::query_scalar!(
+            r#"SELECT role::text AS "role!" FROM users WHERE lower(email) = lower($1)"#,
+            "self-reg@example.com",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(role, "adult");
+        assert!(
+            !crate::models::user::admin_exists(&app_pool).await.unwrap(),
+            "self-registration must not create an administrator"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_returns_404_when_disabled(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        // Base config has self_registration_enabled = false.
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "nope@example.com",
+                "display_name": "Nope",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_duplicate_email_returns_409(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let body = serde_json::json!({
+            "email": "dup-reg@example.com",
+            "display_name": "Dup",
+            "password": "correct-horse-battery-staple-7!",
+        });
+        assert_eq!(
+            server
+                .post("/auth/register")
+                .json(&body)
+                .await
+                .status_code(),
+            StatusCode::CREATED
+        );
+        assert_eq!(
+            server
+                .post("/auth/register")
+                .json(&body)
+                .await
+                .status_code(),
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_weak_password_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "weak-reg@example.com",
+                "display_name": "Weak",
+                "password": "password",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 }

@@ -223,6 +223,20 @@ pub async fn enforce(
     Ok(())
 }
 
+/// Convenience for request handlers: build the [`PasswordPolicy`] and the breach
+/// client from `config`, then [`enforce`]. The breach client carries the SSRF
+/// resolver (via [`crate::services::enrichment::http::api_client`]) so the
+/// operator-overridable HIBP URL cannot be aimed at an internal address.
+pub async fn enforce_from_config(
+    config: &Config,
+    password: &str,
+    user_inputs: &[&str],
+) -> Result<(), PolicyError> {
+    let policy = PasswordPolicy::from_config(config);
+    let client = crate::services::enrichment::http::api_client(&config.user_agent());
+    enforce(password, user_inputs, &policy, &client).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

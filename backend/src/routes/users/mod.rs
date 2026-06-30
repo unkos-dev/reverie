@@ -57,6 +57,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(update_user))
         .routes(routes!(update_account_status))
         .routes(routes!(admin_reset_password))
+        .routes(routes!(change_own_password))
 }
 
 /// Enforce the configured password policy (length bounds, zxcvbn floor, HIBP
@@ -69,9 +70,7 @@ async fn enforce_password_policy(
     password: &str,
     user_inputs: &[&str],
 ) -> Result<(), AppError> {
-    let policy = crate::auth::password_policy::PasswordPolicy::from_config(&state.config);
-    let client = crate::services::enrichment::http::api_client(&state.config.user_agent());
-    crate::auth::password_policy::enforce(password, user_inputs, &policy, &client)
+    crate::auth::password_policy::enforce_from_config(&state.config, password, user_inputs)
         .await
         .map_err(|e| AppError::Validation(e.to_string()))
 }
@@ -657,6 +656,92 @@ async fn admin_reset_password(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Body for `POST /api/v1/account/password`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct ChangePasswordRequest {
+    /// The caller's current password, re-verified before the change.
+    current_password: String,
+    /// The new password; enforced against the password policy.
+    new_password: String,
+}
+
+/// `POST /api/v1/account/password` — the authenticated caller changes their own
+/// password.
+///
+/// THREAT (IDOR): the target is ALWAYS the session user. The
+/// endpoint accepts no id from the path or body, so it cannot be turned against
+/// another account. It verifies the current password, enforces the policy on the
+/// new one, writes it, and bumps `session_version`, which forces re-auth of every
+/// session including the caller's own.
+///
+/// # Errors
+/// - [`AppError::Unauthorized`] when unauthenticated.
+/// - [`AppError::Validation`] (422) when the current password is wrong, the new
+///   password fails the policy, or the account has no local credential (it signs
+///   in through an identity provider).
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/account/password",
+    tag = "users",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn change_own_password(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    body: Result<axum::Json<ChangePasswordRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+    let user_id = current_user.user_id;
+
+    let credential = crate::models::local_credentials::find_by_user_id(&state.pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(|| {
+            AppError::Validation(
+                "this account has no password to change; it signs in through an identity provider"
+                    .to_owned(),
+            )
+        })?;
+
+    if crate::auth::password::verify_password(
+        req.current_password.as_bytes(),
+        &credential.password_hash,
+    )
+    .is_err()
+    {
+        return Err(AppError::Validation(
+            "current password is incorrect".to_owned(),
+        ));
+    }
+
+    enforce_password_policy(&state, &req.new_password, &[]).await?;
+    let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::local_credentials::set_password(&mut *tx, user_id, &phc)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::user::increment_session_version(&mut *tx, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;

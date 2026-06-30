@@ -1131,3 +1131,123 @@ async fn admin_reset_unknown_id_returns_404(pool: PgPool) {
         .await;
     test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }
+
+// ---------- POST /api/v1/account/password (self-service) ----------
+
+const OLD_PW: &str = "the old password one!";
+
+fn csrf_header(token: &str) -> (HeaderName, HeaderValue) {
+    (
+        HeaderName::from_static("x-csrf-token"),
+        HeaderValue::from_str(token).expect("ascii csrf token"),
+    )
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_succeeds_and_forces_reauth(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-happy",
+        "change-happy@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-happy@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": OLD_PW, "new_password": STRONG_PW}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    // session_version bumped: the current session is invalidated (forced re-auth).
+    assert_eq!(
+        server.get("/auth/me").await.status_code(),
+        StatusCode::UNAUTHORIZED,
+        "a self-service password change forces re-authentication"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_wrong_current_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-wrong",
+        "change-wrong@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-wrong@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": "not the password", "new_password": STRONG_PW}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_weak_new_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-weak",
+        "change-weak@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-weak@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": OLD_PW, "new_password": "password"}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_oidc_only_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    // An OIDC-provisioned account: a device token but no local credential.
+    let (_id, basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "change-oidc").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Basic auth is CSRF-exempt, so no token is needed.
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .json(&json!({"current_password": "anything", "new_password": STRONG_PW}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
