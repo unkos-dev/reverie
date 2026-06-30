@@ -70,6 +70,10 @@ pub const RATE_LIMITED: &str = "rate-limited";
 /// ([`crate::error::AppError::SetupAlreadyComplete`]). HTTP 409.
 pub const SETUP_ALREADY_COMPLETE: &str = "setup-already-complete";
 
+/// Account creation or self-registration rejected: the email is already in use
+/// ([`crate::error::AppError::EmailConflict`]). HTTP 409.
+pub const EMAIL_CONFLICT: &str = "email-conflict";
+
 /// Generic internal error (anything wrapped in
 /// [`crate::error::AppError::Internal`]). `detail` is a fixed
 /// non-leaking string; the inner cause is `tracing::error!`-logged

@@ -28,7 +28,10 @@ pub fn test_config() -> Config {
         password_min_length: 8,
         password_max_length: 256,
         password_min_zxcvbn_score: 2,
-        password_breach_check_enabled: true,
+        // Off in tests so endpoint tests exercise length + zxcvbn deterministically
+        // without an outbound HIBP call; the breach path is unit-tested against a
+        // wiremock loopback in auth::password_policy.
+        password_breach_check_enabled: false,
         password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
         self_registration_enabled: false,
         recovery_pin_ttl_secs: 900,
