@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Plugin, ResolvedConfig } from "vite";
+import type { Plugin, ResolvedConfig } from "vite-plus";
 import { cspHashPlugin } from "../csp-hash";
 
 // Type guard — transformIndexHtml can be a function or an object with
@@ -182,11 +182,11 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
 `;
     writeFileSync(join(root, "vite.config.ts"), viteConfig, "utf8");
 
-    // Re-use the parent project's node_modules for vite + plugin types
-    // by symlinking instead of a full `npm install` here. Direct fs call
-    // rather than `ln -s` via shell so CodeQL doesn't flag a shell command
-    // built from a non-constant path.
-    const parentNodeModules = resolve(thisDir, "..", "..", "node_modules");
+    // Re-use the workspace-root node_modules (npm workspaces hoists vite and
+    // its deps there, not into frontend/) by symlinking instead of a full
+    // `npm install` here. Direct fs call rather than `ln -s` via shell so
+    // CodeQL doesn't flag a shell command built from a non-constant path.
+    const parentNodeModules = resolve(thisDir, "..", "..", "..", "node_modules");
     symlinkSync(parentNodeModules, join(root, "node_modules"));
 
     execSync("npx vite build", { cwd: root, stdio: "pipe" });

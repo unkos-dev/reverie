@@ -6,22 +6,20 @@
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 
-# A passed file list is stripped of its leading `frontend/` so repo-root-relative
-# staged paths (the hook hand-off) resolve against this recipe's frontend/ CWD.
-#
-# oxlint over the frontend (delegates to the package.json `lint` script).
+# Runs from the repo root with repo-root-relative paths so the root vite.config.ts
+# lint overrides (scoped to frontend/**) match the linted paths literally, instead
+# of relying on oxlint resolving a frontend/-CWD-relative path against the root
+# config. A bare `vp lint frontend` lints the whole package.
 [group('js')]
 [positional-arguments]
-[working-directory('frontend')]
 oxlint *files:
     #!/usr/bin/env bash
     set -ueo pipefail
+    cd "$(git rev-parse --show-toplevel)"
     if [ "$#" -gt 0 ]; then
-        args=()
-        for f in "$@"; do args+=("${f#frontend/}"); done
-        npm run lint -- "${args[@]}"
+        npx --no-install vp lint --max-warnings 0 "$@"
     else
-        npm run lint
+        npx --no-install vp lint --max-warnings 0 frontend
     fi
 
 # With an explicit file list, scopes to those paths (leading `frontend/` stripped so
@@ -67,17 +65,18 @@ detect:
     npm run detect
 
 # Runs at the repo root over every oxfmt-owned type; never a dependency of
-# check/lint.
+# check/lint. vp's bundled oxfmt is the one formatter; config is the root
+# vite.config.ts fmt block.
 #
 # Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.
 [group('js')]
 fmt:
-    npx --no-install oxfmt --write --no-error-on-unmatched-pattern .
+    npx --no-install vp fmt --write --no-error-on-unmatched-pattern .
 
 # Verify whole-tree formatting without writing (the authoritative CI gate form).
 [group('js')]
 fmt-check:
-    npx --no-install oxfmt --check .
+    npx --no-install vp fmt --check .
 
 # Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.
 [group('js')]
@@ -125,7 +124,7 @@ test:
 test-coverage:
     npm run test:coverage
 
-# Frontend production build (tsc -b && vite build).
+# Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
 [group('js')]
 [working-directory('frontend')]
 build:

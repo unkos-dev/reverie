@@ -144,6 +144,7 @@ no translation pass.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [dependency-review allow-ghsas suppresses vite-alias false positives](2026-06-30-vite-plus-alias-dependency-review.md): adopted from PR #558; vp's `vite` npm alias makes the fork match real-vite advisories, so the gate suppresses 14 GHSAs; lifts when vp drops the alias or dependency-review resolves npm aliases
 - [Forwarded client-IP header trusted by name, not proxy identity](2026-06-27-forwarded-header-trust-unbound.md): adopted from PR #511 review; the login/recovery limiter honors trusted_client_ip_header without a peer-CIDR binding; lifts when forwarded-IP trust is bound to an allow-listed reverse-proxy CIDR
 - [Recovery-PIN single-active invariant is app-enforced, not DB-enforced](2026-06-27-single-active-recovery-pin.md): adopted from PR #511 review; rotate() supersedes in-tx but the schema lacks a partial unique index; lifts when the schema gains that index with race handling and a concurrency test
 - [no-plan-refs.sh misses subdirectories and capitalized labels](2026-06-26-no-plan-refs-gate-coverage-gaps.md): adopted from PR #511 review; the gate's scope glob doesn't recurse and its pattern is lowercase-only; lifts when it recurses + matches capitalized forms with a test

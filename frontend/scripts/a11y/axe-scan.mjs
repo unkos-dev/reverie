@@ -21,6 +21,7 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { urlMatches, verdict } from "./allowlist.mjs";
@@ -34,8 +35,10 @@ const TARGETS = (process.env.A11Y_TARGETS ?? "/design/system")
 // and, once an authenticated session is wired, the post-login Home/Library/Detail
 // views. Add them to A11Y_TARGETS (or the default above) as they ship.
 
+// Resolve axe-core through Node module resolution rather than a fixed relative
+// path: npm workspaces hoist it to the root node_modules, not frontend/.
 const AXE_SOURCE = readFileSync(
-  fileURLToPath(new URL("../../node_modules/axe-core/axe.min.js", import.meta.url)),
+  createRequire(import.meta.url).resolve("axe-core/axe.min.js"),
   "utf8",
 );
 

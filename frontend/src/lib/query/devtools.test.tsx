@@ -6,7 +6,7 @@
  * `@tanstack/react-query-devtools` doesn't crash the route tree.
  */
 import { render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vite-plus/test";
 
 vi.mock("@tanstack/react-query-devtools", () => ({
   ReactQueryDevtools: () => <div data-testid="devtools-mock">devtools</div>,

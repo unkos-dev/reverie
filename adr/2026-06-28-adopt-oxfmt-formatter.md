@@ -53,14 +53,13 @@ Keeping Prettier is rejected by the toolchain direction.
 The forcing details resolved as follows.
 
 - **Options come from the Prettier config**, mapped by `oxfmt --migrate prettier`
-  into `.oxfmtrc.json`: `semi`, double quotes, trailing commas everywhere, a
-  100-column print width, two-space indent, preserved prose wrapping, and Unix
-  line endings. `proseWrap` and `endOfLine` map directly in this oxfmt version,
-  so neither relies on `.editorconfig`.
-- **The ignore set ports into `.oxfmtrc.json` as `ignorePatterns`** rather than
-  staying in a file named for the removed tool. All thirteen entries hold,
-  including `CHANGELOG.md` and the four drift-gated generated files that a reflow
-  would corrupt.
+  and now held in the root `vite.config.ts` fmt block: `semi`, double quotes,
+  trailing commas everywhere, a 100-column print width, two-space indent,
+  preserved prose wrapping, and Unix line endings. `proseWrap` and `endOfLine`
+  map directly in this oxfmt version, so neither relies on `.editorconfig`.
+- **The ignore set lives in that same fmt block as `ignorePatterns`**, root-
+  relative, including `CHANGELOG.md` and the drift-gated generated files that a
+  reflow would corrupt.
 - **TOML formatting is new coverage.** Prettier has no TOML parser, so the four
   `.toml` files never passed through the old gate. oxfmt formats TOML, and only
   `Cargo.toml` drifts: it wraps one over-long dependency array and drops the
@@ -89,8 +88,8 @@ The forcing details resolved as follows.
 
 ### Confirmation
 
-`just js::fmt-check` runs `oxfmt --check .` and gates the CI `repo-lint` job;
-the pre-commit hook runs `oxfmt --write`. The four drift-gated generated files and `CHANGELOG.md` stay
+`just js::fmt-check` runs `vp fmt --check .` and gates the CI `repo-lint` job;
+the pre-commit hook runs `vp fmt --write`. The four drift-gated generated files and `CHANGELOG.md` stay
 byte identical through a full format pass. markdownlint, stylelint, and Vale keep
 their own passes; oxfmt owns only the format check.
 

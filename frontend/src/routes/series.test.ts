@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";

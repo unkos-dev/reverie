@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig } from "vitest/config";
+import { defineConfig, lazyPlugins, type PluginOption } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { parseAllowedHosts } from "./vite-plugins/allowed-hosts";
@@ -14,7 +14,12 @@ import { parseHmrConfig } from "./vite-plugins/hmr-config";
 const DEV_CSP = buildDevCsp(process.env.REVERIE_DEV_HOSTS);
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), cspHashPlugin()],
+  // fmt + lint are defined in the root vite.config.ts; this file is frontend
+  // build/server/test config only.
+  // vp lazyPlugins returns Plugin<any>[] which TS cannot reconcile with the
+  // PluginOption[] vite-plus expects across the rolldown-vite type graph
+  // (vitejs/vite#20948); the assertion is the documented vp-recommended fix.
+  plugins: lazyPlugins(() => [react(), tailwindcss(), cspHashPlugin()] as PluginOption[]),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
@@ -23,18 +28,20 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Route the dev-only design tree into its own chunk. main.tsx gates
-        // the import behind `if (import.meta.env.DEV)`; in production
+        // Route the dev-only design tree into its own named chunk. main.tsx
+        // gates the import behind `if (import.meta.env.DEV)`; in production
         // `import.meta.env.DEV` is replaced with literal `false`, the
-        // dynamic-import branch becomes dead code, Vite tree-shakes the
-        // chunk, and no `design-*.js` is emitted into `dist/assets/`.
-        // Substring-grepping the minified output is unreliable (Vite
-        // mangles names); the Level 4 gate in the plan checks for the
-        // chunk file's structural absence instead.
-        manualChunks(id) {
-          if (id.includes("/src/routes/design") || id.includes("/src/pages/design/")) {
-            return "design";
-          }
+        // dynamic-import branch becomes dead code, rolldown tree-shakes it,
+        // and no `design-*.js` is emitted into `dist/assets/`. The named
+        // group makes any leak surface as a `design-*.js` chunk, which
+        // scripts/assert-no-design-chunk.mjs fails the build on (substring-
+        // grepping minified output is unreliable, so the gate checks for the
+        // chunk file's structural presence instead). The `test` mirrors the
+        // prior manualChunks predicate: `routes/design` with no trailing
+        // slash matches design.tsx and the directory; `pages/design/` is
+        // directory-only.
+        codeSplitting: {
+          groups: [{ name: "design", test: /\/src\/(routes\/design|pages\/design\/)/ }],
         },
       },
     },

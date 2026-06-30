@@ -65,6 +65,12 @@ jobs:
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
+              # Root workspace inputs now drive the frontend job: the hoisted
+              # lockfile + shared overrides, and the root vite.config.ts that owns
+              # the frontend lint config.
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
               - 'Dockerfile'
               - '.github/workflows/ci.yml'
             staging:
@@ -104,9 +110,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'frontend/package.json'
-              - 'frontend/package-lock.json'
               - 'docs/package.json'
-              - 'docs/package-lock.json'
               - '.github/workflows/ci.yml'
             docs:
               # The generated reference artifacts (docs/openapi.json,
@@ -115,6 +119,10 @@ jobs:
               # backend trigger needed (a stale-but-unregenerated artifact is
               # caught by the backend job's drift tests instead).
               - 'docs/**'
+              # docs is an npm workspace, so the hoisted lockfile + shared
+              # overrides in the root manifest affect the docs build too.
+              - 'package.json'
+              - 'package-lock.json'
               - '.github/workflows/ci.yml'
               # docs.yml carries its own astro build; a docs.yml-only PR must
               # still run the docs gate here rather than first failing on the
@@ -594,6 +602,18 @@ jobs:
           # License policy is owned by cargo-deny (backend/deny.toml) to avoid a
           # second, drifting allowlist; this layer gates vulnerabilities only.
           fail-on-severity: moderate
+          # vp ships as a vite fork installed under the `vite` alias, so the lock
+          # entry reads `vite@0.2.1` and matches every historical real-vite
+          # advisory (0.2.1 sorts below all real versions). vite-plus-core 0.2.1 is
+          # vite 8.x underneath, which carries the fixes for these dev-server
+          # server.fs.deny / path-traversal issues, so they do not apply. Revisit on
+          # a vp version bump. See debt/2026-06-30-vite-plus-alias-dependency-review.md
+          allow-ghsas: >-
+            GHSA-353f-5xf4-qw67, GHSA-356w-63v5-8wf4, GHSA-4r4m-qw57-chr8,
+            GHSA-4w7w-66w2-5vf9, GHSA-64vr-g452-qvp3, GHSA-859w-5945-r5v3,
+            GHSA-9cwx-2883-4wfx, GHSA-c27g-q93r-2cwf, GHSA-fx2h-pf6j-xcff,
+            GHSA-mv48-hcvh-8jj8, GHSA-v6wh-96g9-6wx3, GHSA-vg6x-rcgg-rjx6,
+            GHSA-x574-m823-4x7w, GHSA-xcj6-pq6g-qj4x
 
   # UNK-245: catch syntax / context-availability violations in workflow
   # files before merge. Mirrors the `actionlint` invocation wired into
@@ -787,23 +807,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
+          cache: true
 
-      # license-checker reads node_modules, so each tree needs a real
-      # install. npx pin (-y, exact version) keeps the scanner itself
-      # deterministic; bump deliberately.
+      # One workspace install (vp). license-checker then walks each package's
+      # declared production deps, resolved from the hoisted root node_modules.
+      # npx pin (-y, exact version) keeps the scanner itself deterministic.
       - name: Check npm licenses (gating)
         run: |
           set -euo pipefail
+          vp install
           allow="MIT;Apache-2.0;ISC;0BSD;BSD-2-Clause;BSD-3-Clause;BlueOak-1.0.0;CC0-1.0;Python-2.0;Unlicense"
           rc=0
           for tree in . frontend docs; do
-            echo "::group::npm ci + license check (${tree})"
+            echo "::group::license check (${tree})"
             (
               cd "$tree"
-              npm ci
               npx -y license-checker-rseidelsohn@5.0.1 \
                 --production \
                 --excludePrivatePackages \
@@ -981,19 +1002,19 @@ jobs:
         run: just infra::yamllint
 
       # markdownlint-cli2 is npm-only (no standalone release binary), so unlike
-      # shellcheck/hadolint/typos it needs Node + an install. `npm ci` off the
+      # shellcheck/hadolint/typos it needs Node + an install. `vp install` off the
       # committed root lockfile keeps the CI version in lockstep with the
       # markdownlint-cli2 the lefthook pre-commit hook runs locally.
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
-          cache: npm
+          cache: true
 
-      - name: Install markdownlint-cli2
-        run: npm ci
+      - name: Install workspace
+        run: vp install
 
       # markdownlint is a js-plane recipe (it runs the npm-local markdownlint-cli2
-      # installed by the npm ci above). The .claude/ exclusion and pathspec scope
+      # installed by the vp install above). The .claude/ exclusion and pathspec scope
       # live in the js::markdownlint recipe.
       - name: Markdown lint (markdownlint-cli2)
         run: just js::markdownlint
@@ -1040,13 +1061,13 @@ jobs:
       - name: Prose lint (Vale)
         run: just infra::prose
 
-      # Authoritative formatting gate. The pre-commit hook runs `oxfmt --write`
+      # Authoritative formatting gate. The pre-commit hook runs `vp fmt --write`
       # on staged files locally, but pre-commit is bypassable (`--no-verify`)
       # and never runs on fork PRs; this whole-tree `--check` is the surface
       # that actually fails the build. The `js::fmt-check` recipe owns the
-      # invocation; the `ignorePatterns` in `.oxfmtrc.json` scope it (vendored
-      # shadcn/ui, archival .claude docs, build output). Uses the oxfmt from the
-      # `npm ci` above, in lockstep with local.
+      # invocation; the `ignorePatterns` in the root `vite.config.ts` fmt block
+      # scope it (vendored shadcn/ui, archival .claude docs, build output). Uses
+      # vp's bundled oxfmt from the `vp install` above, in lockstep with local.
       - name: Format check (oxfmt)
         run: just js::fmt-check
 
@@ -1121,14 +1142,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: true
 
+      # Install from the repo root: this job's default working-directory is
+      # frontend/, but the root prepare hook (lefthook install) resolves its
+      # binary from the root node_modules, so npm's cwd must be the root.
       - name: Install
-        run: npm ci
+        working-directory: ${{ github.workspace }}
+        run: vp install
 
       # just walks up to the repo-root justfile from this frontend/ working
       # directory, and each js:: recipe re-enters frontend/ via its own
@@ -1196,14 +1220,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: true
 
+      # Install from the repo root (job default working-directory is frontend/);
+      # the root prepare hook needs npm's cwd at the root to resolve lefthook.
       - name: Install
-        run: npm ci
+        working-directory: ${{ github.workspace }}
+        run: vp install
 
       # agent-browser is a verification-stack binary (hard-rule-8): pinned to the
       # workspace-image version, fail-closed (no `command -v` fallback). The local
@@ -1534,18 +1560,20 @@ jobs:
         with:
           persist-credentials: false
 
-      # No npm cache: this build mirrors docs.yml, which deliberately drops the
+      # No cache: this build mirrors docs.yml, which deliberately drops the
       # cache to close a cache-poisoning surface shared with the Pages deploy
       # path (zizmor cache-poisoning; UNK-327). The install is small.
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
+          cache: false
 
-      - name: Install docs dependencies
-        run: cd docs && npm ci
+      # docs is an npm workspace; one root install hoists its deps.
+      - name: Install workspace
+        run: vp install
 
       - name: Build Starlight
-        run: cd docs && npm run build
+        run: npm run build --workspace docs
 
       # Starlight builds with base path /reverie/, so internal links render as
       # root-relative /reverie/...; lychee resolves a root-relative /X against
@@ -1595,15 +1623,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
-          cache: npm
+          cache: true
 
       # Root lockfile carries @commitlint/cli + config-conventional — the
       # same pinned versions the local commit-msg hook runs.
       - name: Install commitlint
-        run: npm ci
+        run: vp install
 
       # Event-payload SHAs, not refs: base.sha pins the fork point even if
       # the base branch moves mid-run, and neither value is
