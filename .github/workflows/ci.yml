@@ -592,6 +592,18 @@ jobs:
           # License policy is owned by cargo-deny (backend/deny.toml) to avoid a
           # second, drifting allowlist; this layer gates vulnerabilities only.
           fail-on-severity: moderate
+          # vp ships as a vite fork installed under the `vite` alias, so the lock
+          # entry reads `vite@0.2.1` and matches every historical real-vite
+          # advisory (0.2.1 sorts below all real versions). vite-plus-core 0.2.1 is
+          # vite 8.x underneath, which carries the fixes for these dev-server
+          # server.fs.deny / path-traversal issues, so they do not apply. Revisit on
+          # a vp version bump. See debt/2026-06-30-vite-plus-alias-dependency-review.md
+          allow-ghsas: >-
+            GHSA-353f-5xf4-qw67, GHSA-356w-63v5-8wf4, GHSA-4r4m-qw57-chr8,
+            GHSA-4w7w-66w2-5vf9, GHSA-64vr-g452-qvp3, GHSA-859w-5945-r5v3,
+            GHSA-9cwx-2883-4wfx, GHSA-c27g-q93r-2cwf, GHSA-fx2h-pf6j-xcff,
+            GHSA-mv48-hcvh-8jj8, GHSA-v6wh-96g9-6wx3, GHSA-vg6x-rcgg-rjx6,
+            GHSA-x574-m823-4x7w, GHSA-xcj6-pq6g-qj4x
 
   # UNK-245: catch syntax / context-availability violations in workflow
   # files before merge. Mirrors the `actionlint` invocation wired into
