@@ -5502,7 +5502,7 @@
           },
           "new_password": {
             "type": "string",
-            "description": "New plaintext password; enforced against `password_min_length`."
+            "description": "New plaintext password; enforced against the full password policy."
           },
           "pin": {
             "type": "string",
