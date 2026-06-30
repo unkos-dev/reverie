@@ -1,6 +1,12 @@
 /**
  * `/register`: self-service account registration.
  *
+ * NOTE: intentionally not routed in `main.tsx`. Registration today creates an
+ * immediately-active account with no admin approval, so account creation stays
+ * admin-provisioned and this screen is dormant. It is kept here (and tested) as
+ * the starting point for an approval-gated request-access flow. Wire the route
+ * up only once registration is moderated.
+ *
  * Config-gated on the server (`self_registration_enabled`); a 404 means the
  * instance has it turned off, surfaced inline. A self-registered account is
  * always an adult. Registration does not establish a session (parity with

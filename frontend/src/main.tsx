@@ -85,14 +85,11 @@ const routes: RouteObject[] = [
       return { Component: mod.Component };
     },
   },
-  {
-    path: "/register",
-    errorElement: <RootErrorBoundary />,
-    lazy: async () => {
-      const mod = await import("./routes/auth-register");
-      return { Component: mod.Component };
-    },
-  },
+  // No `/register` route on purpose. The self-registration screen and its API
+  // client exist and are tested, but registration today is an unmoderated
+  // free-for-all (an enabled flag mints immediately-active adult accounts), so
+  // account creation stays admin-provisioned. Wire this route back up once
+  // registration becomes a request-access flow gated on admin approval.
   {
     path: "/account/password",
     errorElement: <RootErrorBoundary />,
