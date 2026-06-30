@@ -310,7 +310,9 @@ function CreateUserDialog({ onCreated }: CreateUserDialogProps): ReactElement {
     onSuccess: (user) => {
       toast.success(`Created ${user.display_name}.`);
       onCreated();
-      setOpen(false);
+      // Close through the same handler as a manual dismiss so the role selection
+      // resets; a bare setOpen(false) would leave it on the last-created role.
+      handleOpenChange(false);
     },
     onError: (err: Error) => {
       const detail = errorDetail(err);

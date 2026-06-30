@@ -169,11 +169,25 @@ pub async fn check_breached(client: &reqwest::Client, password: &str, base_url: 
     body.lines().any(|line| {
         let mut parts = line.splitn(2, ':');
         let candidate = parts.next().unwrap_or_default();
-        let count: u64 = parts
+        if !candidate.eq_ignore_ascii_case(suffix) {
+            return false;
+        }
+        // Only the row matching our hash suffix decides the verdict. A malformed
+        // count here would otherwise read as "not breached" with no trace, so log
+        // it and stay fail-open: an unreadable count is not a confirmed breach.
+        parts
             .next()
-            .and_then(|c| c.trim().parse().ok())
-            .unwrap_or(0);
-        count > 0 && candidate.eq_ignore_ascii_case(suffix)
+            .map(str::trim)
+            .and_then(|c| c.parse::<u64>().ok())
+            .map_or_else(
+                || {
+                    tracing::warn!(
+                        "HIBP returned an unparsable count for the matching suffix; failing open"
+                    );
+                    false
+                },
+                |count| count > 0,
+            )
     })
 }
 
@@ -291,6 +305,26 @@ mod tests {
         let server = MockServer::start().await;
         // The real suffix is present but with count 0 (padding): not a breach.
         let body = "1E4C9B93F3F0682250B6CF8331B7EE68FD8:0";
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+        )]
+        let client = reqwest::Client::new();
+        assert!(!check_breached(&client, "password", &server.uri()).await);
+    }
+
+    #[tokio::test]
+    async fn check_breached_malformed_count_for_matching_suffix_fails_open() {
+        let server = MockServer::start().await;
+        // The matching suffix is present but its count is not a number. An
+        // unreadable matching row must fail open (not breached), never silently
+        // miss without a trace.
+        let body = "1E4C9B93F3F0682250B6CF8331B7EE68FD8:not-a-number";
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_string(body))
             .mount(&server)
