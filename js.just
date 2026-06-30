@@ -6,22 +6,20 @@
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 
-# A passed file list is stripped of its leading `frontend/` so repo-root-relative
-# staged paths (the hook hand-off) resolve against this recipe's frontend/ CWD.
-#
-# oxlint over the frontend (delegates to the package.json `lint` script).
+# Runs from the repo root with repo-root-relative paths so the root vite.config.ts
+# lint overrides (scoped to frontend/**) match the linted paths literally, instead
+# of relying on oxlint resolving a frontend/-CWD-relative path against the root
+# config. A bare `vp lint frontend` lints the whole package.
 [group('js')]
 [positional-arguments]
-[working-directory('frontend')]
 oxlint *files:
     #!/usr/bin/env bash
     set -ueo pipefail
+    cd "$(git rev-parse --show-toplevel)"
     if [ "$#" -gt 0 ]; then
-        args=()
-        for f in "$@"; do args+=("${f#frontend/}"); done
-        npm run lint -- "${args[@]}"
+        npx --no-install vp lint --max-warnings 0 "$@"
     else
-        npm run lint
+        npx --no-install vp lint --max-warnings 0 frontend
     fi
 
 # With an explicit file list, scopes to those paths (leading `frontend/` stripped so
