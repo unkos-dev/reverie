@@ -94,4 +94,28 @@ describe("account-password", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(changeOwnPassword).not.toHaveBeenCalled();
   });
+
+  test("scopes aria-invalid to the field that failed", async () => {
+    renderChange();
+    const user = userEvent.setup();
+    const current = screen.getByLabelText("Current password");
+    const next = screen.getByLabelText("New password");
+
+    // A short new password marks only the new-password input, never current.
+    await user.type(current, "old-password-1");
+    await user.type(next, "short");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    await screen.findByRole("alert");
+    expect(next).toHaveAttribute("aria-invalid", "true");
+    expect(current).not.toHaveAttribute("aria-invalid");
+
+    // A blank current password marks only the current input, never new.
+    await user.clear(next);
+    await user.type(next, "new-password-2");
+    await user.clear(current);
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    await screen.findByRole("alert");
+    expect(current).toHaveAttribute("aria-invalid", "true");
+    expect(next).not.toHaveAttribute("aria-invalid");
+  });
 });

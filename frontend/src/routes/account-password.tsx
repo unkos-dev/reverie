@@ -22,10 +22,18 @@ import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
+/**
+ * A validation error tagged with the field it belongs to, so `aria-invalid` is
+ * scoped to the failing input. A server rejection covers more than one field
+ * (wrong current password or a rejected new one), so it stays `form` level and
+ * is announced through the alert without mislabelling a specific input.
+ */
+type FormError = { field: "current" | "new" | "form"; message: string };
+
 /** Route component for `/account/password`. */
 export function Component(): ReactElement {
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
 
   const changeMutation = useMutation({
     mutationFn: ({
@@ -44,7 +52,7 @@ export function Component(): ReactElement {
         err instanceof ApiError && err.detail !== ""
           ? err.detail
           : "Could not change the password.";
-      setError(message);
+      setError({ field: "form", message });
       toast.error(message);
     },
   });
@@ -55,12 +63,12 @@ export function Component(): ReactElement {
     const data = new FormData(e.currentTarget);
     const currentPassword = currentPasswordField.safeParse(formString(data, "current_password"));
     if (!currentPassword.success) {
-      setError("Enter your current password.");
+      setError({ field: "current", message: "Enter your current password." });
       return;
     }
     const newPassword = newPasswordField.safeParse(formString(data, "new_password"));
     if (!newPassword.success) {
-      setError("Use at least 8 characters for the new password.");
+      setError({ field: "new", message: "Use at least 8 characters for the new password." });
       return;
     }
     changeMutation.mutate({
@@ -88,7 +96,7 @@ export function Component(): ReactElement {
             type="password"
             autoComplete="current-password"
             required
-            aria-invalid={error !== null || undefined}
+            aria-invalid={error?.field === "current" || undefined}
           />
         </Field>
         <Field>
@@ -99,13 +107,13 @@ export function Component(): ReactElement {
             type="password"
             autoComplete="new-password"
             required
-            aria-invalid={error !== null || undefined}
+            aria-invalid={error?.field === "new" || undefined}
           />
           <FieldDescription>
             Use at least 8 characters. Avoid common words or passwords from known data breaches.
           </FieldDescription>
         </Field>
-        {error !== null ? <FieldError>{error}</FieldError> : null}
+        {error !== null ? <FieldError>{error.message}</FieldError> : null}
         <Button type="submit" disabled={changeMutation.isPending}>
           Change password
         </Button>

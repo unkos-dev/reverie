@@ -29,10 +29,18 @@ import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
+/**
+ * A validation error tagged with the field it belongs to, so `aria-invalid` is
+ * scoped to the failing input. A server rejection is not field-specific (for
+ * example a duplicate email or a disabled instance), so it stays `form` level
+ * and is announced through the alert without mislabelling a specific input.
+ */
+type FormError = { field: "display" | "email" | "password" | "form"; message: string };
+
 /** Route component for `/register`. */
 export function Component(): ReactElement {
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
 
   const registerMutation = useMutation({
     mutationFn: ({
@@ -51,7 +59,7 @@ export function Component(): ReactElement {
     onError: (err) => {
       const message =
         err instanceof ApiError && err.detail !== "" ? err.detail : "Could not create the account.";
-      setError(message);
+      setError({ field: "form", message });
       toast.error(message);
     },
   });
@@ -62,17 +70,17 @@ export function Component(): ReactElement {
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
     if (!displayName.success) {
-      setError("Enter a display name.");
+      setError({ field: "display", message: "Enter a display name." });
       return;
     }
     const email = emailField.safeParse(formString(data, "email"));
     if (!email.success) {
-      setError("Enter a valid email address.");
+      setError({ field: "email", message: "Enter a valid email address." });
       return;
     }
     const password = newPasswordField.safeParse(formString(data, "password"));
     if (!password.success) {
-      setError("Use at least 8 characters for the password.");
+      setError({ field: "password", message: "Use at least 8 characters for the password." });
       return;
     }
     registerMutation.mutate({
@@ -101,7 +109,7 @@ export function Component(): ReactElement {
             type="text"
             autoComplete="name"
             required
-            aria-invalid={error !== null || undefined}
+            aria-invalid={error?.field === "display" || undefined}
           />
         </Field>
         <Field>
@@ -112,7 +120,7 @@ export function Component(): ReactElement {
             type="email"
             autoComplete="email"
             required
-            aria-invalid={error !== null || undefined}
+            aria-invalid={error?.field === "email" || undefined}
           />
         </Field>
         <Field>
@@ -123,13 +131,13 @@ export function Component(): ReactElement {
             type="password"
             autoComplete="new-password"
             required
-            aria-invalid={error !== null || undefined}
+            aria-invalid={error?.field === "password" || undefined}
           />
           <FieldDescription>
             Use at least 8 characters. Avoid common words or passwords from known data breaches.
           </FieldDescription>
         </Field>
-        {error !== null ? <FieldError>{error}</FieldError> : null}
+        {error !== null ? <FieldError>{error.message}</FieldError> : null}
         <Button type="submit" disabled={registerMutation.isPending}>
           Create account
         </Button>
