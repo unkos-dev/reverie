@@ -8,6 +8,10 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      # docs is an npm workspace; its build resolves hoisted deps from the root
+      # lockfile, so a root manifest/lockfile change must redeploy the docs too.
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/docs.yml"
     tags:
       - "v*"
