@@ -166,12 +166,37 @@
       ],
       "default": null
     },
+    "password_breach_check_enabled": {
+      "description": "Whether the HIBP Pwned Passwords breach check runs at credential-setting\ntime (`REVERIE_PASSWORD_BREACH_CHECK_ENABLED`, default `true`). The check\nfails open: a HIBP outage never blocks account creation or login. Set\n`false` to skip the outbound request entirely (e.g. fully offline\ninstances).",
+      "type": "boolean",
+      "default": true
+    },
+    "password_breach_check_url": {
+      "description": "Base URL of the HIBP Pwned Passwords range API\n(`REVERIE_PASSWORD_BREACH_CHECK_URL`, default\n`https://api.pwnedpasswords.com/range`). Only the 5-character SHA-1\nprefix is appended as a path segment (k-anonymity); the password never\nleaves the process. Overridable so tests can point at a mock.",
+      "type": "string",
+      "default": "https://api.pwnedpasswords.com/range"
+    },
+    "password_max_length": {
+      "description": "Maximum length for a local-account password, in characters\n(`REVERIE_PASSWORD_MAX_LENGTH`, default `256`). A denial-of-service cap,\nnot a composition rule: NIST SP 800-63B forbids composition rules but\npermits a length cap, and an unbounded password is a CPU-exhaustion\nvector on the unauthenticated registration path (zxcvbn and Argon2 cost\nboth grow with length). Checked before any strength or breach work.",
+      "type": "integer",
+      "format": "uint",
+      "default": 256,
+      "minimum": 64
+    },
     "password_min_length": {
-      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). Enforced at first-run setup and password reset. Only the length\nfloor is enforced; breach (HIBP) and strength (zxcvbn) checks are planned\nfor a later release.",
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at registration, admin create/reset, and self-service\nchange.",
       "type": "integer",
       "format": "uint",
       "default": 8,
       "minimum": 8
+    },
+    "password_min_zxcvbn_score": {
+      "description": "Minimum acceptable zxcvbn strength score, 0..=4\n(`REVERIE_PASSWORD_MIN_ZXCVBN_SCORE`, default `2`). A candidate scoring\nbelow this is rejected as too weak, with the estimator's feedback\nreturned in the 422 response.",
+      "type": "integer",
+      "format": "uint8",
+      "default": 2,
+      "maximum": 4,
+      "minimum": 0
     },
     "port": {
       "description": "HTTP listen port (`REVERIE_PORT`, default `3000`).",
@@ -201,6 +226,11 @@
     "security": {
       "description": "Response-header policy (CSP, HSTS, reporting endpoint, dist\npath). `csp_*_header` fields are finalised by [`crate::run`]\nafter construction.",
       "$ref": "#/$defs/SecurityConfig"
+    },
+    "self_registration_enabled": {
+      "description": "Whether self-service account registration is enabled\n(`REVERIE_SELF_REGISTRATION_ENABLED`, default `false`). When off, the\n`/auth/register` endpoint returns 404. A self-registered account is\nalways a non-admin, non-child Adult; admin and child accounts are created\nonly by an existing administrator.",
+      "type": "boolean",
+      "default": false
     },
     "trusted_client_ip_header": {
       "description": "Optional forwarded-for header to trust for the client IP behind a reverse\nproxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset\nby default: the TCP peer is used. An unauthenticated forwarded header is\nattacker-spoofable, so it is honoured only when an operator names it.",
