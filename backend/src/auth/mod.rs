@@ -28,6 +28,9 @@ pub mod oidc;
 /// Argon2id password hashing/verification for local accounts.
 pub mod password;
 
+/// Password policy: length bounds, zxcvbn strength floor, HIBP breach check.
+pub mod password_policy;
+
 /// Per-source (per-IP) login rate limiting (keyed governor + client-IP helper).
 pub mod rate_limit;
 
