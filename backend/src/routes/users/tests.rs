@@ -1002,8 +1002,18 @@ async fn concurrent_cross_disable_keeps_one_enabled_admin(pool: PgPool) {
     let server_a = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let server_b = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    // A disables B and B disables A at the same time. The FOR UPDATE guard must
-    // let exactly one through, or the instance is bricked with zero admins.
+    // A disables B and B disables A at the same time. Exactly one must win, or
+    // the instance is bricked with zero admins. The loser is rejected one of two
+    // ways depending on scheduling, and both are correct:
+    //   - 422: both requests authenticate while still enabled, then serialize on
+    //     the `ORDER BY id FOR UPDATE` lock; the loser re-reads the now-smaller
+    //     enabled-admin set and the last-enabled-admin guard rejects it.
+    //   - 401: the winner commits first, disabling the loser's acting admin; the
+    //     loser's `CurrentUser` extractor then rejects at the auth boundary
+    //     before the handler (and its guard) ever runs.
+    // A 401 can only arise after a successful disable committed, so it still
+    // implies exactly one winner. The deterministic backstop is the
+    // enabled-admin recount below.
     let fut_a = server_a
         .put(&format!("/api/v1/users/{admin_b}/account-status"))
         .add_header(auth(&a_basic).0, auth(&a_basic).1)
@@ -1018,12 +1028,14 @@ async fn concurrent_cross_disable_keeps_one_enabled_admin(pool: PgPool) {
     let ok = codes.iter().filter(|&&c| c == StatusCode::OK).count();
     let rejected = codes
         .iter()
-        .filter(|&&c| c == StatusCode::UNPROCESSABLE_ENTITY)
+        .filter(|&&c| c == StatusCode::UNPROCESSABLE_ENTITY || c == StatusCode::UNAUTHORIZED)
         .count();
     assert_eq!(ok, 1, "exactly one cross-disable succeeds, got {codes:?}");
     assert_eq!(
         rejected, 1,
-        "the other is rejected by the last-enabled-admin guard, got {codes:?}"
+        "the other is rejected, either by the last-enabled-admin guard (422) or, when \
+         the acting admin was concurrently disabled by the winner, at the auth boundary \
+         (401); got {codes:?}"
     );
 
     let enabled_admins: i64 = sqlx::query_scalar!(
