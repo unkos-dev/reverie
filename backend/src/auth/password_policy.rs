@@ -1,7 +1,7 @@
 //! Password policy enforcement for local accounts.
 //!
 //! Combines three NIST SP 800-63B / OWASP ASVS V2.1 controls behind a single
-//! [`enforce`] entry point so every credential-setting path (registration,
+//! [`enforce`](crate::auth::password_policy::enforce) entry point so every credential-setting path (registration,
 //! admin create, admin reset, self-service change) applies the same gate:
 //!
 //! 1. Length bounds: a minimum floor and a maximum cap. The cap is a DoS guard,
