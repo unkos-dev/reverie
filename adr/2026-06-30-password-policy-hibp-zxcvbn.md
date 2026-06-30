@@ -11,11 +11,11 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Reverie accepts local passwords on four paths: self-registration, admin account
-creation, admin-driven reset, and a user changing their own password. Without a
-strength gate, every one of these accepts trivially weak or already-breached
-passwords, and a self-hosted instance with no security team is exactly where a
-weak family password does the most damage.
+Reverie accepts local passwords on five paths: self-registration, admin account
+creation, admin-driven reset, a user changing their own password, and PIN-based
+recovery. Without a strength gate, every one of these accepts trivially weak or
+already-breached passwords, and a self-hosted instance with no security team is
+exactly where a weak family password does the most damage.
 
 A password policy has to satisfy two forces at once. It must be strong by current
 guidance (NIST SP 800-63B and OWASP ASVS V2.1, which call for screening against
@@ -35,8 +35,9 @@ dependency of account creation?
   context-specific words, no composition rules, allow long passphrases.
 - Self-hosted posture: no third-party service may be a hard dependency of setting
   a password; offline and degraded-network instances must keep working.
-- One gate, four callers: registration, admin create, admin reset, and
-  self-service change must apply identical rules, with no path able to skip it.
+- One gate, every caller: registration, admin create, admin reset, self-service
+  change, and PIN recovery must apply identical rules, with no path able to skip
+  it.
 - Denial-of-service safety: strength scoring and hashing cost grows with input
   length, and one of the callers is reached unauthenticated.
 
@@ -82,11 +83,9 @@ bearing, so an offline or degraded instance still functions.
 
 ### Confirmation
 
-All four callers route through the single `enforce` seam in
+Every credential-setting path routes through the single `enforce` seam in
 `backend/src/auth/password_policy.rs`; none reimplements the checks. The length cap
-is asserted before any scoring or hashing. Unit tests cover the length floor and
-cap, the zxcvbn rejection of weak input, and the fail-open path (a strong password
-is accepted when the breach endpoint is unreachable).
+is asserted before any scoring or hashing.
 
 ## Pros and Cons of the Options
 

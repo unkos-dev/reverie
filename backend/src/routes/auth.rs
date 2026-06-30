@@ -736,7 +736,7 @@ struct ResetPasswordRequest {
     email: String,
     /// The recovery PIN from the host file.
     pin: String,
-    /// New plaintext password; enforced against `password_min_length`.
+    /// New plaintext password; enforced against the full password policy.
     new_password: String,
 }
 
@@ -783,9 +783,18 @@ async fn reset_password(
 
     let generic = || AppError::Validation("invalid or expired reset request".to_owned());
 
-    if body.new_password.chars().count() < state.config.password_min_length {
-        return Err(generic());
-    }
+    // The recovery path sets a credential, so it runs the same strength policy as
+    // every other credential-setting path: an attacker holding a PIN must not be
+    // able to install a weak or breached password here. Enforced before the email
+    // lookup, and a rejection is mapped to the generic error, so neither the
+    // outcome nor the timing reveals whether the account or PIN exists.
+    crate::auth::password_policy::enforce_from_config(
+        &state.config,
+        &body.new_password,
+        &[&body.email],
+    )
+    .await
+    .map_err(|_| generic())?;
 
     let user = user::find_by_email(&state.pool, &body.email)
         .await
@@ -2362,7 +2371,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "reset-bad@example.com",
                 "pin": "0000000000",
-                "new_password": "a brand new password",
+                "new_password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -2403,7 +2412,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "recover@example.com",
                 "pin": pin,
-                "new_password": "a brand new password",
+                "new_password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(
@@ -2417,7 +2426,7 @@ mod tests {
             .post("/auth/local/login")
             .json(&serde_json::json!({
                 "email": "recover@example.com",
-                "password": "a brand new password",
+                "password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(
@@ -2432,7 +2441,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "recover@example.com",
                 "pin": pin,
-                "new_password": "yet another password",
+                "new_password": "amber thistle vault ridge",
             }))
             .await;
         assert_eq!(
@@ -2441,6 +2450,62 @@ mod tests {
             "a consumed PIN is single-use"
         );
         // The successful reset already removed the PIN file; nothing to clean up.
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_rejects_a_weak_password(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let user_id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "weakset",
+            "weakset@example.com",
+            "the old password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let forgot = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "weakset@example.com"}))
+            .await;
+        assert_eq!(forgot.status_code(), StatusCode::OK);
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
+        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
+        let pin = contents
+            .lines()
+            .find_map(|l| l.strip_prefix("pin: "))
+            .expect("PIN line in file")
+            .to_owned();
+
+        // A valid PIN with a policy-failing password is rejected: the recovery
+        // path is not a bypass for the strength gate.
+        let weak = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "weakset@example.com",
+                "pin": &pin,
+                "new_password": "password",
+            }))
+            .await;
+        assert_eq!(weak.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // The rejection happened before the PIN was consumed, so the same PIN
+        // still completes a reset with a strong password.
+        let strong = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "weakset@example.com",
+                "pin": &pin,
+                "new_password": "lithe cobalt meadow drift",
+            }))
+            .await;
+        assert_eq!(
+            strong.status_code(),
+            StatusCode::OK,
+            "the PIN survived the rejected weak attempt"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2510,7 +2575,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "stale@example.com",
                 "pin": pin,
-                "new_password": "a brand new password",
+                "new_password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(reset.status_code(), StatusCode::OK);

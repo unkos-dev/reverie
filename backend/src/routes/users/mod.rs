@@ -633,7 +633,18 @@ async fn admin_reset_password(
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
-    enforce_password_policy(&state, &req.new_password, &[]).await?;
+    // Feed the target's own email and display name to the strength estimator so a
+    // password echoing them is penalized. The authoritative existence check is the
+    // FOR UPDATE below; this read only supplies the context words.
+    let target = crate::models::user::find_by_id(&state.pool, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::NotFound)?;
+    let mut context: Vec<&str> = vec![target.display_name.as_str()];
+    if let Some(email) = target.email.as_deref() {
+        context.push(email);
+    }
+    enforce_password_policy(&state, &req.new_password, &context).await?;
     let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
@@ -729,7 +740,17 @@ async fn change_own_password(
         ));
     }
 
-    enforce_password_policy(&state, &req.new_password, &[]).await?;
+    // Same context-word treatment as the other credential-setting paths: the
+    // caller's own email and display name penalize a password that echoes them.
+    let me = crate::models::user::find_by_id(&state.pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+    let mut context: Vec<&str> = vec![me.display_name.as_str()];
+    if let Some(email) = me.email.as_deref() {
+        context.push(email);
+    }
+    enforce_password_policy(&state, &req.new_password, &context).await?;
     let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
