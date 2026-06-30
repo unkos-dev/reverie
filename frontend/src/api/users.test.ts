@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { __resetCsrfTokenForTesting } from "./csrf";
-import { listUsers, updateUserRole, updateUserChildStatus, updateUser } from "./users";
+import {
+  listUsers,
+  updateUserRole,
+  updateUserChildStatus,
+  updateUser,
+  createUser,
+  setAccountStatus,
+  adminResetPassword,
+} from "./users";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -11,12 +19,20 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
+/** Parse the JSON request body recorded for a mocked fetch call. */
+function bodyJson(init: RequestInit | undefined): unknown {
+  const body = init?.body;
+  if (typeof body !== "string") throw new Error("expected a serialized JSON body");
+  return JSON.parse(body);
+}
+
 const STUB_USER = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   display_name: "Alice",
   email: "alice@example.com",
   role: "admin",
   is_child: false,
+  disabled: false,
   created_at: "2026-05-25T00:00:00Z",
   updated_at: "2026-05-25T00:00:00Z",
 };
@@ -140,5 +156,105 @@ describe("updateUser", () => {
   test("throws on schema mismatch", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ id: "bad" }));
     await expect(updateUser(STUB_USER.id, { display_name: "Bob" })).rejects.toThrow();
+  });
+});
+
+describe("createUser", () => {
+  test("sends POST with create body and parses the created user", async () => {
+    const created = {
+      ...STUB_USER,
+      display_name: "Carol",
+      email: "carol@example.com",
+      role: "adult",
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(created, { status: 201 }));
+    const result = await createUser({
+      email: "carol@example.com",
+      display_name: "Carol",
+      role: "adult",
+      password: "correct-horse-battery-staple",
+    });
+    expect(result.display_name).toBe("Carol");
+    expect(result.role).toBe("adult");
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/v1/users");
+    expect(call[1]?.method).toBe("POST");
+    expect(bodyJson(call[1])).toEqual({
+      email: "carol@example.com",
+      display_name: "Carol",
+      role: "adult",
+      password: "correct-horse-battery-staple",
+    });
+  });
+
+  test("throws on duplicate email (409)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        { type: "https://reverie.example/probs/email-conflict", status: 409, title: "Conflict" },
+        { status: 409, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(
+      createUser({
+        email: "taken@example.com",
+        display_name: "Carol",
+        role: "adult",
+        password: "correct-horse-battery-staple",
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("setAccountStatus", () => {
+  test("sends PUT with disabled body and parses the updated user", async () => {
+    const disabled = { ...STUB_USER, disabled: true };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(disabled));
+    const result = await setAccountStatus(STUB_USER.id, true);
+    expect(result.disabled).toBe(true);
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/account-status`);
+    expect(call[1]?.method).toBe("PUT");
+    expect(bodyJson(call[1])).toEqual({ disabled: true });
+  });
+
+  test("throws on non-2xx", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        {
+          type: "https://reverie.example/probs/validation",
+          status: 422,
+          title: "Validation Error",
+        },
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(setAccountStatus(STUB_USER.id, true)).rejects.toThrow();
+  });
+});
+
+describe("adminResetPassword", () => {
+  test("sends POST with new_password and resolves void on empty 200", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 200 }));
+    await expect(
+      adminResetPassword(STUB_USER.id, "correct-horse-battery-staple"),
+    ).resolves.toBeUndefined();
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/password-reset`);
+    expect(call[1]?.method).toBe("POST");
+    expect(bodyJson(call[1])).toEqual({ new_password: "correct-horse-battery-staple" });
+  });
+
+  test("throws on policy rejection (422)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        {
+          type: "https://reverie.example/probs/validation",
+          status: 422,
+          title: "Validation Error",
+        },
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
+      ),
+    );
+    await expect(adminResetPassword(STUB_USER.id, "weak")).rejects.toThrow();
   });
 });
