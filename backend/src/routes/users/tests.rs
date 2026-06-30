@@ -46,6 +46,34 @@ async fn list_users_as_admin_returns_all(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_users_serializes_timestamps_as_rfc3339_strings(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/users")
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    // The frontend user Zod schema parses created_at/updated_at as strings. Without
+    // the rfc3339 serde adapter, `time` serializes OffsetDateTime as an array and
+    // the client parse fails. Assert the wire format is a parseable RFC 3339 string.
+    let body: Vec<serde_json::Value> = r.json();
+    let created = body[0]["created_at"]
+        .as_str()
+        .expect("created_at is a JSON string");
+    let updated = body[0]["updated_at"]
+        .as_str()
+        .expect("updated_at is a JSON string");
+    let rfc3339 = &time::format_description::well_known::Rfc3339;
+    assert!(time::OffsetDateTime::parse(created, rfc3339).is_ok());
+    assert!(time::OffsetDateTime::parse(updated, rfc3339).is_ok());
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_users_as_adult_returns_403(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

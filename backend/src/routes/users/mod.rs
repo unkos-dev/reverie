@@ -89,8 +89,10 @@ struct UserResponse {
     /// Whether child content-visibility rules apply to this user.
     is_child: bool,
     /// Row creation timestamp.
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
     /// Last mutation timestamp.
+    #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
     /// Whether the account is soft-disabled (cannot authenticate). Derived from
     /// `disabled_at`; the timestamp itself is not exposed on the wire.
