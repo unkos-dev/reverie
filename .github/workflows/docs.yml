@@ -33,20 +33,21 @@ jobs:
         with:
           persist-credentials: false
 
-      # No npm cache here, despite docs/package-lock.json existing: this build
-      # job feeds the privileged Pages deploy, so a cache it shares with that
-      # path is a cache-poisoning surface (zizmor cache-poisoning, error). The
-      # docs dependency install is small, so dropping the cache costs little and
-      # closes the finding outright rather than accepting it (UNK-327).
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      # No cache here: this build job feeds the privileged Pages deploy, so a
+      # cache it shares with that path is a cache-poisoning surface (zizmor
+      # cache-poisoning, error). The docs dependency install is small, so dropping
+      # the cache costs little and closes the finding outright (UNK-327).
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
+          cache: false
 
-      - name: Install docs dependencies
-        run: cd docs && npm ci
+      # docs is an npm workspace; one root install hoists its deps.
+      - name: Install workspace
+        run: vp install
 
       - name: Build Starlight
-        run: cd docs && npm run build
+        run: npm run build --workspace docs
 
       # Link-check the *rendered* site (UNK-327). Hybrid posture: internal and
       # relative links are deterministic and fully under our control, so a

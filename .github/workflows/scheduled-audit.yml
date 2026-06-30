@@ -74,22 +74,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
           node-version: 24.16.0
+          cache: false
 
-      - name: Audit npm lockfiles
-        run: |
-          set -euo pipefail
-          rc=0
-          for tree in . frontend docs; do
-            echo "::group::npm audit (${tree})"
-            # Audit every tree before failing so one finding doesn't mask
-            # another tree's report.
-            (cd "$tree" && npm audit --audit-level=high) || rc=1
-            echo "::endgroup::"
-          done
-          exit "$rc"
+      # One root lockfile now covers all workspaces (frontend + docs), so a
+      # single audit reads the whole dependency tree.
+      - name: Audit npm lockfile
+        run: npm audit --audit-level=high
 
   # gitleaks (hot path) only sees the working tree / PR diff. This cron
   # sweeps full history daily so a history-buried or freshly-disclosed secret
