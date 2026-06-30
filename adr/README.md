@@ -61,3 +61,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md) (accepted, 2026-06-27)
 - [Adopt oxfmt, replacing Prettier](2026-06-28-adopt-oxfmt-formatter.md) (accepted, 2026-06-28)
 - [Adopt lefthook, replacing husky and lint-staged](2026-06-28-adopt-lefthook-git-hooks.md) (accepted, 2026-06-28)
+- [Adopt the Vite+ (vp) monorepo toolchain](2026-06-30-adopt-vite-plus-monorepo-toolchain.md) (accepted, 2026-06-30)
