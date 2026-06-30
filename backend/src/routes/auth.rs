@@ -215,6 +215,14 @@ async fn callback(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("user upsert failed: {e}")))?;
 
+    // THREAT (account lockout): a soft-disabled account cannot complete OIDC
+    // login. Reject after resolving the identity but before establishing any
+    // session. A first-time OIDC user is freshly provisioned (never disabled);
+    // this catches an existing account disabled after its initial link.
+    if user.disabled_at.is_some() {
+        return Err(AppError::Unauthorized);
+    }
+
     // Log the user in — cycles session ID (fixation prevention) and persists
     // user_id + session_version for per-request rehydration.
     crate::auth::session::login(&session, &user)
@@ -356,7 +364,17 @@ async fn local_login(
     // A correct password succeeds even during an active backoff (which it then
     // clears). Verify-first means backoff never blocks a legitimate login; it
     // only rejects continued *wrong* attempts.
-    let session_user = if verified { account } else { None };
+    //
+    // THREAT (account-state enumeration, CWE-204): a soft-disabled account with
+    // a CORRECT password must be indistinguishable from a wrong password. It
+    // falls through to the generic failed-login path below (same email-keyed
+    // throttle escalation, same generic 422, no session) rather than returning a
+    // distinct "account disabled" error, which would be a disabled-state oracle.
+    // The Argon2 verify above already ran, so login latency is preserved.
+    let session_user = match account {
+        Some(user) if verified && user.disabled_at.is_none() => Some(user),
+        _ => None,
+    };
     if let Some(user) = session_user {
         crate::models::login_throttle::reset(&state.pool, &body.email)
             .await
@@ -1956,6 +1974,117 @@ mod tests {
             unknown.text(),
             wrong.text(),
             "unknown-email and wrong-password bodies must be byte-identical"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_disabled_account_is_generic_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "disabled-login",
+            "disabled-login@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        crate::models::user::set_disabled(&app_pool, id, true)
+            .await
+            .expect("disable account");
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server.save_cookies();
+
+        // THREAT (account-state enumeration): a CORRECT password against a
+        // disabled account must be indistinguishable from a wrong password —
+        // generic 422 and no session established.
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "disabled-login@example.com",
+                "password": "a perfectly good password",
+            }))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a disabled account with the right password gets the generic failure"
+        );
+
+        let me = server.get("/auth/me").await;
+        assert_eq!(
+            me.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a disabled-account login must not establish a session"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn disabled_user_live_session_is_rejected(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "disabled-session",
+            "disabled-session@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server.save_cookies();
+
+        let login = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "disabled-session@example.com",
+                "password": "a perfectly good password",
+            }))
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(server.get("/auth/me").await.status_code(), StatusCode::OK);
+
+        crate::models::user::set_disabled(&app_pool, id, true)
+            .await
+            .expect("disable account");
+
+        // The live cookie is now worthless: session rehydration rejects a
+        // disabled user on the very next request.
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "disabling a user invalidates their live session immediately"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn disabled_user_device_token_is_rejected(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "disabled-token").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let before = server
+            .get("/auth/me")
+            .add_header(axum::http::header::AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            before.status_code(),
+            StatusCode::OK,
+            "the device token authenticates before the account is disabled"
+        );
+
+        crate::models::user::set_disabled(&app_pool, id, true)
+            .await
+            .expect("disable account");
+
+        let after = server
+            .get("/auth/me")
+            .add_header(axum::http::header::AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            after.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a disabled user's device token is inert on the Basic-auth path"
         );
     }
 

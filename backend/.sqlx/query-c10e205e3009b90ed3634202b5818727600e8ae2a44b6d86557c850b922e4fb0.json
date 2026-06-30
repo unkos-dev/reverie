@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE users SET display_name = $2, email = $3, updated_at = now() WHERE id = $1 RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\"",
+  "query": "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\", disabled_at FROM users WHERE lower(email) = lower($1)",
   "describe": {
     "columns": [
       {
@@ -134,12 +134,21 @@
             "name": "theme_preference"
           }
         }
+      },
+      {
+        "ordinal": 10,
+        "name": "disabled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "disabled_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Text",
         "Text"
       ]
     },
@@ -153,8 +162,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "47ce398bd6bd0aa87598e55bf0cf4b8099e47ef1f176d8482314466b0b488443"
+  "hash": "c10e205e3009b90ed3634202b5818727600e8ae2a44b6d86557c850b922e4fb0"
 }

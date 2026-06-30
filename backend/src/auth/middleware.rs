@@ -137,6 +137,12 @@ pub async fn verify_basic(
         .await
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or(AppError::Unauthorized)?;
+    // THREAT (account lockout): a soft-disabled account must not authenticate on
+    // any transport. Reject before the device-token scan so a disabled user's
+    // token is inert regardless of whether the token itself is still valid.
+    if u.disabled_at.is_some() {
+        return Err(AppError::Unauthorized);
+    }
     let tokens = device_token::list_for_user(&state.pool, user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -209,6 +215,20 @@ impl FromRequestParts<AppState> for CurrentUser {
             let user = user::find_by_id(&state.pool, user_id)
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
+            // THREAT (account lockout): a soft-disabled account is rejected on
+            // session rehydration independent of `session_version`. Disabling
+            // also bumps the version (so the check below would catch it too),
+            // but this explicit gate is defence-in-depth: a disabled user is
+            // never re-admitted from a live cookie. Tear the session down so it
+            // cannot keep re-loading until idle expiry.
+            if let Some(u) = &user
+                && u.disabled_at.is_some()
+            {
+                if let Err(e) = session.flush().await {
+                    tracing::warn!(error = %e, "session flush failed (disabled account)");
+                }
+                return Err(AppError::Unauthorized);
+            }
             // THREAT (force-logout): the session stores the `session_version`
             // captured at login; if `users.session_version` has since been
             // bumped (role change, security event) the stored copy is stale and

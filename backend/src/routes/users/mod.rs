@@ -72,6 +72,9 @@ struct UserResponse {
     created_at: OffsetDateTime,
     /// Last mutation timestamp.
     updated_at: OffsetDateTime,
+    /// Whether the account is soft-disabled (cannot authenticate). Derived from
+    /// `disabled_at`; the timestamp itself is not exposed on the wire.
+    disabled: bool,
 }
 
 /// Defensive bound on the users list (the justified
@@ -111,7 +114,8 @@ async fn list_users(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!"
              FROM users
             ORDER BY created_at ASC, id ASC
             LIMIT $1"#,
@@ -230,7 +234,8 @@ async fn update_role(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at"#,
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!""#,
         req.role.as_str(),
         id,
     )
@@ -345,7 +350,8 @@ async fn update_child_status(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at"#,
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!""#,
         req.is_child,
         new_role.as_str(),
         id,
@@ -564,7 +570,8 @@ async fn update_user(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!"
              FROM users
             WHERE id = $1"#,
         id,

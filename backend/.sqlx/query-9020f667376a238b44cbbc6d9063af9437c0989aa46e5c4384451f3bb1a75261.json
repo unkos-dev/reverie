@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE users\n              SET is_child = $1,\n                  role = ($2::text)::user_role,\n                  session_version = session_version + 1,\n                  updated_at = now()\n            WHERE id = $3\n        RETURNING id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at",
+  "query": "UPDATE users\n              SET is_child = $1,\n                  role = ($2::text)::user_role,\n                  session_version = session_version + 1,\n                  updated_at = now()\n            WHERE id = $3\n        RETURNING id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at,\n                  (disabled_at IS NOT NULL) AS \"disabled!\"",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,12 @@
             "name": "updated_at"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "disabled!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -106,8 +112,9 @@
       false,
       false,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "60dee79abadd599d5aec4930c4958cd7bdfd8e5b7d9ea104c36aacc2d3d0a2e2"
+  "hash": "9020f667376a238b44cbbc6d9063af9437c0989aa46e5c4384451f3bb1a75261"
 }

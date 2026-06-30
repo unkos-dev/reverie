@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\" FROM users WHERE id = $1",
+  "query": "SELECT id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at,\n                  (disabled_at IS NOT NULL) AS \"disabled!\"\n             FROM users\n            ORDER BY created_at ASC, id ASC\n            LIMIT $1",
   "describe": {
     "columns": [
       {
@@ -16,17 +16,6 @@
       },
       {
         "ordinal": 1,
-        "name": "oidc_subject?",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "oidc_subject"
-          }
-        }
-      },
-      {
-        "ordinal": 2,
         "name": "display_name",
         "type_info": "Text",
         "origin": {
@@ -37,7 +26,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "email",
         "type_info": "Text",
         "origin": {
@@ -48,7 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "role: Role",
         "type_info": {
           "Custom": {
@@ -70,7 +59,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "is_child",
         "type_info": "Bool",
         "origin": {
@@ -81,7 +70,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,7 +81,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,56 +92,27 @@
         }
       },
       {
-        "ordinal": 8,
-        "name": "session_version",
-        "type_info": "Int4",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "session_version"
-          }
-        }
-      },
-      {
-        "ordinal": 9,
-        "name": "theme_preference: ThemePreference",
-        "type_info": {
-          "Custom": {
-            "name": "theme_preference",
-            "kind": {
-              "Enum": [
-                "system",
-                "light",
-                "dark"
-              ]
-            }
-          }
-        },
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "theme_preference"
-          }
-        }
+        "ordinal": 7,
+        "name": "disabled!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Int8"
       ]
     },
     "nullable": [
       false,
-      true,
       false,
       true,
       false,
       false,
       false,
       false,
-      false,
-      false
+      null
     ]
   },
-  "hash": "bffc75c9119c9c573c52126b79333779dc6921e96211a99e6964aa4122dcab65"
+  "hash": "e9db0ef01b9d90c92bc2f2f4fc759267f4d756ca5928d04637e462d5c7423444"
 }

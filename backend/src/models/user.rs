@@ -28,6 +28,7 @@ struct UserRow {
     updated_at: OffsetDateTime,
     session_version: i32,
     theme_preference: ThemePreference,
+    disabled_at: Option<OffsetDateTime>,
 }
 
 /// Public user row exposed to handlers and serialised in API responses.
@@ -64,6 +65,11 @@ pub struct User {
     pub session_version: i32,
     /// Selected UI theme; see [`ThemePreference`].
     pub theme_preference: ThemePreference,
+    /// `Some(ts)` when the account is soft-disabled (disabled at `ts`); `None`
+    /// when active. Every auth-resolution path rejects a user with this set, so
+    /// a disabled account cannot log in, rehydrate a session, or authenticate a
+    /// device token.
+    pub disabled_at: Option<OffsetDateTime>,
 }
 
 impl From<UserRow> for User {
@@ -79,6 +85,7 @@ impl From<UserRow> for User {
             updated_at: row.updated_at,
             session_version: row.session_version,
             theme_preference: row.theme_preference,
+            disabled_at: row.disabled_at,
         }
     }
 }
@@ -93,7 +100,8 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
         UserRow,
         "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                 role AS \"role: Role\", is_child, created_at, updated_at, \
-                session_version, theme_preference AS \"theme_preference: ThemePreference\" \
+                session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                disabled_at \
          FROM users WHERE id = $1",
         id,
     )
@@ -136,7 +144,8 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, s
         UserRow,
         "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                 role AS \"role: Role\", is_child, created_at, updated_at, \
-                session_version, theme_preference AS \"theme_preference: ThemePreference\" \
+                session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                disabled_at \
          FROM users WHERE lower(email) = lower($1)",
         email,
     )
@@ -231,7 +240,8 @@ pub async fn create_first_admin(
          VALUES ($1, $2, 'admin'::user_role) \
          RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                    role AS \"role: Role\", is_child, created_at, updated_at, \
-                   session_version, theme_preference AS \"theme_preference: ThemePreference\"",
+                   session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                   disabled_at",
         display_name,
         email,
     )
@@ -258,6 +268,125 @@ pub async fn create_first_admin(
 
     tx.commit().await.map_err(BootstrapError::Db)?;
     Ok(User::from(row))
+}
+
+/// Typed outcome of a local-account create.
+#[derive(Debug)]
+pub enum CreateUserError {
+    /// The email collides with an existing account (`idx_users_email_lower`).
+    /// Maps to HTTP 409.
+    EmailExists,
+    /// Any other database failure.
+    Db(sqlx::Error),
+}
+
+/// Create a local (non-bootstrap) account, optionally with a password.
+///
+/// Mirrors [`create_first_admin`] without the `instance_bootstrap` singleton
+/// marker: this path is for accounts minted after the instance is already
+/// bootstrapped (admin create/invite and self-registration). When
+/// `password_hash` is `Some`, the `local_credentials` row is inserted in the
+/// same transaction so an account and its credential are atomic. `is_child` is
+/// derived from `role` to satisfy the `chk_child_role_sync` constraint.
+///
+/// `password_hash`, when present, is an Argon2id PHC ([`crate::auth::password`]);
+/// this never sees a clear password.
+///
+/// # Errors
+///
+/// [`CreateUserError::EmailExists`] on an email collision, or
+/// [`CreateUserError::Db`] for any other failure.
+#[allow(dead_code)] // Consumed by the admin-create + register routes in this PR
+pub async fn create_local(
+    pool: &PgPool,
+    email: &str,
+    display_name: &str,
+    role: Role,
+    password_hash: Option<&str>,
+) -> Result<User, CreateUserError> {
+    let is_child = role == Role::Child;
+    let mut tx = pool.begin().await.map_err(CreateUserError::Db)?;
+
+    let row = match sqlx::query_as!(
+        UserRow,
+        "INSERT INTO users (display_name, email, role, is_child) \
+         VALUES ($1, $2, ($3::text)::user_role, $4) \
+         RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
+                   role AS \"role: Role\", is_child, created_at, updated_at, \
+                   session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                   disabled_at",
+        display_name,
+        email,
+        role.as_str(),
+        is_child,
+    )
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            return Err(match &e {
+                sqlx::Error::Database(db) if db.is_unique_violation() => {
+                    CreateUserError::EmailExists
+                }
+                _ => CreateUserError::Db(e),
+            });
+        }
+    };
+
+    if let Some(phc) = password_hash {
+        sqlx::query!(
+            "INSERT INTO local_credentials (user_id, password_hash) VALUES ($1, $2)",
+            row.id,
+            phc,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(CreateUserError::Db)?;
+    }
+
+    tx.commit().await.map_err(CreateUserError::Db)?;
+    Ok(User::from(row))
+}
+
+/// Soft-disable or re-enable an account.
+///
+/// Disabling stamps `disabled_at = now()` AND bumps `session_version` in one
+/// statement so every live session for the target is invalidated immediately
+/// (the force-logout lever). Re-enabling clears `disabled_at`; it does not bump
+/// the version, since a disabled account holds no live sessions to preserve.
+///
+/// Takes an executor so the caller binds it to the same transaction as its
+/// last-enabled-admin guard (the account-status handler).
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the `UPDATE`.
+#[allow(dead_code)] // Consumed by the account-status route in this PR
+pub async fn set_disabled(
+    executor: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    disabled: bool,
+) -> Result<(), sqlx::Error> {
+    if disabled {
+        sqlx::query!(
+            "UPDATE users \
+             SET disabled_at = now(), session_version = session_version + 1, updated_at = now() \
+             WHERE id = $1",
+            user_id,
+        )
+        .execute(executor)
+        .await
+        .map(|_| ())
+    } else {
+        sqlx::query!(
+            "UPDATE users SET disabled_at = NULL, updated_at = now() WHERE id = $1",
+            user_id,
+        )
+        .execute(executor)
+        .await
+        .map(|_| ())
+    }
 }
 
 /// Fetch a user by OIDC identity `(issuer, subject)`, resolved through
@@ -429,7 +558,8 @@ pub async fn upsert_from_oidc(
              WHERE id = $1 \
              RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                        role AS \"role: Role\", is_child, created_at, updated_at, \
-                       session_version, theme_preference AS \"theme_preference: ThemePreference\"",
+                       session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                       disabled_at",
             user_id,
             display_name,
             email,
@@ -455,7 +585,8 @@ pub async fn upsert_from_oidc(
             UserRow,
             "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                     role AS \"role: Role\", is_child, created_at, updated_at, \
-                    session_version, theme_preference AS \"theme_preference: ThemePreference\" \
+                    session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                    disabled_at \
              FROM users WHERE id = $1",
             user_id,
         )
@@ -996,5 +1127,100 @@ mod tests {
                 .await
                 .expect("count admins");
         assert_eq!(admin_count, Some(1), "exactly one administrator exists");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_local_creates_adult_with_credential(pool: PgPool) {
+        let phc = crate::auth::password::hash_password(b"a strong password").expect("hash");
+        let user = create_local(&pool, "adult@example.com", "Adult", Role::Adult, Some(&phc))
+            .await
+            .expect("create adult");
+        assert_eq!(user.role, Role::Adult);
+        assert!(!user.is_child);
+        assert!(user.disabled_at.is_none());
+        let cred = crate::models::local_credentials::find_by_user_id(&pool, user.id)
+            .await
+            .expect("query credential");
+        assert!(
+            cred.is_some(),
+            "a password create writes a local credential"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_local_child_sets_is_child(pool: PgPool) {
+        let user = create_local(&pool, "child@example.com", "Child", Role::Child, None)
+            .await
+            .expect("create child");
+        assert_eq!(user.role, Role::Child);
+        assert!(
+            user.is_child,
+            "child role sets is_child to satisfy chk_child_role_sync"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_local_without_password_writes_no_credential(pool: PgPool) {
+        let user = create_local(&pool, "nopass@example.com", "NoPass", Role::Adult, None)
+            .await
+            .expect("create");
+        let cred = crate::models::local_credentials::find_by_user_id(&pool, user.id)
+            .await
+            .expect("query credential");
+        assert!(cred.is_none(), "no password means no credential row");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_local_duplicate_email_is_email_exists(pool: PgPool) {
+        create_local(&pool, "dup@example.com", "First", Role::Adult, None)
+            .await
+            .expect("first create");
+        // Case-insensitive collision via idx_users_email_lower.
+        let err = create_local(&pool, "DUP@example.com", "Second", Role::Adult, None)
+            .await
+            .expect_err("duplicate email rejected");
+        assert!(matches!(err, CreateUserError::EmailExists));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn set_disabled_stamps_timestamp_and_bumps_session_version(pool: PgPool) {
+        let user = create_local(&pool, "disable@example.com", "Dis", Role::Adult, None)
+            .await
+            .expect("create");
+        assert!(user.disabled_at.is_none());
+        let before = user.session_version;
+
+        set_disabled(&pool, user.id, true).await.expect("disable");
+
+        let reloaded = find_by_id(&pool, user.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+        assert!(reloaded.disabled_at.is_some(), "disable stamps disabled_at");
+        assert_eq!(
+            reloaded.session_version,
+            before + 1,
+            "disable bumps session_version to kill live sessions"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn set_disabled_false_clears_timestamp(pool: PgPool) {
+        let user = create_local(&pool, "reenable@example.com", "Re", Role::Adult, None)
+            .await
+            .expect("create");
+        set_disabled(&pool, user.id, true).await.expect("disable");
+        set_disabled(&pool, user.id, false)
+            .await
+            .expect("re-enable");
+
+        let reloaded = find_by_id(&pool, user.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+        assert!(
+            reloaded.disabled_at.is_none(),
+            "re-enable clears disabled_at"
+        );
     }
 }
