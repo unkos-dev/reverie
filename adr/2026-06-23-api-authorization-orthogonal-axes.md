@@ -137,6 +137,17 @@ All transports resolve through the same extractor to the same in-process
 identity and the same scope set, so authorization logic downstream is transport
 agnostic.
 
+**Unified credential format and indexed resolution.** The plaintext credential
+is `{prefix}{token_id}.{secret}` for Bearer and `{prefix}{token_id}:{secret}`
+for Basic, split into a username/password pair on the same delimiter.
+`token_id` is the device token's own row id, so both transports resolve
+through one indexed lookup by id. This replaces the prior per-user scan over
+hashed secrets and the constant-time comparison that scan needed to stay safe.
+A token also carries an optional expiry (`expires_at`); the same lookup
+excludes an expired, non-revoked token exactly as it excludes a revoked one,
+so expiry sits alongside revocation as a first-class exclusion, not a check
+bolted on afterward.
+
 **Resource-server validation (the RFC 9068 profile).** Inbound JWT access tokens
 issued by a configured IdP are validated with `jsonwebtoken` for the underlying
 signature, expiry, and not-before checks, and `jwks_client_rs` (built on
@@ -210,6 +221,14 @@ The three-axis model is enforced server-side only: scope on the credential,
 role and child status from the user record, ownership at the data layer. Any
 client-side representation of these checks is presentation and is never the
 enforcement point.
+
+Credential resolution for Bearer and Basic both key on the token id embedded
+in the credential, never on a secret comparison against every row a user
+owns. An authz-matrix test suite asserts, for every documented operation,
+that a credential missing any one of its required scopes gets a 403. It also
+asserts that an admin user presenting a read-scoped token is still blocked
+from a mutation despite their role, keeping scope enforcement independent of
+the role axis in practice, not only in this decision's prose.
 
 ## Pros and Cons of the Options
 

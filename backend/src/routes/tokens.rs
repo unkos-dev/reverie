@@ -30,7 +30,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(revoke_token))
 }
 
-/// Mass-assignment allow-list (codeguard #4): exactly `{name, scopes,
+/// Mass-assignment allow-list (codeguard #7): exactly `{name, scopes,
 /// expires_in_days}`, nothing else settable at mint.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct CreateTokenRequest {
