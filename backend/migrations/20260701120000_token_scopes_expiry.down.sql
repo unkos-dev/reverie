@@ -7,12 +7,12 @@ ALTER TABLE public.device_tokens DROP CONSTRAINT device_tokens_expires_at_ts_dec
 ALTER TABLE public.device_tokens DROP COLUMN expires_at;
 
 -- Revert scopes off the `scope` type before DROP TYPE, or the drop fails on
--- the column's dependency.
+-- the column's dependency. Direct cast, no subquery (see up.sql).
 ALTER TABLE public.device_tokens ALTER COLUMN scopes DROP DEFAULT;
 ALTER TABLE public.device_tokens
     ALTER COLUMN scopes
     TYPE text[]
-    USING (SELECT array_agg(x::text) FROM unnest(scopes) AS x);
+    USING scopes::text[];
 ALTER TABLE public.device_tokens ALTER COLUMN scopes SET DEFAULT '{read}';
 
 DROP TYPE public.scope;

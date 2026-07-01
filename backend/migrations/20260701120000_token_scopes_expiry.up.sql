@@ -13,15 +13,16 @@
 CREATE TYPE public.scope AS ENUM ('read', 'write', 'admin');
 
 -- Enum-rebuild dance (DROP DEFAULT before ALTER COLUMN TYPE, SET DEFAULT
--- after -- backend/CLAUDE.md). A direct `text[]::scope[]` cast is not
--- guaranteed to be registered for enum arrays, so the USING clause goes
--- through unnest+cast+array_agg, which is total over any text[] holding
--- valid label text (existing rows are all `{read}`, the column default).
+-- after -- backend/CLAUDE.md). The double cast applies the text->scope
+-- element cast across the array (ArrayCoerceExpr); a subquery-based USING
+-- (e.g. unnest+array_agg) is rejected by Postgres as an invalid transform
+-- expression for ALTER COLUMN TYPE. Existing rows are all `{read}`, so the
+-- cast is total over the enum's label set.
 ALTER TABLE public.device_tokens ALTER COLUMN scopes DROP DEFAULT;
 ALTER TABLE public.device_tokens
     ALTER COLUMN scopes
     TYPE public.scope[]
-    USING (SELECT array_agg(x::public.scope) FROM unnest(scopes) AS x);
+    USING scopes::text[]::public.scope[];
 ALTER TABLE public.device_tokens ALTER COLUMN scopes SET DEFAULT '{read}'::public.scope[];
 
 -- Optional token expiry. NULL = never expires, preserving current behaviour
