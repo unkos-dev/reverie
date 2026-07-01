@@ -6,7 +6,8 @@
 //! abandoned `axum-login` + `tower-sessions-sqlx-store` wrappers — ADR
 //! `2026-06-04-first-party-session-layer.md`), OIDC provider discovery and
 //! client construction ([`oidc`]), role-assertion helpers
-//! ([`middleware::CurrentUser`]), device-token generation and constant-time
+//! ([`middleware::CurrentUser`]), the credential-capability axis
+//! ([`scope::Scope`]), device-token generation and constant-time
 //! verification ([`token`]), a Basic-only extractor for OPDS routes
 //! ([`basic_only`]), and the FOUC theme-preference cookie ([`theme_cookie`]).
 //!
@@ -36,6 +37,9 @@ pub mod rate_limit;
 
 /// Forgot-password recovery: PIN generation + operator-readable host file.
 pub mod recovery;
+
+/// `Scope`: credential capability (`read`/`write`/`admin`), orthogonal to role.
+pub mod scope;
 
 /// Session login / logout helpers on `tower_sessions::Session`.
 pub mod session;
