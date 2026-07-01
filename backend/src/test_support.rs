@@ -376,12 +376,19 @@ pub mod db {
         .await
         .expect("promote to admin");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        crate::models::device_token::create(app_pool, user.id, "admin-test", &hash)
+        let token = crate::models::device_token::create(app_pool, user.id, "admin-test", &hash)
             .await
             .expect("create token");
 
-        let basic =
-            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        let basic = base64ct::Base64::encode_string(
+            format!(
+                "{}{}:{}",
+                crate::auth::token::TOKEN_PREFIX,
+                token.id,
+                plaintext
+            )
+            .as_bytes(),
+        );
         (user.id, format!("Basic {basic}"))
     }
 
@@ -583,12 +590,19 @@ pub mod db {
         .await
         .expect("demote to child");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        crate::models::device_token::create(app_pool, user.id, "child-test", &hash)
+        let token = crate::models::device_token::create(app_pool, user.id, "child-test", &hash)
             .await
             .expect("create token");
 
-        let basic =
-            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        let basic = base64ct::Base64::encode_string(
+            format!(
+                "{}{}:{}",
+                crate::auth::token::TOKEN_PREFIX,
+                token.id,
+                plaintext
+            )
+            .as_bytes(),
+        );
         (user.id, format!("Basic {basic}"))
     }
 
@@ -607,12 +621,19 @@ pub mod db {
         .await
         .expect("upsert user");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        crate::models::device_token::create(app_pool, user.id, "adult-test", &hash)
+        let token = crate::models::device_token::create(app_pool, user.id, "adult-test", &hash)
             .await
             .expect("create token");
 
-        let basic =
-            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        let basic = base64ct::Base64::encode_string(
+            format!(
+                "{}{}:{}",
+                crate::auth::token::TOKEN_PREFIX,
+                token.id,
+                plaintext
+            )
+            .as_bytes(),
+        );
         (user.id, format!("Basic {basic}"))
     }
 

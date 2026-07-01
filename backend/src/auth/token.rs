@@ -24,6 +24,13 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+/// Prefix on every issued device-token credential: `{TOKEN_PREFIX}{token_id}.{secret}`
+/// (Bearer) or `{TOKEN_PREFIX}{token_id}:{secret}` (Basic username/password
+/// split). Distinctive and greppable so a leaked token is caught by
+/// TruffleHog/gitleaks (already in CI); the `_pat_` marker mirrors GitHub's
+/// `github_pat_` convention.
+pub const TOKEN_PREFIX: &str = "rvpat_";
+
 fn sha256_hex(input: &[u8]) -> String {
     let digest = Sha256::digest(input);
     digest

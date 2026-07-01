@@ -241,7 +241,7 @@ mod tests {
         .await
         .expect("create user");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
+        let token = crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
             .await
             .expect("create token");
 
@@ -258,8 +258,15 @@ mod tests {
         let server = axum_test::TestServer::new(app);
 
         use base64ct::Encoding;
-        let basic =
-            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        let basic = base64ct::Base64::encode_string(
+            format!(
+                "{}{}:{}",
+                crate::auth::token::TOKEN_PREFIX,
+                token.id,
+                plaintext
+            )
+            .as_bytes(),
+        );
 
         (server, basic)
     }

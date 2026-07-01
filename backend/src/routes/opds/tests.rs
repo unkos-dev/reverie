@@ -611,7 +611,7 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     );
 }
 
-// ── SVG covers rasterize to PNG and serve (UNK-406) ──────────────────────
+// ── SVG covers rasterize to PNG and serve ────────────────────────────────
 
 async fn insert_manifestation_bytes(
     ingestion_pool: &PgPool,
@@ -773,13 +773,13 @@ async fn malformed_svg_cover_does_not_serve(pool: PgPool) {
     assert_eq!(count, 0, "no cover should be cached for a malformed SVG");
 }
 
-// ── Regression: cover dual-mount asymmetry (UNK-376 PR1) ─────────────────
+// ── Regression: cover dual-mount asymmetry ────────────────────────────────
 
-/// PR1 (`/api`→`/api/v1`, UNK-376): the cover handler is dual-mounted and the
-/// move is *asymmetric* — only the API mount shifted to `/api/v1`; the OPDS
-/// mount stayed at `/opds`. Both must keep serving the shared handler. A
-/// router-wiring slip (API mount left at the old prefix, or the OPDS mount
-/// moved too) would slip past the single-route `/api/v1/books` move test.
+/// The cover handler is dual-mounted and the mount is *asymmetric* — the API
+/// side lives at `/api/v1`, the OPDS side stays at `/opds`. Both must keep
+/// serving the shared handler. A router-wiring slip (API mount left at the
+/// old prefix, or the OPDS mount moved too) would slip past the single-route
+/// `/api/v1/books` move test.
 #[sqlx::test(migrations = "./migrations")]
 async fn cover_dual_mount_serves_api_v1_and_opds(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -1109,14 +1109,23 @@ async fn exact_page_size_has_no_next_link(pool: PgPool) {
 async fn wrong_password_returns_challenge(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (admin_id, _correct) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_admin_id, correct) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
 
-    // Craft a Basic header with the real user UUID but a wrong plaintext.
+    // Extract the real `{prefix}{token_id}` username from the valid Basic
+    // credential, then re-encode with a wrong plaintext secret — this
+    // exercises the "known token id, wrong secret" rejection specifically,
+    // rather than the "unknown/malformed id" path.
     use base64ct::Encoding;
+    let correct_b64 = correct.strip_prefix("Basic ").expect("Basic prefix");
+    let mut buf = vec![0u8; correct_b64.len()];
+    let decoded = base64ct::Base64::decode(correct_b64.as_bytes(), &mut buf).expect("decode basic");
+    let decoded_str = std::str::from_utf8(decoded).expect("utf8 basic");
+    let (username, _correct_secret) = decoded_str.split_once(':').expect("basic has a colon");
+
     let wrong_plaintext = "rev_0000000000000000000000000000000000000000";
     let bad_basic = format!(
         "Basic {}",
-        base64ct::Base64::encode_string(format!("{admin_id}:{wrong_plaintext}").as_bytes())
+        base64ct::Base64::encode_string(format!("{username}:{wrong_plaintext}").as_bytes())
     );
 
     let tmp = tempfile::TempDir::new().unwrap();
@@ -1149,7 +1158,7 @@ async fn opds_disabled_returns_404() {
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
 }
 
-// ── UNK-374: navigation feeds (authors / series) are keyset-paginated ──
+// ── Navigation feeds (authors / series) are keyset-paginated ─────────────
 
 /// Seed an author with one visible manifestation so the navigation
 /// feeds surface it.
