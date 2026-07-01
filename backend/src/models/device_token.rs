@@ -92,12 +92,20 @@ pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceTok
          FROM device_tokens \
          WHERE user_id = $1 AND revoked_at IS NULL \
            AND (expires_at IS NULL OR expires_at > now()) \
-         ORDER BY created_at DESC",
+         ORDER BY created_at DESC \
+         LIMIT $2",
         user_id,
+        MAX_ACTIVE_TOKENS_LISTED,
     )
     .fetch_all(pool)
     .await
 }
+
+/// Hard ceiling on rows returned by [`list_for_user`], satisfying the bounded
+/// -query invariant by construction. The per-user active-token cap
+/// (`MAX_TOKENS_PER_USER`) keeps the real count well below this; the bound is
+/// defence in depth against a future path that inserts past the cap.
+const MAX_ACTIVE_TOKENS_LISTED: i64 = 100;
 
 /// Resolve a token by its primary key: one indexed row, no per-user scan.
 /// Filters to active rows (not revoked, not expired) so a caller never needs
