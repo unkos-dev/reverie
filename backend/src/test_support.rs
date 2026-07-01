@@ -376,9 +376,19 @@ pub mod db {
         .await
         .expect("promote to admin");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        let token = crate::models::device_token::create(app_pool, user.id, "admin-test", &hash)
-            .await
-            .expect("create token");
+        // Mint with the full role-derived scope set (not the create() default
+        // `{read}`) so this token authenticates like the user's own session —
+        // scope-gated mutation tests would otherwise 403 on every write.
+        let token = crate::models::device_token::create_with_limit(
+            app_pool,
+            user.id,
+            "admin-test",
+            &hash,
+            crate::auth::scope::Scope::for_role(crate::models::role::Role::Admin),
+            None,
+        )
+        .await
+        .expect("create token");
 
         let basic = base64ct::Base64::encode_string(
             format!(
@@ -590,9 +600,18 @@ pub mod db {
         .await
         .expect("demote to child");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        let token = crate::models::device_token::create(app_pool, user.id, "child-test", &hash)
-            .await
-            .expect("create token");
+        // Role-derived scope set, not create()'s `{read}` default — see the
+        // admin helper above for why.
+        let token = crate::models::device_token::create_with_limit(
+            app_pool,
+            user.id,
+            "child-test",
+            &hash,
+            crate::auth::scope::Scope::for_role(crate::models::role::Role::Child),
+            None,
+        )
+        .await
+        .expect("create token");
 
         let basic = base64ct::Base64::encode_string(
             format!(
@@ -621,9 +640,18 @@ pub mod db {
         .await
         .expect("upsert user");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        let token = crate::models::device_token::create(app_pool, user.id, "adult-test", &hash)
-            .await
-            .expect("create token");
+        // Role-derived scope set, not create()'s `{read}` default — see the
+        // admin helper above for why.
+        let token = crate::models::device_token::create_with_limit(
+            app_pool,
+            user.id,
+            "adult-test",
+            &hash,
+            crate::auth::scope::Scope::for_role(crate::models::role::Role::Adult),
+            None,
+        )
+        .await
+        .expect("create token");
 
         let basic = base64ct::Base64::encode_string(
             format!(

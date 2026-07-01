@@ -103,11 +103,11 @@ struct TokenListItem {
     path = "/api/v1/tokens",
     tag = "tokens",
     request_body = CreateTokenRequest,
-    security(("session_cookie" = []), ("opds_basic" = [])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "A requested scope exceeds the caller's role ceiling", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Name empty / longer than 255 characters after trim, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -116,6 +116,8 @@ async fn create_token(
     State(state): State<AppState>,
     Json(body): Json<CreateTokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
+
     let name = body.name.trim();
     if name.is_empty() || name.chars().count() > 255 {
         return Err(AppError::Validation("name must be 1-255 characters".into()));
@@ -178,7 +180,7 @@ async fn create_token(
     get,
     path = "/api/v1/tokens",
     tag = "tokens",
-    security(("session_cookie" = []), ("opds_basic" = [])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "The caller's active device tokens, hash and plaintext elided", body = [TokenListItem]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
@@ -218,10 +220,11 @@ async fn list_tokens(
     path = "/api/v1/tokens/{id}",
     tag = "tokens",
     params(("id" = Uuid, Path, description = "Token row id")),
-    security(("session_cookie" = []), ("opds_basic" = [])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Token revoked"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller's credential lacks the write scope", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Token does not exist, belongs to another user, or is already revoked", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -230,6 +233,8 @@ async fn revoke_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
+
     let revoked = device_token::revoke(&state.pool, id, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -296,9 +301,19 @@ mod tests {
         .await
         .expect("create user");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        let token = crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
-            .await
-            .expect("create token");
+        // Role-derived scope set (not create()'s `{read}` default) so this
+        // token authenticates like the user's own session -- scope-gated
+        // mutation tests below (create/revoke) would otherwise 403.
+        let token = crate::models::device_token::create_with_limit(
+            &pool,
+            user.id,
+            "auth-token",
+            &hash,
+            crate::auth::scope::Scope::for_role(crate::models::role::Role::Adult),
+            None,
+        )
+        .await
+        .expect("create token");
 
         let state = crate::state::AppState {
             pool: pool.clone(),

@@ -83,7 +83,8 @@ fn spec_declares_security_model() {
     let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
     let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
 
-    // securitySchemes: session cookie (JSON data API) + HTTP Basic (OPDS).
+    // securitySchemes: session cookie (JSON data API) + HTTP Basic (OPDS) +
+    // HTTP Bearer (personal device tokens, S4).
     let schemes = &doc["components"]["securitySchemes"];
     assert_eq!(
         schemes["session_cookie"]["type"], "apiKey",
@@ -99,10 +100,16 @@ fn spec_declares_security_model() {
         "opds_basic is an http scheme"
     );
     assert_eq!(schemes["opds_basic"]["scheme"], "basic");
+    assert_eq!(
+        schemes["device_token_bearer"]["type"], "http",
+        "device_token_bearer is an http scheme"
+    );
+    assert_eq!(schemes["device_token_bearer"]["scheme"], "bearer");
 
-    // Hard-rule-6: both schemes must document the HTTPS-in-production requirement
-    // (Basic credentials / session cookies are cleartext-exposed otherwise).
-    for scheme in ["session_cookie", "opds_basic"] {
+    // Hard-rule-6: all three schemes must document the HTTPS-in-production
+    // requirement (Basic/Bearer credentials and session cookies are
+    // cleartext-exposed otherwise).
+    for scheme in ["session_cookie", "opds_basic", "device_token_bearer"] {
         let description = schemes[scheme]["description"].as_str().unwrap_or("");
         assert!(
             description.contains("HTTPS"),
@@ -147,14 +154,19 @@ fn spec_covers_library_routes() {
         assert!(paths.contains_key(path), "{path} documented");
     }
 
-    // Authed routes inherit the document-level session_cookie default — they must
-    // NOT carry an operation-level `security` key (inherit-by-omission, the
-    // deny-by-default contract; only public ops opt out). See `SecurityAddon`.
-    assert!(
-        doc["paths"]["/api/v1/books"]["get"]
-            .get("security")
-            .is_none(),
-        "GET /api/v1/books must inherit the global security default (no op-level security)"
+    // S4: every /api/v1 op now carries an explicit per-operation `security`
+    // declaring its required scope(s) — the authz-matrix test
+    // (tests/authz_matrix.rs) is the completeness backstop (deny-by-default:
+    // it fails if any /api/v1 op lacks a declared scope). This is a read, so
+    // it requires only `read` on all three schemes.
+    assert_eq!(
+        doc["paths"]["/api/v1/books"]["get"]["security"],
+        serde_json::json!([
+            {"session_cookie": ["read"]},
+            {"device_token_bearer": ["read"]},
+            {"opds_basic": ["read"]},
+        ]),
+        "GET /api/v1/books must declare its read-scope security requirement"
     );
 
     // Response DTO schemas are registered as components (auto-collected via routes!).
@@ -222,15 +234,28 @@ fn spec_covers_series_dashboard_routes() {
         assert!(paths.contains_key(path), "{path} documented");
     }
 
-    // All three are authed routes: they inherit the document-level session_cookie
-    // default and must NOT carry an operation-level `security` key (inherit-by-
-    // omission, the deny-by-default contract; only public ops opt out). The admin
-    // gate on dashboard is an authorization layer documented as a 403 below — not a
-    // separate security scheme.
-    for path in data_routes {
-        assert!(
-            doc["paths"][path]["get"].get("security").is_none(),
-            "GET {path} must inherit the global security default (no op-level security)"
+    // S4: every /api/v1 op declares its required scope(s) explicitly.
+    // series/{id} is a plain read (`read`); the dashboard ops are admin-only
+    // reads (`admin`) — the authz-matrix test (tests/authz_matrix.rs) is the
+    // completeness + orthogonality backstop.
+    assert_eq!(
+        doc["paths"]["/api/v1/series/{id}"]["get"]["security"],
+        serde_json::json!([
+            {"session_cookie": ["read"]},
+            {"device_token_bearer": ["read"]},
+            {"opds_basic": ["read"]},
+        ]),
+        "GET /api/v1/series/{{id}} must declare its read-scope security requirement"
+    );
+    for path in ["/api/v1/dashboard/stats", "/api/v1/dashboard/activity"] {
+        assert_eq!(
+            doc["paths"][path]["get"]["security"],
+            serde_json::json!([
+                {"session_cookie": ["admin"]},
+                {"device_token_bearer": ["admin"]},
+                {"opds_basic": ["admin"]},
+            ]),
+            "GET {path} must declare its admin-scope security requirement"
         );
     }
 

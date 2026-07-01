@@ -1,4 +1,4 @@
-//! OpenAPI 3.1 contract for the Reverie HTTP API (docs-as-done, UNK-370;
+//! OpenAPI 3.1 contract for the Reverie HTTP API (docs-as-done;
 //! `adr/2026-06-08-api-versioning-openapi.md`).
 //!
 //! The spec is generated code-first from the handlers: [`ApiDoc`] supplies the
@@ -7,10 +7,10 @@
 //! the merged document; the committed `docs/openapi.json` is drift-gated by
 //! `tests/gen_openapi.rs`, and `starlight-openapi` renders it on the docs site.
 //!
-//! Phase 1 is a single pilot module — `health` — proving the pipeline end to
-//! end. Removing a `#[utoipa::path]` from a handler wired via `routes!` is a
-//! compile error, which is the coverage mechanism the remaining route modules
-//! adopt module-by-module in phase 2.
+//! `health` was the original single pilot module proving the pipeline end to
+//! end; every route module now documents its operations the same way.
+//! Removing a `#[utoipa::path]` from a handler wired via `routes!` is a
+//! compile error, so a module cannot silently regress to undocumented.
 //!
 //! # Coupling with `crate::error` (intentional)
 //!
@@ -56,12 +56,18 @@ const API_VERSION: &str = "0.1.0";
 ///   `SessionManagerLayer` (tracks tower-sessions' default name, which the layer
 ///   does not override via `.with_name`). Covers the JSON data API.
 /// - `opds_basic` — HTTP Basic, for the OPDS feeds' Basic-auth path.
+/// - `device_token_bearer` — HTTP Bearer, the unified
+///   `{prefix}{token_id}.{secret}` personal-token credential
+///   ([`crate::auth::token::TOKEN_PREFIX`]). Resolves through the same
+///   [`crate::auth::middleware::resolve_device_token`] indexed lookup as
+///   `opds_basic` — both transports share one credential model.
 ///
-/// Both schemes carry a `description` documenting that HTTPS is mandatory in
-/// production — Basic credentials and session cookies are otherwise exposed in
-/// cleartext. Transport is enforced operationally (reverse-proxy TLS; the
-/// session cookie is `Secure` when `behind_https`), not by the spec, so the
-/// residual Checkov `CKV_OPENAPI_3` finding on `opds_basic` is a justified skip.
+/// All three schemes carry a `description` documenting that HTTPS is mandatory
+/// in production — Basic credentials, Bearer tokens, and session cookies are
+/// otherwise exposed in cleartext. Transport is enforced operationally
+/// (reverse-proxy TLS; the session cookie is `Secure` when `behind_https`),
+/// not by the spec, so the residual Checkov `CKV_OPENAPI_3` finding on
+/// `opds_basic` / `device_token_bearer` is a justified skip.
 ///
 /// See `adr/2026-06-08-api-versioning-openapi.md`.
 struct SecurityAddon;
@@ -89,6 +95,19 @@ impl Modify for SecurityAddon {
                         "HTTP Basic authentication for the OPDS feeds. MUST be used over \
                          HTTPS in production — Basic credentials are otherwise exposed in \
                          transit (Checkov CKV_OPENAPI_3).",
+                    ))
+                    .build(),
+            ),
+        );
+        components.add_security_scheme(
+            "device_token_bearer",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "Personal device-token credential (`{prefix}{token_id}.{secret}`). \
+                         MUST be used over HTTPS in production — the token is otherwise \
+                         exposed in transit (Checkov CKV_OPENAPI_3).",
                     ))
                     .build(),
             ),

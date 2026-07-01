@@ -14,6 +14,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use crate::auth::middleware::CurrentUser;
+use crate::auth::scope::Scope;
 use crate::error::AppError;
 use crate::models::settings::{
     Settings, UpdateSettings, has_restart_required_field, restart_required_fields, validate_update,
@@ -64,6 +65,7 @@ struct SettingsResponse {
     get,
     path = "/api/v1/settings",
     tag = "settings",
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -74,6 +76,7 @@ async fn get_settings(
     current_user: CurrentUser,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
 
     let settings = crate::services::settings::load(&state.pool)
@@ -115,6 +118,7 @@ struct PutSettingsResponse {
     path = "/api/v1/settings",
     tag = "settings",
     request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
+    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
     responses(
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -127,6 +131,7 @@ async fn put_settings(
     State(state): State<AppState>,
     body: Result<axum::Json<UpdateSettings>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
     current_user.require_admin()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 

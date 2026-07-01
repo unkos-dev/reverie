@@ -15,6 +15,7 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
+use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
 use crate::models::work;
@@ -82,6 +83,7 @@ struct MetadataRow {
     get,
     path = "/api/v1/manifestations/{id}/metadata",
     tag = "metadata",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
@@ -112,6 +114,7 @@ async fn get_manifestation_metadata(
     get,
     path = "/api/v1/works/{id}/metadata",
     tag = "metadata",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Work id")),
     responses(
         (status = 200, description = "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)", body = [MetadataRow]),
@@ -238,6 +241,7 @@ struct LockPayload {
     post,
     path = "/api/v1/manifestations/{id}/metadata/accept",
     tag = "metadata",
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
@@ -254,6 +258,7 @@ async fn accept_manifestation(
     Path(manifestation_id): Path<Uuid>,
     axum::Json(payload): axum::Json<VersionPayload>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
@@ -317,6 +322,7 @@ async fn accept_manifestation(
     post,
     path = "/api/v1/manifestations/{id}/metadata/reject",
     tag = "metadata",
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
@@ -332,6 +338,7 @@ async fn reject_manifestation(
     Path(manifestation_id): Path<Uuid>,
     axum::Json(payload): axum::Json<VersionPayload>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
@@ -374,6 +381,7 @@ async fn reject_manifestation(
     post,
     path = "/api/v1/manifestations/{id}/metadata/revert",
     tag = "metadata",
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = RevertPayload,
     responses(
@@ -390,6 +398,7 @@ async fn revert_manifestation(
     Path(manifestation_id): Path<Uuid>,
     axum::Json(payload): axum::Json<RevertPayload>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
@@ -455,6 +464,7 @@ async fn revert_manifestation(
     post,
     path = "/api/v1/manifestations/{id}/metadata/lock",
     tag = "metadata",
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
@@ -470,6 +480,7 @@ async fn lock_field(
     Path(manifestation_id): Path<Uuid>,
     axum::Json(payload): axum::Json<LockPayload>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let entity = parse_entity(&payload.entity_type)?;
     field_lock::lock(
@@ -497,6 +508,7 @@ async fn lock_field(
     post,
     path = "/api/v1/manifestations/{id}/metadata/unlock",
     tag = "metadata",
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
@@ -513,6 +525,7 @@ async fn unlock_field(
     Path(manifestation_id): Path<Uuid>,
     axum::Json(payload): axum::Json<LockPayload>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let entity = parse_entity(&payload.entity_type)?;
     let removed = field_lock::unlock(&state.pool, manifestation_id, entity, &payload.field_name)
@@ -896,6 +909,7 @@ impl UpdateMetadataFields {
     patch,
     path = "/api/v1/books/{id}/metadata",
     tag = "metadata",
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body(content = UpdateMetadataRequest, description = "RFC 7396 JSON Merge Patch under a `fields` envelope: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
@@ -913,6 +927,7 @@ async fn update_book_metadata(
     Path(manifestation_id): Path<Uuid>,
     body: Result<axum::Json<UpdateMetadataRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     let fields = req.fields.populated();
