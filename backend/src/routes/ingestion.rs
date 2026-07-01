@@ -45,7 +45,7 @@ struct ScanResponse {
     post,
     path = "/api/v1/ingestion/scan",
     tag = "ingestion",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Scan complete; per-outcome file counts. Admin only.", body = ScanResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -56,7 +56,7 @@ async fn scan(
     current_user: CurrentUser,
     State(state): State<AppState>,
 ) -> Result<Json<ScanResponse>, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
 
     let result = services::ingestion::scan_once(&state.config, &state.ingestion_pool)

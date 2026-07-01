@@ -45,29 +45,30 @@ const API_VERSION: &str = "0.1.0";
 ///
 /// THREAT: documentation-time fail-safe for the documented surface. A handler
 /// wired through `pilot_router` that omits a per-operation `security` annotation
-/// inherits the global requirement and documents-as-authed — never as-public —
+/// inherits the global requirement and documents-as-authed, never as-public,
 /// so an undocumented-public endpoint cannot silently enter the contract (OWASP
 /// fail-safe defaults; matches the Checkov `CKV_OPENAPI_4` shape). Routes outside
 /// `pilot_router` are not in the spec at all; runtime enforcement for every route
-/// lives in `auth/` middleware — the spec is a contract signal, not a gate.
+/// lives in `auth/` middleware. The spec is a contract signal, not a gate.
 ///
 /// Schemes:
-/// - `session_cookie` — `apiKey` in cookie `id`, the session cookie set by the
+/// - `session_cookie`: `apiKey` in cookie `id`, the session cookie set by the
 ///   `SessionManagerLayer` (tracks tower-sessions' default name, which the layer
 ///   does not override via `.with_name`). Covers the JSON data API.
-/// - `opds_basic` — HTTP Basic, for the OPDS feeds' Basic-auth path.
-/// - `device_token_bearer` — HTTP Bearer, the unified
+/// - `opds_basic`: HTTP Basic, for the OPDS feeds' Basic-auth path.
+/// - `device_token_bearer`: HTTP Bearer, the unified
 ///   `{prefix}{token_id}.{secret}` personal-token credential
 ///   ([`crate::auth::token::TOKEN_PREFIX`]). Resolves through the same
-///   [`crate::auth::middleware::resolve_device_token`] indexed lookup as
-///   `opds_basic` — both transports share one credential model.
+///   `resolve_device_token` indexed lookup as `opds_basic`; both transports
+///   share one credential model.
 ///
 /// All three schemes carry a `description` documenting that HTTPS is mandatory
-/// in production — Basic credentials, Bearer tokens, and session cookies are
-/// otherwise exposed in cleartext. Transport is enforced operationally
+/// in production, since Basic credentials, Bearer tokens, and session cookies
+/// are otherwise exposed in cleartext. Transport is enforced operationally
 /// (reverse-proxy TLS; the session cookie is `Secure` when `behind_https`),
-/// not by the spec, so the residual Checkov `CKV_OPENAPI_3` finding on
-/// `opds_basic` / `device_token_bearer` is a justified skip.
+/// not by the spec, so the residual cleartext-credential findings are justified
+/// skips: `CKV_OPENAPI_3` on `opds_basic` (HTTP Basic) and `CKV_OPENAPI_20` on
+/// `device_token_bearer` (HTTP Bearer). Both are registered in `.checkov.yaml`.
 ///
 /// See `adr/2026-06-08-api-versioning-openapi.md`.
 struct SecurityAddon;
@@ -93,7 +94,7 @@ impl Modify for SecurityAddon {
                     .scheme(HttpAuthScheme::Basic)
                     .description(Some(
                         "HTTP Basic authentication for the OPDS feeds. MUST be used over \
-                         HTTPS in production — Basic credentials are otherwise exposed in \
+                         HTTPS in production; Basic credentials are otherwise exposed in \
                          transit (Checkov CKV_OPENAPI_3).",
                     ))
                     .build(),
@@ -106,8 +107,8 @@ impl Modify for SecurityAddon {
                     .scheme(HttpAuthScheme::Bearer)
                     .description(Some(
                         "Personal device-token credential (`{prefix}{token_id}.{secret}`). \
-                         MUST be used over HTTPS in production — the token is otherwise \
-                         exposed in transit (Checkov CKV_OPENAPI_3).",
+                         MUST be used over HTTPS in production; the token is otherwise \
+                         exposed in transit (Checkov CKV_OPENAPI_20).",
                     ))
                     .build(),
             ),

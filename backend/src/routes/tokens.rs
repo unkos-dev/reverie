@@ -97,8 +97,8 @@ struct TokenListItem {
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the trimmed name is empty or longer than
-///   255 characters, `expires_in_days` is not one of 30/60/90/365, or the
-///   caller already has 10 active tokens.
+///   255 characters, the scope set is empty, `expires_in_days` is not one of
+///   30/60/90/365, or the caller already has 10 active tokens.
 /// - [`AppError::Forbidden`] when a requested scope exceeds the caller's
 ///   role ceiling (e.g. a non-admin requesting `admin`).
 /// - [`AppError::Internal`] on database errors.
@@ -112,7 +112,7 @@ struct TokenListItem {
         (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Name empty / longer than 255 characters after trim, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn create_token(
@@ -127,8 +127,26 @@ async fn create_token(
         return Err(AppError::Validation("name must be 1-255 characters".into()));
     }
 
+    // A zero-capability token is never useful and is refused at the auth seam
+    // anyway (see `resolve_device_token`'s read-floor check); reject it here so
+    // the caller gets a 422 explaining why rather than minting a dead credential.
+    if body.scopes.is_empty() {
+        return Err(AppError::Validation(
+            "at least one scope is required".into(),
+        ));
+    }
+
+    // THREAT (privilege escalation): a token may never carry more capability
+    // than its owner's role permits ([`CurrentUser::may_grant_scope`]). Log a
+    // rejected grant so repeated attempts to mint above the role ceiling leave
+    // a server-side signal.
     for scope in &body.scopes {
         if !current_user.may_grant_scope(*scope) {
+            tracing::warn!(
+                user_id = %current_user.user_id,
+                requested_scope = %scope,
+                "device_token mint rejected: requested scope exceeds role ceiling"
+            );
             return Err(AppError::Forbidden);
         }
     }

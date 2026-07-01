@@ -1,11 +1,8 @@
--- Token scope + expiry storage (S4 of the auth/authz consolidation arc).
+-- Token scope and expiry storage for device tokens.
 --
--- Type + column seam only: converts the column-only `device_tokens.scopes
--- text[]` placeholder (added in S1) to a Postgres-enum-backed `scope[]`, and
--- adds an optional `expires_at`. No Rust struct/query reads either yet -- this
--- commit exists solely so the migration can be applied ahead of the query
--- code that reads it (sqlx same-commit migration+query deadlock, see
--- CLAUDE.local.md). See adr/2026-06-23-api-authorization-orthogonal-axes.md.
+-- Converts the placeholder `device_tokens.scopes text[]` column to a
+-- Postgres-enum-backed `scope[]`, and adds an optional `expires_at`.
+-- See adr/2026-06-23-api-authorization-orthogonal-axes.md.
 
 -- Credential capability, orthogonal to role. Mirrors the `user_role` /
 -- `identity_provider` PG-enum convention so an invalid scope is

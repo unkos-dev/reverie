@@ -32,11 +32,12 @@ pub struct DeviceToken {
     /// Row insert timestamp.
     pub created_at: OffsetDateTime,
     /// `now()` of revocation; `None` while the token is active.
-    /// [`list_for_user`] filters on `revoked_at IS NULL`.
+    /// [`list_for_user`] and [`find_by_id`] return only active rows
+    /// (not revoked and not expired).
     pub revoked_at: Option<OffsetDateTime>,
     /// Capabilities this token carries. Defaults to `{read}` at the DB
-    /// level; a token minted after S4 carries the explicit scopes chosen at
-    /// mint, bounded by the owner's role ceiling ([`Scope::grantable_by`]).
+    /// level; a token carries the explicit scopes chosen at mint, bounded by
+    /// the owner's role ceiling ([`Scope::grantable_by`]).
     pub scopes: Vec<Scope>,
     /// Optional expiry. `None` = never expires. [`find_by_id`] filters out
     /// expired rows.
@@ -73,7 +74,12 @@ pub async fn create(
     .await
 }
 
-/// List active (non-revoked) tokens for a user.
+/// List active tokens for a user: not revoked and not expired.
+///
+/// The active-row predicate matches [`find_by_id`] and the
+/// [`create_with_limit`] cap count, so the list reflects exactly the tokens
+/// that can still authenticate and that count against the per-user cap. An
+/// expired token is inert (it can no longer authenticate) and is omitted.
 ///
 /// # Errors
 ///
@@ -85,6 +91,7 @@ pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceTok
                 scopes AS \"scopes: Vec<Scope>\", expires_at \
          FROM device_tokens \
          WHERE user_id = $1 AND revoked_at IS NULL \
+           AND (expires_at IS NULL OR expires_at > now()) \
          ORDER BY created_at DESC",
         user_id,
     )
@@ -97,7 +104,7 @@ pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceTok
 /// a second existence check.
 ///
 /// Backs the unified Bearer/Basic credential resolution (both transports
-/// converge on this lookup) — see `auth::middleware::verify_basic` /
+/// converge on this lookup); see `auth::middleware::verify_basic` /
 /// `verify_bearer`.
 ///
 /// # Errors
@@ -190,9 +197,8 @@ pub async fn create_with_limit(
     .map_err(CreateError::Db)?;
 
     // Expiry predicate matches find_by_id's active-row filter: an expired
-    // but unrevoked token no longer counts against the cap (S1 fix — the
-    // count previously filtered on revoked_at only, so an expired token
-    // permanently ate a cap slot).
+    // but unrevoked token no longer counts against the cap. Filtering on
+    // revoked_at alone would let an expired token permanently eat a cap slot.
     let count = sqlx::query_scalar!(
         "SELECT count(*) AS \"count!\" FROM device_tokens \
          WHERE user_id = $1 AND revoked_at IS NULL \
@@ -229,7 +235,7 @@ pub async fn create_with_limit(
 
 /// Update `last_used_at`, debounced SQL-side to at most one UPDATE per token
 /// per 5 minutes. The WHERE predicate turns every call into a no-op when a
-/// previous update landed within the window — single source of truth, atomic
+/// previous update landed within the window; single source of truth, atomic
 /// under concurrent requests, no Rust-side policy to unit-test.
 ///
 /// # Errors
@@ -358,7 +364,7 @@ mod tests {
         .await
         .expect("create user");
 
-        // Saturate then revoke them all — revoked tokens must not block creation.
+        // Saturate then revoke them all; revoked tokens must not block creation.
         let cap = usize::try_from(MAX_TOKENS_PER_USER).expect("MAX_TOKENS_PER_USER fits usize");
         for i in 0..cap {
             let t = create_with_limit(
@@ -406,7 +412,7 @@ mod tests {
         .expect("fetch first");
         let first = first.expect("first last_used_at not null");
 
-        // Sleep 50ms then update again — the SQL predicate should veto the write
+        // Sleep 50ms then update again; the SQL predicate should veto the write
         // because last_used_at < now() - interval '5 minutes' is false.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         update_last_used(&pool, token.id).await.expect("second");
@@ -484,9 +490,9 @@ mod tests {
         .await
         .expect("create user");
 
-        // Saturate with already-expired tokens. S1 fix regression: the cap
-        // count previously filtered on revoked_at only, so an
-        // expired-but-unrevoked token permanently ate a slot.
+        // Saturate with already-expired tokens. Regression guard: the cap
+        // count must exclude expired rows, else an expired-but-unrevoked
+        // token permanently eats a slot.
         let cap = usize::try_from(MAX_TOKENS_PER_USER).expect("MAX_TOKENS_PER_USER fits usize");
         let expired = OffsetDateTime::now_utc() - Duration::days(1);
         for i in 0..cap {

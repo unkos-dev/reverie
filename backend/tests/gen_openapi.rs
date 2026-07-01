@@ -84,7 +84,7 @@ fn spec_declares_security_model() {
     let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
 
     // securitySchemes: session cookie (JSON data API) + HTTP Basic (OPDS) +
-    // HTTP Bearer (personal device tokens, S4).
+    // HTTP Bearer (personal device tokens).
     let schemes = &doc["components"]["securitySchemes"];
     assert_eq!(
         schemes["session_cookie"]["type"], "apiKey",
@@ -154,11 +154,11 @@ fn spec_covers_library_routes() {
         assert!(paths.contains_key(path), "{path} documented");
     }
 
-    // S4: every /api/v1 op now carries an explicit per-operation `security`
-    // declaring its required scope(s) — the authz-matrix test
-    // (tests/authz_matrix.rs) is the completeness backstop (deny-by-default:
-    // it fails if any /api/v1 op lacks a declared scope). This is a read, so
-    // it requires only `read` on all three schemes.
+    // Every /api/v1 op carries an explicit per-operation `security` declaring
+    // its required scope. The authz-matrix test (`src/authz_matrix.rs`) is the
+    // completeness backstop (deny-by-default: it fails if any /api/v1 op lacks
+    // a declared scope). This is a read, so it requires only `read` on all
+    // three schemes.
     assert_eq!(
         doc["paths"]["/api/v1/books"]["get"]["security"],
         serde_json::json!([
@@ -234,10 +234,10 @@ fn spec_covers_series_dashboard_routes() {
         assert!(paths.contains_key(path), "{path} documented");
     }
 
-    // S4: every /api/v1 op declares its required scope(s) explicitly.
-    // series/{id} is a plain read (`read`); the dashboard ops are admin-only
-    // reads (`admin`) — the authz-matrix test (tests/authz_matrix.rs) is the
-    // completeness + orthogonality backstop.
+    // Every /api/v1 op declares its required scope explicitly. series/{id} is
+    // a plain read (`read`); the dashboard ops are admin-only reads (`admin`).
+    // The authz-matrix test (`src/authz_matrix.rs`) is the completeness
+    // backstop.
     assert_eq!(
         doc["paths"]["/api/v1/series/{id}"]["get"]["security"],
         serde_json::json!([

@@ -747,19 +747,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -1717,19 +1714,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -2571,7 +2565,7 @@
           "tokens"
         ],
         "summary": "`POST /api/v1/tokens` — issue a new device token for the caller.",
-        "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, `expires_in_days` is not one of 30/60/90/365, or the\n  caller already has 10 active tokens.\n- [`AppError::Forbidden`] when a requested scope exceeds the caller's\n  role ceiling (e.g. a non-admin requesting `admin`).\n- [`AppError::Internal`] on database errors.",
+        "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, the scope set is empty, `expires_in_days` is not one of\n  30/60/90/365, or the caller already has 10 active tokens.\n- [`AppError::Forbidden`] when a requested scope exceeds the caller's\n  role ceiling (e.g. a non-admin requesting `admin`).\n- [`AppError::Internal`] on database errors.",
         "operationId": "create_token",
         "requestBody": {
           "content": {
@@ -2615,7 +2609,7 @@
             }
           },
           "422": {
-            "description": "Name empty / longer than 255 characters after trim, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached",
+            "description": "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -2851,19 +2845,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -2956,19 +2947,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -3060,19 +3048,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -3164,19 +3149,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -3261,19 +3243,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -3365,19 +3344,16 @@
         "security": [
           {
             "session_cookie": [
-              "write",
               "admin"
             ]
           },
           {
             "device_token_bearer": [
-              "write",
               "admin"
             ]
           },
           {
             "opds_basic": [
-              "write",
               "admin"
             ]
           }
@@ -6360,7 +6336,7 @@
       },
       "Scope": {
         "type": "string",
-        "description": "Credential capability. Composes with [`Role`] (identity gating) and\nownership (resource axis) as the three orthogonal authorization axes.",
+        "description": "Credential capability, one of the authorization axes alongside [`Role`]\n(identity gating) and ownership (resource axis).\n\nThe variants are declared in ascending capability order, so the derived\n[`Ord`] is the scope hierarchy: `Read < Write < Admin`. A floor check\ncompares against this order rather than testing set membership.",
         "enum": [
           "read",
           "write",
@@ -7573,12 +7549,12 @@
       "device_token_bearer": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production — the token is otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
+        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit (Checkov CKV_OPENAPI_20)."
       },
       "opds_basic": {
         "type": "http",
         "scheme": "basic",
-        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production — Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
+        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production; Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
       },
       "session_cookie": {
         "type": "apiKey",

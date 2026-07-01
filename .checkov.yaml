@@ -14,6 +14,15 @@
 #   docs mandate HTTPS in production, and the session cookie is issued
 #   with Secure when behind_https is on. Permanent, documented exception.
 #
+# CKV_OPENAPI_20 — "API keys are not sent over cleartext". Fires on the
+#   `device_token_bearer` HTTP Bearer scheme (the cleartext-transport check
+#   for the bearer/apiKey family, the Bearer counterpart to CKV_OPENAPI_3's
+#   finding on `opds_basic`). Same deliberate posture: the token is a personal
+#   device credential presented over Bearer, HTTPS is mandated in production by
+#   the scheme description and operator docs, and TLS is terminated at the
+#   reverse proxy. Transport cannot be asserted in the generated spec, so the
+#   finding is owned operationally. Permanent, documented exception.
+#
 # CKV_OPENAPI_21 — "arrays have a maximum number of items". Fires on
 #   unbounded array query params (e.g. the `tag` filter). Real finding,
 #   aligned with the project's bounded-queries invariant — but spec-side
@@ -24,4 +33,5 @@
 #   maxItems in the generated spec.
 skip-check:
   - CKV_OPENAPI_3
+  - CKV_OPENAPI_20
   - CKV_OPENAPI_21

@@ -182,7 +182,7 @@ struct UpdateRoleRequest {
     put,
     path = "/api/v1/users/{id}/role",
     tag = "users",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateRoleRequest,
     responses(
@@ -199,7 +199,7 @@ async fn update_role(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<UpdateRoleRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
@@ -305,7 +305,7 @@ struct UpdateChildStatusRequest {
     put,
     path = "/api/v1/users/{id}/child-status",
     tag = "users",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateChildStatusRequest,
     responses(
@@ -322,7 +322,7 @@ async fn update_child_status(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<UpdateChildStatusRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
@@ -427,7 +427,7 @@ struct CreateUserRequest {
     post,
     path = "/api/v1/users",
     tag = "users",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
         (status = 201, description = "Created user. Admin only.", body = UserResponse),
@@ -442,7 +442,7 @@ async fn create_user(
     State(state): State<AppState>,
     body: Result<axum::Json<CreateUserRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
@@ -507,7 +507,7 @@ struct AccountStatusRequest {
     put,
     path = "/api/v1/users/{id}/account-status",
     tag = "users",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AccountStatusRequest,
     responses(
@@ -524,7 +524,7 @@ async fn update_account_status(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<AccountStatusRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
@@ -632,7 +632,7 @@ struct AdminPasswordResetRequest {
     post,
     path = "/api/v1/users/{id}/password-reset",
     tag = "users",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AdminPasswordResetRequest,
     responses(
@@ -649,7 +649,7 @@ async fn admin_reset_password(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<AdminPasswordResetRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
@@ -883,7 +883,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     patch,
     path = "/api/v1/users/{id}",
     tag = "users",
-    security(("session_cookie" = ["write", "admin"]), ("device_token_bearer" = ["write", "admin"]), ("opds_basic" = ["write", "admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
     responses(
@@ -900,7 +900,7 @@ async fn update_user(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<UpdateUserRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scopes(&[Scope::Write, Scope::Admin])?;
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 

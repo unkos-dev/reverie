@@ -4,21 +4,24 @@
 //! It resolves the caller in three steps: session cookie first (rehydrated from
 //! the first-party [`tower_sessions::Session`] — read `user_id`, reload the user,
 //! compare `session_version`), then `Authorization: Basic` (via
-//! [`verify_basic`]), then `Authorization: Bearer` (via [`verify_bearer`]).
-//! Basic and Bearer both resolve through [`resolve_device_token`], a single
-//! indexed lookup on the unified `{prefix}{token_id}.{secret}` credential
-//! (see `auth::token::TOKEN_PREFIX`). Handlers that receive a `CurrentUser`
-//! are guaranteed an authenticated identity; unauthenticated requests are
-//! rejected with `AppError::Unauthorized` before the handler body runs.
+//! [`verify_basic`](crate::auth::middleware::verify_basic)), then
+//! `Authorization: Bearer` (via
+//! [`verify_bearer`](crate::auth::middleware::verify_bearer)). Basic and Bearer
+//! both resolve through `resolve_device_token`, a single indexed lookup on the
+//! unified `{prefix}{token_id}.{secret}` credential (see
+//! `auth::token::TOKEN_PREFIX`). Handlers that receive a `CurrentUser` are
+//! guaranteed an authenticated identity; unauthenticated requests are rejected
+//! with `AppError::Unauthorized` before the handler body runs.
 //!
 //! # Tier 2 — security-critical
 //!
 //! This module is the authentication seam for every non-public route.
 //! Inline `// THREAT:` annotations mark the account-lockout and
 //! `session_version` force-logout checks, and the retirement of the old
-//! per-user-scan timing mitigation in [`resolve_device_token`]. The
-//! role/scope-assertion contract on [`CurrentUser`] is enforced structurally
-//! (private `role`/`is_child`/`scopes` fields, access only via the
+//! per-user-scan timing mitigation in `resolve_device_token`. The
+//! role/scope-assertion contract on
+//! [`CurrentUser`](crate::auth::middleware::CurrentUser) is enforced
+//! structurally (private `role`/`is_child`/`scopes` fields, access only via the
 //! `require_*` methods) and documented in `///` prose on those items.
 
 use axum::extract::FromRequestParts;
@@ -65,9 +68,8 @@ pub struct CurrentUser {
 
     /// Capabilities this credential carries. A session derives the full
     /// role-ceiling set ([`Scope::for_role`]); a personal token carries the
-    /// explicit scopes chosen at mint. Private — gate via
-    /// [`require_scope`](CurrentUser::require_scope) /
-    /// [`require_scopes`](CurrentUser::require_scopes).
+    /// explicit scope chosen at mint. Private, gated via
+    /// [`require_scope`](CurrentUser::require_scope).
     scopes: Vec<Scope>,
 }
 
@@ -107,49 +109,48 @@ impl CurrentUser {
         }
     }
 
-    /// Return `Err(Forbidden)` unless this credential carries `needed`.
+    /// Floor check against the scope hierarchy (`read` < `write` < `admin`):
+    /// `Ok` when this credential holds `needed` or any higher scope.
     ///
-    /// Every session derives at least `{read, write}` from role (see
-    /// [`Scope::for_role`]), so a session is never blocked by this check on a
-    /// mutation — only a narrowed personal token can lack `write`. Child
-    /// restrictions come from
+    /// An endpoint names the least scope it requires; a `write` credential
+    /// clears a `read` gate and a `admin` credential clears a `write` gate,
+    /// because a higher scope subsumes every lower one. Every session derives
+    /// at least `{read, write}` from role (see [`Scope::for_role`]) and every
+    /// token is minted with at least `read`, so a `read` gate never blocks an
+    /// authenticated caller; only a narrowed token is blocked from `write` or
+    /// `admin`. Child restrictions come from
     /// [`require_not_child`](CurrentUser::require_not_child), not from
     /// withholding scope.
     ///
     /// # Errors
     ///
-    /// Returns [`AppError::Forbidden`] when `needed` is not in `self.scopes`.
+    /// Returns [`AppError::Forbidden`] when no held scope reaches `needed`.
     pub fn require_scope(&self, needed: Scope) -> Result<(), AppError> {
-        if self.scopes.contains(&needed) {
+        if self.scopes.iter().any(|held| *held >= needed) {
             Ok(())
         } else {
-            Err(AppError::Forbidden)
-        }
-    }
-
-    /// All-of check for endpoints requiring multiple scopes. An admin
-    /// mutation needs `write` AND `admin` — it is both a mutation and
-    /// administrative, so `admin` alone would let a `[read, admin]` audit
-    /// token mutate admin endpoints (see `auth::scope` module docs). Keeps
-    /// the call site one line and the required set aligned with the OpenAPI
-    /// `security(...)` array.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AppError::Forbidden`] when any scope in `needed` is missing
-    /// from `self.scopes`.
-    pub fn require_scopes(&self, needed: &[Scope]) -> Result<(), AppError> {
-        if needed.iter().all(|s| self.scopes.contains(s)) {
-            Ok(())
-        } else {
+            // THREAT (capability overreach): a credential reached for a scope
+            // above its own. Rare on the failure branch (a narrowed token
+            // pointed at a higher-scope endpoint), so a warn here is signal,
+            // not noise, for a token being used beyond its grant.
+            tracing::warn!(
+                user_id = %self.user_id,
+                needed = %needed,
+                "scope check rejected: credential lacks required scope"
+            );
             Err(AppError::Forbidden)
         }
     }
 
     /// Whether this user's role permits minting a token carrying `scope`
-    /// ([`Scope::grantable_by`] — a non-admin cannot mint an admin-scoped
+    /// ([`Scope::grantable_by`]; a non-admin cannot mint an admin-scoped
     /// token). Narrow accessor for the mint-time ceiling check; `role`
     /// itself stays private.
+    ///
+    /// THREAT (privilege escalation): this is the role ceiling on delegated
+    /// capability. It bounds a minted token to no more than its owner's role
+    /// already grants, so a compromised non-admin session cannot forge an
+    /// admin-scoped credential. The mint handler logs a rejected grant.
     pub const fn may_grant_scope(&self, scope: Scope) -> bool {
         scope.grantable_by(self.role)
     }
@@ -208,6 +209,16 @@ async fn resolve_device_token(
     }
 
     if !token::verify_device_token(secret, &dt.token_hash) {
+        return Err(AppError::Unauthorized);
+    }
+
+    // THREAT (read floor): scopes form a hierarchy (read < write < admin) with
+    // read as the floor, so every valid credential must carry at least one
+    // scope. A scopeless token has zero capability; admit it and it would reach
+    // read surface with no gate ever rejecting it. Mint refuses an empty set at
+    // issue; this is the defence-in-depth seam that also rejects any empty-scope
+    // row reaching auth by another path (legacy data, direct DB write).
+    if dt.scopes.is_empty() {
         return Err(AppError::Unauthorized);
     }
 

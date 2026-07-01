@@ -1,16 +1,19 @@
-//! Authz matrix: deny-by-default scope declarations + per-scope enforcement
-//! grid + invariant-5 orthogonality (S4 —
-//! `adr/2026-06-23-api-authorization-orthogonal-axes.md`).
+//! Authz matrix: deny-by-default scope declarations plus a per-operation
+//! enforcement grid over the scope hierarchy (`read` < `write` < `admin`).
+//! See `adr/2026-06-23-api-authorization-orthogonal-axes.md`.
+//!
+//! Each operation declares the least scope it needs. The grid asserts, per
+//! operation, that a credential at the required scope (or higher) passes and
+//! a credential one level below is rejected, so a declared requirement that
+//! has no matching runtime gate cannot slip through green.
 //!
 //! Lives inside the crate (rather than `backend/tests/`) because it needs
 //! [`crate::test_support`], which is `#[cfg(test)] pub(crate)` and therefore
 //! invisible to the separate integration-test crates under `backend/tests/`.
 //!
-//! Parses the IN-PROCESS OpenAPI spec ([`crate::openapi::spec_json`]), not
-//! the committed `docs/openapi.json` — that artifact's regeneration is
-//! deferred to the final S4 commit, so reading the committed file here would
-//! assert against stale annotations while the sweep across route files
-//! lands over several commits.
+//! Parses the in-process OpenAPI spec ([`crate::openapi::spec_json`]) rather
+//! than the committed `docs/openapi.json`, so the grid always tests the
+//! annotations the running server actually serves.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -39,6 +42,23 @@ struct Operation {
 const HTTP_METHODS: &[&str] = &[
     "get", "post", "put", "patch", "delete", "head", "options", "trace",
 ];
+
+/// The single scope an operation requires: the highest in its declared set.
+/// Scopes are a hierarchy, so a set like `[read, write]` requires `write`
+/// (the ceiling), and a credential holding `write` or higher clears it.
+/// `None` when the operation declares no scope (a public or auth-only op).
+fn required_scope(op: &Operation) -> Option<Scope> {
+    op.scopes.iter().copied().max()
+}
+
+/// The scope one level below `scope`, or `None` for the `read` floor.
+const fn one_below(scope: Scope) -> Option<Scope> {
+    match scope {
+        Scope::Read => None,
+        Scope::Write => Some(Scope::Read),
+        Scope::Admin => Some(Scope::Write),
+    }
+}
 
 fn parse_operations() -> Vec<Operation> {
     let rendered = crate::openapi::spec_json().expect("serialize OpenAPI spec");
@@ -84,7 +104,7 @@ fn parse_operations() -> Vec<Operation> {
 
 /// Endpoints intentionally excluded from the mutating-verb `write` lint: a
 /// mutating HTTP verb used for a semantically read-only operation. Explicit
-/// and visible rather than a silent skip — the lint also fails if an entry
+/// and visible rather than a silent skip; the lint also fails if an entry
 /// here matches no parsed operation (a stale allow-list).
 const METHOD_LINT_ALLOWLIST: &[&str] = &["POST /api/v1/manifestations/{id}/enrichment/dry-run"];
 
@@ -118,7 +138,7 @@ fn mutating_verb_ops_require_write_scope() {
                 .iter()
                 .find(|a| **a == key)
                 .map_or_else(
-                    || !op.scopes.contains(&Scope::Write),
+                    || required_scope(op).is_none_or(|s| s < Scope::Write),
                     |allowed| {
                         allowlist_seen.insert(*allowed);
                         false
@@ -273,75 +293,87 @@ async fn call_with_scoped_token(
     status
 }
 
-/// Per-op-per-required-scope grid (finding C1): for every op whose scope
-/// array includes `write` or `admin` (i.e. every op that actually has a
-/// runtime `require_scope`/`require_scopes` gate -- plain non-admin reads are
-/// annotation-only by design and have nothing to grid-test), assert (a) a
-/// token holding every declared scope is NOT rejected by scope, and (b) for
-/// each declared scope, a token missing exactly that one scope IS rejected
-/// (403). This subsumes read-token-blocked, `[read,write]`-vs-admin, and
-/// `[read,admin]`-vs-mutation as special cases, and proves every declared
-/// scope is actually enforced, not just present in the spec.
+// Hierarchy grid: for every operation with a required scope, assert a
+// credential at exactly that scope passes, a credential at the top of the
+// hierarchy (`admin`) always passes, and a credential one level below the
+// requirement is rejected (403). The one-below case is what proves a
+// declared requirement has a real runtime gate: without a gate, the lower
+// credential would slip through and this test fails. Read-floor operations
+// (required scope `read`) have no lower level to reject; the scopeless-token
+// test below is their negative control.
 #[sqlx::test(migrations = "./migrations")]
-async fn scope_grid_enforces_every_declared_requirement(pool: PgPool) {
+async fn scope_grid_enforces_the_hierarchy(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let (admin_id, _basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
 
     let ops = parse_operations();
-    let gated: Vec<&Operation> = ops
+    let gated: Vec<(&Operation, Scope)> = ops
         .iter()
-        .filter(|op| op.scopes.contains(&Scope::Write) || op.scopes.contains(&Scope::Admin))
+        .filter_map(|op| required_scope(op).map(|s| (op, s)))
         .collect();
-    assert!(
-        !gated.is_empty(),
-        "expected at least one scope-gated /api/v1 op"
-    );
+    assert!(!gated.is_empty(), "expected at least one scope-gated op");
 
-    for op in gated {
+    for (op, required) in gated {
         let path = substitute_path_params(&op.path);
         let body = body_for(&op.method, &op.path);
 
-        // Positive control: holding every required scope must not 403 --
-        // proves the assertions below test enforcement, not a broken harness
-        // that 403s everything regardless of scope.
-        let status = call_with_scoped_token(
+        // Positive: a token at the required scope must not 403.
+        let at_required = call_with_scoped_token(
             &server,
             &app_pool,
             admin_id,
-            &op.scopes,
+            &[required],
             &op.method,
             &path,
             body.as_ref(),
         )
         .await;
         assert_ne!(
-            status,
+            at_required,
             StatusCode::FORBIDDEN,
-            "{} {} rejected a token holding every declared scope {:?} (got 403 -- the gate is likely checking the wrong scope set)",
+            "{} {} rejected a token holding its required scope {required:?}",
             op.method,
-            op.path,
-            op.scopes
+            op.path
         );
 
-        // Negative: missing any single declared scope must 403.
-        for missing in &op.scopes {
-            let held: Vec<Scope> = op.scopes.iter().copied().filter(|s| s != missing).collect();
-            let status = call_with_scoped_token(
+        // Positive: the top of the hierarchy clears every gate.
+        let at_top = call_with_scoped_token(
+            &server,
+            &app_pool,
+            admin_id,
+            &[Scope::Admin],
+            &op.method,
+            &path,
+            body.as_ref(),
+        )
+        .await;
+        assert_ne!(
+            at_top,
+            StatusCode::FORBIDDEN,
+            "{} {} rejected an admin-scoped token (top of the hierarchy)",
+            op.method,
+            op.path
+        );
+
+        // Negative: one level below the requirement must 403. Proves the
+        // gate exists; a missing gate would let this token through.
+        if let Some(below) = one_below(required) {
+            let at_below = call_with_scoped_token(
                 &server,
                 &app_pool,
                 admin_id,
-                &held,
+                &[below],
                 &op.method,
                 &path,
                 body.as_ref(),
             )
             .await;
             assert_eq!(
-                status,
+                at_below,
                 StatusCode::FORBIDDEN,
-                "{} {} did not 403 a token missing {missing:?} (held {held:?}), got {status}",
+                "{} {} did not 403 a token one level below its requirement (held {below:?}, needs {required:?}), got {at_below}",
                 op.method,
                 op.path
             );
@@ -349,12 +381,11 @@ async fn scope_grid_enforces_every_declared_requirement(pool: PgPool) {
     }
 }
 
-/// Scope is orthogonal to role: an admin-role user presenting a read-scoped
-/// token is blocked from every mutation despite `role == Admin` -- proves
-/// scope is not derived from role. Checked against every mutation op in the
-/// spec (non-admin and admin alike), not just one representative endpoint.
+// A `read`-only token is blocked from every mutation. A mutation requires
+// `write` or higher, and `read` sits below `write`, so the floor credential
+// cannot mutate. Checked against every mutating op in the spec.
 #[sqlx::test(migrations = "./migrations")]
-async fn invariant5_read_token_blocked_from_every_mutation_despite_admin_role(pool: PgPool) {
+async fn read_token_blocked_from_every_mutation(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
@@ -363,12 +394,9 @@ async fn invariant5_read_token_blocked_from_every_mutation_despite_admin_role(po
     let ops = parse_operations();
     let mutations: Vec<&Operation> = ops
         .iter()
-        .filter(|op| op.scopes.contains(&Scope::Write))
+        .filter(|op| required_scope(op).is_some_and(|s| s >= Scope::Write))
         .collect();
-    assert!(
-        !mutations.is_empty(),
-        "expected at least one mutation op to test scope/role orthogonality against"
-    );
+    assert!(!mutations.is_empty(), "expected at least one mutation op");
 
     for op in mutations {
         let path = substitute_path_params(&op.path);
@@ -386,60 +414,18 @@ async fn invariant5_read_token_blocked_from_every_mutation_despite_admin_role(po
         assert_eq!(
             status,
             StatusCode::FORBIDDEN,
-            "scope/role orthogonality violated: admin role + read-only token must be blocked from {} {} despite role=admin, got {status}",
+            "a read-only token must be blocked from {} {}, got {status}",
             op.method,
             op.path
         );
     }
 }
 
-/// Finding D1: a `[read, admin]` audit-style token must be rejected by every
-/// mutation, including admin mutations -- `admin` scope alone does not imply
-/// `write`. Without this, a `[read,admin]` token (a legitimate read-only
-/// audit credential an admin can mint) could mutate admin endpoints if they
-/// were gated on `admin` alone instead of `write AND admin`.
+// A `write` token is blocked from every admin operation. `admin` is the top
+// of the hierarchy and `write` sits below it, so a write credential cannot
+// reach admin surface. Checked against every admin op (reads and mutations).
 #[sqlx::test(migrations = "./migrations")]
-async fn read_admin_token_rejected_by_every_mutation_d1(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let (admin_id, _basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-
-    let ops = parse_operations();
-    let mutations: Vec<&Operation> = ops
-        .iter()
-        .filter(|op| op.scopes.contains(&Scope::Write))
-        .collect();
-    assert!(!mutations.is_empty());
-
-    for op in mutations {
-        let path = substitute_path_params(&op.path);
-        let body = body_for(&op.method, &op.path);
-        let status = call_with_scoped_token(
-            &server,
-            &app_pool,
-            admin_id,
-            &[Scope::Read, Scope::Admin],
-            &op.method,
-            &path,
-            body.as_ref(),
-        )
-        .await;
-        assert_eq!(
-            status,
-            StatusCode::FORBIDDEN,
-            "D1 violated: a [read,admin] token must be blocked from {} {} (missing write), got {status}",
-            op.method,
-            op.path
-        );
-    }
-}
-
-/// Finding C1: a non-admin `[read, write]` token must be rejected by every
-/// admin operation (reads and mutations alike) -- `write` scope alone does
-/// not imply `admin`.
-#[sqlx::test(migrations = "./migrations")]
-async fn read_write_token_rejected_by_every_admin_op_c1(pool: PgPool) {
+async fn write_token_blocked_from_every_admin_op(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
@@ -448,12 +434,9 @@ async fn read_write_token_rejected_by_every_admin_op_c1(pool: PgPool) {
     let ops = parse_operations();
     let admin_ops: Vec<&Operation> = ops
         .iter()
-        .filter(|op| op.scopes.contains(&Scope::Admin))
+        .filter(|op| required_scope(op) == Some(Scope::Admin))
         .collect();
-    assert!(
-        !admin_ops.is_empty(),
-        "expected at least one admin op to test C1 against"
-    );
+    assert!(!admin_ops.is_empty(), "expected at least one admin op");
 
     for op in admin_ops {
         let path = substitute_path_params(&op.path);
@@ -462,7 +445,7 @@ async fn read_write_token_rejected_by_every_admin_op_c1(pool: PgPool) {
             &server,
             &app_pool,
             admin_id,
-            &[Scope::Read, Scope::Write],
+            &[Scope::Write],
             &op.method,
             &path,
             body.as_ref(),
@@ -471,7 +454,45 @@ async fn read_write_token_rejected_by_every_admin_op_c1(pool: PgPool) {
         assert_eq!(
             status,
             StatusCode::FORBIDDEN,
-            "C1 violated: a non-admin [read,write] token must be blocked from {} {} (missing admin), got {status}",
+            "a write token must be blocked from admin op {} {}, got {status}",
+            op.method,
+            op.path
+        );
+    }
+}
+
+// A scopeless token authenticates as nothing: `read` is the floor, so a
+// credential carrying no scope is rejected at the auth seam and reaches no
+// operation, reads included. Minted directly at the model layer to bypass
+// the mint handler's empty-set guard, so this proves the seam-level floor
+// (`resolve_device_token`), not just the route validation.
+#[sqlx::test(migrations = "./migrations")]
+async fn scopeless_token_rejected_by_every_op(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let (admin_id, _basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let ops = parse_operations();
+    assert!(!ops.is_empty(), "expected at least one /api/v1 op");
+
+    for op in &ops {
+        let path = substitute_path_params(&op.path);
+        let body = body_for(&op.method, &op.path);
+        let status = call_with_scoped_token(
+            &server,
+            &app_pool,
+            admin_id,
+            &[],
+            &op.method,
+            &path,
+            body.as_ref(),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "a scopeless token must be rejected at auth for {} {}, got {status}",
             op.method,
             op.path
         );
@@ -479,5 +500,5 @@ async fn read_write_token_rejected_by_every_admin_op_c1(pool: PgPool) {
 }
 
 // Role-ceiling (non-admin cannot mint an admin-scoped token) is covered by
-// `routes::tokens::tests::create_token_rejects_admin_scope_ceiling` (S4
-// commit 5) -- not duplicated here.
+// `routes::tokens::tests::create_token_rejects_admin_scope_ceiling`, not
+// duplicated here.

@@ -1,35 +1,46 @@
-//! `Scope` — credential capability, orthogonal to [`Role`].
+//! `Scope` is a credential's capability, one of the authorization axes
+//! kept distinct from [`Role`](crate::models::role::Role) (identity) and
+//! ownership (resource).
 //!
-//! A session derives its scope set from role at extraction
-//! ([`Scope::for_role`]); a personal token carries the explicit scopes chosen
-//! at mint, bounded by the owner's role ceiling ([`Scope::grantable_by`]).
-//! Enforcement composes by union: a non-admin mutation requires `write`, an
-//! admin read requires `admin`, and an admin mutation requires **both**
-//! `write` and `admin` (it is a mutation *and* administrative — gating on
-//! `admin` alone would let a `[read, admin]` audit token mutate admin
-//! endpoints). See `adr/2026-06-23-api-authorization-orthogonal-axes.md`.
+//! The three scopes form a linear hierarchy: `read` < `write` < `admin`.
+//! A higher scope subsumes every lower one, so a `write` credential may read
+//! and a `admin` credential may read and write. Enforcement is a floor check
+//! ([`CurrentUser::require_scope`](crate::auth::middleware::CurrentUser::require_scope)):
+//! an endpoint names the least scope it needs and any credential holding that
+//! scope or higher passes. `read` is the floor, so every valid credential
+//! carries at least `read`; a token is never minted empty.
+//!
+//! A session derives its scope from role at extraction
+//! ([`Scope::for_role`](crate::auth::scope::Scope::for_role)); a personal token
+//! carries the explicit scope chosen at mint, bounded by the owner's role
+//! ceiling ([`Scope::grantable_by`](crate::auth::scope::Scope::grantable_by)).
 //!
 //! A dedicated module path is deliberate: `routes::opds::scope::Scope` and
 //! `oauth2::Scope` already exist elsewhere in the dependency graph.
 //!
 //! Wire formats:
-//! - Postgres: `scope` ENUM type (see migration
-//!   `20260701120000_token_scopes_expiry.up.sql`).
-//! - JSON: lowercase string literal — "read" | "write" | "admin".
+//! - Postgres: `scope` ENUM type (see the token-scopes migration).
+//! - JSON: lowercase string literal, "read", "write", or "admin".
 
 use std::fmt;
 use std::str::FromStr;
 
 use crate::models::role::Role;
 
-/// Credential capability. Composes with [`Role`] (identity gating) and
-/// ownership (resource axis) as the three orthogonal authorization axes.
+/// Credential capability, one of the authorization axes alongside [`Role`]
+/// (identity gating) and ownership (resource axis).
+///
+/// The variants are declared in ascending capability order, so the derived
+/// [`Ord`] is the scope hierarchy: `Read < Write < Admin`. A floor check
+/// compares against this order rather than testing set membership.
 #[derive(
     Debug,
     Clone,
     Copy,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     serde::Serialize,
     serde::Deserialize,
@@ -39,11 +50,13 @@ use crate::models::role::Role;
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "scope", rename_all = "lowercase")]
 pub enum Scope {
-    /// Safe (read-only) operations.
+    /// Safe (read-only) operations. The hierarchy floor: every valid
+    /// credential carries at least this.
     Read,
-    /// Mutating operations.
+    /// Mutating operations. Subsumes `read`.
     Write,
-    /// Administrative surface (user management, etc.).
+    /// Administrative surface (user management, etc.). Subsumes `write`
+    /// and `read`.
     Admin,
 }
 
@@ -59,9 +72,9 @@ impl Scope {
     }
 
     /// Scope set a session derives from its role. Every role gets at least
-    /// `{read, write}` — child restrictions are enforced by
-    /// `CurrentUser::require_not_child`, not by withholding scope. Only
-    /// [`Role::Admin`] also derives `admin`.
+    /// `{read, write}`; child restrictions are enforced by
+    /// [`CurrentUser::require_not_child`](crate::auth::middleware::CurrentUser::require_not_child),
+    /// not by withholding scope. Only [`Role::Admin`] also derives `admin`.
     pub const fn for_role(role: Role) -> &'static [Self] {
         match role {
             Role::Admin => &[Self::Read, Self::Write, Self::Admin],
@@ -152,6 +165,17 @@ mod tests {
         );
         assert_eq!(Scope::for_role(Role::Adult), &[Scope::Read, Scope::Write]);
         assert_eq!(Scope::for_role(Role::Child), &[Scope::Read, Scope::Write]);
+    }
+
+    #[test]
+    fn hierarchy_orders_read_below_write_below_admin() {
+        assert!(Scope::Read < Scope::Write);
+        assert!(Scope::Write < Scope::Admin);
+        assert!(Scope::Read < Scope::Admin);
+        // A higher scope satisfies a lower floor; a lower one does not.
+        assert!(Scope::Admin >= Scope::Write);
+        assert!(Scope::Write >= Scope::Read);
+        assert!(Scope::Read < Scope::Write);
     }
 
     #[test]
