@@ -17,6 +17,7 @@ const UserSchema = z.object({
   email: z.email().nullable(),
   role: z.enum(ROLE_VALUES),
   is_child: z.boolean(),
+  disabled: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -55,6 +56,55 @@ async function updateUserChildStatus(
   return UserSchema.parse(raw);
 }
 
+/** Fields for `POST /api/v1/users` (admin create / invite). */
+type CreateUserInput = {
+  email: string;
+  display_name: string;
+  role: Role;
+  password: string;
+};
+
+/** `POST /api/v1/users` — create a user with an admin-typed password (admin only). */
+async function createUser(input: CreateUserInput, signal?: AbortSignal): Promise<User> {
+  const raw = await apiFetch("/api/v1/users", {
+    method: "POST",
+    body: JSON.stringify(input),
+    signal,
+  });
+  return UserSchema.parse(raw);
+}
+
+/** `PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable (admin only). */
+async function setAccountStatus(
+  id: string,
+  disabled: boolean,
+  signal?: AbortSignal,
+): Promise<User> {
+  const raw = await apiFetch(`/api/v1/users/${id}/account-status`, {
+    method: "PUT",
+    body: JSON.stringify({ disabled }),
+    signal,
+  });
+  return UserSchema.parse(raw);
+}
+
+/**
+ * `POST /api/v1/users/{id}/password-reset` — an admin sets a new password for a
+ * target account (admin only). Returns 200 with no body; the admin relays the
+ * password out-of-band.
+ */
+async function adminResetPassword(
+  id: string,
+  newPassword: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await apiFetch(`/api/v1/users/${id}/password-reset`, {
+    method: "POST",
+    body: JSON.stringify({ new_password: newPassword }),
+    signal,
+  });
+}
+
 /** Fields accepted by `PATCH /api/v1/users/{id}`. */
 interface UpdateUserFields {
   display_name?: string | null;
@@ -75,5 +125,13 @@ async function updateUser(
   return UserSchema.parse(raw);
 }
 
-export { listUsers, updateUserRole, updateUserChildStatus, updateUser };
-export type { User, Role, UpdateUserFields };
+export {
+  listUsers,
+  updateUserRole,
+  updateUserChildStatus,
+  updateUser,
+  createUser,
+  setAccountStatus,
+  adminResetPassword,
+};
+export type { User, Role, UpdateUserFields, CreateUserInput };

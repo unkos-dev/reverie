@@ -36,3 +36,14 @@ export const ResetPasswordSchema = z.object({
   pin: pinField,
   new_password: newPasswordField,
 });
+/** Body for `POST /auth/register` (self-service registration). */
+export const RegisterSchema = z.object({
+  email: emailField,
+  display_name: displayNameField,
+  password: newPasswordField,
+});
+/** Body for `POST /api/v1/account/password` (self-service change). */
+export const ChangePasswordSchema = z.object({
+  current_password: currentPasswordField,
+  new_password: newPasswordField,
+});

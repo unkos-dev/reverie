@@ -14,8 +14,10 @@
 import { z } from "zod";
 
 import {
+  ChangePasswordSchema,
   ForgotPasswordSchema,
   LoginLocalSchema,
+  RegisterSchema,
   ResetPasswordSchema,
   SetupAdminSchema,
 } from "./auth.schemas";
@@ -123,6 +125,51 @@ export async function resetPassword(
 ): Promise<void> {
   const body = ResetPasswordSchema.parse({ email, pin, new_password: newPassword });
   await apiFetch("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Self-register an account (`POST /auth/register`). Config-gated; always creates
+ * an adult, never an admin or child. Does not establish a session: the caller
+ * signs in afterwards.
+ *
+ * # Errors
+ * Throws {@link ApiError} when registration or local auth is disabled (404),
+ * the email is already in use (409), validation or policy fails (422), or the
+ * per-source limit is exceeded (429).
+ */
+export async function register(
+  email: string,
+  displayName: string,
+  password: string,
+): Promise<void> {
+  const body = RegisterSchema.parse({ email, display_name: displayName, password });
+  await apiFetch("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Change the caller's own password (`POST /api/v1/account/password`). Verifies
+ * the current password and invalidates every session, so the caller signs in
+ * again afterwards.
+ *
+ * # Errors
+ * Throws {@link ApiError} when the current password is wrong, the new password
+ * fails the policy, or there is no local credential (422).
+ */
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const body = ChangePasswordSchema.parse({
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+  await apiFetch("/api/v1/account/password", {
     method: "POST",
     body: JSON.stringify(body),
   });

@@ -62,3 +62,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Adopt oxfmt, replacing Prettier](2026-06-28-adopt-oxfmt-formatter.md) (accepted, 2026-06-28)
 - [Adopt lefthook, replacing husky and lint-staged](2026-06-28-adopt-lefthook-git-hooks.md) (accepted, 2026-06-28)
 - [Adopt the Vite+ (vp) monorepo toolchain](2026-06-30-adopt-vite-plus-monorepo-toolchain.md) (accepted, 2026-06-30)
+- [Password strength policy: zxcvbn floor plus a fail-open HIBP breach check](2026-06-30-password-policy-hibp-zxcvbn.md) (accepted, 2026-06-30)

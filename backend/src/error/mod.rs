@@ -141,6 +141,11 @@ pub enum AppError {
     /// (also 409) is deliberately NOT reused.
     #[error("setup already complete")]
     SetupAlreadyComplete,
+    /// Account creation or self-registration rejected because the email is
+    /// already in use (`idx_users_email_lower`). RFC 9457 `type`
+    /// [`problems::EMAIL_CONFLICT`]. HTTP 409 Conflict.
+    #[error("email already in use")]
+    EmailConflict,
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 9457 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
@@ -244,6 +249,12 @@ impl IntoResponse for AppError {
                 problems::SETUP_ALREADY_COMPLETE,
                 "Conflict",
                 "An administrator already exists; first-run setup is closed.".to_owned(),
+            ),
+            Self::EmailConflict => (
+                StatusCode::CONFLICT,
+                problems::EMAIL_CONFLICT,
+                "Conflict",
+                "An account with that email already exists.".to_owned(),
             ),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");

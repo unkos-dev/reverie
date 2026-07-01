@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\" FROM users WHERE lower(email) = lower($1)",
+  "query": "INSERT INTO users (display_name, email, role, is_child) VALUES ($1, $2, ($3::text)::user_role, $4) RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\", disabled_at",
   "describe": {
     "columns": [
       {
@@ -134,11 +134,25 @@
             "name": "theme_preference"
           }
         }
+      },
+      {
+        "ordinal": 10,
+        "name": "disabled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "disabled_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Text",
+        "Text",
+        "Bool"
       ]
     },
     "nullable": [
@@ -151,8 +165,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "849b562b8abc0f29b029be49bc5a72a9340f76662802473aaa7b790ae52072f3"
+  "hash": "f36ae9dd6de3f26f58af7cb60cf082ae7ce5c090530d1c6679c715c8ff67d9a4"
 }

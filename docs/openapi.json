@@ -10,6 +10,51 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/account/password": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`POST /api/v1/account/password` — the authenticated caller changes their own\npassword.",
+        "description": "THREAT (IDOR): the target is ALWAYS the session user. The\nendpoint accepts no id from the path or body, so it cannot be turned against\nanother account. It verifies the current password, enforces the policy on the\nnew one, writes it, and bumps `session_version`, which forces re-auth of every\nsession including the caller's own.\n\n# Errors\n- [`AppError::Unauthorized`] when unauthenticated.\n- [`AppError::Validation`] (422) when the current password is wrong, the new\n  password fails the policy, or the account has no local credential (it signs\n  in through an identity provider).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "change_own_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed; all of the caller's sessions are invalidated."
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Wrong current password, new password rejected by the policy, or no local credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/books": {
       "get": {
         "tags": [
@@ -2129,6 +2174,76 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`POST /api/v1/users` — create an account with an admin-typed initial\npassword (admin only). This is the create-and-invite path: there is no\nseparate invite mechanism, no email, and no forced first-login change. The\nadmin relays the password out-of-band; the user may self-service change it.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on an invalid email or a password that\n  fails the policy (too short/long, too weak, or breached).\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "create_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created user. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid email, or password rejected by the policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/users/{id}": {
@@ -2216,6 +2331,90 @@
         }
       }
     },
+    "/api/v1/users/{id}/account-status": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable an\naccount (admin only). Disabling stamps `disabled_at`, bumps the target's\n`session_version` (killing live sessions at once), and locks them out of\nevery auth path; re-enabling clears it.",
+        "description": "Last-enabled-admin protection (TOCTOU-safe): when disabling an admin, all\nenabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as\n[`update_role`]) and the request is rejected if it would leave zero enabled\nadmins. An admin cannot disable their own account.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on a self-disable attempt or when disabling\n  the last enabled admin.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "update_account_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user. Disabling invalidates the target's sessions. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Cannot disable your own account, or disabling would leave zero enabled admins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/{id}/child-status": {
       "put": {
         "tags": [
@@ -2289,6 +2488,83 @@
           },
           "422": {
             "description": "Marking the last admin as child would leave zero admins, or the request body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/password-reset": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "`POST /api/v1/users/{id}/password-reset` — an admin sets a new password for\na target account (admin only). Consistent with create: the admin types the\npassword and hands it off; no PIN, no email. Bumps the target's\n`session_version` so their existing sessions are invalidated. Works for an\nOIDC-only account too (the local credential is upserted).",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) when the password fails the policy.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "admin_reset_password",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset; the target's sessions are invalidated. Admin only."
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Password rejected by the policy",
             "content": {
               "application/json": {
                 "schema": {
@@ -2775,6 +3051,74 @@
           },
           "404": {
             "description": "OIDC is not configured on this instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`POST /auth/register`: config-gated self-service registration.",
+        "description": "Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.\nMirrors the repeatable pre-auth handlers (`forgot_password`/`reset_password`),\nNOT `setup`: it is unauthenticated and repeatable, and each call fires an\nArgon2 hash plus an outbound HIBP request, so the per-source rate limit is\nenforced BEFORE any policy/hash/breach work.\n\nTHREAT (privilege escalation): a self-registered account is\nalways an `adult`, never an admin or child. The DTO carries no role, and\n`create_local` is called with [`Role::Adult`]; admin and child accounts are\nminted only by an existing administrator. No session is established (parity\nwith setup/reset: the session contract lives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::NotFound`] when self-registration or local auth is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) on a malformed email or a policy failure.\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on hashing or database failure.",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Account created (no auto-login)"
+          },
+          "404": {
+            "description": "Self-registration is disabled on this instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
             "content": {
               "application/json": {
                 "schema": {
@@ -4201,6 +4545,19 @@
   },
   "components": {
     "schemas": {
+      "AccountStatusRequest": {
+        "type": "object",
+        "description": "Body for `PUT /api/v1/users/{id}/account-status`.",
+        "required": [
+          "disabled"
+        ],
+        "properties": {
+          "disabled": {
+            "type": "boolean",
+            "description": "`true` to soft-disable the account, `false` to re-enable it."
+          }
+        }
+      },
       "ActivityResponse": {
         "type": "object",
         "description": "Response shape for `GET /api/v1/dashboard/activity`.",
@@ -4227,6 +4584,19 @@
             "type": "string",
             "format": "uuid",
             "description": "Manifestation to append; must be visible to the caller."
+          }
+        }
+      },
+      "AdminPasswordResetRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/users/{id}/password-reset`.",
+        "required": [
+          "new_password"
+        ],
+        "properties": {
+          "new_password": {
+            "type": "string",
+            "description": "New password the admin sets for the target and relays out-of-band.\nEnforced against the password policy."
           }
         }
       },
@@ -4511,6 +4881,24 @@
           }
         }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/account/password`.",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "The caller's current password, re-verified before the change."
+          },
+          "new_password": {
+            "type": "string",
+            "description": "The new password; enforced against the password policy."
+          }
+        }
+      },
       "CleanupMode": {
         "type": "string",
         "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
@@ -4566,6 +4954,34 @@
           "token": {
             "type": "string",
             "description": "Token plaintext. Returned exactly once, here; only its SHA-256 hash\nis persisted, so the plaintext cannot be recovered later."
+          }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/users`.",
+        "required": [
+          "email",
+          "display_name",
+          "role",
+          "password"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable display name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address for the new account; must be a syntactically valid\naddr-spec and unique (case-insensitive)."
+          },
+          "password": {
+            "type": "string",
+            "description": "Initial password, typed by the admin and handed off out-of-band. Required;\nenforced against the password policy (length, zxcvbn floor, HIBP breach)."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Role for the new account. `child` and `admin` accounts are created only\nhere, by an existing administrator."
           }
         }
       },
@@ -5018,6 +5434,29 @@
         ],
         "description": "Response shape for `PUT /api/v1/settings`."
       },
+      "RegisterRequest": {
+        "type": "object",
+        "description": "Request body for `POST /auth/register`. Explicit allow-list (no\nmass-assignment): a self-registrant cannot smuggle a role or child flag.",
+        "required": [
+          "email",
+          "display_name",
+          "password"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Display name."
+          },
+          "email": {
+            "type": "string",
+            "description": "New account email (RFC 5322 addr-spec)."
+          },
+          "password": {
+            "type": "string",
+            "description": "Plaintext password; enforced against the password policy, then hashed."
+          }
+        }
+      },
       "RenameShelfRequest": {
         "type": "object",
         "description": "Body for `PATCH /api/v1/shelves/{id}`.",
@@ -5063,7 +5502,7 @@
           },
           "new_password": {
             "type": "string",
-            "description": "New plaintext password; enforced against `password_min_length`."
+            "description": "New plaintext password; enforced against the full password policy."
           },
           "pin": {
             "type": "string",
@@ -6129,13 +6568,18 @@
           "role",
           "is_child",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "disabled"
         ],
         "properties": {
           "created_at": {
             "type": "string",
             "format": "date-time",
             "description": "Row creation timestamp."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "Whether the account is soft-disabled (cannot authenticate). Derived from\n`disabled_at`; the timestamp itself is not exposed on the wire."
           },
           "display_name": {
             "type": "string",

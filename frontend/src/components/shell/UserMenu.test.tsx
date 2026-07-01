@@ -1,11 +1,20 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { MemoryRouter } from "react-router";
 
 import { logout } from "@/api/auth";
 import { useAuthMe } from "@/hooks/useAuthMe";
 
 import { UserChip } from "./UserMenu";
+
+function renderChip(): ReturnType<typeof render> {
+  return render(
+    <MemoryRouter>
+      <UserChip />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock("@/api/auth", () => ({ logout: vi.fn() }));
 vi.mock("@/hooks/useAuthMe", () => ({ useAuthMe: vi.fn() }));
@@ -63,12 +72,12 @@ afterEach(() => {
 describe("UserChip", () => {
   test("renders nothing while authn is pending or logged out", () => {
     useAuthMeMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
-    const { container } = render(<UserChip />);
+    const { container } = renderChip();
     expect(container).toBeEmptyDOMElement();
   });
 
   test("chip shows initials and opens the menu with account identity", async () => {
-    render(<UserChip />);
+    renderChip();
     const user = userEvent.setup();
     const chip = screen.getByRole("button", { name: /Ada Lovelace/ });
     expect(chip).toHaveTextContent("AL");
@@ -78,15 +87,23 @@ describe("UserChip", () => {
   });
 
   test("Settings item is disabled", async () => {
-    render(<UserChip />);
+    renderChip();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
     const settings = await screen.findByRole("menuitem", { name: /Settings/ });
     expect(settings).toHaveAttribute("aria-disabled", "true");
   });
 
+  test("exposes a Change password link to the account screen", async () => {
+    renderChip();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    const link = await screen.findByRole("menuitem", { name: "Change password" });
+    expect(link).toHaveAttribute("href", "/account/password");
+  });
+
   test("theme submenu exposes the three preferences and writes through", async () => {
-    render(<UserChip />);
+    renderChip();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
     await user.click(await screen.findByRole("menuitem", { name: "Theme" }));
@@ -103,7 +120,7 @@ describe("UserChip", () => {
 
   test("sign out calls the logout endpoint then hard-navigates to /login", async () => {
     const loc = mockLocation();
-    render(<UserChip />);
+    renderChip();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
     await user.click(await screen.findByRole("menuitem", { name: /Sign out/ }));
@@ -117,7 +134,7 @@ describe("UserChip", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     logoutMock.mockRejectedValue(new Error("network down"));
     const loc = mockLocation();
-    render(<UserChip />);
+    renderChip();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
     await user.click(await screen.findByRole("menuitem", { name: /Sign out/ }));

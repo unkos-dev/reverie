@@ -87,6 +87,10 @@ const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
 /// that only need one slice.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "this is the flat env-sourced configuration root; its boolean fields are independent operator toggles (local auth, auto-migrate, self-registration, breach check, ...) that map one-to-one to env vars, not a state machine that should be modelled as an enum"
+)]
 pub struct Config {
     /// HTTP listen port (`REVERIE_PORT`, default `3000`).
     pub port: u16,
@@ -135,11 +139,45 @@ pub struct Config {
     pub login_throttle_cap_secs: i32,
     /// Minimum length for a local-account password
     /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic
-    /// floor). Enforced at first-run setup and password reset. Only the length
-    /// floor is enforced; breach (HIBP) and strength (zxcvbn) checks are planned
-    /// for a later release.
+    /// floor). The length floor, the zxcvbn strength floor
+    /// ([`Self::password_min_zxcvbn_score`]), and the HIBP breach check
+    /// ([`Self::password_breach_check_enabled`]) together form the password
+    /// policy applied at registration, admin create/reset, and self-service
+    /// change.
     #[validate(range(min = 8, message = "must be at least 8 (NIST SP 800-63B)"))]
     pub password_min_length: usize,
+    /// Maximum length for a local-account password, in characters
+    /// (`REVERIE_PASSWORD_MAX_LENGTH`, default `256`). A denial-of-service cap,
+    /// not a composition rule: NIST SP 800-63B forbids composition rules but
+    /// permits a length cap, and an unbounded password is a CPU-exhaustion
+    /// vector on the unauthenticated registration path (zxcvbn and Argon2 cost
+    /// both grow with length). Checked before any strength or breach work.
+    #[validate(range(min = 64, message = "must be at least 64 (NIST SP 800-63B)"))]
+    pub password_max_length: usize,
+    /// Minimum acceptable zxcvbn strength score, 0..=4
+    /// (`REVERIE_PASSWORD_MIN_ZXCVBN_SCORE`, default `2`). A candidate scoring
+    /// below this is rejected as too weak, with the estimator's feedback
+    /// returned in the 422 response.
+    #[validate(range(max = 4, message = "must be between 0 and 4"))]
+    pub password_min_zxcvbn_score: u8,
+    /// Whether the HIBP Pwned Passwords breach check runs at credential-setting
+    /// time (`REVERIE_PASSWORD_BREACH_CHECK_ENABLED`, default `true`). The check
+    /// fails open: a HIBP outage never blocks account creation or login. Set
+    /// `false` to skip the outbound request entirely (e.g. fully offline
+    /// instances).
+    pub password_breach_check_enabled: bool,
+    /// Base URL of the HIBP Pwned Passwords range API
+    /// (`REVERIE_PASSWORD_BREACH_CHECK_URL`, default
+    /// `https://api.pwnedpasswords.com/range`). Only the 5-character SHA-1
+    /// prefix is appended as a path segment (k-anonymity); the password never
+    /// leaves the process. Overridable so tests can point at a mock.
+    pub password_breach_check_url: String,
+    /// Whether self-service account registration is enabled
+    /// (`REVERIE_SELF_REGISTRATION_ENABLED`, default `false`). When off, the
+    /// `/auth/register` endpoint returns 404. A self-registered account is
+    /// always a non-admin, non-child Adult; admin and child accounts are created
+    /// only by an existing administrator.
+    pub self_registration_enabled: bool,
     /// Lifetime of a forgot-password recovery PIN, seconds
     /// (`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by
     /// design: the PIN is single-use and rate-limited.
@@ -661,6 +699,11 @@ impl Default for Config {
             login_throttle_base_secs: 2,
             login_throttle_cap_secs: 900,
             password_min_length: 8,
+            password_max_length: 256,
+            password_min_zxcvbn_score: 2,
+            password_breach_check_enabled: true,
+            password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
+            self_registration_enabled: false,
             recovery_pin_ttl_secs: 900,
             recovery_pin_dir: "./reverie-recovery".into(),
             trusted_client_ip_header: None,

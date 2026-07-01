@@ -46,6 +46,34 @@ async fn list_users_as_admin_returns_all(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_users_serializes_timestamps_as_rfc3339_strings(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/users")
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    // The frontend user Zod schema parses created_at/updated_at as strings. Without
+    // the rfc3339 serde adapter, `time` serializes OffsetDateTime as an array and
+    // the client parse fails. Assert the wire format is a parseable RFC 3339 string.
+    let body: Vec<serde_json::Value> = r.json();
+    let created = body[0]["created_at"]
+        .as_str()
+        .expect("created_at is a JSON string");
+    let updated = body[0]["updated_at"]
+        .as_str()
+        .expect("updated_at is a JSON string");
+    let rfc3339 = &time::format_description::well_known::Rfc3339;
+    assert!(time::OffsetDateTime::parse(created, rfc3339).is_ok());
+    assert!(time::OffsetDateTime::parse(updated, rfc3339).is_ok());
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_users_as_adult_returns_403(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -435,7 +463,7 @@ async fn patch_user_invalid_email_format_returns_422(pool: PgPool) {
         "a@",
         "@domain.com",
         "a@.com",
-        // UNK-309: display-name and domain-literal forms. `EmailAddress::is_valid`
+        // Display-name and domain-literal forms. `EmailAddress::is_valid`
         // (default options) accepts these and would store the angle/bracket-bearing
         // string raw; `is_addr_spec` rejects them. Exercised here so a revert of the
         // PATCH path back to `is_valid` is caught at the route level, not just in the
@@ -767,4 +795,546 @@ async fn patch_display_name_only_does_not_bump_session_version(pool: PgPool) {
         sv_after, sv_before,
         "session_version should NOT bump on display_name-only change"
     );
+}
+
+// ---------- POST /api/v1/users (create / invite) ----------
+
+/// A passphrase that clears the zxcvbn floor. The breach check is disabled in
+/// the test config, so this never reaches HIBP.
+const STRONG_PW: &str = "correct-horse-battery-staple-7!";
+
+#[sqlx::test(migrations = "./migrations")]
+async fn create_user_as_admin_creates_adult(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post("/api/v1/users")
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({
+            "email": "new-adult@example.com",
+            "display_name": "New Adult",
+            "role": "adult",
+            "password": STRONG_PW,
+        }))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::CREATED);
+    let body: serde_json::Value = r.json();
+    assert_eq!(body["role"], "adult");
+    assert_eq!(body["is_child"], false);
+    assert_eq!(body["disabled"], false);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn create_user_creates_child(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post("/api/v1/users")
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({
+            "email": "new-child@example.com",
+            "display_name": "New Child",
+            "role": "child",
+            "password": STRONG_PW,
+        }))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::CREATED);
+    let body: serde_json::Value = r.json();
+    assert_eq!(body["role"], "child");
+    assert_eq!(body["is_child"], true);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn create_user_weak_password_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post("/api/v1/users")
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({
+            "email": "weak@example.com",
+            "display_name": "Weak",
+            "role": "adult",
+            "password": "password",
+        }))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn create_user_non_admin_returns_403(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "create-forbidden").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post("/api/v1/users")
+        .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
+        .json(&json!({
+            "email": "x@example.com",
+            "display_name": "X",
+            "role": "adult",
+            "password": STRONG_PW,
+        }))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn create_user_child_caller_returns_403(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_child_id, child_basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "create-child-caller").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post("/api/v1/users")
+        .add_header(auth(&child_basic).0, auth(&child_basic).1)
+        .json(&json!({
+            "email": "x@example.com",
+            "display_name": "X",
+            "role": "adult",
+            "password": STRONG_PW,
+        }))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn create_user_duplicate_email_returns_409(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let make = |email: &str| {
+        server
+            .post("/api/v1/users")
+            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .json(&json!({
+                "email": email,
+                "display_name": "Dup",
+                "role": "adult",
+                "password": STRONG_PW,
+            }))
+    };
+    assert_eq!(
+        make("dup@example.com").await.status_code(),
+        StatusCode::CREATED
+    );
+    // Case-insensitive collision.
+    let r = make("DUP@example.com").await;
+    test_support::assert_problem(&r, problems::EMAIL_CONFLICT, StatusCode::CONFLICT);
+}
+
+// ---------- PUT /api/v1/users/{id}/account-status ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_disable_then_re_enable_user(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (target_id, target_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "status-target").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // The target authenticates before being disabled.
+    let before = server
+        .get("/auth/me")
+        .add_header(auth(&target_basic).0, auth(&target_basic).1)
+        .await;
+    assert_eq!(before.status_code(), StatusCode::OK);
+
+    let disable = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    assert_eq!(disable.status_code(), StatusCode::OK);
+    assert_eq!(disable.json::<serde_json::Value>()["disabled"], true);
+
+    // The target's token is now inert.
+    let after_disable = server
+        .get("/auth/me")
+        .add_header(auth(&target_basic).0, auth(&target_basic).1)
+        .await;
+    assert_eq!(after_disable.status_code(), StatusCode::UNAUTHORIZED);
+
+    // Re-enabling restores access.
+    let enable = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": false}))
+        .await;
+    assert_eq!(enable.status_code(), StatusCode::OK);
+    assert_eq!(enable.json::<serde_json::Value>()["disabled"], false);
+
+    let after_enable = server
+        .get("/auth/me")
+        .add_header(auth(&target_basic).0, auth(&target_basic).1)
+        .await;
+    assert_eq!(after_enable.status_code(), StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn repeat_disable_is_idempotent(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (target_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "idem-target").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let first = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    assert_eq!(first.status_code(), StatusCode::OK);
+
+    let sv_after_first: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        target_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // Disabling an already-disabled account stays 200 but must not bump
+    // session_version again; a retry should not evict freshly-created sessions.
+    let second = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    assert_eq!(second.status_code(), StatusCode::OK);
+    assert_eq!(second.json::<serde_json::Value>()["disabled"], true);
+
+    let sv_after_second: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        target_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        sv_after_first, sv_after_second,
+        "a repeat disable must not bump session_version"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn cannot_disable_own_account(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .put(&format!("/api/v1/users/{admin_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn account_status_non_admin_returns_403(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "status-forbidden").await;
+    let (target_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "status-victim").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn concurrent_cross_disable_keeps_one_enabled_admin(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin_a, a_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (admin_b, b_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server_a = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let server_b = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // A disables B and B disables A at the same time. Exactly one must win, or
+    // the instance is bricked with zero admins. The loser is rejected one of two
+    // ways depending on scheduling, and both are correct:
+    //   - 422: both requests authenticate while still enabled, then serialize on
+    //     the `ORDER BY id FOR UPDATE` lock; the loser re-reads the now-smaller
+    //     enabled-admin set and the last-enabled-admin guard rejects it.
+    //   - 401: the winner commits first, disabling the loser's acting admin; the
+    //     loser's `CurrentUser` extractor then rejects at the auth boundary
+    //     before the handler (and its guard) ever runs.
+    // A 401 can only arise after a successful disable committed, so it still
+    // implies exactly one winner. The deterministic backstop is the
+    // enabled-admin recount below.
+    let fut_a = server_a
+        .put(&format!("/api/v1/users/{admin_b}/account-status"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .json(&json!({"disabled": true}));
+    let fut_b = server_b
+        .put(&format!("/api/v1/users/{admin_a}/account-status"))
+        .add_header(auth(&b_basic).0, auth(&b_basic).1)
+        .json(&json!({"disabled": true}));
+    let (ra, rb) = tokio::join!(fut_a, fut_b);
+
+    let codes = [ra.status_code(), rb.status_code()];
+    let ok = codes.iter().filter(|&&c| c == StatusCode::OK).count();
+    let rejected = codes
+        .iter()
+        .filter(|&&c| c == StatusCode::UNPROCESSABLE_ENTITY || c == StatusCode::UNAUTHORIZED)
+        .count();
+    assert_eq!(ok, 1, "exactly one cross-disable succeeds, got {codes:?}");
+    assert_eq!(
+        rejected, 1,
+        "the other is rejected, either by the last-enabled-admin guard (422) or, when \
+         the acting admin was concurrently disabled by the winner, at the auth boundary \
+         (401); got {codes:?}"
+    );
+
+    let enabled_admins: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "c!" FROM users WHERE role = 'admin' AND disabled_at IS NULL"#
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        enabled_admins, 1,
+        "at least one enabled admin must always remain"
+    );
+}
+
+// ---------- POST /api/v1/users/{id}/password-reset ----------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_reset_password_bumps_session_version(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (target_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-target").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let before: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        target_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let r = server
+        .post(&format!("/api/v1/users/{target_id}/password-reset"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"new_password": STRONG_PW}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    let after: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        target_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        after > before,
+        "admin reset bumps the target's session_version"
+    );
+
+    let cred = crate::models::local_credentials::find_by_user_id(&app_pool, target_id)
+        .await
+        .unwrap();
+    assert!(cred.is_some(), "admin reset upserts a local credential");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_reset_weak_password_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (target_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-weak").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post(&format!("/api/v1/users/{target_id}/password-reset"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"new_password": "password"}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_reset_non_admin_returns_403(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-forbidden").await;
+    let (target_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-victim").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post(&format!("/api/v1/users/{target_id}/password-reset"))
+        .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
+        .json(&json!({"new_password": STRONG_PW}))
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_reset_unknown_id_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post(&format!("/api/v1/users/{}/password-reset", Uuid::new_v4()))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"new_password": STRONG_PW}))
+        .await;
+    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+}
+
+// ---------- POST /api/v1/account/password (self-service) ----------
+
+const OLD_PW: &str = "the old password one!";
+
+fn csrf_header(token: &str) -> (HeaderName, HeaderValue) {
+    (
+        HeaderName::from_static("x-csrf-token"),
+        HeaderValue::from_str(token).expect("ascii csrf token"),
+    )
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_succeeds_and_forces_reauth(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-happy",
+        "change-happy@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-happy@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": OLD_PW, "new_password": STRONG_PW}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+
+    // session_version bumped: the current session is invalidated (forced re-auth).
+    assert_eq!(
+        server.get("/auth/me").await.status_code(),
+        StatusCode::UNAUTHORIZED,
+        "a self-service password change forces re-authentication"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_wrong_current_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-wrong",
+        "change-wrong@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-wrong@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": "not the password", "new_password": STRONG_PW}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_weak_new_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    test_support::db::create_adult_with_password(
+        &app_pool,
+        "change-weak",
+        "change-weak@example.com",
+        OLD_PW,
+    )
+    .await;
+    let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    server.save_cookies();
+    server
+        .post("/auth/local/login")
+        .json(&json!({"email": "change-weak@example.com", "password": OLD_PW}))
+        .await;
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let token = me["csrf_token"].as_str().unwrap().to_owned();
+
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(csrf_header(&token).0, csrf_header(&token).1)
+        .json(&json!({"current_password": OLD_PW, "new_password": "password"}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_oidc_only_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    // An OIDC-provisioned account: a device token but no local credential.
+    let (_id, basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "change-oidc").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Basic auth is CSRF-exempt, so no token is needed.
+    let r = server
+        .post("/api/v1/account/password")
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .json(&json!({"current_password": "anything", "new_password": STRONG_PW}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
 }

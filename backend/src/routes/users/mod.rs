@@ -27,6 +27,7 @@
 //! with 422 "would leave zero admins".
 
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -50,9 +51,28 @@ mod tests;
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_users))
+        .routes(routes!(create_user))
         .routes(routes!(update_role))
         .routes(routes!(update_child_status))
         .routes(routes!(update_user))
+        .routes(routes!(update_account_status))
+        .routes(routes!(admin_reset_password))
+        .routes(routes!(change_own_password))
+}
+
+/// Enforce the configured password policy (length bounds, zxcvbn floor, HIBP
+/// breach check) against a candidate, mapping a rejection to a 422. The breach
+/// client is built per call from the configured user-agent and carries the SSRF
+/// resolver, so the operator-overridable HIBP URL cannot be aimed at an internal
+/// address.
+async fn enforce_password_policy(
+    state: &AppState,
+    password: &str,
+    user_inputs: &[&str],
+) -> Result<(), AppError> {
+    crate::auth::password_policy::enforce_from_config(&state.config, password, user_inputs)
+        .await
+        .map_err(|e| AppError::Validation(e.to_string()))
 }
 
 /// Wire-format user row returned by list and mutation endpoints.
@@ -69,9 +89,14 @@ struct UserResponse {
     /// Whether child content-visibility rules apply to this user.
     is_child: bool,
     /// Row creation timestamp.
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
     /// Last mutation timestamp.
+    #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
+    /// Whether the account is soft-disabled (cannot authenticate). Derived from
+    /// `disabled_at`; the timestamp itself is not exposed on the wire.
+    disabled: bool,
 }
 
 /// Defensive bound on the users list (the justified
@@ -111,7 +136,8 @@ async fn list_users(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!"
              FROM users
             ORDER BY created_at ASC, id ASC
             LIMIT $1"#,
@@ -230,7 +256,8 @@ async fn update_role(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at"#,
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!""#,
         req.role.as_str(),
         id,
     )
@@ -345,7 +372,8 @@ async fn update_child_status(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at"#,
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!""#,
         req.is_child,
         new_role.as_str(),
         id,
@@ -359,6 +387,397 @@ async fn update_child_status(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     Ok(axum::Json(row))
+}
+
+/// Body for `POST /api/v1/users`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct CreateUserRequest {
+    /// Email address for the new account; must be a syntactically valid
+    /// addr-spec and unique (case-insensitive).
+    email: String,
+    /// Human-readable display name.
+    display_name: String,
+    /// Role for the new account. `child` and `admin` accounts are created only
+    /// here, by an existing administrator.
+    role: Role,
+    /// Initial password, typed by the admin and handed off out-of-band. Required;
+    /// enforced against the password policy (length, zxcvbn floor, HIBP breach).
+    password: String,
+}
+
+/// `POST /api/v1/users` — create an account with an admin-typed initial
+/// password (admin only). This is the create-and-invite path: there is no
+/// separate invite mechanism, no email, and no forced first-login change. The
+/// admin relays the password out-of-band; the user may self-service change it.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is not an admin or is a child.
+/// - [`AppError::Validation`] (422) on an invalid email or a password that
+///   fails the policy (too short/long, too weak, or breached).
+/// - [`AppError::EmailConflict`] (409) when the email is already in use.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/users",
+    tag = "users",
+    request_body = CreateUserRequest,
+    responses(
+        (status = 201, description = "Created user. Admin only.", body = UserResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn create_user(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    body: Result<axum::Json<CreateUserRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_admin()?;
+    current_user.require_not_child()?;
+    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+
+    if !is_addr_spec(&req.email) {
+        return Err(AppError::Validation("invalid email address".into()));
+    }
+    enforce_password_policy(&state, &req.password, &[&req.email, &req.display_name]).await?;
+    let phc = crate::auth::password::hash_password(req.password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    let user = crate::models::user::create_local(
+        &state.pool,
+        &req.email,
+        &req.display_name,
+        req.role,
+        Some(&phc),
+    )
+    .await
+    .map_err(|e| match e {
+        crate::models::user::CreateUserError::EmailExists => AppError::EmailConflict,
+        crate::models::user::CreateUserError::Db(db) => AppError::Internal(db.into()),
+    })?;
+
+    let body = UserResponse {
+        id: user.id,
+        display_name: user.display_name,
+        email: user.email,
+        role: user.role,
+        is_child: user.is_child,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        disabled: user.disabled_at.is_some(),
+    };
+    Ok((StatusCode::CREATED, axum::Json(body)))
+}
+
+/// Body for `PUT /api/v1/users/{id}/account-status`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct AccountStatusRequest {
+    /// `true` to soft-disable the account, `false` to re-enable it.
+    disabled: bool,
+}
+
+/// `PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable an
+/// account (admin only). Disabling stamps `disabled_at`, bumps the target's
+/// `session_version` (killing live sessions at once), and locks them out of
+/// every auth path; re-enabling clears it.
+///
+/// Last-enabled-admin protection (TOCTOU-safe): when disabling an admin, all
+/// enabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as
+/// [`update_role`]) and the request is rejected if it would leave zero enabled
+/// admins. An admin cannot disable their own account.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is not an admin or is a child.
+/// - [`AppError::Validation`] (422) on a self-disable attempt or when disabling
+///   the last enabled admin.
+/// - [`AppError::NotFound`] when the target does not exist.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    put,
+    path = "/api/v1/users/{id}/account-status",
+    tag = "users",
+    params(("id" = Uuid, Path, description = "Target user id")),
+    request_body = AccountStatusRequest,
+    responses(
+        (status = 200, description = "Updated user. Disabling invalidates the target's sessions. Admin only.", body = UserResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Cannot disable your own account, or disabling would leave zero enabled admins", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn update_account_status(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    body: Result<axum::Json<AccountStatusRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_admin()?;
+    current_user.require_not_child()?;
+    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+
+    if req.disabled && id == current_user.user_id {
+        return Err(AppError::Validation(
+            "cannot disable your own account".into(),
+        ));
+    }
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    // Lock the currently-enabled admin rows first (consistent ORDER BY id with
+    // update_role), then the target. The snapshot is the basis for the
+    // last-enabled-admin recount.
+    let enabled_admin_ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM users WHERE role = 'admin' AND disabled_at IS NULL ORDER BY id FOR UPDATE"
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    let target = sqlx::query!(
+        r#"SELECT role AS "role: Role", disabled_at FROM users WHERE id = $1 FOR UPDATE"#,
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::NotFound)?;
+
+    // Disabling the sole enabled admin would brick the instance (recovery is
+    // DB-only). target.disabled_at.is_none() means it is counted in the locked
+    // set; len <= 1 means it is the only one.
+    if req.disabled
+        && target.role == Role::Admin
+        && target.disabled_at.is_none()
+        && enabled_admin_ids.len() <= 1
+    {
+        return Err(AppError::Validation(
+            "would leave zero enabled admins".into(),
+        ));
+    }
+
+    // Idempotent: only write when the state actually changes. A retry or
+    // double-submit against an account already in the requested state must not
+    // bump session_version (which would evict live sessions) or touch updated_at.
+    if req.disabled != target.disabled_at.is_some() {
+        if req.disabled {
+            crate::models::user::disable_account(&mut *tx, id).await
+        } else {
+            crate::models::user::enable_account(&mut *tx, id).await
+        }
+        .map_err(|e| AppError::Internal(e.into()))?;
+    }
+
+    let row = sqlx::query_as!(
+        UserResponse,
+        r#"SELECT id,
+                  display_name,
+                  email,
+                  role AS "role: Role",
+                  is_child,
+                  created_at,
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!"
+             FROM users WHERE id = $1"#,
+        id,
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(axum::Json(row))
+}
+
+/// Body for `POST /api/v1/users/{id}/password-reset`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct AdminPasswordResetRequest {
+    /// New password the admin sets for the target and relays out-of-band.
+    /// Enforced against the password policy.
+    new_password: String,
+}
+
+/// `POST /api/v1/users/{id}/password-reset` — an admin sets a new password for
+/// a target account (admin only). Consistent with create: the admin types the
+/// password and hands it off; no PIN, no email. Bumps the target's
+/// `session_version` so their existing sessions are invalidated. Works for an
+/// OIDC-only account too (the local credential is upserted).
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is not an admin or is a child.
+/// - [`AppError::Validation`] (422) when the password fails the policy.
+/// - [`AppError::NotFound`] when the target does not exist.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/{id}/password-reset",
+    tag = "users",
+    params(("id" = Uuid, Path, description = "Target user id")),
+    request_body = AdminPasswordResetRequest,
+    responses(
+        (status = 200, description = "Password reset; the target's sessions are invalidated. Admin only."),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn admin_reset_password(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    body: Result<axum::Json<AdminPasswordResetRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_admin()?;
+    current_user.require_not_child()?;
+    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+
+    // Feed the target's own email and display name to the strength estimator so a
+    // password echoing them is penalized. The authoritative existence check is the
+    // FOR UPDATE below; this read only supplies the context words.
+    let target = crate::models::user::find_by_id(&state.pool, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::NotFound)?;
+    let mut context: Vec<&str> = vec![target.display_name.as_str()];
+    if let Some(email) = target.email.as_deref() {
+        context.push(email);
+    }
+    enforce_password_policy(&state, &req.new_password, &context).await?;
+    let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let exists = sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR UPDATE", id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if exists.is_none() {
+        return Err(AppError::NotFound);
+    }
+
+    crate::models::local_credentials::set_password(&mut *tx, id, &phc)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::user::increment_session_version(&mut *tx, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(StatusCode::OK)
+}
+
+/// Body for `POST /api/v1/account/password`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct ChangePasswordRequest {
+    /// The caller's current password, re-verified before the change.
+    current_password: String,
+    /// The new password; enforced against the password policy.
+    new_password: String,
+}
+
+/// `POST /api/v1/account/password` — the authenticated caller changes their own
+/// password.
+///
+/// THREAT (IDOR): the target is ALWAYS the session user. The
+/// endpoint accepts no id from the path or body, so it cannot be turned against
+/// another account. It verifies the current password, enforces the policy on the
+/// new one, writes it, and bumps `session_version`, which forces re-auth of every
+/// session including the caller's own.
+///
+/// # Errors
+/// - [`AppError::Unauthorized`] when unauthenticated.
+/// - [`AppError::Validation`] (422) when the current password is wrong, the new
+///   password fails the policy, or the account has no local credential (it signs
+///   in through an identity provider).
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    post,
+    path = "/api/v1/account/password",
+    tag = "users",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn change_own_password(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    body: Result<axum::Json<ChangePasswordRequest>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+    let user_id = current_user.user_id;
+
+    let credential = crate::models::local_credentials::find_by_user_id(&state.pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(|| {
+            AppError::Validation(
+                "this account has no password to change; it signs in through an identity provider"
+                    .to_owned(),
+            )
+        })?;
+
+    if crate::auth::password::verify_password(
+        req.current_password.as_bytes(),
+        &credential.password_hash,
+    )
+    .is_err()
+    {
+        return Err(AppError::Validation(
+            "current password is incorrect".to_owned(),
+        ));
+    }
+
+    // Same context-word treatment as the other credential-setting paths: the
+    // caller's own email and display name penalize a password that echoes them.
+    let me = crate::models::user::find_by_id(&state.pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+    let mut context: Vec<&str> = vec![me.display_name.as_str()];
+    if let Some(email) = me.email.as_deref() {
+        context.push(email);
+    }
+    enforce_password_policy(&state, &req.new_password, &context).await?;
+    let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::local_credentials::set_password(&mut *tx, user_id, &phc)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::user::increment_session_version(&mut *tx, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(StatusCode::OK)
 }
 
 /// Body for `PATCH /api/v1/users/{id}`.
@@ -564,7 +983,8 @@ async fn update_user(
                   role AS "role: Role",
                   is_child,
                   created_at,
-                  updated_at
+                  updated_at,
+                  (disabled_at IS NOT NULL) AS "disabled!"
              FROM users
             WHERE id = $1"#,
         id,

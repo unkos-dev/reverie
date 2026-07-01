@@ -39,6 +39,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(local_login))
         .routes(routes!(setup_status))
         .routes(routes!(setup))
+        .routes(routes!(register))
         .routes(routes!(forgot_password))
         .routes(routes!(reset_password))
         .routes(routes!(logout))
@@ -215,6 +216,14 @@ async fn callback(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("user upsert failed: {e}")))?;
 
+    // THREAT (account lockout): a soft-disabled account cannot complete OIDC
+    // login. Reject after resolving the identity but before establishing any
+    // session. A first-time OIDC user is freshly provisioned (never disabled);
+    // this catches an existing account disabled after its initial link.
+    if user.disabled_at.is_some() {
+        return Err(AppError::Unauthorized);
+    }
+
     // Log the user in — cycles session ID (fixation prevention) and persists
     // user_id + session_version for per-request rehydration.
     crate::auth::session::login(&session, &user)
@@ -356,7 +365,17 @@ async fn local_login(
     // A correct password succeeds even during an active backoff (which it then
     // clears). Verify-first means backoff never blocks a legitimate login; it
     // only rejects continued *wrong* attempts.
-    let session_user = if verified { account } else { None };
+    //
+    // THREAT (account-state enumeration, CWE-204): a soft-disabled account with
+    // a CORRECT password must be indistinguishable from a wrong password. It
+    // falls through to the generic failed-login path below (same email-keyed
+    // throttle escalation, same generic 422, no session) rather than returning a
+    // distinct "account disabled" error, which would be a disabled-state oracle.
+    // The Argon2 verify above already ran, so login latency is preserved.
+    let session_user = match account {
+        Some(user) if verified && user.disabled_at.is_none() => Some(user),
+        _ => None,
+    };
     if let Some(user) = session_user {
         crate::models::login_throttle::reset(&state.pool, &body.email)
             .await
@@ -517,6 +536,92 @@ async fn setup(
     }
 }
 
+/// Request body for `POST /auth/register`. Explicit allow-list (no
+/// mass-assignment): a self-registrant cannot smuggle a role or child flag.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct RegisterRequest {
+    /// New account email (RFC 5322 addr-spec).
+    email: String,
+    /// Display name.
+    display_name: String,
+    /// Plaintext password; enforced against the password policy, then hashed.
+    password: String,
+}
+
+/// `POST /auth/register`: config-gated self-service registration.
+///
+/// Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.
+/// Mirrors the repeatable pre-auth handlers (`forgot_password`/`reset_password`),
+/// NOT `setup`: it is unauthenticated and repeatable, and each call fires an
+/// Argon2 hash plus an outbound HIBP request, so the per-source rate limit is
+/// enforced BEFORE any policy/hash/breach work.
+///
+/// THREAT (privilege escalation): a self-registered account is
+/// always an `adult`, never an admin or child. The DTO carries no role, and
+/// `create_local` is called with [`Role::Adult`]; admin and child accounts are
+/// minted only by an existing administrator. No session is established (parity
+/// with setup/reset: the session contract lives only at `/auth/local/login`).
+///
+/// # Errors
+/// - [`AppError::NotFound`] when self-registration or local auth is disabled.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
+/// - [`AppError::Validation`] (422) on a malformed email or a policy failure.
+/// - [`AppError::EmailConflict`] (409) when the email is already in use.
+/// - [`AppError::Internal`] on hashing or database failure.
+#[utoipa::path(
+    post,
+    path = "/auth/register",
+    tag = "auth",
+    security(()),
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "Account created (no auto-login)"),
+        (status = 404, description = "Self-registration is disabled on this instance", body = crate::openapi::ProblemDetails),
+        (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn register(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    Json(body): Json<RegisterRequest>,
+) -> Result<StatusCode, AppError> {
+    if !state.config.self_registration_enabled || !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    if !user::is_addr_spec(&body.email) {
+        return Err(AppError::Validation("invalid email address".to_owned()));
+    }
+    crate::auth::password_policy::enforce_from_config(
+        &state.config,
+        &body.password,
+        &[&body.email, &body.display_name],
+    )
+    .await
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+
+    let phc = crate::auth::password::hash_password(body.password.as_bytes())
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
+
+    match user::create_local(
+        &state.pool,
+        &body.email,
+        &body.display_name,
+        crate::models::role::Role::Adult,
+        Some(&phc),
+    )
+    .await
+    {
+        Ok(_user) => Ok(StatusCode::CREATED),
+        Err(user::CreateUserError::EmailExists) => Err(AppError::EmailConflict),
+        Err(user::CreateUserError::Db(e)) => Err(AppError::Internal(e.into())),
+    }
+}
+
 /// Resolve the client IP and enforce the per-source login/recovery rate limit.
 /// Tolerates a missing peer (test harness); shared by the login and recovery
 /// handlers.
@@ -631,7 +736,7 @@ struct ResetPasswordRequest {
     email: String,
     /// The recovery PIN from the host file.
     pin: String,
-    /// New plaintext password; enforced against `password_min_length`.
+    /// New plaintext password; enforced against the full password policy.
     new_password: String,
 }
 
@@ -678,9 +783,18 @@ async fn reset_password(
 
     let generic = || AppError::Validation("invalid or expired reset request".to_owned());
 
-    if body.new_password.chars().count() < state.config.password_min_length {
-        return Err(generic());
-    }
+    // The recovery path sets a credential, so it runs the same strength policy as
+    // every other credential-setting path: an attacker holding a PIN must not be
+    // able to install a weak or breached password here. Enforced before the email
+    // lookup, and a rejection is mapped to the generic error, so neither the
+    // outcome nor the timing reveals whether the account or PIN exists.
+    crate::auth::password_policy::enforce_from_config(
+        &state.config,
+        &body.new_password,
+        &[&body.email],
+    )
+    .await
+    .map_err(|_| generic())?;
 
     let user = user::find_by_email(&state.pool, &body.email)
         .await
@@ -1960,6 +2074,117 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_disabled_account_is_generic_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "disabled-login",
+            "disabled-login@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        crate::models::user::disable_account(&app_pool, id)
+            .await
+            .expect("disable account");
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server.save_cookies();
+
+        // THREAT (account-state enumeration): a CORRECT password against a
+        // disabled account must be indistinguishable from a wrong password —
+        // generic 422 and no session established.
+        let resp = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "disabled-login@example.com",
+                "password": "a perfectly good password",
+            }))
+            .await;
+        assert_eq!(
+            resp.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a disabled account with the right password gets the generic failure"
+        );
+
+        let me = server.get("/auth/me").await;
+        assert_eq!(
+            me.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a disabled-account login must not establish a session"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn disabled_user_live_session_is_rejected(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "disabled-session",
+            "disabled-session@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server.save_cookies();
+
+        let login = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({
+                "email": "disabled-session@example.com",
+                "password": "a perfectly good password",
+            }))
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(server.get("/auth/me").await.status_code(), StatusCode::OK);
+
+        crate::models::user::disable_account(&app_pool, id)
+            .await
+            .expect("disable account");
+
+        // The live cookie is now worthless: session rehydration rejects a
+        // disabled user on the very next request.
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "disabling a user invalidates their live session immediately"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn disabled_user_device_token_is_rejected(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "disabled-token").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let before = server
+            .get("/auth/me")
+            .add_header(axum::http::header::AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            before.status_code(),
+            StatusCode::OK,
+            "the device token authenticates before the account is disabled"
+        );
+
+        crate::models::user::disable_account(&app_pool, id)
+            .await
+            .expect("disable account");
+
+        let after = server
+            .get("/auth/me")
+            .add_header(axum::http::header::AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            after.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a disabled user's device token is inert on the Basic-auth path"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn local_login_session_is_csrf_enforced(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2146,7 +2371,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "reset-bad@example.com",
                 "pin": "0000000000",
-                "new_password": "a brand new password",
+                "new_password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(resp.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -2187,7 +2412,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "recover@example.com",
                 "pin": pin,
-                "new_password": "a brand new password",
+                "new_password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(
@@ -2201,7 +2426,7 @@ mod tests {
             .post("/auth/local/login")
             .json(&serde_json::json!({
                 "email": "recover@example.com",
-                "password": "a brand new password",
+                "password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(
@@ -2216,7 +2441,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "recover@example.com",
                 "pin": pin,
-                "new_password": "yet another password",
+                "new_password": "amber thistle vault ridge",
             }))
             .await;
         assert_eq!(
@@ -2225,6 +2450,62 @@ mod tests {
             "a consumed PIN is single-use"
         );
         // The successful reset already removed the PIN file; nothing to clean up.
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_rejects_a_weak_password(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let user_id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "weakset",
+            "weakset@example.com",
+            "the old password",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let forgot = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "weakset@example.com"}))
+            .await;
+        assert_eq!(forgot.status_code(), StatusCode::OK);
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
+        let contents = std::fs::read_to_string(&pin_path).expect("recovery PIN file written");
+        let pin = contents
+            .lines()
+            .find_map(|l| l.strip_prefix("pin: "))
+            .expect("PIN line in file")
+            .to_owned();
+
+        // A valid PIN with a policy-failing password is rejected: the recovery
+        // path is not a bypass for the strength gate.
+        let weak = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "weakset@example.com",
+                "pin": &pin,
+                "new_password": "password",
+            }))
+            .await;
+        assert_eq!(weak.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // The rejection happened before the PIN was consumed, so the same PIN
+        // still completes a reset with a strong password.
+        let strong = server
+            .post("/auth/reset-password")
+            .json(&serde_json::json!({
+                "email": "weakset@example.com",
+                "pin": &pin,
+                "new_password": "lithe cobalt meadow drift",
+            }))
+            .await;
+        assert_eq!(
+            strong.status_code(),
+            StatusCode::OK,
+            "the PIN survived the rejected weak attempt"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2294,7 +2575,7 @@ mod tests {
             .json(&serde_json::json!({
                 "email": "stale@example.com",
                 "pin": pin,
-                "new_password": "a brand new password",
+                "new_password": "lithe cobalt meadow drift",
             }))
             .await;
         assert_eq!(reset.status_code(), StatusCode::OK);
@@ -2305,5 +2586,120 @@ mod tests {
             StatusCode::UNAUTHORIZED,
             "a session established before the reset is invalidated by it"
         );
+    }
+
+    // ---------- POST /auth/register ----------
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_creates_adult_when_enabled(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "self-reg@example.com",
+                "display_name": "Self Reg",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED);
+
+        // A self-registered account is an adult, never an admin or
+        // child, and it does not flip the first-admin gate.
+        let role: String = sqlx::query_scalar!(
+            r#"SELECT role::text AS "role!" FROM users WHERE lower(email) = lower($1)"#,
+            "self-reg@example.com",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(role, "adult");
+        assert!(
+            !crate::models::user::admin_exists(&app_pool).await.unwrap(),
+            "self-registration must not create an administrator"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_returns_404_when_disabled(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        // Base config has self_registration_enabled = false.
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "nope@example.com",
+                "display_name": "Nope",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_duplicate_email_returns_409(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let body = serde_json::json!({
+            "email": "dup-reg@example.com",
+            "display_name": "Dup",
+            "password": "correct-horse-battery-staple-7!",
+        });
+        assert_eq!(
+            server
+                .post("/auth/register")
+                .json(&body)
+                .await
+                .status_code(),
+            StatusCode::CREATED
+        );
+        assert_eq!(
+            server
+                .post("/auth/register")
+                .json(&body)
+                .await
+                .status_code(),
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_weak_password_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "weak-reg@example.com",
+                "display_name": "Weak",
+                "password": "password",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_invalid_email_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "not-an-email",
+                "display_name": "Bad Email",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 }

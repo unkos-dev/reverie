@@ -26,6 +26,14 @@ pub fn test_config() -> Config {
         login_throttle_base_secs: 2,
         login_throttle_cap_secs: 900,
         password_min_length: 8,
+        password_max_length: 256,
+        password_min_zxcvbn_score: 2,
+        // Off in tests so endpoint tests exercise length + zxcvbn deterministically
+        // without an outbound HIBP call; the breach path is unit-tested against a
+        // wiremock loopback in auth::password_policy.
+        password_breach_check_enabled: false,
+        password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
+        self_registration_enabled: false,
         recovery_pin_ttl_secs: 900,
         recovery_pin_dir: "./reverie-recovery".into(),
         trusted_client_ip_header: None,
@@ -397,6 +405,29 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config: super::test_config(),
+            oidc_client: Some(super::test_oidc_client()),
+            login_limiter: super::test_login_limiter(),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
+    /// Same as [`server_with_real_pools`] but with self-registration enabled, for
+    /// `/auth/register` tests (the base `test_config()` has it off to match the
+    /// shipped default).
+    pub fn server_with_self_registration(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+    ) -> axum_test::TestServer {
+        use crate::state::AppState;
+        let mut config = super::test_config();
+        config.self_registration_enabled = true;
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
             oidc_client: Some(super::test_oidc_client()),
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),

@@ -121,7 +121,7 @@ function bodyFor(url: URL, role: string): unknown {
   if (pathname.startsWith("/api/v1/series/")) {
     return { id: "series-1", name: "Discworld", sort_name: "discworld", works: [] };
   }
-  if (pathname === "/api/v1/users") return [{ ...ADMIN_ME, ...USER_TIMESTAMPS }];
+  if (pathname === "/api/v1/users") return [{ ...ADMIN_ME, ...USER_TIMESTAMPS, disabled: false }];
   if (pathname === "/api/v1/dashboard/stats") return STATS;
   if (pathname.startsWith("/api/v1/dashboard/activity")) return { batches: [] };
   // Fail fast — a silent `{}` for an unknown path would green-light

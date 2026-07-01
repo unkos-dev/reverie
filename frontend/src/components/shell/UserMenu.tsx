@@ -18,6 +18,7 @@
  * submenu re-binds the same three `ThemePreference` values instead.
  */
 import type { ReactElement } from "react";
+import { Link } from "react-router";
 
 import { logout } from "@/api/auth";
 import {
@@ -89,6 +90,9 @@ export function UserChip(): ReactElement | null {
         <DropdownMenuItem disabled>
           Settings
           <span className="text-fg-faint ml-auto text-xs">planned</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/account/password">Change password</Link>
         </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>

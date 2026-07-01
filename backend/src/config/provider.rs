@@ -46,6 +46,23 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ),
     ("REVERIE_LOGIN_THROTTLE_CAP_SECS", "login_throttle_cap_secs"),
     ("REVERIE_PASSWORD_MIN_LENGTH", "password_min_length"),
+    ("REVERIE_PASSWORD_MAX_LENGTH", "password_max_length"),
+    (
+        "REVERIE_PASSWORD_MIN_ZXCVBN_SCORE",
+        "password_min_zxcvbn_score",
+    ),
+    (
+        "REVERIE_PASSWORD_BREACH_CHECK_ENABLED",
+        "password_breach_check_enabled",
+    ),
+    (
+        "REVERIE_PASSWORD_BREACH_CHECK_URL",
+        "password_breach_check_url",
+    ),
+    (
+        "REVERIE_SELF_REGISTRATION_ENABLED",
+        "self_registration_enabled",
+    ),
     ("REVERIE_RECOVERY_PIN_TTL_SECS", "recovery_pin_ttl_secs"),
     ("REVERIE_RECOVERY_PIN_DIR", "recovery_pin_dir"),
     (

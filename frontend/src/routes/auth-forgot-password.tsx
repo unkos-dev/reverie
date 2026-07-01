@@ -144,7 +144,9 @@ export function Component(): ReactElement {
             required
             aria-invalid={error !== null || undefined}
           />
-          <FieldDescription>Use at least 8 characters.</FieldDescription>
+          <FieldDescription>
+            Use at least 8 characters. Avoid common words or passwords from known data breaches.
+          </FieldDescription>
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
         <Button type="submit" disabled={resetMutation.isPending}>
