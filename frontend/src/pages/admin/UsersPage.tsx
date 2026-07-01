@@ -232,7 +232,7 @@ function UserRow({
   onRoleChange,
   onChildToggle,
   onStatusToggle,
-}: UserRowProps): ReactElement {
+}: Readonly<UserRowProps>): ReactElement {
   return (
     <TableRow>
       <TableCell className="font-medium">
@@ -300,7 +300,7 @@ type CreateUserDialogProps = {
   onCreated: () => void;
 };
 
-function CreateUserDialog({ onCreated }: CreateUserDialogProps): ReactElement {
+function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): ReactElement {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<Role>("adult");
   const [error, setError] = useState<string | null>(null);
@@ -408,7 +408,7 @@ function CreateUserDialog({ onCreated }: CreateUserDialogProps): ReactElement {
               required
             />
           </Field>
-          {error !== null ? <FieldError>{error}</FieldError> : null}
+          {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">
@@ -430,7 +430,10 @@ type ResetPasswordDialogProps = {
   displayName: string;
 };
 
-function ResetPasswordDialog({ userId, displayName }: ResetPasswordDialogProps): ReactElement {
+function ResetPasswordDialog({
+  userId,
+  displayName,
+}: Readonly<ResetPasswordDialogProps>): ReactElement {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -490,7 +493,7 @@ function ResetPasswordDialog({ userId, displayName }: ResetPasswordDialogProps):
               required
             />
           </Field>
-          {error !== null ? <FieldError>{error}</FieldError> : null}
+          {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">

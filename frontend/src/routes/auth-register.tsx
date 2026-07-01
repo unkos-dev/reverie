@@ -137,7 +137,7 @@ export function Component(): ReactElement {
             Use at least 8 characters. Avoid common words or passwords from known data breaches.
           </FieldDescription>
         </Field>
-        {error !== null ? <FieldError>{error.message}</FieldError> : null}
+        {error ? <FieldError>{error.message}</FieldError> : null}
         <Button type="submit" disabled={registerMutation.isPending}>
           Create account
         </Button>
