@@ -349,12 +349,11 @@ pub async fn create_local(
     Ok(User::from(row))
 }
 
-/// Soft-disable or re-enable an account.
+/// Soft-disable an account.
 ///
-/// Disabling stamps `disabled_at = now()` AND bumps `session_version` in one
-/// statement so every live session for the target is invalidated immediately
-/// (the force-logout lever). Re-enabling clears `disabled_at`; it does not bump
-/// the version, since a disabled account holds no live sessions to preserve.
+/// Stamps `disabled_at = now()` AND bumps `session_version` in one statement so
+/// every live session for the target is invalidated immediately (the
+/// force-logout lever).
 ///
 /// Takes an executor so the caller binds it to the same transaction as its
 /// last-enabled-admin guard (the account-status handler).
@@ -363,30 +362,44 @@ pub async fn create_local(
 ///
 /// Returns [`sqlx::Error`] from the `UPDATE`.
 #[allow(dead_code)] // Consumed by the account-status route in this PR
-pub async fn set_disabled(
+pub async fn disable_account(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
-    disabled: bool,
 ) -> Result<(), sqlx::Error> {
-    if disabled {
-        sqlx::query!(
-            "UPDATE users \
-             SET disabled_at = now(), session_version = session_version + 1, updated_at = now() \
-             WHERE id = $1",
-            user_id,
-        )
-        .execute(executor)
-        .await
-        .map(|_| ())
-    } else {
-        sqlx::query!(
-            "UPDATE users SET disabled_at = NULL, updated_at = now() WHERE id = $1",
-            user_id,
-        )
-        .execute(executor)
-        .await
-        .map(|_| ())
-    }
+    sqlx::query!(
+        "UPDATE users \
+         SET disabled_at = now(), session_version = session_version + 1, updated_at = now() \
+         WHERE id = $1",
+        user_id,
+    )
+    .execute(executor)
+    .await
+    .map(|_| ())
+}
+
+/// Re-enable a soft-disabled account.
+///
+/// Clears `disabled_at`; it does not bump `session_version`, since a disabled
+/// account holds no live sessions to preserve.
+///
+/// Takes an executor so the caller binds it to the same transaction as its
+/// last-enabled-admin guard (the account-status handler).
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the `UPDATE`.
+#[allow(dead_code)] // Consumed by the account-status route in this PR
+pub async fn enable_account(
+    executor: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE users SET disabled_at = NULL, updated_at = now() WHERE id = $1",
+        user_id,
+    )
+    .execute(executor)
+    .await
+    .map(|_| ())
 }
 
 /// Fetch a user by OIDC identity `(issuer, subject)`, resolved through
@@ -1183,14 +1196,14 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn set_disabled_stamps_timestamp_and_bumps_session_version(pool: PgPool) {
+    async fn disable_account_stamps_timestamp_and_bumps_session_version(pool: PgPool) {
         let user = create_local(&pool, "disable@example.com", "Dis", Role::Adult, None)
             .await
             .expect("create");
         assert!(user.disabled_at.is_none());
         let before = user.session_version;
 
-        set_disabled(&pool, user.id, true).await.expect("disable");
+        disable_account(&pool, user.id).await.expect("disable");
 
         let reloaded = find_by_id(&pool, user.id)
             .await
@@ -1205,14 +1218,12 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn set_disabled_false_clears_timestamp(pool: PgPool) {
+    async fn enable_account_clears_timestamp(pool: PgPool) {
         let user = create_local(&pool, "reenable@example.com", "Re", Role::Adult, None)
             .await
             .expect("create");
-        set_disabled(&pool, user.id, true).await.expect("disable");
-        set_disabled(&pool, user.id, false)
-            .await
-            .expect("re-enable");
+        disable_account(&pool, user.id).await.expect("disable");
+        enable_account(&pool, user.id).await.expect("re-enable");
 
         let reloaded = find_by_id(&pool, user.id)
             .await

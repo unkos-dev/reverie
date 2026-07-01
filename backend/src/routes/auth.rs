@@ -2084,7 +2084,7 @@ mod tests {
             "a perfectly good password",
         )
         .await;
-        crate::models::user::set_disabled(&app_pool, id, true)
+        crate::models::user::disable_account(&app_pool, id)
             .await
             .expect("disable account");
         let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
@@ -2138,7 +2138,7 @@ mod tests {
         assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
         assert_eq!(server.get("/auth/me").await.status_code(), StatusCode::OK);
 
-        crate::models::user::set_disabled(&app_pool, id, true)
+        crate::models::user::disable_account(&app_pool, id)
             .await
             .expect("disable account");
 
@@ -2169,7 +2169,7 @@ mod tests {
             "the device token authenticates before the account is disabled"
         );
 
-        crate::models::user::set_disabled(&app_pool, id, true)
+        crate::models::user::disable_account(&app_pool, id)
             .await
             .expect("disable account");
 
