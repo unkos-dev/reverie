@@ -61,6 +61,7 @@ struct CreateTokenResponse {
     /// Capabilities this token carries.
     scopes: Vec<Scope>,
     /// `null` if the token never expires.
+    #[serde(with = "time::serde::rfc3339::option")]
     expires_at: Option<OffsetDateTime>,
     /// The full Bearer credential (`{prefix}{id}.{secret}`), returned
     /// exactly once, here; only its SHA-256 hash is persisted, so the
@@ -81,11 +82,14 @@ struct TokenListItem {
     /// Capabilities this token carries.
     scopes: Vec<Scope>,
     /// `null` if the token never expires.
+    #[serde(with = "time::serde::rfc3339::option")]
     expires_at: Option<OffsetDateTime>,
     /// Timestamp of the last successful auth with this token; `null` if
     /// the token has never been used.
+    #[serde(with = "time::serde::rfc3339::option")]
     last_used_at: Option<OffsetDateTime>,
     /// Token creation timestamp.
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
 }
 
@@ -372,7 +376,9 @@ mod tests {
         assert_eq!(reader["scopes"], serde_json::json!(["read"]));
         assert!(reader["expires_at"].is_null());
         assert!(reader["last_used_at"].is_null());
-        assert!(!reader["created_at"].is_null());
+        // RFC 3339 string, not `time`'s default array-of-fields shape --
+        // a bare `!is_null()` check would pass either way.
+        assert!(reader["created_at"].as_str().is_some());
 
         // The helper's auth token is also listed. Its last_used_at is NOT
         // asserted non-null here: verify_basic schedules the
@@ -432,7 +438,7 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::CREATED);
         let body = response.json::<serde_json::Value>();
         assert_eq!(body["scopes"], serde_json::json!(["read", "write"]));
-        assert!(!body["expires_at"].is_null());
+        assert!(body["expires_at"].as_str().is_some());
 
         // The response credential re-verifies as a valid Bearer token for
         // its own mint — round-trips through the exact resolver a client
