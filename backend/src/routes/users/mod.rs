@@ -562,9 +562,14 @@ async fn update_account_status(
         ));
     }
 
-    crate::models::user::set_disabled(&mut *tx, id, req.disabled)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    // Idempotent: only write when the state actually changes. A retry or
+    // double-submit against an account already in the requested state must not
+    // bump session_version (which would evict live sessions) or touch updated_at.
+    if req.disabled != target.disabled_at.is_some() {
+        crate::models::user::set_disabled(&mut *tx, id, req.disabled)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
 
     let row = sqlx::query_as!(
         UserResponse,

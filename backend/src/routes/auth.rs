@@ -2685,4 +2685,21 @@ mod tests {
             .await;
         assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn register_invalid_email_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_self_registration(&app_pool, &ingestion_pool);
+
+        let r = server
+            .post("/auth/register")
+            .json(&serde_json::json!({
+                "email": "not-an-email",
+                "display_name": "Bad Email",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
 }

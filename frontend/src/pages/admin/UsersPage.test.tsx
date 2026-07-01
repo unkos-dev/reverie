@@ -154,6 +154,19 @@ describe("UsersPage", () => {
     expect(await screen.findByRole("button", { name: "Enable" })).toBeInTheDocument();
   });
 
+  test("enable button calls setAccountStatus with disabled=false", async () => {
+    const target = makeUser({ disabled: true });
+    vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);
+    const setStatus = vi
+      .spyOn(usersApi, "setAccountStatus")
+      .mockResolvedValue({ ...target, disabled: false });
+    renderUsersPage(ADMIN_ME, [target]);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Enable" }));
+    expect(setStatus).toHaveBeenCalledWith(target.id, false);
+  });
+
   test("offers no disable control for the calling admin's own row", async () => {
     renderUsersPage(ADMIN_ME, [makeUser({ id: ADMIN_ME.id, display_name: "Alice" })]);
     await screen.findByText("Alice");

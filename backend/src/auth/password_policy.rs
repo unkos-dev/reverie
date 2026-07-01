@@ -439,6 +439,33 @@ mod tests {
         assert!(result.is_ok(), "expected Ok, got {result:?}");
     }
 
+    #[tokio::test]
+    async fn enforce_rejects_a_breached_password() {
+        let server = MockServer::start().await;
+        // SHA-1 of "correct-horse-battery-staple-7!" is
+        // A07F01DC7C1181DF05D6B47FC8F0DC0826A173C1: prefix A07F0, the rest the
+        // suffix. Reporting that suffix as seen means a strong-but-breached
+        // password is rejected by enforce(), not accepted on strength alone.
+        let body = "1DC7C1181DF05D6B47FC8F0DC0826A173C1:9";
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/A07F0$"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+
+        let result = enforce(
+            "correct-horse-battery-staple-7!",
+            &[],
+            &policy(server.uri()),
+            &dummy_client(),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(PolicyError::Breached)),
+            "expected Breached, got {result:?}"
+        );
+    }
+
     #[expect(
         clippy::disallowed_methods,
         reason = "bare Client::new() in tests is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md)"

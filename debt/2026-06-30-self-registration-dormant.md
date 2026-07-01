@@ -2,7 +2,7 @@
 severity: low
 surfaces: [security, frontend, server-operator]
 adopted: 2026-06-30
-adopted-because: S3 review decision; the register endpoint mints immediately-active accounts with no admin approval, which does not fit the single-operator family threat model
+adopted-because: S3 review decision; the register endpoint mints immediately-active accounts with no admin approval, which is unsafe for a multi-user, potentially internet-exposed instance where anyone who can reach it could mint a working account
 lift-when-class: feature
 lift-when: registration is moderated as a request-access flow (creates disabled-pending accounts an admin approves), with the `/register` route and a gated login entry point re-wired and a disabled-on-register invariant test
 ---
@@ -21,8 +21,9 @@ left inert:
   `/register` route, so the screen is unreachable in the app.
 
 As built, turning the flag on is an unmoderated free-for-all: anyone who can
-reach the instance creates a working adult account. That suits neither Reverie's
-single-operator family threat model nor the norm for self-hosted media servers
+reach the instance creates a working adult account. On a multi-user instance that
+may be reachable from the public internet, that is an open door, and it fits
+neither Reverie's threat model nor the norm for self-hosted media servers
 (admin-provisioned accounts). Account creation therefore stays admin-only via
 `POST /api/v1/users`; the registration path is retained but not exposed.
 

@@ -989,6 +989,53 @@ async fn admin_disable_then_re_enable_user(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn repeat_disable_is_idempotent(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (target_id, _) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "idem-target").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let first = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    assert_eq!(first.status_code(), StatusCode::OK);
+
+    let sv_after_first: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        target_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // Disabling an already-disabled account stays 200 but must not bump
+    // session_version again; a retry should not evict freshly-created sessions.
+    let second = server
+        .put(&format!("/api/v1/users/{target_id}/account-status"))
+        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .json(&json!({"disabled": true}))
+        .await;
+    assert_eq!(second.status_code(), StatusCode::OK);
+    assert_eq!(second.json::<serde_json::Value>()["disabled"], true);
+
+    let sv_after_second: i32 = sqlx::query_scalar!(
+        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
+        target_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        sv_after_first, sv_after_second,
+        "a repeat disable must not bump session_version"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn cannot_disable_own_account(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
