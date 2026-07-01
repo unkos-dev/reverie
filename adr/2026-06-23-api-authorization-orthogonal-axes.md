@@ -109,10 +109,15 @@ Collapsing them (M3) would force child restrictions and administrative gating to
 be re-encoded as scopes, losing the clean separation between a credential's
 delegated capability and the identity behind it.
 
-**Scope representation.** Scopes are a typed enum persisted as a Postgres text
-array on the credential. Sessions derive their scope set from the user's role
-(an interactive login gets the full capability its role allows). Tokens carry
-explicit scopes, bounded by the user's role ceiling.
+**Scope representation.** Scopes are a typed enum (`read`, `write`, `admin`)
+persisted as an array of the Postgres `scope` enum on the credential. Within
+the scope axis the three values compose as a hierarchy, `read < write < admin`:
+a higher scope subsumes every lower one, so an endpoint gates on the least
+scope it requires and any credential holding that scope or higher clears it.
+`read` is the floor, so every valid credential carries at least `read` and a
+scopeless credential is rejected at authentication. Sessions derive their scope
+set from the user's role (an interactive login gets the full capability its
+role allows). Tokens carry explicit scopes, bounded by the user's role ceiling.
 
 **Role-to-scope ceiling.** Administrator unlocks the `admin` scope; `read` and
 `write` are available to all roles. A child account holds `read` and `write`

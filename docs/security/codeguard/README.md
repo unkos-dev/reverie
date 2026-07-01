@@ -216,13 +216,15 @@ that matrix, since it is enforcement infrastructure rather than a single
 handler decision.
 
 **Reverie's position:** `backend/src/authz_matrix.rs` parses the OpenAPI
-document generated in-process (not the committed `docs/openapi.json`, which
-can lag by design between commits) and asserts, for every `/api/v1` operation,
-that it declares a scope requirement and that a credential missing any one of
-those scopes is rejected with 403. A companion check flags any mutating-verb
-(`POST`/`PUT`/`PATCH`/`DELETE`) operation that does not require `write`, with a
-small explicit allow-list, logged rather than silent, for the rare
-side-effect-free exception (a search endpoint that happens to use `POST`).
+document generated in-process (not the committed `docs/openapi.json`) and
+asserts, for every `/api/v1` operation, that it declares a scope requirement
+and that a credential one level below the required scope in the hierarchy
+(`read` < `write` < `admin`) is rejected with 403, while a scopeless credential
+is rejected at the auth seam. A companion check flags any mutating-verb
+(`POST`/`PUT`/`PATCH`/`DELETE`) operation that does not require at least
+`write`, with a small explicit allow-list, logged rather than silent, for the
+rare side-effect-free exception (the enrichment dry-run, a `POST` that computes
+a preview without persisting).
 Mint requests for personal tokens go through a mass-assignment allow-list DTO
 (`CreateTokenRequest` in `backend/src/routes/tokens.rs`: exactly `name`,
 `scopes`, `expires_in_days`), so no other field on the token row is settable at
