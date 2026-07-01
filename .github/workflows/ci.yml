@@ -228,7 +228,7 @@ jobs:
       # SHA-pinned: dtolnay/rust-toolchain reads the toolchain from the
       # git ref name (`@stable`), so pinning to a SHA requires naming the
       # channel explicitly via `toolchain:`.
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: stable
           # llvm-tools-preview ships the llvm-profdata/llvm-cov binaries
@@ -526,7 +526,7 @@ jobs:
       # The pinned SHA is dtolnay/rust-toolchain's `stable` tag; the
       # `toolchain:` input overrides which channel is actually installed, so
       # the same action revision installs the MSRV toolchain here.
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
 
