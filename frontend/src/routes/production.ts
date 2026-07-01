@@ -66,6 +66,15 @@ export const shelfDetailRoute: RouteObject = {
   },
 };
 
+/** `/tokens` — self-service device-token management (any authenticated user). */
+export const tokensRoute: RouteObject = {
+  path: "tokens",
+  lazy: async () => {
+    const mod = await import("./tokens");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};
+
 /** `/admin/users` — admin-only user management. */
 export const adminUsersRoute: RouteObject = {
   path: "admin/users",

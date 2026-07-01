@@ -65,6 +65,12 @@ export const queryKeys = {
     /** `/auth/setup/status` — first-run + provider state for the auth screens and the redirect. */
     setupStatus: () => ["auth", "setup-status"] as const,
   },
+  tokens: {
+    /** Root namespace; invalidate to refetch every tokens-* slot. */
+    all: ["tokens"] as const,
+    /** `GET /api/v1/tokens` list (the caller's own tokens). */
+    list: () => ["tokens", "list"] as const,
+  },
   dashboard: {
     /** Root namespace; invalidate to refetch every dashboard-* slot. */
     all: ["dashboard"] as const,

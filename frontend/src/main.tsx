@@ -36,6 +36,7 @@ import {
   seriesRoute,
   shelfDetailRoute,
   shelvesRoute,
+  tokensRoute,
 } from "./routes/production";
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
 
@@ -51,6 +52,7 @@ const routes: RouteObject[] = [
       seriesRoute,
       shelvesRoute,
       shelfDetailRoute,
+      tokensRoute,
       adminUsersRoute,
       adminDashboardRoute,
     ],
