@@ -90,14 +90,24 @@ async fn create_token(
     }
 
     let (plaintext, hash) = generate_device_token();
-    let dt = device_token::create_with_limit(&state.pool, current_user.user_id, name, &hash)
-        .await
-        .map_err(|e| match e {
-            device_token::CreateError::LimitExceeded => {
-                AppError::Validation("maximum of 10 active device tokens per user".into())
-            }
-            device_token::CreateError::Db(e) => AppError::Internal(e.into()),
-        })?;
+    // TODO(S4 commit 5): scopes/expires_in_days come from the request DTO;
+    // this placeholder preserves current behaviour (implicit read scope,
+    // never expires) until the mint endpoint is scope/expiry-aware.
+    let dt = device_token::create_with_limit(
+        &state.pool,
+        current_user.user_id,
+        name,
+        &hash,
+        &[crate::auth::scope::Scope::Read],
+        None,
+    )
+    .await
+    .map_err(|e| match e {
+        device_token::CreateError::LimitExceeded => {
+            AppError::Validation("maximum of 10 active device tokens per user".into())
+        }
+        device_token::CreateError::Db(e) => AppError::Internal(e.into()),
+    })?;
 
     Ok((
         StatusCode::CREATED,

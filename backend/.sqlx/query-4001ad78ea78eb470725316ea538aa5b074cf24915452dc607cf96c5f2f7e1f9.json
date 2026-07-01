@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"count!\" FROM device_tokens WHERE user_id = $1 AND revoked_at IS NULL",
+  "query": "SELECT count(*) AS \"count!\" FROM device_tokens WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "3b9ca01c6103820407918d49ac91b9ed8810c9a88ddb9621e00a486d8d903c8c"
+  "hash": "4001ad78ea78eb470725316ea538aa5b074cf24915452dc607cf96c5f2f7e1f9"
 }

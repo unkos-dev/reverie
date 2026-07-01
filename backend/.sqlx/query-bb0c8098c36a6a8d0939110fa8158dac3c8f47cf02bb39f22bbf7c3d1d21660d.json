@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, user_id, name, token_hash, last_used_at, created_at, revoked_at FROM device_tokens WHERE user_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC",
+  "query": "INSERT INTO device_tokens (user_id, name, token_hash) VALUES ($1, $2, $3) RETURNING id, user_id, name, token_hash, last_used_at, created_at, revoked_at, scopes AS \"scopes: Vec<Scope>\", expires_at",
   "describe": {
     "columns": [
       {
@@ -79,11 +79,53 @@
             "name": "revoked_at"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "scopes: Vec<Scope>",
+        "type_info": {
+          "Custom": {
+            "name": "scope[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "scope",
+                  "kind": {
+                    "Enum": [
+                      "read",
+                      "write",
+                      "admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "device_tokens",
+            "name": "scopes"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "device_tokens",
+            "name": "expires_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text",
+        "Text"
       ]
     },
     "nullable": [
@@ -93,8 +135,10 @@
       false,
       true,
       false,
+      true,
+      false,
       true
     ]
   },
-  "hash": "8d5e0bbf4238360cdfd51200c278d9416018e17246adc9460490ff89669293bb"
+  "hash": "bb0c8098c36a6a8d0939110fa8158dac3c8f47cf02bb39f22bbf7c3d1d21660d"
 }
