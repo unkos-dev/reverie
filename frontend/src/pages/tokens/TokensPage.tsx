@@ -2,9 +2,13 @@
  * `/tokens` — self-service device-token management.
  *
  * Lists the caller's own active tokens with revoke, and mints new ones
- * through a scope + expiry dialog. Reachable by any authenticated user;
- * the `admin` scope option only renders for `me.role === 'admin'` — the
+ * through an access-level + expiry dialog. Reachable by any authenticated
+ * user; the `admin` level only renders for `me.role === 'admin'`, and the
  * backend re-enforces this ceiling regardless of what the dialog offers.
+ *
+ * Access levels map to the scope hierarchy (`read` < `write` < `admin`): a
+ * higher level subsumes the lower ones, so the dialog offers a single level
+ * rather than independent scope toggles.
  */
 import { type ReactElement, type SyntheticEvent, useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +19,6 @@ import { useAuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 import { listTokens, createToken, revokeToken } from "@/api/tokens";
 import type { Token, Scope, CreateTokenResponse } from "@/api/tokens";
-import { SCOPE_VALUES } from "@/api/tokens";
 import { ApiError } from "@/api";
 import { formString } from "@/lib/form";
 import {
@@ -43,10 +46,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -59,6 +60,15 @@ const EXPIRY_OPTIONS = [
   { value: "never", label: "Never" },
 ] as const;
 type ExpiryValue = (typeof EXPIRY_OPTIONS)[number]["value"];
+
+// Access levels are the scope hierarchy presented as a single choice: each
+// level grants itself and every level below it. Ordered low to high; `admin`
+// is offered only to admins (the backend re-enforces the ceiling).
+const ACCESS_LEVELS = [
+  { value: "read", label: "Read-only", hint: "View library data. Cannot make changes." },
+  { value: "write", label: "Read & write", hint: "View and modify library data." },
+  { value: "admin", label: "Admin", hint: "Full access, including user management." },
+] as const satisfies ReadonlyArray<{ value: Scope; label: string; hint: string }>;
 
 function errorDetail(err: unknown): string {
   if (err instanceof ApiError) return err.detail;
@@ -212,7 +222,7 @@ type CreateTokenDialogProps = {
 
 function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogProps>): ReactElement {
   const [open, setOpen] = useState(false);
-  const [scopes, setScopes] = useState<Set<Scope>>(new Set(["read", "write"]));
+  const [level, setLevel] = useState<Scope>("write");
   const [expiry, setExpiry] = useState<ExpiryValue>("90");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreateTokenResponse | null>(null);
@@ -236,21 +246,9 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
     if (!next) {
       setError(null);
       setCreated(null);
-      setScopes(new Set(["read", "write"]));
+      setLevel("write");
       setExpiry("90");
     }
-  }
-
-  function toggleScope(scope: Scope, checked: boolean): void {
-    setScopes((prev) => {
-      const next = new Set(prev);
-      if (checked) {
-        next.add(scope);
-      } else {
-        next.delete(scope);
-      }
-      return next;
-    });
   }
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
@@ -262,13 +260,9 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
       setError("Enter a name (1-255 characters).");
       return;
     }
-    if (scopes.size === 0) {
-      setError("Select at least one scope.");
-      return;
-    }
     mutation.mutate({
       name,
-      scopes: Array.from(scopes),
+      scopes: [level],
       expiresInDays: expiry === "never" ? null : Number(expiry),
     });
   }
@@ -300,28 +294,36 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                 <Input id="create-token-name" name="name" type="text" required />
               </Field>
               <Field>
-                <FieldLabel>Scopes</FieldLabel>
-                <div className="flex flex-col gap-2">
-                  {SCOPE_VALUES.filter((scope) => scope !== "admin" || isAdmin).map((scope) => (
-                    <div key={scope} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`create-token-scope-${scope}`}
-                        checked={scopes.has(scope)}
-                        onCheckedChange={(checked) => {
-                          toggleScope(scope, checked === true);
-                        }}
-                      />
-                      <Label htmlFor={`create-token-scope-${scope}`}>{scope}</Label>
-                    </div>
-                  ))}
-                </div>
+                <FieldLabel htmlFor="create-token-level">Access level</FieldLabel>
+                <Select
+                  value={level}
+                  onValueChange={(v) => {
+                    const match = ACCESS_LEVELS.find((l) => l.value === v);
+                    if (match) setLevel(match.value);
+                  }}
+                >
+                  <SelectTrigger id="create-token-level" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ACCESS_LEVELS.filter((l) => l.value !== "admin" || isAdmin).map((l) => (
+                      <SelectItem key={l.value} value={l.value}>
+                        {l.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  {ACCESS_LEVELS.find((l) => l.value === level)?.hint}
+                </p>
               </Field>
               <Field>
                 <FieldLabel htmlFor="create-token-expiry">Expires</FieldLabel>
                 <Select
                   value={expiry}
-                  onValueChange={(v: ExpiryValue) => {
-                    setExpiry(v);
+                  onValueChange={(v) => {
+                    const match = EXPIRY_OPTIONS.find((o) => o.value === v);
+                    if (match) setExpiry(match.value);
                   }}
                 >
                   <SelectTrigger id="create-token-expiry" className="w-full">
@@ -363,20 +365,27 @@ type RevealCredentialProps = {
 /**
  * Splits the Bearer credential on its last `.` into the OPDS Basic-auth
  * username/password pair, mirroring `backend/src/routes/tokens.rs`'s
- * documented format.
+ * documented format. Returns `null` when the credential has no `.`
+ * separator (an unexpected shape), so the caller can omit the OPDS split
+ * rather than render a credential silently missing a character.
  */
-function splitCredential(bearer: string): { username: string; password: string } {
+function splitCredential(bearer: string): { username: string; password: string } | null {
   const i = bearer.lastIndexOf(".");
+  if (i <= 0 || i >= bearer.length - 1) return null;
   return { username: bearer.slice(0, i), password: bearer.slice(i + 1) };
 }
 
-function copyToClipboard(value: string): void {
-  void navigator.clipboard.writeText(value);
-  toast.success("Copied.");
+async function copyToClipboard(value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success("Copied.");
+  } catch {
+    toast.error("Copy failed. Select the text and copy it manually.");
+  }
 }
 
 function RevealCredential({ token, onDone }: Readonly<RevealCredentialProps>): ReactElement {
-  const { username, password } = splitCredential(token.token);
+  const basicAuth = splitCredential(token.token);
 
   return (
     <>
@@ -388,13 +397,15 @@ function RevealCredential({ token, onDone }: Readonly<RevealCredentialProps>): R
       </DialogHeader>
       <div className="flex flex-col gap-4">
         <CopyField label="Bearer token" value={token.token} />
-        <div className="border-border rounded-md border p-3">
-          <p className="text-fg-muted mb-2 text-xs">
-            For OPDS / e-reader apps that prompt for username and password separately:
-          </p>
-          <CopyField label="Username" value={username} />
-          <CopyField label="Password" value={password} />
-        </div>
+        {basicAuth && (
+          <div className="border-border rounded-md border p-3">
+            <p className="text-fg-muted mb-2 text-xs">
+              For OPDS / e-reader apps that prompt for username and password separately:
+            </p>
+            <CopyField label="Username" value={basicAuth.username} />
+            <CopyField label="Password" value={basicAuth.password} />
+          </div>
+        )}
       </div>
       <DialogFooter>
         <Button type="button" onClick={onDone}>
@@ -422,7 +433,7 @@ function CopyField({ label, value }: Readonly<CopyFieldProps>): ReactElement {
           size="icon"
           aria-label={`Copy ${label}`}
           onClick={() => {
-            copyToClipboard(value);
+            void copyToClipboard(value);
           }}
         >
           <Copy className="size-4" aria-hidden="true" />

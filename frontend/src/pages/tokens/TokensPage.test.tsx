@@ -3,6 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
+import { toast } from "sonner";
 import type { ReactElement } from "react";
 
 import { queryKeys } from "@/lib/query/keys";
@@ -116,42 +117,41 @@ describe("TokensPage", () => {
     expect(revoke).toHaveBeenCalledWith(target.id);
   });
 
-  test("non-admin cannot select the admin scope", async () => {
+  test("non-admin is not offered the admin access level", async () => {
     renderTokensPage(ADULT_ME, []);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
-    expect(screen.getByLabelText("read")).toBeInTheDocument();
-    expect(screen.getByLabelText("write")).toBeInTheDocument();
-    expect(screen.queryByLabelText("admin")).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("Access level"));
+    expect(await screen.findByRole("option", { name: "Read-only" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Read & write" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Admin" })).not.toBeInTheDocument();
   });
 
-  test("admin can select the admin scope", async () => {
+  test("admin is offered the admin access level", async () => {
     renderTokensPage(ADMIN_ME, []);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
-    expect(screen.getByLabelText("admin")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Access level"));
+    expect(await screen.findByRole("option", { name: "Admin" })).toBeInTheDocument();
   });
 
-  test("create dialog blocks submit with no scope selected", async () => {
+  test("create dialog blocks submit with an empty name", async () => {
     const create = vi.spyOn(tokensApi, "createToken");
     renderTokensPage(ADULT_ME, []);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
-    await user.type(screen.getByLabelText("Name"), "reader");
-    await user.click(screen.getByLabelText("read"));
-    await user.click(screen.getByLabelText("write"));
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(create).not.toHaveBeenCalled();
   });
 
-  test("create dialog submits name, scopes, and expiry", async () => {
+  test("submits the default write level, name, and expiry", async () => {
     const create = vi.spyOn(tokensApi, "createToken").mockResolvedValue({
-      ...makeToken({ name: "reader", scopes: ["read", "write"] }),
+      ...makeToken({ name: "reader", scopes: ["write"] }),
       token: "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
     });
     renderTokensPage(ADULT_ME, []);
@@ -163,9 +163,43 @@ describe("TokensPage", () => {
 
     expect(create).toHaveBeenCalledWith({
       name: "reader",
-      scopes: ["read", "write"],
+      scopes: ["write"],
       expiresInDays: 90,
     });
+  });
+
+  test("admin mints an admin-level token as a single scope", async () => {
+    const create = vi.spyOn(tokensApi, "createToken").mockResolvedValue({
+      ...makeToken({ name: "ops", scopes: ["admin"] }),
+      token: "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
+    });
+    renderTokensPage(ADMIN_ME, []);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "ops");
+    await user.click(screen.getByLabelText("Access level"));
+    await user.click(await screen.findByRole("option", { name: "Admin" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(create).toHaveBeenCalledWith({
+      name: "ops",
+      scopes: ["admin"],
+      expiresInDays: 90,
+    });
+  });
+
+  test("surfaces an error and stays on the form when creation fails", async () => {
+    vi.spyOn(tokensApi, "createToken").mockRejectedValueOnce(new Error("Forbidden"));
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Forbidden");
+    expect(screen.queryByText("Token created")).not.toBeInTheDocument();
   });
 
   test("reveals the credential once, including the OPDS username/password split", async () => {
@@ -192,5 +226,66 @@ describe("TokensPage", () => {
       screen.getByDisplayValue("rvpat_11111111-1111-4111-8111-111111111111"),
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue("secretvalue")).toBeInTheDocument();
+  });
+
+  test("omits the OPDS split when the credential has no separator", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn() },
+      configurable: true,
+    });
+    vi.spyOn(tokensApi, "createToken").mockResolvedValue({
+      ...makeToken({ name: "reader" }),
+      token: "malformedcredentialnodot",
+    });
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByText("Token created")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("malformedcredentialnodot")).toBeInTheDocument();
+    expect(screen.queryByText("Username")).not.toBeInTheDocument();
+    expect(screen.queryByText("Password")).not.toBeInTheDocument();
+  });
+
+  test("reports a copy failure instead of a false success", async () => {
+    vi.spyOn(tokensApi, "createToken").mockResolvedValue({
+      ...makeToken({ name: "reader" }),
+      token: "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
+    });
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await screen.findByText("Token created");
+
+    // Install the rejecting clipboard AFTER userEvent.setup(), which otherwise
+    // replaces navigator.clipboard with its own resolving stub.
+    const writeText = vi.fn<(v: string) => Promise<void>>(() =>
+      Promise.reject(new Error("denied")),
+    );
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    // Isolate this copy from any toast calls the mint flow made earlier: the
+    // sonner mock functions accumulate across the test's own actions.
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
+    await user.click(screen.getByRole("button", { name: "Copy Bearer token" }));
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        "Copy failed. Select the text and copy it manually.",
+      );
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
+    );
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalledWith("Copied.");
   });
 });
