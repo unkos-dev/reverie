@@ -168,6 +168,27 @@ describe("TokensPage", () => {
     });
   });
 
+  test("maps the Never expiry option to a null lifetime", async () => {
+    const create = vi.spyOn(tokensApi, "createToken").mockResolvedValue({
+      ...makeToken({ name: "forever" }),
+      token: "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
+    });
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "forever");
+    await user.click(screen.getByLabelText("Expires"));
+    await user.click(await screen.findByRole("option", { name: "Never" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(create).toHaveBeenCalledWith({
+      name: "forever",
+      scopes: ["write"],
+      expiresInDays: null,
+    });
+  });
+
   test("admin mints an admin-level token as a single scope", async () => {
     const create = vi.spyOn(tokensApi, "createToken").mockResolvedValue({
       ...makeToken({ name: "ops", scopes: ["admin"] }),

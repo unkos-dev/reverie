@@ -137,8 +137,8 @@ function TokensPage(): ReactElement {
 
       {isLoading && (
         <div className="space-y-2">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={`skel-${String(i)}`} className="h-12 w-full" />
+          {["name", "scopes", "actions"].map((slot) => (
+            <Skeleton key={`skel-${slot}`} className="h-12 w-full" />
           ))}
         </div>
       )}
@@ -267,6 +267,8 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
     });
   }
 
+  const availableLevels = ACCESS_LEVELS.filter((l) => l.value !== "admin" || isAdmin);
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
@@ -306,7 +308,7 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ACCESS_LEVELS.filter((l) => l.value !== "admin" || isAdmin).map((l) => (
+                    {availableLevels.map((l) => (
                       <SelectItem key={l.value} value={l.value}>
                         {l.label}
                       </SelectItem>

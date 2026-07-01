@@ -12,13 +12,16 @@ import { apiFetch } from "./fetch";
 const SCOPE_VALUES = ["read", "write", "admin"] as const;
 type Scope = (typeof SCOPE_VALUES)[number];
 
+// Timestamps are RFC 3339 (offset form, e.g. `...+00:00` or `...Z`). Validate
+// the format at the parse boundary so a backend serialization regression fails
+// loudly here rather than reaching date formatting as an invalid string.
 const TokenSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   scopes: z.array(z.enum(SCOPE_VALUES)),
-  expires_at: z.string().nullable(),
-  last_used_at: z.string().nullable(),
-  created_at: z.string(),
+  expires_at: z.iso.datetime({ offset: true }).nullable(),
+  last_used_at: z.iso.datetime({ offset: true }).nullable(),
+  created_at: z.iso.datetime({ offset: true }),
 });
 
 /** One active device token in the list view (no plaintext, no hash). */
