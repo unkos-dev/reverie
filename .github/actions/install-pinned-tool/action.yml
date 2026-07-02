@@ -53,13 +53,19 @@ runs:
         mkdir -p "$HOME/.local/bin"
         url="${TOOL_URL//\{version\}/${TOOL_VERSION}}"
         member="${ARCHIVE_MEMBER//\{version\}/${TOOL_VERSION}}"
+        # Fail fast on a stalled release server instead of hanging the
+        # runner until the job timeout; retry transient failures.
+        fetch() {
+          curl -fsSL --connect-timeout 10 --max-time 300 \
+            --retry 2 --retry-all-errors -o "$1" "$url"
+        }
         if [ -z "$member" ]; then
-          curl -fsSL -o "$HOME/.local/bin/$TOOL_BINARY" "$url"
+          fetch "$HOME/.local/bin/$TOOL_BINARY"
           echo "$TOOL_SHA256  $HOME/.local/bin/$TOOL_BINARY" | sha256sum -c -
           chmod +x "$HOME/.local/bin/$TOOL_BINARY"
         else
           tmp="$(mktemp -d)"
-          curl -fsSL -o "$tmp/archive" "$url"
+          fetch "$tmp/archive"
           echo "$TOOL_SHA256  $tmp/archive" | sha256sum -c -
           tar -xf "$tmp/archive" -C "$HOME/.local/bin" \
             --strip-components="$STRIP_COMPONENTS" "$member"
