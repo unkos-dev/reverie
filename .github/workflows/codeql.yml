@@ -19,18 +19,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Detect which languages' source actually changed so downstream analyze
-  # jobs can skip when their inputs are untouched. Scheduled runs always
-  # analyze everything — the path filter is skipped and the analyze jobs
-  # fall through the `schedule` branch of their `if:` expressions.
-  #
-  # Actions analyzer is deliberately NOT path-gated. It runs on every PR
-  # to guarantee at least one CodeQL result exists for the commit — the
-  # default-branch-protection ruleset requires code scanning results,
-  # and a PR that matches none of the path filters (e.g. docs-only or
-  # .github/renovate.json-only) would otherwise have zero results and
-  # be permanently blocked from merging. Actions analysis is the
-  # cheapest of the three (~48s) so the always-on cost is modest.
+  # Detect which languages' source changed so analyze jobs can skip.
+  # Scheduled runs always analyze everything (the analyze jobs' `if:` falls
+  # through on `schedule`). The Actions analyzer is deliberately NOT
+  # path-gated: the ruleset requires code-scanning results, and a PR
+  # matching no path filter would otherwise have zero results and be
+  # permanently blocked from merging; Actions analysis is the cheapest of
+  # the three, so the always-on cost is modest.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -66,15 +61,14 @@ jobs:
 
   analyze-actions:
     name: Analyze (actions)
-    # Always runs — guarantees a CodeQL result exists for the commit so
-    # the default-branch-protection ruleset's code-scanning rule is
-    # satisfied even on PRs that touch no path-gated source.
+    # Always runs — guarantees a CodeQL result exists for every commit (see
+    # the changes-job comment).
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      # CodeQL needs security-events: write to upload SARIF results.
+      # security-events: write to upload SARIF; actions: read lets the
+      # extractor fetch referenced workflows.
       security-events: write
-      # actions: read lets the Actions extractor fetch referenced workflows.
       actions: read
       contents: read
     steps:
@@ -140,10 +134,8 @@ jobs:
         uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           languages: rust
-          # All three languages use build-mode: none. The Rust extractor
-          # (codeql/rust-queries, beta) currently pins Rust to `none` and
-          # rejects `manual`/`autobuild`; the extractor invokes cargo
-          # internally. Revisit when upstream exposes manual mode.
+          # The Rust extractor (beta) pins Rust to `none` and rejects
+          # manual/autobuild; it invokes cargo internally.
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
