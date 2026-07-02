@@ -44,6 +44,10 @@ runs:
         TOOL_BINARY: ${{ inputs.binary }}
         ARCHIVE_MEMBER: ${{ inputs.archive-member }}
         STRIP_COMPONENTS: ${{ inputs.strip-components }}
+      # ~/.local/bin is already on the GitHub runner-image PATH (the same
+      # mechanism pipx-installed tools rely on), so no GITHUB_PATH write is
+      # needed — which also keeps this action clear of zizmor's github-env
+      # audit.
       run: |
         set -euo pipefail
         mkdir -p "$HOME/.local/bin"
@@ -61,4 +65,3 @@ runs:
             --strip-components="$STRIP_COMPONENTS" "$member"
           rm -rf "$tmp"
         fi
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
