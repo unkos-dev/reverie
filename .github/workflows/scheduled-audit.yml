@@ -108,11 +108,15 @@ jobs:
 
       # Same gate posture as the publish-time scan: fixable HIGH/CRITICAL
       # only — unfixed CVEs would red the cron daily with no action
-      # available.
+      # available. --platform is load-bearing: :main is an arm64-only
+      # manifest list and trivy otherwise resolves it against this amd64
+      # scanner host and errors before analyzing anything (cross-platform
+      # scanning is layer analysis, not execution, so the pin is safe).
       - name: Scan published :main image
         run: |
           set -euo pipefail
           trivy image \
+            --platform linux/arm64 \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --exit-code 1 \
