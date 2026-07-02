@@ -25,6 +25,7 @@ rules:
       # glob), so add a file here if a future run flags it.
       - ci.yml
       - codeql.yml
+      - docker-publish.yml
       - scheduled-audit.yml
       - scorecard.yml
   cache-poisoning:

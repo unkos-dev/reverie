@@ -1,26 +1,21 @@
-# Auto-close the Linear issue tracked by a merged PR.
-#
-# WHY: hard-rule-9 (CLAUDE.md) closes issues via a `Closes UNK-XXX` magic-word
-# in the PR body, but that depends on the author remembering the line. This
-# workflow removes that dependence for internal PRs by regex-extracting the
-# UNK-N identifier from the branch name (our `feat/unk-42-...` convention
-# always carries it) and transitioning the issue to Done directly via the
-# Linear GraphQL API. The two paths are complementary and idempotent:
+# Auto-close the Linear issue tracked by a merged PR by extracting the UNK-N
+# identifier from the branch name (fallback: PR title) and transitioning the
+# issue to Done via the Linear GraphQL API. Complementary and idempotent with
+# the `Closes UNK-XXX` magic-word path:
 #   - internal PRs  -> this workflow (no magic-word discipline needed)
-#   - fork PRs      -> Linear's native GitHub integration + `Closes UNK-XXX`
-#                      (fork PRs receive no repo secrets, so this workflow
+#   - fork PRs      -> Linear's native GitHub integration + magic word (fork
+#                      PRs receive no repo secrets, so this workflow
 #                      deliberately no-ops on them — see the same-repo guard)
 #
 # THREAT: reverie is a public repo. Branch name and PR title are
-# attacker-controlled. Two mitigations are load-bearing and MUST be preserved:
-#   1. Trigger is `pull_request` (NEVER `pull_request_target`). GitHub withholds
-#      repo secrets from fork-originated `pull_request` runs, so a malicious
-#      fork PR cannot obtain LINEAR_API_KEY. `pull_request_target` would expose
-#      it and is a classic public-repo compromise vector.
+# attacker-controlled. Two mitigations are load-bearing and MUST be
+# preserved:
+#   1. Trigger is `pull_request` (NEVER `pull_request_target`). GitHub
+#      withholds repo secrets from fork-originated `pull_request` runs, so a
+#      malicious fork PR cannot obtain LINEAR_API_KEY.
 #   2. Untrusted inputs (head_ref, PR title) reach the shell ONLY via `env:`
-#      mapping, never via `${{ }}` interpolation inside `run:` bodies, and are
-#      immediately constrained to `UNK-\d+` by a regex. Inlining `${{ }}` into a
-#      run script would be a remote code execution hole.
+#      mapping, never `${{ }}` interpolation inside `run:` bodies, and are
+#      immediately constrained to `UNK-\d+` by a regex.
 name: Linear Issue Auto-Close
 
 on:
@@ -37,8 +32,7 @@ concurrency:
 
 jobs:
   close-linear-issue:
-    # Only merged, same-repo PRs. The same-repo guard makes the fork-skip
-    # explicit (documents intent for OSS auditors) and is belt-and-suspenders
+    # Only merged, same-repo PRs. The same-repo guard is belt-and-suspenders
     # to GitHub's secret-withholding on fork `pull_request` runs.
     if: >
       github.event.pull_request.merged == true &&
@@ -83,12 +77,15 @@ jobs:
             exit 0
           fi
 
-          if ! ISSUE_RESP=$(curl -sf --max-time 30 --connect-timeout 10 -X POST "https://api.linear.app/graphql" \
+          # Reads retry transient failures; the mutation stays single-shot
+          # (idempotent in effect, but a blind retry on an ambiguous failure
+          # is not worth the double-fire risk).
+          if ! ISSUE_RESP=$(curl -sf --max-time 30 --connect-timeout 10 --retry 2 --retry-all-errors -X POST "https://api.linear.app/graphql" \
             -H "Authorization: $LINEAR_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"query\": \"{ issue(id: \\\"$ISSUE_ID\\\") { id state { id name } } }\"}"); then
-            # Non-2xx (e.g. 401 invalid key) or timeout. `curl -sf` under set -e
-            # would otherwise exit 22 with no annotation — surface it instead.
+            # `curl -sf` under set -e would otherwise exit 22 with no
+            # annotation — surface it instead.
             echo "::error::Linear API request failed (issue lookup) for $ISSUE_ID"
             exit 1
           fi
@@ -108,7 +105,7 @@ jobs:
             exit 0
           fi
 
-          if ! STATES_RESP=$(curl -sf --max-time 30 --connect-timeout 10 -X POST "https://api.linear.app/graphql" \
+          if ! STATES_RESP=$(curl -sf --max-time 30 --connect-timeout 10 --retry 2 --retry-all-errors -X POST "https://api.linear.app/graphql" \
             -H "Authorization: $LINEAR_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"query\": \"{ workflowStates(filter: { team: { id: { eq: \\\"$TEAM_ID\\\" } }, type: { eq: \\\"completed\\\" } }) { nodes { id name } } }\"}"); then
