@@ -63,5 +63,5 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 - **Formatting & Linting:** You must respect `cargo fmt` and `cargo clippy`. Do not fight the formatter. Fix warnings, do not suppress them with `#[allow(...)]` unless heavily justified.
 - **Time Crate:** Use the `time` crate. The `chrono` crate is strictly forbidden in first-party code.
 - **Logging:** Use `tracing` with structured fields. Never use `println!`.
-- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts — run `REGEN=1 cargo test --test gen_openapi --test gen_config_ref` and commit them in the same PR; drift tests gate CI.
+- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts — run `REGEN=1 cargo test --test gen_openapi --test gen_config_ref --test gen_config_schema` and commit them in the same PR; drift tests gate CI.
   </tool_standards>
