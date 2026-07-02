@@ -30,6 +30,19 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("OIDC_CLIENT_SECRET", "oidc_client_secret"),
     ("OIDC_REDIRECT_URI", "oidc_redirect_uri"),
     ("REVERIE_LOCAL_AUTH_ENABLED", "local_auth_enabled"),
+    ("REVERIE_RESOURCE_SERVER_ISSUER", "resource_server_issuer"),
+    (
+        "REVERIE_RESOURCE_SERVER_AUDIENCE",
+        "resource_server_audience",
+    ),
+    (
+        "REVERIE_RESOURCE_SERVER_JWKS_URL",
+        "resource_server_jwks_url",
+    ),
+    (
+        "REVERIE_RESOURCE_SERVER_REQUIRE_AT_JWT",
+        "resource_server_require_at_jwt",
+    ),
     ("REVERIE_PORT", "port"),
     ("REVERIE_LIBRARY_PATH", "library_path"),
     ("REVERIE_INGESTION_PATH", "ingestion_path"),
