@@ -499,6 +499,286 @@ async fn scopeless_token_rejected_by_every_op(pool: PgPool) {
     }
 }
 
+// JWT matrix: the same grid, but the credential is an RFC 9068 access token
+// resolved through auth::jwt::JwtValidator + auth::middleware::resolve_jwt
+// rather than a minted device token. Proves the scope hierarchy and the
+// role/scope orthogonality hold identically for the JWT path -- a claimed
+// scope is clamped to the caller's role ceiling exactly like a
+// minted token's scope set, so every gate above enforces the same floor
+// regardless of which credential type presented it. An absent `scope` claim
+// resolving to the full role-derived set (session parity) is already
+// covered by `auth::middleware::tests::absent_scope_claim_grants_full_role_ceiling`
+// and by every op this grid passes with no claim set below -- no separate
+// integration test needed for that path alone.
+
+use crate::models::user;
+use crate::test_support::oidc_mock::{MockOidcProvider, now_unix};
+
+const JWT_MATRIX_AUDIENCE: &str = "reverie-authz-matrix";
+
+/// Build a JWT-validator-configured server against a freshly started mock
+/// `IdP`. Each JWT-matrix test gets its own mock: the issuer is embedded both
+/// in the validator's config and in every token this mock signs.
+async fn jwt_server(
+    app_pool: &PgPool,
+    ingestion_pool: &PgPool,
+) -> (axum_test::TestServer, MockOidcProvider) {
+    let mock = MockOidcProvider::start("").await;
+    mock.mount_resource_server_jwks().await;
+    let server = test_support::db::server_with_jwt_validator(
+        app_pool,
+        ingestion_pool,
+        &mock,
+        JWT_MATRIX_AUDIENCE,
+        false,
+    )
+    .await;
+    (server, mock)
+}
+
+/// Seed an OIDC identity at `issuer`/`subject` and promote it to `admin` --
+/// the JWT-matrix counterpart to `test_support::db::create_admin_and_basic_auth`,
+/// but at the mock's dynamic issuer rather than the fixed test issuer that
+/// helper uses (a signed token's `iss` must match the validator's configured
+/// issuer).
+async fn seed_admin_identity(app_pool: &PgPool, issuer: &str, subject: &str) -> uuid::Uuid {
+    let seeded = user::upsert_from_oidc(app_pool, issuer, subject, "Matrix JWT Admin", None)
+        .await
+        .expect("seed identity");
+    sqlx::query!(
+        "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
+        seeded.id,
+    )
+    .execute(app_pool)
+    .await
+    .expect("promote to admin");
+    seeded.id
+}
+
+/// Seed an OIDC identity and demote it to `child` -- the JWT-matrix
+/// counterpart to `test_support::db::create_child_user_and_basic_auth`.
+async fn seed_child_identity(app_pool: &PgPool, issuer: &str, subject: &str) -> uuid::Uuid {
+    let seeded = user::upsert_from_oidc(app_pool, issuer, subject, "Matrix JWT Child", None)
+        .await
+        .expect("seed identity");
+    sqlx::query!(
+        "UPDATE users SET role = 'child'::user_role, is_child = TRUE WHERE id = $1",
+        seeded.id,
+    )
+    .execute(app_pool)
+    .await
+    .expect("demote to child");
+    seeded.id
+}
+
+/// Sign an access token for `subject`. `scope` becomes the space-delimited
+/// RFC 8693 `scope` claim when present; omitted entirely when `None` (the
+/// absent-claim path resolves to the caller's full role-derived set).
+fn sign_scoped_token(mock: &MockOidcProvider, subject: &str, scope: Option<&[Scope]>) -> String {
+    let now = now_unix();
+    let mut claims = serde_json::json!({
+        "iss": mock.issuer(),
+        "aud": JWT_MATRIX_AUDIENCE,
+        "sub": subject,
+        "exp": now + 300,
+        "iat": now,
+    });
+    if let Some(scopes) = scope {
+        let joined = scopes
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        claims["scope"] = serde_json::json!(joined);
+    }
+    mock.sign_access_token(&claims, |_| {})
+}
+
+async fn call_with_jwt(
+    server: &axum_test::TestServer,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> StatusCode {
+    send(server, method, path, body, &format!("Bearer {token}")).await
+}
+
+// Hierarchy grid over JWT callers: identical structure to
+// scope_grid_enforces_the_hierarchy, but the credential is a signed access
+// token whose `scope` claim is clamped against an admin-role identity's
+// ceiling instead of a device token's minted scope set.
+#[sqlx::test(migrations = "./migrations")]
+async fn jwt_scope_grid_enforces_the_hierarchy(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (server, mock) = jwt_server(&app_pool, &ingestion_pool).await;
+    let subject = format!("jwt-matrix-hierarchy-{}", uuid::Uuid::new_v4());
+    seed_admin_identity(&app_pool, mock.issuer(), &subject).await;
+
+    let ops = parse_operations();
+    let gated: Vec<(&Operation, Scope)> = ops
+        .iter()
+        .filter_map(|op| required_scope(op).map(|s| (op, s)))
+        .collect();
+    assert!(!gated.is_empty(), "expected at least one scope-gated op");
+
+    for (op, required) in gated {
+        let path = substitute_path_params(&op.path);
+        let body = body_for(&op.method, &op.path);
+
+        let at_required = call_with_jwt(
+            &server,
+            &sign_scoped_token(&mock, &subject, Some(&[required])),
+            &op.method,
+            &path,
+            body.as_ref(),
+        )
+        .await;
+        assert_ne!(
+            at_required,
+            StatusCode::FORBIDDEN,
+            "{} {} rejected a JWT claiming its required scope {required:?}",
+            op.method,
+            op.path
+        );
+
+        let at_top = call_with_jwt(
+            &server,
+            &sign_scoped_token(&mock, &subject, Some(&[Scope::Admin])),
+            &op.method,
+            &path,
+            body.as_ref(),
+        )
+        .await;
+        assert_ne!(
+            at_top,
+            StatusCode::FORBIDDEN,
+            "{} {} rejected an admin-scope-claiming JWT (top of the hierarchy)",
+            op.method,
+            op.path
+        );
+
+        if let Some(below) = one_below(required) {
+            let at_below = call_with_jwt(
+                &server,
+                &sign_scoped_token(&mock, &subject, Some(&[below])),
+                &op.method,
+                &path,
+                body.as_ref(),
+            )
+            .await;
+            assert_eq!(
+                at_below,
+                StatusCode::FORBIDDEN,
+                "{} {} did not 403 a JWT claiming one level below its requirement \
+                 (claimed {below:?}, needs {required:?}), got {at_below}",
+                op.method,
+                op.path
+            );
+        }
+    }
+}
+
+// Invariant-5 orthogonality: an admin-ROLE identity presenting a JWT that
+// claims only `read` is blocked from every mutation, exactly as a
+// role-derived admin session would NOT be -- proving the claimed scope, not
+// the role, is what a mutation gate enforces for the JWT path. This is the
+// same op set `read_token_blocked_from_every_mutation` exercises for device
+// tokens.
+#[sqlx::test(migrations = "./migrations")]
+async fn jwt_read_scope_claim_blocked_from_every_mutation(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (server, mock) = jwt_server(&app_pool, &ingestion_pool).await;
+    let subject = format!("jwt-matrix-orthogonality-{}", uuid::Uuid::new_v4());
+    seed_admin_identity(&app_pool, mock.issuer(), &subject).await;
+    let token = sign_scoped_token(&mock, &subject, Some(&[Scope::Read]));
+
+    let ops = parse_operations();
+    let mutations: Vec<&Operation> = ops
+        .iter()
+        .filter(|op| required_scope(op).is_some_and(|s| s >= Scope::Write))
+        .collect();
+    assert!(!mutations.is_empty(), "expected at least one mutation op");
+
+    for op in mutations {
+        let path = substitute_path_params(&op.path);
+        let body = body_for(&op.method, &op.path);
+        let status = call_with_jwt(&server, &token, &op.method, &path, body.as_ref()).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "an admin-role JWT claiming only read must be blocked from {} {}, got {status}",
+            op.method,
+            op.path
+        );
+    }
+}
+
+// A write-scope-claiming JWT is blocked from every admin operation, mirroring
+// write_token_blocked_from_every_admin_op for the JWT path.
+#[sqlx::test(migrations = "./migrations")]
+async fn jwt_write_scope_claim_blocked_from_every_admin_op(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (server, mock) = jwt_server(&app_pool, &ingestion_pool).await;
+    let subject = format!("jwt-matrix-write-ceiling-{}", uuid::Uuid::new_v4());
+    seed_admin_identity(&app_pool, mock.issuer(), &subject).await;
+    let token = sign_scoped_token(&mock, &subject, Some(&[Scope::Write]));
+
+    let ops = parse_operations();
+    let admin_ops: Vec<&Operation> = ops
+        .iter()
+        .filter(|op| required_scope(op) == Some(Scope::Admin))
+        .collect();
+    assert!(!admin_ops.is_empty(), "expected at least one admin op");
+
+    for op in admin_ops {
+        let path = substitute_path_params(&op.path);
+        let body = body_for(&op.method, &op.path);
+        let status = call_with_jwt(&server, &token, &op.method, &path, body.as_ref()).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "a write-scope-claiming JWT must be blocked from admin op {} {}, got {status}",
+            op.method,
+            op.path
+        );
+    }
+}
+
+// A child-role identity's JWT carries no scope claim (role parity: the full
+// {read, write} role-derived set, same as a child's session or device
+// token), which clears create_shelf's `write` scope gate -- but the handler
+// also calls require_not_child(), a second, orthogonal axis no scope claim
+// can satisfy. Proves require_not_child rejects a JWT caller exactly as it
+// rejects a session or device-token caller, not just the scope axis.
+#[sqlx::test(migrations = "./migrations")]
+async fn child_role_jwt_subject_to_require_not_child_gates(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (server, mock) = jwt_server(&app_pool, &ingestion_pool).await;
+    let subject = format!("jwt-matrix-child-{}", uuid::Uuid::new_v4());
+    seed_child_identity(&app_pool, mock.issuer(), &subject).await;
+    let token = sign_scoped_token(&mock, &subject, None);
+
+    let status = call_with_jwt(
+        &server,
+        &token,
+        "POST",
+        "/api/v1/shelves",
+        Some(&serde_json::json!({"name": "Matrix Shelf"})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a child-role JWT must be rejected by require_not_child even though its \
+         role-derived scope clears the write gate, got {status}"
+    );
+}
+
 // Role-ceiling (non-admin cannot mint an admin-scoped token) is covered by
 // `routes::tokens::tests::create_token_rejects_admin_scope_ceiling`, not
 // duplicated here.
