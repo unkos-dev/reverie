@@ -759,7 +759,7 @@ mod tests {
 
         let response = server
             .get("/api/v1/shelves")
-            .add_header(AUTHORIZATION, "Bearer looks.like.a.jwt")
+            .add_header(AUTHORIZATION, "Bearer neither-device-token-nor-jwt")
             .await;
 
         test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
