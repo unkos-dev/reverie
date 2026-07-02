@@ -3,10 +3,12 @@
 .gitignore
 .vscode
 .idea
-# docs is excluded wholesale, but its manifest must reach the build context:
-# npm needs every workspace's package.json to resolve the workspace graph
-# (the frontend-builder stage installs only the frontend workspace's deps).
-docs
+# docs is excluded except its manifest: npm needs every workspace's
+# package.json to resolve the workspace graph (the frontend-builder stage
+# installs only the frontend workspace's deps). `docs/*` rather than a bare
+# `docs` so the negation matches at the child level instead of relying on
+# the builder walking into an excluded parent directory.
+docs/*
 !docs/package.json
 target
 node_modules
