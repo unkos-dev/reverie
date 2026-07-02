@@ -246,6 +246,15 @@ pub struct Config {
     /// entirely, so a Bearer credential that is not an `rvpat_` personal
     /// token then 401s at the extractor dispatch.
     ///
+    /// Prerequisite: a JWT only ever authenticates an identity that already
+    /// exists in Reverie. The token's `(iss, sub)` pair must already be
+    /// linked to a user through a prior interactive OIDC login (that login
+    /// is the only path that creates the link); a correctly signed token
+    /// for an issuer/subject Reverie has never seen is rejected, not
+    /// auto-provisioned. Interactive login must therefore be configured and
+    /// exercised at least once for a given user before resource-server JWTs
+    /// for that user will authenticate.
+    ///
     /// THREAT: this is the trust anchor for API-caller signatures. The
     /// JWKS URL used to verify tokens derives from this issuer (via OIDC
     /// discovery, or the explicit `resource_server_jwks_url` override),
@@ -261,11 +270,15 @@ pub struct Config {
     /// Use a DEDICATED `IdP` client/audience for API access, distinct from
     /// the interactive-login `oidc_client_id`: if the same audience were
     /// accepted for both, an ID token minted for interactive login could
-    /// be replayed as an API access token (cross-JWT confusion). Machine
-    /// identities that can never complete an interactive login (e.g. `IdP`
-    /// client-credentials service accounts) cannot resolve through this
-    /// path either way; see [`crate::auth::jwt`] for the M2M / personal-token
-    /// (`rvpat_`) boundary.
+    /// be replayed as an API access token (cross-JWT confusion).
+    ///
+    /// Not for machine-to-machine callers: a service account, CI job, or
+    /// script that can never complete an interactive login has no
+    /// `(iss, sub)` link to resolve against and is rejected outright (see
+    /// the prerequisite documented on `resource_server_issuer`). Mint it a
+    /// personal access token instead (`rvpat_`-prefixed, `POST
+    /// /api/v1/tokens` or the token-management screen): that credential is
+    /// exactly what this config is not for.
     pub resource_server_audience: String,
     /// Explicit JWKS endpoint override for resource-server JWT validation
     /// (`REVERIE_RESOURCE_SERVER_JWKS_URL`). Empty (default) derives the
