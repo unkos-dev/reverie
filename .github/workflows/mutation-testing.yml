@@ -1,0 +1,125 @@
+name: Mutation testing
+
+# Weekly, advisory-only mutation testing over the backend: cargo-mutants
+# patches the source one mutation at a time and re-runs the tests; a mutant
+# the suite fails to kill marks behaviour no test asserts. Coverage says a
+# line executed — this says a test would notice if it broke.
+#
+# Advisory posture: not a required check, never blocks anything. Missed
+# mutants surface in the step summary + artifact for periodic triage;
+# infrastructure failures (build errors, bad flags) still fail the run so
+# the cron cannot rot silently.
+#
+# Sharded 1/8 per week, rotating on the ISO week number, so the full
+# mutant population is covered every 8 weeks at a bounded per-run cost.
+on:
+  schedule:
+    # Weekly, 19:07 UTC Saturday (~03:07 Sunday Perth). Off-peak; clear of
+    # the CodeQL (Sun), Scorecard (Tue), and daily-audit (18:00) crons.
+    - cron: "7 19 * * 6"
+  # Manual runs for validating the harness or chasing a specific week's
+  # findings.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-testing
+  cancel-in-progress: true
+
+jobs:
+  mutants:
+    name: Mutation testing (cargo-mutants)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: reverie
+          POSTGRES_PASSWORD: reverie
+          POSTGRES_DB: reverie_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reverie -d reverie_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Compile against the committed .sqlx cache; tests connect live and
+      # create their own per-test databases (same split as the backend CI
+      # job's clippy/test phases).
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      RUSTFLAGS: -C link-arg=-fuse-ld=mold
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Create database roles
+        run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
+        working-directory: ${{ github.workspace }}
+
+      # Mutation testing rebuilds per mutant — the link-time win compounds.
+      - name: Install mold linker
+        run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends mold
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: backend
+
+      - uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
+        with:
+          tool: cargo-mutants@27.1.0
+
+      # Exit-code triage keeps the advisory posture honest: missed mutants
+      # (2) and mutant timeouts (3) are findings, not failures; anything
+      # else (usage error, clean-tree build failure) is real breakage and
+      # reds the run.
+      - name: Run mutants (weekly shard)
+        run: |
+          set -euo pipefail
+          shard=$(( 10#$(date -u +%V) % 8 ))
+          echo "ISO week $(date -u +%V) -> shard ${shard}/8"
+          rc=0
+          cargo mutants --workspace --shard "${shard}/8" -- --all-targets || rc=$?
+          case "$rc" in
+            0) echo "shard clean: every mutant caught" ;;
+            2|3)
+              echo "::warning title=Mutation testing findings::cargo-mutants exit ${rc} (2 = missed mutants, 3 = timeouts) — see the artifact and step summary."
+              ;;
+            *) exit "$rc" ;;
+          esac
+          {
+            echo "## Mutation testing (shard ${shard}/8)"
+            echo ""
+            echo '```'
+            for f in missed.txt timeout.txt unviable.txt; do
+              if [ -s "mutants.out/$f" ]; then
+                echo "== $f ($(wc -l < "mutants.out/$f") lines) =="
+                head -40 "mutants.out/$f"
+              fi
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mutants-report
+          path: backend/mutants.out
+          if-no-files-found: warn
+          retention-days: 30

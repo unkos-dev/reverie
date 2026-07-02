@@ -45,7 +45,34 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
+      # Branch pushes build only when an image input changed; tag pushes
+      # and manual dispatches always build. A `paths:` filter on the push
+      # trigger cannot express this split — it would also filter tag
+      # pushes, and a silently skipped release build is unacceptable — so
+      # the gate lives here. The filter step is skipped on tag/dispatch, in
+      # which case its empty output falls through as "build".
+      build: ${{ steps.filter.outputs.image != 'false' }}
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        with:
+          # Image inputs: the definition files plus everything the build
+          # context COPYs. Keep in lockstep with the Dockerfile's COPY
+          # surface.
+          filters: |
+            image:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'backend/**'
+              - 'frontend/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'docs/package.json'
+              - '.github/workflows/docker-publish.yml'
       - id: set
         env:
           REF_TYPE: ${{ github.ref_type }}
@@ -58,6 +85,7 @@ jobs:
 
   build:
     needs: prepare-matrix
+    if: needs.prepare-matrix.outputs.build == 'true'
     runs-on: ${{ matrix.runner }}
     # Bounded well above observed build time but far below the 6h default
     # so a hung build fails fast.
@@ -101,6 +129,22 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=buildcache-${{ matrix.arch }}
           cache-to: type=gha,scope=buildcache-${{ matrix.arch }},mode=max
+
+      # The CVE gate downstream is layer analysis and never executes the
+      # binary; this does, on the digest just pushed, natively on this
+      # runner's arch. print-config-schema exercises the entrypoint,
+      # dynamic linking, and the config structs with no database, and must
+      # emit valid JSON. Full /health readiness needs a live Postgres and
+      # is the staging smoke's remit. Failing here stops the merge job, so
+      # a non-executing image is never tagged or signed.
+      - name: Boot smoke (entrypoint executes)
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run --rm "${IMAGE_REF}@${BUILD_DIGEST}" print-config-schema | jq -e . > /dev/null
+          echo "entrypoint OK: config schema is valid JSON"
 
       # `buildx du` reports the *ephemeral* buildkit content store on this
       # runner, not the persistent gha cache pool — useful for spotting
