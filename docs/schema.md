@@ -60,11 +60,11 @@ ingestion_jobs     (standalone)
 
 ### User Features
 
-| Table           | Purpose                  | Key Columns                                     |
-| --------------- | ------------------------ | ----------------------------------------------- |
-| `shelves`       | Per-user collections     | `user_id`, `name`, `is_system`                  |
-| `shelf_items`   | Shelf-Manifestation join | `shelf_id`, `manifestation_id`, `position`      |
-| `device_tokens` | OPDS/reader device auth  | `user_id`, `token_hash`, `revoked_at`, `scopes` |
+| Table           | Purpose                  | Key Columns                                                   |
+| --------------- | ------------------------ | ------------------------------------------------------------- |
+| `shelves`       | Per-user collections     | `user_id`, `name`, `is_system`                                |
+| `shelf_items`   | Shelf-Manifestation join | `shelf_id`, `manifestation_id`, `position`                    |
+| `device_tokens` | OPDS/reader device auth  | `user_id`, `token_hash`, `revoked_at`, `scopes`, `expires_at` |
 
 ### Auth & Identity
 
@@ -96,6 +96,7 @@ ingestion_jobs     (standalone)
 | ------------------------ | ----------------------------------------------- | ---------------------------------- |
 | `user_role`              | admin, adult, child                             | `users.role`                       |
 | `identity_provider`      | oidc                                            | `user_identities.provider`         |
+| `scope`                  | read, write, admin                              | `device_tokens.scopes`             |
 | `author_role`            | author, editor, translator, narrator            | `work_authors.role`                |
 | `manifestation_format`   | epub, pdf, mobi, azw3, cbz, cbr                 | `manifestations.format`            |
 | `validation_status`      | pending, clean, repaired, degraded              | `manifestations.validation_status` |

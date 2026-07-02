@@ -137,6 +137,7 @@ struct BookListResponse {
     path = "/api/v1/books",
     tag = "library",
     params(ListParams),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Paginated list of visible books", body = BookListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -607,6 +608,7 @@ pub(crate) async fn load_authors_for_works(
     path = "/api/v1/books/{id}",
     tag = "library",
     params(("id" = Uuid, Path, description = "Manifestation id")),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Book detail", body = BookDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -952,6 +954,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     path = "/api/v1/works/{id}",
     tag = "library",
     params(("id" = Uuid, Path, description = "Work id")),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),

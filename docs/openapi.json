@@ -52,7 +52,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/books": {
@@ -168,7 +185,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/books/{id}": {
@@ -222,7 +256,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/books/{id}/cover": {
@@ -272,7 +323,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/books/{id}/cover/thumb": {
@@ -322,7 +390,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/books/{id}/metadata": {
@@ -400,7 +485,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/dashboard/activity": {
@@ -464,7 +566,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/dashboard/stats": {
@@ -506,7 +625,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/enrichment/status": {
@@ -548,7 +684,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/ingestion/scan": {
@@ -590,7 +743,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/enrichment/dry-run": {
@@ -654,7 +824,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/enrichment/trigger": {
@@ -711,7 +898,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/metadata": {
@@ -768,7 +972,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/accept": {
@@ -845,7 +1066,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/lock": {
@@ -912,7 +1150,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/reject": {
@@ -979,7 +1234,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/revert": {
@@ -1056,7 +1328,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/unlock": {
@@ -1133,7 +1422,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/search": {
@@ -1196,7 +1502,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/series/{id}": {
@@ -1250,7 +1573,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/settings": {
@@ -1292,7 +1632,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -1353,7 +1710,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/shelves": {
@@ -1361,7 +1735,7 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`GET /api/v1/shelves` — list the caller's shelves, keyset-paginated\nover `(is_system DESC, name ASC, id ASC)` (UNK-374: every list is\nbounded by construction).",
+        "summary": "`GET /api/v1/shelves` — list the caller's shelves, keyset-paginated\nover `(is_system DESC, name ASC, id ASC)` — every list is bounded by\nconstruction.",
         "description": "# Errors\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list_shelves",
         "parameters": [
@@ -1424,7 +1798,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -1492,7 +1883,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/shelves/{id}": {
@@ -1500,7 +1908,7 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items,\nkeyset-paginated over `(position, added_at, manifestation_id)`\n(UNK-374). The ETag/If-Match contract is unaffected by item paging:\nthe entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.",
+        "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items,\nkeyset-paginated over `(position, added_at, manifestation_id)` — every\nlist is bounded by construction. The ETag/If-Match contract is\nunaffected by item paging:\nthe entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.",
         "description": "# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_shelf_with_items",
         "parameters": [
@@ -1589,7 +1997,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -1654,7 +2079,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       },
       "patch": {
         "tags": [
@@ -1754,7 +2196,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/shelves/{id}/items": {
@@ -1858,7 +2317,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -1931,7 +2407,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/shelves/{id}/items/{manifestation_id}": {
@@ -1996,7 +2489,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/tokens": {
@@ -2031,14 +2541,31 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
           "tokens"
         ],
         "summary": "`POST /api/v1/tokens` — issue a new device token for the caller.",
-        "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, or the caller already has 10 active tokens.\n- [`AppError::Internal`] on database errors.",
+        "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, the scope set is empty, `expires_in_days` is not one of\n  30/60/90/365, or the caller already has 10 active tokens.\n- [`AppError::Forbidden`] when a requested scope exceeds the caller's\n  role ceiling (e.g. a non-admin requesting `admin`).\n- [`AppError::Internal`] on database errors.",
         "operationId": "create_token",
         "requestBody": {
           "content": {
@@ -2052,7 +2579,7 @@
         },
         "responses": {
           "201": {
-            "description": "Token created. The `token` field is the plaintext, returned exactly once — only its SHA-256 hash is persisted.",
+            "description": "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2071,8 +2598,18 @@
               }
             }
           },
+          "403": {
+            "description": "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "Name empty / longer than 255 characters after trim, or the per-user cap of 10 active tokens is reached",
+            "description": "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -2081,7 +2618,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/tokens/{id}": {
@@ -2118,6 +2672,16 @@
               }
             }
           },
+          "403": {
+            "description": "Caller's credential lacks the write scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Token does not exist, belongs to another user, or is already revoked",
             "content": {
@@ -2128,7 +2692,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/users": {
@@ -2173,7 +2754,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -2243,7 +2841,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/users/{id}": {
@@ -2328,7 +2943,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/users/{id}/account-status": {
@@ -2412,7 +3044,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/users/{id}/child-status": {
@@ -2496,7 +3145,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/users/{id}/password-reset": {
@@ -2573,7 +3239,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/users/{id}/role": {
@@ -2657,7 +3340,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/works/{id}": {
@@ -2711,7 +3411,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/api/v1/works/{id}/metadata": {
@@ -2768,7 +3485,24 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
       }
     },
     "/auth/callback": {
@@ -4923,14 +5657,32 @@
       },
       "CreateTokenRequest": {
         "type": "object",
+        "description": "Mass-assignment allow-list (codeguard #7): exactly `{name, scopes,\nexpires_in_days}`, nothing else settable at mint.",
         "required": [
           "name"
         ],
         "properties": {
+          "expires_in_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Token lifetime in days from mint: one of 30 / 60 / 90 / 365. Omitted\n(or explicit `null`) mints a token that never expires.",
+            "example": 90,
+            "minimum": 0
+          },
           "name": {
             "type": "string",
             "description": "User-supplied label for the device (1-255 characters after trim).",
             "example": "My Kindle"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "description": "Capabilities to grant this token, bounded by the caller's role\nceiling ([`CurrentUser::may_grant_scope`]) — a non-admin cannot\nrequest `admin`. Omitted defaults to `[read]`."
           }
         }
       },
@@ -4939,9 +5691,18 @@
         "required": [
           "id",
           "name",
+          "scopes",
           "token"
         ],
         "properties": {
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`null` if the token never expires."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -4951,9 +5712,16 @@
             "type": "string",
             "description": "The label the token was created with (trimmed)."
           },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "description": "Capabilities this token carries."
+          },
           "token": {
             "type": "string",
-            "description": "Token plaintext. Returned exactly once, here; only its SHA-256 hash\nis persisted, so the plaintext cannot be recovered later."
+            "description": "The full Bearer credential (`{prefix}{id}.{secret}`), returned\nexactly once, here; only its SHA-256 hash is persisted, so the\nplaintext cannot be recovered later. For OPDS / Basic-auth clients,\nsplit on the last `.`: the part before is the Basic username, the\npart after is the Basic password."
           }
         }
       },
@@ -5566,6 +6334,15 @@
           }
         }
       },
+      "Scope": {
+        "type": "string",
+        "description": "Credential capability, one of the authorization axes alongside [`Role`]\n(identity gating) and ownership (resource axis).\n\nThe variants are declared in ascending capability order, so the derived\n[`Ord`] is the scope hierarchy: `Read < Write < Admin`. A floor check\ncompares against this order rather than testing set membership.",
+        "enum": [
+          "read",
+          "write",
+          "admin"
+        ]
+      },
       "SearchHit": {
         "type": "object",
         "description": "One result row of `GET /api/v1/search`. Carries the bare minimum the\ncommand-palette UI needs: a kind tag for grouping, identifiers for\nnavigation, a short display label, and an optional `ts_headline`\nsnippet with non-HTML ASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`)\nmarkers so the React renderer can avoid `dangerouslySetInnerHTML`.",
@@ -6126,7 +6903,7 @@
           "clean_non_epub_count": {
             "type": "integer",
             "format": "int64",
-            "description": "Number of `clean` rows that are non-EPUB formats. UNK-313: non-EPUB\nfiles carry `validation_status='clean'` despite never being\nstructurally validated — surfaced so the UI can footnote the bucket."
+            "description": "Number of `clean` rows that are non-EPUB formats: non-EPUB files\ncarry `validation_status='clean'` despite never being structurally\nvalidated — surfaced so the UI can footnote the bucket."
           },
           "enrichment_breakdown": {
             "type": "array",
@@ -6250,6 +7027,7 @@
         "required": [
           "id",
           "name",
+          "scopes",
           "created_at"
         ],
         "properties": {
@@ -6257,6 +7035,14 @@
             "type": "string",
             "format": "date-time",
             "description": "Token creation timestamp."
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`null` if the token never expires."
           },
           "id": {
             "type": "string",
@@ -6274,6 +7060,13 @@
           "name": {
             "type": "string",
             "description": "User-supplied label."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "description": "Capabilities this token carries."
           }
         }
       },
@@ -6753,10 +7546,15 @@
       }
     },
     "securitySchemes": {
+      "device_token_bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit (Checkov CKV_OPENAPI_20)."
+      },
       "opds_basic": {
         "type": "http",
         "scheme": "basic",
-        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production — Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
+        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production; Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
       },
       "session_cookie": {
         "type": "apiKey",

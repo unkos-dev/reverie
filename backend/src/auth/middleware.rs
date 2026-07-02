@@ -1,22 +1,28 @@
-//! `CurrentUser` extractor and Basic-auth verification for Reverie.
+//! `CurrentUser` extractor and Bearer/Basic verification for Reverie.
 //!
 //! [`crate::auth::middleware::CurrentUser`] is the primary identity extractor used by route handlers.
-//! It resolves the caller in two steps: session cookie first (rehydrated from
+//! It resolves the caller in three steps: session cookie first (rehydrated from
 //! the first-party [`tower_sessions::Session`] — read `user_id`, reload the user,
-//! compare `session_version`), Basic auth second (via
-//! [`crate::auth::middleware::verify_basic`]). Handlers that receive a `CurrentUser` are guaranteed
-//! an authenticated identity; unauthenticated requests are rejected with
-//! `AppError::Unauthorized` before the handler body runs.
+//! compare `session_version`), then `Authorization: Basic` (via
+//! [`verify_basic`](crate::auth::middleware::verify_basic)), then
+//! `Authorization: Bearer` (via
+//! [`verify_bearer`](crate::auth::middleware::verify_bearer)). Basic and Bearer
+//! both resolve through `resolve_device_token`, a single indexed lookup on the
+//! unified `{prefix}{token_id}.{secret}` credential (see
+//! `auth::token::TOKEN_PREFIX`). Handlers that receive a `CurrentUser` are
+//! guaranteed an authenticated identity; unauthenticated requests are rejected
+//! with `AppError::Unauthorized` before the handler body runs.
 //!
 //! # Tier 2 — security-critical
 //!
 //! This module is the authentication seam for every non-public route.
-//! Inline `// THREAT:` annotations mark the timing-side-channel mitigation in
-//! [`crate::auth::middleware::verify_basic`] and the `session_version`
-//! force-logout check. The role-assertion contract on
-//! [`crate::auth::middleware::CurrentUser`] is enforced structurally (private
-//! `role`/`is_child` fields, access only via the `require_*` methods) and
-//! documented in `///` prose on those items.
+//! Inline `// THREAT:` annotations mark the account-lockout and
+//! `session_version` force-logout checks, and the retirement of the old
+//! per-user-scan timing mitigation in `resolve_device_token`. The
+//! role/scope-assertion contract on
+//! [`CurrentUser`](crate::auth::middleware::CurrentUser) is enforced
+//! structurally (private `role`/`is_child`/`scopes` fields, access only via the
+//! `require_*` methods) and documented in `///` prose on those items.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -24,7 +30,9 @@ use base64ct::Encoding;
 use tower_sessions::Session;
 use uuid::Uuid;
 
+use crate::auth::scope::Scope;
 use crate::auth::session::{SESSION_KEY_SESSION_VERSION, SESSION_KEY_USER_ID};
+use crate::auth::token;
 use crate::error::AppError;
 use crate::models::role::Role;
 use crate::models::{device_token, user};
@@ -34,12 +42,14 @@ use crate::state::AppState;
 ///
 /// Extracted from the request by [`FromRequestParts`]. Resolution order:
 /// session cookie (rehydrated from [`tower_sessions::Session`]) →
-/// `Authorization: Basic` (via [`verify_basic`]). Returns
-/// [`AppError::Unauthorized`] if neither path yields a valid identity.
+/// `Authorization: Basic` (via [`verify_basic`]) → `Authorization: Bearer`
+/// (via [`verify_bearer`]). Returns [`AppError::Unauthorized`] if no path
+/// yields a valid identity.
 ///
-/// Role-assertion methods ([`require_admin`](CurrentUser::require_admin),
-/// [`require_not_child`](CurrentUser::require_not_child)) are the canonical
-/// way for handlers to enforce access control. `role` and `is_child` are
+/// Role/scope-assertion methods ([`require_admin`](CurrentUser::require_admin),
+/// [`require_not_child`](CurrentUser::require_not_child),
+/// [`require_scope`](CurrentUser::require_scope)) are the canonical way for
+/// handlers to enforce access control. `role`, `is_child`, and `scopes` are
 /// private precisely so they cannot be read directly — the assertion methods
 /// are the single, compile-enforced point of access control, which keeps the
 /// logic in one place and survives future role-model changes.
@@ -55,6 +65,12 @@ pub struct CurrentUser {
     /// Whether this account is flagged as a child profile. Private — gate via
     /// [`require_not_child`](CurrentUser::require_not_child).
     is_child: bool,
+
+    /// Capabilities this credential carries. A session derives the full
+    /// role-ceiling set ([`Scope::for_role`]); a personal token carries the
+    /// explicit scope chosen at mint. Private, gated via
+    /// [`require_scope`](CurrentUser::require_scope).
+    scopes: Vec<Scope>,
 }
 
 impl CurrentUser {
@@ -92,26 +108,155 @@ impl CurrentUser {
             Ok(())
         }
     }
+
+    /// Floor check against the scope hierarchy (`read` < `write` < `admin`):
+    /// `Ok` when this credential holds `needed` or any higher scope.
+    ///
+    /// An endpoint names the least scope it requires; a `write` credential
+    /// clears a `read` gate and a `admin` credential clears a `write` gate,
+    /// because a higher scope subsumes every lower one. Every session derives
+    /// at least `{read, write}` from role (see [`Scope::for_role`]) and every
+    /// token is minted with at least `read`, so a `read` gate never blocks an
+    /// authenticated caller; only a narrowed token is blocked from `write` or
+    /// `admin`. Child restrictions come from
+    /// [`require_not_child`](CurrentUser::require_not_child), not from
+    /// withholding scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Forbidden`] when no held scope reaches `needed`.
+    pub fn require_scope(&self, needed: Scope) -> Result<(), AppError> {
+        if self.scopes.iter().any(|held| *held >= needed) {
+            Ok(())
+        } else {
+            // THREAT (capability overreach): a credential reached for a scope
+            // above its own. Rare on the failure branch (a narrowed token
+            // pointed at a higher-scope endpoint), so a warn here is signal,
+            // not noise, for a token being used beyond its grant.
+            tracing::warn!(
+                user_id = %self.user_id,
+                needed = %needed,
+                "scope check rejected: credential lacks required scope"
+            );
+            Err(AppError::Forbidden)
+        }
+    }
+
+    /// Whether this user's role permits minting a token carrying `scope`
+    /// ([`Scope::grantable_by`]; a non-admin cannot mint an admin-scoped
+    /// token). Narrow accessor for the mint-time ceiling check; `role`
+    /// itself stays private.
+    ///
+    /// THREAT (privilege escalation): this is the role ceiling on delegated
+    /// capability. It bounds a minted token to no more than its owner's role
+    /// already grants, so a compromised non-admin session cannot forge an
+    /// admin-scoped credential. The mint handler logs a rejected grant.
+    pub const fn may_grant_scope(&self, scope: Scope) -> bool {
+        scope.grantable_by(self.role)
+    }
 }
 
-/// Verify an `Authorization: Basic <b64>` header against the device-token
-/// registry. Shared by [`CurrentUser`] (cookie-or-Basic) and
-/// [`crate::auth::basic_only::BasicOnly`] (Basic-only).
+/// Resolve a device-token credential shared by [`verify_basic`] and
+/// [`verify_bearer`]: `prefixed_id` is `{prefix}{token_id}` (the Basic
+/// username field or the Bearer value's segment before `.`), `secret` is the
+/// token plaintext.
 ///
-/// Timing-side-channel mitigation: all tokens for the user are iterated in
-/// full before returning a match result — see `// THREAT:` inline below.
+/// One indexed [`device_token::find_by_id`] lookup — no per-user scan.
+///
+/// THREAT (timing side-channel, retired): the earlier implementation
+/// iterated every token for the claimed user in full so a match's position
+/// in the list could not be inferred from response timing. That mitigation
+/// no longer applies: `find_by_id` addresses a token by primary key, not by
+/// rank within a scan, so there is no list-position to leak. The SHA-256
+/// digest comparison remains constant-time (`subtle::ConstantTimeEq` inside
+/// [`token::verify_device_token`]) to avoid leaking the hash itself.
+///
+/// Side-effect: schedules an async `update_last_used` write (SQL-side
+/// debounced to at most one UPDATE per token per 5 minutes).
+///
+/// # Errors
+///
+/// Returns [`AppError::Unauthorized`] when `prefixed_id` does not carry
+/// [`token::TOKEN_PREFIX`], the remainder is not a UUID, the id resolves to
+/// no active (non-revoked, non-expired) token, the owning account is
+/// disabled, or `secret` does not match the stored hash. Returns
+/// [`AppError::Internal`] on database errors.
+async fn resolve_device_token(
+    state: &AppState,
+    prefixed_id: &str,
+    secret: &str,
+) -> Result<Option<CurrentUser>, AppError> {
+    let Some(id_str) = prefixed_id.strip_prefix(token::TOKEN_PREFIX) else {
+        return Err(AppError::Unauthorized);
+    };
+    let token_id: Uuid = id_str.parse().map_err(|_| AppError::Unauthorized)?;
+
+    let dt = device_token::find_by_id(&state.pool, token_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+
+    let u = user::find_by_id(&state.pool, dt.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+    // THREAT (account lockout): a soft-disabled account must not authenticate
+    // on any transport. Reject before the secret comparison so a disabled
+    // user's token is inert regardless of whether the secret itself is
+    // correct.
+    if u.disabled_at.is_some() {
+        return Err(AppError::Unauthorized);
+    }
+
+    if !token::verify_device_token(secret, &dt.token_hash) {
+        return Err(AppError::Unauthorized);
+    }
+
+    // THREAT (read floor): scopes form a hierarchy (read < write < admin) with
+    // read as the floor, so every valid credential must carry at least one
+    // scope. A scopeless token has zero capability; admit it and it would reach
+    // read surface with no gate ever rejecting it. Mint refuses an empty set at
+    // issue; this is the defence-in-depth seam that also rejects any empty-scope
+    // row reaching auth by another path (legacy data, direct DB write).
+    if dt.scopes.is_empty() {
+        return Err(AppError::Unauthorized);
+    }
+
+    let pool = state.pool.clone();
+    let matched_token_id = dt.id;
+    tokio::spawn(async move {
+        if let Err(e) = device_token::update_last_used(&pool, matched_token_id).await {
+            tracing::warn!(
+                error = %e,
+                token_id = %matched_token_id,
+                "device_token: update_last_used failed (non-fatal)"
+            );
+        }
+    });
+
+    Ok(Some(CurrentUser {
+        user_id: u.id,
+        role: u.role,
+        is_child: u.is_child,
+        scopes: dt.scopes,
+    }))
+}
+
+/// Verify an `Authorization: Basic <b64({prefix}{token_id}:{secret})>`
+/// header. Shared by [`CurrentUser`] (cookie-or-Basic-or-Bearer) and
+/// [`crate::auth::basic_only::BasicOnly`] (Basic-only, for OPDS clients that
+/// only speak Basic).
 ///
 /// Returns `Ok(Some(user))` when Basic credentials validate, `Ok(None)` when
 /// no `Authorization: Basic ...` is present, and `Err(Unauthorized)` when a
-/// Basic header is present but credentials are malformed or don't match any
-/// active token. Side-effect: schedules an async `update_last_used` write
-/// (SQL-side debounced to at most one UPDATE per token per 5 minutes).
+/// Basic header is present but does not resolve — see
+/// [`resolve_device_token`] for the failure modes.
 ///
 /// # Errors
 ///
 /// Returns [`AppError::Unauthorized`] when the `Authorization: Basic` header
-/// is present but the credentials are malformed, the user UUID is unknown, or
-/// no stored token matches. Returns [`AppError::Internal`] on database errors.
+/// is present but malformed or does not resolve to an active token. Returns
+/// [`AppError::Internal`] on database errors.
 pub async fn verify_basic(
     state: &AppState,
     parts: &Parts,
@@ -130,65 +275,41 @@ pub async fn verify_basic(
     let decoded = base64ct::Base64::decode(credentials.as_bytes(), &mut buf)
         .map_err(|_| AppError::Unauthorized)?;
     let decoded_str = std::str::from_utf8(decoded).map_err(|_| AppError::Unauthorized)?;
-    let (username, password) = decoded_str.split_once(':').ok_or(AppError::Unauthorized)?;
+    let (username, secret) = decoded_str.split_once(':').ok_or(AppError::Unauthorized)?;
 
-    let user_id: Uuid = username.parse().map_err(|_| AppError::Unauthorized)?;
-    let u = user::find_by_id(&state.pool, user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or(AppError::Unauthorized)?;
-    // THREAT (account lockout): a soft-disabled account must not authenticate on
-    // any transport. Reject before the device-token scan so a disabled user's
-    // token is inert regardless of whether the token itself is still valid.
-    if u.disabled_at.is_some() {
-        return Err(AppError::Unauthorized);
-    }
-    let tokens = device_token::list_for_user(&state.pool, user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    resolve_device_token(state, username, secret).await
+}
 
-    // THREAT: early-exit on first match would leak the token's position in the
-    // list via response timing, allowing an attacker to narrow guesses to
-    // recently-issued tokens. Iterating all tokens in full — combined with
-    // constant-time comparison of the SHA-256 hex digests (performed via
-    // `subtle::ConstantTimeEq` inside `token::verify_device_token`) — closes
-    // this side-channel. Only the digest comparison is constant-time; the
-    // SHA-256 computation itself is not a cryptographic constant-time
-    // primitive and its wall-clock cost grows with input length, which is
-    // attacker-controlled here (`password` comes from the Basic credentials).
-    // This mitigation targets secret-dependent early-exit in the
-    // comparison/match step, not input-length-driven timing variance.
-    // `matched_token_id` is overwritten on each match so only the last
-    // matching token wins. Note that `device_tokens.token_hash` carries no DB
-    // `UNIQUE` constraint, so uniqueness is not a structural/DB invariant;
-    // SHA-256 collision resistance (2^256 work factor) makes duplicate hashes
-    // cryptographically infeasible in practice, so the overwrite is a
-    // belt-and-braces choice that avoids conditional branching on match count
-    // rather than a load-bearing invariant.
-    let mut matched_token_id = None;
-    for token in &tokens {
-        if crate::auth::token::verify_device_token(password, &token.token_hash) {
-            matched_token_id = Some(token.id);
-        }
-    }
+/// Verify an `Authorization: Bearer {prefix}{token_id}.{secret}` header.
+/// Shares [`resolve_device_token`] with [`verify_basic`] — both transports
+/// converge on the same indexed lookup.
+///
+/// Returns `Ok(Some(user))` when the Bearer credential validates, `Ok(None)`
+/// when no `Authorization: Bearer ...` is present, and `Err(Unauthorized)`
+/// when a Bearer header is present but does not resolve — see
+/// [`resolve_device_token`] for the failure modes.
+///
+/// # Errors
+///
+/// Returns [`AppError::Unauthorized`] when the `Authorization: Bearer` header
+/// is present but malformed (missing the `.` separator) or does not resolve
+/// to an active token. Returns [`AppError::Internal`] on database errors.
+pub async fn verify_bearer(
+    state: &AppState,
+    parts: &Parts,
+) -> Result<Option<CurrentUser>, AppError> {
+    let Some(auth) = parts.headers.get(axum::http::header::AUTHORIZATION) else {
+        return Ok(None);
+    };
+    let Ok(auth_str) = auth.to_str() else {
+        return Ok(None);
+    };
+    let Some(credential) = auth_str.strip_prefix("Bearer ") else {
+        return Ok(None);
+    };
 
-    let token_id = matched_token_id.ok_or(AppError::Unauthorized)?;
-    let pool = state.pool.clone();
-    tokio::spawn(async move {
-        if let Err(e) = device_token::update_last_used(&pool, token_id).await {
-            tracing::warn!(
-                error = %e,
-                %token_id,
-                "device_token: update_last_used failed (non-fatal)"
-            );
-        }
-    });
-
-    Ok(Some(CurrentUser {
-        user_id: u.id,
-        role: u.role,
-        is_child: u.is_child,
-    }))
+    let (prefixed_id, secret) = credential.split_once('.').ok_or(AppError::Unauthorized)?;
+    resolve_device_token(state, prefixed_id, secret).await
 }
 
 impl FromRequestParts<AppState> for CurrentUser {
@@ -246,6 +367,7 @@ impl FromRequestParts<AppState> for CurrentUser {
                     user_id: user.id,
                     role: user.role,
                     is_child: user.is_child,
+                    scopes: Scope::for_role(user.role).to_vec(),
                 });
             }
             // Invalid session — user deleted, or `session_version` stale. Wipe
@@ -257,8 +379,13 @@ impl FromRequestParts<AppState> for CurrentUser {
             }
         }
 
-        // Fall back to Basic auth
+        // Fall back to Basic, then Bearer. Mutually exclusive by header
+        // prefix, so trying both is safe — only one can match a given
+        // `Authorization` header value.
         if let Some(user) = verify_basic(state, parts).await? {
+            return Ok(user);
+        }
+        if let Some(user) = verify_bearer(state, parts).await? {
             return Ok(user);
         }
 

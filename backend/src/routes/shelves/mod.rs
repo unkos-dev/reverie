@@ -42,6 +42,7 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
+use crate::auth::scope::Scope;
 use crate::error::AppError;
 use crate::models::shelf::{Shelf, ShelfItem};
 use crate::routes::cursor::{ShelfCursor, ShelfItemCursor};
@@ -134,8 +135,8 @@ struct ShelfListResponse {
 }
 
 /// `GET /api/v1/shelves` — list the caller's shelves, keyset-paginated
-/// over `(is_system DESC, name ASC, id ASC)` (UNK-374: every list is
-/// bounded by construction).
+/// over `(is_system DESC, name ASC, id ASC)` — every list is bounded by
+/// construction.
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the cursor is malformed.
@@ -145,6 +146,7 @@ struct ShelfListResponse {
     path = "/api/v1/shelves",
     tag = "shelves",
     params(ShelfListParams),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "One page of the caller's shelves, system shelves first then by name", body = ShelfListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -262,6 +264,7 @@ struct CreateShelfRequest {
     path = "/api/v1/shelves",
     tag = "shelves",
     request_body = CreateShelfRequest,
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Shelf created", body = Shelf,
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -275,6 +278,7 @@ async fn create_shelf(
     State(state): State<AppState>,
     body: Result<axum::Json<CreateShelfRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     let name = req.name.trim();
@@ -338,6 +342,7 @@ struct RenameShelfRequest {
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = RenameShelfRequest,
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 200, description = "Renamed shelf", body = Shelf,
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -354,6 +359,7 @@ async fn rename_shelf(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<RenameShelfRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     let name = req.name.trim();
@@ -433,6 +439,7 @@ async fn rename_shelf(
     path = "/api/v1/shelves/{id}",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Shelf deleted"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -446,6 +453,7 @@ async fn delete_shelf(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let mut tx = state
         .pool
@@ -509,8 +517,9 @@ struct ShelfDetailResponse {
 }
 
 /// `GET /api/v1/shelves/{id}` — shelf identity plus ordered items,
-/// keyset-paginated over `(position, added_at, manifestation_id)`
-/// (UNK-374). The ETag/If-Match contract is unaffected by item paging:
+/// keyset-paginated over `(position, added_at, manifestation_id)` — every
+/// list is bounded by construction. The ETag/If-Match contract is
+/// unaffected by item paging:
 /// the entity-tag carries the shelf's `updated_at` regardless of which
 /// items page is requested.
 ///
@@ -523,6 +532,7 @@ struct ShelfDetailResponse {
     path = "/api/v1/shelves/{id}",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
          headers(
@@ -673,6 +683,7 @@ struct AddItemRequest {
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = AddItemRequest,
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -687,6 +698,7 @@ async fn add_shelf_item(
     Path(id): Path<Uuid>,
     body: Result<axum::Json<AddItemRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     // RLS-scoped probe: confirm the caller can see the target
@@ -779,6 +791,7 @@ async fn add_shelf_item(
         ("id" = Uuid, Path, description = "Shelf id"),
         ("manifestation_id" = Uuid, Path, description = "Manifestation to remove")
     ),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item removed; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -791,6 +804,7 @@ async fn remove_shelf_item(
     State(state): State<AppState>,
     Path((shelf_id, manifestation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     let mut tx = state
         .pool
         .begin()
@@ -865,6 +879,7 @@ struct ReorderItemsRequest {
         ("If-Match" = String, Header, description = "Strong entity-tag from a prior shelf response; weak validators (W/\"...\") are rejected")
     ),
     request_body = ReorderItemsRequest,
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Positions rewritten; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -882,6 +897,7 @@ async fn reorder_shelf_items(
     headers_in: HeaderMap,
     body: Result<axum::Json<ReorderItemsRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 

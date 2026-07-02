@@ -22,6 +22,8 @@
 )]
 
 pub mod auth;
+#[cfg(test)]
+mod authz_matrix;
 pub mod config;
 pub mod db;
 pub mod error;

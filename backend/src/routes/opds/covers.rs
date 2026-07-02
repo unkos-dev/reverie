@@ -142,6 +142,7 @@ async fn opds_cover_thumb(
     get,
     path = "/api/v1/books/{id}/cover",
     tag = "library",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"),
@@ -174,6 +175,7 @@ async fn api_cover(
     get,
     path = "/api/v1/books/{id}/cover/thumb",
     tag = "library",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),

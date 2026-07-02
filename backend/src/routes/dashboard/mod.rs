@@ -1,5 +1,4 @@
-//! `/api/v1/dashboard/*` admin-only library-health aggregation routes
-//! (Step 12 / UNK-81).
+//! `/api/v1/dashboard/*` admin-only library-health aggregation routes.
 //!
 //! THREAT: Privilege escalation / information disclosure — both endpoints
 //! are admin-gated via [`CurrentUser::require_admin`](crate::auth::middleware::CurrentUser::require_admin)
@@ -26,6 +25,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use crate::auth::middleware::CurrentUser;
+use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
 use crate::models::enrichment_status::EnrichmentStatus;
@@ -89,9 +89,9 @@ struct StatsResponse {
     storage_cover_bytes: i64,
     storage_by_format: Vec<FormatBucket>,
     validation_breakdown: Vec<StatusCount>,
-    /// Number of `clean` rows that are non-EPUB formats. UNK-313: non-EPUB
-    /// files carry `validation_status='clean'` despite never being
-    /// structurally validated — surfaced so the UI can footnote the bucket.
+    /// Number of `clean` rows that are non-EPUB formats: non-EPUB files
+    /// carry `validation_status='clean'` despite never being structurally
+    /// validated — surfaced so the UI can footnote the bucket.
     clean_non_epub_count: i64,
     enrichment_breakdown: Vec<StatusCount>,
     metadata_coverage: MetadataCoverage,
@@ -112,6 +112,7 @@ struct StatsResponse {
     get,
     path = "/api/v1/dashboard/stats",
     tag = "dashboard",
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Library-wide aggregate health metrics. Admin only.", body = StatsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -126,6 +127,7 @@ async fn stats(
     current_user: CurrentUser,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
@@ -298,6 +300,7 @@ struct ActivityResponse {
     path = "/api/v1/dashboard/activity",
     tag = "dashboard",
     params(ActivityParams),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Most-recent ingestion batches, newest first. Admin only.", body = ActivityResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
@@ -310,6 +313,7 @@ async fn activity(
     State(state): State<AppState>,
     params: Result<Query<ActivityParams>, QueryRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     let Query(params) = params?;
 

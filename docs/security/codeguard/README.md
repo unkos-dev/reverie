@@ -206,3 +206,36 @@ just knowledge of an email address.
 - Generic responses on both endpoints and equivalent cryptographic work on the
   unknown-account path, so neither response nor timing enumerates accounts
 - No auto-login after reset: the user must re-authenticate with the new password
+
+### 7. Scope authorization verified by a generated-spec CI matrix, not by this list
+
+**Override:** none. `codeguard-0-authorization-access-control.md`'s own "Testing
+and Automation" section asks for an authorization matrix that iterates
+endpoints and roles and drives CI, and this entry records where reverie keeps
+that matrix, since it is enforcement infrastructure rather than a single
+handler decision.
+
+**Reverie's position:** `backend/src/authz_matrix.rs` parses the OpenAPI
+document generated in-process (not the committed `docs/openapi.json`) and
+asserts, for every `/api/v1` operation, that it declares a scope requirement
+and that a credential one level below the required scope in the hierarchy
+(`read` < `write` < `admin`) is rejected with 403, while a scopeless credential
+is rejected at the auth seam. A companion check flags any mutating-verb
+(`POST`/`PUT`/`PATCH`/`DELETE`) operation that does not require at least
+`write`, with a small explicit allow-list, logged rather than silent, for the
+rare side-effect-free exception (the enrichment dry-run, a `POST` that computes
+a preview without persisting).
+Mint requests for personal tokens go through a mass-assignment allow-list DTO
+(`CreateTokenRequest` in `backend/src/routes/tokens.rs`: exactly `name`,
+`scopes`, `expires_in_days`), so no other field on the token row is settable at
+mint.
+
+**Rationale:** A per-handler review cannot guarantee that a later PR adding or
+renaming an operation keeps its scope gate. Parsing the in-process spec ties
+the test to the same source the client-facing contract is generated from, so
+an operation cannot drift from documented to undocumented, or from gated to
+ungated, without failing the build.
+
+**Compensating controls:** n/a — this entry documents reverie's mechanism for
+satisfying the guard's own deny-by-default and testing-and-automation
+principles, not a departure from them.

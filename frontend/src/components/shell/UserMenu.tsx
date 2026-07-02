@@ -94,6 +94,9 @@ export function UserChip(): ReactElement | null {
         <DropdownMenuItem asChild>
           <Link to="/account/password">Change password</Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/tokens">API tokens</Link>
+        </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>

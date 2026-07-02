@@ -109,10 +109,15 @@ Collapsing them (M3) would force child restrictions and administrative gating to
 be re-encoded as scopes, losing the clean separation between a credential's
 delegated capability and the identity behind it.
 
-**Scope representation.** Scopes are a typed enum persisted as a Postgres text
-array on the credential. Sessions derive their scope set from the user's role
-(an interactive login gets the full capability its role allows). Tokens carry
-explicit scopes, bounded by the user's role ceiling.
+**Scope representation.** Scopes are a typed enum (`read`, `write`, `admin`)
+persisted as an array of the Postgres `scope` enum on the credential. Within
+the scope axis the three values compose as a hierarchy, `read < write < admin`:
+a higher scope subsumes every lower one, so an endpoint gates on the least
+scope it requires and any credential holding that scope or higher clears it.
+`read` is the floor, so every valid credential carries at least `read` and a
+scopeless credential is rejected at authentication. Sessions derive their scope
+set from the user's role (an interactive login gets the full capability its
+role allows). Tokens carry explicit scopes, bounded by the user's role ceiling.
 
 **Role-to-scope ceiling.** Administrator unlocks the `admin` scope; `read` and
 `write` are available to all roles. A child account holds `read` and `write`
@@ -136,6 +141,17 @@ high-entropy random token and orthogonal to scope.
 All transports resolve through the same extractor to the same in-process
 identity and the same scope set, so authorization logic downstream is transport
 agnostic.
+
+**Unified credential format and indexed resolution.** The plaintext credential
+is `{prefix}{token_id}.{secret}` for Bearer and `{prefix}{token_id}:{secret}`
+for Basic, split into a username/password pair on the same delimiter.
+`token_id` is the device token's own row id, so both transports resolve
+through one indexed lookup by id. This replaces the prior per-user scan over
+hashed secrets and the constant-time comparison that scan needed to stay safe.
+A token also carries an optional expiry (`expires_at`); the same lookup
+excludes an expired, non-revoked token exactly as it excludes a revoked one,
+so expiry sits alongside revocation as a first-class exclusion, not a check
+bolted on afterward.
 
 **Resource-server validation (the RFC 9068 profile).** Inbound JWT access tokens
 issued by a configured IdP are validated with `jsonwebtoken` for the underlying
@@ -210,6 +226,14 @@ The three-axis model is enforced server-side only: scope on the credential,
 role and child status from the user record, ownership at the data layer. Any
 client-side representation of these checks is presentation and is never the
 enforcement point.
+
+Credential resolution for Bearer and Basic both key on the token id embedded
+in the credential, never on a secret comparison against every row a user
+owns. An authz-matrix test suite asserts, for every documented operation,
+that a credential missing any one of its required scopes gets a 403. It also
+asserts that an admin user presenting a read-scoped token is still blocked
+from a mutation despite their role, keeping scope enforcement independent of
+the role axis in practice, not only in this decision's prose.
 
 ## Pros and Cons of the Options
 

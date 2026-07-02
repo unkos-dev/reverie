@@ -14,7 +14,8 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::auth::middleware::CurrentUser;
-use crate::auth::token::generate_device_token;
+use crate::auth::scope::Scope;
+use crate::auth::token::{self, generate_device_token};
 use crate::error::AppError;
 use crate::models::device_token;
 use crate::state::AppState;
@@ -29,11 +30,26 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(revoke_token))
 }
 
+/// Mass-assignment allow-list (codeguard #7): exactly `{name, scopes,
+/// expires_in_days}`, nothing else settable at mint.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct CreateTokenRequest {
     /// User-supplied label for the device (1-255 characters after trim).
     #[schema(example = "My Kindle")]
     name: String,
+    /// Capabilities to grant this token, bounded by the caller's role
+    /// ceiling ([`CurrentUser::may_grant_scope`]) — a non-admin cannot
+    /// request `admin`. Omitted defaults to `[read]`.
+    #[serde(default = "default_scopes")]
+    scopes: Vec<Scope>,
+    /// Token lifetime in days from mint: one of 30 / 60 / 90 / 365. Omitted
+    /// (or explicit `null`) mints a token that never expires.
+    #[schema(example = 90)]
+    expires_in_days: Option<u16>,
+}
+
+fn default_scopes() -> Vec<Scope> {
+    vec![Scope::Read]
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
@@ -42,8 +58,16 @@ struct CreateTokenResponse {
     id: Uuid,
     /// The label the token was created with (trimmed).
     name: String,
-    /// Token plaintext. Returned exactly once, here; only its SHA-256 hash
-    /// is persisted, so the plaintext cannot be recovered later.
+    /// Capabilities this token carries.
+    scopes: Vec<Scope>,
+    /// `null` if the token never expires.
+    #[serde(with = "time::serde::rfc3339::option")]
+    expires_at: Option<OffsetDateTime>,
+    /// The full Bearer credential (`{prefix}{id}.{secret}`), returned
+    /// exactly once, here; only its SHA-256 hash is persisted, so the
+    /// plaintext cannot be recovered later. For OPDS / Basic-auth clients,
+    /// split on the last `.`: the part before is the Basic username, the
+    /// part after is the Basic password.
     token: String,
 }
 
@@ -55,10 +79,17 @@ struct TokenListItem {
     id: Uuid,
     /// User-supplied label.
     name: String,
+    /// Capabilities this token carries.
+    scopes: Vec<Scope>,
+    /// `null` if the token never expires.
+    #[serde(with = "time::serde::rfc3339::option")]
+    expires_at: Option<OffsetDateTime>,
     /// Timestamp of the last successful auth with this token; `null` if
     /// the token has never been used.
+    #[serde(with = "time::serde::rfc3339::option")]
     last_used_at: Option<OffsetDateTime>,
     /// Token creation timestamp.
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
 }
 
@@ -66,17 +97,22 @@ struct TokenListItem {
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the trimmed name is empty or longer than
-///   255 characters, or the caller already has 10 active tokens.
+///   255 characters, the scope set is empty, `expires_in_days` is not one of
+///   30/60/90/365, or the caller already has 10 active tokens.
+/// - [`AppError::Forbidden`] when a requested scope exceeds the caller's
+///   role ceiling (e.g. a non-admin requesting `admin`).
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     post,
     path = "/api/v1/tokens",
     tag = "tokens",
     request_body = CreateTokenRequest,
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        (status = 201, description = "Token created. The `token` field is the plaintext, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
+        (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Name empty / longer than 255 characters after trim, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn create_token(
@@ -84,27 +120,76 @@ async fn create_token(
     State(state): State<AppState>,
     Json(body): Json<CreateTokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
+
     let name = body.name.trim();
     if name.is_empty() || name.chars().count() > 255 {
         return Err(AppError::Validation("name must be 1-255 characters".into()));
     }
 
+    // A zero-capability token is never useful and is refused at the auth seam
+    // anyway (see `resolve_device_token`'s read-floor check); reject it here so
+    // the caller gets a 422 explaining why rather than minting a dead credential.
+    if body.scopes.is_empty() {
+        return Err(AppError::Validation(
+            "at least one scope is required".into(),
+        ));
+    }
+
+    // THREAT (privilege escalation): a token may never carry more capability
+    // than its owner's role permits ([`CurrentUser::may_grant_scope`]). Log a
+    // rejected grant so repeated attempts to mint above the role ceiling leave
+    // a server-side signal.
+    for scope in &body.scopes {
+        if !current_user.may_grant_scope(*scope) {
+            tracing::warn!(
+                user_id = %current_user.user_id,
+                requested_scope = %scope,
+                "device_token mint rejected: requested scope exceeds role ceiling"
+            );
+            return Err(AppError::Forbidden);
+        }
+    }
+
+    let expires_at = match body.expires_in_days {
+        None => None,
+        Some(days @ (30 | 60 | 90 | 365)) => {
+            Some(OffsetDateTime::now_utc() + time::Duration::days(i64::from(days)))
+        }
+        Some(_) => {
+            return Err(AppError::Validation(
+                "expires_in_days must be 30, 60, 90, or 365".into(),
+            ));
+        }
+    };
+
     let (plaintext, hash) = generate_device_token();
-    let dt = device_token::create_with_limit(&state.pool, current_user.user_id, name, &hash)
-        .await
-        .map_err(|e| match e {
-            device_token::CreateError::LimitExceeded => {
-                AppError::Validation("maximum of 10 active device tokens per user".into())
-            }
-            device_token::CreateError::Db(e) => AppError::Internal(e.into()),
-        })?;
+    let dt = device_token::create_with_limit(
+        &state.pool,
+        current_user.user_id,
+        name,
+        &hash,
+        &body.scopes,
+        expires_at,
+    )
+    .await
+    .map_err(|e| match e {
+        device_token::CreateError::LimitExceeded => {
+            AppError::Validation("maximum of 10 active device tokens per user".into())
+        }
+        device_token::CreateError::Db(e) => AppError::Internal(e.into()),
+    })?;
+
+    let credential = format!("{}{}.{}", token::TOKEN_PREFIX, dt.id, plaintext);
 
     Ok((
         StatusCode::CREATED,
         Json(CreateTokenResponse {
             id: dt.id,
             name: dt.name,
-            token: plaintext,
+            scopes: dt.scopes,
+            expires_at: dt.expires_at,
+            token: credential,
         }),
     ))
 }
@@ -117,6 +202,7 @@ async fn create_token(
     get,
     path = "/api/v1/tokens",
     tag = "tokens",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "The caller's active device tokens, hash and plaintext elided", body = [TokenListItem]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
@@ -135,6 +221,8 @@ async fn list_tokens(
         .map(|t| TokenListItem {
             id: t.id,
             name: t.name,
+            scopes: t.scopes,
+            expires_at: t.expires_at,
             last_used_at: t.last_used_at,
             created_at: t.created_at,
         })
@@ -154,9 +242,11 @@ async fn list_tokens(
     path = "/api/v1/tokens/{id}",
     tag = "tokens",
     params(("id" = Uuid, Path, description = "Token row id")),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Token revoked"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller's credential lacks the write scope", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Token does not exist, belongs to another user, or is already revoked", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -165,6 +255,8 @@ async fn revoke_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
+
     let revoked = device_token::revoke(&state.pool, id, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -231,9 +323,19 @@ mod tests {
         .await
         .expect("create user");
         let (plaintext, hash) = crate::auth::token::generate_device_token();
-        crate::models::device_token::create(&pool, user.id, "auth-token", &hash)
-            .await
-            .expect("create token");
+        // Role-derived scope set (not create()'s `{read}` default) so this
+        // token authenticates like the user's own session -- scope-gated
+        // mutation tests below (create/revoke) would otherwise 403.
+        let token = crate::models::device_token::create_with_limit(
+            &pool,
+            user.id,
+            "auth-token",
+            &hash,
+            crate::auth::scope::Scope::for_role(crate::models::role::Role::Adult),
+            None,
+        )
+        .await
+        .expect("create token");
 
         let state = crate::state::AppState {
             pool: pool.clone(),
@@ -248,8 +350,15 @@ mod tests {
         let server = axum_test::TestServer::new(app);
 
         use base64ct::Encoding;
-        let basic =
-            base64ct::Base64::encode_string(format!("{}:{}", user.id, plaintext).as_bytes());
+        let basic = base64ct::Base64::encode_string(
+            format!(
+                "{}{}:{}",
+                crate::auth::token::TOKEN_PREFIX,
+                token.id,
+                plaintext
+            )
+            .as_bytes(),
+        );
 
         (server, basic)
     }
@@ -282,8 +391,12 @@ mod tests {
             .find(|t| t["id"] == created_id)
             .expect("created token present in list");
         assert_eq!(reader["name"], "reader");
+        assert_eq!(reader["scopes"], serde_json::json!(["read"]));
+        assert!(reader["expires_at"].is_null());
         assert!(reader["last_used_at"].is_null());
-        assert!(!reader["created_at"].is_null());
+        // RFC 3339 string, not `time`'s default array-of-fields shape --
+        // a bare `!is_null()` check would pass either way.
+        assert!(reader["created_at"].as_str().is_some());
 
         // The helper's auth token is also listed. Its last_used_at is NOT
         // asserted non-null here: verify_basic schedules the
@@ -296,11 +409,90 @@ mod tests {
         // plaintext nor its stored hash may appear in the list shape.
         for item in items {
             let obj = item.as_object().expect("list item is a JSON object");
-            assert_eq!(obj.len(), 4, "unexpected fields in {obj:?}");
-            for key in ["id", "name", "last_used_at", "created_at"] {
+            assert_eq!(obj.len(), 6, "unexpected fields in {obj:?}");
+            for key in [
+                "id",
+                "name",
+                "scopes",
+                "expires_at",
+                "last_used_at",
+                "created_at",
+            ] {
                 assert!(obj.contains_key(key), "missing {key} in {obj:?}");
             }
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_token_defaults_scope_and_expiry(pool: sqlx::PgPool) {
+        let (server, basic) = authenticated_test_server(pool).await;
+
+        let response = server
+            .post("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "defaults"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+        let body = response.json::<serde_json::Value>();
+        assert_eq!(body["scopes"], serde_json::json!(["read"]));
+        assert!(body["expires_at"].is_null());
+        assert!(
+            body["token"]
+                .as_str()
+                .expect("token is a string")
+                .starts_with(crate::auth::token::TOKEN_PREFIX)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_token_mints_requested_scopes_and_expiry(pool: sqlx::PgPool) {
+        let (server, basic) = authenticated_test_server(pool).await;
+
+        let response = server
+            .post("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "scoped", "scopes": ["read", "write"], "expires_in_days": 90}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+        let body = response.json::<serde_json::Value>();
+        assert_eq!(body["scopes"], serde_json::json!(["read", "write"]));
+        assert!(body["expires_at"].as_str().is_some());
+
+        // The response credential re-verifies as a valid Bearer token for
+        // its own mint — round-trips through the exact resolver a client
+        // would hit.
+        let token = body["token"].as_str().expect("token is a string");
+        let list = server
+            .get("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Bearer {token}"))
+            .await;
+        assert_eq!(list.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_token_rejects_admin_scope_ceiling(pool: sqlx::PgPool) {
+        let (server, basic) = authenticated_test_server(pool).await;
+
+        // The helper mints a non-admin (default adult-role) user; requesting
+        // `admin` must be rejected by the mint-time role ceiling.
+        let response = server
+            .post("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "audit", "scopes": ["read", "admin"]}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn create_token_rejects_invalid_expires_in_days(pool: sqlx::PgPool) {
+        let (server, basic) = authenticated_test_server(pool).await;
+
+        let response = server
+            .post("/api/v1/tokens")
+            .add_header(axum::http::header::AUTHORIZATION, format!("Basic {basic}"))
+            .json(&serde_json::json!({"name": "bad-expiry", "expires_in_days": 45}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[sqlx::test(migrations = "./migrations")]
