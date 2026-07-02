@@ -195,7 +195,11 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
-            type=sha,prefix=sha-,enable=${{ github.ref_type != 'tag' }}
+            # THREAT: immutable sha-<7> tags are the staging auto-deploy
+            # trigger, so they are minted for main only — a workflow_dispatch
+            # on a feature branch must be able to verify the full publish
+            # pipeline without putting unreviewed code on a deployable tag.
+            type=sha,prefix=sha-,enable=${{ github.ref_type != 'tag' && github.ref_name == 'main' }}
 
       # CVE-gate the image BEFORE it is tagged and signed — signing an
       # unscanned artifact is attestation theatre. Placement is
