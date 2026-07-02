@@ -33,9 +33,17 @@ impl FromRequestParts<AppState> for BasicOnly {
     ) -> Result<Self, Self::Rejection> {
         match verify_basic(state, parts).await {
             Ok(Some(user)) => Ok(Self(user)),
-            Ok(None) | Err(AppError::Unauthorized) => Err(AppError::BasicAuthRequired {
-                realm: state.config.opds.realm.clone(),
-            }),
+            // No header at all, or a header present but rejected (wrong
+            // password, disabled account, malformed value) — verify_basic
+            // now signals the latter as InvalidCredential (see its doc
+            // comment), but BasicOnly is Basic-only: every rejection here
+            // must still produce the RFC 7617 challenge, never the Bearer
+            // one InvalidCredential's own IntoResponse would otherwise emit.
+            Ok(None) | Err(AppError::Unauthorized | AppError::InvalidCredential) => {
+                Err(AppError::BasicAuthRequired {
+                    realm: state.config.opds.realm.clone(),
+                })
+            }
             Err(other) => Err(other),
         }
     }

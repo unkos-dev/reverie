@@ -65,7 +65,7 @@ struct SettingsResponse {
     get,
     path = "/api/v1/settings",
     tag = "settings",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -118,7 +118,7 @@ struct PutSettingsResponse {
     path = "/api/v1/settings",
     tag = "settings",
     request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),

@@ -22,6 +22,10 @@ pub fn test_config() -> Config {
         oidc_client_secret: String::new(),
         oidc_redirect_uri: String::new(),
         local_auth_enabled: true,
+        resource_server_issuer: String::new(),
+        resource_server_audience: String::new(),
+        resource_server_jwks_url: String::new(),
+        resource_server_require_at_jwt: false,
         login_rate_per_min: 10,
         login_throttle_base_secs: 2,
         login_throttle_cap_secs: 900,
@@ -172,6 +176,7 @@ pub fn test_state() -> AppState {
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         config: test_config(),
         oidc_client: Some(test_oidc_client()),
+        jwt_validator: None,
         login_limiter: test_login_limiter(),
         settings: test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -423,6 +428,47 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config: super::test_config(),
             oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: None,
+            login_limiter: super::test_login_limiter(),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
+    /// Same as [`server_with_real_pools`] but with a
+    /// [`crate::auth::jwt::JwtValidator`] wired up against `mock`'s
+    /// resource-server JWKS endpoint. `mock.mount_resource_server_jwks()`
+    /// must already have been called (the explicit-URL path in
+    /// `init_jwt_validator` performs no discovery, so this makes no network
+    /// call beyond that mounted route). `audience` becomes both the
+    /// validator's configured `aud` and the value callers must sign into a
+    /// token's `aud` claim for it to be accepted.
+    pub async fn server_with_jwt_validator(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        mock: &super::oidc_mock::MockOidcProvider,
+        audience: &str,
+        require_at_jwt: bool,
+    ) -> axum_test::TestServer {
+        use crate::state::AppState;
+
+        let mut config = super::test_config();
+        config.resource_server_issuer = mock.issuer().to_string();
+        config.resource_server_audience = audience.to_string();
+        config.resource_server_jwks_url = mock.resource_server_jwks_url();
+        config.resource_server_require_at_jwt = require_at_jwt;
+        let validator = crate::auth::jwt::init_jwt_validator(&config)
+            .await
+            .expect("build JwtValidator against the mock resource-server JWKS");
+
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
+            oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: Some(std::sync::Arc::new(validator)),
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -446,6 +492,7 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config,
             oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -482,6 +529,7 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config,
             oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -507,6 +555,7 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config,
             oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -539,6 +588,7 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             config,
             oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -952,6 +1002,13 @@ pub mod oidc_mock {
             &self.issuer
         }
 
+        /// The `kid` published for this mock's signing key, for tests that
+        /// need to construct a token header by hand (e.g. an alg-confusion
+        /// probe that must reuse the real `kid` while forging the signature).
+        pub fn kid(&self) -> &str {
+            &self.kid
+        }
+
         /// Build an `OidcClient` bound to this mock with embedded JWKS, so
         /// `id_token_verifier` does not need network IO.
         pub fn client(&self, redirect_uri: &str) -> OidcClient {
@@ -1053,5 +1110,66 @@ pub mod oidc_mock {
                 .mount(&self.server)
                 .await;
         }
+
+        /// Serve this mock's RSA keypair as a second, resource-server-flavored
+        /// JWKS endpoint that carries an explicit `alg` (RFC 7517 §4.4).
+        /// `CoreJsonWebKey::new_rsa` (used to build the OIDC `/jwks` endpoint
+        /// above) hard-codes `alg: None`, since the OIDC id-token verifier
+        /// never needs it; a resource-server client
+        /// ([`crate::auth::jwt::JwtValidator`]) rejects an alg-less JWK
+        /// outright, so the resource-server test suite needs a JWKS that
+        /// carries one, matching real conformant `IdPs` (Authentik, Keycloak,
+        /// ...). A distinct path keeps the OIDC `/jwks` endpoint, and every
+        /// pre-existing test against it, untouched.
+        pub async fn mount_resource_server_jwks(&self) {
+            let mut body = serde_json::to_value(&self.jwks).expect("serialize jwks");
+            if let Some(keys) = body["keys"].as_array_mut() {
+                for key in keys {
+                    key["alg"] = serde_json::json!("RS256");
+                }
+            }
+            Mock::given(method("GET"))
+                .and(path("/resource-server-jwks"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&self.server)
+                .await;
+        }
+
+        /// URL of the resource-server-flavored JWKS endpoint mounted by
+        /// [`Self::mount_resource_server_jwks`].
+        pub fn resource_server_jwks_url(&self) -> String {
+            format!("{}/resource-server-jwks", self.issuer)
+        }
+
+        /// Sign an access token with the mock's RSA keypair. `claims` is raw
+        /// JSON, not a typed struct, and `header` mutates the default
+        /// (`RS256` / `kid = self.kid` / `typ = "at+jwt"`) header before
+        /// signing; both are deliberately unconstrained so the invariant-3
+        /// negative suite can construct shapes a typed claims struct could
+        /// not express: a string-typed `exp` (CVE-2026-25537 regression), an
+        /// absent required claim, a foreign `typ`, an unknown `kid`, ...
+        pub fn sign_access_token(
+            &self,
+            claims: &serde_json::Value,
+            header: impl FnOnce(&mut jsonwebtoken::Header),
+        ) -> String {
+            let mut hdr = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+            hdr.kid = Some(self.kid.clone());
+            hdr.typ = Some("at+jwt".to_string());
+            header(&mut hdr);
+            let key = jsonwebtoken::EncodingKey::from_rsa_pem(self.signing_key_pem.as_bytes())
+                .expect("parse mock RSA signing key");
+            jsonwebtoken::encode(&hdr, claims, &key).expect("sign mock access token")
+        }
+    }
+
+    /// `u64` Unix timestamp for signing test claims. Avoids growing the
+    /// chrono footprint the rest of this mock already carries transitively
+    /// (see the module doc on [`MockOidcProvider::mount_token_endpoint`]).
+    pub fn now_unix() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock before UNIX epoch")
+            .as_secs()
     }
 }

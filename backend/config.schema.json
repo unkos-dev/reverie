@@ -223,6 +223,26 @@
       "default": 900,
       "minimum": 60
     },
+    "resource_server_audience": {
+      "description": "Expected `aud` claim for resource-server JWT validation\n(`REVERIE_RESOURCE_SERVER_AUDIENCE`). Required together with\n`resource_server_issuer` (both set, or neither).\n\nUse a DEDICATED `IdP` client/audience for API access, distinct from\nthe interactive-login `oidc_client_id`: if the same audience were\naccepted for both, an ID token minted for interactive login could\nbe replayed as an API access token (cross-JWT confusion).\n\nNot for machine-to-machine callers: a service account, CI job, or\nscript that can never complete an interactive login has no\n`(iss, sub)` link to resolve against and is rejected outright (see\nthe prerequisite documented on `resource_server_issuer`). Mint it a\npersonal access token instead (`rvpat_`-prefixed, `POST\n/api/v1/tokens` or the token-management screen): that credential is\nexactly what this config is not for.",
+      "type": "string",
+      "default": ""
+    },
+    "resource_server_issuer": {
+      "description": "OIDC issuer URL for resource-server JWT validation\n(`REVERIE_RESOURCE_SERVER_ISSUER`). Distinct from `oidc_issuer_url`\n(interactive login): a resource-server JWT authenticates an API\ncaller through the `CurrentUser` extractor and never establishes a\nsession. Empty (default) disables JWT Bearer authentication\nentirely, so a Bearer credential that is not an `rvpat_` personal\ntoken then 401s at the extractor dispatch.\n\nPrerequisite: a JWT only ever authenticates an identity that already\nexists in Reverie. The token's `(iss, sub)` pair must already be\nlinked to a user through a prior interactive OIDC login (that login\nis the only path that creates the link); a correctly signed token\nfor an issuer/subject Reverie has never seen is rejected, not\nauto-provisioned. Interactive login must therefore be configured and\nexercised at least once for a given user before resource-server JWTs\nfor that user will authenticate.\n\nTHREAT: this is the trust anchor for API-caller signatures. The\nJWKS URL used to verify tokens derives from this issuer (via OIDC\ndiscovery, or the explicit `resource_server_jwks_url` override),\nnever from a claim inside an incoming token. An operator pointing\nthis at a malicious or compromised issuer can induce Reverie to\ntrust attacker-controlled JWKS, enabling access-token forgery (the\nsame operator-level threat documented on `oidc_issuer_url`).",
+      "type": "string",
+      "default": ""
+    },
+    "resource_server_jwks_url": {
+      "description": "Explicit JWKS endpoint override for resource-server JWT validation\n(`REVERIE_RESOURCE_SERVER_JWKS_URL`). Empty (default) derives the\nJWKS URL from `resource_server_issuer` via OIDC discovery at\nstartup. Set this only for an `IdP` that does not publish\n`.well-known/openid-configuration` (or exposes a JWKS endpoint\noutside its discovery document); the resolved URL is fixed for the\nprocess lifetime and is never read from an incoming token (RFC 8725\n§3.9/§3.10: `jku`/`x5u` header values are never followed).\n\nFetches against the resolved endpoint carry explicit connect and\nrequest timeouts and never follow redirects (the configured URL\nmust be the final endpoint); resolved keys are cached in-process. Missing\nkeys are NOT negatively cached: each Bearer credential naming an\nunknown `kid` triggers a fresh JWKS fetch, so a flood of such\ncredentials drives outbound fetches to the `IdP` roughly 1:1. On an\ninternet-exposed instance, put the API behind an edge rate limiter\n(reverse proxy or WAF) to bound that amplification.",
+      "type": "string",
+      "default": ""
+    },
+    "resource_server_require_at_jwt": {
+      "description": "Whether the `typ` header of a resource-server JWT must be `at+jwt` /\n`application/at+jwt` per RFC 9068 §4\n(`REVERIE_RESOURCE_SERVER_REQUIRE_AT_JWT`, default `false`).\n\n`true` (strict): only `at+jwt` / `application/at+jwt` is accepted.\n`false` (relaxed, default): a bare `JWT` or an absent `typ` is\nadditionally accepted. In both modes any OTHER explicit `typ`\n(e.g. `logout+jwt`, `dpop+jwt`) is rejected, closing the replay of a\nsame-key token declared for another purpose (Authentik, for one,\nsigns logout tokens with the same key as access tokens). Set `true`\nfor a conforming `IdP` (Authelia, Kanidm, Keycloak 26.2+ with the\n`at+jwt` toggle enabled); most self-hosted `IdPs` surveyed\n2026-07-02 (Authentik, Zitadel, Casdoor, Hydra/fosite) emit a bare\n`typ: JWT` or omit it entirely, hence the relaxed default. Revisit\nonce upstream `IdPs` converge (tracked upstream:\ngoauthentik/authentik#22070).",
+      "type": "boolean",
+      "default": false
+    },
     "security": {
       "description": "Response-header policy (CSP, HSTS, reporting endpoint, dist\npath). `csp_*_header` fields are finalised by [`crate::run`]\nafter construction.",
       "$ref": "#/$defs/SecurityConfig"

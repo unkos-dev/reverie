@@ -61,14 +61,21 @@ const API_VERSION: &str = "0.1.0";
 ///   ([`crate::auth::token::TOKEN_PREFIX`]). Resolves through the same
 ///   `resolve_device_token` indexed lookup as `opds_basic`; both transports
 ///   share one credential model.
+/// - `oidc_jwt_bearer`: HTTP Bearer, an RFC 9068 resource-server access
+///   token issued by the configured `IdP`. Resolves through
+///   [`crate::auth::jwt::JwtValidator`] and a read-only `(iss, sub)` lookup;
+///   inert (the scheme documents a surface that always 401s) when the
+///   resource-server config is absent. Never provisions an account — see
+///   the module docs on `crate::auth::middleware::verify_bearer`.
 ///
-/// All three schemes carry a `description` documenting that HTTPS is mandatory
+/// All four schemes carry a `description` documenting that HTTPS is mandatory
 /// in production, since Basic credentials, Bearer tokens, and session cookies
 /// are otherwise exposed in cleartext. Transport is enforced operationally
 /// (reverse-proxy TLS; the session cookie is `Secure` when `behind_https`),
 /// not by the spec, so the residual cleartext-credential findings are justified
 /// skips: `CKV_OPENAPI_3` on `opds_basic` (HTTP Basic) and `CKV_OPENAPI_20` on
-/// `device_token_bearer` (HTTP Bearer). Both are registered in `.checkov.yaml`.
+/// `device_token_bearer` and `oidc_jwt_bearer` (HTTP Bearer). All are
+/// registered in `.checkov.yaml`.
 ///
 /// See `adr/2026-06-08-api-versioning-openapi.md`.
 struct SecurityAddon;
@@ -109,6 +116,20 @@ impl Modify for SecurityAddon {
                         "Personal device-token credential (`{prefix}{token_id}.{secret}`). \
                          MUST be used over HTTPS in production; the token is otherwise \
                          exposed in transit (Checkov CKV_OPENAPI_20).",
+                    ))
+                    .build(),
+            ),
+        );
+        components.add_security_scheme(
+            "oidc_jwt_bearer",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .description(Some(
+                        "RFC 9068 resource-server access token issued by the configured IdP. \
+                         MUST be used over HTTPS in production; the token is otherwise exposed \
+                         in transit (Checkov CKV_OPENAPI_20).",
                     ))
                     .build(),
             ),

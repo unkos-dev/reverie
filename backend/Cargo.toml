@@ -41,6 +41,13 @@ futures = "0.3.32"
 governor = { version = "0.10.4", features = ["dashmap"] }
 hickory-resolver = "0.26.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+# Resource-server JWT validation (RFC 9068) for IdP-issued Bearer access
+# tokens; jsonwebtoken has no default crypto backend as of 10.x, so a
+# backend feature is mandatory. jwks_client_rs pulls jsonwebtoken >=10.2
+# transitively; default-features = false drops native-tls in favour of
+# the workspace's rustls posture.
+jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
+jwks_client_rs = { version = "0.6", default-features = false, features = ["rustls", "rust_crypto"] }
 notify = "8.2.0"
 openidconnect = { version = "4.0.1", features = ["reqwest"] }
 quick-xml = "0.41.0"

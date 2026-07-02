@@ -408,7 +408,6 @@ pub async fn enable_account(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the identity lookup or the user `SELECT`.
-#[allow(dead_code)] // Used by admin user management in future steps
 pub async fn find_by_oidc_identity(
     pool: &PgPool,
     issuer: &str,

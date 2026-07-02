@@ -84,7 +84,7 @@ fn spec_declares_security_model() {
     let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
 
     // securitySchemes: session cookie (JSON data API) + HTTP Basic (OPDS) +
-    // HTTP Bearer (personal device tokens).
+    // HTTP Bearer (personal device tokens) + HTTP Bearer (resource-server JWTs).
     let schemes = &doc["components"]["securitySchemes"];
     assert_eq!(
         schemes["session_cookie"]["type"], "apiKey",
@@ -105,11 +105,21 @@ fn spec_declares_security_model() {
         "device_token_bearer is an http scheme"
     );
     assert_eq!(schemes["device_token_bearer"]["scheme"], "bearer");
+    assert_eq!(
+        schemes["oidc_jwt_bearer"]["type"], "http",
+        "oidc_jwt_bearer is an http scheme"
+    );
+    assert_eq!(schemes["oidc_jwt_bearer"]["scheme"], "bearer");
 
-    // Hard-rule-6: all three schemes must document the HTTPS-in-production
+    // Hard-rule-6: all four schemes must document the HTTPS-in-production
     // requirement (Basic/Bearer credentials and session cookies are
     // cleartext-exposed otherwise).
-    for scheme in ["session_cookie", "opds_basic", "device_token_bearer"] {
+    for scheme in [
+        "session_cookie",
+        "opds_basic",
+        "device_token_bearer",
+        "oidc_jwt_bearer",
+    ] {
         let description = schemes[scheme]["description"].as_str().unwrap_or("");
         assert!(
             description.contains("HTTPS"),
@@ -158,12 +168,13 @@ fn spec_covers_library_routes() {
     // its required scope. The authz-matrix test (`src/authz_matrix.rs`) is the
     // completeness backstop (deny-by-default: it fails if any /api/v1 op lacks
     // a declared scope). This is a read, so it requires only `read` on all
-    // three schemes.
+    // four schemes.
     assert_eq!(
         doc["paths"]["/api/v1/books"]["get"]["security"],
         serde_json::json!([
             {"session_cookie": ["read"]},
             {"device_token_bearer": ["read"]},
+            {"oidc_jwt_bearer": ["read"]},
             {"opds_basic": ["read"]},
         ]),
         "GET /api/v1/books must declare its read-scope security requirement"
@@ -243,6 +254,7 @@ fn spec_covers_series_dashboard_routes() {
         serde_json::json!([
             {"session_cookie": ["read"]},
             {"device_token_bearer": ["read"]},
+            {"oidc_jwt_bearer": ["read"]},
             {"opds_basic": ["read"]},
         ]),
         "GET /api/v1/series/{{id}} must declare its read-scope security requirement"
@@ -253,6 +265,7 @@ fn spec_covers_series_dashboard_routes() {
             serde_json::json!([
                 {"session_cookie": ["admin"]},
                 {"device_token_bearer": ["admin"]},
+                {"oidc_jwt_bearer": ["admin"]},
                 {"opds_basic": ["admin"]},
             ]),
             "GET {path} must declare its admin-scope security requirement"

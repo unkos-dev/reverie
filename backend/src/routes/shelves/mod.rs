@@ -146,7 +146,7 @@ struct ShelfListResponse {
     path = "/api/v1/shelves",
     tag = "shelves",
     params(ShelfListParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "One page of the caller's shelves, system shelves first then by name", body = ShelfListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -264,7 +264,7 @@ struct CreateShelfRequest {
     path = "/api/v1/shelves",
     tag = "shelves",
     request_body = CreateShelfRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Shelf created", body = Shelf,
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -342,7 +342,7 @@ struct RenameShelfRequest {
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = RenameShelfRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 200, description = "Renamed shelf", body = Shelf,
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -439,7 +439,7 @@ async fn rename_shelf(
     path = "/api/v1/shelves/{id}",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Shelf deleted"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -532,7 +532,7 @@ struct ShelfDetailResponse {
     path = "/api/v1/shelves/{id}",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
          headers(
@@ -683,7 +683,7 @@ struct AddItemRequest {
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = AddItemRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -791,7 +791,7 @@ async fn add_shelf_item(
         ("id" = Uuid, Path, description = "Shelf id"),
         ("manifestation_id" = Uuid, Path, description = "Manifestation to remove")
     ),
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item removed; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
@@ -879,7 +879,7 @@ struct ReorderItemsRequest {
         ("If-Match" = String, Header, description = "Strong entity-tag from a prior shelf response; weak validators (W/\"...\") are rejected")
     ),
     request_body = ReorderItemsRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Positions rewritten; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),

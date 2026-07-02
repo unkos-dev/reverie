@@ -112,7 +112,7 @@ struct StatsResponse {
     get,
     path = "/api/v1/dashboard/stats",
     tag = "dashboard",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Library-wide aggregate health metrics. Admin only.", body = StatsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -300,7 +300,7 @@ struct ActivityResponse {
     path = "/api/v1/dashboard/activity",
     tag = "dashboard",
     params(ActivityParams),
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Most-recent ingestion batches, newest first. Admin only.", body = ActivityResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),

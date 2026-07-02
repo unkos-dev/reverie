@@ -25,10 +25,12 @@ unmaintained = "workspace"
 yanked = "warn"
 ignore = [
   # rsa — Marvin Attack (PKCS#1 v1.5 timing sidechannel). No patched version
-  # exists upstream. rsa is pulled in transitively via openidconnect for JWT
-  # *verification* only; the vulnerable PKCS#1 v1.5 *decryption* path is never
-  # invoked.
-  { id = "RUSTSEC-2023-0071", reason = "no upstream fix; rsa used transitively via openidconnect for JWT verification only — vulnerable PKCS#1 v1.5 decryption path never invoked" },
+  # exists upstream. rsa is pulled in transitively via openidconnect (ID-token
+  # verification) and, as of the resource-server JWT validator, via
+  # jsonwebtoken's `rust_crypto` backend (RS*/PS* access-token *verification*)
+  # too — both edges use rsa for *verification* only; the vulnerable PKCS#1
+  # v1.5 *decryption* path is never invoked by either.
+  { id = "RUSTSEC-2023-0071", reason = "no upstream fix; rsa used transitively via openidconnect and jsonwebtoken's rust_crypto backend for JWT verification only — vulnerable PKCS#1 v1.5 decryption path never invoked" },
   # rand — soundness issue (aliased &mut via log + thread_rng). rand 0.8.x is
   # pulled in transitively by sqlx 0.8; the ecosystem has not yet released a
   # sqlx 0.9 / rand-0.9-compatible version. Revisit when sqlx 0.9 goes stable.
