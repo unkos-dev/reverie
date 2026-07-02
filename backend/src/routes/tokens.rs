@@ -107,7 +107,7 @@ struct TokenListItem {
     path = "/api/v1/tokens",
     tag = "tokens",
     request_body = CreateTokenRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -202,7 +202,7 @@ async fn create_token(
     get,
     path = "/api/v1/tokens",
     tag = "tokens",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "The caller's active device tokens, hash and plaintext elided", body = [TokenListItem]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
@@ -242,7 +242,7 @@ async fn list_tokens(
     path = "/api/v1/tokens/{id}",
     tag = "tokens",
     params(("id" = Uuid, Path, description = "Token row id")),
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Token revoked"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),

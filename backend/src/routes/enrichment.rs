@@ -56,7 +56,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     post,
     path = "/api/v1/manifestations/{id}/enrichment/trigger",
     tag = "enrichment",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 202, description = "Enrichment state reset to pending; the background worker picks the manifestation up on its next poll"),
@@ -114,7 +114,7 @@ async fn trigger(
     post,
     path = "/api/v1/manifestations/{id}/enrichment/dry-run",
     tag = "enrichment",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Diff of changes an enrichment pass would make; per-source failures are listed, not fatal", body = crate::services::enrichment::dry_run::DryRunDiff),
@@ -178,7 +178,7 @@ struct StatusSummary {
     get,
     path = "/api/v1/enrichment/status",
     tag = "enrichment",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Per-status manifestation counts under the caller's RLS context", body = StatusSummary),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),

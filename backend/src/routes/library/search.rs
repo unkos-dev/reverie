@@ -112,7 +112,7 @@ pub(super) struct SearchParams {
     path = "/api/v1/search",
     tag = "library",
     params(SearchParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Top hybrid-ranked search results", body = SearchResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),

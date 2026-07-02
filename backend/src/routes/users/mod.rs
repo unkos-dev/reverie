@@ -117,7 +117,7 @@ const MAX_LISTED_USERS: i64 = 500;
     get,
     path = "/api/v1/users",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "All users, oldest first, defensively capped at 500 rows. Admin only.", body = [UserResponse]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
@@ -182,7 +182,7 @@ struct UpdateRoleRequest {
     put,
     path = "/api/v1/users/{id}/role",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateRoleRequest,
     responses(
@@ -305,7 +305,7 @@ struct UpdateChildStatusRequest {
     put,
     path = "/api/v1/users/{id}/child-status",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateChildStatusRequest,
     responses(
@@ -427,7 +427,7 @@ struct CreateUserRequest {
     post,
     path = "/api/v1/users",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
         (status = 201, description = "Created user. Admin only.", body = UserResponse),
@@ -507,7 +507,7 @@ struct AccountStatusRequest {
     put,
     path = "/api/v1/users/{id}/account-status",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AccountStatusRequest,
     responses(
@@ -632,7 +632,7 @@ struct AdminPasswordResetRequest {
     post,
     path = "/api/v1/users/{id}/password-reset",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AdminPasswordResetRequest,
     responses(
@@ -725,7 +725,7 @@ struct ChangePasswordRequest {
     post,
     path = "/api/v1/account/password",
     tag = "users",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
@@ -883,7 +883,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     patch,
     path = "/api/v1/users/{id}",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
     responses(
