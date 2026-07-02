@@ -50,7 +50,7 @@ jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 jwks_client_rs = { version = "0.6", default-features = false, features = ["rustls", "rust_crypto"] }
 notify = "8.2.0"
 openidconnect = { version = "4.0.1", features = ["reqwest"] }
-quick-xml = "0.40.1"
+quick-xml = "0.41.0"
 rand = "0.10.1"
 regex = "1.12.4"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json", "stream"] }
