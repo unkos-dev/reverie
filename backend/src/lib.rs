@@ -664,13 +664,27 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 /// Returns an error if schema serialization or the stdout write fails.
 pub fn print_config_schema() -> anyhow::Result<()> {
     use std::io::Write as _;
-    let schema = schemars::schema_for!(config::Config);
-    let mut json = serde_json::to_string_pretty(&schema).context("serialize config schema")?;
-    json.push('\n');
+    let json = config_schema_json()?;
     std::io::stdout()
         .write_all(json.as_bytes())
         .context("write config schema to stdout")?;
     Ok(())
+}
+
+/// Render the config JSON Schema exactly as [`print_config_schema`] emits it
+/// (pretty-printed, trailing newline included). The single rendering seam
+/// shared by the CLI subcommand and the `gen_config_schema` drift test, so
+/// the committed `config.schema.json` is compared against the same bytes the
+/// binary would print.
+///
+/// # Errors
+///
+/// Returns an error if schema serialization fails.
+pub fn config_schema_json() -> anyhow::Result<String> {
+    let schema = schemars::schema_for!(config::Config);
+    let mut json = serde_json::to_string_pretty(&schema).context("serialize config schema")?;
+    json.push('\n');
+    Ok(json)
 }
 
 /// Resolve the migration DSN from the raw `DATABASE_URL_MIGRATION` value,

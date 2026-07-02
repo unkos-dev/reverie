@@ -393,11 +393,13 @@ jobs:
       - name: Check sqlx query cache freshness
         run: cargo sqlx prepare --check -- --tests
 
-      # Drift guard on the committed config JSON Schema (generated from the
-      # config structs by print-config-schema; the config reference renders
-      # from it). Same contract as the .sqlx check above.
+      # Drift guard on the committed config JSON Schema. The check itself
+      # lives in the gen_config_schema drift test (same generate→commit→check
+      # contract as gen_openapi/gen_config_ref, and what the pre-push hook
+      # runs locally); invoked standalone here so schema drift fails fast,
+      # before the full nextest pass below.
       - name: Check config schema freshness
-        run: cargo run --quiet --locked -- print-config-schema | diff -u config.schema.json -
+        run: cargo test --locked --test gen_config_schema
 
       # nextest runs each test in its own process; every #[sqlx::test]
       # gets an isolated per-test database. Single pass under llvm-cov,
