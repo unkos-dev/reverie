@@ -290,7 +290,8 @@ pub struct Config {
     /// §3.9/§3.10: `jku`/`x5u` header values are never followed).
     ///
     /// Fetches against the resolved endpoint carry explicit connect and
-    /// request timeouts, and resolved keys are cached in-process. Missing
+    /// request timeouts and never follow redirects (the configured URL
+    /// must be the final endpoint); resolved keys are cached in-process. Missing
     /// keys are NOT negatively cached: each Bearer credential naming an
     /// unknown `kid` triggers a fresh JWKS fetch, so a flood of such
     /// credentials drives outbound fetches to the `IdP` roughly 1:1. On an

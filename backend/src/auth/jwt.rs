@@ -91,8 +91,9 @@ impl std::error::Error for JwtValidationError {}
 /// `jwks_client_rs::source::WebSource` cannot set one, and a bare-UA fetch
 /// 403s behind common WAFs (mirrors [`crate::auth::oidc::http_client`]'s
 /// THREAT note). Fetches ONLY from the configured `url`; this type has no
-/// `jku`/`x5u` code path at all, so a token can never redirect key
-/// resolution to an attacker-chosen JWKS endpoint.
+/// `jku`/`x5u` code path at all, and its client never follows HTTP
+/// redirects, so a token can never redirect key resolution to an
+/// attacker-chosen JWKS endpoint.
 struct ReverieJwksSource {
     client: reqwest::Client,
     url: url::Url,
@@ -145,11 +146,15 @@ const JWKS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// failed refresh RESOLVES; a fetch with no timeout against an `IdP` that
 /// hangs (rather than errors fast) never resolves, holding every request
 /// that triggered the refresh open and defeating that warm-cache fallback.
-fn jwks_http_client(connect_timeout: Duration, request_timeout: Duration) -> reqwest::Client {
-    #[allow(
-        clippy::expect_used,
-        reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
-    )]
+/// Redirects are never followed: the operator-configured (or
+/// discovery-resolved) JWKS URL is the final endpoint, and following a
+/// redirect would let the response steer key resolution to a different one.
+fn jwks_http_client(
+    connect_timeout: Duration,
+    request_timeout: Duration,
+) -> anyhow::Result<reqwest::Client> {
+    use anyhow::Context as _;
+
     #[expect(
         clippy::disallowed_methods,
         reason = "sanctioned UA-setting constructor the clippy.toml ban funnels callers into; .user_agent() is set on the next line"
@@ -158,8 +163,9 @@ fn jwks_http_client(connect_timeout: Duration, request_timeout: Duration) -> req
         .user_agent(concat!("reverie/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(connect_timeout)
         .timeout(request_timeout)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
-        .expect("failed to build resource-server JWKS HTTP client: TLS init should not fail in this environment")
+        .context("failed to build resource-server JWKS HTTP client")
 }
 
 /// Build a `jsonwebtoken::DecodingKey` from a resolved JWK. Mirrors
@@ -313,7 +319,7 @@ pub async fn init_jwt_validator(config: &Config) -> anyhow::Result<JwtValidator>
     };
 
     let source = ReverieJwksSource {
-        client: jwks_http_client(JWKS_CONNECT_TIMEOUT, JWKS_REQUEST_TIMEOUT),
+        client: jwks_http_client(JWKS_CONNECT_TIMEOUT, JWKS_REQUEST_TIMEOUT)?,
         url: jwks_url,
     };
     let client = JwksClient::builder().build(source);
@@ -701,7 +707,8 @@ mod tests {
             .await;
 
         let source = ReverieJwksSource {
-            client: jwks_http_client(Duration::from_millis(250), Duration::from_millis(250)),
+            client: jwks_http_client(Duration::from_millis(250), Duration::from_millis(250))
+                .expect("build JWKS test client"),
             url: url::Url::parse(&format!("{}/jwks", server.uri())).expect("mock JWKS url parses"),
         };
 
@@ -715,6 +722,38 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "the fetch must fail within the configured client timeout, not the mock's delay"
+        );
+    }
+
+    #[tokio::test]
+    async fn jwks_fetch_never_follows_redirects() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let real = MockOidcProvider::start("").await;
+        real.mount_resource_server_jwks().await;
+
+        let redirector = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", real.resource_server_jwks_url().as_str()),
+            )
+            .mount(&redirector)
+            .await;
+
+        let source = ReverieJwksSource {
+            client: jwks_http_client(JWKS_CONNECT_TIMEOUT, JWKS_REQUEST_TIMEOUT)
+                .expect("build JWKS test client"),
+            url: url::Url::parse(&format!("{}/jwks", redirector.uri()))
+                .expect("mock JWKS url parses"),
+        };
+
+        assert!(
+            source.fetch_keys().await.is_err(),
+            "a redirect response must fail the fetch, not steer it to the redirect target \
+             (the target here serves a fully valid JWKS, so following it would succeed)"
         );
     }
 }
