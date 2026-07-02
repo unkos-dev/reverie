@@ -1,15 +1,16 @@
 //! Resource-server JWT (RFC 9068 access token) validation for API callers.
 //!
-//! [`JwtValidator`] is built at startup ([`init_jwt_validator`]) when
-//! resource-server config is present
-//! ([`crate::config::Config::resource_server_configured`]). It validates
-//! IdP-issued Bearer access tokens end to end: `iss`/`aud` enforcement, the
-//! signing algorithm pinned from the resolved JWK (never the token header),
-//! a JWKS fetched only from the configured URL, and the `typ` header policy
-//! documented on [`crate::config::Config::resource_server_require_at_jwt`].
-//! Resolving validated claims to a canonical user is
-//! `auth::middleware::resolve_jwt`'s job, not this module's: [`JwtValidator`]
-//! owns cryptographic validation only.
+//! [`crate::auth::jwt::JwtValidator`] is built at startup
+//! ([`crate::auth::jwt::init_jwt_validator`]) when resource-server config is
+//! present ([`crate::config::Config::resource_server_configured`]). It
+//! validates IdP-issued Bearer access tokens end to end: `iss`/`aud`
+//! enforcement, the signing algorithm pinned from the resolved JWK (never
+//! the token header), a JWKS fetched only from the configured URL, and the
+//! `typ` header policy documented on
+//! [`crate::config::Config::resource_server_require_at_jwt`]. Resolving
+//! validated claims to a canonical user is `auth::middleware::resolve_jwt`'s
+//! job, not this module's: [`crate::auth::jwt::JwtValidator`] owns
+//! cryptographic validation only.
 //!
 //! # Tier 2 — security-critical
 //!
@@ -17,8 +18,9 @@
 //! helper) is deliberately NOT used: it never checks `iss`, only checks
 //! `aud` when a non-empty slice is passed, and falls back to
 //! `Validation::default()` (HS256) when a JWK omits `alg`, all footguns
-//! for a resource server. [`JwtValidator::validate`] instead uses
-//! [`jsonwebtoken::decode`] and [`JwksClient::get`] as building blocks, with
+//! for a resource server. [`crate::auth::jwt::JwtValidator::validate`]
+//! instead uses [`jsonwebtoken::decode`] and
+//! [`jwks_client_rs::JwksClient::get`] as building blocks, with
 //! `// THREAT:` annotations marking every step whose absence would open a
 //! bypass.
 
