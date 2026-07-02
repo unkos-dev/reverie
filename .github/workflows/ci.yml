@@ -14,9 +14,13 @@ on:
 permissions:
   contents: read
 
+# Never cancel main-push runs: back-to-back merges would cancel the older
+# run, reddening the workflow badge and starving the sonar job of coverage
+# artifacts (a cancelled run once wiped the Sonar baseline to 0%).
+# Superseded PR runs cancel freely.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Detect which areas of the repo changed so downstream jobs can skip when
@@ -137,7 +141,10 @@ jobs:
   backend:
     name: Backend
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    # Push-to-main always runs both stack jobs: the sonar baseline analysis
+    # needs both lcov artifacts because SonarQube Cloud has no coverage
+    # carryforward; a stack whose report is absent re-reports as 0%.
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -408,22 +415,24 @@ jobs:
       # above. --remap-path-prefix yields workspace-relative SF: paths so
       # the artifact is portable.
       - name: Test (with coverage)
-        run: cargo llvm-cov nextest --workspace --remap-path-prefix --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --locked --workspace --remap-path-prefix --lcov --output-path lcov.info
 
       # nextest does not run doctests. Reverie has none today; this step
       # exists so doctest drift fails CI from day one and is near-instant
       # while empty.
       - name: Doctests
-        run: cargo test --doc --workspace
+        run: cargo test --locked --doc --workspace
 
       # if-no-files-found: error — a missing report must fail here, not
-      # read as 0% coverage downstream.
+      # read as 0% coverage downstream. Consumed by the sonar job within
+      # this run; no post-run use, so minimum retention.
       - name: Upload backend coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: backend-coverage
           path: backend/lcov.info
           if-no-files-found: error
+          retention-days: 1
 
   # MSRV floor enforcement: compile the workspace on exactly the declared
   # `rust-version` so a dependency bump or new syntax that silently raises
@@ -948,7 +957,8 @@ jobs:
   frontend:
     name: Frontend
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    # Push-to-main always runs both stack jobs; see the backend job's note.
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -985,13 +995,15 @@ jobs:
         run: just js::test-coverage
 
       # if-no-files-found: error — a missing report must fail here, not
-      # read as 0% coverage downstream.
+      # read as 0% coverage downstream. Consumed by the sonar job within
+      # this run; no post-run use, so minimum retention.
       - name: Upload frontend coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: frontend-coverage
           path: frontend/coverage/lcov.info
           if-no-files-found: error
+          retention-days: 1
 
       - name: Stylelint
         run: just js::stylelint
@@ -1416,13 +1428,20 @@ jobs:
   sonar:
     name: SonarQube Cloud
     needs: [changes, backend, frontend]
-    # Single-stack PRs skip one producing job; run anyway (incremental
-    # analysis keeps the other stack). Skip fork PRs: no SONAR_TOKEN, so
-    # the scan only fails.
+    # A main analysis overwrites coverage with exactly what it submits;
+    # SonarQube Cloud has no carryforward, so a missing report re-reports
+    # that stack as 0%. Hence on push both producers must have succeeded.
+    # PR analyses never touch the main baseline, so single-stack PRs (one
+    # producer skipped) still scan. Skip fork PRs: no SONAR_TOKEN, so the
+    # scan only fails. !cancelled(), not always(): always() runs even
+    # inside a cancelled run, and once scanned main with zero artifacts,
+    # wiping the baseline to 0%.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'push' ||
+       (needs.backend.result == 'success' && needs.frontend.result == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true
@@ -1459,9 +1478,13 @@ jobs:
             sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
           fi
 
-      # Advisory job: a missing artifact/token can't fail the build, so
-      # surface it as an annotation rather than break silently.
-      - name: Warn on degraded coverage inputs
+      # On push a missing artifact must block the scan: it would overwrite
+      # the main baseline with partial coverage (the job-level if already
+      # requires both producers green, so a miss here is an artifact-infra
+      # failure). On PRs the analysis is baseline-safe; annotate and
+      # continue. The job stays advisory either way (continue-on-error,
+      # absent from ci-gate).
+      - name: Gate coverage inputs
         if: always()
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -1469,6 +1492,10 @@ jobs:
           FRONTEND_DL: ${{ steps.dl_frontend.outcome }}
         run: |
           if [ "${BACKEND_DL}" = 'failure' ] || [ "${FRONTEND_DL}" = 'failure' ]; then
+            if [ "${GITHUB_EVENT_NAME}" = 'push' ]; then
+              echo "::error title=Sonar coverage missing::A coverage artifact was absent on a main push; refusing to overwrite the baseline with partial coverage."
+              exit 1
+            fi
             echo "::warning title=Sonar coverage partial::A coverage artifact was absent (single-stack PR or upstream failure); Sonar scanned with incomplete coverage."
           fi
           if [ -z "${SONAR_TOKEN}" ]; then

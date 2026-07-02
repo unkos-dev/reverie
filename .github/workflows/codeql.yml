@@ -14,9 +14,12 @@ on:
 permissions:
   contents: read
 
+# Never cancel main-branch runs (pushes and the weekly schedule both carry
+# refs/heads/main): a cancelled run reddens the README badge and drops the
+# commit's code-scanning results. Superseded PR runs cancel freely.
 concurrency:
   group: codeql-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Detect which languages' source changed so analyze jobs can skip.
