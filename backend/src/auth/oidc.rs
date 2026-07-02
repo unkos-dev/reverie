@@ -86,8 +86,13 @@ pub type OidcClient = openidconnect::Client<
 ///
 /// The explicit `User-Agent` header is load-bearing: see the
 /// "WAF reachability" section in the module-level docs. Removing it
-/// reopens [UNK-255](https://linear.app/unkos/issue/UNK-255).
-fn http_client() -> Result<openidconnect::reqwest::Client> {
+/// reopens the empty-User-Agent WAF-block failure mode described there.
+///
+/// `pub(crate)`: also used by [`crate::auth::jwt::init_jwt_validator`] for
+/// the OIDC-discovery JWKS-URL fallback, which needs the same
+/// `openidconnect::reqwest::Client` type `CoreProviderMetadata::discover_async`
+/// takes.
+pub(crate) fn http_client() -> Result<openidconnect::reqwest::Client> {
     // THREAT: an empty User-Agent is matched by common WAF scanner blocklists
     // (Cloudflare, AWS WAF). Set a stable, identifiable UA so OIDC discovery
     // succeeds behind a WAF and upstream IdP operators can trace requests

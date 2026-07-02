@@ -325,6 +325,7 @@ mod tests {
             ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             config,
             oidc_client: Some(test_support::test_oidc_client()),
+            jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
