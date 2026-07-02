@@ -437,6 +437,46 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
+    /// Same as [`server_with_real_pools`] but with a
+    /// [`crate::auth::jwt::JwtValidator`] wired up against `mock`'s
+    /// resource-server JWKS endpoint. `mock.mount_resource_server_jwks()`
+    /// must already have been called (the explicit-URL path in
+    /// `init_jwt_validator` performs no discovery, so this makes no network
+    /// call beyond that mounted route). `audience` becomes both the
+    /// validator's configured `aud` and the value callers must sign into a
+    /// token's `aud` claim for it to be accepted.
+    pub async fn server_with_jwt_validator(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        mock: &super::oidc_mock::MockOidcProvider,
+        audience: &str,
+        require_at_jwt: bool,
+    ) -> axum_test::TestServer {
+        use crate::state::AppState;
+
+        let mut config = super::test_config();
+        config.resource_server_issuer = mock.issuer().to_string();
+        config.resource_server_audience = audience.to_string();
+        config.resource_server_jwks_url = mock.resource_server_jwks_url();
+        config.resource_server_require_at_jwt = require_at_jwt;
+        let validator = crate::auth::jwt::init_jwt_validator(&config)
+            .await
+            .expect("build JwtValidator against the mock resource-server JWKS");
+
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
+            oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: Some(std::sync::Arc::new(validator)),
+            login_limiter: super::test_login_limiter(),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
     /// Same as [`server_with_real_pools`] but with self-registration enabled, for
     /// `/auth/register` tests (the base `test_config()` has it off to match the
     /// shipped default).

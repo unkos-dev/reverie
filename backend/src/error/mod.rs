@@ -61,12 +61,25 @@ pub enum AppError {
     /// "existence-not-leaked" decision.
     #[error("not found")]
     NotFound,
-    /// Caller unauthenticated. RFC 9457 `type`
-    /// [`problems::UNAUTHORIZED`]. HTTP 401, no `WWW-Authenticate`
-    /// challenge — use [`Self::BasicAuthRequired`] for the OPDS
-    /// Basic-auth challenge variant.
+    /// Caller unauthenticated: no credential was presented at all. RFC 9457
+    /// `type` [`problems::UNAUTHORIZED`]. HTTP 401 with a bare
+    /// `WWW-Authenticate: Bearer` challenge (RFC 6750 §3) — use
+    /// [`Self::BasicAuthRequired`] for the OPDS Basic-auth challenge variant,
+    /// or [`Self::InvalidCredential`] when a credential WAS presented and
+    /// rejected.
     #[error("unauthorized")]
     Unauthorized,
+    /// Caller presented a credential (device token, JWT, or a malformed
+    /// `Authorization` header) and it was rejected. Identical RFC 9457 body
+    /// to [`Self::Unauthorized`] (same slug, title, detail, HTTP 401) but
+    /// with `WWW-Authenticate: Bearer error="invalid_token"` (RFC 6750 §3.1)
+    /// instead of a bare challenge, so a client can distinguish "no
+    /// credential yet" from "that credential doesn't work" without parsing
+    /// the body. Deliberately carries no detail about *why* the credential
+    /// was rejected (expired vs. forged vs. unknown identity are all the
+    /// same response) to avoid handing an attacker an oracle.
+    #[error("invalid credential")]
+    InvalidCredential,
     /// 401 with `WWW-Authenticate: Basic` challenge (RFC 7617).
     /// **Not RFC 9457** — emits an EMPTY body for compatibility with
     /// OPDS Basic-auth clients (`KOReader`, `Foliate`). `realm` is
@@ -176,6 +189,18 @@ impl IntoResponse for AppError {
             return response;
         }
 
+        // Computed before the variant is consumed below: the two Bearer
+        // challenge variants carry an identical Problem Details body and
+        // differ only in this header, so the header is applied to the
+        // finished response rather than threaded through the body match.
+        let challenge = match &self {
+            Self::Unauthorized => Some(HeaderValue::from_static("Bearer")),
+            Self::InvalidCredential => {
+                Some(HeaderValue::from_static(r#"Bearer error="invalid_token""#))
+            }
+            _ => None,
+        };
+
         let (status, slug, title, detail) = match self {
             Self::NotFound => (
                 StatusCode::NOT_FOUND,
@@ -183,7 +208,10 @@ impl IntoResponse for AppError {
                 "Not Found",
                 "Resource not found.".to_owned(),
             ),
-            Self::Unauthorized => (
+            // Unauthorized and InvalidCredential share this body — see the
+            // challenge computation above for the header that distinguishes
+            // them on the wire.
+            Self::Unauthorized | Self::InvalidCredential => (
                 StatusCode::UNAUTHORIZED,
                 problems::UNAUTHORIZED,
                 "Unauthorized",
@@ -270,14 +298,22 @@ impl IntoResponse for AppError {
         // The shared runtime DTO owns serialization, the problem+json
         // content type, and the instance capture from the request
         // task-local — one wire shape for every emitter.
-        crate::openapi::ProblemDetails {
+        let mut response = crate::openapi::ProblemDetails {
             r#type: problems::problem_type(slug),
             title: title.to_owned(),
             status: status.as_u16(),
             detail,
             instance: None,
         }
-        .into_response()
+        .into_response();
+
+        if let Some(value) = challenge {
+            response
+                .headers_mut()
+                .insert(header::WWW_AUTHENTICATE, value);
+        }
+
+        response
     }
 }
 
@@ -353,6 +389,43 @@ mod tests {
         let (status, _, json) = parse_problem(AppError::Unauthorized).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_problem_shape(&json, problems::UNAUTHORIZED, 401, "Unauthorized");
+    }
+
+    #[tokio::test]
+    async fn unauthorized_carries_bare_bearer_challenge() {
+        let response = AppError::Unauthorized.into_response();
+        let challenge = response
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .expect("WWW-Authenticate header present")
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            challenge, "Bearer",
+            "no credential was presented; the challenge must not claim invalid_token"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_credential_returns_same_body_as_unauthorized() {
+        let (status, _, json) = parse_problem(AppError::InvalidCredential).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_problem_shape(&json, problems::UNAUTHORIZED, 401, "Unauthorized");
+    }
+
+    #[tokio::test]
+    async fn invalid_credential_carries_invalid_token_challenge() {
+        let response = AppError::InvalidCredential.into_response();
+        let challenge = response
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .expect("WWW-Authenticate header present")
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            challenge, r#"Bearer error="invalid_token""#,
+            "a rejected credential must be distinguishable from no credential at all"
+        );
     }
 
     #[tokio::test]

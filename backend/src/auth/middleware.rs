@@ -6,12 +6,16 @@
 //! compare `session_version`), then `Authorization: Basic` (via
 //! [`verify_basic`](crate::auth::middleware::verify_basic)), then
 //! `Authorization: Bearer` (via
-//! [`verify_bearer`](crate::auth::middleware::verify_bearer)). Basic and Bearer
-//! both resolve through `resolve_device_token`, a single indexed lookup on the
-//! unified `{prefix}{token_id}.{secret}` credential (see
-//! `auth::token::TOKEN_PREFIX`). Handlers that receive a `CurrentUser` are
-//! guaranteed an authenticated identity; unauthenticated requests are rejected
-//! with `AppError::Unauthorized` before the handler body runs.
+//! [`verify_bearer`](crate::auth::middleware::verify_bearer)). `verify_bearer`
+//! itself dispatches on the credential's prefix: a `{prefix}{token_id}.{secret}`
+//! value resolves through `resolve_device_token` (shared with Basic — a single
+//! indexed lookup, see `auth::token::TOKEN_PREFIX`), anything else is handed to
+//! `resolve_jwt` as an RFC 9068 resource-server access token when a
+//! [`crate::auth::jwt::JwtValidator`] is configured. Handlers that receive a
+//! `CurrentUser` are guaranteed an authenticated identity; unauthenticated
+//! requests are rejected with `AppError::Unauthorized` (no credential
+//! presented) or `AppError::InvalidCredential` (a credential was presented and
+//! rejected) before the handler body runs.
 //!
 //! # Tier 2 — security-critical
 //!
@@ -43,8 +47,9 @@ use crate::state::AppState;
 /// Extracted from the request by [`FromRequestParts`]. Resolution order:
 /// session cookie (rehydrated from [`tower_sessions::Session`]) →
 /// `Authorization: Basic` (via [`verify_basic`]) → `Authorization: Bearer`
-/// (via [`verify_bearer`]). Returns [`AppError::Unauthorized`] if no path
-/// yields a valid identity.
+/// (via [`verify_bearer`], itself device-token-or-JWT — see the module docs).
+/// Returns [`AppError::Unauthorized`] if no credential was presented at all,
+/// or [`AppError::InvalidCredential`] if one was presented and rejected.
 ///
 /// Role/scope-assertion methods ([`require_admin`](CurrentUser::require_admin),
 /// [`require_not_child`](CurrentUser::require_not_child),
@@ -176,7 +181,7 @@ impl CurrentUser {
 ///
 /// # Errors
 ///
-/// Returns [`AppError::Unauthorized`] when `prefixed_id` does not carry
+/// Returns [`AppError::InvalidCredential`] when `prefixed_id` does not carry
 /// [`token::TOKEN_PREFIX`], the remainder is not a UUID, the id resolves to
 /// no active (non-revoked, non-expired) token, the owning account is
 /// disabled, or `secret` does not match the stored hash. Returns
@@ -187,29 +192,29 @@ async fn resolve_device_token(
     secret: &str,
 ) -> Result<Option<CurrentUser>, AppError> {
     let Some(id_str) = prefixed_id.strip_prefix(token::TOKEN_PREFIX) else {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::InvalidCredential);
     };
-    let token_id: Uuid = id_str.parse().map_err(|_| AppError::Unauthorized)?;
+    let token_id: Uuid = id_str.parse().map_err(|_| AppError::InvalidCredential)?;
 
     let dt = device_token::find_by_id(&state.pool, token_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or(AppError::Unauthorized)?;
+        .ok_or(AppError::InvalidCredential)?;
 
     let u = user::find_by_id(&state.pool, dt.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or(AppError::Unauthorized)?;
+        .ok_or(AppError::InvalidCredential)?;
     // THREAT (account lockout): a soft-disabled account must not authenticate
     // on any transport. Reject before the secret comparison so a disabled
     // user's token is inert regardless of whether the secret itself is
     // correct.
     if u.disabled_at.is_some() {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::InvalidCredential);
     }
 
     if !token::verify_device_token(secret, &dt.token_hash) {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::InvalidCredential);
     }
 
     // THREAT (read floor): scopes form a hierarchy (read < write < admin) with
@@ -219,7 +224,7 @@ async fn resolve_device_token(
     // issue; this is the defence-in-depth seam that also rejects any empty-scope
     // row reaching auth by another path (legacy data, direct DB write).
     if dt.scopes.is_empty() {
-        return Err(AppError::Unauthorized);
+        return Err(AppError::InvalidCredential);
     }
 
     let pool = state.pool.clone();
@@ -248,15 +253,15 @@ async fn resolve_device_token(
 /// only speak Basic).
 ///
 /// Returns `Ok(Some(user))` when Basic credentials validate, `Ok(None)` when
-/// no `Authorization: Basic ...` is present, and `Err(Unauthorized)` when a
-/// Basic header is present but does not resolve — see
+/// no `Authorization: Basic ...` is present, and `Err(InvalidCredential)`
+/// when a Basic header is present but does not resolve — see
 /// [`resolve_device_token`] for the failure modes.
 ///
 /// # Errors
 ///
-/// Returns [`AppError::Unauthorized`] when the `Authorization: Basic` header
-/// is present but malformed or does not resolve to an active token. Returns
-/// [`AppError::Internal`] on database errors.
+/// Returns [`AppError::InvalidCredential`] when the `Authorization: Basic`
+/// header is present but malformed or does not resolve to an active token.
+/// Returns [`AppError::Internal`] on database errors.
 pub async fn verify_basic(
     state: &AppState,
     parts: &Parts,
@@ -273,27 +278,35 @@ pub async fn verify_basic(
 
     let mut buf = vec![0u8; credentials.len()];
     let decoded = base64ct::Base64::decode(credentials.as_bytes(), &mut buf)
-        .map_err(|_| AppError::Unauthorized)?;
-    let decoded_str = std::str::from_utf8(decoded).map_err(|_| AppError::Unauthorized)?;
-    let (username, secret) = decoded_str.split_once(':').ok_or(AppError::Unauthorized)?;
+        .map_err(|_| AppError::InvalidCredential)?;
+    let decoded_str = std::str::from_utf8(decoded).map_err(|_| AppError::InvalidCredential)?;
+    let (username, secret) = decoded_str
+        .split_once(':')
+        .ok_or(AppError::InvalidCredential)?;
 
     resolve_device_token(state, username, secret).await
 }
 
-/// Verify an `Authorization: Bearer {prefix}{token_id}.{secret}` header.
-/// Shares [`resolve_device_token`] with [`verify_basic`] — both transports
-/// converge on the same indexed lookup.
+/// Verify an `Authorization: Bearer` header, dispatching on the credential's
+/// prefix. A `{prefix}{token_id}.{secret}` value (see [`token::TOKEN_PREFIX`])
+/// is a device token and resolves through [`resolve_device_token`], shared
+/// with [`verify_basic`]. Anything else is handed to [`resolve_jwt`] as an
+/// RFC 9068 resource-server access token.
 ///
 /// Returns `Ok(Some(user))` when the Bearer credential validates, `Ok(None)`
-/// when no `Authorization: Bearer ...` is present, and `Err(Unauthorized)`
-/// when a Bearer header is present but does not resolve — see
-/// [`resolve_device_token`] for the failure modes.
+/// when no `Authorization: Bearer ...` is present (or the credential is a
+/// non-device-token value and no [`crate::auth::jwt::JwtValidator`] is
+/// configured — the resource-server feature is inert, so this is
+/// indistinguishable from "no credential" rather than a rejection), and
+/// `Err(InvalidCredential)` when a Bearer header is present but does not
+/// resolve.
 ///
 /// # Errors
 ///
-/// Returns [`AppError::Unauthorized`] when the `Authorization: Bearer` header
-/// is present but malformed (missing the `.` separator) or does not resolve
-/// to an active token. Returns [`AppError::Internal`] on database errors.
+/// Returns [`AppError::InvalidCredential`] when the `Authorization: Bearer`
+/// header is present but malformed (a device-token-prefixed value missing the
+/// `.` separator) or does not resolve to an active identity. Returns
+/// [`AppError::Internal`] on database errors.
 pub async fn verify_bearer(
     state: &AppState,
     parts: &Parts,
@@ -308,8 +321,97 @@ pub async fn verify_bearer(
         return Ok(None);
     };
 
-    let (prefixed_id, secret) = credential.split_once('.').ok_or(AppError::Unauthorized)?;
-    resolve_device_token(state, prefixed_id, secret).await
+    if credential.starts_with(token::TOKEN_PREFIX) {
+        let (prefixed_id, secret) = credential
+            .split_once('.')
+            .ok_or(AppError::InvalidCredential)?;
+        return resolve_device_token(state, prefixed_id, secret).await;
+    }
+
+    resolve_jwt(state, credential).await
+}
+
+/// Resolve the effective scope set for a validated JWT's `scope` claim
+/// against the caller's role ceiling: claimed names are matched against the
+/// fixed `read`/`write`/`admin` literals, unknown names are ignored (never an
+/// error), and the granted set can never exceed
+/// [`Scope::for_role`] — the role ceiling always holds regardless of what the
+/// claim asks for. An absent claim carries the full role-derived set,
+/// matching session parity: an unscoped delegation is the issuer granting
+/// everything the role already allows. A present claim that narrows to
+/// nothing (every named scope unknown, or above the role ceiling) is
+/// rejected — `None` — rather than silently falling back to the full
+/// role-derived set, mirroring the empty-scope rejection in
+/// [`resolve_device_token`]: an explicit narrowing that resolves to zero
+/// capability is a rejected credential, not an ignored one.
+fn resolve_jwt_scopes(claimed: Option<&[String]>, role: Role) -> Option<Vec<Scope>> {
+    let ceiling = Scope::for_role(role);
+    let Some(names) = claimed else {
+        return Some(ceiling.to_vec());
+    };
+
+    let granted: Vec<Scope> = ceiling
+        .iter()
+        .copied()
+        .filter(|scope| names.iter().any(|name| name == scope.as_str()))
+        .collect();
+
+    if granted.is_empty() {
+        None
+    } else {
+        Some(granted)
+    }
+}
+
+/// Resolve an `Authorization: Bearer` credential as an RFC 9068
+/// resource-server access token and look up the canonical identity it
+/// carries. Read-only: an unlinked `(iss, sub)` is rejected, never
+/// provisioned here — the interactive OIDC callback (`upsert_from_oidc`) is
+/// the only path that creates a `user_identities` row, so an access token
+/// alone can never mint an account.
+///
+/// Returns `Ok(None)` when no [`crate::auth::jwt::JwtValidator`] is
+/// configured, so [`verify_bearer`] falls through to the generic
+/// `Unauthorized` challenge exactly as it would for an absent header — the
+/// `rvpat_` device-token path is unaffected either way. Once a validator is
+/// configured, every rejection (signature/claim failure, unknown identity, a
+/// disabled account, or a `scope` claim that narrows to nothing the role
+/// permits) is [`AppError::InvalidCredential`].
+///
+/// # Errors
+///
+/// Returns [`AppError::InvalidCredential`] on any rejection described above.
+/// Returns [`AppError::Internal`] on a database error during identity lookup.
+async fn resolve_jwt(state: &AppState, token: &str) -> Result<Option<CurrentUser>, AppError> {
+    let Some(validator) = &state.jwt_validator else {
+        return Ok(None);
+    };
+
+    let claims = validator
+        .validate(token)
+        .await
+        .map_err(|_| AppError::InvalidCredential)?;
+
+    let user = user::find_by_oidc_identity(&state.pool, &claims.iss, &claims.sub)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::InvalidCredential)?;
+
+    // THREAT (account lockout): mirrors resolve_device_token — a
+    // soft-disabled account must not authenticate on any transport.
+    if user.disabled_at.is_some() {
+        return Err(AppError::InvalidCredential);
+    }
+
+    let scopes = resolve_jwt_scopes(claims.scope.as_deref(), user.role)
+        .ok_or(AppError::InvalidCredential)?;
+
+    Ok(Some(CurrentUser {
+        user_id: user.id,
+        role: user.role,
+        is_child: user.is_child,
+        scopes,
+    }))
 }
 
 impl FromRequestParts<AppState> for CurrentUser {
@@ -390,5 +492,354 @@ impl FromRequestParts<AppState> for CurrentUser {
         }
 
         Err(AppError::Unauthorized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(literals: &[&str]) -> Vec<String> {
+        literals.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn absent_scope_claim_grants_full_role_ceiling() {
+        assert_eq!(
+            resolve_jwt_scopes(None, Role::Adult),
+            Some(vec![Scope::Read, Scope::Write])
+        );
+        assert_eq!(
+            resolve_jwt_scopes(None, Role::Admin),
+            Some(vec![Scope::Read, Scope::Write, Scope::Admin])
+        );
+    }
+
+    #[test]
+    fn claimed_scope_narrows_to_the_intersection() {
+        let claimed = names(&["read"]);
+        assert_eq!(
+            resolve_jwt_scopes(Some(&claimed), Role::Admin),
+            Some(vec![Scope::Read]),
+            "an admin JWT claiming only read must not carry write/admin"
+        );
+    }
+
+    #[test]
+    fn unknown_scope_literals_are_ignored_not_rejected() {
+        let claimed = names(&["read", "superuser"]);
+        assert_eq!(
+            resolve_jwt_scopes(Some(&claimed), Role::Adult),
+            Some(vec![Scope::Read]),
+            "an unrecognised literal must be dropped, not treated as an error"
+        );
+    }
+
+    #[test]
+    fn claim_above_role_ceiling_rejects_rather_than_falling_back() {
+        // An adult's role ceiling is {read, write} — it never includes admin,
+        // so claiming only "admin" intersects to nothing. This must reject
+        // the credential outright, not silently substitute the full
+        // role-derived set (that would ignore an explicit, if unreachable,
+        // narrowing request instead of treating it as a rejected credential).
+        let claimed = names(&["admin"]);
+        assert_eq!(
+            resolve_jwt_scopes(Some(&claimed), Role::Adult),
+            None,
+            "a claim that narrows to nothing the role permits must reject"
+        );
+    }
+
+    #[test]
+    fn all_unknown_scope_literals_reject() {
+        let claimed = names(&["superuser", "wizard"]);
+        assert_eq!(resolve_jwt_scopes(Some(&claimed), Role::Admin), None);
+    }
+
+    #[test]
+    fn explicitly_empty_scope_list_rejects() {
+        let claimed: Vec<String> = Vec::new();
+        assert_eq!(resolve_jwt_scopes(Some(&claimed), Role::Admin), None);
+    }
+
+    // Extractor integration: the full CurrentUser resolution path through a
+    // real router + real database, not just resolve_jwt/resolve_jwt_scopes in
+    // isolation. These are #[sqlx::test] (DB-backed) and ride CI; see
+    // CLAUDE.local.md for why they don't run in this workspace.
+
+    use axum::http::StatusCode;
+    use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
+    use sqlx::PgPool;
+
+    use crate::error::problems;
+    use crate::test_support::oidc_mock::{MockOidcProvider, now_unix};
+    use crate::test_support::{self, db};
+
+    const AUDIENCE: &str = "reverie-integration-tests";
+
+    fn claims_for(mock: &MockOidcProvider, subject: &str) -> serde_json::Value {
+        let now = now_unix();
+        serde_json::json!({
+            "iss": mock.issuer(),
+            "aud": AUDIENCE,
+            "sub": subject,
+            "exp": now + 300,
+            "iat": now,
+        })
+    }
+
+    /// Mint a `{prefix}{id}.{secret}` device-token Bearer value for
+    /// `user_id`, role-derived scope set (matches the Basic-auth test
+    /// helpers in `test_support::db`).
+    async fn bearer_device_token(pool: &PgPool, user_id: Uuid) -> String {
+        let (plaintext, hash) = token::generate_device_token();
+        let dt = device_token::create_with_limit(
+            pool,
+            user_id,
+            "bearer-integration-test",
+            &hash,
+            Scope::for_role(Role::Adult),
+            None,
+        )
+        .await
+        .expect("create device token");
+        format!("Bearer {}{}.{plaintext}", token::TOKEN_PREFIX, dt.id)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn jwt_caller_reaches_protected_endpoint(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        let subject = format!("jwt-e2e-{}", Uuid::new_v4());
+        user::upsert_from_oidc(&app_pool, mock.issuer(), &subject, "JWT E2E", None)
+            .await
+            .expect("seed identity via interactive-login-equivalent upsert");
+        let token = mock.sign_access_token(&claims_for(&mock, &subject), |_| {});
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, format!("Bearer {token}"))
+            .await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn unknown_oidc_identity_rejected_and_not_provisioned(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        // Never seeded via upsert_from_oidc — this (iss, sub) has no
+        // user_identities row.
+        let subject = format!("never-provisioned-{}", Uuid::new_v4());
+        let token = mock.sign_access_token(&claims_for(&mock, &subject), |_| {});
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, format!("Bearer {token}"))
+            .await;
+
+        test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get(WWW_AUTHENTICATE)
+                .and_then(|v| v.to_str().ok()),
+            Some(r#"Bearer error="invalid_token""#),
+        );
+
+        // The load-bearing assertion: a valid, well-formed JWT for an
+        // unlinked identity must never provision an account.
+        let resolved = user::find_by_oidc_identity(&app_pool, mock.issuer(), &subject)
+            .await
+            .expect("lookup succeeds");
+        assert!(
+            resolved.is_none(),
+            "an access token for an unknown identity must never create a user row"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn disabled_account_rejected_via_jwt(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        let subject = format!("jwt-disabled-{}", Uuid::new_v4());
+        let seeded = user::upsert_from_oidc(&app_pool, mock.issuer(), &subject, "Disabled", None)
+            .await
+            .expect("seed identity");
+        user::disable_account(&app_pool, seeded.id)
+            .await
+            .expect("disable account");
+        let token = mock.sign_access_token(&claims_for(&mock, &subject), |_| {});
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, format!("Bearer {token}"))
+            .await;
+
+        test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn malformed_bearer_value_rejected_when_configured(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, "Bearer not-a-jwt-at-all")
+            .await;
+
+        test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get(WWW_AUTHENTICATE)
+                .and_then(|v| v.to_str().ok()),
+            Some(r#"Bearer error="invalid_token""#),
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn device_token_bearer_unaffected_when_resource_server_unconfigured(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let server = db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let subject = format!("rvpat-off-{}", Uuid::new_v4());
+        let seeded = user::upsert_from_oidc(
+            &app_pool,
+            "https://test-issuer.example.com",
+            &subject,
+            "Rvpat",
+            None,
+        )
+        .await
+        .expect("seed identity");
+        let bearer = bearer_device_token(&app_pool, seeded.id).await;
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, bearer)
+            .await;
+
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "an rvpat_ device-token Bearer credential must be unaffected by S5 when no \
+             JwtValidator is configured"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn non_device_bearer_falls_through_to_generic_unauthorized_when_unconfigured(
+        pool: PgPool,
+    ) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let server = db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, "Bearer looks.like.a.jwt")
+            .await;
+
+        test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get(WWW_AUTHENTICATE)
+                .and_then(|v| v.to_str().ok()),
+            Some("Bearer"),
+            "with the resource-server feature off, a non-device-token Bearer value must \
+             be indistinguishable from no credential at all — never claim invalid_token \
+             for a feature that isn't even configured"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn device_token_bearer_still_works_when_resource_server_configured(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        let subject = format!("rvpat-on-{}", Uuid::new_v4());
+        let seeded = user::upsert_from_oidc(&app_pool, mock.issuer(), &subject, "Rvpat On", None)
+            .await
+            .expect("seed identity");
+        let bearer = bearer_device_token(&app_pool, seeded.id).await;
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, bearer)
+            .await;
+
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "dispatch must route an rvpat_-prefixed credential to the device-token path \
+             even with a JwtValidator configured, never attempt to parse it as a JWT"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn basic_auth_path_unaffected_when_resource_server_configured(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        let (_, basic) = db::create_adult_and_basic_auth(&app_pool, "basic-regression").await;
+
+        let response = server
+            .get("/api/v1/shelves")
+            .add_header(AUTHORIZATION, basic)
+            .await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn no_credential_at_all_gets_bare_bearer_challenge(pool: PgPool) {
+        let ingestion_pool = db::ingestion_pool_for(&pool).await;
+        let app_pool = db::app_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let server =
+            db::server_with_jwt_validator(&app_pool, &ingestion_pool, &mock, AUDIENCE, false).await;
+
+        let response = server.get("/api/v1/shelves").await;
+
+        test_support::assert_problem(&response, problems::UNAUTHORIZED, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get(WWW_AUTHENTICATE)
+                .and_then(|v| v.to_str().ok()),
+            Some("Bearer"),
+        );
     }
 }
