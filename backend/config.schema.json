@@ -234,7 +234,7 @@
       "default": ""
     },
     "resource_server_jwks_url": {
-      "description": "Explicit JWKS endpoint override for resource-server JWT validation\n(`REVERIE_RESOURCE_SERVER_JWKS_URL`). Empty (default) derives the\nJWKS URL from `resource_server_issuer` via OIDC discovery at\nstartup. Set this only for an `IdP` that does not publish\n`.well-known/openid-configuration` (or exposes a JWKS endpoint\noutside its discovery document); the resolved URL is fixed for the\nprocess lifetime and is never read from an incoming token (RFC 8725\n§3.9/§3.10: `jku`/`x5u` header values are never followed).",
+      "description": "Explicit JWKS endpoint override for resource-server JWT validation\n(`REVERIE_RESOURCE_SERVER_JWKS_URL`). Empty (default) derives the\nJWKS URL from `resource_server_issuer` via OIDC discovery at\nstartup. Set this only for an `IdP` that does not publish\n`.well-known/openid-configuration` (or exposes a JWKS endpoint\noutside its discovery document); the resolved URL is fixed for the\nprocess lifetime and is never read from an incoming token (RFC 8725\n§3.9/§3.10: `jku`/`x5u` header values are never followed).\n\nFetches against the resolved endpoint carry explicit connect and\nrequest timeouts, and resolved keys are cached in-process. Missing\nkeys are NOT negatively cached: each Bearer credential naming an\nunknown `kid` triggers a fresh JWKS fetch, so a flood of such\ncredentials drives outbound fetches to the `IdP` roughly 1:1. On an\ninternet-exposed instance, put the API behind an edge rate limiter\n(reverse proxy or WAF) to bound that amplification.",
       "type": "string",
       "default": ""
     },
