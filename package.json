@@ -23,7 +23,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.1.0",
     "@commitlint/config-conventional": "^21.1.0",
-    "agent-browser": "0.27.0",
+    "agent-browser": "0.31.1",
     "lefthook": "2.1.9",
     "license-checker-rseidelsohn": "5.0.1",
     "markdownlint-cli2": "^0.22.1",

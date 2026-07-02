@@ -58,7 +58,7 @@ runs:
           curl -fsSL -o "$tmp/archive" "$url"
           echo "$TOOL_SHA256  $tmp/archive" | sha256sum -c -
           tar -xf "$tmp/archive" -C "$HOME/.local/bin" \
-            --strip-components="$STRIP_COMPONENTS" "$ARCHIVE_MEMBER"
+            --strip-components="$STRIP_COMPONENTS" "$member"
           rm -rf "$tmp"
         fi
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
