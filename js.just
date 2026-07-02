@@ -9,7 +9,9 @@ set shell := ["bash", "-ueo", "pipefail", "-c"]
 # Runs from the repo root with repo-root-relative paths so the root vite.config.ts
 # lint overrides (scoped to frontend/**) match the linted paths literally, instead
 # of relying on oxlint resolving a frontend/-CWD-relative path against the root
-# config. A bare `vp lint frontend` lints the whole package.
+# config. A bare `vp lint frontend` lints the whole package. Under GitHub
+# Actions, --format=github emits workflow annotations so findings land inline
+# on the PR diff.
 [group('js')]
 [positional-arguments]
 oxlint *files:
@@ -17,9 +19,9 @@ oxlint *files:
     set -ueo pipefail
     cd "$(git rev-parse --show-toplevel)"
     if [ "$#" -gt 0 ]; then
-        npx --no-install vp lint --max-warnings 0 "$@"
+        npx --no-install vp lint --max-warnings 0 ${GITHUB_ACTIONS:+--format=github} "$@"
     else
-        npx --no-install vp lint --max-warnings 0 frontend
+        npx --no-install vp lint --max-warnings 0 ${GITHUB_ACTIONS:+--format=github} frontend
     fi
 
 # With an explicit file list, scopes to those paths (leading `frontend/` stripped so

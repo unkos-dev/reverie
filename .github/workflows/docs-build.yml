@@ -1,0 +1,87 @@
+name: Docs build (reusable)
+
+# Single definition of the Starlight build + link check, consumed by two
+# lanes that cannot share jobs directly (cross-workflow `needs` is
+# impossible): ci.yml's PR-time `docs` job, which must join the ci-gate
+# aggregator, and docs.yml's push-to-main Pages deploy.
+on:
+  workflow_call:
+    inputs:
+      check-external-links:
+        description: Run the advisory external-link pass (deploy lane only)
+        type: boolean
+        default: false
+      upload-pages-artifact:
+        description: Upload docs/dist as a Pages artifact for a deploy job
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      # No dependency cache: the deploy lane feeds the privileged Pages
+      # publish, so a cache shared with that path is a cache-poisoning
+      # surface (zizmor). The install is small enough to eat.
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
+        with:
+          node-version: 24.16.0
+          cache: false
+
+      - name: Install workspace
+        run: vp install
+
+      - name: Build Starlight
+        run: vp run --filter docs build
+
+      # Starlight builds with base path /reverie/, so internal links render
+      # root-relative as /reverie/... lychee resolves a root-relative /X
+      # against --root-dir as <root-dir>/X, so symlink docs/dist under a
+      # `reverie` subdir and point --root-dir at its parent.
+      - name: Stage built docs at the Pages base path
+        run: |
+          mkdir -p "${RUNNER_TEMP}/linkroot"
+          ln -sfn "${GITHUB_WORKSPACE}/docs/dist" "${RUNNER_TEMP}/linkroot/reverie"
+
+      # Internal links are deterministic and under our control, so a broken
+      # one fails the build; --offline means this gating pass cannot flake.
+      - name: Check internal links (gating)
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--offline --no-progress --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
+          fail: true
+
+      # External URLs are flaky (rate limits, transient 5xx), so this pass is
+      # advisory: continue-on-error swallows the non-zero exit; fail:true
+      # still surfaces the broken links in the step log. `--scheme` restricts
+      # it to absolute URLs so internal links are not re-walked.
+      - name: Check external links (advisory)
+        if: inputs.check-external-links
+        id: external-links
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: "--no-progress --scheme http --scheme https --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
+          fail: true
+
+      # A green job with broken external links is invisible unless someone
+      # opens the step log; annotate without changing the non-blocking
+      # semantics.
+      - name: Flag broken external links
+        if: inputs.check-external-links && steps.external-links.outcome == 'failure'
+        run: echo "::warning::lychee found broken external links in the docs — see the 'Check external links (advisory)' step summary."
+
+      - name: Upload Pages artifact
+        if: inputs.upload-pages-artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: docs/dist

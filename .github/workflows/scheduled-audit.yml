@@ -1,18 +1,15 @@
 name: Scheduled advisory scan
 
-# A newly-disclosed RustSec advisory against an unchanged Cargo.lock is
-# invisible to the PR-triggered `audit` job in ci.yml, which only fires when
-# dependency or workflow files change. This cron re-runs the advisory half of cargo-deny
-# against the committed lockfile so a freshly-published advisory surfaces
-# within a day even with zero dependency churn. Renovate's vulnerability alerts
-# cover the same ground reactively; this is the deterministic backstop. The
-# former standalone `cargo audit` step was retired in #427 when cargo-deny took
-# over advisory coverage, so this cron runs `cargo deny check advisories`
-# rather than `cargo audit` (UNK-327).
+# A newly-disclosed advisory against an unchanged lockfile is invisible to
+# the PR-triggered checks in ci.yml, which only fire when dependency files
+# change. These crons re-scan the committed lockfiles daily so a fresh
+# advisory surfaces within a day even with zero dependency churn. Renovate's
+# vulnerability alerts cover the same ground reactively; this is the
+# deterministic backstop.
 on:
   schedule:
-    # 18:00 UTC daily (02:00 Australia/Perth) — off-peak, clear of the Renovate
-    # schedule windows in .github/renovate.json.
+    # 18:00 UTC daily (02:00 Australia/Perth) — off-peak, clear of the
+    # Renovate schedule windows in .github/renovate.json.
     - cron: "0 18 * * *"
   workflow_dispatch:
 
@@ -32,39 +29,30 @@ jobs:
       run:
         working-directory: backend
     steps:
-      # Read-only job (lockfile scan) — keep the token out of .git/config.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
 
-      # Prebuilt cargo-deny via install-action, mirroring the `audit` job in
-      # ci.yml. Version pinned; Renovate's install-action customManager keeps
-      # both occurrences in lockstep. fallback:none fails closed if no prebuilt
-      # is available rather than silently switching install source.
+      # Same pin as ci.yml's audit job; Renovate keeps both in lockstep.
+      # fallback:none fails closed rather than silently switching the
+      # install source of a security scanner.
       - uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
         with:
           tool: cargo-deny@0.19.8
           fallback: none
 
-      # Advisories only. The license/bans/sources policy is a PR-time concern
-      # already enforced by ci.yml's `audit` job; this cron exists solely to
-      # catch newly-disclosed advisories against the static lockfile, so
-      # scoping to the advisories check keeps a red run unambiguous — it means
-      # a new advisory, not a policy edit.
+      # Advisories only: the license/bans/sources policy is PR-time
+      # (ci.yml's audit job), so a red run here unambiguously means a new
+      # advisory, not a policy edit.
       - name: Check advisories
         run: cargo deny check advisories
 
-  # UNK-378: npm counterpart of the cargo-deny advisory cron above. A newly
-  # disclosed npm advisory against an unchanged lockfile is invisible to
-  # PR-time checks (dependency-review-action only diffs PR-introduced deps),
-  # so this scans all three committed npm lockfiles daily. `npm audit`
-  # queries the registry's bulk-advisory endpoint from the lockfile alone —
-  # no install needed. Full tree including devDependencies: a compromised
-  # dev tool runs with repo write access locally and in CI, so its
-  # advisories matter as much as runtime ones. --audit-level=high keeps the
-  # red-run signal meaningful in npm's noisier advisory ecosystem (the
-  # license policy is PR-time in ci.yml's npm-license job — licenses have
-  # no temporal drift).
+  # npm counterpart of the cargo-deny cron. `npm audit` queries the
+  # registry's bulk-advisory endpoint from the lockfile alone — no install
+  # needed. Full tree including devDependencies: a compromised dev tool runs
+  # with repo write access locally and in CI, so its advisories matter as
+  # much as runtime ones. --audit-level=high keeps the red-run signal
+  # meaningful in npm's noisier advisory ecosystem.
   npm-advisories:
     name: Advisory scan (npm audit)
     runs-on: ubuntu-latest
@@ -79,14 +67,82 @@ jobs:
           node-version: 24.16.0
           cache: false
 
-      # One root lockfile now covers all workspaces (frontend + docs), so a
-      # single audit reads the whole dependency tree.
+      # One root lockfile covers all workspaces.
       - name: Audit npm lockfile
         run: npm audit --audit-level=high
 
+  # The lockfile crons above cover application dependencies, but the
+  # published image also carries distro layers whose CVEs drift after
+  # publish — the publish-time trivy gate only sees what was known at
+  # build time. Re-scan the tag staging consumes so a newly-disclosed
+  # fixable HIGH/CRITICAL surfaces within a day.
+  image-advisories:
+    name: Advisory scan (published image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+      issues: write # open/comment a failure alert (see final step)
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Keep this pin in lockstep with ci.yml's and docker-publish.yml's.
+      - name: Install trivy
+        uses: ./.github/actions/install-pinned-tool
+        with:
+          # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
+          version: "0.71.2"
+          sha256: "0510e71e2fd39bf863856d499c8dc19feb4e7336546394c502a8f5cc7ab27460"
+          url: "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_Linux-64bit.tar.gz"
+          binary: trivy
+          archive-member: trivy
+
+      # Same gate posture as the publish-time scan: fixable HIGH/CRITICAL
+      # only — unfixed CVEs would red the cron daily with no action
+      # available. --platform is load-bearing: :main is an arm64-only
+      # manifest list and trivy otherwise resolves it against this amd64
+      # scanner host and errors before analyzing anything (cross-platform
+      # scanning is layer analysis, not execution, so the pin is safe).
+      - name: Scan published :main image
+        run: |
+          set -euo pipefail
+          trivy image \
+            --platform linux/arm64 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --no-progress \
+            ghcr.io/unkos-dev/reverie:main
+
+      # Same alert shape as the trufflehog job below: red cron runs are
+      # easy to miss, an open issue is not.
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Published image advisory scan failed"
+          n=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Recurred: ${RUN_URL}"
+          else
+            gh issue create --title "$title" --body "The daily trivy scan of ghcr.io/unkos-dev/reverie:main found a fixable HIGH/CRITICAL CVE (or the scan errored). Review the run log: ${RUN_URL}. Remediation is usually a base-image or dependency bump followed by a main push to republish."
+          fi
+
   # gitleaks (hot path) only sees the working tree / PR diff. This cron
-  # sweeps full history daily so a history-buried or freshly-disclosed secret
-  # surfaces within a day.
+  # sweeps full history daily so a history-buried or freshly-disclosed
+  # secret surfaces within a day.
   trufflehog:
     name: Secret history sweep (trufflehog)
     runs-on: ubuntu-latest
@@ -105,20 +161,20 @@ jobs:
       - name: TruffleHog full-history scan
         uses: trufflesecurity/trufflehog@30d5bb91af1a771378349dbbb0c82129392acf70 # v3.95.6
         with:
-          # Pin the image (default is :latest). renovate keeps this in lockstep
-          # with the action SHA via the customManager keyed to this annotation.
+          # Pin the image (default is :latest); Renovate keeps it in
+          # lockstep with the action SHA via the annotation below.
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
           version: "3.95.6"
           # verified-only: example/test Postgres DSNs error verification and
-          # would red the cron daily as unknown noise; a real live leak still
+          # would red the cron daily as noise; a real live leak still
           # verifies. No base:/head: so the schedule run scans full history.
           extra_args: --results=verified
 
-      # A failed sweep otherwise only surfaces as a red run + GitHub's default
-      # email. Open an issue so the failure lands where it gets noticed. The
-      # body links the access-controlled run log and never copies findings, so
-      # a detected secret is not re-leaked into a readable issue. Deduped:
-      # comment on the open alert instead of one issue per day.
+      # A failed sweep otherwise only surfaces as a red run + GitHub's
+      # default email. The issue body links the access-controlled run log
+      # and never copies findings, so a detected secret is not re-leaked
+      # into a readable issue. Deduped: comment on the open alert instead
+      # of one issue per day.
       - name: Open issue on failure
         if: failure()
         env:

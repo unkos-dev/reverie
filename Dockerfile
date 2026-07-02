@@ -37,15 +37,36 @@ RUN cargo build --release
 
 # Stage 2: Build frontend with buildkit npm cache mount.
 # The mount avoids re-fetching tarballs when the npm-ci layer cache is invalidated
-# but package-lock.json is unchanged — buildkit reuses the mount within a single
+# but the lockfile is unchanged — buildkit reuses the mount within a single
 # build. GHA runners are ephemeral so the mount does not persist across runs;
 # cross-run npm reuse is provided by the gha layer cache instead.
+#
+# npm workspaces: the lockfile is hoisted to the repo root, so the install
+# needs the root manifests plus every workspace manifest to resolve the
+# workspace graph. docs/package.json is present for graph resolution only —
+# `--workspace frontend` keeps its dependencies out of the install.
+# --ignore-scripts skips the root `prepare` hook (lefthook install), which
+# requires a .git directory the build context deliberately excludes; the
+# frontend build tools ship platform binaries as scriptless optional deps,
+# so nothing in the install relies on lifecycle scripts.
 FROM node:24.16.0-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c574f736c476489d09f560a203 AS frontend-builder
+# vp's native binary initializes an HTTPS client at startup and aborts when
+# the system has no CA store; the slim base ships none.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-COPY frontend/ .
-RUN npm run build
+COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/
+COPY docs/package.json docs/
+# devEngines pins npm exactly, and the base image's bundled npm lags it —
+# the `onFail: download` self-swap does not fire under `npm ci` here, it
+# just hard-fails (EBADDEVENGINES). Install the manifest-pinned npm first,
+# reading the version from package.json so this line can never drift from
+# the pin it exists to satisfy.
+RUN --mount=type=cache,target=/root/.npm npm install -g "npm@$(node -p "require('./package.json').devEngines.packageManager.version")"
+RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-scripts
+COPY frontend/ frontend/
+RUN npm run build --workspace frontend
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
@@ -59,7 +80,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN useradd -r -s /bin/false reverie
 
 COPY --from=backend-builder /build/target/release/reverie-api /usr/local/bin/reverie-api
-COPY --from=frontend-builder /build/dist /srv/frontend
+COPY --from=frontend-builder /build/frontend/dist /srv/frontend
 # UNK-106: the backend serves /assets/* and falls back to index.html for SPA
 # routes when this env var is set. Validation at startup panics the process
 # if the dir or its csp-hashes.json sidecar is missing.
