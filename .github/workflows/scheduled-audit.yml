@@ -71,6 +71,75 @@ jobs:
       - name: Audit npm lockfile
         run: npm audit --audit-level=high
 
+  # The lockfile crons above cover application dependencies, but the
+  # published image also carries distro layers whose CVEs drift after
+  # publish — the publish-time trivy gate only sees what was known at
+  # build time. Re-scan the tag staging consumes so a newly-disclosed
+  # fixable HIGH/CRITICAL surfaces within a day.
+  image-advisories:
+    name: Advisory scan (published image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+      issues: write # open/comment a failure alert (see final step)
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Keep this pin in lockstep with ci.yml's and docker-publish.yml's.
+      - name: Install trivy
+        uses: ./.github/actions/install-pinned-tool
+        with:
+          # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
+          version: "0.71.2"
+          sha256: "0510e71e2fd39bf863856d499c8dc19feb4e7336546394c502a8f5cc7ab27460"
+          url: "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_Linux-64bit.tar.gz"
+          binary: trivy
+          archive-member: trivy
+
+      # Same gate posture as the publish-time scan: fixable HIGH/CRITICAL
+      # only — unfixed CVEs would red the cron daily with no action
+      # available. --platform is load-bearing: :main is an arm64-only
+      # manifest list and trivy otherwise resolves it against this amd64
+      # scanner host and errors before analyzing anything (cross-platform
+      # scanning is layer analysis, not execution, so the pin is safe).
+      - name: Scan published :main image
+        run: |
+          set -euo pipefail
+          trivy image \
+            --platform linux/arm64 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --no-progress \
+            ghcr.io/unkos-dev/reverie:main
+
+      # Same alert shape as the trufflehog job below: red cron runs are
+      # easy to miss, an open issue is not.
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Published image advisory scan failed"
+          n=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Recurred: ${RUN_URL}"
+          else
+            gh issue create --title "$title" --body "The daily trivy scan of ghcr.io/unkos-dev/reverie:main found a fixable HIGH/CRITICAL CVE (or the scan errored). Review the run log: ${RUN_URL}. Remediation is usually a base-image or dependency bump followed by a main push to republish."
+          fi
+
   # gitleaks (hot path) only sees the working tree / PR diff. This cron
   # sweeps full history daily so a history-buried or freshly-disclosed
   # secret surfaces within a day.

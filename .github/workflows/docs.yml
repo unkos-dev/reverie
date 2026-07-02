@@ -23,10 +23,13 @@ permissions:
   contents: read
 
 # Every event here is a real deploy event; one shared `pages` group keeps
-# concurrent Pages deployments serialized.
+# concurrent Pages deployments serialized. Queue rather than cancel: an
+# in-flight production deploy should always complete (a cancelled
+# deploy-pages call can strand a red deployment event), and deploys are
+# infrequent enough that queueing costs seconds.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
