@@ -54,6 +54,12 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 COPY frontend/package.json frontend/
 COPY docs/package.json docs/
+# devEngines pins npm exactly, and the base image's bundled npm lags it —
+# the `onFail: download` self-swap does not fire under `npm ci` here, it
+# just hard-fails (EBADDEVENGINES). Install the manifest-pinned npm first,
+# reading the version from package.json so this line can never drift from
+# the pin it exists to satisfy.
+RUN --mount=type=cache,target=/root/.npm npm install -g "npm@$(node -p "require('./package.json').devEngines.packageManager.version")"
 RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-scripts
 COPY frontend/ frontend/
 RUN npm run build --workspace frontend
