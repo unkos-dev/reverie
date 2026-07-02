@@ -372,6 +372,28 @@ mod tests {
         assert_eq!(validated.scope, None);
     }
 
+    /// RFC 7519 §4.1.3 permits `aud` as either a single string or an array
+    /// of strings; real `IdPs` (Keycloak among them) emit the array form even
+    /// for a single configured audience. `jsonwebtoken` deserializes both
+    /// shapes into the same internal set for `Validation::set_audience` to
+    /// check against, but that's a claim about the dependency, not this
+    /// wrapper — assert it directly rather than trust it silently.
+    #[tokio::test]
+    async fn accepts_array_form_audience() {
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_resource_server_jwks().await;
+        let validator = build_validator(&mock, false).await;
+
+        let mut claims = base_claims(mock.issuer(), "user-1");
+        claims["aud"] = serde_json::json!([AUDIENCE, "other-service"]);
+        let token = mock.sign_access_token(&claims, |_| {});
+
+        validator
+            .validate(&token)
+            .await
+            .expect("array-form aud containing the configured audience must validate");
+    }
+
     #[tokio::test]
     async fn rejects_wrong_issuer() {
         let mock = MockOidcProvider::start("").await;
