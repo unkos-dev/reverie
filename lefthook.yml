@@ -111,8 +111,8 @@ pre-push:
     - name: backend-clippy
       run: cd "$(git rev-parse --show-toplevel)/backend" && cargo clippy --workspace --all-targets --locked -- -D warnings
     - name: backend-drift
-      run: cd "$(git rev-parse --show-toplevel)/backend" && SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref
-      fail_text: "Generated artifacts stale. Regenerate BOTH and commit: (cd backend && REGEN=1 cargo test --test gen_openapi --test gen_config_ref)"
+      run: cd "$(git rev-parse --show-toplevel)/backend" && SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
+      fail_text: "Generated artifacts stale. Regenerate ALL and commit: (cd backend && REGEN=1 cargo test --test gen_openapi --test gen_config_ref --test gen_config_schema)"
 
 # {1} is the commit-message file path git passes to the hook. commitlint config
 # lives in package.json and resolves automatically.
