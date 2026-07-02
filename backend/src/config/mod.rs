@@ -288,6 +288,14 @@ pub struct Config {
     /// outside its discovery document); the resolved URL is fixed for the
     /// process lifetime and is never read from an incoming token (RFC 8725
     /// §3.9/§3.10: `jku`/`x5u` header values are never followed).
+    ///
+    /// Fetches against the resolved endpoint carry explicit connect and
+    /// request timeouts, and resolved keys are cached in-process. Missing
+    /// keys are NOT negatively cached: each Bearer credential naming an
+    /// unknown `kid` triggers a fresh JWKS fetch, so a flood of such
+    /// credentials drives outbound fetches to the `IdP` roughly 1:1. On an
+    /// internet-exposed instance, put the API behind an edge rate limiter
+    /// (reverse proxy or WAF) to bound that amplification.
     pub resource_server_jwks_url: String,
     /// Whether the `typ` header of a resource-server JWT must be `at+jwt` /
     /// `application/at+jwt` per RFC 9068 §4

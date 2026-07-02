@@ -25,6 +25,7 @@
 //! bypass.
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use jsonwebtoken::errors::{ErrorKind, new_error};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
@@ -123,13 +124,28 @@ impl JwksSource for ReverieJwksSource {
     }
 }
 
+/// Connect timeout for the JWKS fetch client. A bare `reqwest::Client`
+/// carries NO default timeout; `jwks_client_rs::source::WebSource` (which
+/// [`ReverieJwksSource`] replaces to set a `User-Agent`) sets its own, so
+/// the replacement must too.
+const JWKS_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Full-request timeout for the JWKS fetch client (connect through body).
+const JWKS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Build the UA-carrying HTTP client used by [`ReverieJwksSource`] to fetch
 /// the resource-server JWKS. Mirrors `services::enrichment::http::api_client`
 /// and `auth::oidc::http_client`: an empty `User-Agent` is matched by common
 /// WAF scanner blocklists (Cloudflare, AWS WAF), so every outbound client in
 /// this codebase is built through a sanctioned UA-setting constructor (see
 /// `adr/2026-05-18-outbound-http-user-agent.md`).
-fn jwks_http_client() -> reqwest::Client {
+///
+/// THREAT: the timeouts are availability defenses on the auth hot path.
+/// `jwks_client_rs`'s cache serves a previously cached key only after a
+/// failed refresh RESOLVES; a fetch with no timeout against an `IdP` that
+/// hangs (rather than errors fast) never resolves, holding every request
+/// that triggered the refresh open and defeating that warm-cache fallback.
+fn jwks_http_client(connect_timeout: Duration, request_timeout: Duration) -> reqwest::Client {
     #[allow(
         clippy::expect_used,
         reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
@@ -140,6 +156,8 @@ fn jwks_http_client() -> reqwest::Client {
     )]
     reqwest::ClientBuilder::new()
         .user_agent(concat!("reverie/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(connect_timeout)
+        .timeout(request_timeout)
         .build()
         .expect("failed to build resource-server JWKS HTTP client: TLS init should not fail in this environment")
 }
@@ -295,7 +313,7 @@ pub async fn init_jwt_validator(config: &Config) -> anyhow::Result<JwtValidator>
     };
 
     let source = ReverieJwksSource {
-        client: jwks_http_client(),
+        client: jwks_http_client(JWKS_CONNECT_TIMEOUT, JWKS_REQUEST_TIMEOUT),
         url: jwks_url,
     };
     let client = JwksClient::builder().build(source);
@@ -666,5 +684,37 @@ mod tests {
         let token = mock.sign_access_token(&claims, |_| {});
 
         assert!(validator.validate(&token).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn jwks_fetch_fails_fast_against_hung_endpoint() {
+        use std::time::Instant;
+
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+
+        let source = ReverieJwksSource {
+            client: jwks_http_client(Duration::from_millis(250), Duration::from_millis(250)),
+            url: url::Url::parse(&format!("{}/jwks", server.uri())).expect("mock JWKS url parses"),
+        };
+
+        let started = Instant::now();
+        let result = source.fetch_keys().await;
+
+        assert!(
+            result.is_err(),
+            "a hung JWKS endpoint must time out, not hang the fetch"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the fetch must fail within the configured client timeout, not the mock's delay"
+        );
     }
 }
