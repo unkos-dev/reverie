@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT m.id                   AS \"id!\",\n               m.work_id              AS \"work_id!\",\n               w.title                AS \"title!\",\n               w.description          AS description,\n               w.language             AS language,\n               m.isbn_13              AS isbn_13,\n               m.isbn_10              AS isbn_10,\n               m.publisher            AS publisher,\n               m.pub_date             AS pub_date,\n               m.created_at           AS \"created_at!\",\n               m.updated_at           AS \"updated_at!\",\n               m.ingestion_status::text  AS \"ingestion_status!\",\n               m.validation_status       AS \"validation_status!: ValidationStatus\",\n               m.enrichment_status::text AS \"enrichment_status!\",\n               w.title_version_id        AS w_title_v,\n               w.description_version_id  AS w_desc_v,\n               w.language_version_id     AS w_lang_v,\n               m.publisher_version_id    AS m_publisher_v,\n               m.pub_date_version_id     AS m_pubdate_v,\n               m.isbn_10_version_id      AS m_isbn10_v,\n               m.isbn_13_version_id      AS m_isbn13_v,\n               m.cover_version_id        AS m_cover_v,\n               series_one.series_id      AS \"series_id?\",\n               series_one.series_name    AS \"series_name?\",\n               series_one.series_position AS \"series_position?: f64\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n          LEFT JOIN LATERAL (\n              SELECT s.id    AS series_id,\n                     s.name  AS series_name,\n                     sw.position AS series_position\n              FROM series_works sw\n              JOIN series s ON s.id = sw.series_id\n              WHERE sw.work_id = w.id\n              ORDER BY sw.position ASC NULLS LAST, s.id ASC\n              LIMIT 1\n          ) series_one ON TRUE\n         WHERE m.id = $1\n        ",
+  "query": "\n        SELECT m.id                   AS \"id!\",\n               m.work_id              AS \"work_id!\",\n               w.title                AS \"title!\",\n               w.subtitle             AS subtitle,\n               w.description          AS description,\n               w.language             AS language,\n               m.isbn_13              AS isbn_13,\n               m.isbn_10              AS isbn_10,\n               m.publisher            AS publisher,\n               m.pub_date             AS pub_date,\n               m.pages                AS pages,\n               m.created_at           AS \"created_at!\",\n               m.updated_at           AS \"updated_at!\",\n               m.ingestion_status::text  AS \"ingestion_status!\",\n               m.validation_status       AS \"validation_status!: ValidationStatus\",\n               m.enrichment_status::text AS \"enrichment_status!\",\n               w.title_version_id        AS w_title_v,\n               w.subtitle_version_id     AS w_subtitle_v,\n               w.description_version_id  AS w_desc_v,\n               w.language_version_id     AS w_lang_v,\n               m.publisher_version_id    AS m_publisher_v,\n               m.pub_date_version_id     AS m_pubdate_v,\n               m.isbn_10_version_id      AS m_isbn10_v,\n               m.isbn_13_version_id      AS m_isbn13_v,\n               m.cover_version_id        AS m_cover_v,\n               m.pages_version_id        AS m_pages_v,\n               series_one.series_id      AS \"series_id?\",\n               series_one.series_name    AS \"series_name?\",\n               series_one.series_position AS \"series_position?: f64\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n          LEFT JOIN LATERAL (\n              SELECT s.id    AS series_id,\n                     s.name  AS series_name,\n                     sw.position AS series_position\n              FROM series_works sw\n              JOIN series s ON s.id = sw.series_id\n              WHERE sw.work_id = w.id\n              ORDER BY sw.position ASC NULLS LAST, s.id ASC\n              LIMIT 1\n          ) series_one ON TRUE\n         WHERE m.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "subtitle",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "description",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "language",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "isbn_10",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "publisher",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "pub_date",
         "type_info": "Date",
         "origin": {
@@ -103,7 +114,18 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
+        "name": "pages",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "created_at!",
         "type_info": "Timestamptz",
         "origin": {
@@ -114,7 +136,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "updated_at!",
         "type_info": "Timestamptz",
         "origin": {
@@ -125,13 +147,13 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "ingestion_status!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "validation_status!: ValidationStatus",
         "type_info": {
           "Custom": {
@@ -155,13 +177,13 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 15,
         "name": "enrichment_status!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 14,
+        "ordinal": 16,
         "name": "w_title_v",
         "type_info": "Uuid",
         "origin": {
@@ -172,7 +194,18 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 17,
+        "name": "w_subtitle_v",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
         "name": "w_desc_v",
         "type_info": "Uuid",
         "origin": {
@@ -183,7 +216,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 19,
         "name": "w_lang_v",
         "type_info": "Uuid",
         "origin": {
@@ -194,7 +227,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 20,
         "name": "m_publisher_v",
         "type_info": "Uuid",
         "origin": {
@@ -205,7 +238,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 21,
         "name": "m_pubdate_v",
         "type_info": "Uuid",
         "origin": {
@@ -216,7 +249,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 22,
         "name": "m_isbn10_v",
         "type_info": "Uuid",
         "origin": {
@@ -227,7 +260,7 @@
         }
       },
       {
-        "ordinal": 20,
+        "ordinal": 23,
         "name": "m_isbn13_v",
         "type_info": "Uuid",
         "origin": {
@@ -238,7 +271,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 24,
         "name": "m_cover_v",
         "type_info": "Uuid",
         "origin": {
@@ -249,7 +282,18 @@
         }
       },
       {
-        "ordinal": 22,
+        "ordinal": 25,
+        "name": "m_pages_v",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
         "name": "series_id?",
         "type_info": "Uuid",
         "origin": {
@@ -260,7 +304,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 27,
         "name": "series_name?",
         "type_info": "Text",
         "origin": {
@@ -271,7 +315,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 28,
         "name": "series_position?: f64",
         "type_info": "Numeric",
         "origin": {
@@ -297,11 +341,15 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false,
       null,
       false,
       null,
+      true,
+      true,
       true,
       true,
       true,
@@ -315,5 +363,5 @@
       true
     ]
   },
-  "hash": "fc3ad94291f0cf9d8a20b19d9523c8a4272a8c1e47a440b49002c812557c716d"
+  "hash": "413307ea41288ce49359b79ab7daf2b7390adf97065c136abf496dfeac0264ed"
 }

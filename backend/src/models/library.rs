@@ -55,13 +55,19 @@ pub struct BookListRow {
     pub work_id: Uuid,
     /// `works.title` of the parent work.
     pub title: String,
+    /// `works.subtitle`, when declared.
+    pub subtitle: Option<String>,
     /// Author display names ordered by `work_authors.position`. Empty
-    /// when the work has no authors yet (pre-enrichment stub).
+    /// when the work has no authors yet (pre-enrichment stub), and never
+    /// includes editors/translators/narrators — no role substitutes for
+    /// another in display.
     pub authors: Vec<String>,
     /// Series membership; `None` when the work isn't on a series.
     pub series: Option<SeriesRef>,
     /// `manifestations.isbn_13`, when known.
     pub isbn_13: Option<String>,
+    /// `manifestations.pages`, when known.
+    pub pages: Option<i32>,
     /// Cover thumbnail URL — relative path served by the
     /// `/api/v1/books/{id}/cover/thumb` handler under the caller's
     /// session. Not pre-signed; access is gated by the session cookie.
@@ -96,6 +102,8 @@ pub struct BookDetail {
     pub work_id: Uuid,
     /// `works.title`.
     pub title: String,
+    /// `works.subtitle`, when declared.
+    pub subtitle: Option<String>,
     /// Author display names ordered by `work_authors.position`.
     pub authors: Vec<String>,
     /// Series membership; `None` when the work isn't on a series.
@@ -108,6 +116,8 @@ pub struct BookDetail {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
+    /// `manifestations.pages`, when known.
+    pub pages: Option<i32>,
     /// `manifestations.publisher` — canonical publisher string. Surfaced
     /// on `BookDetail` so the manual-edit dialog can confirm clears
     /// (`EditMetadataDialog.canonicalEditableFields`).
@@ -199,6 +209,8 @@ pub struct WorkDetail {
     pub id: Uuid,
     /// `works.title`.
     pub title: String,
+    /// `works.subtitle`, when declared.
+    pub subtitle: Option<String>,
     /// Author display names ordered by `work_authors.position`.
     pub authors: Vec<String>,
     /// Long-form description (`works.description`).
@@ -277,6 +289,8 @@ pub struct WorkManifestation {
     pub isbn_13: Option<String>,
     /// `manifestations.isbn_10`.
     pub isbn_10: Option<String>,
+    /// `manifestations.pages`, when known.
+    pub pages: Option<i32>,
     /// Cover thumbnail URL — relative path under
     /// `/api/v1/books/{id}/cover/thumb`, session-cookie gated. See
     /// [`BookListRow::cover_url`].

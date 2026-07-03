@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id   AS \"id!\", title AS \"title!\", description, language FROM works WHERE id = $1",
+  "query": "SELECT id   AS \"id!\", title AS \"title!\", subtitle, description, language FROM works WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "subtitle",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "description",
         "type_info": "Text",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "language",
         "type_info": "Text",
         "origin": {
@@ -57,8 +68,9 @@
       false,
       false,
       true,
+      true,
       true
     ]
   },
-  "hash": "624125788d1183891b34b8e7efa164af8d73dc90a6ae0b7cfa80aa68b1290094"
+  "hash": "9930d4ea56880692017853fbccac0c0ec5391b0ec14c78fc4367b8d256e951e4"
 }
