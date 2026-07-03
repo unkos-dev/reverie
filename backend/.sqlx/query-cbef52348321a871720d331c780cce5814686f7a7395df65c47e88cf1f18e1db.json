@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_state SET notes = $3 WHERE user_id = $1 AND manifestation_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cbef52348321a871720d331c780cce5814686f7a7395df65c47e88cf1f18e1db"
+}

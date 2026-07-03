@@ -615,7 +615,7 @@
           "reading"
         ],
         "summary": "`PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.",
-        "description": "Transition stamps, computed against the fetched-or-default state and\napplied based on the resulting `status` (not a before/after diff, so\nrepeating the same status re-applies its stamp):\n- resulting `status = reading` → `started_at := COALESCE(started_at, now())`\n- resulting `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other resulting `status` (including an explicit `null` clear) →\n  no stamps; `progress_pct` / `started_at` / `finished_at` /\n  `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields, or\n  `rating` is outside `1..=5`.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "patch_reading",
         "parameters": [
           {
@@ -672,7 +672,7 @@
             }
           },
           "422": {
-            "description": "Empty patch, or rating outside 1-5",
+            "description": "Empty patch, rating outside 1-5, or notes over 10000 characters",
             "content": {
               "application/json": {
                 "schema": {
@@ -6604,7 +6604,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "`reading_state.finished_at`: stamped when `status` transitions to\n[`ReadingStatus::Finished`]; re-stamped on every re-entry."
+            "description": "`reading_state.finished_at`: stamped each time a patch sets `status`\nto [`ReadingStatus::Finished`]."
           },
           "last_read_at": {
             "type": [
@@ -6643,7 +6643,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "`reading_state.started_at`: stamped when `status` first transitions\nto [`ReadingStatus::Reading`]; not re-stamped on later re-entries."
+            "description": "`reading_state.started_at`: stamped when a patch first sets `status`\nto [`ReadingStatus::Reading`]; not re-stamped on later re-entries."
           },
           "status": {
             "oneOf": [
@@ -7660,7 +7660,8 @@
               "string",
               "null"
             ],
-            "description": "New free-text notes. Absent = unchanged; `null` clears."
+            "description": "New free-text notes, at most 10000 characters. Absent = unchanged;\n`null` clears.",
+            "maxLength": 10000
           },
           "rating": {
             "type": [
@@ -7677,7 +7678,7 @@
               },
               {
                 "$ref": "#/components/schemas/ReadingStatus",
-                "description": "New status. Absent = unchanged; `null` clears (and skips every\ntransition stamp below, since none of them fire without a `status`\nof `reading` or `finished`)."
+                "description": "New status. Absent = unchanged; `null` clears. Transition stamps\nfire only when this field is present with a non-null value, so\nabsent and `null` both leave every timestamp untouched."
               }
             ]
           }

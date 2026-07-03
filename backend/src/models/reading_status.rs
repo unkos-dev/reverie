@@ -32,11 +32,11 @@ pub enum ReadingStatus {
     WantToRead,
     /// Currently being read. Stamps `started_at` on first transition.
     Reading,
-    /// Started, then paused. Timestamps are left as-is.
+    /// Paused partway through. Timestamps are left as-is.
     OnHold,
     /// Finished. Stamps `finished_at`, `progress_pct = 100`, `last_read_at`.
     Finished,
-    /// Started, then given up on. Timestamps are left as-is.
+    /// Given up on. Timestamps are left as-is.
     Abandoned,
 }
 
@@ -96,10 +96,6 @@ mod tests {
         assert!(result.is_err(), "expected unknown variant to be rejected");
     }
 
-    /// Loud-failure regression: simulates the DB `reading_status` enum
-    /// gaining a value with no Rust counterpart (out-of-band `ALTER TYPE`, or
-    /// a migration landing ahead of the matching Rust change). `sqlx::Type`
-    /// must surface this as a decode error, not silently coerce.
     #[sqlx::test(migrations = "./migrations")]
     async fn decode_fails_for_unknown_db_variant(pool: sqlx::PgPool) {
         // CARVE-OUT: runtime sqlx::query is intentional. The ALTER TYPE is

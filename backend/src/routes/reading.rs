@@ -30,6 +30,30 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(get_reading, patch_reading))
 }
 
+/// Character cap for `reading_state.notes`; mirrored by the
+/// `reading_state_notes_len` CHECK in the schema.
+const NOTES_MAX_CHARS: usize = 10_000;
+
+/// RLS-scoped existence probe shared by both handlers: `NotFound` when the
+/// manifestation is missing or hidden for the current user
+/// (existence-not-leaked).
+async fn ensure_manifestation_visible(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    manifestation_id: Uuid,
+) -> Result<(), AppError> {
+    let visible: Option<Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM manifestations WHERE id = $1",
+        manifestation_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    if visible.is_none() {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
+}
+
 /// Decode target for a `reading_state` row (shared by the GET read and the
 /// PATCH pre-write lock). `Default` gives the all-null "unread" shape for a
 /// missing row.
@@ -88,16 +112,7 @@ async fn get_reading(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let visible: Option<Uuid> = sqlx::query_scalar!(
-        "SELECT id FROM manifestations WHERE id = $1",
-        manifestation_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-    if visible.is_none() {
-        return Err(AppError::NotFound);
-    }
+    ensure_manifestation_visible(&mut tx, manifestation_id).await?;
 
     let row = sqlx::query_as!(
         ReadingStateRow,
@@ -125,9 +140,9 @@ async fn get_reading(
 )]
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateReadingRequest {
-    /// New status. Absent = unchanged; `null` clears (and skips every
-    /// transition stamp below, since none of them fire without a `status`
-    /// of `reading` or `finished`).
+    /// New status. Absent = unchanged; `null` clears. Transition stamps
+    /// fire only when this field is present with a non-null value, so
+    /// absent and `null` both leave every timestamp untouched.
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[schema(value_type = Option<ReadingStatus>)]
     status: Option<Option<ReadingStatus>>,
@@ -135,15 +150,16 @@ struct UpdateReadingRequest {
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[schema(value_type = Option<i16>)]
     rating: Option<Option<i16>>,
-    /// New free-text notes. Absent = unchanged; `null` clears.
+    /// New free-text notes, at most 10000 characters. Absent = unchanged;
+    /// `null` clears.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, max_length = 10_000)]
     notes: Option<Option<String>>,
 }
 
-/// Merge a patch onto the fetched-or-default row and apply transition
-/// stamps. Pure function (no I/O) so `patch_reading` stays a thin
-/// fetch/merge/write pipeline; see the handler doc for the stamp rules.
+/// Merge a patch onto the locked row and apply transition stamps. Pure
+/// function (no I/O) so `patch_reading` stays a thin fetch/merge/write
+/// pipeline; see the handler doc for the stamp rules.
 fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> ReadingStateRow {
     let status = match req.status {
         None => existing.status,
@@ -161,7 +177,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
         Some(Some(v)) => Some(v.clone()),
     };
 
-    let (progress_pct, started_at, finished_at, last_read_at) = match status {
+    let (progress_pct, started_at, finished_at, last_read_at) = match req.status.flatten() {
         Some(ReadingStatus::Reading) => (
             existing.progress_pct,
             Some(existing.started_at.unwrap_or_else(OffsetDateTime::now_utc)),
@@ -193,19 +209,19 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 
 /// `PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.
 ///
-/// Transition stamps, computed against the fetched-or-default state and
-/// applied based on the resulting `status` (not a before/after diff, so
-/// repeating the same status re-applies its stamp):
-/// - resulting `status = reading` → `started_at := COALESCE(started_at, now())`
-/// - resulting `status = finished` → `finished_at := now()`,
+/// Transition stamps fire only when the patch itself carries a non-null
+/// `status` (no before/after diff, so repeating the current status
+/// re-applies its stamp; a patch without `status` never touches stamps):
+/// - patched `status = reading` → `started_at := COALESCE(started_at, now())`
+/// - patched `status = finished` → `finished_at := now()`,
 ///   `progress_pct := 100`, `last_read_at := now()`
-/// - any other resulting `status` (including an explicit `null` clear) →
-///   no stamps; `progress_pct` / `started_at` / `finished_at` /
-///   `last_read_at` carry over unchanged
+/// - any other patched `status`, an explicit `null` clear, or a patch
+///   without `status` → no stamps; `progress_pct` / `started_at` /
+///   `finished_at` / `last_read_at` carry over unchanged
 ///
 /// # Errors
-/// - [`AppError::Validation`] when the body has no populated fields, or
-///   `rating` is outside `1..=5`.
+/// - [`AppError::Validation`] when the body has no populated fields,
+///   `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden by
 ///   RLS for the current user (existence-not-leaked).
 /// - [`AppError::Internal`] on database errors.
@@ -220,7 +236,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
         (status = 200, description = "Reading state after the patch and any transition stamps", body = ReadingState),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch, or rating outside 1-5", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn patch_reading(
@@ -242,21 +258,34 @@ async fn patch_reading(
             "rating must be between 1 and 5".into(),
         ));
     }
+    if let Some(Some(notes)) = &req.notes
+        && notes.chars().count() > NOTES_MAX_CHARS
+    {
+        return Err(AppError::Validation(
+            "notes must be at most 10000 characters".into(),
+        ));
+    }
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let visible: Option<Uuid> = sqlx::query_scalar!(
-        "SELECT id FROM manifestations WHERE id = $1",
+    ensure_manifestation_visible(&mut tx, manifestation_id).await?;
+
+    // Seed the row before locking: FOR UPDATE cannot lock an absent row, so
+    // two concurrent first-writes would otherwise both merge against the
+    // empty default and the later commit would silently drop the earlier
+    // one's fields. After the seed, the SELECT below always has a row to
+    // lock and concurrent patches serialize on it.
+    sqlx::query!(
+        "INSERT INTO reading_state (user_id, manifestation_id) VALUES ($1, $2)
+         ON CONFLICT (user_id, manifestation_id) DO NOTHING",
+        current_user.user_id,
         manifestation_id,
     )
-    .fetch_optional(&mut *tx)
+    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
-    if visible.is_none() {
-        return Err(AppError::NotFound);
-    }
 
     let existing = sqlx::query_as!(
         ReadingStateRow,
@@ -265,28 +294,24 @@ async fn patch_reading(
              FROM reading_state WHERE manifestation_id = $1 FOR UPDATE"#,
         manifestation_id,
     )
-    .fetch_optional(&mut *tx)
+    .fetch_one(&mut *tx)
     .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .unwrap_or_default();
+    .map_err(|e| AppError::Internal(e.into()))?;
 
     let merged = apply_patch(existing, &req);
 
     let row = sqlx::query_as!(
         ReadingStateRow,
         r#"
-        INSERT INTO reading_state
-            (user_id, manifestation_id, status, rating, notes, progress_pct,
-             started_at, finished_at, last_read_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (user_id, manifestation_id) DO UPDATE SET
-            status = EXCLUDED.status,
-            rating = EXCLUDED.rating,
-            notes = EXCLUDED.notes,
-            progress_pct = EXCLUDED.progress_pct,
-            started_at = EXCLUDED.started_at,
-            finished_at = EXCLUDED.finished_at,
-            last_read_at = EXCLUDED.last_read_at
+        UPDATE reading_state SET
+            status = $3,
+            rating = $4,
+            notes = $5,
+            progress_pct = $6,
+            started_at = $7,
+            finished_at = $8,
+            last_read_at = $9
+        WHERE user_id = $1 AND manifestation_id = $2
         RETURNING status AS "status?: ReadingStatus", rating, notes, progress_pct,
                   started_at, finished_at, last_read_at
         "#,
@@ -580,6 +605,141 @@ mod tests {
             "clearing status must not erase prior transition timestamps"
         );
         assert_eq!(cleared_body["progress_pct"].as_f64(), Some(100.0));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_requires_auth(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let r = server
+            .patch(&format!("/api/v1/books/{}/reading", Uuid::new_v4()))
+            .json(&json!({"status": "reading"}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_unrelated_patch_preserves_finished_at(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "stamp-guard").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "stamp-guard").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let finished = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"status": "finished"}))
+            .await;
+        let finished_body: serde_json::Value = finished.json();
+        let finished_at = finished_body["finished_at"]
+            .as_str()
+            .expect("finished_at set")
+            .to_owned();
+        let last_read_at = finished_body["last_read_at"]
+            .as_str()
+            .expect("last_read_at set")
+            .to_owned();
+
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"rating": 4}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert_eq!(body["status"], "finished");
+        assert_eq!(body["rating"], 4);
+        assert_eq!(
+            body["finished_at"].as_str(),
+            Some(finished_at.as_str()),
+            "rating-only patch must not re-stamp finished_at"
+        );
+        assert_eq!(
+            body["last_read_at"].as_str(),
+            Some(last_read_at.as_str()),
+            "rating-only patch must not re-stamp last_read_at"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_concurrent_first_writes_both_survive(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "merge-race").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "merge-race").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let rating_patch = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"rating": 4}));
+        let notes_patch = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"notes": "kept"}));
+        let (a, b) = tokio::join!(rating_patch, notes_patch);
+        assert_eq!(a.status_code(), StatusCode::OK, "body: {}", a.text());
+        assert_eq!(b.status_code(), StatusCode::OK, "body: {}", b.text());
+
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        let body: serde_json::Value = r.json();
+        assert_eq!(body["rating"], 4, "concurrent write lost: {body}");
+        assert_eq!(body["notes"], "kept", "concurrent write lost: {body}");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reading_rls_hidden_book_returns_404(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "shelf-gate").await;
+        let (_child_id, child_basic) =
+            test_support::db::create_child_user_and_basic_auth(&app_pool, "shelf-gate").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // The manifestation exists but sits on no shelf, so the child RLS
+        // policy hides it; both verbs must 404 exactly like a missing id.
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&child_basic).0.clone(), auth(&child_basic).1.clone())
+            .await;
+        test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&child_basic).0, auth(&child_basic).1)
+            .json(&json!({"status": "reading"}))
+            .await;
+        test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_notes_over_cap_rejected(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "notes-limit").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "notes-limit").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"notes": "n".repeat(10_001)}))
+            .await;
+        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[sqlx::test(migrations = "./migrations")]

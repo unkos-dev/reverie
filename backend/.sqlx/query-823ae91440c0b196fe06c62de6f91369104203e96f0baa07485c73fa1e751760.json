@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO reading_state\n            (user_id, manifestation_id, status, rating, notes, progress_pct,\n             started_at, finished_at, last_read_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        ON CONFLICT (user_id, manifestation_id) DO UPDATE SET\n            status = EXCLUDED.status,\n            rating = EXCLUDED.rating,\n            notes = EXCLUDED.notes,\n            progress_pct = EXCLUDED.progress_pct,\n            started_at = EXCLUDED.started_at,\n            finished_at = EXCLUDED.finished_at,\n            last_read_at = EXCLUDED.last_read_at\n        RETURNING status AS \"status?: ReadingStatus\", rating, notes, progress_pct,\n                  started_at, finished_at, last_read_at\n        ",
+  "query": "\n        UPDATE reading_state SET\n            status = $3,\n            rating = $4,\n            notes = $5,\n            progress_pct = $6,\n            started_at = $7,\n            finished_at = $8,\n            last_read_at = $9\n        WHERE user_id = $1 AND manifestation_id = $2\n        RETURNING status AS \"status?: ReadingStatus\", rating, notes, progress_pct,\n                  started_at, finished_at, last_read_at\n        ",
   "describe": {
     "columns": [
       {
@@ -130,5 +130,5 @@
       true
     ]
   },
-  "hash": "8c2e2f2f53d247dfe5add229fe2b8d13c0335bd4f6b31d8dcf968c6e512760d8"
+  "hash": "823ae91440c0b196fe06c62de6f91369104203e96f0baa07485c73fa1e751760"
 }

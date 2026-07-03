@@ -5,6 +5,7 @@
 ALTER TABLE public.reading_state
     DROP CONSTRAINT reading_state_finished_at_ts_decode_range,
     DROP CONSTRAINT reading_state_started_at_ts_decode_range,
+    DROP CONSTRAINT reading_state_notes_len,
     DROP CONSTRAINT reading_state_rating_range,
     DROP COLUMN finished_at,
     DROP COLUMN started_at,

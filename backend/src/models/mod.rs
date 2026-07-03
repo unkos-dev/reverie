@@ -24,7 +24,8 @@ pub mod login_throttle;
 pub mod manifestation_format;
 /// Hashed, single-use, short-lived password-reset PIN records.
 pub mod password_reset_pin;
-/// Per-`(user, manifestation)` reading-progress and last-read timestamp.
+/// Per-`(user, manifestation)` reading state: status, rating, notes,
+/// progress, and reading dates.
 pub mod reading_state;
 /// Closed value set for the `reading_status` Postgres `ENUM`.
 pub mod reading_status;

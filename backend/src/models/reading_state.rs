@@ -33,13 +33,16 @@ pub struct ReadingState {
     pub notes: Option<String>,
     /// `reading_state.progress_pct`, 0-100.
     pub progress_pct: Option<f32>,
-    /// `reading_state.started_at`: stamped when `status` first transitions
+    /// `reading_state.started_at`: stamped when a patch first sets `status`
     /// to [`ReadingStatus::Reading`]; not re-stamped on later re-entries.
+    #[serde(with = "time::serde::rfc3339::option")]
     pub started_at: Option<OffsetDateTime>,
-    /// `reading_state.finished_at`: stamped when `status` transitions to
-    /// [`ReadingStatus::Finished`]; re-stamped on every re-entry.
+    /// `reading_state.finished_at`: stamped each time a patch sets `status`
+    /// to [`ReadingStatus::Finished`].
+    #[serde(with = "time::serde::rfc3339::option")]
     pub finished_at: Option<OffsetDateTime>,
     /// `reading_state.last_read_at`.
+    #[serde(with = "time::serde::rfc3339::option")]
     pub last_read_at: Option<OffsetDateTime>,
 }
 
@@ -449,6 +452,34 @@ mod tests {
         .execute(&pool)
         .await
         .expect("boundary ratings 1 and 5 should be accepted");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn notes_over_cap_rejected(pool: PgPool) {
+        let (m_id, user_id) = fixture(&pool, "notes-boundary").await;
+        sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, notes) VALUES ($1, $2, $3)",
+            user_id,
+            m_id,
+            "n".repeat(10_000),
+        )
+        .execute(&pool)
+        .await
+        .expect("10000-char notes should be accepted");
+
+        let err = sqlx::query!(
+            "UPDATE reading_state SET notes = $3 WHERE user_id = $1 AND manifestation_id = $2",
+            user_id,
+            m_id,
+            "n".repeat(10_001),
+        )
+        .execute(&pool)
+        .await
+        .expect_err("10001-char notes must violate the notes length CHECK");
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("reading_state_notes_len"),
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
