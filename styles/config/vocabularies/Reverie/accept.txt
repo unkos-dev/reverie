@@ -163,6 +163,8 @@ Greptile
 gzipped
 handoff
 hardcoded
+hardlink
+hardlinks
 Hasura
 healthcheck
 homelab
