@@ -42,6 +42,8 @@ use crate::models::library::{
     BookDetail, BookListRow, MetadataVersionRow, MetadataVersionSummary, SeriesRef, WorkDetail,
     WorkManifestation,
 };
+use crate::models::reading_state::ReadingStateSummary;
+use crate::models::reading_status::ReadingStatus;
 use crate::models::validation_status::ValidationStatus;
 use crate::routes::cursor::{CursorKey, SortMode};
 use crate::state::AppState;
@@ -229,6 +231,9 @@ async fn list(
         .map(|r| r.get::<Uuid, _>("work_id"))
         .collect();
     let authors_by_work = load_authors_for_works(&mut tx, &work_ids).await?;
+    let manifestation_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
+    let reading_by_manifestation =
+        load_reading_state_for_manifestations(&mut tx, &manifestation_ids).await?;
 
     let mut items: Vec<BookListRow> = Vec::with_capacity(page_rows.len());
     for r in page_rows {
@@ -257,6 +262,7 @@ async fn list(
                 ))
             })?,
             enrichment_status: parse_enrichment(&enrichment_raw)?,
+            reading_state: reading_by_manifestation.get(&m_id).cloned(),
             created_at: r.get("created_at"),
         });
     }
@@ -588,6 +594,40 @@ pub(crate) async fn load_authors_for_works(
     .map_err(|e| AppError::Internal(e.into()))?;
     for r in rows {
         out.entry(r.work_id).or_default().push(r.name);
+    }
+    Ok(out)
+}
+
+pub(crate) async fn load_reading_state_for_manifestations(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, ReadingStateSummary>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, ReadingStateSummary> =
+        std::collections::HashMap::new();
+    if manifestation_ids.is_empty() {
+        return Ok(out);
+    }
+    // Same RLS-scoped transaction as the page query: no `WHERE user_id = ...`
+    // predicate here (module invariant, see the file doc comment).
+    // `reading_state`'s RLS policy already confines this SELECT to the
+    // caller's own rows.
+    let rows = sqlx::query!(
+        r#"SELECT manifestation_id, status AS "status?: ReadingStatus", rating, progress_pct
+             FROM reading_state WHERE manifestation_id = ANY($1::uuid[])"#,
+        manifestation_ids,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in rows {
+        out.insert(
+            r.manifestation_id,
+            ReadingStateSummary {
+                status: r.status,
+                rating: r.rating,
+                progress_pct: r.progress_pct,
+            },
+        );
     }
     Ok(out)
 }

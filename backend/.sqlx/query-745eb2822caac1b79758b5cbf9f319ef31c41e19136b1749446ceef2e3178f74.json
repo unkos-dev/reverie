@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reading_state (user_id, manifestation_id, started_at) VALUES ($1, $2, 'infinity')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "745eb2822caac1b79758b5cbf9f319ef31c41e19136b1749446ceef2e3178f74"
+}

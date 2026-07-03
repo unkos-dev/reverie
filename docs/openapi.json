@@ -535,6 +535,177 @@
         ]
       }
     },
+    "/api/v1/books/{id}/reading": {
+      "get": {
+        "tags": [
+          "reading"
+        ],
+        "summary": "`GET /api/v1/books/{id}/reading`: the caller's reading state for one\nbook.",
+        "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_reading",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Caller's reading state; all-null fields mean unread (no row yet)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "reading"
+        ],
+        "summary": "`PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.",
+        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "patch_reading",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReadingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Reading state after the patch and any transition stamps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty patch, rating outside 1-5, or notes over 10000 characters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/dashboard/activity": {
       "get": {
         "tags": [
@@ -5799,6 +5970,17 @@
             ],
             "description": "`manifestations.isbn_13`, when known."
           },
+          "reading_state": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReadingStateSummary",
+                "description": "Caller's reading state for this book; `None` when unread (no\n`reading_state` row). Batch-loaded alongside `authors`."
+              }
+            ]
+          },
           "series": {
             "oneOf": [
               {
@@ -6411,6 +6593,114 @@
           }
         ],
         "description": "Response shape for `PUT /api/v1/settings`."
+      },
+      "ReadingState": {
+        "type": "object",
+        "description": "`GET /api/v1/books/{id}/reading` response: the caller's full reading\nstate for one book. A missing `reading_state` row (never written) decodes\nto all-`None` fields; that all-null shape IS the \"unread\" domain state,\nnot an error.",
+        "properties": {
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`reading_state.finished_at`: stamped each time a patch sets `status`\nto [`ReadingStatus::Finished`]."
+          },
+          "last_read_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`reading_state.last_read_at`."
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`reading_state.notes`; free-text, caller-authored."
+          },
+          "progress_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "`reading_state.progress_pct`, 0-100."
+          },
+          "rating": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`reading_state.rating`, 1-5; `None` means unrated."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`reading_state.started_at`: stamped when a patch first sets `status`\nto [`ReadingStatus::Reading`]; not re-stamped on later re-entries."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReadingStatus",
+                "description": "`reading_state.status`; `None` means unread (no row, or row with a\nnull status)."
+              }
+            ]
+          }
+        }
+      },
+      "ReadingStateSummary": {
+        "type": "object",
+        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).",
+        "properties": {
+          "progress_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "`reading_state.progress_pct`, 0-100."
+          },
+          "rating": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`reading_state.rating`, 1-5."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReadingStatus",
+                "description": "`reading_state.status`."
+              }
+            ]
+          }
+        }
+      },
+      "ReadingStatus": {
+        "type": "string",
+        "description": "A user's relationship to one book: where they are in reading it.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].",
+        "enum": [
+          "want_to_read",
+          "reading",
+          "on_hold",
+          "finished",
+          "abandoned"
+        ]
       },
       "RegisterRequest": {
         "type": "object",
@@ -7361,6 +7651,39 @@
           }
         }
       },
+      "UpdateReadingRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /api/v1/books/{id}/reading`. RFC 7396 JSON Merge Patch:\nan absent key leaves the field unchanged, an explicit `null` clears it.",
+        "properties": {
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New free-text notes, at most 10000 characters. Absent = unchanged;\n`null` clears.",
+            "maxLength": 10000
+          },
+          "rating": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "New rating, 1-5. Absent = unchanged; `null` clears."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReadingStatus",
+                "description": "New status. Absent = unchanged; `null` clears. Transition stamps\nfire only when this field is present with a non-null value, so\nabsent and `null` both leave every timestamp untouched."
+              }
+            ]
+          }
+        }
+      },
       "UpdateRoleRequest": {
         "type": "object",
         "description": "Body for `PUT /api/v1/users/{id}/role`.",
@@ -7821,6 +8144,10 @@
     {
       "name": "metadata",
       "description": "Metadata review queue: accept / reject / revert / lock and manual edits."
+    },
+    {
+      "name": "reading",
+      "description": "Per-user reading state: status, rating, notes, and reading dates."
     },
     {
       "name": "enrichment",

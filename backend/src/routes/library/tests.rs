@@ -1748,3 +1748,53 @@ async fn search_endpoint_duplicate_query_key_returns_400(pool: PgPool) {
         StatusCode::BAD_REQUEST,
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_reading_state_is_caller_scoped(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reading-list-a").await;
+    let (_b_id, b_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reading-list-b").await;
+    let (_work, m_id) = insert_book(&ingestion_pool, "reading-list", "Reading List Book").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    server
+        .patch(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, a_basic.clone())
+        .json(&serde_json::json!({"status": "reading", "rating": 4}))
+        .await;
+
+    let a_list = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, a_basic)
+        .await;
+    assert_eq!(a_list.status_code(), StatusCode::OK);
+    let a_body: serde_json::Value = a_list.json();
+    let a_item = a_body["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .find(|i| i["id"].as_str() == Some(m_id.to_string().as_str()))
+        .expect("book present in A's list");
+    assert_eq!(a_item["reading_state"]["status"], "reading");
+    assert_eq!(a_item["reading_state"]["rating"], 4);
+
+    let b_list = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, b_basic)
+        .await;
+    assert_eq!(b_list.status_code(), StatusCode::OK);
+    let b_body: serde_json::Value = b_list.json();
+    let b_item = b_body["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .find(|i| i["id"].as_str() == Some(m_id.to_string().as_str()))
+        .expect("book present in B's list");
+    assert!(
+        b_item["reading_state"].is_null(),
+        "user B has no reading_state row for this book: {b_item}"
+    );
+}

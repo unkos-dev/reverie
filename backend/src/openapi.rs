@@ -166,6 +166,7 @@ impl Modify for SecurityAddon {
         (name = "settings", description = "Admin-only runtime settings."),
         (name = "tokens", description = "Per-user device tokens for OPDS / Basic-auth clients."),
         (name = "metadata", description = "Metadata review queue: accept / reject / revert / lock and manual edits."),
+        (name = "reading", description = "Per-user reading state: status, rating, notes, and reading dates."),
         (name = "enrichment", description = "Enrichment pipeline controls and queue status."),
         (name = "ingestion", description = "Admin-only library-scan trigger."),
         (name = "auth", description = "OIDC login flow, session introspection, and theme preference."),
@@ -246,6 +247,7 @@ fn pilot_router() -> OpenApiRouter<AppState> {
         .merge(crate::routes::settings::router())
         .merge(crate::routes::tokens::router())
         .merge(crate::routes::metadata::router())
+        .merge(crate::routes::reading::router())
         .merge(crate::routes::enrichment::router())
         .merge(crate::routes::ingestion::router())
         .merge(crate::routes::auth::router())

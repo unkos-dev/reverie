@@ -25,6 +25,8 @@ pub mod library;
 pub mod metadata;
 /// OPDS 1.2 catalog routes (feeds, downloads, cover dual-mount).
 pub mod opds;
+/// Per-user reading state JSON API (`/api/v1/books/{id}/reading`).
+pub mod reading;
 /// Series JSON API (`/api/v1/series/{id}`).
 pub mod series;
 /// Admin-only persisted settings (`/api/v1/settings`).

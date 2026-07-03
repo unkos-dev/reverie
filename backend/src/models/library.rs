@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::ingestion_status::IngestionStatus;
+use crate::models::reading_state::ReadingStateSummary;
 use crate::models::validation_status::ValidationStatus;
 
 /// Series membership for a manifestation. Embedded into both
@@ -73,6 +74,9 @@ pub struct BookListRow {
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
+    /// Caller's reading state for this book; `None` when unread (no
+    /// `reading_state` row). Batch-loaded alongside `authors`.
+    pub reading_state: Option<ReadingStateSummary>,
     /// `manifestations.created_at`; used as the recent-sort cursor
     /// key and elided from the JSON wire shape.
     #[serde(skip)]
