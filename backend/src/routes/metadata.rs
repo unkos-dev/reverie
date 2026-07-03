@@ -841,6 +841,10 @@ async fn clear_field(
 /// Maximum length (in `char`s) for a manually-entered contributor name.
 const MAX_CONTRIBUTOR_NAME_CHARS: usize = 500;
 
+/// Maximum number of names accepted per contributor role in one patch.
+/// Bounds the per-name insert loop that runs under the handler's row lock.
+const MAX_CONTRIBUTORS_PER_ROLE: usize = 100;
+
 /// Apply a `contributors` merge-patch: per role, replace/clear/reorder
 /// `work_authors` rows and journal the change under `contributors.<role>`.
 ///
@@ -914,6 +918,11 @@ async fn apply_contributors_patch(
                 .map_err(|e| AppError::Internal(e.into()))?;
             }
             Some(names) => {
+                if names.len() > MAX_CONTRIBUTORS_PER_ROLE {
+                    return Err(AppError::Validation(format!(
+                        "{role} list exceeds {MAX_CONTRIBUTORS_PER_ROLE} names"
+                    )));
+                }
                 let mut trimmed: Vec<String> = Vec::with_capacity(names.len());
                 let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for raw in &names {
@@ -936,7 +945,8 @@ async fn apply_contributors_patch(
                     }
                 }
 
-                let json = serde_json::to_value(&trimmed).unwrap_or_default();
+                let json =
+                    serde_json::to_value(&trimmed).map_err(|e| AppError::Internal(e.into()))?;
                 let version_id =
                     insert_manual_version(tx, manifestation_id, user_id, &key, &json).await?;
 
@@ -988,9 +998,14 @@ async fn apply_contributors_patch(
         }
     }
 
-    work::refresh_first_author_sort(tx, work_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    // The denormalized sort column derives from the author role only, so
+    // editor/translator-only patches skip the refresh (and its updated_at
+    // trigger bump).
+    if author_touched {
+        work::refresh_first_author_sort(tx, work_id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
 
     // The library path renders from the primary author, so a contributor
     // change must enqueue writeback like every scalar field in this handler.
@@ -1055,7 +1070,7 @@ struct UpdateMetadataFields {
     subtitle: Option<Option<String>>,
     /// New page count. Absent = unchanged; `null` clears; must be positive.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<i32>)]
+    #[schema(value_type = Option<i32>, minimum = 1)]
     pages: Option<Option<i32>>,
     /// Per-role contributor replace/clear. Absent = unchanged; `null` clears
     /// author, editor, and translator together (pure RFC 7396 member removal).
@@ -1081,15 +1096,15 @@ struct UpdateMetadataFields {
 struct ContributorsPatch {
     /// Ordered author names. `null` or `[]` clears the role.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<Vec<String>>)]
+    #[schema(value_type = Option<Vec<String>>, max_items = 100)]
     author: Option<Option<Vec<String>>>,
     /// Ordered editor names. `null` or `[]` clears the role.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<Vec<String>>)]
+    #[schema(value_type = Option<Vec<String>>, max_items = 100)]
     editor: Option<Option<Vec<String>>>,
     /// Ordered translator names. `null` or `[]` clears the role.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<Vec<String>>)]
+    #[schema(value_type = Option<Vec<String>>, max_items = 100)]
     translator: Option<Option<Vec<String>>>,
 }
 
@@ -2603,36 +2618,6 @@ mod tests {
 
     // ── PATCH contributors / subtitle / pages ──────────────────────────────
 
-    /// Insert an author directly and link it to `work_id` at `position`,
-    /// bypassing the PATCH handler. Returns the author id.
-    async fn seed_author(
-        pool: &sqlx::PgPool,
-        work_id: Uuid,
-        name: &str,
-        role: &str,
-        position: i32,
-    ) -> Uuid {
-        let author_id: Uuid = sqlx::query_scalar!(
-            "INSERT INTO authors (name, sort_name) VALUES ($1, $1) RETURNING id",
-            name,
-        )
-        .fetch_one(pool)
-        .await
-        .expect("insert author");
-        sqlx::query!(
-            "INSERT INTO work_authors (work_id, author_id, role, position) \
-             VALUES ($1, $2, ($3::text)::author_role, $4)",
-            work_id,
-            author_id,
-            role,
-            position,
-        )
-        .execute(pool)
-        .await
-        .expect("insert work_authors");
-        author_id
-    }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_contributors_replace_sets_names_in_order(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -2744,6 +2729,32 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn patch_contributors_over_cap_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let names: Vec<String> = (0..=super::MAX_CONTRIBUTORS_PER_ROLE)
+            .map(|i| format!("Cap Name {i} {marker}"))
+            .collect();
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"contributors": {"author": names}}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn patch_contributors_reorder_changes_position(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2753,8 +2764,8 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let name_a = format!("Reorder Alpha {marker}");
         let name_b = format!("Reorder Beta {marker}");
-        seed_author(&ing_pool, work_id, &name_a, "author", 0).await;
-        seed_author(&ing_pool, work_id, &name_b, "author", 1).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &name_a, "author", 0).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &name_b, "author", 1).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
@@ -2789,7 +2800,7 @@ mod tests {
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let author_name = format!("Untouched Author {marker}");
-        seed_author(&ing_pool, work_id, &author_name, "author", 0).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &author_name, "author", 0).await;
 
         let editor_name = format!("New Editor {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
@@ -2824,7 +2835,7 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
-        seed_author(
+        test_support::db::insert_contributor(
             &ing_pool,
             work_id,
             &format!("Editor To Clear {marker}"),
@@ -2871,7 +2882,7 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
-        seed_author(
+        test_support::db::insert_contributor(
             &ing_pool,
             work_id,
             &format!("Translator To Clear {marker}"),
@@ -2907,7 +2918,7 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
-        seed_author(
+        test_support::db::insert_contributor(
             &ing_pool,
             work_id,
             &format!("Sole Author {marker}"),
@@ -2951,7 +2962,7 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
-        seed_author(
+        test_support::db::insert_contributor(
             &ing_pool,
             work_id,
             &format!("Editor Only {marker}"),
