@@ -2,7 +2,7 @@
 #
 # One declarative file owns pre-commit, pre-push, and commit-msg. pre-commit
 # scopes each tool to the staged files it applies to; pre-push runs the backend
-# verification gate; commit-msg runs commitlint.
+# verification gate; commit-msg runs commitlint and the DCO sign-off check.
 #
 # glob_matcher: doublestar makes `**` match zero-or-more directories and lets a
 # slashless `**/*.ext` pattern match by basename at any depth, including files
@@ -120,3 +120,7 @@ commit-msg:
   jobs:
     - name: commitlint
       run: npx --no-install commitlint --edit {1}
+    # Merge commits are exempt, matching scripts/dco-check.sh in CI.
+    - name: dco
+      run: 'head -n1 {1} | grep -q "^Merge " || grep -q "^Signed-off-by: " {1}'
+      fail_text: "Missing Signed-off-by trailer. Commit with git commit -s (see CONTRIBUTING.md, Developer Certificate of Origin)."
