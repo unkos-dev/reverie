@@ -1,0 +1,134 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO reading_state\n            (user_id, manifestation_id, status, rating, notes, progress_pct,\n             started_at, finished_at, last_read_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        ON CONFLICT (user_id, manifestation_id) DO UPDATE SET\n            status = EXCLUDED.status,\n            rating = EXCLUDED.rating,\n            notes = EXCLUDED.notes,\n            progress_pct = EXCLUDED.progress_pct,\n            started_at = EXCLUDED.started_at,\n            finished_at = EXCLUDED.finished_at,\n            last_read_at = EXCLUDED.last_read_at\n        RETURNING status AS \"status?: ReadingStatus\", rating, notes, progress_pct,\n                  started_at, finished_at, last_read_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status?: ReadingStatus",
+        "type_info": {
+          "Custom": {
+            "name": "reading_status",
+            "kind": {
+              "Enum": [
+                "want_to_read",
+                "reading",
+                "on_hold",
+                "finished",
+                "abandoned"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "rating",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "notes",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "notes"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "progress_pct",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "progress_pct"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_read_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "last_read_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "reading_status",
+            "kind": {
+              "Enum": [
+                "want_to_read",
+                "reading",
+                "on_hold",
+                "finished",
+                "abandoned"
+              ]
+            }
+          }
+        },
+        "Int2",
+        "Text",
+        "Float4",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8c2e2f2f53d247dfe5add229fe2b8d13c0335bd4f6b31d8dcf968c6e512760d8"
+}

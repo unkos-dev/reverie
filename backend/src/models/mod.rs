@@ -26,6 +26,8 @@ pub mod manifestation_format;
 pub mod password_reset_pin;
 /// Per-`(user, manifestation)` reading-progress and last-read timestamp.
 pub mod reading_state;
+/// Closed value set for the `reading_status` Postgres `ENUM`.
+pub mod reading_status;
 /// Closed value set for the `user_role` Postgres `ENUM`.
 pub mod role;
 /// Response DTOs for the series API (`/api/v1/series/{id}`).

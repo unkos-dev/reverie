@@ -1,8 +1,62 @@
-//! Reading state — per-`(user, manifestation)` progress and last-read timestamp.
+//! Reading state — per-`(user, manifestation)` status, rating, notes,
+//! progress, and reading dates.
 //!
-//! Schema lives in migration `20260428000001_activate_reading_state`. Step 11
-//! will add the model query layer here. For now this module only carries
-//! schema-level tests against the migration.
+//! Schema lives in migration `20260428000001_activate_reading_state`
+//! (progress/last-read) extended by `20260703120000_reading_domain`
+//! (status/rating/notes/started_at/finished_at). Queries live in
+//! `routes::reading` and `routes::library`, not here — this module carries
+//! the wire DTOs, plus schema-level tests against the migrations.
+//!
+//! Wire-format conventions follow the JSON-API conventions ADR
+//! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
+//! `Option<T>` for nullable (never `skip_serializing_if`), RFC 3339
+//! timestamps via `time`.
+
+use serde::Serialize;
+use time::OffsetDateTime;
+
+use crate::models::reading_status::ReadingStatus;
+
+/// `GET /api/v1/books/{id}/reading` response: the caller's full reading
+/// state for one book. A missing `reading_state` row (never written) decodes
+/// to all-`None` fields — that all-null shape IS the "unread" domain state,
+/// not an error.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub struct ReadingState {
+    /// `reading_state.status`; `None` means unread (no row, or row with a
+    /// null status).
+    pub status: Option<ReadingStatus>,
+    /// `reading_state.rating`, 1-5; `None` means unrated.
+    pub rating: Option<i16>,
+    /// `reading_state.notes`; free-text, caller-authored.
+    pub notes: Option<String>,
+    /// `reading_state.progress_pct`, 0-100.
+    pub progress_pct: Option<f32>,
+    /// `reading_state.started_at` — stamped when `status` first transitions
+    /// to [`ReadingStatus::Reading`]; not re-stamped on later re-entries.
+    pub started_at: Option<OffsetDateTime>,
+    /// `reading_state.finished_at` — stamped when `status` transitions to
+    /// [`ReadingStatus::Finished`]; re-stamped on every re-entry.
+    pub finished_at: Option<OffsetDateTime>,
+    /// `reading_state.last_read_at`.
+    pub last_read_at: Option<OffsetDateTime>,
+}
+
+/// Reading-state slice embedded in each `GET /api/v1/books` list row.
+/// Batch-loaded alongside the page (see `routes::library::load_authors_for_works`
+/// for the sibling batch-load pattern); `None` when the caller has no
+/// `reading_state` row for that book (unread).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub struct ReadingStateSummary {
+    /// `reading_state.status`.
+    pub status: Option<ReadingStatus>,
+    /// `reading_state.rating`, 1-5.
+    pub rating: Option<i16>,
+    /// `reading_state.progress_pct`, 0-100.
+    pub progress_pct: Option<f32>,
+}
 
 #[cfg(test)]
 mod tests {

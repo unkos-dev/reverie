@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT manifestation_id, status AS \"status?: ReadingStatus\", rating, progress_pct\n             FROM reading_state WHERE manifestation_id = ANY($1::uuid[])",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "manifestation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status?: ReadingStatus",
+        "type_info": {
+          "Custom": {
+            "name": "reading_status",
+            "kind": {
+              "Enum": [
+                "want_to_read",
+                "reading",
+                "on_hold",
+                "finished",
+                "abandoned"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "rating",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "progress_pct",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "reading_state",
+            "name": "progress_pct"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3ce89bee8eb1e853b6f99027fc303f405a55b714e556413719a793dc7e8ae61d"
+}
