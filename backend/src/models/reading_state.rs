@@ -1,10 +1,10 @@
-//! Reading state — per-`(user, manifestation)` status, rating, notes,
+//! Reading state: per-`(user, manifestation)` status, rating, notes,
 //! progress, and reading dates.
 //!
 //! Schema lives in migration `20260428000001_activate_reading_state`
 //! (progress/last-read) extended by `20260703120000_reading_domain`
 //! (status/rating/notes/started_at/finished_at). Queries live in
-//! `routes::reading` and `routes::library`, not here — this module carries
+//! `routes::reading` and `routes::library`, not here; this module carries
 //! the wire DTOs, plus schema-level tests against the migrations.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
@@ -19,7 +19,7 @@ use crate::models::reading_status::ReadingStatus;
 
 /// `GET /api/v1/books/{id}/reading` response: the caller's full reading
 /// state for one book. A missing `reading_state` row (never written) decodes
-/// to all-`None` fields — that all-null shape IS the "unread" domain state,
+/// to all-`None` fields; that all-null shape IS the "unread" domain state,
 /// not an error.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
@@ -33,10 +33,10 @@ pub struct ReadingState {
     pub notes: Option<String>,
     /// `reading_state.progress_pct`, 0-100.
     pub progress_pct: Option<f32>,
-    /// `reading_state.started_at` — stamped when `status` first transitions
+    /// `reading_state.started_at`: stamped when `status` first transitions
     /// to [`ReadingStatus::Reading`]; not re-stamped on later re-entries.
     pub started_at: Option<OffsetDateTime>,
-    /// `reading_state.finished_at` — stamped when `status` transitions to
+    /// `reading_state.finished_at`: stamped when `status` transitions to
     /// [`ReadingStatus::Finished`]; re-stamped on every re-entry.
     pub finished_at: Option<OffsetDateTime>,
     /// `reading_state.last_read_at`.
@@ -400,6 +400,90 @@ mod tests {
         assert!(
             updated > initial,
             "updated_at trigger should advance on UPDATE"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rating_below_range_rejected(pool: PgPool) {
+        let (m_id, user_id) = fixture(&pool, "rating-low").await;
+        let result = sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, rating) VALUES ($1, $2, $3)",
+            user_id,
+            m_id,
+            0_i16,
+        )
+        .execute(&pool)
+        .await;
+        assert!(result.is_err(), "rating = 0 should violate range CHECK");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rating_above_range_rejected(pool: PgPool) {
+        let (m_id, user_id) = fixture(&pool, "rating-high").await;
+        let result = sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, rating) VALUES ($1, $2, $3)",
+            user_id,
+            m_id,
+            6_i16,
+        )
+        .execute(&pool)
+        .await;
+        assert!(result.is_err(), "rating = 6 should violate range CHECK");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rating_boundaries_accepted(pool: PgPool) {
+        let ingestion = ingestion_pool_for(&pool).await;
+        let app = app_pool_for(&pool).await;
+        let (_w1, m1) = insert_work_and_manifestation(&ingestion, "rating-low-bound").await;
+        let (_w2, m2) = insert_work_and_manifestation(&ingestion, "rating-high-bound").await;
+        let (user_id, _) = create_adult_and_basic_auth(&app, "rating-boundaries").await;
+
+        sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, rating) \
+             VALUES ($1, $2, 1), ($1, $3, 5)",
+            user_id,
+            m1,
+            m2,
+        )
+        .execute(&pool)
+        .await
+        .expect("boundary ratings 1 and 5 should be accepted");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn started_at_decode_range_rejects_infinity(pool: PgPool) {
+        let (m_id, user_id) = fixture(&pool, "started-at-infinity").await;
+        let err = sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, started_at) \
+             VALUES ($1, $2, 'infinity')",
+            user_id,
+            m_id,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("infinity must violate the started_at decode-range CHECK");
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("reading_state_started_at_ts_decode_range"),
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn finished_at_decode_range_rejects_infinity(pool: PgPool) {
+        let (m_id, user_id) = fixture(&pool, "finished-at-infinity").await;
+        let err = sqlx::query!(
+            "INSERT INTO reading_state (user_id, manifestation_id, finished_at) \
+             VALUES ($1, $2, 'infinity')",
+            user_id,
+            m_id,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("infinity must violate the finished_at decode-range CHECK");
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("reading_state_finished_at_ts_decode_range"),
         );
     }
 }

@@ -607,8 +607,8 @@ pub(crate) async fn load_reading_state_for_manifestations(
     if manifestation_ids.is_empty() {
         return Ok(out);
     }
-    // Same RLS-scoped transaction as the page query — no `WHERE user_id =
-    // …` predicate here (module invariant, see the file doc comment):
+    // Same RLS-scoped transaction as the page query: no `WHERE user_id = ...`
+    // predicate here (module invariant, see the file doc comment).
     // `reading_state`'s RLS policy already confines this SELECT to the
     // caller's own rows.
     let rows = sqlx::query!(

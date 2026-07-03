@@ -1,5 +1,5 @@
-//! `/api/v1/books/{id}/reading` — per-user reading state: status, rating,
-//! notes, progress, and reading dates.
+//! `/api/v1/books/{id}/reading`, the per-user reading state endpoints:
+//! status, rating, notes, progress, and reading dates.
 //!
 //! THREAT: unlike `metadata` and `shelves`, these handlers do NOT call
 //! `require_not_child()`. Reading state is self-scoped personal data (a
@@ -58,7 +58,7 @@ impl From<ReadingStateRow> for ReadingState {
     }
 }
 
-/// `GET /api/v1/books/{id}/reading` — the caller's reading state for one
+/// `GET /api/v1/books/{id}/reading`: the caller's reading state for one
 /// book.
 ///
 /// # Errors
@@ -121,7 +121,7 @@ async fn get_reading(
 /// an absent key leaves the field unchanged, an explicit `null` clears it.
 #[allow(
     clippy::option_option,
-    reason = "RFC 7396 sparse-update encoding — outer Option distinguishes absent (None) from present-and-null (Some(None))"
+    reason = "RFC 7396 sparse-update encoding: outer Option distinguishes absent (None) from present-and-null (Some(None))"
 )]
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateReadingRequest {
@@ -143,7 +143,7 @@ struct UpdateReadingRequest {
 
 /// Merge a patch onto the fetched-or-default row and apply transition
 /// stamps. Pure function (no I/O) so `patch_reading` stays a thin
-/// fetch/merge/write pipeline — see the handler doc for the stamp rules.
+/// fetch/merge/write pipeline; see the handler doc for the stamp rules.
 fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> ReadingStateRow {
     let status = match req.status {
         None => existing.status,
@@ -191,7 +191,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     }
 }
 
-/// `PATCH /api/v1/books/{id}/reading` — upsert the caller's reading state.
+/// `PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.
 ///
 /// Transition stamps, computed against the fetched-or-default state and
 /// applied based on the resulting `status` (not a before/after diff, so
@@ -309,4 +309,386 @@ async fn patch_reading(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     Ok(axum::Json(ReadingState::from(row)))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{HeaderName, HeaderValue, StatusCode};
+    use serde_json::json;
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    use crate::error::problems;
+    use crate::test_support;
+
+    fn auth(header: &str) -> (HeaderName, HeaderValue) {
+        (
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(header).expect("ascii auth header"),
+        )
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_reading_requires_auth(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let r = server
+            .get(&format!("/api/v1/books/{}/reading", Uuid::new_v4()))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_reading_absent_row_returns_all_null_200(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "get-absent").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "get-absent").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        for field in [
+            "status",
+            "rating",
+            "notes",
+            "progress_pct",
+            "started_at",
+            "finished_at",
+            "last_read_at",
+        ] {
+            assert!(body[field].is_null(), "{field} should be null: {body}");
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_reading_unknown_book_returns_404(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "get-404").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get(&format!("/api/v1/books/{}/reading", Uuid::new_v4()))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_unknown_book_returns_404(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "patch-404").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{}/reading", Uuid::new_v4()))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"status": "reading"}))
+            .await;
+        test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_creates_row_via_upsert(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "upsert").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "upsert").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"status": "want_to_read", "rating": 4, "notes": "looks good"}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert_eq!(body["status"], "want_to_read");
+        assert_eq!(body["rating"], 4);
+        assert_eq!(body["notes"], "looks good");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_partial_update_leaves_other_fields_unchanged(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "partial").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "partial").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"status": "on_hold", "rating": 3, "notes": "original"}))
+            .await;
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"rating": 5}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert_eq!(body["rating"], 5);
+        assert_eq!(
+            body["status"], "on_hold",
+            "unpatched field must be untouched"
+        );
+        assert_eq!(
+            body["notes"], "original",
+            "unpatched field must be untouched"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_explicit_null_clears_field(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "clear").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "clear").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"notes": "temporary"}))
+            .await;
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"notes": null}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert!(body["notes"].is_null());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_status_reading_stamps_started_at_once(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "started-once").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "started-once").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let first = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"status": "reading"}))
+            .await;
+        let first_body: serde_json::Value = first.json();
+        let started_at_1 = first_body["started_at"]
+            .as_str()
+            .expect("started_at set on first reading transition")
+            .to_owned();
+
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+
+        let second = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"status": "reading"}))
+            .await;
+        let second_body: serde_json::Value = second.json();
+        assert_eq!(
+            second_body["started_at"].as_str(),
+            Some(started_at_1.as_str()),
+            "re-entering reading must not re-stamp started_at"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_status_finished_stamps_progress_and_timestamps(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "finished").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "finished").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"status": "finished"}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert_eq!(body["progress_pct"].as_f64(), Some(100.0));
+        assert!(body["finished_at"].is_string());
+        assert!(body["last_read_at"].is_string());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_status_null_after_finished_leaves_timestamps(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "clear-after-finish")
+                .await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "clear-after-finish").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let finished = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"status": "finished"}))
+            .await;
+        let finished_body: serde_json::Value = finished.json();
+        let finished_at = finished_body["finished_at"]
+            .as_str()
+            .expect("finished_at set")
+            .to_owned();
+
+        let cleared = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"status": null}))
+            .await;
+        assert_eq!(
+            cleared.status_code(),
+            StatusCode::OK,
+            "body: {}",
+            cleared.text()
+        );
+        let cleared_body: serde_json::Value = cleared.json();
+        assert!(cleared_body["status"].is_null());
+        assert_eq!(
+            cleared_body["finished_at"].as_str(),
+            Some(finished_at.as_str()),
+            "clearing status must not erase prior transition timestamps"
+        );
+        assert_eq!(cleared_body["progress_pct"].as_f64(), Some(100.0));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_rating_out_of_range_rejected(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "rating-range").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "rating-range").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        for bad_rating in [0, 6] {
+            let r = server
+                .patch(&format!("/api/v1/books/{m_id}/reading"))
+                .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+                .json(&json!({"rating": bad_rating}))
+                .await;
+            test_support::assert_problem(
+                &r,
+                problems::VALIDATION,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_empty_patch_rejected(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "empty-patch").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "empty-patch").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({}))
+            .await;
+        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn cross_user_reading_state_is_isolated(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "isolation").await;
+        let (_a_id, a_basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "isolation-a").await;
+        let (_b_id, b_basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "isolation-b").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&a_basic).0, auth(&a_basic).1)
+            .json(&json!({"status": "finished", "rating": 5}))
+            .await;
+
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&b_basic).0, auth(&b_basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert!(
+            body["status"].is_null(),
+            "user B must not see user A's reading state: {body}"
+        );
+        assert!(body["rating"].is_null());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn child_account_can_read_and_write_own_reading_state(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "child-rw").await;
+        let (child_id, child_basic) =
+            test_support::db::create_child_user_and_basic_auth(&app_pool, "child-rw").await;
+        // Child manifestation visibility is shelf-gated (manifestations_select_child
+        // RLS policy): put the book on the child's own shelf so the RLS-scoped
+        // manifestation probe in the handler sees it.
+        let shelf_id = test_support::db::create_shelf(&app_pool, child_id, "Child shelf").await;
+        test_support::db::add_to_shelf(&app_pool, shelf_id, m_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let patched = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&child_basic).0.clone(), auth(&child_basic).1.clone())
+            .json(&json!({"status": "reading", "rating": 5}))
+            .await;
+        assert_eq!(
+            patched.status_code(),
+            StatusCode::OK,
+            "child must be able to write their own reading state: {}",
+            patched.text()
+        );
+
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&child_basic).0, auth(&child_basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        assert_eq!(body["status"], "reading");
+        assert_eq!(body["rating"], 5);
+    }
 }

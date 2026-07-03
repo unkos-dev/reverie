@@ -1,10 +1,10 @@
-//! `ReadingStatus` — closed value set for the Postgres `reading_status` ENUM
+//! `ReadingStatus`: closed value set for the Postgres `reading_status` ENUM
 //! applied to `reading_state.status`.
 //!
 //! Wire formats:
 //! - Postgres: `reading_status` ENUM type (see migration
 //!   `20260703120000_reading_domain.up.sql`).
-//! - JSON: `snake_case` string —
+//! - JSON: `snake_case` string:
 //!   `"want_to_read"` | `"reading"` | `"on_hold"` | `"finished"` | `"abandoned"`.
 
 /// A user's relationship to one book: where they are in reading it.
@@ -42,8 +42,8 @@ pub enum ReadingStatus {
 
 impl ReadingStatus {
     /// Canonical wire string. Matches the `#[serde(rename_all)]` and
-    /// `#[sqlx(rename_all)]` mappings — `Debug` yields the Rust variant name
-    /// (`"WantToRead"`), which does not match the Postgres / JSON form. Use
+    /// `#[sqlx(rename_all)]` mappings (`Debug` yields the Rust variant name,
+    /// `"WantToRead"`, which does not match the Postgres / JSON form). Use
     /// this for log lines and error messages so the three surfaces stay
     /// consistent.
     pub const fn as_str(self) -> &'static str {
@@ -105,7 +105,7 @@ mod tests {
         // CARVE-OUT: runtime sqlx::query is intentional. The ALTER TYPE is
         // DDL (macros can't validate it), and the SELECT references a
         // variant ('probe_unknown') deliberately not in the prepare-time
-        // schema — the entire point of the test is to exercise the
+        // schema; that is the entire point of the test, to exercise the
         // unknown-variant decode path. Compile-time macros would refuse to
         // validate.
         sqlx::query("ALTER TYPE reading_status ADD VALUE 'probe_unknown'")
