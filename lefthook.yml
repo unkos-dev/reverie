@@ -2,7 +2,7 @@
 #
 # One declarative file owns pre-commit, pre-push, and commit-msg. pre-commit
 # scopes each tool to the staged files it applies to; pre-push runs the backend
-# verification gate; commit-msg runs commitlint.
+# verification gate; commit-msg runs commitlint and the DCO sign-off check.
 #
 # glob_matcher: doublestar makes `**` match zero-or-more directories and lets a
 # slashless `**/*.ext` pattern match by basename at any depth, including files
@@ -97,9 +97,11 @@ pre-commit:
             glob: "frontend/src/**/*.css"
             run: just js::stylelint {staged_files}
 
-# Backend gate, always-run: each command cd's into backend rather than using
-# root:, so a frontend-only push still runs it, and no job carries a glob: key,
-# so the gate fires on every push regardless of what changed.
+# Backend gate, scoped to pushes that touch backend/: the glob gates WHETHER
+# each job runs (same pattern as the impeccable pre-commit job); the commands
+# themselves still cd into backend and validate the whole crate. CI's backend
+# job is path-filtered the same way, so local and CI agree that a docs- or
+# frontend-only push owes no cargo build.
 # piped: true gives stop-on-first-failure; in the jobs array form, array order is
 # the execution order, so fmt -> clippy -> drift means the cheap check fails
 # before the heavy clippy and cargo-test builds run on a constrained host.
@@ -107,10 +109,13 @@ pre-push:
   piped: true
   jobs:
     - name: backend-fmt
+      glob: "backend/**"
       run: cd "$(git rev-parse --show-toplevel)/backend" && cargo fmt --all -- --check
     - name: backend-clippy
+      glob: "backend/**"
       run: cd "$(git rev-parse --show-toplevel)/backend" && cargo clippy --workspace --all-targets --locked -- -D warnings
     - name: backend-drift
+      glob: "backend/**"
       run: cd "$(git rev-parse --show-toplevel)/backend" && SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
       fail_text: "Generated artifacts stale. Regenerate ALL and commit: (cd backend && REGEN=1 cargo test --test gen_openapi --test gen_config_ref --test gen_config_schema)"
 
@@ -120,3 +125,7 @@ commit-msg:
   jobs:
     - name: commitlint
       run: npx --no-install commitlint --edit {1}
+    # Merge commits are exempt, matching scripts/dco-check.sh in CI.
+    - name: dco
+      run: 'head -n1 {1} | grep -q "^Merge " || grep -Eq "^Signed-off-by: .+ <.+@.+>" {1}'
+      fail_text: "Missing Signed-off-by trailer. Commit with git commit -s (see CONTRIBUTING.md, Developer Certificate of Origin)."

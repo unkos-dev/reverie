@@ -1,6 +1,6 @@
 # Contributing to Reverie
 
-Thanks for your interest in contributing. Reverie is a self-hosted ebook library manager built for the open-source self-hosting community. The project is pre-v1.0 and opinionated — not every proposal will fit the direction, and the maintainer may close issues or PRs that are outside scope. If you're unsure whether an idea fits, open a discussion or a lightweight issue before sinking time into code.
+Thanks for your interest in contributing. Reverie is a self-hosted ebook library manager built for the open-source self-hosting community. The project is pre-v1.0 and opinionated: not every proposal will fit the direction, and the maintainer may close issues or PRs that are outside scope. If you're unsure whether an idea fits, open a discussion or a lightweight issue before sinking time into code.
 
 ## Community standards
 
@@ -8,9 +8,17 @@ This project follows the project [Code of Conduct](CODE_OF_CONDUCT.md). Particip
 
 **Security issues are reported privately, not through issues.** Use [GitHub Security Advisories](https://github.com/unkos-dev/reverie/security/advisories/new). See [SECURITY.md](SECURITY.md) for scope, response timeframes, and the project's threat model.
 
-## Contributor License Agreement
+## Developer Certificate of Origin
 
-By submitting a pull request, you agree to assign copyright of your contribution to the project maintainer (John Unkovich). This preserves the option to dual-license in the future while keeping the project AGPL-3.0 for the community. Acceptance is implicit by the act of submitting a PR — no separate signature needed.
+Contributions are accepted under the [Developer Certificate of Origin v1.1](https://developercertificate.org/) (DCO). You keep the copyright of your work; every contribution is licensed to the project under the same AGPL-3.0 terms the project ships under (inbound = outbound). Signing off certifies that you wrote the contribution, or otherwise have the right to submit it under that license.
+
+Add the trailer to each commit with `git commit -s` (or `--signoff`):
+
+```text
+Signed-off-by: Your Name <your-email@example.com>
+```
+
+CI blocks pull requests that contain commits without the trailer, and the repository's commit-msg hook rejects an unsigned commit locally before it is created.
 
 ## Commit messages and branches
 
@@ -20,26 +28,32 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 <type>(<scope>): <description>
 ```
 
-Branch names use the same type prefix: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `perf/`. See [CLAUDE.md](../CLAUDE.md) for the full specification, examples, and breaking-change conventions.
+Branch names use the same type prefix: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `perf/`. Breaking changes append `!` after the type or scope and explain the break in a `BREAKING CHANGE:` footer.
 
 ## Development setup
 
-Simplest path — full stack in Docker:
+Simplest path, full stack in Docker:
 
 ```bash
 git clone https://github.com/unkos-dev/reverie.git
 cd reverie
-docker compose up
+docker compose -f docker/compose.dev.yml up
 ```
 
-Backend only (requires Rust toolchain — MSRV **1.94**, declared as `rust-version` in `backend/Cargo.toml` and enforced in CI):
+> Upgrading a dev checkout from before the postgres:18 mount-layout fix? Drop
+> the old volume first:
+> `docker compose -f docker/compose.dev.yml down && docker volume rm reverie_pgdata`
+> (Compose prefixes volume names with the checkout directory name; if yours
+> differs, `docker volume ls | grep pgdata` finds the actual name.)
+
+Backend only (requires the Rust toolchain; the minimum supported version is declared as `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) and enforced in CI):
 
 ```bash
 cd backend && cargo run
 ```
 
 > Run `cargo run -- migrate` once to initialise the schema before the first
-> `cargo run` — the server verifies the schema and refuses to start if it is
+> `cargo run`; the server verifies the schema and refuses to start if it is
 > fresh or behind.
 
 Frontend only (requires Node.js >=24.15.0):
@@ -48,30 +62,22 @@ Frontend only (requires Node.js >=24.15.0):
 cd frontend && npm install && npm run dev
 ```
 
-See [backend/CLAUDE.md](../backend/CLAUDE.md) and [frontend/CLAUDE.md](../frontend/CLAUDE.md) for subsystem-specific conventions (database roles, testing helpers, linting rules).
+Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/CLAUDE.md](../backend/CLAUDE.md) and [frontend/CLAUDE.md](../frontend/CLAUDE.md).
 
 ### Pre-commit prerequisites
 
-Hooks are installed by lefthook through the `prepare` npm script, so a fresh
-clone wires them on `npm ci`. If you cloned before lefthook replaced husky and
-still have husky's local `core.hooksPath`, lefthook refuses to install until you
-clear it once:
+Git hooks are managed by lefthook and installed through the `prepare` npm script, so a fresh clone wires them on `npm ci`.
+
+The lefthook pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit; CI pins the enforced version in [`ci.yml`](workflows/ci.yml), and the command below installs that pin:
 
 ```bash
-git config --local --unset core.hooksPath
-```
-
-The lefthook pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit (version pinned to **v1.7.12** in [`.github/workflows/ci.yml`](workflows/ci.yml)):
-
-```bash
-# Linux + macOS — pinned binary (Homebrew's formula is not version-pinned,
-# so it can drift from the v1.7.12 lint chain enforced in CI; download the
-# release tarball directly to guarantee parity).
+# Linux + macOS. Download the release tarball directly: Homebrew's formula is
+# not version-pinned, so it can drift from the lint chain enforced in CI.
 curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_$(uname -s | tr 'A-Z' 'a-z')_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz" \
   | tar -xz -C "$HOME/.local/bin" actionlint
 ```
 
-The hook also runs [`yamllint`](https://www.yamllint.com/) on changed `*.{yml,yaml}` files (version pinned to **1.33.0** in CI). It is pip-installable:
+The hook also runs [`yamllint`](https://www.yamllint.com/) on changed `*.{yml,yaml}` files (version pinned in CI). It is pip-installable:
 
 ```bash
 pipx install yamllint==1.33.0
@@ -85,21 +91,21 @@ cargo install just   # or: brew install just, your distro package manager, https
 
 If `actionlint`, `yamllint`, or `just` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
 
-Workflow files are additionally scanned in CI by [zizmor](https://github.com/zizmorcore/zizmor) (the merge-blocking `workflow-security` job) for GitHub Actions security issues — credential persistence, template injection, cache poisoning, and dangerous triggers. It is a CI-only tool, so there is nothing to install locally; documented suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
+Workflow files are additionally scanned in CI by [zizmor](https://github.com/zizmorcore/zizmor) (the merge-blocking `workflow-security` job) for GitHub Actions security issues: credential persistence, template injection, cache poisoning, and dangerous triggers. It is a CI-only tool, so there is nothing to install locally; documented suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 
 ## Testing requirements
 
 **Tests are mandatory.** No feature or bug fix is complete without tests. Follow the test-first pattern:
 
-- **Happy path** — expected behaviour works
-- **Negative cases** — invalid input is rejected, error paths are exercised
-- **Edge cases** — where the behaviour is non-obvious
+- **Happy path**: expected behaviour works
+- **Negative cases**: invalid input is rejected, error paths are exercised
+- **Edge cases**: where the behaviour is non-obvious
 
-PRs without tests will not be approved. See [CLAUDE.md](../CLAUDE.md) Hard Rule 5 for the full policy.
+PRs without tests will not be approved.
 
 ## Accessibility
 
-Reverie targets **WCAG 2.2 Level AA** as a design invariant. The process — what the automated gate covers, what the manual audit owns, the audit cadence, and how the one accepted brand carve-out (Reverie Gold on large CTAs) is documented — is recorded in [`adr/2026-06-05-accessibility-review-process.md`](../adr/2026-06-05-accessibility-review-process.md).
+Reverie targets **WCAG 2.2 Level AA** as a design invariant. The review process is recorded in [`adr/2026-06-05-accessibility-review-process.md`](../adr/2026-06-05-accessibility-review-process.md): what the automated gate covers, what the manual audit owns, the audit cadence, and how the one accepted brand carve-out (Reverie Gold on large CTAs) is documented.
 
 For frontend changes, the `a11y` CI job runs axe-core against the design showcase and fails on any WCAG 2.2 AA violation outside the documented allowlist (`frontend/scripts/a11y/allowlist.mjs`). Run it locally with `npm run a11y` (from `frontend/`, with the dev server up). UI-touching PRs also carry an accessibility checklist in the PR template.
 
@@ -108,8 +114,8 @@ For frontend changes, the `a11y` CI job runs axe-core against the design showcas
 1. Create a feature branch from `main` using the appropriate prefix
 2. Write tests for your changes (see above)
 3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test`, `npm run lint`, `npm test`, `npm run build` as applicable)
-4. Open the PR — it will load a template; fill in **Summary**, **Why** (if motivation isn't obvious from the diff), and **Test plan**
-5. Labels auto-apply based on paths touched — no manual labelling needed
+4. Open the PR and fill in the template's **Summary**, **Why** (if motivation isn't obvious from the diff), and **Test plan**
+5. Labels auto-apply based on paths touched; no manual labelling needed
 6. Wait for maintainer review and approval
 
 ## Third-party AI code review
@@ -118,13 +124,13 @@ This repository uses third-party AI code reviewers that auto-comment on pull req
 
 Active reviewers:
 
-- [Greptile](https://www.greptile.com) — graph-based codebase context. See [security disclosures](https://www.greptile.com/security)
-- [CodeRabbit](https://www.coderabbit.ai) — line-level inline review with formal GitHub PR Review status. See [security and trust](https://www.coderabbit.ai/trust-center)
+- [Greptile](https://www.greptile.com): graph-based codebase context. See [security disclosures](https://www.greptile.com/security)
+- [CodeRabbit](https://www.coderabbit.ai): line-level inline review with formal GitHub PR Review status. See [security and trust](https://www.coderabbit.ai/trust-center)
 
 General data handling (both reviewers):
 
 - Both are managed SaaS providers; inference runs through third-party LLM platforms (OpenAI, Anthropic, Google). Repository code is cached on their infrastructure while their GitHub Apps have access; cache is deleted on App uninstall per each provider's retention policy
-- Reverie is AGPL-3.0 and the code these reviewers receive is already public, so the marginal exposure is near-zero — these disclosures exist for transparency, not because anything sensitive is being shared
+- Reverie is AGPL-3.0 and the code these reviewers receive is already public, so the marginal exposure is near zero; the disclosures exist for transparency
 
 Reviewer-specific notes:
 
