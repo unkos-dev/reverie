@@ -404,14 +404,20 @@ async fn apply_canonical_batch(
 ///
 /// Returns an error if the manifestation does not exist or the query fails.
 pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Result<Snapshot> {
-    // `first_author` reads the denormalized, role='author'-only sort-name
-    // column instead of a correlated subquery over any contributor role;
-    // an editor- or translator-only work no longer masquerades as its
-    // "first author" for lookup-key purposes.
+    // `first_author` must be the display-form `a.name`, not the denormalized
+    // `first_author_sort_name` column: the lookup key feeds external source
+    // queries (Hardcover ilike, Google Books inauthor:) that match display
+    // names, and a sort-form "Surname, Given" string never matches there.
+    // The role filter keeps an editor- or translator-only work from
+    // masquerading as its "first author" for lookup-key purposes.
     let row = sqlx::query!(
         "SELECT m.work_id, m.isbn_10, m.isbn_13, m.publisher, m.pub_date, m.pages, \
                 w.title, w.description, w.language, w.subtitle, \
-                w.first_author_sort_name AS first_author \
+                (SELECT a.name FROM work_authors wa \
+                 JOIN authors a ON a.id = wa.author_id \
+                 WHERE wa.work_id = w.id AND wa.role = 'author' \
+                 ORDER BY wa.position \
+                 LIMIT 1) AS first_author \
          FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
          WHERE m.id = $1",
@@ -1185,6 +1191,84 @@ mod tests {
         .await
         .unwrap();
         (work_id, manifestation_id)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn load_snapshot_lookup_key_uses_author_display_name(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let title = format!("Snapshot Vocab {marker}");
+        let sort_form = format!("{marker}, Alpha Writer");
+        let display_form = format!("Alpha Writer {marker}");
+        let work_id = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title, first_author_sort_name) \
+             VALUES ($1, $1, $2) RETURNING id",
+            title,
+            sort_form,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let path = format!("/tmp/snap-{marker}.epub");
+        let hash = format!("snap-hash-{marker}");
+        let m_id = sqlx::query_scalar!(
+            "INSERT INTO manifestations \
+               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING id",
+            work_id,
+            path,
+            hash,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let editor_name = format!("Edit Person {marker}");
+        let editor_sort = format!("{marker}, Edit Person");
+        let editor_id = sqlx::query_scalar!(
+            "INSERT INTO authors (name, sort_name) VALUES ($1, $2) RETURNING id",
+            editor_name,
+            editor_sort,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let author_id = sqlx::query_scalar!(
+            "INSERT INTO authors (name, sort_name) VALUES ($1, $2) RETURNING id",
+            display_form,
+            sort_form,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        // Editor sits at position 0: the role filter must skip it and pick
+        // the position-1 author row.
+        sqlx::query!(
+            "INSERT INTO work_authors (work_id, author_id, role, position) \
+             VALUES ($1, $2, 'editor', 0), ($1, $3, 'author', 1)",
+            work_id,
+            editor_id,
+            author_id,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let snapshot = load_snapshot(&pool, m_id).await.unwrap();
+        match snapshot.lookup_key {
+            Some(LookupKey::TitleAuthor { title: t, author }) => {
+                assert_eq!(t, title);
+                assert_eq!(
+                    author, display_form,
+                    "lookup key must carry the display-form name external \
+                     sources match on, not first_author_sort_name"
+                );
+            }
+            other => panic!("expected TitleAuthor lookup key, got {other:?}"),
+        }
     }
 
     /// Build an `/api/books?bibkeys=ISBN:X&jscmd=data` mock response.

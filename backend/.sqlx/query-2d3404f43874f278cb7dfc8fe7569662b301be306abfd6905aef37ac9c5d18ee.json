@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.work_id, m.isbn_10, m.isbn_13, m.publisher, m.pub_date, m.pages, w.title, w.description, w.language, w.subtitle, w.first_author_sort_name AS first_author FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+  "query": "SELECT m.work_id, m.isbn_10, m.isbn_13, m.publisher, m.pub_date, m.pages, w.title, w.description, w.language, w.subtitle, (SELECT a.name FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = w.id AND wa.role = 'author' ORDER BY wa.position LIMIT 1) AS first_author FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1",
   "describe": {
     "columns": [
       {
@@ -117,12 +117,7 @@
         "ordinal": 10,
         "name": "first_author",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "works",
-            "name": "first_author_sort_name"
-          }
-        }
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -141,8 +136,8 @@
       true,
       true,
       true,
-      true
+      null
     ]
   },
-  "hash": "8bf475bba6b7d834fd508f451764f3de99697d8b369178d3c4f40a2a73345491"
+  "hash": "2d3404f43874f278cb7dfc8fe7569662b301be306abfd6905aef37ac9c5d18ee"
 }
