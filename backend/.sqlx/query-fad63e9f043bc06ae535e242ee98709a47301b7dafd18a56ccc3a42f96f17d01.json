@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET title = $1, sort_title = $2, subtitle = $3, description = $4, language = $5, title_version_id = $6, subtitle_version_id = $7, description_version_id = $8, language_version_id = $9 WHERE id = $10",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fad63e9f043bc06ae535e242ee98709a47301b7dafd18a56ccc3a42f96f17d01"
+}

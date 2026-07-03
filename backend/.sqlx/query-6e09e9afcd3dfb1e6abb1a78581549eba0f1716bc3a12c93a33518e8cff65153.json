@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET first_author_sort_name = (SELECT a.sort_name FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = $1 AND wa.role = 'author' ORDER BY wa.position ASC LIMIT 1) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6e09e9afcd3dfb1e6abb1a78581549eba0f1716bc3a12c93a33518e8cff65153"
+}

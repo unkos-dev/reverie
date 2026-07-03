@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) VALUES ($1, 'opf', $2, '[]'::jsonb, '\\x00'::bytea, 'title', 0.5) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3c2b93d2c36568c0573799d612bd37a84b630851cce53104468202215e334a28"
+}
