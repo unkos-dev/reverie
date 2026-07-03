@@ -883,6 +883,7 @@ async fn apply_contributors_patch(
     .map_err(|e| AppError::Internal(e.into()))?;
 
     let mut author_touched = false;
+    let mut touched = false;
 
     for (role, maybe_names) in [
         ("author", author),
@@ -892,6 +893,7 @@ async fn apply_contributors_patch(
         let Some(names) = maybe_names else {
             continue; // absent from the patch: this role is untouched.
         };
+        touched = true;
         if role == "author" {
             author_touched = true;
         }
@@ -989,6 +991,12 @@ async fn apply_contributors_patch(
     work::refresh_first_author_sort(tx, work_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    // The library path renders from the primary author, so a contributor
+    // change must enqueue writeback like every scalar field in this handler.
+    if touched {
+        enqueue_writeback(tx, manifestation_id, "contributors").await?;
+    }
     Ok(())
 }
 
@@ -2688,6 +2696,51 @@ mod tests {
         .await
         .expect("fetch journal row");
         assert_eq!(journal_value, serde_json::json!([name_a, name_b]));
+
+        let jobs: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("count writeback jobs");
+        assert_eq!(
+            jobs, 1,
+            "contributor edit re-renders the library path; exactly one \
+             writeback job must ride the same transaction"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_contributors_empty_object_enqueues_no_writeback(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"contributors": {}}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        let jobs: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("count writeback jobs");
+        assert_eq!(jobs, 0, "role-free patch touches nothing; no writeback");
     }
 
     #[sqlx::test(migrations = "./migrations")]
