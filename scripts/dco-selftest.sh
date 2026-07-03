@@ -61,4 +61,8 @@ commit a.txt -m "chore: unsigned"
 git -C "${tmp}" tag unsigned
 expect "unsigned commit rejected" 1 base unsigned
 
+# Fail-closed paths: bad input must never pass as an empty commit list.
+expect "invalid ref fails closed" 2 base no-such-ref
+expect "empty base fails closed" 2 "" signed
+
 exit "${fail}"
