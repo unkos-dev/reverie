@@ -1738,8 +1738,9 @@ mod tests {
         );
     }
 
-    /// `work_authors.source_version_id` must be wired to the `creators`
-    /// journal row so authors on the work trace back to their draft.
+    /// `work_authors.source_version_id` must be wired to the per-role
+    /// `contributors.author` journal row so authors on the work trace back
+    /// to their draft.
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_work_authors_source_version_id(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -1764,7 +1765,8 @@ mod tests {
             .join("McAuthor, Test/The Integration Test.epub");
 
         // Every work_author row for this work must carry a source_version_id
-        // pointing at a metadata_versions row with field_name='creators'.
+        // pointing at a metadata_versions row with
+        // field_name='contributors.author'.
         let dest_str = dest.to_str().unwrap();
         let rows = sqlx::query!(
             "SELECT wa.author_id, wa.source_version_id \
@@ -1793,8 +1795,8 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(
-                field_name, "creators",
-                "source_version_id should reference a 'creators' journal row"
+                field_name, "contributors.author",
+                "source_version_id should reference a 'contributors.author' journal row"
             );
         }
     }

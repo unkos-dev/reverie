@@ -513,22 +513,14 @@ async fn list_endpoint_sort_author_translator_only_work_sorts_into_null_bucket(p
     insert_book_with_author(&ingestion_pool, "g", "Neuromancer", "Gibson, William").await;
     let (translator_work_id, _translator_m_id) =
         insert_book(&ingestion_pool, "t", "Translated Only").await;
-    let translator_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO authors (name, sort_name) VALUES ($1, $1) RETURNING id",
-        "Aardvark, Ann",
-    )
-    .fetch_one(&ingestion_pool)
-    .await
-    .expect("insert translator");
-    sqlx::query!(
-        "INSERT INTO work_authors (work_id, author_id, role, position) \
-         VALUES ($1, $2, 'translator'::author_role, 0)",
+    test_support::db::insert_contributor(
+        &ingestion_pool,
         translator_work_id,
-        translator_id,
+        "Aardvark, Ann",
+        "translator",
+        0,
     )
-    .execute(&ingestion_pool)
-    .await
-    .expect("insert translator work_authors");
+    .await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
     let response = server
@@ -885,22 +877,7 @@ async fn detail_and_list_endpoints_exclude_editor_from_authors(pool: PgPool) {
             .fetch_one(&ingestion_pool)
             .await
             .unwrap();
-    let editor_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO authors (name, sort_name) VALUES ($1, $1) RETURNING id",
-        "Roe, Pat",
-    )
-    .fetch_one(&ingestion_pool)
-    .await
-    .expect("insert editor");
-    sqlx::query!(
-        "INSERT INTO work_authors (work_id, author_id, role, position) \
-         VALUES ($1, $2, 'editor'::author_role, 1)",
-        work_id,
-        editor_id,
-    )
-    .execute(&ingestion_pool)
-    .await
-    .expect("insert editor work_authors");
+    test_support::db::insert_contributor(&ingestion_pool, work_id, "Roe, Pat", "editor", 1).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 

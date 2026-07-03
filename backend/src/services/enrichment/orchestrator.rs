@@ -2189,6 +2189,114 @@ mod tests {
         assert_eq!(outcome.staged, 0);
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn apply_canonical_batch_applies_pages(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_enrich_fixture(&pool, "9781857231380", &marker).await;
+
+        let new = SourceResult {
+            field_name: "pages".into(),
+            raw_value: serde_json::json!(353),
+            match_type: "isbn".into(),
+        };
+
+        let mut tx = pool.begin().await.unwrap();
+        let id_new = upsert_journal_row(&mut tx, m_id, "googlebooks", &new)
+            .await
+            .unwrap();
+        let new_hash = value_hash::value_hash(&new.field_name, &new.raw_value);
+        let mut per_field: PerFieldRows = std::collections::HashMap::new();
+        per_field.insert(
+            "pages".into(),
+            vec![(
+                "googlebooks".into(),
+                PolicyInputRow {
+                    id: id_new,
+                    value_hash: new_hash,
+                },
+            )],
+        );
+        let snapshot = Snapshot {
+            manifestation_id: m_id,
+            work_id,
+            lookup_key: None,
+            canonical: CanonicalState::default(),
+        };
+        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(
+            outcome.applied, 1,
+            "positive pages on empty canonical must Apply"
+        );
+        let row = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.pages, Some(353));
+        assert_eq!(row.pages_version_id, Some(id_new));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn apply_canonical_batch_skips_non_positive_pages(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_enrich_fixture(&pool, "9781857231397", &marker).await;
+
+        let new = SourceResult {
+            field_name: "pages".into(),
+            raw_value: serde_json::json!(0),
+            match_type: "isbn".into(),
+        };
+
+        let mut tx = pool.begin().await.unwrap();
+        let id_new = upsert_journal_row(&mut tx, m_id, "googlebooks", &new)
+            .await
+            .unwrap();
+        let new_hash = value_hash::value_hash(&new.field_name, &new.raw_value);
+        let mut per_field: PerFieldRows = std::collections::HashMap::new();
+        per_field.insert(
+            "pages".into(),
+            vec![(
+                "googlebooks".into(),
+                PolicyInputRow {
+                    id: id_new,
+                    value_hash: new_hash,
+                },
+            )],
+        );
+        let snapshot = Snapshot {
+            manifestation_id: m_id,
+            work_id,
+            lookup_key: None,
+            canonical: CanonicalState::default(),
+        };
+        let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(
+            outcome.applied, 0,
+            "non-positive pages must skip the canonical write"
+        );
+        let row = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.pages, None);
+        assert_eq!(row.pages_version_id, None);
+    }
+
     /// `apply_field` returning `Ok(false)` for a non-string JSON value
     /// must skip without inflating counters or enqueuing writebacks; the
     /// inner loop must `continue` to the next source for the same field.
