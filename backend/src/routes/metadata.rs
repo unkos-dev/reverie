@@ -2673,8 +2673,8 @@ mod tests {
         .expect("fetch sort name");
         assert_eq!(
             sort_name.as_deref(),
-            Some(name_a.as_str()),
-            "single-word test names have no space, so sort_name == name; \
+            Some(format!("{marker}, Alpha Author").as_str()),
+            "sort form moves the final name token to the front; \
              refresh_first_author_sort must have run"
         );
 
