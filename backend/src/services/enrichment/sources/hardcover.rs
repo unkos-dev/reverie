@@ -273,7 +273,7 @@ fn map_book(book: &Value, match_type: &str) -> Vec<SourceResult> {
             .collect();
         if !authors.is_empty() {
             out.push(SourceResult {
-                field_name: "creators".into(),
+                field_name: "contributors.author".into(),
                 raw_value: json!(authors),
                 match_type: match_type.into(),
             });
@@ -385,7 +385,7 @@ mod tests {
 
         let fields: Vec<&str> = out.iter().map(|r| r.field_name.as_str()).collect();
         assert!(fields.contains(&"title"));
-        assert!(fields.contains(&"creators"));
+        assert!(fields.contains(&"contributors.author"));
         assert!(fields.contains(&"isbn_13"));
         assert!(fields.contains(&"language"));
         assert!(fields.contains(&"publisher"));
