@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO field_locks (manifestation_id, entity_type, field_name) VALUES ($1, 'work', 'contributors.author')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "43e628c1da7253f44245de6e47321b94380384e01de96de7cb41679d93aaec1f"
+}

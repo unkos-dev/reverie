@@ -293,8 +293,10 @@ fn parse_date(s: &str) -> Option<time::Date> {
 }
 
 /// Generate sort name: "J. R. R. Tolkien" → "Tolkien, J. R. R."
-/// Single-word names are returned as-is.
-fn generate_sort_name(name: &str) -> String {
+/// Single-word names are returned as-is. Shared with the PATCH contributors
+/// path (`routes::metadata`) so manually-entered names sort the same way as
+/// extracted ones; do not duplicate this logic elsewhere.
+pub(crate) fn generate_sort_name(name: &str) -> String {
     let name = name.trim();
     name.rfind(' ').map_or_else(
         || name.to_string(),

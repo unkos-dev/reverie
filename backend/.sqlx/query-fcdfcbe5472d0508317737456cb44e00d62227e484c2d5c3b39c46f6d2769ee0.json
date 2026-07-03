@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pages",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pages_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages_version_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "fcdfcbe5472d0508317737456cb44e00d62227e484c2d5c3b39c46f6d2769ee0"
+}

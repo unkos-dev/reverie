@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.name, wa.position FROM work_authors wa JOIN authors a ON a.id = wa.author_id WHERE wa.work_id = $1 AND wa.role = 'author' ORDER BY wa.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "work_authors",
+            "name": "position"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "417ac37eeaa313d4125ccdd4074c3bb524bcc314d813e65f8fce0827422d140e"
+}

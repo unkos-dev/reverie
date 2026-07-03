@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET pages = NULL, pages_version_id = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d27aef025d6e03368eb3ec8424035521da695618ec0dfacc3c0c779a90587a44"
+}

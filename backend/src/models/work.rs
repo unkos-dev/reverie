@@ -264,7 +264,7 @@ pub async fn refresh_first_author_sort(
     Ok(())
 }
 
-async fn find_or_create_author(
+pub(crate) async fn find_or_create_author(
     conn: &mut PgConnection,
     name: &str,
     sort_name: &str,
