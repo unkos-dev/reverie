@@ -892,6 +892,9 @@ jobs:
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
 
+      - name: DCO gate self-test
+        run: just infra::dco-selftest
+
       - name: Dockerfile lint (hadolint)
         run: just infra::hadolint
 

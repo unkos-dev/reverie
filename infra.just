@@ -40,6 +40,11 @@ prose:
 vale-selftest:
     scripts/vale-selftest.sh
 
+# Self-test the DCO gate (dco-check.sh verdicts on fixture histories).
+[group('infra')]
+dco-selftest:
+    scripts/dco-selftest.sh
+
 # Test the vale-lint.sh scope policy (include/exclude classification).
 [group('infra')]
 vale-scope-test:
@@ -79,7 +84,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test greptile-config lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest greptile-config lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
