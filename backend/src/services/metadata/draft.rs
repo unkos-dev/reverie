@@ -240,6 +240,7 @@ mod tests {
         ExtractedMetadata {
             title: Some("Draft Test Title".into()),
             sort_title: Some("draft test title".into()),
+            subtitle: None,
             description: Some("A description".into()),
             language: Some("en".into()),
             creators: vec![ExtractedCreator {
@@ -247,6 +248,8 @@ mod tests {
                 sort_name: "Writer, Test".into(),
                 role: "author".into(),
             }],
+            unmapped_contributors: vec![],
+            pages: None,
             publisher: Some("Test Publisher".into()),
             pub_date: None,
             isbn: Some(IsbnResult {

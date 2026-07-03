@@ -692,9 +692,12 @@ async fn commit_ingest(
             ExtractedMetadata {
                 title: Some(title.clone()),
                 sort_title: Some(title),
+                subtitle: None,
                 description: None,
                 language: None,
                 creators: Vec::new(),
+                unmapped_contributors: Vec::new(),
+                pages: None,
                 publisher: None,
                 pub_date: None,
                 isbn: None,

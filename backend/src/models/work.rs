@@ -393,6 +393,7 @@ mod tests {
         ExtractedMetadata {
             title: Some(title.into()),
             sort_title: Some(title.to_lowercase()),
+            subtitle: None,
             description: None,
             language: Some("en".into()),
             creators: vec![ExtractedCreator {
@@ -400,6 +401,8 @@ mod tests {
                 sort_name: format!("{author}, Test"),
                 role: "author".into(),
             }],
+            unmapped_contributors: vec![],
+            pages: None,
             publisher: None,
             pub_date: None,
             isbn: None,
