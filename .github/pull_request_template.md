@@ -30,19 +30,19 @@ adr/2026-06-05-accessibility-review-process.md. -->
 - [ ] Any new colour is already a design token (no arbitrary hex).
 - [ ] Reverie Alarm appears only in one of its two carve-out contexts.
 
-<!-- Closes the tracking issue on merge (CLAUDE.md hard rule #9). Replace the
-number; remove the line only if this PR genuinely has no Linear issue. -->
+<!-- Closes the tracking issue on merge. Replace the number; remove the line
+only if this PR genuinely has no tracking issue. -->
 
 Closes UNK-XXX
 
 <!--
-Reminders (see CLAUDE.md for the full conventions):
+Reminders (see CONTRIBUTING.md for the full conventions):
 
 - Title MUST follow Conventional Commits: <type>(<scope>): <description>
   Types: feat, fix, refactor, docs, chore, test, perf
-- Include the Linear issue ID in the branch name when applicable
+- Include the tracking issue ID in the branch name when applicable
   (e.g. feat/unk-42-epub-import) and reference it in the body where relevant.
-- Tests are mandatory per CLAUDE.md hard rule #5 — happy path, negative
-  cases, and non-obvious edge cases. PRs without tests will not be approved.
-- Wait for explicit user approval before merging (CLAUDE.md hard rule #1).
+- Tests are mandatory: happy path, negative cases, and non-obvious edge
+  cases. PRs without tests will not be approved.
+- Maintainer review and approval gate every merge.
 -->
