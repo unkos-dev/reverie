@@ -3186,7 +3186,7 @@ mod tests {
             "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
             m_id,
         )
-        .fetch_one(&app_pool)
+        .fetch_one(&ing_pool)
         .await
         .expect("fetch manifestation");
         assert_eq!(row.pages, Some(353));
@@ -3203,7 +3203,7 @@ mod tests {
             "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
             m_id,
         )
-        .fetch_one(&app_pool)
+        .fetch_one(&ing_pool)
         .await
         .expect("fetch manifestation after clear");
         assert!(row.pages.is_none());
