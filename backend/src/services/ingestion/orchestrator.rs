@@ -725,21 +725,24 @@ async fn commit_ingest(
         .map_or((None, None), |i| (i.isbn_10.clone(), i.isbn_13.clone()));
     let publisher = extracted.as_ref().and_then(|m| m.publisher.clone());
     let pub_date = extracted.as_ref().and_then(|m| m.pub_date);
+    let pages = extracted.as_ref().and_then(|m| m.pages);
 
     sqlx::query!(
         "UPDATE manifestations SET \
-            isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, \
-            isbn_10_version_id = $5, isbn_13_version_id = $6, \
-            publisher_version_id = $7, pub_date_version_id = $8 \
-         WHERE id = $9",
+            isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, pages = $5, \
+            isbn_10_version_id = $6, isbn_13_version_id = $7, \
+            publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10 \
+         WHERE id = $11",
         isbn_10.as_deref(),
         isbn_13.as_deref(),
         publisher.as_deref(),
         pub_date,
+        pages,
         draft_ids.get("isbn_10").copied(),
         draft_ids.get("isbn_13").copied(),
         draft_ids.get("publisher").copied(),
         draft_ids.get("pub_date").copied(),
+        draft_ids.get("pages").copied(),
         manifestation_id,
     )
     .execute(&mut *tx)
@@ -1007,21 +1010,24 @@ mod tests {
 
         w.start_file("OEBPS/content.opf", default).unwrap();
         w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+            br##"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata>
-    <dc:title>The Integration Test</dc:title>
+    <dc:title id="t1">The Integration Test</dc:title>
+    <dc:title id="t2">A Subtitle For Testing</dc:title>
+    <meta refines="#t2" property="title-type">subtitle</meta>
     <dc:creator opf:role="aut">Test McAuthor</dc:creator>
     <dc:language>en</dc:language>
     <dc:identifier>urn:isbn:9780306406157</dc:identifier>
     <dc:publisher>Test Press</dc:publisher>
     <dc:description>A book for testing metadata extraction</dc:description>
+    <meta property="schema:numberOfPages">327</meta>
     <meta name="calibre:series" content="Test Series"/>
     <meta name="calibre:series_index" content="1"/>
   </metadata>
   <manifest/>
   <spine/>
-</package>"#,
+</package>"##,
         )
         .unwrap();
 
@@ -1173,6 +1179,32 @@ mod tests {
         .unwrap();
         assert_eq!(isbn.as_deref(), Some("9780306406157"));
 
+        // Verify subtitle landed on the work with its pointer set.
+        let (subtitle, subtitle_version_id) = sqlx::query!(
+            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
+             JOIN manifestations m ON m.work_id = w.id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.subtitle, r.subtitle_version_id))
+        .unwrap();
+        assert_eq!(subtitle.as_deref(), Some("A Subtitle For Testing"));
+        assert!(subtitle_version_id.is_some());
+
+        // Verify page count landed on the manifestation with its pointer set.
+        let (pages, pages_version_id) = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.pages, r.pages_version_id))
+        .unwrap();
+        assert_eq!(pages, Some(327));
+        assert!(pages_version_id.is_some());
+
         // Verify metadata_versions drafts were created
         let draft_count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM metadata_versions mv \
@@ -1199,6 +1231,55 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(series_count, 1, "expected series link");
+    }
+
+    /// An EPUB with no declared subtitle refine or `numberOfPages` meta must
+    /// leave all four fields (both canonical columns and both pointers) NULL
+    /// — no colon-split heuristics, no defaulting to zero.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_without_subtitle_or_pages_leaves_all_four_null(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+
+        let source = ingestion.path().join("Tolkien - The Hobbit.epub");
+        std::fs::write(&source, make_minimal_epub()).unwrap();
+
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+
+        let dest = library.path().join("Tolkien/The Hobbit.epub");
+        let dest_str = dest.to_str().unwrap();
+
+        let (subtitle, subtitle_version_id) = sqlx::query!(
+            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
+             JOIN manifestations m ON m.work_id = w.id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.subtitle, r.subtitle_version_id))
+        .unwrap();
+        assert!(subtitle.is_none());
+        assert!(subtitle_version_id.is_none());
+
+        let (pages, pages_version_id) = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.pages, r.pages_version_id))
+        .unwrap();
+        assert!(pages.is_none());
+        assert!(pages_version_id.is_none());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1481,6 +1562,8 @@ mod tests {
         struct Invariant {
             title: Option<String>,
             title_version_id: Option<uuid::Uuid>,
+            subtitle: Option<String>,
+            subtitle_version_id: Option<uuid::Uuid>,
             language: Option<String>,
             language_version_id: Option<uuid::Uuid>,
             publisher: Option<String>,
@@ -1488,15 +1571,19 @@ mod tests {
             pub_date_version_id: Option<uuid::Uuid>,
             isbn_13: Option<String>,
             isbn_13_version_id: Option<uuid::Uuid>,
+            pages: Option<i32>,
+            pages_version_id: Option<uuid::Uuid>,
         }
         let dest_str = dest.to_str().unwrap();
         let inv = sqlx::query_as!(
             Invariant,
             "SELECT w.title AS \"title?\", w.title_version_id, \
+                    w.subtitle, w.subtitle_version_id, \
                     w.language, w.language_version_id, \
                     m.publisher, m.publisher_version_id, \
                     m.pub_date_version_id, \
-                    m.isbn_13, m.isbn_13_version_id \
+                    m.isbn_13, m.isbn_13_version_id, \
+                    m.pages, m.pages_version_id \
              FROM manifestations m \
              JOIN works w ON w.id = m.work_id \
              WHERE m.file_path = $1",
@@ -1508,6 +1595,8 @@ mod tests {
         let Invariant {
             title,
             title_version_id: title_ptr,
+            subtitle,
+            subtitle_version_id: subtitle_ptr,
             language,
             language_version_id: language_ptr,
             publisher,
@@ -1515,11 +1604,19 @@ mod tests {
             pub_date_version_id: pub_date_ptr,
             isbn_13,
             isbn_13_version_id: isbn_13_ptr,
+            pages,
+            pages_version_id: pages_ptr,
         } = inv;
 
         // Invariant: non-NULL canonical value ⇒ non-NULL pointer.
         if title.is_some() {
             assert!(title_ptr.is_some(), "title set but title_version_id NULL");
+        }
+        if subtitle.is_some() {
+            assert!(
+                subtitle_ptr.is_some(),
+                "subtitle set but subtitle_version_id NULL"
+            );
         }
         if language.is_some() {
             assert!(
@@ -1539,14 +1636,19 @@ mod tests {
                 "isbn_13 set but isbn_13_version_id NULL"
             );
         }
+        if pages.is_some() {
+            assert!(pages_ptr.is_some(), "pages set but pages_version_id NULL");
+        }
 
         // Every non-NULL pointer must reference a real source='opf' row.
         for pointer in [
             title_ptr,
+            subtitle_ptr,
             language_ptr,
             publisher_ptr,
             pub_date_ptr,
             isbn_13_ptr,
+            pages_ptr,
         ]
         .into_iter()
         .flatten()

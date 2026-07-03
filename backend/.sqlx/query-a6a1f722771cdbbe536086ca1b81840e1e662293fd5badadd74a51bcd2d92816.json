@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT w.title AS \"title?\", w.title_version_id, w.language, w.language_version_id, m.publisher, m.publisher_version_id, m.pub_date_version_id, m.isbn_13, m.isbn_13_version_id FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.file_path = $1",
+  "query": "SELECT w.title AS \"title?\", w.title_version_id, w.subtitle, w.subtitle_version_id, w.language, w.language_version_id, m.publisher, m.publisher_version_id, m.pub_date_version_id, m.isbn_13, m.isbn_13_version_id, m.pages, m.pages_version_id FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.file_path = $1",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,28 @@
       },
       {
         "ordinal": 2,
+        "name": "subtitle",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subtitle_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "language",
         "type_info": "Text",
         "origin": {
@@ -37,7 +59,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "language_version_id",
         "type_info": "Uuid",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "publisher",
         "type_info": "Text",
         "origin": {
@@ -59,7 +81,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "publisher_version_id",
         "type_info": "Uuid",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "pub_date_version_id",
         "type_info": "Uuid",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -92,13 +114,35 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "isbn_13_version_id",
         "type_info": "Uuid",
         "origin": {
           "Table": {
             "table": "manifestations",
             "name": "isbn_13_version_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "pages",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "pages_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages_version_id"
           }
         }
       }
@@ -117,8 +161,12 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "2dff0f83a617704a03aac3ff285793365bc802da383efaaf154f95f1ef43db30"
+  "hash": "a6a1f722771cdbbe536086ca1b81840e1e662293fd5badadd74a51bcd2d92816"
 }
