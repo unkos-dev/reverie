@@ -105,7 +105,7 @@ fn starts_with_ci(haystack: &[u8], needle: &[u8]) -> bool {
 /// unbounded render cost), plus non-positive or unallocatable render dimensions,
 /// PNG-encode failure, or an all-transparent render (so the caller's spine
 /// fallback still fires).
-#[allow(
+#[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "render dimensions are non-negative and bounded to MAX_RENDER_LONG_EDGE before the cast"
@@ -744,8 +744,8 @@ mod tests {
     }
 
     /// Real Standard Ebooks `cover.svg` (Pride and Prejudice). SE releases all
-    /// its work to the public domain (CC0). This is the canonical input UNK-406
-    /// exists to render, so the gate must accept it — a false-reject here would
+    /// its work to the public domain (CC0). This is the canonical input the SVG cover
+    /// pipeline exists to render, so the gate must accept it — a false-reject here would
     /// regress every SE cover inside the PR that ships SVG support.
     const STANDARD_EBOOKS_COVER: &str = include_str!("testdata/standard_ebooks_cover.svg");
 

@@ -3,10 +3,6 @@
 //!
 //! Mirrors [`crate::routes::opds::tests`] — `#[sqlx::test]` per case,
 //! real-pool harness via [`crate::test_support::db::server_with_real_pools`].
-#![allow(
-    clippy::cast_possible_wrap,
-    reason = "test-only casts on small fixture sizes"
-)]
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
 use axum_test::TestServer;

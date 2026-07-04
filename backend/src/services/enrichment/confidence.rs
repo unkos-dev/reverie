@@ -62,7 +62,7 @@ pub fn score(source: &str, match_type: &str, quorum: u32) -> f32 {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::float_cmp,
     reason = "test assertions on f32 literals that are exactly representable in IEEE 754 (1.00, 0.99, 0.50, 1.10, 1.20 are all powers-of-two fractions or exact values)"
 )]

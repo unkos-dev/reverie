@@ -471,7 +471,7 @@ pub(super) async fn emit_new(
     }
 
     if has_more {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
         )]
@@ -559,7 +559,7 @@ pub(super) async fn emit_authors(
         );
     }
     if has_more {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
         )]
@@ -650,7 +650,7 @@ pub(super) async fn emit_author_books(
         });
     }
     if has_more {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
         )]
@@ -735,7 +735,7 @@ pub(super) async fn emit_series(
         );
     }
     if has_more {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "has_more is only true when page_rows is non-empty (split_page guarantees this invariant)"
         )]

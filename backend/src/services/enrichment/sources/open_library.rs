@@ -29,7 +29,7 @@ type Limiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 fn limiter() -> &'static Limiter {
     static L: OnceLock<Limiter> = OnceLock::new();
     L.get_or_init(|| {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "NonZeroU32::new(3) — the literal 3 is a compile-time constant that is always non-zero; this cannot fail"
         )]

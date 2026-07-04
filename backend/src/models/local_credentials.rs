@@ -44,7 +44,6 @@ impl std::fmt::Debug for LocalCredential {
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
-#[allow(dead_code)] // Seam consumed by the local-login step; exercised by tests
 pub async fn find_by_user_id(
     pool: &PgPool,
     user_id: Uuid,
@@ -75,7 +74,6 @@ pub async fn find_by_user_id(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `INSERT ... ON CONFLICT`.
-#[allow(dead_code)] // Consumed by setup/reset/seed in this PR
 pub async fn set_password(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,

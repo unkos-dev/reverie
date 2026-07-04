@@ -63,3 +63,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Adopt lefthook, replacing husky and lint-staged](2026-06-28-adopt-lefthook-git-hooks.md) (accepted, 2026-06-28)
 - [Adopt the Vite+ (vp) monorepo toolchain](2026-06-30-adopt-vite-plus-monorepo-toolchain.md) (accepted, 2026-06-30)
 - [Password strength policy: zxcvbn floor plus a fail-open HIBP breach check](2026-06-30-password-policy-hibp-zxcvbn.md) (accepted, 2026-06-30)
+- [Lint suppressions must be self-purging: #[expect] with a reason, never #[allow]](2026-07-04-expect-over-allow-lint-suppressions.md) (accepted, 2026-07-04)

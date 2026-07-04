@@ -53,7 +53,6 @@ impl LookupKey {
     ///
     /// The returned value corresponds to the `match_type` column written by
     /// adapters into `SourceResult` and consumed by `confidence::match_modifier`.
-    #[allow(dead_code)] // Kept alongside cache_key() as the public shape of LookupKey; used by adapter tests.
     pub const fn match_type_for(&self) -> &'static str {
         match self {
             Self::Isbn(_) => "isbn",
@@ -79,7 +78,6 @@ pub struct SourceResult {
 
 /// Failure modes shared across adapters.
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)] // NotFound is part of the adapter contract; currently expressed as Ok(vec![]) by all adapters.
 pub enum SourceError {
     /// The provider returned no record for the requested key (clean miss).
     #[error("not found")]
@@ -110,8 +108,6 @@ pub struct LookupCtx<'a> {
     /// MAY return its results directly from the cached payload instead of
     /// hitting the network; the orchestrator passes `None` when a miss is
     /// desired.
-    #[allow(dead_code)]
-    // adapter-facing hook; orchestrator passes None today but the field is part of the contract.
     pub cached: Option<&'a CachedResponse>,
 }
 

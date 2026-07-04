@@ -11,8 +11,6 @@
 //! schema prose printed into a CI log can trip the platform's
 //! secret-pattern redaction, garbling the output.
 
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use std::path::PathBuf;
 
 fn artifact_path() -> PathBuf {

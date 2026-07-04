@@ -30,14 +30,12 @@ pub fn isbn_key(raw: &str) -> Option<String> {
 /// (contains a comma), swap to "First Last" order before the above steps.
 ///
 /// Returns a key of the form `"ta:{title}|{author}"`.
-#[allow(dead_code)] // title/author fallback is covered by tests; orchestrator wiring pending phase D.
 pub fn title_author_key(title: &str, author: &str) -> String {
     let t = normalise_text(title);
     let a = normalise_author(author);
     format!("ta:{t}|{a}")
 }
 
-#[allow(dead_code)]
 fn normalise_author(raw: &str) -> String {
     // Swap "Last, First" → "First Last" before further normalisation.
     let swapped = if let Some((last, first)) = raw.split_once(',') {
@@ -48,7 +46,6 @@ fn normalise_author(raw: &str) -> String {
     normalise_text(&swapped)
 }
 
-#[allow(dead_code)]
 fn normalise_text(s: &str) -> String {
     let lower = s.to_ascii_lowercase();
     // Strip punctuation: keep only alphanumeric chars and spaces.

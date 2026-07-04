@@ -4,12 +4,10 @@
 //! `#[sqlx::test]` so each gets its own isolated DB. Cover/download tests
 //! also build a per-test `TempDir` for the `library_path` root and write
 //! real EPUB bytes to the path that `manifestations.file_path` points at.
-#![allow(
+#![expect(
     clippy::items_after_statements,
     clippy::format_collect,
     clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_possible_truncation,
     clippy::option_if_let_else,
     reason = "test-only module: these are test helper patterns (local struct defs, casts for test fixtures, format-collect for URL construction) not worth refactoring"
 )]

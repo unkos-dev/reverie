@@ -31,7 +31,7 @@ pub type DraftIds = HashMap<String, Uuid>;
 /// fails (e.g. constraint violation, connection loss, or serialisation failure).
 /// Partial writes within an uncommitted transaction are visible to the caller
 /// and will be rolled back if the caller rolls back.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "write_drafts inserts a draft row per canonical metadata axis; the per-axis cases are mechanical and cannot meaningfully be split without changing the function's transaction contract"
 )]

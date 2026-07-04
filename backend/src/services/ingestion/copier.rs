@@ -21,7 +21,6 @@ pub struct CopyResult {
     /// Path of the file as it now exists in the library directory
     /// (`dest_dir.join(dest_relative)`; absolute only if `dest_dir` was
     /// absolute — `copy_verified` does not canonicalise).
-    #[allow(dead_code)] // Used by future callers (e.g. status endpoints)
     pub dest_path: PathBuf,
     /// Lowercase hex `SHA-256` digest of the copied bytes, verified against the source.
     pub sha256: String,
@@ -62,7 +61,7 @@ pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
     let file = std::fs::File::open(path)?;
     let mut reader = BufReader::with_capacity(BUF_SIZE, file);
     let mut hasher = Sha256::new();
-    #[allow(
+    #[expect(
         clippy::large_stack_arrays,
         reason = "64 KiB I/O buffer; heap-allocated BufReader wraps it so the size is intentional for throughput"
     )]
@@ -127,7 +126,7 @@ pub fn copy_verified(
         let mut writer = BufWriter::new(&temp);
         let mut reader = BufReader::with_capacity(BUF_SIZE, std::fs::File::open(source)?);
         let mut dest_hasher = Sha256::new();
-        #[allow(
+        #[expect(
             clippy::large_stack_arrays,
             reason = "64 KiB I/O buffer; intentional for throughput"
         )]

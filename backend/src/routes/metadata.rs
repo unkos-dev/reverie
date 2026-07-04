@@ -552,7 +552,10 @@ fn parse_entity(s: &str) -> Result<EntityType, AppError> {
 //
 // Field-dispatch with one `sqlx::query!` per supported field; macro-form
 // expansion pushed this just past clippy's 100-line threshold.
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "field dispatch with one sqlx::query! per supported field; macro-form expansion pushes this past the 100-line threshold"
+)]
 async fn apply_version(
     tx: &mut Transaction<'_, Postgres>,
     field: &str,
@@ -1040,7 +1043,7 @@ async fn apply_contributors_patch(
 ///
 /// `cover` is not yet operator-editable from this endpoint — cover
 /// promotion happens via a separate file-upload path.
-#[allow(
+#[expect(
     clippy::option_option,
     reason = "RFC 7396 sparse-update encoding — outer Option distinguishes absent (None) from present-and-null (Some(None))"
 )]
@@ -1099,7 +1102,7 @@ struct UpdateMetadataFields {
 /// non-empty array replaces it wholesale in the given order. `narrator` is
 /// deliberately not accepted here (reserved, not yet operator-writable);
 /// any unrecognised key 422s via `deny_unknown_fields`.
-#[allow(
+#[expect(
     clippy::option_option,
     reason = "see UpdateMetadataFields struct attribute"
 )]
@@ -1140,10 +1143,6 @@ impl UpdateMetadataFields {
     /// `pages` widens this to `Value` (rather than adding a parallel
     /// int-typed path) so every scalar field, string or numeric, flows
     /// through the same apply/clear plumbing.
-    #[allow(
-        clippy::option_option,
-        reason = "see UpdateMetadataFields struct attribute"
-    )]
     fn populated(self) -> Vec<(&'static str, Option<Value>)> {
         let mut out: Vec<(&'static str, Option<Value>)> = Vec::new();
         if let Some(v) = self.title {

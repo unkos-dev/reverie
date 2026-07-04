@@ -53,7 +53,6 @@ pub struct ExtractedMetadata {
     /// Series name and position parsed from Calibre-style `OPF` series metadata.
     pub series: Option<SeriesInfo>,
     /// Consumed by the enrichment confidence scorer (Step 7 task 14).
-    #[allow(dead_code)]
     pub inversion: Option<inversion::InversionResult>,
     /// Confidence score 0.0-1.0 based on field completeness.
     pub confidence: f32,
@@ -341,7 +340,7 @@ fn map_relator(code: &str) -> Option<&'static str> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::float_cmp,
     reason = "test code: both sides are the same f32 literal propagated through identical rounding, so bitwise comparison is reliable"
 )]

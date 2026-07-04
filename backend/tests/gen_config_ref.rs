@@ -6,8 +6,6 @@
 //! `cargo sqlx prepare --check`. `REGEN=1` rewrites the artifact instead of
 //! asserting (`REGEN=1 cargo test --test gen_config_ref`).
 
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use std::path::PathBuf;
 
 fn artifact_path() -> PathBuf {

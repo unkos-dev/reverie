@@ -119,7 +119,7 @@ struct StatsResponse {
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
     )
 )]
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "single aggregate-query assembly + DTO mapping; splitting hurts readability"
 )]

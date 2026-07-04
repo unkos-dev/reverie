@@ -102,7 +102,7 @@ const RESOURCE_SERVER_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
 /// that only need one slice.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "this is the flat env-sourced configuration root; its boolean fields are independent operator toggles (local auth, auto-migrate, self-registration, breach check, ...) that map one-to-one to env vars, not a state machine that should be modelled as an enum"
 )]

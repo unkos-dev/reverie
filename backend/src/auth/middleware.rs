@@ -105,7 +105,6 @@ impl CurrentUser {
     /// # Errors
     ///
     /// Returns [`AppError::Forbidden`] when `self.is_child` is `true`.
-    #[allow(dead_code)] // wired up by Step 7 tasks 25/26 (metadata + enrichment routes)
     pub const fn require_not_child(&self) -> Result<(), AppError> {
         if self.is_child {
             Err(AppError::Forbidden)

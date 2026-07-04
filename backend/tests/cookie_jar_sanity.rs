@@ -9,7 +9,6 @@
 //! `#[allow]` here rather than in `src/main.rs` because `tests/*.rs` files
 //! are separate compilation units; the crate-root `#![cfg_attr(test, allow(...))]`
 //! in `src/main.rs` does not reach them.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use axum::{Router, http::StatusCode, response::Redirect, routing::get};
 use axum_extra::extract::cookie::{Cookie, CookieJar};

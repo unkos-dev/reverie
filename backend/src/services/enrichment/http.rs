@@ -41,7 +41,6 @@ use tracing::warn;
 
 /// Reason a redirect hop was rejected by the `SSRF` guard.
 #[derive(Debug)]
-#[allow(dead_code)] // DnsFailure/MissingHost are constructed inside cover_download (phase D).
 pub enum HopError {
     /// The resolved IP is in a denied range (loopback, `RFC 1918`, link-local, etc.).
     DenyListed(IpAddr),
@@ -191,7 +190,6 @@ const fn to_ipv4_mapped(v6: Ipv6Addr) -> Option<std::net::Ipv4Addr> {
 /// - [`HopError::MissingHost`] — the `URL` has no host component.
 /// - [`HopError::DnsFailure`] — OS resolver returned an error or produced no addresses.
 /// - [`HopError::DenyListed`] — a resolved IP falls in a denied range.
-#[allow(dead_code)] // called from cover_download (phase D) and cover_client redirect policy.
 pub fn validate_hop(url: &reqwest::Url) -> Result<(), HopError> {
     let host = url.host_str().ok_or(HopError::MissingHost)?;
 
@@ -230,7 +228,7 @@ fn ssrf_resolver() -> Arc<SsrfResolver> {
     static RESOLVER: OnceLock<Arc<SsrfResolver>> = OnceLock::new();
     RESOLVER
         .get_or_init(|| {
-            #[allow(
+            #[expect(
                 clippy::expect_used,
                 reason = "SSRF resolver reads /etc/resolv.conf at first call; failure means the system resolver is misconfigured, which is an unrecoverable startup condition"
             )]
@@ -298,7 +296,7 @@ impl Resolve for SsrfResolver {
 /// `user_agent` is forwarded on every request.  Upstream providers
 /// (e.g. `OpenLibrary`) grant identified clients a higher rate-limit tier.
 pub fn api_client(user_agent: &str) -> reqwest::Client {
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
     )]
@@ -330,7 +328,6 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
 ///
 /// Panics if the underlying TLS stack cannot be initialised — this should
 /// never happen in a normally configured environment.
-#[allow(dead_code)] // wired from cover_download (phase D).
 pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) -> reqwest::Client {
     let policy = redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= redirect_limit {
@@ -342,7 +339,7 @@ pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) 
         }
     });
 
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
     )]

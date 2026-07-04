@@ -103,7 +103,7 @@ pub(super) struct SearchParams {
 /// - [`AppError::Validation`] when `q` is missing, empty, or longer
 ///   than [`MAX_Q_LEN`] characters.
 /// - [`AppError::Internal`] on database errors.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "single hybrid CTE assembly; splitting hurts readability of the SQL flow"
 )]

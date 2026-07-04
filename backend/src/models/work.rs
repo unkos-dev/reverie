@@ -32,7 +32,6 @@ use crate::services::metadata::extractor::ExtractedMetadata;
 
 /// Outcome of `rematch_on_isbn_change` — Step 7 task 6.
 /// Consumed by the enrichment orchestrator (Step 7 task 21).
-#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum RematchOutcome {
     /// No matching ISBN row elsewhere; the manifestation is left untouched.
@@ -216,7 +215,6 @@ pub async fn upgrade_stub(
 /// match-or-create flow without draft wiring. Retained for call sites that
 /// don't participate in the ingest-invariant flow (primarily the existing
 /// tests).
-#[allow(dead_code)]
 #[cfg(test)]
 pub async fn find_or_create(
     pool: &PgPool,
@@ -318,7 +316,6 @@ async fn find_or_create_series(
 /// `FOR UPDATE` candidate scan, the safety-condition counts, the
 /// `manifestations.work_id` `UPDATE`, the stub `DELETE`, or the
 /// `suspected_duplicate_work_id` `UPDATE`.
-#[allow(dead_code)]
 pub async fn rematch_on_isbn_change(
     conn: &mut PgConnection,
     manifestation_id: Uuid,

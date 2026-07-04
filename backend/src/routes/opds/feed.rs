@@ -20,7 +20,7 @@
 //! representable as Rfc3339. Making every builder method return `Result`
 //! would cascade error-handling into every call site for an error path that
 //! physically cannot occur.
-#![allow(
+#![expect(
     clippy::expect_used,
     reason = "all expects write to Cursor<Vec<u8>> (infallible) or format OffsetDateTime as Rfc3339 (always representable)"
 )]
@@ -67,7 +67,6 @@ pub const REL_SELF: &str = "self";
 pub const REL_START: &str = "start";
 /// `rel` value reserved for parent-feed links on sub-feeds; not yet
 /// emitted (MVP doesn't carry `rel="up"`).
-#[allow(dead_code)] // reserved: OPDS allows `rel="up"` on sub-feeds; MVP doesn't emit.
 pub const REL_UP: &str = "up";
 /// `rel` value for navigation entries that point at a subcatalog.
 pub const REL_SUBSECTION: &str = "subsection";
@@ -357,7 +356,7 @@ impl FeedBuilder {
     }
 
     /// `rel="next"` pagination link (RFC 5005 Atom paging — valid on
-    /// both feed kinds; navigation feeds gained pagination in UNK-374).
+    /// both feed kinds; navigation feeds gained pagination as well).
     /// The link's `type` attribute follows the feed's own kind. Caller
     /// guarantees one page of rows is ready.
     pub fn add_next_link(&mut self, href: &str) {
@@ -376,7 +375,6 @@ impl FeedBuilder {
     }
 
     /// Arbitrary link — used e.g. for `rel="up"` on library/shelf roots.
-    #[allow(dead_code)]
     pub fn add_link(&mut self, rel: &str, path: &str, mime: Option<&str>) {
         self.write_link(rel, path, mime, None);
     }

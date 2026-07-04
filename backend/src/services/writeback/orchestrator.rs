@@ -143,7 +143,7 @@ struct JobSnapshot {
 ///   contained no `OPF` root-file path.
 /// - `WritebackError::Persist` — the atomic commit, cross-FS copy, or
 ///   path-rename step failed.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "run_once implements the full writeback pipeline: snapshot load → transform → pack → rename → post-validation → DB update; each step is a data-dependency on the previous"
 )]
@@ -631,7 +631,7 @@ const fn is_regression(pre: &ValidationOutcome, post: &ValidationOutcome) -> boo
 fn compute_hex_sha256(path: &Path) -> Result<String, WritebackError> {
     let mut f = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
-    #[allow(
+    #[expect(
         clippy::large_stack_arrays,
         reason = "64 KiB I/O buffer; intentional for throughput"
     )]
@@ -688,7 +688,7 @@ fn move_cover_sidecar(pending_path: &str) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::let_underscore_must_use,
     reason = "test code: discarding fmt::Write result on String in test helper is intentional; fmt::Write on String is infallible"
 )]

@@ -66,7 +66,7 @@ pub struct SeriesRef<'a> {
 ///
 /// - `WritebackError::Xml` — `quick_xml` failed to parse the input bytes or
 ///   write an event to the output buffer.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "transform implements a two-pass XML rewrite over 11 metadata axes plus EPUB 2/3 version-specific formats; the passes share state that cannot be cleanly separated without significant architecture changes"
 )]
@@ -448,7 +448,10 @@ fn format_index(idx: f64) -> String {
     if idx.fract() == 0.0 {
         // idx.fract() == 0.0 guarantees the value is a whole number;
         // series positions are always small integers well within i64 range.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "fract()==0 guarantees a whole number; series positions are small integers well within i64"
+        )]
         let whole: i64 = idx as i64;
         format!("{whole}")
     } else {

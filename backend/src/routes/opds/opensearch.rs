@@ -8,7 +8,7 @@
 //! infallible; `Response::builder()` with a valid `StatusCode` and a valid
 //! ASCII header value cannot fail. Making these return `Result` would cascade
 //! error-handling into every call site for error paths that cannot occur.
-#![allow(
+#![expect(
     clippy::expect_used,
     reason = "all expects write to Cursor<Vec<u8>> (infallible) or build Response from static inputs (cannot fail)"
 )]

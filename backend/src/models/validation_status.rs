@@ -1,8 +1,8 @@
 //! `ValidationStatus` — closed value set for the Postgres `validation_status`
 //! ENUM applied to `manifestations.validation_status`.
 //!
-//! Defensive type-safety (UNK-276, continues the `sqlx::Type` enum series
-//! begun under UNK-107 / UNK-173): pre-migration this was the last DB enum
+//! Defensive type-safety, continuing the `sqlx::Type` enum series:
+//! pre-migration this was the last DB enum
 //! exposed as a raw `String` field on the public API DTOs ([`BookListRow`],
 //! [`BookDetail`], [`WorkManifestation`]), so an unknown DB variant flowed to
 //! the wire as an opaque string. `sqlx::Type` decode of an unknown variant now
@@ -33,7 +33,7 @@
 //! - JSON: lowercase string —
 //!   `"pending"` | `"clean"` | `"repaired"` | `"degraded"` | `"failed"`
 //!   (`failed` added by migration
-//!   `20260610180000_validation_status_add_failed.up.sql`, UNK-312).
+//!   `20260610180000_validation_status_add_failed.up.sql`).
 
 /// Outcome of structural validation for a single manifestation.
 ///
@@ -77,8 +77,8 @@ pub enum ValidationStatus {
     /// IO failure, crash), so nothing is known about the file's structural
     /// quality. Distinct from [`Self::Degraded`] (validator ran, found
     /// tolerable issues) and from [`Self::Pending`] (validator never
-    /// attempted) so operators can monitor validator failures directly
-    /// (UNK-312). The file is still ingested and served.
+    /// attempted) so operators can monitor validator failures
+    /// directly. The file is still ingested and served.
     Failed,
 }
 
@@ -87,7 +87,6 @@ impl ValidationStatus {
     /// `#[sqlx(rename_all)]` mappings — `Debug` yields the Rust variant name
     /// (`"Clean"`), which does not match the Postgres / JSON form. Use this for
     /// log lines and error messages so the three surfaces stay consistent.
-    #[allow(dead_code)] // No production consumer yet — anchors wire-format invariant for future read paths.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -138,14 +137,13 @@ mod tests {
         assert!(result.is_err(), "expected legacy 'valid' to be rejected");
     }
 
-    /// Loud-failure regression for UNK-276 (mirrors the UNK-107
-    /// `manifestation_format` probe). Simulates the DB `validation_status` enum
+    /// Loud-failure regression (mirrors the `manifestation_format` probe). Simulates the DB `validation_status` enum
     /// gaining a value with no Rust counterpart (out-of-band `ALTER TYPE`, or a
     /// migration landing ahead of the matching Rust change). `sqlx::Type` must
     /// surface this as a decode error, not silently coerce.
     #[sqlx::test(migrations = "./migrations")]
     async fn decode_fails_for_unknown_db_variant(pool: sqlx::PgPool) {
-        // CARVE-OUT (UNK-167): runtime sqlx::query is intentional. The ALTER
+        // CARVE-OUT (runtime-sqlx allowlist): runtime sqlx::query is intentional. The ALTER
         // TYPE is DDL (macros can't validate it), and the SELECT references a
         // variant ('probe_unknown') deliberately not in the prepare-time schema
         // — the entire point of the test is to exercise the unknown-variant

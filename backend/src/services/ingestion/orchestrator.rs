@@ -133,7 +133,7 @@ pub async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, any
     result
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "scan_once_inner orchestrates the full ingestion pipeline: walk → dedup → copy → DB; the steps have data dependencies that make splitting into helpers awkward without additional Arc-sharing"
 )]
@@ -282,7 +282,7 @@ fn run_validator(path: &Path) -> Result<epub::ValidationReport, epub::EpubError>
     epub::validate_and_repair(path)
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "process_file executes a sequential 8-step ingest pipeline (hash, dedup, copy, validate, rename, DB commit) where each step needs output from the previous; decomposing further requires passing a large context struct between helpers"
 )]
@@ -624,8 +624,11 @@ async fn process_file(
 ///   4. write drafts (OPF drafts, or synthetic heuristic-title draft at 0.2)
 ///   5. upgrade stub work with pointers if newly created
 ///   6. UPDATE manifestation canonical values + pointer columns from draft IDs
-#[allow(clippy::too_many_arguments)]
-#[allow(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "commit_ingest threads the full ingest context; bundling into a struct would be single-caller indirection"
+)]
+#[expect(
     clippy::ref_option,
     reason = "commit_ingest is called with &extracted and &accessibility_metadata from a site that holds owned Options; changing to Option<&T> would require .as_ref() at every call site with no readability benefit"
 )]
@@ -768,7 +771,7 @@ async fn quarantine_async(source: &Path, quarantine_path: &Path, reason: &str) {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::items_after_statements,
     reason = "test code: local struct definitions inside test functions are idiomatic for sqlx::FromRow test helpers"
 )]

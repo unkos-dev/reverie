@@ -111,7 +111,6 @@ pub async fn insert_oidc(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
-#[allow(dead_code)] // Seam for admin/identity management; exercised by tests
 pub async fn find_by_oidc(
     executor: impl sqlx::PgExecutor<'_>,
     issuer: &str,

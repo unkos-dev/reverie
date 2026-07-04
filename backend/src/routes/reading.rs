@@ -134,7 +134,7 @@ async fn get_reading(
 
 /// Body for `PATCH /api/v1/books/{id}/reading`. RFC 7396 JSON Merge Patch:
 /// an absent key leaves the field unchanged, an explicit `null` clears it.
-#[allow(
+#[expect(
     clippy::option_option,
     reason = "RFC 7396 sparse-update encoding: outer Option distinguishes absent (None) from present-and-null (Some(None))"
 )]
