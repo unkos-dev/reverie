@@ -1210,7 +1210,6 @@ impl UpdateMetadataFields {
         (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails)
     )
 )]
-#[allow(clippy::too_many_lines)]
 async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
