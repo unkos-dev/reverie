@@ -864,14 +864,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_empty_dir_returns_zero(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
+        let (_ingestion, _library, _quarantine, config) = scan_env();
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 0);
         assert_eq!(result.failed, 0);
@@ -881,18 +874,11 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_processes_pdf_end_to_end(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Tolkien - The Hobbit.pdf");
         std::fs::write(&source, b"fake pdf bytes for scan_once test").unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -933,6 +919,26 @@ mod tests {
             ValidationStatus::Pending,
             "expected validation_status=pending for never-validated non-EPUB"
         );
+    }
+
+    /// Tempdir trio + scan config for a `scan_once` test. The dirs must
+    /// outlive the scan (files are asserted in place), so they ride along
+    /// in the return value.
+    fn scan_env() -> (
+        tempfile::TempDir,
+        tempfile::TempDir,
+        tempfile::TempDir,
+        Config,
+    ) {
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        (ingestion, library, quarantine, config)
     }
 
     const CONTAINER_XML: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1048,19 +1054,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_extracts_metadata_from_epub(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         // Use a filename that differs from the OPF metadata to test rename
         let source = ingestion.path().join("Unknown - somefile.epub");
         std::fs::write(&source, make_metadata_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1);
         assert_eq!(result.failed, 0);
@@ -1171,18 +1170,11 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_without_subtitle_or_pages_leaves_all_four_null(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Tolkien - The Hobbit.epub");
         std::fs::write(&source, make_minimal_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
@@ -1219,18 +1211,11 @@ mod tests {
         // P1: exercise the EPUB validation path end-to-end, verifying that a clean
         // EPUB gets validation_status='clean' in the manifestation row.
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Tolkien - The Hobbit.epub");
         std::fs::write(&source, make_minimal_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -1265,18 +1250,11 @@ mod tests {
         // in place and the manifestation row must record `repaired`.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Mended - Patchwork Quilt.epub");
         std::fs::write(&source, make_repaired_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -1304,18 +1282,11 @@ mod tests {
         // absent is degraded (not repaired) and still ingested.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Faded - Wilted Garden.epub");
         std::fs::write(&source, make_degraded_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -1345,18 +1316,11 @@ mod tests {
         //.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Probe - force-validator-error.epub");
         std::fs::write(&source, make_minimal_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0, "validator error must not fail ingestion");
@@ -1382,18 +1346,11 @@ mod tests {
         // P2: a corrupt EPUB (not a valid ZIP) must be quarantined — the source
         // gets a quarantine sidecar, the library copy is removed, and failed=1.
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Bad - Corrupt Book.epub");
         std::fs::write(&source, b"this is not a zip file").unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.failed, 1, "expected 1 failed (quarantined)");
         assert_eq!(result.processed, 0);
@@ -1430,20 +1387,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_skips_duplicate_on_second_run(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, _library, _quarantine, config) = scan_env();
 
         // Unique content to avoid collisions with other test data
         let unique_content = format!("dedup-test-{}", uuid::Uuid::new_v4());
         let source = ingestion.path().join("Author - Book.pdf");
         std::fs::write(&source, unique_content.as_bytes()).unwrap();
-
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
 
         // First scan: should process the file
         let r1 = scan_once(&config, &pool).await.unwrap();
@@ -1465,19 +1414,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_version_pointers_for_all_canonical_fields(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let marker = uuid::Uuid::new_v4().simple().to_string();
         let source = ingestion.path().join(format!("invariant-{marker}.epub"));
         std::fs::write(&source, make_metadata_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
@@ -1608,9 +1550,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_without_opf_writes_heuristic_title_journal(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         // PDF has no OPF extraction path → heuristic fallback engages.
         let marker = uuid::Uuid::new_v4().simple().to_string();
@@ -1619,11 +1559,6 @@ mod tests {
             .join(format!("Heuristic Author - Heuristic Title {marker}.pdf"));
         std::fs::write(&source, format!("heuristic-pdf-{marker}")).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
@@ -1676,19 +1611,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_work_authors_source_version_id(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let marker = uuid::Uuid::new_v4().simple().to_string();
         let source = ingestion.path().join(format!("authors-{marker}.epub"));
         std::fs::write(&source, make_metadata_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
