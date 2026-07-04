@@ -845,6 +845,84 @@ const MAX_CONTRIBUTOR_NAME_CHARS: usize = 500;
 /// Bounds the per-name insert loop that runs under the handler's row lock.
 const MAX_CONTRIBUTORS_PER_ROLE: usize = 100;
 
+/// Validate one role's submitted names: bounded count, trimmed, non-empty,
+/// length-capped, duplicate-free. Returns the trimmed list.
+fn validated_role_names(role: &str, names: &[String]) -> Result<Vec<String>, AppError> {
+    if names.len() > MAX_CONTRIBUTORS_PER_ROLE {
+        return Err(AppError::Validation(format!(
+            "{role} list exceeds {MAX_CONTRIBUTORS_PER_ROLE} names"
+        )));
+    }
+    let mut trimmed: Vec<String> = Vec::with_capacity(names.len());
+    for raw in names {
+        let t = raw.trim();
+        if t.is_empty() {
+            return Err(AppError::Validation(format!(
+                "{role} name must not be empty"
+            )));
+        }
+        if t.chars().count() > MAX_CONTRIBUTOR_NAME_CHARS {
+            return Err(AppError::Validation(format!(
+                "{role} name exceeds {MAX_CONTRIBUTOR_NAME_CHARS} characters"
+            )));
+        }
+        trimmed.push(t.to_string());
+    }
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for t in &trimmed {
+        if !seen.insert(t.as_str()) {
+            return Err(AppError::Validation(format!("duplicate {role} name '{t}'")));
+        }
+    }
+    Ok(trimmed)
+}
+
+async fn delete_role_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    work_id: Uuid,
+    role: &str,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "DELETE FROM work_authors WHERE work_id = $1 AND role = ($2::text)::author_role",
+        work_id,
+        role,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(())
+}
+
+async fn insert_role_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    work_id: Uuid,
+    role: &str,
+    names: &[String],
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    for (i, name) in names.iter().enumerate() {
+        let sort_name = crate::services::metadata::extractor::generate_sort_name(name);
+        let author_id = work::find_or_create_author(tx, name, &sort_name)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let position = i32::try_from(i).unwrap_or(i32::MAX);
+        sqlx::query!(
+            "INSERT INTO work_authors (work_id, author_id, role, position, source_version_id) \
+             VALUES ($1, $2, ($3::text)::author_role, $4, $5) \
+             ON CONFLICT (work_id, author_id, role) DO NOTHING",
+            work_id,
+            author_id,
+            role,
+            position,
+            version_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    }
+    Ok(())
+}
+
 /// Apply a `contributors` merge-patch: per role, replace/clear/reorder
 /// `work_authors` rows and journal the change under `contributors.<role>`.
 ///
@@ -859,11 +937,6 @@ const MAX_CONTRIBUTORS_PER_ROLE: usize = 100;
 ///   authorless stub are legal; the invariant only fires when the
 ///   `author` key was touched).
 /// - [`AppError::Internal`] on database errors.
-//
-// Per-role loop with validation + journal + work_authors rewrite inline;
-// splitting further would scatter one cohesive replace operation across
-// several functions for no clarity gain.
-#[allow(clippy::too_many_lines)]
 async fn apply_contributors_patch(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -908,77 +981,16 @@ async fn apply_contributors_patch(
         match names {
             None => {
                 insert_manual_version(tx, manifestation_id, user_id, &key, &Value::Null).await?;
-                sqlx::query!(
-                    "DELETE FROM work_authors WHERE work_id = $1 AND role = ($2::text)::author_role",
-                    work_id,
-                    role,
-                )
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
+                delete_role_rows(tx, work_id, role).await?;
             }
             Some(names) => {
-                if names.len() > MAX_CONTRIBUTORS_PER_ROLE {
-                    return Err(AppError::Validation(format!(
-                        "{role} list exceeds {MAX_CONTRIBUTORS_PER_ROLE} names"
-                    )));
-                }
-                let mut trimmed: Vec<String> = Vec::with_capacity(names.len());
-                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-                for raw in &names {
-                    let t = raw.trim();
-                    if t.is_empty() {
-                        return Err(AppError::Validation(format!(
-                            "{role} name must not be empty"
-                        )));
-                    }
-                    if t.chars().count() > MAX_CONTRIBUTOR_NAME_CHARS {
-                        return Err(AppError::Validation(format!(
-                            "{role} name exceeds {MAX_CONTRIBUTOR_NAME_CHARS} characters"
-                        )));
-                    }
-                    trimmed.push(t.to_string());
-                }
-                for t in &trimmed {
-                    if !seen.insert(t.as_str()) {
-                        return Err(AppError::Validation(format!("duplicate {role} name '{t}'")));
-                    }
-                }
-
+                let trimmed = validated_role_names(role, &names)?;
                 let json =
                     serde_json::to_value(&trimmed).map_err(|e| AppError::Internal(e.into()))?;
                 let version_id =
                     insert_manual_version(tx, manifestation_id, user_id, &key, &json).await?;
-
-                sqlx::query!(
-                    "DELETE FROM work_authors WHERE work_id = $1 AND role = ($2::text)::author_role",
-                    work_id,
-                    role,
-                )
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-
-                for (i, name) in trimmed.iter().enumerate() {
-                    let sort_name = crate::services::metadata::extractor::generate_sort_name(name);
-                    let author_id = work::find_or_create_author(tx, name, &sort_name)
-                        .await
-                        .map_err(|e| AppError::Internal(e.into()))?;
-                    let position = i32::try_from(i).unwrap_or(i32::MAX);
-                    sqlx::query!(
-                        "INSERT INTO work_authors (work_id, author_id, role, position, source_version_id) \
-                         VALUES ($1, $2, ($3::text)::author_role, $4, $5) \
-                         ON CONFLICT (work_id, author_id, role) DO NOTHING",
-                        work_id,
-                        author_id,
-                        role,
-                        position,
-                        version_id,
-                    )
-                    .execute(&mut **tx)
-                    .await
-                    .map_err(|e| AppError::Internal(e.into()))?;
-                }
+                delete_role_rows(tx, work_id, role).await?;
+                insert_role_rows(tx, work_id, role, &trimmed, version_id).await?;
             }
         }
     }
@@ -1244,53 +1256,15 @@ async fn update_book_metadata(
         if field == "isbn_10" || field == "isbn_13" {
             touched_isbn = true;
         }
-        if let Some(value) = maybe_value {
-            // Reject malformed ISBNs (wrong length, bad check digit,
-            // non-numeric) and normalise valid ones to digits-only so the
-            // stored value matches the ingestion surface and rematch's
-            // exact-equality join can find ingested twins. Guard lives here,
-            // not in `apply_version`, so accept/revert paths keep accepting
-            // historical pre-validation/pre-normalisation values.
-            let json = match field {
-                "isbn_10" | "isbn_13" => {
-                    let raw = value
-                        .as_str()
-                        .ok_or_else(|| AppError::Validation(format!("{field} must be a string")))?;
-                    let normalised = if field == "isbn_10" {
-                        isbn::checked_isbn10(raw)
-                    } else {
-                        isbn::checked_isbn13(raw)
-                    }
-                    .ok_or_else(|| AppError::Validation(format!("invalid {field}")))?;
-                    serde_json::Value::String(normalised)
-                }
-                _ => value,
-            };
-            let version_id = insert_manual_version(
-                &mut tx,
-                manifestation_id,
-                current_user.user_id,
-                field,
-                &json,
-            )
-            .await?;
-            apply_version(&mut tx, field, &json, version_id, manifestation_id, work_id).await?;
-        } else {
-            // Audit-trail row: source='manual', new_value=null,
-            // resolved_by = caller. `clear_field` does NOT wire a
-            // canonical pointer to this row — by design — so it lives
-            // in the journal as an orphan record of the clear action,
-            // but `resolved_by` makes the action accountable.
-            insert_manual_version(
-                &mut tx,
-                manifestation_id,
-                current_user.user_id,
-                field,
-                &serde_json::Value::Null,
-            )
-            .await?;
-            clear_field(&mut tx, field, manifestation_id, work_id).await?;
-        }
+        apply_scalar_patch_field(
+            &mut tx,
+            manifestation_id,
+            work_id,
+            current_user.user_id,
+            field,
+            maybe_value,
+        )
+        .await?;
     }
 
     if let Some(patch) = contributors {
@@ -1314,6 +1288,61 @@ async fn update_book_metadata(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Journal + apply one scalar field from the manual PATCH surface.
+/// A set (`Some`) journals the value and wires the canonical pointer via
+/// `apply_version`; a clear (`None`) journals an accountability row and
+/// nulls the canonical via `clear_field`.
+async fn apply_scalar_patch_field(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    work_id: Uuid,
+    user_id: Uuid,
+    field: &str,
+    maybe_value: Option<serde_json::Value>,
+) -> Result<(), AppError> {
+    if let Some(value) = maybe_value {
+        // Reject malformed ISBNs (wrong length, bad check digit,
+        // non-numeric) and normalise valid ones to digits-only so the
+        // stored value matches the ingestion surface and rematch's
+        // exact-equality join can find ingested twins. Guard lives here,
+        // not in `apply_version`, so accept/revert paths keep accepting
+        // historical pre-validation/pre-normalisation values.
+        let json = match field {
+            "isbn_10" | "isbn_13" => {
+                let raw = value
+                    .as_str()
+                    .ok_or_else(|| AppError::Validation(format!("{field} must be a string")))?;
+                let normalised = if field == "isbn_10" {
+                    isbn::checked_isbn10(raw)
+                } else {
+                    isbn::checked_isbn13(raw)
+                }
+                .ok_or_else(|| AppError::Validation(format!("invalid {field}")))?;
+                serde_json::Value::String(normalised)
+            }
+            _ => value,
+        };
+        let version_id = insert_manual_version(tx, manifestation_id, user_id, field, &json).await?;
+        apply_version(tx, field, &json, version_id, manifestation_id, work_id).await?;
+    } else {
+        // Audit-trail row: source='manual', new_value=null,
+        // resolved_by = caller. `clear_field` does NOT wire a
+        // canonical pointer to this row — by design — so it lives
+        // in the journal as an orphan record of the clear action,
+        // but `resolved_by` makes the action accountable.
+        insert_manual_version(
+            tx,
+            manifestation_id,
+            user_id,
+            field,
+            &serde_json::Value::Null,
+        )
+        .await?;
+        clear_field(tx, field, manifestation_id, work_id).await?;
+    }
+    Ok(())
 }
 
 /// Insert one `metadata_versions` row with `source='manual'`, returning

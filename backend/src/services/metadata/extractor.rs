@@ -111,10 +111,6 @@ pub struct SeriesInfo {
 /// `ISBN` identifiers, generates sort keys, detects title-author inversion,
 /// and computes a completeness-based confidence score (base 0.3 + 0.1 per
 /// present field, except `subjects` which contributes +0.05; capped at 1.0).
-#[allow(
-    clippy::too_many_lines,
-    reason = "extract() builds every canonical field from OpfData in one pass; the per-field cases are mechanical and cannot meaningfully be split without threading the confidence/inversion locals through extra function boundaries"
-)]
 pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
     let title = opf
         .title
@@ -157,54 +153,7 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .map(|id| isbn::parse_isbn(id))
         .find(|r| r.valid);
 
-    // Map creators: each declared role on a creator/contributor yields one
-    // ExtractedCreator; no role at all defaults dc:creator to "author" but
-    // leaves dc:contributor unmapped (never guessed). Unmapped or unknown
-    // relator codes are staged, not dropped. Same (name, role) pair appearing
-    // twice keeps only the first occurrence, preserving document order.
-    let mut creators: Vec<ExtractedCreator> = Vec::new();
-    let mut unmapped_contributors: Vec<UnmappedContributor> = Vec::new();
-    let mut seen_roles: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
-    for c in &opf.creators {
-        let name = sanitiser::sanitise(&c.name);
-        if c.roles.is_empty() {
-            if c.from_contributor {
-                tracing::info!(name = %name, "unmapped contributor: no relator code declared");
-                unmapped_contributors.push(UnmappedContributor { name, code: None });
-            } else {
-                let role = "author".to_string();
-                if seen_roles.insert((name.clone(), role.clone())) {
-                    let sort_name = generate_sort_name(&name);
-                    creators.push(ExtractedCreator {
-                        name,
-                        sort_name,
-                        role,
-                    });
-                }
-            }
-            continue;
-        }
-        for code in &c.roles {
-            if let Some(role) = map_relator(code) {
-                let role = role.to_string();
-                if seen_roles.insert((name.clone(), role.clone())) {
-                    let sort_name = generate_sort_name(&name);
-                    creators.push(ExtractedCreator {
-                        name: name.clone(),
-                        sort_name,
-                        role,
-                    });
-                }
-            } else {
-                tracing::info!(code = code.as_str(), name = %name, "unmapped contributor relator code");
-                unmapped_contributors.push(UnmappedContributor {
-                    name: name.clone(),
-                    code: Some(code.clone()),
-                });
-            }
-        }
-    }
+    let (creators, unmapped_contributors) = collect_creators(&opf.creators);
 
     let subjects: Vec<String> = opf
         .subjects
@@ -231,32 +180,7 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .as_deref()
         .and_then(|t| inversion::detect_inversion(t, &author_names));
 
-    // Confidence: base 0.3, +0.1 per present field, cap at 1.0
-    let mut confidence: f32 = 0.3;
-    if title.is_some() {
-        confidence += 0.1;
-    }
-    if !creators.is_empty() {
-        confidence += 0.1;
-    }
-    if isbn.is_some() {
-        confidence += 0.1;
-    }
-    if publisher.is_some() {
-        confidence += 0.1;
-    }
-    if pub_date.is_some() {
-        confidence += 0.1;
-    }
-    if description.is_some() {
-        confidence += 0.1;
-    }
-    if !subjects.is_empty() {
-        confidence += 0.05;
-    }
-    let confidence = confidence.min(1.0);
-
-    ExtractedMetadata {
+    let mut meta = ExtractedMetadata {
         title,
         sort_title,
         subtitle,
@@ -271,8 +195,91 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         subjects,
         series,
         inversion,
-        confidence,
+        confidence: 0.0,
+    };
+    meta.confidence = completeness_confidence(&meta);
+    meta
+}
+
+/// Map creators/contributors to role-tagged [`ExtractedCreator`]s plus the
+/// staged unmapped set. Each declared role on a creator/contributor yields
+/// one entry; no role at all defaults `dc:creator` to `"author"` but leaves
+/// `dc:contributor` unmapped (never guessed). Unmapped or unknown relator
+/// codes are staged, not dropped. Same (name, role) pair appearing twice
+/// keeps only the first occurrence, preserving document order.
+fn collect_creators(
+    raw: &[opf_layer::Creator],
+) -> (Vec<ExtractedCreator>, Vec<UnmappedContributor>) {
+    let mut creators: Vec<ExtractedCreator> = Vec::new();
+    let mut unmapped: Vec<UnmappedContributor> = Vec::new();
+    let mut seen_roles: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+
+    let push_unique = |creators: &mut Vec<ExtractedCreator>,
+                       seen: &mut std::collections::HashSet<(String, String)>,
+                       name: &str,
+                       role: &str| {
+        if seen.insert((name.to_string(), role.to_string())) {
+            creators.push(ExtractedCreator {
+                name: name.to_string(),
+                sort_name: generate_sort_name(name),
+                role: role.to_string(),
+            });
+        }
+    };
+
+    for c in raw {
+        let name = sanitiser::sanitise(&c.name);
+        if c.roles.is_empty() {
+            if c.from_contributor {
+                tracing::info!(name = %name, "unmapped contributor: no relator code declared");
+                unmapped.push(UnmappedContributor { name, code: None });
+            } else {
+                push_unique(&mut creators, &mut seen_roles, &name, "author");
+            }
+            continue;
+        }
+        for code in &c.roles {
+            if let Some(role) = map_relator(code) {
+                push_unique(&mut creators, &mut seen_roles, &name, role);
+            } else {
+                tracing::info!(code = code.as_str(), name = %name, "unmapped contributor relator code");
+                unmapped.push(UnmappedContributor {
+                    name: name.clone(),
+                    code: Some(code.clone()),
+                });
+            }
+        }
     }
+    (creators, unmapped)
+}
+
+/// Completeness-based confidence: base 0.3, +0.1 per present field
+/// (`subjects` contributes +0.05), capped at 1.0.
+fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
+    let mut confidence: f32 = 0.3;
+    if meta.title.is_some() {
+        confidence += 0.1;
+    }
+    if !meta.creators.is_empty() {
+        confidence += 0.1;
+    }
+    if meta.isbn.is_some() {
+        confidence += 0.1;
+    }
+    if meta.publisher.is_some() {
+        confidence += 0.1;
+    }
+    if meta.pub_date.is_some() {
+        confidence += 0.1;
+    }
+    if meta.description.is_some() {
+        confidence += 0.1;
+    }
+    if !meta.subjects.is_empty() {
+        confidence += 0.05;
+    }
+    confidence.min(1.0)
 }
 
 /// Try to parse a date string in common OPF formats.
