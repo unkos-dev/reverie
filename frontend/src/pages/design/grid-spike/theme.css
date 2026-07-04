@@ -1,0 +1,29 @@
+/**
+ * react-data-grid theme bridge. RDG reads its own `--rdg-*` custom properties,
+ * so mapping them onto Reverie semantic tokens is the whole bridge: no hex, no
+ * overrides of RDG internals, and light/dark follow automatically because the
+ * Reverie tokens flip under `[data-theme]`. The AG Grid half of the bridge is
+ * in `theme.ts`. Dev-only: this file lives under `pages/design/`.
+ */
+
+.spike-grid-rdg {
+  --rdg-color: var(--fg);
+  --rdg-background-color: var(--canvas);
+  --rdg-header-background-color: var(--surface-2);
+  --rdg-row-hover-background-color: var(--surface);
+  --rdg-row-selected-background-color: var(--accent-soft);
+  --rdg-row-selected-hover-background-color: var(--accent-soft);
+  --rdg-selection-color: var(--focus-ring);
+  --rdg-border-color: var(--border);
+  --rdg-font-size: 14px;
+}
+
+.spike-grid-rdg .rdg {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  block-size: 100%;
+}
+
+.spike-grid-ag {
+  block-size: 100%;
+}
