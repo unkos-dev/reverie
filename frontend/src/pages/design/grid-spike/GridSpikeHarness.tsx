@@ -28,10 +28,12 @@ import { GRID_BINDINGS } from "./bindings/registry";
 import { SPIKE_COLUMNS } from "./columns";
 import { DEFAULT_ROW_COUNT, generateRows } from "./data/generator";
 import { LATENCY_PRESETS, listSpikeBooks, type SpikeListResponse } from "./data/mock-api";
+import { applyEdits, recordMove, type RowEdits } from "./harness-helpers";
 import { FrameMonitor, summarize, type FrameStats, type Summary } from "./perf/instrument";
 import {
   BINDING_IDS,
   type BindingId,
+  type CellEdit,
   type FocusReport,
   type GridBinding,
   type GridBindingProps,
@@ -43,6 +45,7 @@ const SEED = 20260704;
 const PAGE_SIZE = 1_000;
 const GRID_HEIGHT = 560;
 const KEYSTROKE_MOVES = 200;
+const MOVE_TIMEOUT_MS = 300;
 const ROW_COUNT_PRESETS = [1_000, 10_000, DEFAULT_ROW_COUNT] as const;
 
 function raf(): Promise<void> {
@@ -66,11 +69,19 @@ function findBinding(id: BindingId): GridBinding {
 
 type Metrics = {
   keystroke: Summary | null;
+  keystrokeDropped: number;
   frame: FrameStats | null;
+  scrollNote: string | null;
   mountMs: number | null;
 };
 
-const EMPTY_METRICS: Metrics = { keystroke: null, frame: null, mountMs: null };
+const EMPTY_METRICS: Metrics = {
+  keystroke: null,
+  keystrokeDropped: 0,
+  frame: null,
+  scrollNote: null,
+  mountMs: null,
+};
 
 /** Route errorElement: keeps a harness fetch/parse failure local and readable. */
 export function GridSpikeError(): ReactElement {
@@ -221,9 +232,14 @@ function GridStage(props: GridStageProps): ReactElement {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
 
+  const [edits, setEdits] = useState<RowEdits>(() => new Map());
   const rows: readonly SpikeBookRow[] = useMemo(
-    () => data.pages.flatMap((p) => p.items),
-    [data.pages],
+    () =>
+      applyEdits(
+        data.pages.flatMap((p) => p.items),
+        edits,
+      ),
+    [data.pages, edits],
   );
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -242,16 +258,25 @@ function GridStage(props: GridStageProps): ReactElement {
   const handleCellFocus = useCallback((_report: FocusReport): void => {
     if (!benchActiveRef.current) return;
     requestAnimationFrame(() => {
-      samplesRef.current.push(performance.now() - moveStartRef.current);
       const resolve = moveResolveRef.current;
+      // The move already settled (timed out and was recorded by the loop). Drop
+      // the late focus so it cannot double-count into the sample.
+      if (resolve === null) return;
       moveResolveRef.current = null;
-      resolve?.();
+      recordMove(samplesRef.current, performance.now() - moveStartRef.current, MOVE_TIMEOUT_MS);
+      resolve();
     });
   }, []);
 
-  const handleCellEdit = useCallback((): void => {
-    // Design D6: edits commit to local state only; the harness just proves the
-    // wiring fires. No metadata pipeline in this phase.
+  const handleCellEdit = useCallback((edit: CellEdit): void => {
+    // Only the title column is editable (columns.ts); commit it to local state
+    // so the value survives re-render and the measure-mount remount.
+    if (edit.columnKey !== "title") return;
+    setEdits((prev) => {
+      const next = new Map(prev);
+      next.set(edit.rowId, edit.value);
+      return next;
+    });
   }, []);
 
   const handleMounted = useCallback((): void => {
@@ -278,29 +303,45 @@ function GridStage(props: GridStageProps): ReactElement {
     await raf();
 
     const keys = ["ArrowDown", "ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"];
+    let dropped = 0;
     for (let i = 0; i < KEYSTROKE_MOVES; i += 1) {
       const target = document.activeElement ?? gridEl;
       moveStartRef.current = performance.now();
       const moved = new Promise<void>((resolve) => {
         moveResolveRef.current = resolve;
       });
+      let timer = 0;
       const timeout = new Promise<void>((resolve) => {
-        setTimeout(resolve, 300);
+        timer = window.setTimeout(resolve, MOVE_TIMEOUT_MS);
       });
       dispatchKey(target, keys[i % keys.length] ?? "ArrowDown");
       await Promise.race([moved, timeout]);
-      moveResolveRef.current = null;
+      window.clearTimeout(timer);
+      // Timeout won: focus never arrived. Record the ceiling so the stall counts
+      // against the budget instead of vanishing from the sample.
+      if (moveResolveRef.current !== null) {
+        moveResolveRef.current = null;
+        if (recordMove(samplesRef.current, null, MOVE_TIMEOUT_MS)) dropped += 1;
+      }
     }
 
     benchActiveRef.current = false;
-    setMetrics((m) => ({ ...m, keystroke: summarize(samplesRef.current) }));
+    setMetrics((m) => ({
+      ...m,
+      keystroke: summarize(samplesRef.current),
+      keystrokeDropped: dropped,
+    }));
     setRunning(false);
   }
 
   async function runScrollBench(): Promise<void> {
     const scroller = stageRef.current?.querySelector(".rdg, .ag-body-viewport") ?? null;
-    if (!(scroller instanceof HTMLElement)) return;
+    if (!(scroller instanceof HTMLElement)) {
+      setMetrics((m) => ({ ...m, frame: null, scrollNote: "scroll container not found" }));
+      return;
+    }
     setRunning(true);
+    setMetrics((m) => ({ ...m, scrollNote: null }));
     const monitor = new FrameMonitor(100);
     monitor.start();
     const started = performance.now();
@@ -413,19 +454,28 @@ function BenchBar(props: BenchBarProps): ReactElement {
   );
 }
 
+function keystrokeText(keystroke: Summary, dropped: number): string {
+  const base = `p50 ${keystroke.p50.toFixed(1)} · p95 ${keystroke.p95.toFixed(1)} · max ${keystroke.max.toFixed(1)} ms (n=${String(keystroke.count)})`;
+  return dropped === 0
+    ? base
+    : `${base} · dropped ${String(dropped)}/${String(KEYSTROKE_MOVES)} (recorded at ${String(MOVE_TIMEOUT_MS)} ms ceiling)`;
+}
+
+function scrollText(frame: FrameStats | null, note: string | null): string {
+  if (note !== null) return note;
+  if (frame === null) return "—";
+  return `max frame ${frame.maxFrameMs.toFixed(1)} ms · stalls ${String(frame.stalls)} / ${String(frame.frames)} frames`;
+}
+
 function MetricsPanel({ metrics }: { metrics: Metrics }): ReactElement {
-  const { keystroke, frame, mountMs } = metrics;
+  const { keystroke, keystrokeDropped, frame, scrollNote, mountMs } = metrics;
   return (
     <section className="border-border grid grid-cols-1 gap-3 rounded-lg border p-3 text-sm sm:grid-cols-3">
       <Metric label="Keystroke to cell-move (budget p95 ≤ 33 ms)">
-        {keystroke === null
-          ? "—"
-          : `p50 ${keystroke.p50.toFixed(1)} · p95 ${keystroke.p95.toFixed(1)} · max ${keystroke.max.toFixed(1)} ms (n=${String(keystroke.count)})`}
+        {keystroke === null ? "—" : keystrokeText(keystroke, keystrokeDropped)}
       </Metric>
       <Metric label="Scroll frames (budget: no stall > 100 ms)">
-        {frame === null
-          ? "—"
-          : `max frame ${frame.maxFrameMs.toFixed(1)} ms · stalls ${String(frame.stalls)} / ${String(frame.frames)} frames`}
+        {scrollText(frame, scrollNote)}
       </Metric>
       <Metric label="Grid mount (budget < 1000 ms)">
         {mountMs === null ? "—" : `${mountMs.toFixed(1)} ms`}
