@@ -46,9 +46,9 @@ pub struct PolicyInputRow {
 pub fn default_policy(field: &str) -> FieldPolicy {
     match field {
         "title" | "sort_title" | "language" | "isbn_10" | "isbn_13" | "publisher" | "pub_date"
-        | "cover" => FieldPolicy::AutoFill,
-        // All other known fields ("description", "series", etc.) and any unknown
-        // fields default to Propose — cautious until a human promotes.
+        | "cover" | "subtitle" | "pages" => FieldPolicy::AutoFill,
+        // All other known fields ("description", "series", "contributors.*", etc.)
+        // and any unknown fields default to Propose: cautious until a human promotes.
         _ => FieldPolicy::Propose,
     }
 }
@@ -178,6 +178,8 @@ mod tests {
             "publisher",
             "pub_date",
             "cover",
+            "subtitle",
+            "pages",
         ] {
             assert_eq!(
                 default_policy(field),
@@ -197,6 +199,10 @@ mod tests {
             "subjects",
             "genres",
             "tags",
+            "contributors.author",
+            "contributors.editor",
+            "contributors.translator",
+            "contributors.other",
         ] {
             assert_eq!(
                 default_policy(field),

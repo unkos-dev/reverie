@@ -89,7 +89,7 @@ async fn detail_happy_path_returns_ordered_works(pool: PgPool) {
     .await
     .unwrap();
     let (w_a, _m_a) = test_support::db::insert_work_and_manifestation(&ingestion_pool, "a").await;
-    let (w_b, _m_b) = test_support::db::insert_work_and_manifestation(&ingestion_pool, "b").await;
+    let (w_b, m_b) = test_support::db::insert_work_and_manifestation(&ingestion_pool, "b").await;
     sqlx::query!(
         "INSERT INTO series_works (series_id, work_id, position) \
          VALUES ($1, $2, 2.0::float8), ($1, $3, 1.0::float8)",
@@ -98,6 +98,16 @@ async fn detail_happy_path_returns_ordered_works(pool: PgPool) {
         w_b,
     )
     .execute(&pool)
+    .await
+    .unwrap();
+    // First-positioned work carries a page count; the other stays NULL, so
+    // the response must surface both states.
+    sqlx::query!(
+        "UPDATE manifestations SET pages = $1 WHERE id = $2",
+        320,
+        m_b,
+    )
+    .execute(&ingestion_pool)
     .await
     .unwrap();
 
@@ -116,6 +126,8 @@ async fn detail_happy_path_returns_ordered_works(pool: PgPool) {
     assert_eq!(works[1]["id"].as_str().unwrap(), w_a.to_string());
     assert!((works[1]["position"].as_f64().unwrap() - 2.0).abs() < 1e-9);
     assert_eq!(works[0]["manifestations"].as_array().unwrap().len(), 1);
+    assert_eq!(works[0]["manifestations"][0]["pages"].as_i64(), Some(320));
+    assert!(works[1]["manifestations"][0]["pages"].is_null());
 }
 
 #[sqlx::test(migrations = "./migrations")]

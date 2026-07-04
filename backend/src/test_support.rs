@@ -357,6 +357,37 @@ pub mod db {
             .unwrap_or_else(|e| panic!("connect as role failed: {e}"))
     }
 
+    /// Insert an author row and link it to `work_id` with the given role and
+    /// position, bypassing the PATCH surface and the sort-column refresh.
+    /// Returns the author id.
+    pub async fn insert_contributor(
+        pool: &PgPool,
+        work_id: Uuid,
+        name: &str,
+        role: &str,
+        position: i32,
+    ) -> Uuid {
+        let author_id: Uuid = sqlx::query_scalar!(
+            "INSERT INTO authors (name, sort_name) VALUES ($1, $1) RETURNING id",
+            name,
+        )
+        .fetch_one(pool)
+        .await
+        .expect("insert author");
+        sqlx::query!(
+            "INSERT INTO work_authors (work_id, author_id, role, position) \
+             VALUES ($1, $2, ($3::text)::author_role, $4)",
+            work_id,
+            author_id,
+            role,
+            position,
+        )
+        .execute(pool)
+        .await
+        .expect("insert work_authors");
+        author_id
+    }
+
     /// Insert an admin-role user via `reverie_app` (the only role with grants
     /// on `users`), mint a device token, and return
     /// `(user_id, "Basic ...")` ready for use as an `Authorization` header.

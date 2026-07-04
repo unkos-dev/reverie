@@ -24,12 +24,20 @@ pub struct ExtractedMetadata {
     pub title: Option<String>,
     /// Lowercased sort key derived from `title`; absent when `title` is absent.
     pub sort_title: Option<String>,
+    /// Sanitised declared subtitle, or `None` if absent (no colon-split heuristics).
+    pub subtitle: Option<String>,
     /// Sanitised book description / synopsis.
     pub description: Option<String>,
     /// `BCP 47` language tag as declared in the `OPF` (e.g. `"en"`, `"fr"`).
     pub language: Option<String>,
-    /// Ordered list of sanitised creators (authors, editors, translators).
+    /// Ordered list of sanitised creators (authors, editors, translators, narrators).
     pub creators: Vec<ExtractedCreator>,
+    /// Contributors with an unmapped or absent relator code, staged for
+    /// manual review rather than guessed as `"author"`.
+    pub unmapped_contributors: Vec<UnmappedContributor>,
+    /// Page count parsed from `schema:numberOfPages` (a community convention,
+    /// not `EPUB 3.3` core). `None` when absent, non-numeric, or not positive.
+    pub pages: Option<i32>,
     /// Sanitised publisher name.
     pub publisher: Option<String>,
     /// Publication date parsed from `OPF` `<dc:date>` in `YYYY`, `YYYY-MM`,
@@ -51,6 +59,18 @@ pub struct ExtractedMetadata {
     pub confidence: f32,
 }
 
+impl ExtractedMetadata {
+    /// First creator carrying the `author` role, in document order.
+    ///
+    /// `creators` is role-mixed and document-ordered, so an editor or
+    /// translator can precede the author; consumers that need "the author"
+    /// (work matching, library path rendering) must never fall back to a
+    /// non-author role.
+    pub fn first_author(&self) -> Option<&ExtractedCreator> {
+        self.creators.iter().find(|c| c.role == "author")
+    }
+}
+
 /// A single contributor (author, editor, translator, narrator) extracted from `OPF`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ExtractedCreator {
@@ -58,9 +78,22 @@ pub struct ExtractedCreator {
     pub name: String,
     /// Sort key in `"Surname, Given"` form; single-word names are returned as-is.
     pub sort_name: String,
-    /// Contributor role mapped from the `OPF` `relator` code: `"author"`,
-    /// `"editor"`, `"translator"`, or `"narrator"`. Unknown codes map to `"author"`.
+    /// Contributor role mapped from a `MARC` relator code: `"author"`,
+    /// `"editor"`, `"translator"`, or `"narrator"`. A `dc:creator` with no
+    /// declared role also maps to `"author"`; unmapped codes never guess a
+    /// role here and instead surface via [`ExtractedMetadata::unmapped_contributors`].
     pub role: String,
+}
+
+/// A contributor whose relator code did not map to a tracked role, or who had
+/// no code at all (a bare `dc:contributor`). Staged for manual review rather
+/// than guessed.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UnmappedContributor {
+    /// Sanitised display name as it appears in the `OPF`.
+    pub name: String,
+    /// The raw, unmapped relator code, or `None` when no code was declared.
+    pub code: Option<String>,
 }
 
 /// Series membership parsed from Calibre-style `OPF` series metadata.
@@ -97,6 +130,18 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .map(sanitiser::sanitise)
         .filter(|s| !s.is_empty());
     let language = opf.language.clone();
+    let subtitle = opf
+        .subtitle
+        .as_deref()
+        .map(sanitiser::sanitise)
+        .filter(|s| !s.is_empty());
+    let pages = opf.number_of_pages.as_deref().and_then(|raw| {
+        let parsed = raw.trim().parse::<i32>().ok().filter(|n| *n > 0);
+        if parsed.is_none() {
+            tracing::debug!(raw, "numberOfPages not a positive integer, discarding");
+        }
+        parsed
+    });
 
     // Parse date: try YYYY-MM-DD, YYYY-MM, YYYY
     let pub_date = opf.date.as_deref().and_then(parse_date);
@@ -108,21 +153,7 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .map(|id| isbn::parse_isbn(id))
         .find(|r| r.valid);
 
-    // Map creators
-    let creators: Vec<ExtractedCreator> = opf
-        .creators
-        .iter()
-        .map(|c| {
-            let name = sanitiser::sanitise(&c.name);
-            let sort_name = generate_sort_name(&name);
-            let role = map_role(c.role.as_deref());
-            ExtractedCreator {
-                name,
-                sort_name,
-                role,
-            }
-        })
-        .collect();
+    let (creators, unmapped_contributors) = collect_creators(&opf.creators);
 
     let subjects: Vec<String> = opf
         .subjects
@@ -149,45 +180,106 @@ pub fn extract(opf: &opf_layer::OpfData) -> ExtractedMetadata {
         .as_deref()
         .and_then(|t| inversion::detect_inversion(t, &author_names));
 
-    // Confidence: base 0.3, +0.1 per present field, cap at 1.0
-    let mut confidence: f32 = 0.3;
-    if title.is_some() {
-        confidence += 0.1;
-    }
-    if !creators.is_empty() {
-        confidence += 0.1;
-    }
-    if isbn.is_some() {
-        confidence += 0.1;
-    }
-    if publisher.is_some() {
-        confidence += 0.1;
-    }
-    if pub_date.is_some() {
-        confidence += 0.1;
-    }
-    if description.is_some() {
-        confidence += 0.1;
-    }
-    if !subjects.is_empty() {
-        confidence += 0.05;
-    }
-    let confidence = confidence.min(1.0);
-
-    ExtractedMetadata {
+    let mut meta = ExtractedMetadata {
         title,
         sort_title,
+        subtitle,
         description,
         language,
         creators,
+        unmapped_contributors,
+        pages,
         publisher,
         pub_date,
         isbn,
         subjects,
         series,
         inversion,
-        confidence,
+        confidence: 0.0,
+    };
+    meta.confidence = completeness_confidence(&meta);
+    meta
+}
+
+/// Map creators/contributors to role-tagged [`ExtractedCreator`]s plus the
+/// staged unmapped set. Each declared role on a creator/contributor yields
+/// one entry; no role at all defaults `dc:creator` to `"author"` but leaves
+/// `dc:contributor` unmapped (never guessed). Unmapped or unknown relator
+/// codes are staged, not dropped. Same (name, role) pair appearing twice
+/// keeps only the first occurrence, preserving document order.
+fn collect_creators(
+    raw: &[opf_layer::Creator],
+) -> (Vec<ExtractedCreator>, Vec<UnmappedContributor>) {
+    let mut creators: Vec<ExtractedCreator> = Vec::new();
+    let mut unmapped: Vec<UnmappedContributor> = Vec::new();
+    let mut seen_roles: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+
+    let push_unique = |creators: &mut Vec<ExtractedCreator>,
+                       seen: &mut std::collections::HashSet<(String, String)>,
+                       name: &str,
+                       role: &str| {
+        if seen.insert((name.to_string(), role.to_string())) {
+            creators.push(ExtractedCreator {
+                name: name.to_string(),
+                sort_name: generate_sort_name(name),
+                role: role.to_string(),
+            });
+        }
+    };
+
+    for c in raw {
+        let name = sanitiser::sanitise(&c.name);
+        if c.roles.is_empty() {
+            if c.from_contributor {
+                tracing::info!(name = %name, "unmapped contributor: no relator code declared");
+                unmapped.push(UnmappedContributor { name, code: None });
+            } else {
+                push_unique(&mut creators, &mut seen_roles, &name, "author");
+            }
+            continue;
+        }
+        for code in &c.roles {
+            if let Some(role) = map_relator(code) {
+                push_unique(&mut creators, &mut seen_roles, &name, role);
+            } else {
+                tracing::info!(code = code.as_str(), name = %name, "unmapped contributor relator code");
+                unmapped.push(UnmappedContributor {
+                    name: name.clone(),
+                    code: Some(code.clone()),
+                });
+            }
+        }
     }
+    (creators, unmapped)
+}
+
+/// Completeness-based confidence: base 0.3, +0.1 per present field
+/// (`subjects` contributes +0.05), capped at 1.0.
+fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
+    let mut confidence: f32 = 0.3;
+    if meta.title.is_some() {
+        confidence += 0.1;
+    }
+    if !meta.creators.is_empty() {
+        confidence += 0.1;
+    }
+    if meta.isbn.is_some() {
+        confidence += 0.1;
+    }
+    if meta.publisher.is_some() {
+        confidence += 0.1;
+    }
+    if meta.pub_date.is_some() {
+        confidence += 0.1;
+    }
+    if meta.description.is_some() {
+        confidence += 0.1;
+    }
+    if !meta.subjects.is_empty() {
+        confidence += 0.05;
+    }
+    confidence.min(1.0)
 }
 
 /// Try to parse a date string in common OPF formats.
@@ -220,8 +312,10 @@ fn parse_date(s: &str) -> Option<time::Date> {
 }
 
 /// Generate sort name: "J. R. R. Tolkien" → "Tolkien, J. R. R."
-/// Single-word names are returned as-is.
-fn generate_sort_name(name: &str) -> String {
+/// Single-word names are returned as-is. Shared with the PATCH contributors
+/// path (`routes::metadata`) so manually-entered names sort the same way as
+/// extracted ones; do not duplicate this logic elsewhere.
+pub(crate) fn generate_sort_name(name: &str) -> String {
     let name = name.trim();
     name.rfind(' ').map_or_else(
         || name.to_string(),
@@ -233,14 +327,16 @@ fn generate_sort_name(name: &str) -> String {
     )
 }
 
-/// Map OPF role codes to `author_role` enum values.
-fn map_role(role: Option<&str>) -> String {
-    match role {
-        Some("edt") => "editor".into(),
-        Some("trl") => "translator".into(),
-        Some("nrt") => "narrator".into(),
-        // "aut", unknown OPF roles, and None all map to "author".
-        _ => "author".into(),
+/// Map a `MARC` relator code to a tracked `author_role` value. Unmapped codes
+/// (including `"aut"`'s absence of a special case — see below) return `None`
+/// so callers stage them instead of guessing a role.
+fn map_relator(code: &str) -> Option<&'static str> {
+    match code {
+        "aut" => Some("author"),
+        "edt" => Some("editor"),
+        "trl" => Some("translator"),
+        "nrt" => Some("narrator"),
+        _ => None,
     }
 }
 
@@ -262,7 +358,9 @@ mod tests {
             opf_path: "OEBPS/content.opf".into(),
             accessibility_metadata: None,
             title: None,
+            subtitle: None,
             creators: vec![],
+            number_of_pages: None,
             description: None,
             publisher: None,
             date: None,
@@ -273,14 +371,19 @@ mod tests {
         }
     }
 
+    fn creator(name: &str, roles: &[&str]) -> Creator {
+        Creator {
+            name: name.into(),
+            roles: roles.iter().map(|r| (*r).to_string()).collect(),
+            from_contributor: false,
+        }
+    }
+
     #[test]
     fn extract_full_metadata() {
         let opf = OpfData {
             title: Some("The Hobbit".into()),
-            creators: vec![Creator {
-                name: "J. R. R. Tolkien".into(),
-                role: Some("aut".into()),
-            }],
+            creators: vec![creator("J. R. R. Tolkien", &["aut"])],
             description: Some("<p>A fantasy novel</p>".into()),
             publisher: Some("Allen &amp; Unwin".into()),
             date: Some("1937-09-21".into()),
@@ -334,31 +437,124 @@ mod tests {
 
     #[test]
     fn role_mapping() {
-        assert_eq!(map_role(Some("aut")), "author");
-        assert_eq!(map_role(Some("edt")), "editor");
-        assert_eq!(map_role(Some("trl")), "translator");
-        assert_eq!(map_role(Some("nrt")), "narrator");
-        assert_eq!(map_role(Some("ill")), "author"); // unknown → author
-        assert_eq!(map_role(None), "author");
+        assert_eq!(map_relator("aut"), Some("author"));
+        assert_eq!(map_relator("edt"), Some("editor"));
+        assert_eq!(map_relator("trl"), Some("translator"));
+        assert_eq!(map_relator("nrt"), Some("narrator"));
+        assert_eq!(map_relator("ill"), None);
     }
 
     #[test]
     fn multi_author_extraction() {
         let opf = OpfData {
             creators: vec![
-                Creator {
-                    name: "Author One".into(),
-                    role: Some("aut".into()),
-                },
-                Creator {
-                    name: "Editor Two".into(),
-                    role: Some("edt".into()),
-                },
+                creator("Author One", &["aut"]),
+                creator("Editor Two", &["edt"]),
             ],
             ..empty_opf()
         };
         let m = extract(&opf);
         assert_eq!(m.creators.len(), 2);
         assert_eq!(m.creators[1].role, "editor");
+    }
+
+    #[test]
+    fn dc_creator_with_no_role_defaults_to_author() {
+        let opf = OpfData {
+            creators: vec![creator("No Role", &[])],
+            ..empty_opf()
+        };
+        let m = extract(&opf);
+        assert_eq!(m.creators.len(), 1);
+        assert_eq!(m.creators[0].role, "author");
+        assert!(m.unmapped_contributors.is_empty());
+    }
+
+    #[test]
+    fn bare_contributor_with_no_role_is_staged_not_guessed() {
+        let opf = OpfData {
+            creators: vec![Creator {
+                name: "Some Helper".into(),
+                roles: vec![],
+                from_contributor: true,
+            }],
+            ..empty_opf()
+        };
+        let m = extract(&opf);
+        assert!(
+            m.creators.is_empty(),
+            "a bare dc:contributor must never be guessed as an author"
+        );
+        assert_eq!(m.unmapped_contributors.len(), 1);
+        assert_eq!(m.unmapped_contributors[0].name, "Some Helper");
+        assert!(m.unmapped_contributors[0].code.is_none());
+    }
+
+    #[test]
+    fn unknown_relator_code_is_staged_not_guessed() {
+        let opf = OpfData {
+            creators: vec![creator("Illustrator Person", &["ill"])],
+            ..empty_opf()
+        };
+        let m = extract(&opf);
+        assert!(
+            m.creators.is_empty(),
+            "an unknown relator code must never be guessed as an author"
+        );
+        assert_eq!(m.unmapped_contributors.len(), 1);
+        assert_eq!(m.unmapped_contributors[0].code.as_deref(), Some("ill"));
+    }
+
+    #[test]
+    fn multi_role_creator_splits_into_mapped_and_unmapped() {
+        // EPUB 3.3 §D.3.10: one creator, two role refines (aut + ill).
+        let opf = OpfData {
+            creators: vec![creator("Maurice Sendak", &["aut", "ill"])],
+            ..empty_opf()
+        };
+        let m = extract(&opf);
+        assert_eq!(m.creators.len(), 1);
+        assert_eq!(m.creators[0].role, "author");
+        assert_eq!(m.unmapped_contributors.len(), 1);
+        assert_eq!(m.unmapped_contributors[0].name, "Maurice Sendak");
+        assert_eq!(m.unmapped_contributors[0].code.as_deref(), Some("ill"));
+    }
+
+    #[test]
+    fn duplicate_name_role_pair_keeps_first_occurrence() {
+        let opf = OpfData {
+            creators: vec![
+                creator("Same Person", &["aut"]),
+                creator("Same Person", &["aut"]),
+            ],
+            ..empty_opf()
+        };
+        let m = extract(&opf);
+        assert_eq!(m.creators.len(), 1);
+    }
+
+    #[test]
+    fn subtitle_sanitized() {
+        let opf = OpfData {
+            subtitle: Some("The Final <b>Empire</b>".into()),
+            ..empty_opf()
+        };
+        let m = extract(&opf);
+        assert_eq!(m.subtitle.as_deref(), Some("The Final Empire"));
+    }
+
+    #[test]
+    fn pages_parse_bounds() {
+        let parse = |raw: &str| {
+            extract(&OpfData {
+                number_of_pages: Some(raw.into()),
+                ..empty_opf()
+            })
+            .pages
+        };
+        assert_eq!(parse("353"), Some(353));
+        assert_eq!(parse("0"), None);
+        assert_eq!(parse("-5"), None);
+        assert_eq!(parse("n/a"), None);
     }
 }

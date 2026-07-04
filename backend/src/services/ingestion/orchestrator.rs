@@ -482,7 +482,7 @@ async fn process_file(
             if let Some(ref t) = meta.title {
                 meta_vars.insert("Title".into(), t.clone());
             }
-            if let Some(first) = meta.creators.first() {
+            if let Some(first) = meta.first_author() {
                 meta_vars.insert("Author".into(), first.sort_name.clone());
             }
             let new_relative = path_template::render(path_template::DEFAULT_TEMPLATE, &meta_vars);
@@ -692,9 +692,12 @@ async fn commit_ingest(
             ExtractedMetadata {
                 title: Some(title.clone()),
                 sort_title: Some(title),
+                subtitle: None,
                 description: None,
                 language: None,
                 creators: Vec::new(),
+                unmapped_contributors: Vec::new(),
+                pages: None,
                 publisher: None,
                 pub_date: None,
                 isbn: None,
@@ -722,21 +725,24 @@ async fn commit_ingest(
         .map_or((None, None), |i| (i.isbn_10.clone(), i.isbn_13.clone()));
     let publisher = extracted.as_ref().and_then(|m| m.publisher.clone());
     let pub_date = extracted.as_ref().and_then(|m| m.pub_date);
+    let pages = extracted.as_ref().and_then(|m| m.pages);
 
     sqlx::query!(
         "UPDATE manifestations SET \
-            isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, \
-            isbn_10_version_id = $5, isbn_13_version_id = $6, \
-            publisher_version_id = $7, pub_date_version_id = $8 \
-         WHERE id = $9",
+            isbn_10 = $1, isbn_13 = $2, publisher = $3, pub_date = $4, pages = $5, \
+            isbn_10_version_id = $6, isbn_13_version_id = $7, \
+            publisher_version_id = $8, pub_date_version_id = $9, pages_version_id = $10 \
+         WHERE id = $11",
         isbn_10.as_deref(),
         isbn_13.as_deref(),
         publisher.as_deref(),
         pub_date,
+        pages,
         draft_ids.get("isbn_10").copied(),
         draft_ids.get("isbn_13").copied(),
         draft_ids.get("publisher").copied(),
         draft_ids.get("pub_date").copied(),
+        draft_ids.get("pages").copied(),
         manifestation_id,
     )
     .execute(&mut *tx)
@@ -858,14 +864,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_empty_dir_returns_zero(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
+        let (_ingestion, _library, _quarantine, config) = scan_env();
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 0);
         assert_eq!(result.failed, 0);
@@ -875,18 +874,11 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_processes_pdf_end_to_end(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Tolkien - The Hobbit.pdf");
         std::fs::write(&source, b"fake pdf bytes for scan_once test").unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -929,12 +921,36 @@ mod tests {
         );
     }
 
-    /// Build a minimal valid EPUB ZIP in memory.
-    ///
-    /// Structure: mimetype (stored) + META-INF/container.xml + OEBPS/content.opf.
-    /// All layers pass cleanly: valid ZIP, valid container, valid OPF with empty
-    /// manifest and spine, no XHTML to check, no cover declared.
-    fn make_minimal_epub() -> Vec<u8> {
+    /// Tempdir trio + scan config for a `scan_once` test. The dirs must
+    /// outlive the scan (files are asserted in place), so they ride along
+    /// in the return value.
+    fn scan_env() -> (
+        tempfile::TempDir,
+        tempfile::TempDir,
+        tempfile::TempDir,
+        Config,
+    ) {
+        let ingestion = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let quarantine = tempfile::tempdir().unwrap();
+        let config = test_config_for(
+            ingestion.path().to_str().unwrap(),
+            library.path().to_str().unwrap(),
+            quarantine.path().to_str().unwrap(),
+        );
+        (ingestion, library, quarantine, config)
+    }
+
+    const CONTAINER_XML: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+
+    /// Assemble an EPUB ZIP in memory: stored `mimetype`, an optional
+    /// `META-INF/container.xml`, and the given OPF at `OEBPS/content.opf`.
+    fn build_epub(opf: &[u8], container_xml: Option<&[u8]>) -> Vec<u8> {
         use std::io::Write as _;
         use zip::write::{ExtendedFileOptions, FileOptions};
 
@@ -949,112 +965,71 @@ mod tests {
 
         let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
 
-        w.start_file("META-INF/container.xml", default.clone())
-            .unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>"#,
-        )
-        .unwrap();
+        if let Some(container) = container_xml {
+            w.start_file("META-INF/container.xml", default.clone())
+                .unwrap();
+            w.write_all(container).unwrap();
+        }
 
         w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(
+        w.write_all(opf).unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    /// Build a minimal valid EPUB ZIP in memory. All layers pass cleanly:
+    /// valid ZIP, valid container, valid OPF with empty manifest and spine,
+    /// no XHTML to check, no cover declared.
+    fn make_minimal_epub() -> Vec<u8> {
+        build_epub(
             br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest/>
   <spine/>
 </package>"#,
+            Some(CONTAINER_XML),
         )
-        .unwrap();
-
-        w.finish().unwrap().into_inner()
     }
 
     /// Build an EPUB with Dublin Core metadata for integration testing.
     fn make_metadata_epub() -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
-
-        w.start_file("META-INF/container.xml", default.clone())
-            .unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>"#,
-        )
-        .unwrap();
-
-        w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+        build_epub(
+            br##"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata>
-    <dc:title>The Integration Test</dc:title>
+    <dc:title id="t1">The Integration Test</dc:title>
+    <dc:title id="t2">A Subtitle For Testing</dc:title>
+    <meta refines="#t2" property="title-type">subtitle</meta>
     <dc:creator opf:role="aut">Test McAuthor</dc:creator>
     <dc:language>en</dc:language>
     <dc:identifier>urn:isbn:9780306406157</dc:identifier>
     <dc:publisher>Test Press</dc:publisher>
     <dc:description>A book for testing metadata extraction</dc:description>
+    <meta property="schema:numberOfPages">327</meta>
     <meta name="calibre:series" content="Test Series"/>
     <meta name="calibre:series_index" content="1"/>
   </metadata>
   <manifest/>
   <spine/>
-</package>"#,
+</package>"##,
+            Some(CONTAINER_XML),
         )
-        .unwrap();
-
-        w.finish().unwrap().into_inner()
     }
 
     /// Build an EPUB the validator rates `Repaired`: a valid `.opf` at a safe
     /// path but no `META-INF/container.xml`, so the container layer regenerates
     /// it (a `Repaired`-severity fix) and repacks the file.
     fn make_repaired_epub() -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        // No META-INF/container.xml — the container layer scans for the .opf and
-        // regenerates the container as a Repaired fix.
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
-        w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(
+        build_epub(
             br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
   <manifest/>
   <spine/>
 </package>"#,
+            None,
         )
-        .unwrap();
-
-        w.finish().unwrap().into_inner()
     }
 
     /// Build an EPUB the validator rates `Degraded`: a complete, valid container
@@ -1062,34 +1037,8 @@ mod tests {
     /// ZIP — the cover layer records a `MissingCover` (`Degraded`) issue with no
     /// repairable issue present.
     fn make_degraded_epub() -> Vec<u8> {
-        use std::io::Write as _;
-        use zip::write::{ExtendedFileOptions, FileOptions};
-
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        w.start_file("mimetype", stored).unwrap();
-        w.write_all(b"application/epub+zip").unwrap();
-
-        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
-
-        w.start_file("META-INF/container.xml", default.clone())
-            .unwrap();
-        w.write_all(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>"#,
-        )
-        .unwrap();
-
         // Manifest declares cover.jpg but the entry is never written to the ZIP.
-        w.start_file("OEBPS/content.opf", default).unwrap();
-        w.write_all(
+        build_epub(
             br#"<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata/>
@@ -1098,28 +1047,19 @@ mod tests {
   </manifest>
   <spine/>
 </package>"#,
+            Some(CONTAINER_XML),
         )
-        .unwrap();
-
-        w.finish().unwrap().into_inner()
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_extracts_metadata_from_epub(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         // Use a filename that differs from the OPF metadata to test rename
         let source = ingestion.path().join("Unknown - somefile.epub");
         std::fs::write(&source, make_metadata_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1);
         assert_eq!(result.failed, 0);
@@ -1170,6 +1110,32 @@ mod tests {
         .unwrap();
         assert_eq!(isbn.as_deref(), Some("9780306406157"));
 
+        // Verify subtitle landed on the work with its pointer set.
+        let (subtitle, subtitle_version_id) = sqlx::query!(
+            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
+             JOIN manifestations m ON m.work_id = w.id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.subtitle, r.subtitle_version_id))
+        .unwrap();
+        assert_eq!(subtitle.as_deref(), Some("A Subtitle For Testing"));
+        assert!(subtitle_version_id.is_some());
+
+        // Verify page count landed on the manifestation with its pointer set.
+        let (pages, pages_version_id) = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.pages, r.pages_version_id))
+        .unwrap();
+        assert_eq!(pages, Some(327));
+        assert!(pages_version_id.is_some());
+
         // Verify metadata_versions drafts were created
         let draft_count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM metadata_versions mv \
@@ -1198,23 +1164,58 @@ mod tests {
         assert_eq!(series_count, 1, "expected series link");
     }
 
+    /// An EPUB with no declared subtitle refine or `numberOfPages` meta must
+    /// leave all four fields (both canonical columns and both pointers) NULL
+    /// — no colon-split heuristics, no defaulting to zero.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_without_subtitle_or_pages_leaves_all_four_null(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, _quarantine, config) = scan_env();
+
+        let source = ingestion.path().join("Tolkien - The Hobbit.epub");
+        std::fs::write(&source, make_minimal_epub()).unwrap();
+
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+
+        let dest = library.path().join("Tolkien/The Hobbit.epub");
+        let dest_str = dest.to_str().unwrap();
+
+        let (subtitle, subtitle_version_id) = sqlx::query!(
+            "SELECT w.subtitle, w.subtitle_version_id FROM works w \
+             JOIN manifestations m ON m.work_id = w.id \
+             WHERE m.file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.subtitle, r.subtitle_version_id))
+        .unwrap();
+        assert!(subtitle.is_none());
+        assert!(subtitle_version_id.is_none());
+
+        let (pages, pages_version_id) = sqlx::query!(
+            "SELECT pages, pages_version_id FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| (r.pages, r.pages_version_id))
+        .unwrap();
+        assert!(pages.is_none());
+        assert!(pages_version_id.is_none());
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_processes_epub_end_to_end(pool: PgPool) {
         // P1: exercise the EPUB validation path end-to-end, verifying that a clean
         // EPUB gets validation_status='clean' in the manifestation row.
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Tolkien - The Hobbit.epub");
         std::fs::write(&source, make_minimal_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -1249,18 +1250,11 @@ mod tests {
         // in place and the manifestation row must record `repaired`.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Mended - Patchwork Quilt.epub");
         std::fs::write(&source, make_repaired_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -1288,18 +1282,11 @@ mod tests {
         // absent is degraded (not repaired) and still ingested.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Faded - Wilted Garden.epub");
         std::fs::write(&source, make_degraded_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0);
@@ -1329,18 +1316,11 @@ mod tests {
         //.
         use crate::models::validation_status::ValidationStatus;
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Probe - force-validator-error.epub");
         std::fs::write(&source, make_minimal_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
         assert_eq!(result.failed, 0, "validator error must not fail ingestion");
@@ -1366,18 +1346,11 @@ mod tests {
         // P2: a corrupt EPUB (not a valid ZIP) must be quarantined — the source
         // gets a quarantine sidecar, the library copy is removed, and failed=1.
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, quarantine, config) = scan_env();
 
         let source = ingestion.path().join("Bad - Corrupt Book.epub");
         std::fs::write(&source, b"this is not a zip file").unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.failed, 1, "expected 1 failed (quarantined)");
         assert_eq!(result.processed, 0);
@@ -1414,20 +1387,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn scan_once_skips_duplicate_on_second_run(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, _library, _quarantine, config) = scan_env();
 
         // Unique content to avoid collisions with other test data
         let unique_content = format!("dedup-test-{}", uuid::Uuid::new_v4());
         let source = ingestion.path().join("Author - Book.pdf");
         std::fs::write(&source, unique_content.as_bytes()).unwrap();
-
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
 
         // First scan: should process the file
         let r1 = scan_once(&config, &pool).await.unwrap();
@@ -1449,19 +1414,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_version_pointers_for_all_canonical_fields(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let marker = uuid::Uuid::new_v4().simple().to_string();
         let source = ingestion.path().join(format!("invariant-{marker}.epub"));
         std::fs::write(&source, make_metadata_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
@@ -1478,6 +1436,8 @@ mod tests {
         struct Invariant {
             title: Option<String>,
             title_version_id: Option<uuid::Uuid>,
+            subtitle: Option<String>,
+            subtitle_version_id: Option<uuid::Uuid>,
             language: Option<String>,
             language_version_id: Option<uuid::Uuid>,
             publisher: Option<String>,
@@ -1485,15 +1445,19 @@ mod tests {
             pub_date_version_id: Option<uuid::Uuid>,
             isbn_13: Option<String>,
             isbn_13_version_id: Option<uuid::Uuid>,
+            pages: Option<i32>,
+            pages_version_id: Option<uuid::Uuid>,
         }
         let dest_str = dest.to_str().unwrap();
         let inv = sqlx::query_as!(
             Invariant,
             "SELECT w.title AS \"title?\", w.title_version_id, \
+                    w.subtitle, w.subtitle_version_id, \
                     w.language, w.language_version_id, \
                     m.publisher, m.publisher_version_id, \
                     m.pub_date_version_id, \
-                    m.isbn_13, m.isbn_13_version_id \
+                    m.isbn_13, m.isbn_13_version_id, \
+                    m.pages, m.pages_version_id \
              FROM manifestations m \
              JOIN works w ON w.id = m.work_id \
              WHERE m.file_path = $1",
@@ -1505,6 +1469,8 @@ mod tests {
         let Invariant {
             title,
             title_version_id: title_ptr,
+            subtitle,
+            subtitle_version_id: subtitle_ptr,
             language,
             language_version_id: language_ptr,
             publisher,
@@ -1512,11 +1478,19 @@ mod tests {
             pub_date_version_id: pub_date_ptr,
             isbn_13,
             isbn_13_version_id: isbn_13_ptr,
+            pages,
+            pages_version_id: pages_ptr,
         } = inv;
 
         // Invariant: non-NULL canonical value ⇒ non-NULL pointer.
         if title.is_some() {
             assert!(title_ptr.is_some(), "title set but title_version_id NULL");
+        }
+        if subtitle.is_some() {
+            assert!(
+                subtitle_ptr.is_some(),
+                "subtitle set but subtitle_version_id NULL"
+            );
         }
         if language.is_some() {
             assert!(
@@ -1536,14 +1510,19 @@ mod tests {
                 "isbn_13 set but isbn_13_version_id NULL"
             );
         }
+        if pages.is_some() {
+            assert!(pages_ptr.is_some(), "pages set but pages_version_id NULL");
+        }
 
         // Every non-NULL pointer must reference a real source='opf' row.
         for pointer in [
             title_ptr,
+            subtitle_ptr,
             language_ptr,
             publisher_ptr,
             pub_date_ptr,
             isbn_13_ptr,
+            pages_ptr,
         ]
         .into_iter()
         .flatten()
@@ -1571,9 +1550,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_without_opf_writes_heuristic_title_journal(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         // PDF has no OPF extraction path → heuristic fallback engages.
         let marker = uuid::Uuid::new_v4().simple().to_string();
@@ -1582,11 +1559,6 @@ mod tests {
             .join(format!("Heuristic Author - Heuristic Title {marker}.pdf"));
         std::fs::write(&source, format!("heuristic-pdf-{marker}")).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
@@ -1633,24 +1605,18 @@ mod tests {
         );
     }
 
-    /// `work_authors.source_version_id` must be wired to the `creators`
-    /// journal row so authors on the work trace back to their draft.
+    /// `work_authors.source_version_id` must be wired to the per-role
+    /// `contributors.author` journal row so authors on the work trace back
+    /// to their draft.
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_sets_work_authors_source_version_id(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let ingestion = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
+        let (ingestion, library, _quarantine, config) = scan_env();
 
         let marker = uuid::Uuid::new_v4().simple().to_string();
         let source = ingestion.path().join(format!("authors-{marker}.epub"));
         std::fs::write(&source, make_metadata_epub()).unwrap();
 
-        let config = test_config_for(
-            ingestion.path().to_str().unwrap(),
-            library.path().to_str().unwrap(),
-            quarantine.path().to_str().unwrap(),
-        );
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
@@ -1659,7 +1625,8 @@ mod tests {
             .join("McAuthor, Test/The Integration Test.epub");
 
         // Every work_author row for this work must carry a source_version_id
-        // pointing at a metadata_versions row with field_name='creators'.
+        // pointing at a metadata_versions row with
+        // field_name='contributors.author'.
         let dest_str = dest.to_str().unwrap();
         let rows = sqlx::query!(
             "SELECT wa.author_id, wa.source_version_id \
@@ -1688,8 +1655,8 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(
-                field_name, "creators",
-                "source_version_id should reference a 'creators' journal row"
+                field_name, "contributors.author",
+                "source_version_id should reference a 'contributors.author' journal row"
             );
         }
     }

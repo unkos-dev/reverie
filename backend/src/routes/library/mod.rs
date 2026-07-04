@@ -177,23 +177,16 @@ async fn list(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-        "SELECT m.id, m.work_id, m.created_at, m.isbn_13, \
+        "SELECT m.id, m.work_id, m.created_at, m.isbn_13, m.pages, \
                 m.ingestion_status::text AS ingestion_status, \
                 m.validation_status, \
                 m.enrichment_status::text AS enrichment_status, \
-                w.title, w.sort_title, \
+                w.title, w.subtitle, w.sort_title, \
+                w.first_author_sort_name, \
                 series_one.series_id AS series_id, \
                 series_one.series_name AS series_name, \
                 series_one.series_position AS series_position",
     );
-    if params.sort == SortMode::Author {
-        qb.push(
-            ", (SELECT a.sort_name FROM work_authors wa \
-                   JOIN authors a ON a.id = wa.author_id \
-                   WHERE wa.work_id = w.id \
-                   ORDER BY wa.position ASC LIMIT 1) AS first_author_sort_name",
-        );
-    }
     // LEFT JOIN LATERAL pick-one so a work in multiple series does
     // not multiply manifestation rows — duplicates would break LIMIT
     // + cursor math. Deterministic pick: lowest sw.position (NULLS
@@ -246,9 +239,11 @@ async fn list(
             id: m_id,
             work_id,
             title: r.get("title"),
+            subtitle: r.get("subtitle"),
             authors: authors_by_work.get(&work_id).cloned().unwrap_or_default(),
             series,
             isbn_13: r.get("isbn_13"),
+            pages: r.get("pages"),
             cover_url: format!("/api/v1/books/{m_id}/cover/thumb"),
             ingestion_status: parse_ingestion(&ingestion_raw)?,
             // Fallible decode: this dynamic QueryBuilder path can't use a
@@ -349,9 +344,12 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
 /// `i64::from(u32)` cast on `tag.len()` is provably in range.
 fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) {
     if let Some(author_id) = params.author {
+        // Role-scoped to match the response surface: `authors[]` carries the
+        // author role only, so `?author=` must not match a work where the
+        // supplied id is linked as editor/translator.
         qb.push(
             " AND EXISTS (SELECT 1 FROM work_authors wa \
-              WHERE wa.work_id = w.id AND wa.author_id = ",
+              WHERE wa.work_id = w.id AND wa.role = 'author' AND wa.author_id = ",
         );
         qb.push_bind(author_id);
         qb.push(")");
@@ -442,25 +440,15 @@ fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, sort: SortMode, key: O
             // order, PLUS the entire trailing NULL bucket. Postgres
             // three-valued logic would silently drop the NULL bucket
             // from a naive tuple `>` comparison.
-            let author_sub = "(SELECT a.sort_name FROM work_authors wa \
-                  JOIN authors a ON a.id = wa.author_id \
-                  WHERE wa.work_id = w.id \
-                  ORDER BY wa.position ASC LIMIT 1)";
-            qb.push(" AND (");
-            qb.push(author_sub);
-            qb.push(" > ");
+            qb.push(" AND (w.first_author_sort_name > ");
             qb.push_bind(sort_name.clone());
-            qb.push(" OR (");
-            qb.push(author_sub);
-            qb.push(" = ");
+            qb.push(" OR (w.first_author_sort_name = ");
             qb.push_bind(sort_name.clone());
             qb.push(" AND (w.id, m.id) > (");
             qb.push_bind(*work_id);
             qb.push(", ");
             qb.push_bind(*manifestation_id);
-            qb.push(")) OR ");
-            qb.push(author_sub);
-            qb.push(" IS NULL)");
+            qb.push(")) OR w.first_author_sort_name IS NULL)");
         }
         (
             SortMode::Author,
@@ -474,10 +462,7 @@ fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, sort: SortMode, key: O
             // page is the rest of the NULL bucket ordered by
             // `(w.id, m.id)`.
             qb.push(
-                " AND (SELECT a.sort_name FROM work_authors wa \
-                  JOIN authors a ON a.id = wa.author_id \
-                  WHERE wa.work_id = w.id \
-                  ORDER BY wa.position ASC LIMIT 1) IS NULL \
+                " AND w.first_author_sort_name IS NULL \
                   AND (w.id, m.id) > (",
             );
             qb.push_bind(*work_id);
@@ -505,7 +490,7 @@ fn push_order_by(qb: &mut QueryBuilder<Postgres>, sort: SortMode) {
             qb.push(" ORDER BY w.sort_title ASC, w.id ASC, m.id ASC");
         }
         SortMode::Author => {
-            qb.push(" ORDER BY first_author_sort_name ASC NULLS LAST, w.id ASC, m.id ASC");
+            qb.push(" ORDER BY w.first_author_sort_name ASC NULLS LAST, w.id ASC, m.id ASC");
         }
     }
 }
@@ -581,11 +566,13 @@ pub(crate) async fn load_authors_for_works(
     if work_ids.is_empty() {
         return Ok(out);
     }
+    // Editors/translators/narrators never substitute for an author in
+    // display — this list feeds authors[] on the list/detail responses.
     let rows = sqlx::query!(
         "SELECT wa.work_id, a.name \
          FROM work_authors wa \
          JOIN authors a ON a.id = wa.author_id \
-         WHERE wa.work_id = ANY($1::uuid[]) \
+         WHERE wa.work_id = ANY($1::uuid[]) AND wa.role = 'author' \
          ORDER BY wa.position ASC",
         work_ids,
     )
@@ -703,12 +690,14 @@ async fn detail(
         id: row.id,
         work_id,
         title: row.title,
+        subtitle: row.subtitle,
         authors,
         series,
         description: row.description,
         language: row.language,
         isbn_13: row.isbn_13,
         isbn_10: row.isbn_10,
+        pages: row.pages,
         publisher: row.publisher,
         pub_date: pub_date_str,
         cover_url: format!("/api/v1/books/{}/cover/thumb", row.id),
@@ -734,18 +723,21 @@ struct DetailRow {
     id: Uuid,
     work_id: Uuid,
     title: String,
+    subtitle: Option<String>,
     description: Option<String>,
     language: Option<String>,
     isbn_13: Option<String>,
     isbn_10: Option<String>,
     publisher: Option<String>,
     pub_date: Option<time::Date>,
+    pages: Option<i32>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
     ingestion_status: String,
     validation_status: ValidationStatus,
     enrichment_status: String,
     w_title_v: Option<Uuid>,
+    w_subtitle_v: Option<Uuid>,
     w_desc_v: Option<Uuid>,
     w_lang_v: Option<Uuid>,
     m_publisher_v: Option<Uuid>,
@@ -753,6 +745,7 @@ struct DetailRow {
     m_isbn10_v: Option<Uuid>,
     m_isbn13_v: Option<Uuid>,
     m_cover_v: Option<Uuid>,
+    m_pages_v: Option<Uuid>,
     series_id: Option<Uuid>,
     series_name: Option<String>,
     series_position: Option<f64>,
@@ -775,18 +768,21 @@ async fn fetch_detail_row(
         SELECT m.id                   AS "id!",
                m.work_id              AS "work_id!",
                w.title                AS "title!",
+               w.subtitle             AS subtitle,
                w.description          AS description,
                w.language             AS language,
                m.isbn_13              AS isbn_13,
                m.isbn_10              AS isbn_10,
                m.publisher            AS publisher,
                m.pub_date             AS pub_date,
+               m.pages                AS pages,
                m.created_at           AS "created_at!",
                m.updated_at           AS "updated_at!",
                m.ingestion_status::text  AS "ingestion_status!",
                m.validation_status       AS "validation_status!: ValidationStatus",
                m.enrichment_status::text AS "enrichment_status!",
                w.title_version_id        AS w_title_v,
+               w.subtitle_version_id     AS w_subtitle_v,
                w.description_version_id  AS w_desc_v,
                w.language_version_id     AS w_lang_v,
                m.publisher_version_id    AS m_publisher_v,
@@ -794,6 +790,7 @@ async fn fetch_detail_row(
                m.isbn_10_version_id      AS m_isbn10_v,
                m.isbn_13_version_id      AS m_isbn13_v,
                m.cover_version_id        AS m_cover_v,
+               m.pages_version_id        AS m_pages_v,
                series_one.series_id      AS "series_id?",
                series_one.series_name    AS "series_name?",
                series_one.series_position AS "series_position?: f64"
@@ -821,18 +818,21 @@ async fn fetch_detail_row(
         id: r.id,
         work_id: r.work_id,
         title: r.title,
+        subtitle: r.subtitle,
         description: r.description,
         language: r.language,
         isbn_13: r.isbn_13,
         isbn_10: r.isbn_10,
         publisher: r.publisher,
         pub_date: r.pub_date,
+        pages: r.pages,
         created_at: r.created_at,
         updated_at: r.updated_at,
         ingestion_status: r.ingestion_status,
         validation_status: r.validation_status,
         enrichment_status: r.enrichment_status,
         w_title_v: r.w_title_v,
+        w_subtitle_v: r.w_subtitle_v,
         w_desc_v: r.w_desc_v,
         w_lang_v: r.w_lang_v,
         m_publisher_v: r.m_publisher_v,
@@ -840,6 +840,7 @@ async fn fetch_detail_row(
         m_isbn10_v: r.m_isbn10_v,
         m_isbn13_v: r.m_isbn13_v,
         m_cover_v: r.m_cover_v,
+        m_pages_v: r.m_pages_v,
         series_id: r.series_id,
         series_name: r.series_name,
         series_position: r.series_position,
@@ -937,6 +938,7 @@ async fn load_pending_versions(
 fn canonical_pointer_ids(row: &DetailRow) -> Vec<Uuid> {
     [
         row.w_title_v,
+        row.w_subtitle_v,
         row.w_desc_v,
         row.w_lang_v,
         row.m_publisher_v,
@@ -944,6 +946,7 @@ fn canonical_pointer_ids(row: &DetailRow) -> Vec<Uuid> {
         row.m_isbn10_v,
         row.m_isbn13_v,
         row.m_cover_v,
+        row.m_pages_v,
     ]
     .into_iter()
     .flatten()
@@ -957,6 +960,7 @@ fn canonical_pointer_ids(row: &DetailRow) -> Vec<Uuid> {
 fn accepted_pointer_count(row: &DetailRow) -> u32 {
     let filled = [
         row.w_title_v.is_some(),
+        row.w_subtitle_v.is_some(),
         row.w_desc_v.is_some(),
         row.w_lang_v.is_some(),
         row.m_publisher_v.is_some(),
@@ -964,6 +968,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
         row.m_isbn10_v.is_some(),
         row.m_isbn13_v.is_some(),
         row.m_cover_v.is_some(),
+        row.m_pages_v.is_some(),
     ]
     .into_iter()
     .filter(|b| *b)
@@ -1015,6 +1020,7 @@ async fn work_detail(
         SELECT id          AS "id!",
                isbn_10,
                isbn_13,
+               pages,
                created_at  AS "created_at!",
                ingestion_status::text  AS "ingestion_status!",
                validation_status       AS "validation_status!: ValidationStatus",
@@ -1036,6 +1042,7 @@ async fn work_detail(
     let work = sqlx::query!(
         "SELECT id   AS \"id!\", \
                 title AS \"title!\", \
+                subtitle, \
                 description, \
                 language \
          FROM works WHERE id = $1",
@@ -1076,6 +1083,7 @@ async fn work_detail(
             id: r.id,
             isbn_13: r.isbn_13,
             isbn_10: r.isbn_10,
+            pages: r.pages,
             cover_url: format!("/api/v1/books/{}/cover/thumb", r.id),
             ingestion_status: parse_ingestion(&r.ingestion_status)?,
             validation_status: r.validation_status,
@@ -1093,6 +1101,7 @@ async fn work_detail(
     Ok(axum::Json(WorkDetail {
         id: work.id,
         title: work.title,
+        subtitle: work.subtitle,
         authors,
         description: work.description,
         language: work.language,

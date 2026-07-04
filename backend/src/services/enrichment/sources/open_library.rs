@@ -163,7 +163,7 @@ fn map_api_books_response(body: &Value, isbn_key: &str) -> Vec<SourceResult> {
             .collect();
         if !names.is_empty() {
             out.push(SourceResult {
-                field_name: "creators".into(),
+                field_name: "contributors.author".into(),
                 raw_value: json!(names),
                 match_type: mt.into(),
             });
@@ -276,7 +276,7 @@ fn map_search_response(body: &Value) -> Vec<SourceResult> {
             .collect();
         if !authors.is_empty() {
             out.push(SourceResult {
-                field_name: "creators".into(),
+                field_name: "contributors.author".into(),
                 raw_value: json!(authors),
                 match_type: mt.into(),
             });
@@ -361,7 +361,7 @@ mod tests {
         let out = map_api_books_response(&body, "ISBN:9780441172719");
         let fields: Vec<&str> = out.iter().map(|r| r.field_name.as_str()).collect();
         assert!(fields.contains(&"title"));
-        assert!(fields.contains(&"creators"));
+        assert!(fields.contains(&"contributors.author"));
         assert!(fields.contains(&"publisher"));
         assert!(fields.contains(&"pub_date"));
         assert!(fields.contains(&"subjects"));
@@ -407,7 +407,10 @@ mod tests {
             }
         });
         let out = map_api_books_response(&body, "ISBN:9780441172719");
-        let creators = out.iter().find(|r| r.field_name == "creators").unwrap();
+        let creators = out
+            .iter()
+            .find(|r| r.field_name == "contributors.author")
+            .unwrap();
         assert_eq!(creators.raw_value, json!(["Frank Herbert"]));
     }
 
@@ -459,7 +462,7 @@ mod tests {
 
         let fields: Vec<&str> = out.iter().map(|r| r.field_name.as_str()).collect();
         assert!(fields.contains(&"title"));
-        assert!(fields.contains(&"creators"));
+        assert!(fields.contains(&"contributors.author"));
         assert!(fields.contains(&"publisher"));
         assert!(fields.contains(&"isbn_13"));
     }

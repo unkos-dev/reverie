@@ -86,13 +86,14 @@ pub async fn match_existing(
     }
 
     if let Some(title) = &metadata.title
-        && let Some(first_author) = metadata.creators.first()
+        && let Some(first_author) = metadata.first_author()
     {
         let hit = sqlx::query_scalar!(
             "SELECT w.id FROM works w \
              JOIN work_authors wa ON wa.work_id = w.id \
              JOIN authors a ON a.id = wa.author_id \
-             WHERE similarity(w.title, $1) > 0.6 \
+             WHERE wa.role = 'author' \
+               AND similarity(w.title, $1) > 0.6 \
                AND similarity(a.name, $2) > 0.6 \
              ORDER BY similarity(w.title, $1) DESC \
              LIMIT 1",
@@ -144,17 +145,21 @@ pub async fn upgrade_stub(
         "UPDATE works SET \
             title = $1, \
             sort_title = $2, \
-            description = $3, \
-            language = $4, \
-            title_version_id = $5, \
-            description_version_id = $6, \
-            language_version_id = $7 \
-         WHERE id = $8",
+            subtitle = $3, \
+            description = $4, \
+            language = $5, \
+            title_version_id = $6, \
+            subtitle_version_id = $7, \
+            description_version_id = $8, \
+            language_version_id = $9 \
+         WHERE id = $10",
         work_title,
         work_sort_title,
+        metadata.subtitle.as_deref(),
         metadata.description.as_deref(),
         metadata.language.as_deref(),
         draft_ids.get("title").copied(),
+        draft_ids.get("subtitle").copied(),
         draft_ids.get("description").copied(),
         draft_ids.get("language").copied(),
         work_id,
@@ -162,10 +167,12 @@ pub async fn upgrade_stub(
     .execute(&mut *conn)
     .await?;
 
-    let creators_version_id = draft_ids.get("creators").copied();
     for (i, creator) in metadata.creators.iter().enumerate() {
         let author_id = find_or_create_author(conn, &creator.name, &creator.sort_name).await?;
         let position = i32::try_from(i).unwrap_or(i32::MAX);
+        let source_version_id = draft_ids
+            .get(&format!("contributors.{}", creator.role))
+            .copied();
         sqlx::query!(
             // sqlx macros have no built-in &str→enum mapping for `author_role`,
             // so $3 binds as text and the cast to the DB enum happens in SQL.
@@ -176,10 +183,13 @@ pub async fn upgrade_stub(
             author_id,
             &creator.role,
             position,
-            creators_version_id,
+            source_version_id,
         )
         .execute(&mut *conn)
         .await?;
+    }
+    if !metadata.creators.is_empty() {
+        refresh_first_author_sort(conn, work_id).await?;
     }
 
     if let Some(series) = &metadata.series {
@@ -225,7 +235,37 @@ pub async fn find_or_create(
     Ok(stub_id)
 }
 
-async fn find_or_create_author(
+/// Refresh `works.first_author_sort_name` from the current `work_authors` rows.
+///
+/// This is the ONLY writer of that column: every `work_authors` mutation site
+/// (`upgrade_stub` and the contributors `PATCH` handler) calls it after its
+/// writes so the denormalized author-sort index never drifts from the
+/// underlying rows. Picks the lowest-`position` row with `role = 'author'`;
+/// works with no author row get `NULL` (sorts last). The `UPDATE` also bumps
+/// `works.updated_at` via the table's existing trigger.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the `UPDATE` statement.
+pub async fn refresh_first_author_sort(
+    conn: &mut PgConnection,
+    work_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE works SET first_author_sort_name = (\
+             SELECT a.sort_name FROM work_authors wa \
+             JOIN authors a ON a.id = wa.author_id \
+             WHERE wa.work_id = $1 AND wa.role = 'author' \
+             ORDER BY wa.position ASC LIMIT 1) \
+         WHERE id = $1",
+        work_id,
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn find_or_create_author(
     conn: &mut PgConnection,
     name: &str,
     sort_name: &str,
@@ -393,6 +433,7 @@ mod tests {
         ExtractedMetadata {
             title: Some(title.into()),
             sort_title: Some(title.to_lowercase()),
+            subtitle: None,
             description: None,
             language: Some("en".into()),
             creators: vec![ExtractedCreator {
@@ -400,6 +441,8 @@ mod tests {
                 sort_name: format!("{author}, Test"),
                 role: "author".into(),
             }],
+            unmapped_contributors: vec![],
+            pages: None,
             publisher: None,
             pub_date: None,
             isbn: None,
@@ -471,6 +514,60 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn match_existing_uses_author_role_not_leading_editor(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let meta_existing = test_metadata("Quantum Botany Handbook", "Quantum Botany Writer");
+        let work_id = find_or_create(&pool, &meta_existing).await.unwrap();
+
+        let mut meta_incoming = test_metadata("Quantum Botany Handbook", "Quantum Botany Writer");
+        meta_incoming.creators.insert(
+            0,
+            ExtractedCreator {
+                name: "Zebra Editing Stranger".into(),
+                sort_name: "Stranger, Zebra Editing".into(),
+                role: "editor".into(),
+            },
+        );
+
+        let mut conn = pool.acquire().await.unwrap();
+        let hit = match_existing(&mut conn, &meta_incoming).await.unwrap();
+        assert_eq!(
+            hit,
+            Some(work_id),
+            "author-role creator must drive the title+author match even \
+             when an editor precedes it in document order"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn match_existing_ignores_non_author_role_rows(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let work_id = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+            "Volcanic Cartography Atlas",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        crate::test_support::db::insert_contributor(
+            &pool,
+            work_id,
+            "Meridian Mapmaker Osgood",
+            "translator",
+            0,
+        )
+        .await;
+
+        let meta = test_metadata("Volcanic Cartography Atlas", "Meridian Mapmaker Osgood");
+        let mut conn = pool.acquire().await.unwrap();
+        let hit = match_existing(&mut conn, &meta).await.unwrap();
+        assert_eq!(
+            hit, None,
+            "a translator-role row must not satisfy the author similarity match"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn find_or_create_deduplicates_series(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
 
@@ -533,6 +630,129 @@ mod tests {
         });
         let work_id2 = find_or_create(&pool, &meta2).await.unwrap();
         assert_eq!(work_id1, work_id2, "ISBN match should return existing work");
+    }
+
+    /// Helper: insert a `metadata_versions` row directly, for use as a
+    /// `work_authors.source_version_id` FK target in `upgrade_stub` tests.
+    async fn insert_journal_row(pool: &PgPool, manifestation_id: Uuid, field_name: &str) -> Uuid {
+        sqlx::query_scalar!(
+            "INSERT INTO metadata_versions \
+                 (manifestation_id, source, field_name, new_value, value_hash, \
+                  match_type, confidence_score) \
+             VALUES ($1, 'opf', $2, '[]'::jsonb, '\\x00'::bytea, 'title', 0.5) \
+             RETURNING id",
+            manifestation_id,
+            field_name,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upgrade_stub_wires_per_role_source_version_id_and_sort_name(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_unused_work, manifestation_id) =
+            crate::test_support::db::insert_work_and_manifestation(&pool, "role-wiring").await;
+        let author_version_id =
+            insert_journal_row(&pool, manifestation_id, "contributors.author").await;
+        let editor_version_id =
+            insert_journal_row(&pool, manifestation_id, "contributors.editor").await;
+
+        let mut conn = pool.acquire().await.unwrap();
+        let work_id = create_stub(&mut conn).await.unwrap();
+
+        // Editor placed BEFORE author in document order: the sort column must
+        // still resolve to the author, not whichever role sits at position 0.
+        let meta = ExtractedMetadata {
+            creators: vec![
+                ExtractedCreator {
+                    name: "Editor Person".into(),
+                    sort_name: "Person, Editor".into(),
+                    role: "editor".into(),
+                },
+                ExtractedCreator {
+                    name: "Author Person".into(),
+                    sort_name: "Person, Author".into(),
+                    role: "author".into(),
+                },
+            ],
+            ..test_metadata("Role Wiring Test", "unused")
+        };
+        let mut draft_ids = DraftIds::new();
+        draft_ids.insert("contributors.author".into(), author_version_id);
+        draft_ids.insert("contributors.editor".into(), editor_version_id);
+
+        upgrade_stub(&mut conn, work_id, &meta, &draft_ids)
+            .await
+            .unwrap();
+        drop(conn);
+
+        let editor_source = sqlx::query_scalar!(
+            "SELECT source_version_id FROM work_authors \
+             WHERE work_id = $1 AND role = 'editor'",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let author_source = sqlx::query_scalar!(
+            "SELECT source_version_id FROM work_authors \
+             WHERE work_id = $1 AND role = 'author'",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(editor_source, Some(editor_version_id));
+        assert_eq!(author_source, Some(author_version_id));
+        assert_ne!(editor_source, author_source);
+
+        let sort_name = sqlx::query_scalar!(
+            "SELECT first_author_sort_name FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(sort_name.as_deref(), Some("Person, Author"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upgrade_stub_authorless_metadata_leaves_sort_name_null(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_unused_work, manifestation_id) =
+            crate::test_support::db::insert_work_and_manifestation(&pool, "authorless").await;
+        let editor_version_id =
+            insert_journal_row(&pool, manifestation_id, "contributors.editor").await;
+
+        let mut conn = pool.acquire().await.unwrap();
+        let work_id = create_stub(&mut conn).await.unwrap();
+
+        let meta = ExtractedMetadata {
+            creators: vec![ExtractedCreator {
+                name: "Editor Only".into(),
+                sort_name: "Only, Editor".into(),
+                role: "editor".into(),
+            }],
+            ..test_metadata("Authorless Stub Test", "unused")
+        };
+        let mut draft_ids = DraftIds::new();
+        draft_ids.insert("contributors.editor".into(), editor_version_id);
+
+        upgrade_stub(&mut conn, work_id, &meta, &draft_ids)
+            .await
+            .unwrap();
+        drop(conn);
+
+        let sort_name = sqlx::query_scalar!(
+            "SELECT first_author_sort_name FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(sort_name.is_none());
     }
 
     // ── Task 34: rematch_on_isbn_change integration tests ─────────────────

@@ -55,6 +55,18 @@ pub async fn write_drafts(
         .await?;
         out.insert("title".into(), id);
     }
+    if let Some(subtitle) = &metadata.subtitle {
+        let id = insert_draft(
+            conn,
+            manifestation_id,
+            "subtitle",
+            &json_string(subtitle),
+            confidence,
+            "title",
+        )
+        .await?;
+        out.insert("subtitle".into(), id);
+    }
     if let Some(desc) = &metadata.description {
         let id = insert_draft(
             conn,
@@ -130,18 +142,48 @@ pub async fn write_drafts(
             out.insert("isbn_13".into(), id);
         }
     }
-    if !metadata.creators.is_empty() {
-        let val = serde_json::to_value(&metadata.creators).unwrap_or_default();
+    if let Some(pages) = metadata.pages {
         let id = insert_draft(
             conn,
             manifestation_id,
-            "creators",
+            "pages",
+            &serde_json::Value::from(pages),
+            confidence,
+            "title",
+        )
+        .await?;
+        out.insert("pages".into(), id);
+    }
+    // One journal row per declared role: locking/reviewing an editor's name
+    // must never touch the author row alongside it.
+    for role in ["author", "editor", "translator", "narrator"] {
+        let names: Vec<&str> = metadata
+            .creators
+            .iter()
+            .filter(|c| c.role == role)
+            .map(|c| c.name.as_str())
+            .collect();
+        if names.is_empty() {
+            continue;
+        }
+        let key = format!("contributors.{role}");
+        let val = serde_json::to_value(&names).unwrap_or_default();
+        let id = insert_draft(conn, manifestation_id, &key, &val, confidence, "title").await?;
+        out.insert(key, id);
+    }
+    if !metadata.unmapped_contributors.is_empty() {
+        let val = serde_json::to_value(&metadata.unmapped_contributors).unwrap_or_default();
+        // Not inserted into `out`: contributors.other has no apply arm, so no
+        // work_authors row ever points back at it.
+        insert_draft(
+            conn,
+            manifestation_id,
+            "contributors.other",
             &val,
             confidence,
             "title",
         )
         .await?;
-        out.insert("creators".into(), id);
     }
     if !metadata.subjects.is_empty() {
         let val = serde_json::to_value(&metadata.subjects).unwrap_or_default();
@@ -240,13 +282,28 @@ mod tests {
         ExtractedMetadata {
             title: Some("Draft Test Title".into()),
             sort_title: Some("draft test title".into()),
+            subtitle: Some("Draft Test Subtitle".into()),
             description: Some("A description".into()),
             language: Some("en".into()),
-            creators: vec![ExtractedCreator {
-                name: "Test Writer".into(),
-                sort_name: "Writer, Test".into(),
-                role: "author".into(),
-            }],
+            creators: vec![
+                ExtractedCreator {
+                    name: "Test Writer".into(),
+                    sort_name: "Writer, Test".into(),
+                    role: "author".into(),
+                },
+                ExtractedCreator {
+                    name: "Test Editor".into(),
+                    sort_name: "Editor, Test".into(),
+                    role: "editor".into(),
+                },
+            ],
+            unmapped_contributors: vec![
+                crate::services::metadata::extractor::UnmappedContributor {
+                    name: "Test Illustrator".into(),
+                    code: Some("ill".into()),
+                },
+            ],
+            pages: Some(353),
             publisher: Some("Test Publisher".into()),
             pub_date: None,
             isbn: Some(IsbnResult {
@@ -278,9 +335,16 @@ mod tests {
         drop(conn);
 
         assert!(ids.contains_key("title"));
+        assert!(ids.contains_key("subtitle"));
         assert!(ids.contains_key("isbn_13"));
-        assert!(ids.contains_key("creators"));
-        assert_eq!(ids.len(), 8, "expected 8 field ids, got {}", ids.len());
+        assert!(ids.contains_key("pages"));
+        assert!(ids.contains_key("contributors.author"));
+        assert!(ids.contains_key("contributors.editor"));
+        assert!(
+            !ids.contains_key("contributors.other"),
+            "contributors.other has no apply arm and must not appear in DraftIds"
+        );
+        assert_eq!(ids.len(), 11, "expected 11 field ids, got {}", ids.len());
 
         let isbn_match_type = sqlx::query_scalar!(
             "SELECT match_type FROM metadata_versions \
@@ -291,6 +355,29 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(isbn_match_type, "isbn");
+
+        let author_names: serde_json::Value = sqlx::query_scalar!(
+            "SELECT new_value FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name = 'contributors.author'",
+            manifestation_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(author_names, serde_json::json!(["Test Writer"]));
+
+        let other_count: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name = 'contributors.other'",
+            manifestation_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            other_count, 1,
+            "contributors.other row is written to the journal even though it's not tracked in DraftIds"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -310,6 +397,10 @@ mod tests {
         drop(conn);
 
         assert_eq!(first.get("title"), second.get("title"));
+        assert_eq!(
+            first.get("contributors.author"),
+            second.get("contributors.author")
+        );
 
         let count = sqlx::query_scalar!(
             "SELECT observation_count FROM metadata_versions \
@@ -320,6 +411,16 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 2);
+
+        let author_count = sqlx::query_scalar!(
+            "SELECT observation_count FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name = 'contributors.author'",
+            manifestation_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(author_count, 2);
     }
 
     #[sqlx::test(migrations = "./migrations")]

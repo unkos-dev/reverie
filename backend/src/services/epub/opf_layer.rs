@@ -16,13 +16,27 @@ use super::{
     zip_layer::{ZipHandle, read_entry},
 };
 
-/// A Dublin Core `dc:creator` entry with an optional `MARC` relator role.
+/// A Dublin Core `dc:creator` or `dc:contributor` entry with any declared `MARC` relator roles.
 #[derive(Debug, Clone)]
 pub struct Creator {
     /// The creator's name as it appears in the `OPF` metadata.
     pub name: String,
-    /// Optional `MARC` relator code (e.g. `"aut"`, `"edt"`) from `opf:role` or `role` attribute.
-    pub role: Option<String>,
+    /// `MARC` relator codes in document order, from the `opf:role`/`role`
+    /// attribute (`EPUB2`) and/or `<meta refines="#id" property="role">`
+    /// (`EPUB3`, where a single creator may carry more than one role refine).
+    /// Empty when no role was declared.
+    pub roles: Vec<String>,
+    /// `true` for `dc:contributor`, `false` for `dc:creator`.
+    pub from_contributor: bool,
+}
+
+/// Parse-time buffer for a `dc:creator`/`dc:contributor` element, held until
+/// role refines (which may appear anywhere in the document) are resolved.
+struct CreatorBuf {
+    id: Option<String>,
+    name: String,
+    inline_role: Option<String>,
+    from_contributor: bool,
 }
 
 /// Series affiliation metadata sourced from calibre or `EPUB3` collection elements.
@@ -50,10 +64,16 @@ pub struct OpfData {
     pub opf_path: String,
     /// Raw W3C accessibility metadata from `<meta>` elements, if any
     pub accessibility_metadata: Option<serde_json::Value>,
-    /// Dublin Core: title
+    /// Dublin Core: title (first `dc:title` without a `title-type=subtitle` refine)
     pub title: Option<String>,
-    /// Dublin Core: creators with optional role
+    /// Declared subtitle: text of the first `dc:title` refined `title-type="subtitle"`.
+    /// `None` when no such refine exists (no colon-split heuristics are applied).
+    pub subtitle: Option<String>,
+    /// Dublin Core: creators and contributors with any declared roles
     pub creators: Vec<Creator>,
+    /// Raw `schema:numberOfPages` meta text, if present. A community convention,
+    /// not part of the `EPUB 3.3` core vocabulary; parsed to an integer downstream.
+    pub number_of_pages: Option<String>,
     /// Dublin Core: description (may contain HTML)
     pub description: Option<String>,
     /// Dublin Core: publisher
@@ -106,26 +126,35 @@ pub fn validate(
     let mut spine_idrefs: Vec<String> = Vec::new();
     let mut accessibility_meta: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
-    // Dublin Core fields
-    let mut title: Option<String> = None;
-    let mut creators: Vec<Creator> = Vec::new();
+    // Dublin Core fields.
+    // Titles and creators are buffered with their `id` attribute (when
+    // present) so EPUB3 `<meta refines="#id" ...>` role/title-type refines
+    // can be resolved against them after the pass, independent of whether
+    // the refine appears before or after the element it targets.
+    let mut title_elements: Vec<(Option<String>, String)> = Vec::new();
+    let mut creator_bufs: Vec<CreatorBuf> = Vec::new();
     let mut description: Option<String> = None;
     let mut publisher: Option<String> = None;
     let mut date: Option<String> = None;
     let mut language: Option<String> = None;
     let mut identifiers: Vec<String> = Vec::new();
     let mut subjects: Vec<String> = Vec::new();
+    let mut number_of_pages: Option<String> = None;
 
     // Series metadata (calibre or EPUB 3).
     // EPUB 3 group-position is matched to its collection by `refines` target,
     // independent of document order: positions are buffered into a map keyed
     // by the refines target (`#<collection-id>`) as they are seen, then joined
-    // to the collection's id at the end of the pass (UNK-234).
+    // to the collection's id at the end of the pass.
     let mut calibre_series_name: Option<String> = None;
     let mut calibre_series_index: Option<f64> = None;
     let mut epub3_collection_name: Option<String> = None;
     let mut epub3_collection_id: Option<String> = None;
     let mut group_positions: HashMap<String, f64> = HashMap::new();
+    // EPUB3 role/title-type refines, keyed by their `refines` target id
+    // (buffered the same way as group_positions, for the same reason).
+    let mut role_refines: HashMap<String, Vec<String>> = HashMap::new();
+    let mut subtitle_ids: HashSet<String> = HashSet::new();
 
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -192,7 +221,7 @@ pub fn validate(
                         // Buffer the position keyed by its refines target,
                         // regardless of whether the collection has been seen
                         // yet — resolved against the collection id at end of
-                        // pass so element order doesn't matter (UNK-234).
+                        // pass so element order doesn't matter.
                         if let Some(refines) = refines_attr {
                             let text = content_attr.or_else(|| {
                                 reader
@@ -205,6 +234,54 @@ pub fn validate(
                             if let Some(pos) = text.and_then(|t| t.parse::<f64>().ok()) {
                                 group_positions.insert(refines, pos);
                             }
+                        }
+                        continue;
+                    }
+                    if prop == "role" {
+                        // Multiple role refines may target the same creator
+                        // (EPUB 3.3 §D.3.10 example: one creator, aut + ill).
+                        if let Some(refines) = refines_attr {
+                            let text = content_attr.or_else(|| {
+                                reader
+                                    .read_text(e.name())
+                                    .ok()
+                                    .and_then(|t| t.decode().ok())
+                                    .map(|t| t.trim().to_string())
+                                    .filter(|s| !s.is_empty())
+                            });
+                            if let Some(code) = text {
+                                role_refines.entry(refines).or_default().push(code);
+                            }
+                        }
+                        continue;
+                    }
+                    if prop == "title-type" {
+                        if let Some(refines) = refines_attr {
+                            let text = content_attr.or_else(|| {
+                                reader
+                                    .read_text(e.name())
+                                    .ok()
+                                    .and_then(|t| t.decode().ok())
+                                    .map(|t| t.trim().to_string())
+                                    .filter(|s| !s.is_empty())
+                            });
+                            if text.as_deref() == Some("subtitle") {
+                                subtitle_ids.insert(refines);
+                            }
+                        }
+                        continue;
+                    }
+                    if prop == "schema:numberOfPages" {
+                        let text = content_attr.or_else(|| {
+                            reader
+                                .read_text(e.name())
+                                .ok()
+                                .and_then(|t| t.decode().ok())
+                                .map(|t| t.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                        });
+                        if let Some(n) = text {
+                            number_of_pages = Some(n);
                         }
                         continue;
                     }
@@ -265,15 +342,46 @@ pub fn validate(
                 // EPUB 3 self-closing group-position: value lives in the
                 // `content` attr, no text body (quick-xml fires Event::Empty,
                 // not Event::Start). Mirrors the Event::Start arm's
-                // buffer-and-resolve (UNK-315, the self-closing gap UNK-234
-                // left open).
+                // buffer-and-resolve pattern, extended to cover the
+                // self-closing form the Event::Start arm alone can't reach.
                 if let Some(ref prop) = prop
                     && prop == "group-position"
                 {
-                    if let Some(refines) = refines_attr
+                    if let Some(refines) = refines_attr.clone()
                         && let Some(pos) = content.as_deref().and_then(|c| c.parse::<f64>().ok())
                     {
                         group_positions.insert(refines, pos);
+                    }
+                    continue;
+                }
+
+                // Self-closing role/title-type/numberOfPages refines: same
+                // buffer-and-resolve pattern as group-position above.
+                if let Some(ref prop) = prop
+                    && prop == "role"
+                {
+                    if let Some(refines) = refines_attr.clone()
+                        && let Some(code) = content.clone()
+                    {
+                        role_refines.entry(refines).or_default().push(code);
+                    }
+                    continue;
+                }
+                if let Some(ref prop) = prop
+                    && prop == "title-type"
+                {
+                    if let Some(refines) = refines_attr.clone()
+                        && content.as_deref() == Some("subtitle")
+                    {
+                        subtitle_ids.insert(refines);
+                    }
+                    continue;
+                }
+                if let Some(ref prop) = prop
+                    && prop == "schema:numberOfPages"
+                {
+                    if let Some(n) = content.clone() {
+                        number_of_pages = Some(n);
                     }
                     continue;
                 }
@@ -297,12 +405,13 @@ pub fn validate(
                     }
                 }
             }
-            // Dublin Core elements: <dc:title>, <dc:creator>, etc.
+            // Dublin Core elements: <dc:title>, <dc:creator>, <dc:contributor>, etc.
             Event::Start(e)
                 if matches!(
                     local_name(e.name().as_ref()),
                     b"title"
                         | b"creator"
+                        | b"contributor"
                         | b"description"
                         | b"publisher"
                         | b"date"
@@ -312,15 +421,29 @@ pub fn validate(
                 ) && e.name().as_ref() != b"meta" =>
             {
                 let local = local_name(e.name().as_ref()).to_vec();
-                // Extract opf:role for creators (EPUB 2).
-                // EPUB 3 uses <meta refines="#id" property="role"> — not resolved here (MVP).
-                let role = e
+                // opf:role/role attribute: EPUB2 relator code. Kept as a plain,
+                // non-namespace-aware attribute match (not `NsReader`) because
+                // real-world EPUB2 files routinely omit the `xmlns:opf`
+                // declaration despite the spec MUST; strict namespace
+                // resolution would silently drop the attribute. quick-xml
+                // 0.41 also removed `.resolve_attribute()`, so there is no
+                // drop-in namespace-aware alternative to reach for here.
+                let inline_role = e
                     .attributes()
                     .flatten()
                     .find(|a| {
                         let k = a.key.as_ref();
                         k == b"opf:role" || k == b"role"
                     })
+                    .and_then(|a| {
+                        std::str::from_utf8(&a.value)
+                            .ok()
+                            .map(std::string::ToString::to_string)
+                    });
+                let id_attr = e
+                    .attributes()
+                    .flatten()
+                    .find(|a| a.key.as_ref() == b"id")
                     .and_then(|a| {
                         std::str::from_utf8(&a.value)
                             .ok()
@@ -337,8 +460,19 @@ pub fn validate(
 
                 if let Some(text) = text {
                     match local.as_slice() {
-                        b"title" if title.is_none() => title = Some(text),
-                        b"creator" => creators.push(Creator { name: text, role }),
+                        b"title" => title_elements.push((id_attr, text)),
+                        b"creator" => creator_bufs.push(CreatorBuf {
+                            id: id_attr,
+                            name: text,
+                            inline_role,
+                            from_contributor: false,
+                        }),
+                        b"contributor" => creator_bufs.push(CreatorBuf {
+                            id: id_attr,
+                            name: text,
+                            inline_role,
+                            from_contributor: true,
+                        }),
                         b"description" if description.is_none() => description = Some(text),
                         b"publisher" if publisher.is_none() => publisher = Some(text),
                         b"date" if date.is_none() => date = Some(text),
@@ -441,6 +575,50 @@ pub fn validate(
             })
         });
 
+    // Main title = first dc:title without a subtitle refine; subtitle = text
+    // of the first one with it. Creator precedence is document order per
+    // EPUB 3.3 §D.3.5 (display-seq is deliberately not consulted), so when no
+    // refines exist at all the first title wins and subtitle stays None,
+    // matching pre-EPUB3 behavior exactly.
+    let mut title: Option<String> = None;
+    let mut subtitle: Option<String> = None;
+    for (id, text) in title_elements {
+        let is_subtitle = id
+            .as_ref()
+            .is_some_and(|i| subtitle_ids.contains(&format!("#{i}")));
+        if is_subtitle {
+            if subtitle.is_none() {
+                subtitle = Some(text);
+            }
+        } else if title.is_none() {
+            title = Some(text);
+        }
+    }
+
+    // Resolve each creator's roles: inline opf:role (EPUB2) plus any EPUB3
+    // role refines targeting its id, in that order.
+    let creators: Vec<Creator> = creator_bufs
+        .into_iter()
+        .map(|cb| {
+            let mut roles: Vec<String> = Vec::new();
+            if let Some(r) = cb.inline_role {
+                roles.push(r);
+            }
+            if let Some(refined) = cb
+                .id
+                .as_ref()
+                .and_then(|id| role_refines.get(&format!("#{id}")))
+            {
+                roles.extend(refined.iter().cloned());
+            }
+            Creator {
+                name: cb.name,
+                roles,
+                from_contributor: cb.from_contributor,
+            }
+        })
+        .collect();
+
     Some(OpfData {
         manifest,
         cover_href,
@@ -448,7 +626,9 @@ pub fn validate(
         opf_path: path.to_string(),
         accessibility_metadata,
         title,
+        subtitle,
         creators,
+        number_of_pages,
         description,
         publisher,
         date,
@@ -577,7 +757,7 @@ mod tests {
         assert_eq!(data.title.as_deref(), Some("The Hobbit"));
         assert_eq!(data.creators.len(), 1);
         assert_eq!(data.creators[0].name, "J. R. R. Tolkien");
-        assert_eq!(data.creators[0].role.as_deref(), Some("aut"));
+        assert_eq!(data.creators[0].roles, vec!["aut"]);
         assert_eq!(data.description.as_deref(), Some("A fantasy novel"));
         assert_eq!(data.publisher.as_deref(), Some("Allen &amp; Unwin"));
         assert_eq!(data.date.as_deref(), Some("1937-09-21"));
@@ -630,7 +810,7 @@ mod tests {
     fn epub3_collection_series_reversed_order() {
         // group-position appears BEFORE belongs-to-collection in document
         // order — valid per EPUB3, emitted by some toolchains. Position must
-        // still be captured (UNK-234).
+        // still be captured.
         let opf = br##"<package>
             <metadata>
                 <dc:title>A Clash of Kings</dc:title>
@@ -653,7 +833,7 @@ mod tests {
     fn epub3_collection_series_self_closing_position() {
         // Self-closing group-position carries its value in a `content` attr
         // (no text body → quick-xml yields Event::Empty, not Event::Start).
-        // Valid per EPUB3 and emitted by some toolchains (UNK-315).
+        // Valid per EPUB3 and emitted by some toolchains.
         let opf = br##"<package>
             <metadata>
                 <dc:title>A Game of Thrones</dc:title>
@@ -675,7 +855,7 @@ mod tests {
     #[test]
     fn epub3_collection_series_self_closing_reversed_order() {
         // Self-closing group-position BEFORE belongs-to-collection: order
-        // independence must hold for the Event::Empty path too (UNK-315).
+        // independence must hold for the Event::Empty path too.
         let opf = br##"<package>
             <metadata>
                 <dc:title>A Clash of Kings</dc:title>
@@ -697,7 +877,7 @@ mod tests {
     #[test]
     fn epub3_collection_series_self_closing_non_numeric_position() {
         // A malformed (non-numeric) content must not suppress the series name:
-        // position degrades to None, series_meta itself stays Some (UNK-315).
+        // position degrades to None, series_meta itself stays Some.
         let opf = br##"<package>
             <metadata>
                 <dc:title>A Storm of Swords</dc:title>
@@ -719,7 +899,7 @@ mod tests {
     #[test]
     fn epub3_collection_series_self_closing_fractional_position() {
         // EPUB3 allows fractional positions (0.5 prologues, 1.5 interludes);
-        // the field is f64 end-to-end and must not truncate (UNK-315).
+        // the field is f64 end-to-end and must not truncate.
         let opf = br##"<package>
             <metadata>
                 <dc:title>The Hedge Knight</dc:title>
@@ -771,8 +951,135 @@ mod tests {
         let result = validate(&handle, Some("OEBPS/content.opf"), &mut issues);
         let data = result.unwrap();
         assert_eq!(data.creators.len(), 3);
-        assert_eq!(data.creators[0].role.as_deref(), Some("aut"));
-        assert_eq!(data.creators[1].role.as_deref(), Some("edt"));
-        assert!(data.creators[2].role.is_none());
+        assert_eq!(data.creators[0].roles, vec!["aut"]);
+        assert_eq!(data.creators[1].roles, vec!["edt"]);
+        assert!(data.creators[2].roles.is_empty());
+    }
+
+    #[test]
+    fn epub3_single_role_refine() {
+        let opf = br##"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:creator id="c1">Ursula K. Le Guin</dc:creator>
+                <meta refines="#c1" property="role" scheme="marc:relators">aut</meta>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.creators.len(), 1);
+        assert_eq!(data.creators[0].name, "Ursula K. Le Guin");
+        assert_eq!(data.creators[0].roles, vec!["aut"]);
+        assert!(!data.creators[0].from_contributor);
+    }
+
+    #[test]
+    fn epub3_multi_role_refine_on_one_creator() {
+        // EPUB 3.3 §D.3.10 normative example: one creator may carry more than
+        // one role refine (author AND illustrator here).
+        let opf = br##"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:creator id="c1">Maurice Sendak</dc:creator>
+                <meta refines="#c1" property="role" scheme="marc:relators">aut</meta>
+                <meta refines="#c1" property="role" scheme="marc:relators">ill</meta>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.creators.len(), 1);
+        assert_eq!(data.creators[0].roles, vec!["aut", "ill"]);
+    }
+
+    #[test]
+    fn bare_dc_contributor_has_no_role() {
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:creator opf:role="aut">Primary Author</dc:creator>
+                <dc:contributor>Some Helper</dc:contributor>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.creators.len(), 2);
+        assert!(!data.creators[0].from_contributor);
+        assert!(data.creators[1].from_contributor);
+        assert!(data.creators[1].roles.is_empty());
+    }
+
+    #[test]
+    fn declared_subtitle_extracted() {
+        let opf = br##"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title id="t1">Mistborn</dc:title>
+                <dc:title id="t2">The Final Empire</dc:title>
+                <meta refines="#t2" property="title-type">subtitle</meta>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.title.as_deref(), Some("Mistborn"));
+        assert_eq!(data.subtitle.as_deref(), Some("The Final Empire"));
+    }
+
+    #[test]
+    fn no_subtitle_refine_leaves_subtitle_none() {
+        // No title-type refines at all: first title wins, subtitle stays
+        // None (pre-EPUB3 behavior preserved).
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title>Just A Title</dc:title>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.title.as_deref(), Some("Just A Title"));
+        assert!(data.subtitle.is_none());
+    }
+
+    #[test]
+    fn number_of_pages_extracted() {
+        let opf = br#"<package>
+            <metadata>
+                <meta property="schema:numberOfPages">353</meta>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.number_of_pages.as_deref(), Some("353"));
+    }
+
+    #[test]
+    fn missing_everything_regression() {
+        // No contributor/subtitle/pages metadata at all must still parse
+        // cleanly, matching the pre-existing empty-metadata behavior.
+        let opf = br"<package>
+            <metadata/>
+            <manifest/>
+            <spine/>
+        </package>";
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert!(data.title.is_none());
+        assert!(data.subtitle.is_none());
+        assert!(data.number_of_pages.is_none());
+        assert!(data.creators.is_empty());
     }
 }

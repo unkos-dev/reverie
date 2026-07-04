@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO work_authors (work_id, author_id, role, position) VALUES ($1, $2, ($3::text)::author_role, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14f78a4e955bb3a101ed9b34d86f9d64d7bc5658d82de27938956c8fc8477e0c"
+}

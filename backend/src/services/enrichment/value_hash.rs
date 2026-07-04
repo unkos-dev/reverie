@@ -45,14 +45,21 @@ fn normalise(field: &str, v: &Value) -> Value {
             }
             other => other.clone(),
         },
-        "creators" | "subjects" | "genres" | "tags" => match v {
-            Value::Array(items) => {
-                let mut sorted: Vec<Value> = items.iter().map(normalise_item).collect();
-                sorted.sort_by_key(canonical_json);
-                Value::Array(sorted)
+        f if f == "creators"
+            || f == "subjects"
+            || f == "genres"
+            || f == "tags"
+            || f.starts_with("contributors.") =>
+        {
+            match v {
+                Value::Array(items) => {
+                    let mut sorted: Vec<Value> = items.iter().map(normalise_item).collect();
+                    sorted.sort_by_key(canonical_json);
+                    Value::Array(sorted)
+                }
+                other => other.clone(),
             }
-            other => other.clone(),
-        },
+        }
         _ => v.clone(),
     }
 }
@@ -116,6 +123,17 @@ mod tests {
         let a = value_hash("subjects", &json!(["a", "b", "c"]));
         let b = value_hash("subjects", &json!(["c", "a", "b"]));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn contributors_role_field_order_insensitive() {
+        let a = value_hash("contributors.author", &json!(["Alice", "Bob"]));
+        let b = value_hash("contributors.author", &json!(["Bob", "Alice"]));
+        assert_eq!(a, b);
+
+        let c = value_hash("contributors.editor", &json!(["Carol", "Dan"]));
+        let d = value_hash("contributors.editor", &json!(["Dan", "Carol"]));
+        assert_eq!(c, d);
     }
 
     #[test]

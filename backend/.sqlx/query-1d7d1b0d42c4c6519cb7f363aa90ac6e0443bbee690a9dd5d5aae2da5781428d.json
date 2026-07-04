@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM work_authors WHERE work_id = $1 AND role = ($2::text)::author_role",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d7d1b0d42c4c6519cb7f363aa90ac6e0443bbee690a9dd5d5aae2da5781428d"
+}

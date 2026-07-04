@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT observation_count FROM metadata_versions WHERE manifestation_id = $1 AND field_name = 'contributors.author'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "observation_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "observation_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c616d9b3f3b48d50bb730cc6d3b5407e64b709cd92f234e3a248ccb800089314"
+}

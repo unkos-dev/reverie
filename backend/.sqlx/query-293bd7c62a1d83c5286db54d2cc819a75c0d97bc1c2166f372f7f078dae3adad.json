@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id          AS \"id!\",\n               work_id     AS \"work_id!\",\n               isbn_10,\n               isbn_13,\n               created_at  AS \"created_at!\",\n               ingestion_status::text  AS \"ingestion_status!\",\n               validation_status       AS \"validation_status!: ValidationStatus\",\n               enrichment_status::text AS \"enrichment_status!\"\n          FROM manifestations\n         WHERE work_id = ANY($1::uuid[])\n         ORDER BY created_at ASC, id ASC\n        ",
+  "query": "\n        SELECT id          AS \"id!\",\n               isbn_10,\n               isbn_13,\n               pages,\n               created_at  AS \"created_at!\",\n               ingestion_status::text  AS \"ingestion_status!\",\n               validation_status       AS \"validation_status!: ValidationStatus\",\n               enrichment_status::text AS \"enrichment_status!\"\n          FROM manifestations\n         WHERE work_id = $1\n         ORDER BY created_at ASC, id ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -16,17 +16,6 @@
       },
       {
         "ordinal": 1,
-        "name": "work_id!",
-        "type_info": "Uuid",
-        "origin": {
-          "Table": {
-            "table": "manifestations",
-            "name": "work_id"
-          }
-        }
-      },
-      {
-        "ordinal": 2,
         "name": "isbn_10",
         "type_info": "Text",
         "origin": {
@@ -37,13 +26,24 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "manifestations",
             "name": "isbn_13"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "pages",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages"
           }
         }
       },
@@ -97,12 +97,12 @@
     ],
     "parameters": {
       "Left": [
-        "UuidArray"
+        "Uuid"
       ]
     },
     "nullable": [
       false,
-      false,
+      true,
       true,
       true,
       false,
@@ -111,5 +111,5 @@
       null
     ]
   },
-  "hash": "849fd9d6af6e9574aa703e4d03404755a8eb9fccd42a75f8c4e12f1ea18e2966"
+  "hash": "293bd7c62a1d83c5286db54d2cc819a75c0d97bc1c2166f372f7f078dae3adad"
 }

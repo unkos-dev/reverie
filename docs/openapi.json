@@ -5852,6 +5852,14 @@
             },
             "description": "Pending `metadata_versions` rows for this manifestation. Filtered\nto `status = 'pending'` AND not currently promoted as a canonical\npointer. Ordered by `last_seen_at DESC`. Empty when the operator\nhas no drafts to review. Surfaced for the Versions-tab UI; the\nsummary counts above remain so clients can render the tab badge\nwithout parsing the full list."
           },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`manifestations.pages`, when known."
+          },
           "pub_date": {
             "type": [
               "string",
@@ -5876,6 +5884,13 @@
                 "description": "Series membership; `None` when the work isn't on a series."
               }
             ]
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`works.subtitle`, when declared."
           },
           "tags": {
             "type": "array",
@@ -5944,7 +5959,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Author display names ordered by `work_authors.position`. Empty\nwhen the work has no authors yet (pre-enrichment stub)."
+            "description": "Author display names ordered by `work_authors.position`. Empty\nwhen the work has no authors yet (pre-enrichment stub), and never\nincludes editors/translators/narrators — no role substitutes for\nanother in display."
           },
           "cover_url": {
             "type": "string",
@@ -5970,6 +5985,14 @@
             ],
             "description": "`manifestations.isbn_13`, when known."
           },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`manifestations.pages`, when known."
+          },
           "reading_state": {
             "oneOf": [
               {
@@ -5991,6 +6014,13 @@
                 "description": "Series membership; `None` when the work isn't on a series."
               }
             ]
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`works.subtitle`, when declared."
           },
           "title": {
             "type": "string",
@@ -6033,6 +6063,46 @@
           "ingested",
           "none"
         ]
+      },
+      "ContributorsPatch": {
+        "type": "object",
+        "description": "Per-role contributor replace/clear, nested under `UpdateMetadataFields::contributors`.\n\nEach role independently follows RFC 7396 double-`Option` semantics:\nabsent = untouched, `null` (or an empty array) clears the role, a\nnon-empty array replaces it wholesale in the given order. `narrator` is\ndeliberately not accepted here (reserved, not yet operator-writable);\nany unrecognised key 422s via `deny_unknown_fields`.",
+        "properties": {
+          "author": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered author names. `null` or `[]` clears the role.",
+            "maxItems": 100
+          },
+          "editor": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered editor names. `null` or `[]` clears the role.",
+            "maxItems": 100
+          },
+          "translator": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered translator names. `null` or `[]` clears the role.",
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false
       },
       "CreateShelfRequest": {
         "type": "object",
@@ -7587,6 +7657,17 @@
         "type": "object",
         "description": "Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.\n\nEncodes RFC 7396 JSON Merge Patch semantics via\n`serde_with::rust::double_option` (per\n`adr/2026-05-22-backend-aux-crates.md`):\n* absent key → `None`         → leave field unchanged.\n* key = `null` → `Some(None)` → clear the canonical value.\n* key = value → `Some(Some(v))` → set the canonical value.\n\n`cover` is not yet operator-editable from this endpoint — cover\npromotion happens via a separate file-upload path.",
         "properties": {
+          "contributors": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContributorsPatch",
+                "description": "Per-role contributor replace/clear. Absent = unchanged; `null` clears\nauthor, editor, and translator together (pure RFC 7396 member removal).\nHandled separately from the other fields — not part of [`Self::populated`]."
+              }
+            ]
+          },
           "description": {
             "type": [
               "string",
@@ -7615,6 +7696,15 @@
             ],
             "description": "New language. Absent = unchanged; `null` clears."
           },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "New page count. Absent = unchanged; `null` clears; must be positive.",
+            "minimum": 1
+          },
           "pub_date": {
             "type": [
               "string",
@@ -7628,6 +7718,13 @@
               "null"
             ],
             "description": "New publisher. Absent = unchanged; `null` clears."
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New subtitle. Absent = unchanged; `null` clears."
           },
           "title": {
             "type": [
@@ -8017,6 +8114,13 @@
               }
             ]
           },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`works.subtitle`, when declared."
+          },
           "title": {
             "type": "string",
             "description": "`works.title`."
@@ -8070,6 +8174,14 @@
               "null"
             ],
             "description": "`manifestations.isbn_13`."
+          },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`manifestations.pages`, when known."
           },
           "validation_status": {
             "$ref": "#/components/schemas/ValidationStatus",

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT new_value, observation_count FROM metadata_versions WHERE manifestation_id = $1 AND field_name = 'contributors.author'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "new_value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "observation_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "observation_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e1232f1a825a33f3c1bc22f1b9b95aaf96a58c8a4b8360518ca29a980953ff7b"
+}

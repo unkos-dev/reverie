@@ -69,6 +69,13 @@ async fn insert_book_with_author(
     .execute(ingestion_pool)
     .await
     .expect("insert work_authors");
+    // Real writers (upgrade_stub, PATCH contributors) refresh this
+    // denormalized column as part of the same transaction; this
+    // hand-rolled fixture must do the same or sort=author reads NULL.
+    let mut conn = ingestion_pool.acquire().await.expect("acquire conn");
+    crate::models::work::refresh_first_author_sort(&mut conn, work_id)
+        .await
+        .expect("refresh first_author_sort_name");
     m_id
 }
 
@@ -494,6 +501,49 @@ async fn list_endpoint_sort_author_pagination_walk_across_null_boundary(pool: Pg
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_sort_author_translator_only_work_sorts_into_null_bucket(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // first_author_sort_name is populated from role = 'author' only, so
+    // a work with a translator but no author must land in the NULLS
+    // LAST bucket alongside genuinely authorless stubs, not sort by
+    // the translator's (alphabetically-earlier) name.
+    insert_book_with_author(&ingestion_pool, "g", "Neuromancer", "Gibson, William").await;
+    let (translator_work_id, _translator_m_id) =
+        insert_book(&ingestion_pool, "t", "Translated Only").await;
+    test_support::db::insert_contributor(
+        &ingestion_pool,
+        translator_work_id,
+        "Aardvark, Ann",
+        "translator",
+        0,
+    )
+    .await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/books?sort=author")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let titles: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|it| it["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        titles,
+        vec!["Neuromancer", "Translated Only"],
+        "translator-only work has no role='author' row, so first_author_sort_name is NULL and \
+         it must sort after Gibson despite 'Aardvark' being alphabetically first"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_endpoint_pagination_walk_emits_link_and_flips_to_null(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -812,6 +862,125 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
     assert!(
         body.get("pub_date").is_some(),
         "pub_date must surface on BookDetail (null when unset), got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_and_list_endpoints_exclude_editor_from_authors(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id = insert_book_with_author(&ingestion_pool, "ed", "Edited Tome", "Doe, Jane").await;
+    let work_id: Uuid =
+        sqlx::query_scalar!("SELECT work_id FROM manifestations WHERE id = $1", m_id)
+            .fetch_one(&ingestion_pool)
+            .await
+            .unwrap();
+    test_support::db::insert_contributor(&ingestion_pool, work_id, "Roe, Pat", "editor", 1).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let list_response = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(list_response.status_code(), StatusCode::OK);
+    let list_body: serde_json::Value = list_response.json();
+    let list_authors: Vec<&str> = list_body["items"][0]["authors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        list_authors,
+        vec!["Doe, Jane"],
+        "editor role must not surface in BookListRow.authors — got {list_body}"
+    );
+
+    let detail_response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(detail_response.status_code(), StatusCode::OK);
+    let detail_body: serde_json::Value = detail_response.json();
+    let detail_authors: Vec<&str> = detail_body["authors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        detail_authors,
+        vec!["Doe, Jane"],
+        "editor role must not surface in BookDetail.authors — got {detail_body}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_and_list_endpoints_surface_subtitle_and_pages(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id = insert_book_with_author(&ingestion_pool, "sp", "Subtitled Tome", "Doe, Jane").await;
+    let work_id: Uuid =
+        sqlx::query_scalar!("SELECT work_id FROM manifestations WHERE id = $1", m_id)
+            .fetch_one(&ingestion_pool)
+            .await
+            .unwrap();
+    sqlx::query!(
+        "UPDATE works SET subtitle = $1 WHERE id = $2",
+        "A Tale of Two Fixtures",
+        work_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("set subtitle");
+    sqlx::query!(
+        "UPDATE manifestations SET pages = $1 WHERE id = $2",
+        321,
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("set pages");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let list_response = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(list_response.status_code(), StatusCode::OK);
+    let list_body: serde_json::Value = list_response.json();
+    assert_eq!(
+        list_body["items"][0]["subtitle"].as_str().unwrap(),
+        "A Tale of Two Fixtures",
+        "got {list_body}"
+    );
+    assert_eq!(
+        list_body["items"][0]["pages"].as_i64().unwrap(),
+        321,
+        "got {list_body}"
+    );
+
+    let detail_response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(detail_response.status_code(), StatusCode::OK);
+    let detail_body: serde_json::Value = detail_response.json();
+    assert_eq!(
+        detail_body["subtitle"].as_str().unwrap(),
+        "A Tale of Two Fixtures",
+        "got {detail_body}"
+    );
+    assert_eq!(
+        detail_body["pages"].as_i64().unwrap(),
+        321,
+        "got {detail_body}"
     );
 }
 
@@ -1181,6 +1350,36 @@ async fn list_filter_by_author(pool: PgPool) {
     let items = body["items"].as_array().expect("items");
     assert_eq!(items.len(), 1, "only Gibson's book should match");
     assert_eq!(items[0]["title"], "Neuromancer");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_by_author_excludes_non_author_roles(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "ea", "Edited Anthology").await;
+    let editor_id = test_support::db::insert_contributor(
+        &ingestion_pool,
+        work_id,
+        "Compiler Quill Osgood",
+        "editor",
+        0,
+    )
+    .await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/books?author={editor_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().expect("items");
+    assert!(
+        items.is_empty(),
+        "an editor-role link must not satisfy the ?author= filter"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

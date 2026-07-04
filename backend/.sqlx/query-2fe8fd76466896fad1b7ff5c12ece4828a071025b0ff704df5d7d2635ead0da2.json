@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (manifestation_id, source, field_name, value_hash) DO UPDATE SET last_seen_at = now(), observation_count = metadata_versions.observation_count + 1 RETURNING id",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (manifestation_id, source, field_name, value_hash) DO UPDATE SET new_value = EXCLUDED.new_value, last_seen_at = now(), observation_count = metadata_versions.observation_count + 1 RETURNING id",
   "describe": {
     "columns": [
       {
@@ -30,5 +30,5 @@
       false
     ]
   },
-  "hash": "28e5b4cb75fe96942b3daceb4d9400f1d439957b66ea1437ec8726574c7e778b"
+  "hash": "2fe8fd76466896fad1b7ff5c12ece4828a071025b0ff704df5d7d2635ead0da2"
 }
