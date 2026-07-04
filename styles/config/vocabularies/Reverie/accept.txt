@@ -19,6 +19,8 @@ Unkos
 # correct AU spelling is not flagged. The American spelling is NOT accepted, so
 # it still warns and nudges toward these forms.
 sanitisation
+virtualised
+virtualiser
 #
 # Identifiers, libraries, services, and technical jargon.
 accreted
@@ -30,6 +32,7 @@ Affero
 affordance
 affordances
 afterward
+AG
 Akamai
 allowlist
 allowlisted
@@ -83,6 +86,7 @@ codegen
 Codium
 color
 colors
+Comcast
 commentTypes
 compat
 config
@@ -196,6 +200,7 @@ jsonb
 junkovich
 JWTs
 Kavita
+keydown
 keyframe
 keyless
 keyset
@@ -284,6 +289,7 @@ repo
 repos
 representable
 repro
+reskinning
 resvg
 revalidated
 revalidation
@@ -300,6 +306,7 @@ sccache
 schemaless
 schemars
 schemas
+scroller
 sed
 semver
 serde
@@ -324,6 +331,7 @@ strawman
 struct
 structs
 Stylelint
+stylesheet
 subagent
 subagents
 subcommand
@@ -358,10 +366,12 @@ uncatchable
 uninitialized
 Unkovich
 unlayered
+unmerged
 unresolvable
 unscoped
 untyped
 unversioned
+unwired
 upsert
 upstreams
 URIs

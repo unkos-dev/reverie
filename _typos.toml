@@ -11,6 +11,7 @@ extend-ignore-re = [
   # fixture phrase, not a repo-wide allow of the bare word, so a genuine
   # `reciever` typo elsewhere is still caught.
   "reciever drops the frame",
+  "agregate view is wrong",
 ]
 
 [default.extend-words]
