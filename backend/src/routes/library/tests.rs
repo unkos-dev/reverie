@@ -1353,6 +1353,36 @@ async fn list_filter_by_author(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_filter_by_author_excludes_non_author_roles(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "ea", "Edited Anthology").await;
+    let editor_id = test_support::db::insert_contributor(
+        &ingestion_pool,
+        work_id,
+        "Compiler Quill Osgood",
+        "editor",
+        0,
+    )
+    .await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/books?author={editor_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().expect("items");
+    assert!(
+        items.is_empty(),
+        "an editor-role link must not satisfy the ?author= filter"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_filter_by_series(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

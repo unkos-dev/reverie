@@ -344,9 +344,12 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
 /// `i64::from(u32)` cast on `tag.len()` is provably in range.
 fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) {
     if let Some(author_id) = params.author {
+        // Role-scoped to match the response surface: `authors[]` carries the
+        // author role only, so `?author=` must not match a work where the
+        // supplied id is linked as editor/translator.
         qb.push(
             " AND EXISTS (SELECT 1 FROM work_authors wa \
-              WHERE wa.work_id = w.id AND wa.author_id = ",
+              WHERE wa.work_id = w.id AND wa.role = 'author' AND wa.author_id = ",
         );
         qb.push_bind(author_id);
         qb.push(")");
