@@ -211,10 +211,10 @@ function GridStage(props: GridStageProps): ReactElement {
     SpikeListResponse,
     Error,
     InfiniteData<SpikeListResponse, string | undefined>,
-    readonly [string, BindingId, number, SortState],
+    readonly [string, BindingId, number, number, SortState],
     string | undefined
   >({
-    queryKey: ["grid-spike", binding.id, latencyMs, sort],
+    queryKey: ["grid-spike", binding.id, latencyMs, rowCount, sort],
     queryFn: ({ pageParam, signal }) =>
       listSpikeBooks(dataset, { cursor: pageParam, pageSize: PAGE_SIZE, sort, latencyMs }, signal),
     initialPageParam: undefined,
