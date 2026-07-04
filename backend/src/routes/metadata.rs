@@ -1349,6 +1349,11 @@ async fn insert_manual_version(
     // reset, `apply_version` could write a canonical pointer to a row
     // still flagged rejected, leaving the journal internally
     // inconsistent.
+    //
+    // `new_value` is refreshed on conflict: the hash identifies the value
+    // only up to normalisation (contributor arrays hash order-insensitively),
+    // so a reorder collides with the original row and the journal must
+    // record the latest representation, not the first one seen.
     let id: Uuid = sqlx::query_scalar!(
         "INSERT INTO metadata_versions \
             (manifestation_id, source, field_name, new_value, value_hash, \
@@ -1356,7 +1361,8 @@ async fn insert_manual_version(
          VALUES ($1, 'manual', $2, $3, $4, 'manual', 1.0, \
                  'pending'::metadata_review_status, $5, now()) \
          ON CONFLICT (manifestation_id, source, field_name, value_hash) \
-         DO UPDATE SET last_seen_at = now(), \
+         DO UPDATE SET new_value = EXCLUDED.new_value, \
+                       last_seen_at = now(), \
                        observation_count = metadata_versions.observation_count + 1, \
                        status = 'pending'::metadata_review_status, \
                        resolved_by = $5, \
@@ -2752,6 +2758,51 @@ mod tests {
             "body = {}",
             response.text()
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_contributors_reorder_refreshes_journal_new_value(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let name_a = format!("Journal Alpha {marker}");
+        let name_b = format!("Journal Beta {marker}");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"contributors": {"author": [&name_a, &name_b]}}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+
+        // The reorder hashes identically (order-insensitive normalisation),
+        // collides with the first row, and must refresh its new_value.
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"contributors": {"author": [&name_b, &name_a]}}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+
+        let rows = sqlx::query!(
+            "SELECT new_value, observation_count FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name = 'contributors.author'",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch journal rows");
+        assert_eq!(rows.len(), 1, "reorder must collide, not add a second row");
+        assert_eq!(
+            rows[0].new_value,
+            serde_json::json!([name_b, name_a]),
+            "surviving journal row must record the latest contributor order"
+        );
+        assert_eq!(rows[0].observation_count, 2);
     }
 
     #[sqlx::test(migrations = "./migrations")]

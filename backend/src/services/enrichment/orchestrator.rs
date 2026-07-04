@@ -638,7 +638,8 @@ async fn upsert_journal_row(
              (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) \
          VALUES ($1, $2, $3, $4, $5, $6, $7) \
          ON CONFLICT (manifestation_id, source, field_name, value_hash) \
-         DO UPDATE SET last_seen_at = now(), \
+         DO UPDATE SET new_value = EXCLUDED.new_value, \
+                       last_seen_at = now(), \
                        observation_count = metadata_versions.observation_count + 1 \
          RETURNING id",
         manifestation_id,
@@ -2295,6 +2296,50 @@ mod tests {
         .unwrap();
         assert_eq!(row.pages, None);
         assert_eq!(row.pages_version_id, None);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_journal_row_refreshes_new_value_on_reorder(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_enrich_fixture(&pool, "9781857231403", &marker).await;
+
+        let first = SourceResult {
+            field_name: "contributors.author".into(),
+            raw_value: serde_json::json!([format!("Ada {marker}"), format!("Grace {marker}")]),
+            match_type: "isbn".into(),
+        };
+        let reordered = SourceResult {
+            field_name: "contributors.author".into(),
+            raw_value: serde_json::json!([format!("Grace {marker}"), format!("Ada {marker}")]),
+            match_type: "isbn".into(),
+        };
+
+        let mut tx = pool.begin().await.unwrap();
+        let id_first = upsert_journal_row(&mut tx, m_id, "openlibrary", &first)
+            .await
+            .unwrap();
+        let id_second = upsert_journal_row(&mut tx, m_id, "openlibrary", &reordered)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            id_first, id_second,
+            "order-insensitive hash must collide on the same journal row"
+        );
+
+        let row = sqlx::query!(
+            "SELECT new_value, observation_count FROM metadata_versions WHERE id = $1",
+            id_first,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row.new_value, reordered.raw_value,
+            "colliding upsert must refresh new_value to the latest representation"
+        );
+        assert_eq!(row.observation_count, 2);
     }
 
     /// `apply_field` returning `Ok(false)` for a non-string JSON value
