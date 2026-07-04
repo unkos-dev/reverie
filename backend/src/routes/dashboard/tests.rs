@@ -1,15 +1,11 @@
 //! Integration tests for the admin-only `/api/v1/dashboard/*` endpoints
-//! (Step 12 / UNK-81).
+//! (Step 12 of the MVP blueprint).
 //!
 //! Mirrors [`crate::routes::library::tests`] — `#[sqlx::test]` per case,
 //! real-pool harness via [`crate::test_support::db::server_with_real_pools`].
 //! Fixtures are seeded through the `reverie_ingestion` pool (bypasses the
 //! `manifestations` RLS policies); the endpoints are exercised through the
 //! `reverie_app` pool with the admin RLS context set by `acquire_with_rls`.
-#![allow(
-    clippy::cast_possible_wrap,
-    reason = "test-only casts on small fixture sizes"
-)]
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
 use serde_json::Value;

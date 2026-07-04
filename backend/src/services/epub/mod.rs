@@ -77,8 +77,6 @@ pub enum Severity {
 
 /// Repair-relevant context for each issue kind.
 /// Each variant carries the data needed to apply the corresponding fix.
-// Fields are intentionally public API for callers in future pipeline steps.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum IssueKind {
     /// `ZIP` entry contains path traversal components or absolute path.
@@ -160,8 +158,6 @@ pub enum IssueKind {
 }
 
 /// A single validation finding produced by one pipeline layer.
-// All fields are public API for callers; not all are read within this crate yet.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Issue {
     /// The pipeline layer that detected this issue.

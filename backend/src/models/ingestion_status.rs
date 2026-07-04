@@ -1,7 +1,7 @@
 //! `IngestionStatus` — closed value set for the Postgres `ingestion_status`
 //! ENUM applied to `manifestations.ingestion_status`.
 //!
-//! Defensive type-safety (UNK-107): there is no current Rust-side `String`
+//! Defensive type-safety: there is no current Rust-side `String`
 //! field for this enum; values are written as SQL literals
 //! (`'complete'::ingestion_status`) at INSERT time and never read back into
 //! Rust. Introducing the type lets future read paths decode loudly via
@@ -50,7 +50,6 @@ pub enum IngestionStatus {
 impl IngestionStatus {
     /// Wire string for any place that needs the canonical lowercase form.
     /// Matches the `#[serde(rename_all)]` and `#[sqlx(rename_all)]` mappings.
-    #[allow(dead_code)] // No production consumer yet — anchors wire-format invariant for future read paths.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",

@@ -269,7 +269,7 @@ async fn revoke_token(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::items_after_statements,
     reason = "test code: `use base64ct::Encoding` placed inline where needed in test function body"
 )]

@@ -108,7 +108,7 @@ fn local_name(name: &[u8]) -> &[u8] {
 ///
 /// Returns `None` if `opf_path` is `None`, the entry cannot be read from
 /// `handle`, or the entry bytes are not valid `UTF-8`.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "OPF parser handles the full EPUB 2/3 metadata element set in one pass; the per-element cases are mechanical and cannot meaningfully be split without introducing a second parse pass"
 )]

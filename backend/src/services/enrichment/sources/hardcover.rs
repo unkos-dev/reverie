@@ -27,7 +27,7 @@ type Limiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 fn limiter() -> &'static Limiter {
     static L: OnceLock<Limiter> = OnceLock::new();
     L.get_or_init(|| {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "NonZeroU32::new(1) — the literal 1 is a compile-time constant that is always non-zero; this cannot fail"
         )]
@@ -197,7 +197,7 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "map_book maps 10+ Hardcover API fields to SourceResults; the per-field cases are mechanical and extracting would obscure the API→model mapping"
 )]

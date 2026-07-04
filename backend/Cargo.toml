@@ -141,6 +141,13 @@ too_long_first_doc_paragraph = "allow"
 implicit_hasher = "allow"
 
 # Project-specific hard rules from backend/CLAUDE.md.
+#
+# Suppressions must be self-purging and justified: #[expect] errors via
+# unfulfilled_lint_expectations the moment the suppressed lint stops
+# firing, and every expectation must carry a `reason`. Stale #[allow]
+# attributes are invisible to every tool; see the expect-over-allow ADR.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 let_underscore_must_use = "deny"

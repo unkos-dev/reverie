@@ -121,7 +121,6 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
-#[allow(dead_code)] // Consumed by bootstrap/setup + CLI in this PR
 pub async fn admin_exists(pool: &PgPool) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar!(
         r#"SELECT EXISTS(SELECT 1 FROM users WHERE role = 'admin'::user_role) AS "exists!""#
@@ -138,7 +137,6 @@ pub async fn admin_exists(pool: &PgPool) -> Result<bool, sqlx::Error> {
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
-#[allow(dead_code)] // Consumed by local login + recovery in this PR
 pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as!(
         UserRow,
@@ -165,7 +163,6 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, s
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `UPDATE`.
-#[allow(dead_code)] // Consumed by the password-reset route in this PR
 pub async fn increment_session_version(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
@@ -296,7 +293,6 @@ pub enum CreateUserError {
 ///
 /// [`CreateUserError::EmailExists`] on an email collision, or
 /// [`CreateUserError::Db`] for any other failure.
-#[allow(dead_code)] // Consumed by the admin-create + register routes in this PR
 pub async fn create_local(
     pool: &PgPool,
     email: &str,
@@ -361,7 +357,6 @@ pub async fn create_local(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `UPDATE`.
-#[allow(dead_code)] // Consumed by the account-status route in this PR
 pub async fn disable_account(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
@@ -388,7 +383,6 @@ pub async fn disable_account(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `UPDATE`.
-#[allow(dead_code)] // Consumed by the account-status route in this PR
 pub async fn enable_account(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,

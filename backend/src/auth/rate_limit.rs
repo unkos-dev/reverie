@@ -58,7 +58,6 @@ pub type LoginLimiter = DefaultKeyedRateLimiter<IpAddr>;
 /// (burst equal to the rate). `per_min` is [`NonZeroU32`] so a zero quota (which
 /// would lock everyone out) is unrepresentable; config validation enforces the
 /// non-zero invariant at the boundary.
-#[allow(dead_code)] // Wired into AppState + the login routes alongside the CSRF layer
 pub fn build_login_limiter(per_min: NonZeroU32) -> Arc<LoginLimiter> {
     Arc::new(RateLimiter::keyed(Quota::per_minute(per_min)))
 }
@@ -76,7 +75,6 @@ pub fn build_login_limiter(per_min: NonZeroU32) -> Arc<LoginLimiter> {
 /// is the originating client (`X-Forwarded-For` convention); a value that does
 /// not parse as a bare `IpAddr` (e.g. an RFC 7239 `for=` form) falls back to the
 /// peer.
-#[allow(dead_code)] // Consumed by the per-IP rate-limit middleware when wired
 pub fn client_ip(
     headers: &HeaderMap,
     peer: Option<IpAddr>,

@@ -35,7 +35,6 @@ fn key(email: &str) -> String {
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the upsert.
-#[allow(dead_code)] // Consumed by the local-login route in this PR
 pub async fn record_failure(
     pool: &PgPool,
     email: &str,
@@ -65,7 +64,6 @@ pub async fn record_failure(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `DELETE`.
-#[allow(dead_code)] // Consumed by the local-login route + CLI in this PR
 pub async fn reset(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "DELETE FROM local_login_throttle WHERE email_lower = $1",
@@ -82,7 +80,6 @@ pub async fn reset(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the `SELECT`.
-#[allow(dead_code)] // Consumed by the local-login route in this PR
 pub async fn backoff_until(
     pool: &PgPool,
     email: &str,

@@ -123,7 +123,7 @@ fn hash_regex() -> &'static Regex {
     // restricted to RFC 4648 §4 standard base64.
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        #[allow(
+        #[expect(
             clippy::expect_used,
             reason = "hard-coded regex literal is a compile-time constant; test coverage guarantees it is valid"
         )]

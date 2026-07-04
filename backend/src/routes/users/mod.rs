@@ -801,7 +801,10 @@ async fn change_own_password(
 /// `null` on `email` clears; `null` on `display_name` is rejected
 /// (NOT NULL column).
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[allow(clippy::option_option)] // RFC 7396: None = absent, Some(None) = null, Some(Some) = value
+#[expect(
+    clippy::option_option,
+    reason = "RFC 7396: None = absent, Some(None) = null, Some(Some) = value"
+)]
 struct UpdateUserRequest {
     /// New display name. Absent = unchanged; explicit `null` is rejected
     /// (NOT NULL column).
@@ -818,7 +821,10 @@ struct UpdateUserRequest {
     email: Option<Option<String>>,
 }
 
-#[allow(clippy::option_option)]
+#[expect(
+    clippy::option_option,
+    reason = "RFC 7396: None = absent, Some(None) = null, Some(Some) = value"
+)]
 fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
 where
     D: serde::Deserializer<'de>,

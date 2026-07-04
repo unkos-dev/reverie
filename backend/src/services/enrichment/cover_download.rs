@@ -15,7 +15,6 @@
 // Phase D: the orchestrator does not yet call this module. Keep
 // the scaffolding (and its tests) in-tree until the cover-apply
 // path is wired up. Re-evaluate at Phase D merge.
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 
@@ -251,11 +250,11 @@ fn write_atomically(dir: &Path, filename: &str, data: &[u8]) -> Result<PathBuf, 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "test code: x as u8 in image pixel generator; x is pixel position, wrapping is the intended behavior for test image generation"
-)]
 mod tests {
+    #![expect(
+        clippy::cast_possible_truncation,
+        reason = "test code: x as u8 in image pixel generator; x is pixel position, wrapping is the intended behavior for test image generation"
+    )]
     #![expect(
         clippy::disallowed_methods,
         reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"

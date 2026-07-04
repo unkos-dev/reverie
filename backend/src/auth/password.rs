@@ -53,7 +53,7 @@ pub fn verify_password(password: &[u8], phc: &str) -> Result<(), argon2::passwor
 static DUMMY_PHC: LazyLock<String> = LazyLock::new(|| {
     let mut secret = [0u8; 32];
     OsRng.fill_bytes(&mut secret);
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash random bytes with default Argon2 params is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
     )]

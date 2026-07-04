@@ -44,7 +44,7 @@ pub fn select_by_priority(files: &[PathBuf], priority: &[ManifestationFormat]) -
             let Ok(fmt) = ext.parse::<ManifestationFormat>() else {
                 continue;
             };
-            #[allow(
+            #[expect(
                 clippy::unwrap_used,
                 reason = "the `best.is_none()` short-circuit in `&&` guarantees best is Some before .unwrap() is reached"
             )]

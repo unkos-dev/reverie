@@ -15,8 +15,6 @@
 //! than the committed `docs/openapi.json`, so the grid always tests the
 //! annotations the running server actually serves.
 
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use axum::http::StatusCode;
 use serde_json::Value;
 use sqlx::PgPool;

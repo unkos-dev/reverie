@@ -137,7 +137,7 @@ pub fn heuristic_vars_from_filename(filename: &str) -> HashMap<String, String> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::case_sensitive_file_extension_comparisons,
     reason = "test code: all test extensions are lowercase literals, case-insensitive comparison is unnecessary ceremony"
 )]

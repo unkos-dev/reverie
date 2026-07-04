@@ -18,6 +18,7 @@
         clippy::expect_used,
         clippy::print_stdout,
         clippy::print_stderr,
+        reason = "test code exercises panics and stdout freely; production denies hold outside cfg(test)"
     )
 )]
 
@@ -213,7 +214,7 @@ fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
 /// - OIDC discovery against the configured issuer fails;
 /// - the TCP listener cannot bind to the configured port;
 /// - `axum::serve` returns an error during the serving loop.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "This body was verbatim moved from the pre-split `main.rs` and lightly extended (3 lines for try_init error propagation + the `# Errors` docstring section). a typed `StartupError` will reshape startup error handling and is the natural place to extract phase helpers (`setup_tracing`, `init_csp_headers`, `spawn_workers`)."
 )]
@@ -907,7 +908,7 @@ pub async fn run_unlock_account(email: &str) -> anyhow::Result<()> {
 
 async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
     let ctrl_c = tokio::signal::ctrl_c();
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "Signal registration happens once at startup; failure means the OS cannot deliver SIGTERM to this process at all, which is an unrecoverable condition on a Unix host — panicking here is correct"
     )]

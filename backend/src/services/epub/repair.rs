@@ -33,7 +33,7 @@ use super::{EpubError, Issue, IssueKind};
 /// for the same calls and silently skips the fix rather than propagating.
 /// Returns [`EpubError::TempFile`] if the repacked temp file cannot be
 /// atomically persisted over `path`.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "repackage handles 4 distinct EPUB structural repair cases in one pass; splitting would require passing shared state between helpers and obscure the repair logic"
 )]

@@ -42,7 +42,6 @@ use crate::services::enrichment::value_hash;
 /// Outcome of a single [`run_once`] call.  Returned to the queue layer so it
 /// can drive retry/skipped state transitions.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // consumed by queue.rs + tracing
 pub struct RunOutcome {
     /// Manifestation that was enriched.
     pub manifestation_id: Uuid,
@@ -60,7 +59,6 @@ pub struct RunOutcome {
 
 /// A source-level error captured during [`run_once`].
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // source_id + error are surfaced via tracing
 pub struct SourceFailure {
     /// Source that failed (e.g. `"openlibrary"`).
     pub source_id: String,
@@ -716,7 +714,7 @@ async fn enqueue_writeback(
 /// value is unusable (non-string JSON, malformed `pub_date`) so the caller
 /// can try the next source instead of inflating counters and enqueuing a
 /// writeback for a change that did not happen.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "apply_field dispatches over 11 canonical axes each needing a typed UPDATE; the per-axis cases are mechanical and extracting them further would obscure the field→column mapping"
 )]

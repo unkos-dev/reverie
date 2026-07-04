@@ -171,7 +171,10 @@ impl IntoResponse for AppError {
     // A flat, exhaustive variant -> RFC 9457 dispatcher: one trivial arm per
     // error variant. Splitting it would scatter the status/slug/title mapping
     // without reducing complexity, so the length lint is allowed here.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "flat exhaustive variant-to-RFC-9457 dispatcher; splitting scatters the status/slug/title mapping without reducing complexity"
+    )]
     fn into_response(self) -> Response {
         // BasicAuthRequired keeps its pre-Problem-Details shape: empty body +
         // WWW-Authenticate per RFC 7617. OPDS clients depend on this

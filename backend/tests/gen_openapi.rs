@@ -10,8 +10,6 @@
 //! without failing to build — verified by temporarily removing an annotation
 //! during development.
 
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use std::path::PathBuf;
 
 fn artifact_path() -> PathBuf {

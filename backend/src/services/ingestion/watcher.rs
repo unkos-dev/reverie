@@ -110,7 +110,7 @@ pub async fn watch(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::let_underscore_must_use,
     reason = "test code: discarding JoinHandle and Result in test harness scaffolding is intentional; the crate-root cfg_attr only covers unwrap_used/expect_used"
 )]

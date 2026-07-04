@@ -131,7 +131,6 @@ pub async fn mark_failed(pool: &PgPool, id: Uuid, error_message: &str) -> Result
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
-#[allow(dead_code)] // Used by ingestion status API in Step 10
 pub async fn find_by_batch(
     pool: &PgPool,
     batch_id: Uuid,

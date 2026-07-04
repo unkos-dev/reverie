@@ -265,9 +265,7 @@ async fn revert_in_progress(pool: &PgPool) -> sqlx::Result<()> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::cast_sign_loss,
-    clippy::cast_possible_truncation,
+#[expect(
     clippy::cast_possible_wrap,
     reason = "test code: casts in tests for known-small literal constants are intentional and not worth wrapping in try_from/cast_signed"
 )]

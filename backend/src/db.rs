@@ -384,10 +384,6 @@ fn diverged_versions(
 }
 
 /// Inner implementation operating on an already-connected pool.
-#[allow(
-    clippy::too_many_lines,
-    reason = "migration runner threads lock acquisition, schema checks, batch tx, and no-tx passes in sequence; splitting would obscure the linear flow"
-)]
 async fn run_migrations_inner(pool: &PgPool) -> Result<MigrationReport, MigrationError> {
     let start = Instant::now();
     let migrator = sqlx::migrate!("./migrations");
@@ -438,7 +434,7 @@ async fn run_migrations_inner(pool: &PgPool) -> Result<MigrationReport, Migratio
     })
 }
 
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "linear migration pipeline: DDL check → schema checks → batch tx → no-tx pass; splitting would fragment the sequence"
 )]
@@ -548,7 +544,7 @@ async fn run_locked(
                         MigrationError::BatchFailed(e)
                     })?;
 
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation, reason = "elapsed nanos fit i64 for any realistic duration; series positions are small whole numbers")]
                 let elapsed_nanos = migration_start.elapsed().as_nanos() as i64;
 
                 sqlx::query(
@@ -601,7 +597,10 @@ async fn run_locked(
                 source: e,
             })?;
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "elapsed nanos fit i64 for any realistic duration; series positions are small whole numbers"
+        )]
         let elapsed_nanos = migration_start.elapsed().as_nanos() as i64;
 
         sqlx::query(
@@ -976,7 +975,7 @@ mod tests {
         // catalog probe must precede the version SELECT so the operator sees
         // a legible "run `reverie migrate`" message, NOT a raw
         // "relation _sqlx_migrations does not exist" SQL error. This is
-        // UNK-331's first-boot state.
+        // the fresh-database first-boot state.
         let err = verify_schema_current(&pool).await.unwrap_err();
         assert!(
             matches!(err, MigrationError::NotInitialized),

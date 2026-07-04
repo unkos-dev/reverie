@@ -130,7 +130,7 @@ struct BookListResponse {
 /// - [`AppError::Validation`] when the cursor is malformed, the sort
 ///   tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.
 /// - [`AppError::Internal`] on database errors.
-#[allow(
+#[expect(
     clippy::too_many_lines,
     reason = "single dynamic-query assembly; splitting hurts readability of the QueryBuilder flow"
 )]

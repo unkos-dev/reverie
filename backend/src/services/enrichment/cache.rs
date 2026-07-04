@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 ///
 /// Mapped via `sqlx::Type` to the Postgres `api_cache_kind` ENUM so an
 /// unknown DB variant surfaces as a decode error rather than coercing
-/// into a silent fallback (UNK-173, extends UNK-107).
+/// into a silent fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "api_cache_kind", rename_all = "lowercase")]
 pub enum ApiCacheKind {
@@ -29,7 +29,6 @@ pub enum ApiCacheKind {
 
 /// A live (non-expired) cache row returned by [`read`].
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // fields populated for consumers of `read`; orchestrator only writes today.
 pub struct CachedResponse {
     /// Raw `JSON` body returned by the upstream source.
     pub response: Value,
@@ -58,7 +57,6 @@ pub struct CacheTtls {
 /// # Errors
 ///
 /// Returns a [`sqlx::Error`] if the query fails (connection error, decode failure, etc.).
-#[allow(dead_code)] // orchestrator only writes today; read is exercised by the integration tests.
 pub async fn read(
     pool: &PgPool,
     source: &str,

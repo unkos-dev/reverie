@@ -30,7 +30,7 @@ pub(super) fn base_url(state: &AppState) -> Result<&url::Url, AppError> {
 }
 
 pub(super) fn atom_response(body: Vec<u8>, content_type: &str) -> Response {
-    #[allow(
+    #[expect(
         clippy::expect_used,
         reason = "Response::builder() with a valid StatusCode and caller-controlled content_type string; callers always pass a well-known MIME constant so this cannot fail at runtime"
     )]

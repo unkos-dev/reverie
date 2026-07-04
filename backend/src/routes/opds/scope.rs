@@ -48,7 +48,6 @@ pub fn push_scope(qb: &mut QueryBuilder<Postgres>, scope: &Scope, manifestation_
 /// {parent_alias}.work_id … )` fragment to use on navigation feeds keyed on a
 /// parent table (works, authors, series). When scope is a shelf, the
 /// `manifestations` row must also be in that shelf.
-#[allow(dead_code)] // alternative helper; current handlers inline the EXISTS
 pub fn push_visible_manifestation(
     qb: &mut QueryBuilder<Postgres>,
     scope: &Scope,

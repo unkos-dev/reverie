@@ -20,5 +20,4 @@ pub mod watcher;
 
 mod orchestrator;
 
-#[allow(unused_imports)] // ScanResult is part of the public API
 pub use orchestrator::{ScanResult, run_watcher, scan_once};
