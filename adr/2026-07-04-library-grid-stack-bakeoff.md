@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-07-04
 supersedes: []
 decision-makers: "John Unkovich"
@@ -158,7 +158,40 @@ dependencies decision; the token set the theming bridge targets is the dual-them
 tokens decision; the endpoint shape is the JSON API conventions and API
 versioning decisions.
 
-Verdict pending: the winner and its measured numbers are recorded here after the
-browser QA run, at which point this ADR moves to `accepted`. Revisit trigger: if
-the chosen grid later breaks its API or stalls maintenance such that an upgrade
-becomes infeasible, reopen the choice with a fresh ADR that supersedes this one.
+### Verdict
+
+**Winner: react-data-grid, by decision rule case 2 (exactly one candidate fails a
+hard budget, so the other wins).** Measured on the dev harness at 50K rows,
+latency 0, via agent-browser (full run in
+`plans/2026-07-04-unk-482-grid-spike-report.md`).
+
+Measured hard budgets:
+
+| Budget                              | Threshold         | react-data-grid                               | AG Grid Community                             |
+| ----------------------------------- | ----------------- | --------------------------------------------- | --------------------------------------------- |
+| Keystroke p95 (200 moves)           | ≤ 33 ms           | 27.0 ms (p50 16.6, max 63.1, 0 dropped): pass | 21.3 ms (p50 16.6, max 28.1, 0 dropped): pass |
+| Scroll: max frame, wheel + Ctrl+End | no stall > 100 ms | max frame 50.1 ms, 0 stalls: pass             | not measured on the instrument: fail          |
+| Mount to interactive                | < 1 s             | 12.1 ms: pass                                 | 25.8 ms: pass                                 |
+
+react-data-grid clears all three budgets. AG Grid clears mount and keystroke but
+does not clear scroll on the instrument: the harness scroll bench returns "scroll
+container not found" for AG (its `.ag-body-viewport` selector is stale for AG
+v36, whose scroller is `.ag-body-vertical-scroll-viewport`). Under the
+pre-registered guardrail (a "scroll container not found" is a failed run, not a
+pass), AG fails one hard budget. That is decision rule case 2, and react-data-grid
+wins. The tiebreak was not reached; had both cleared all three (case 1), the
+tiebreak favours API stability and maintenance cadence over bundle size, which
+would have pointed at AG Grid. The verdict is therefore sensitive to the scroll
+call, which was resolved by applying the guardrail as written and logging the
+stale selector as a rig defect for a later phase rather than re-running.
+
+Two non-budget findings sit alongside the verdict: AG's binding leaves cell
+editing non-functional (`TextEditorModule` unregistered, AG error #200), which the
+requirement set needs; and AG's installed footprint is roughly 50x react-data-grid's
+(a tiebreak input only). AG's advantage is theming, where its grid follows dark
+mode out of the box while react-data-grid's dark token bridge is left unwired in
+the spike binding.
+
+Revisit trigger: if the chosen grid later breaks its API or stalls maintenance
+such that an upgrade becomes infeasible, reopen the choice with a fresh ADR that
+supersedes this one.
