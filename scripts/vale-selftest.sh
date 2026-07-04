@@ -79,12 +79,20 @@ expect_silent "Reverie uses the Parchment theme."
 # merely contains a short accepted term (config) still fires, so unanchored
 # short entries do not silently swallow typos.
 expect_fires Spelling "The configg value is wrong."
+# Same anchoring holds at acronym length: the two-letter `AG` entry accepts the
+# bare token while a misspelling that starts with it still fires.
+expect_silent "AG Grid renders the table."
+expect_fires Spelling "The agregate view is wrong."
 
 # House style is Australian: an American spelling of a common word warns (it is
 # not accept-listed), while the Australian form stays silent. Guards against the
 # accept-list re-admitting American common words and bypassing the AU nudge.
 expect_fires Spelling "We Minimize the payload."
 expect_silent "We minimise the payload."
+# AU forms the bundled en_AU dictionary lacks are accept-listed (virtualised,
+# virtualiser); the American form is not, so it still warns.
+expect_silent "The grid uses virtualised scrolling."
+expect_fires Spelling "The grid uses virtualized scrolling."
 
 # Edge cases that lock in deliberate design choices.
 # WhStarter is paragraph-scoped, so a Wh- word in a heading is exempt.
