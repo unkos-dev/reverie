@@ -86,13 +86,14 @@ pub async fn match_existing(
     }
 
     if let Some(title) = &metadata.title
-        && let Some(first_author) = metadata.creators.first()
+        && let Some(first_author) = metadata.first_author()
     {
         let hit = sqlx::query_scalar!(
             "SELECT w.id FROM works w \
              JOIN work_authors wa ON wa.work_id = w.id \
              JOIN authors a ON a.id = wa.author_id \
-             WHERE similarity(w.title, $1) > 0.6 \
+             WHERE wa.role = 'author' \
+               AND similarity(w.title, $1) > 0.6 \
                AND similarity(a.name, $2) > 0.6 \
              ORDER BY similarity(w.title, $1) DESC \
              LIMIT 1",
@@ -510,6 +511,60 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn match_existing_uses_author_role_not_leading_editor(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let meta_existing = test_metadata("Quantum Botany Handbook", "Quantum Botany Writer");
+        let work_id = find_or_create(&pool, &meta_existing).await.unwrap();
+
+        let mut meta_incoming = test_metadata("Quantum Botany Handbook", "Quantum Botany Writer");
+        meta_incoming.creators.insert(
+            0,
+            ExtractedCreator {
+                name: "Zebra Editing Stranger".into(),
+                sort_name: "Stranger, Zebra Editing".into(),
+                role: "editor".into(),
+            },
+        );
+
+        let mut conn = pool.acquire().await.unwrap();
+        let hit = match_existing(&mut conn, &meta_incoming).await.unwrap();
+        assert_eq!(
+            hit,
+            Some(work_id),
+            "author-role creator must drive the title+author match even \
+             when an editor precedes it in document order"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn match_existing_ignores_non_author_role_rows(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let work_id = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+            "Volcanic Cartography Atlas",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        crate::test_support::db::insert_contributor(
+            &pool,
+            work_id,
+            "Meridian Mapmaker Osgood",
+            "translator",
+            0,
+        )
+        .await;
+
+        let meta = test_metadata("Volcanic Cartography Atlas", "Meridian Mapmaker Osgood");
+        let mut conn = pool.acquire().await.unwrap();
+        let hit = match_existing(&mut conn, &meta).await.unwrap();
+        assert_eq!(
+            hit, None,
+            "a translator-role row must not satisfy the author similarity match"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

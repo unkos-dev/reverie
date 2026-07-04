@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT w.id FROM works w JOIN work_authors wa ON wa.work_id = w.id JOIN authors a ON a.id = wa.author_id WHERE similarity(w.title, $1) > 0.6 AND similarity(a.name, $2) > 0.6 ORDER BY similarity(w.title, $1) DESC LIMIT 1",
+  "query": "SELECT w.id FROM works w JOIN work_authors wa ON wa.work_id = w.id JOIN authors a ON a.id = wa.author_id WHERE wa.role = 'author' AND similarity(w.title, $1) > 0.6 AND similarity(a.name, $2) > 0.6 ORDER BY similarity(w.title, $1) DESC LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "5620c7fe4f881f49f9224204547458d127f5edd6405ad304c90c44e5831751a4"
+  "hash": "931a6dd9014c62b6674e328060009054d96c7245bb611df82010b233138832c4"
 }

@@ -59,6 +59,18 @@ pub struct ExtractedMetadata {
     pub confidence: f32,
 }
 
+impl ExtractedMetadata {
+    /// First creator carrying the `author` role, in document order.
+    ///
+    /// `creators` is role-mixed and document-ordered, so an editor or
+    /// translator can precede the author; consumers that need "the author"
+    /// (work matching, library path rendering) must never fall back to a
+    /// non-author role.
+    pub fn first_author(&self) -> Option<&ExtractedCreator> {
+        self.creators.iter().find(|c| c.role == "author")
+    }
+}
+
 /// A single contributor (author, editor, translator, narrator) extracted from `OPF`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ExtractedCreator {

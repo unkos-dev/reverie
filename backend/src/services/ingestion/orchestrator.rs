@@ -482,7 +482,7 @@ async fn process_file(
             if let Some(ref t) = meta.title {
                 meta_vars.insert("Title".into(), t.clone());
             }
-            if let Some(first) = meta.creators.first() {
+            if let Some(first) = meta.first_author() {
                 meta_vars.insert("Author".into(), first.sort_name.clone());
             }
             let new_relative = path_template::render(path_template::DEFAULT_TEMPLATE, &meta_vars);
