@@ -32,6 +32,15 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   block-size: 100%;
+
+  /* RDG's root ships `content-visibility: auto`, and Chromium caches the
+   * rasterized grid from its first paint. When the theme-bridge variables
+   * above settle after that paint, the stale vendor-palette pixels stay on
+   * screen until a scroll forces re-rasterization. The grid is this page's
+   * main content and never offscreen at mount, so the skip-when-offscreen
+   * optimization buys nothing; disabling it removes the stale paint cache.
+   */
+  content-visibility: visible;
 }
 
 [data-theme="light"] .rv-grid .rdg {
