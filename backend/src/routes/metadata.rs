@@ -18,6 +18,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
+use crate::models::content_rating::ContentRating;
 use crate::models::work;
 use crate::services::enrichment::field_lock::{self, EntityType};
 use crate::services::enrichment::value_hash;
@@ -703,6 +704,35 @@ async fn apply_version(
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
         }
+        "content_rating" => {
+            let rating: ContentRating = serde_json::from_value(value.clone()).map_err(|_| {
+                AppError::Validation(
+                    "content_rating must be one of everyone, teen, mature, adult, explicit".into(),
+                )
+            })?;
+            sqlx::query!(
+                "UPDATE manifestations \
+                 SET content_rating = $1, content_rating_version_id = $2 \
+                 WHERE id = $3",
+                rating as ContentRating,
+                version_id,
+                manifestation_id,
+            )
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        }
+        "genres" | "moods" | "tags" => {
+            let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
+                AppError::Validation(format!("unsupported vocabulary field '{field}'"))
+            })?;
+            let names: Vec<String> = serde_json::from_value(value.clone()).map_err(|_| {
+                AppError::Validation(format!("{field} must be an array of strings"))
+            })?;
+            let trimmed = validated_vocabulary_terms(field, &names)?;
+            delete_vocabulary_rows(tx, manifestation_id, vocab).await?;
+            insert_vocabulary_rows(tx, manifestation_id, vocab, &trimmed, version_id).await?;
+        }
         other => {
             return Err(AppError::Validation(format!(
                 "unsupported auto-apply field '{other}' (list/complex fields must be accepted via their dedicated routes)"
@@ -737,6 +767,10 @@ async fn enqueue_writeback(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "field dispatch with one sqlx::query! per supported field; macro-form expansion pushes this past the 100-line threshold"
+)]
 async fn clear_field(
     tx: &mut Transaction<'_, Postgres>,
     field: &str,
@@ -832,6 +866,23 @@ async fn clear_field(
             .execute(&mut **tx)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
+        }
+        "content_rating" => {
+            sqlx::query!(
+                "UPDATE manifestations \
+                 SET content_rating = NULL, content_rating_version_id = NULL \
+                 WHERE id = $1",
+                manifestation_id,
+            )
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        }
+        "genres" | "moods" | "tags" => {
+            let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
+                AppError::Validation(format!("unsupported vocabulary field '{field}'"))
+            })?;
+            delete_vocabulary_rows(tx, manifestation_id, vocab).await?;
         }
         other => {
             return Err(AppError::Validation(format!("unsupported field '{other}'")));
@@ -1030,6 +1081,238 @@ async fn apply_contributors_patch(
     Ok(())
 }
 
+// ── vocabulary junction fields (genres / moods / tags) ────────────────────
+
+/// Maximum length (in `char`s) for a manually-entered vocabulary term.
+const MAX_VOCABULARY_TERM_CHARS: usize = 100;
+
+/// Maximum number of terms accepted per vocabulary field in one patch.
+const MAX_VOCABULARY_TERMS_PER_FIELD: usize = 50;
+
+/// Vocabulary junction targets editable from the manual PATCH surface and
+/// the accept/revert machinery. Each maps to a vocabulary table plus a
+/// junction table mirroring `manifestation_tags`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VocabularyField {
+    Genres,
+    Moods,
+    Tags,
+}
+
+impl VocabularyField {
+    const fn field_name(self) -> &'static str {
+        match self {
+            Self::Genres => "genres",
+            Self::Moods => "moods",
+            Self::Tags => "tags",
+        }
+    }
+
+    fn from_field_name(field: &str) -> Option<Self> {
+        match field {
+            "genres" => Some(Self::Genres),
+            "moods" => Some(Self::Moods),
+            "tags" => Some(Self::Tags),
+            _ => None,
+        }
+    }
+}
+
+/// Validate one vocabulary field's submitted terms: bounded count, trimmed,
+/// non-empty, length-capped, duplicate-free. Duplicates are checked
+/// case-insensitively because the vocabulary tables are unique on
+/// `lower(name)`. Returns the trimmed list in submission order.
+fn validated_vocabulary_terms(field: &str, names: &[String]) -> Result<Vec<String>, AppError> {
+    if names.len() > MAX_VOCABULARY_TERMS_PER_FIELD {
+        return Err(AppError::Validation(format!(
+            "{field} list exceeds {MAX_VOCABULARY_TERMS_PER_FIELD} terms"
+        )));
+    }
+    let mut trimmed: Vec<String> = Vec::with_capacity(names.len());
+    for raw in names {
+        let t = raw.trim();
+        if t.is_empty() {
+            return Err(AppError::Validation(format!(
+                "{field} term must not be empty"
+            )));
+        }
+        if t.chars().count() > MAX_VOCABULARY_TERM_CHARS {
+            return Err(AppError::Validation(format!(
+                "{field} term exceeds {MAX_VOCABULARY_TERM_CHARS} characters"
+            )));
+        }
+        trimmed.push(t.to_string());
+    }
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for t in &trimmed {
+        if !seen.insert(t.to_lowercase()) {
+            return Err(AppError::Validation(format!(
+                "duplicate {field} term '{t}'"
+            )));
+        }
+    }
+    Ok(trimmed)
+}
+
+async fn delete_vocabulary_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    field: VocabularyField,
+) -> Result<(), AppError> {
+    match field {
+        VocabularyField::Genres => {
+            sqlx::query!(
+                "DELETE FROM manifestation_genres WHERE manifestation_id = $1",
+                manifestation_id,
+            )
+            .execute(&mut **tx)
+            .await
+        }
+        VocabularyField::Moods => {
+            sqlx::query!(
+                "DELETE FROM manifestation_moods WHERE manifestation_id = $1",
+                manifestation_id,
+            )
+            .execute(&mut **tx)
+            .await
+        }
+        VocabularyField::Tags => {
+            sqlx::query!(
+                "DELETE FROM manifestation_tags WHERE manifestation_id = $1",
+                manifestation_id,
+            )
+            .execute(&mut **tx)
+            .await
+        }
+    }
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(())
+}
+
+/// Find-or-create every term and link it to the manifestation, carrying the
+/// journal pointer onto each junction row. Set-based: one statement per call.
+/// The `ON CONFLICT ((lower(name))) DO UPDATE` leg returns ids for existing
+/// terms too, with last-writer-wins display casing.
+///
+/// The `DISTINCT ON (lower(name)) .. ORDER BY lower(name)` source does two
+/// jobs: it guards the single-statement upsert against case collisions the
+/// Rust-side validation missed (Postgres `lower()` can fold pairs that
+/// `str::to_lowercase` keeps distinct, and upserting the same row twice in
+/// one statement is an error), and it fixes the row-lock acquisition order
+/// so concurrent patches upserting overlapping terms cannot deadlock.
+async fn insert_vocabulary_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    field: VocabularyField,
+    names: &[String],
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    match field {
+        VocabularyField::Genres => {
+            sqlx::query!(
+                "WITH terms AS ( \
+                     INSERT INTO genres (name) \
+                     SELECT DISTINCT ON (lower(name)) name \
+                       FROM unnest($2::text[]) AS t(name) \
+                      ORDER BY lower(name) \
+                     ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+                     RETURNING id \
+                 ) \
+                 INSERT INTO manifestation_genres (manifestation_id, genre_id, source_version_id) \
+                 SELECT $1, id, $3 FROM terms \
+                 ON CONFLICT (manifestation_id, genre_id) DO NOTHING",
+                manifestation_id,
+                names,
+                version_id,
+            )
+            .execute(&mut **tx)
+            .await
+        }
+        VocabularyField::Moods => {
+            sqlx::query!(
+                "WITH terms AS ( \
+                     INSERT INTO moods (name) \
+                     SELECT DISTINCT ON (lower(name)) name \
+                       FROM unnest($2::text[]) AS t(name) \
+                      ORDER BY lower(name) \
+                     ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+                     RETURNING id \
+                 ) \
+                 INSERT INTO manifestation_moods (manifestation_id, mood_id, source_version_id) \
+                 SELECT $1, id, $3 FROM terms \
+                 ON CONFLICT (manifestation_id, mood_id) DO NOTHING",
+                manifestation_id,
+                names,
+                version_id,
+            )
+            .execute(&mut **tx)
+            .await
+        }
+        VocabularyField::Tags => {
+            sqlx::query!(
+                "WITH terms AS ( \
+                     INSERT INTO tags (name) \
+                     SELECT DISTINCT ON (lower(name)) name \
+                       FROM unnest($2::text[]) AS t(name) \
+                      ORDER BY lower(name) \
+                     ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+                     RETURNING id \
+                 ) \
+                 INSERT INTO manifestation_tags (manifestation_id, tag_id, source_version_id) \
+                 SELECT $1, id, $3 FROM terms \
+                 ON CONFLICT (manifestation_id, tag_id) DO NOTHING",
+                manifestation_id,
+                names,
+                version_id,
+            )
+            .execute(&mut **tx)
+            .await
+        }
+    }
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(())
+}
+
+/// Apply one vocabulary field's merge-patch: journal the full replacement
+/// list under the field name and rebuild the junction rows with the new
+/// journal pointer.
+///
+/// `None` (top-level `null`) and an empty array both clear the field; the
+/// clear is journaled as a null-valued accountability row, mirroring the
+/// scalar clear path.
+///
+/// # Errors
+/// - [`AppError::Validation`] on an empty/duplicate/over-length term or an
+///   over-long list.
+/// - [`AppError::Internal`] on database errors.
+async fn apply_vocabulary_patch(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    user_id: Uuid,
+    field: VocabularyField,
+    maybe_names: Option<Vec<String>>,
+) -> Result<(), AppError> {
+    let key = field.field_name();
+    // Empty array ≡ null: both clear the field.
+    let names = maybe_names.filter(|v| !v.is_empty());
+    match names {
+        None => {
+            insert_manual_version(tx, manifestation_id, user_id, key, &Value::Null).await?;
+            delete_vocabulary_rows(tx, manifestation_id, field).await?;
+        }
+        Some(names) => {
+            let trimmed = validated_vocabulary_terms(key, &names)?;
+            let json = serde_json::to_value(&trimmed).map_err(|e| AppError::Internal(e.into()))?;
+            let version_id =
+                insert_manual_version(tx, manifestation_id, user_id, key, &json).await?;
+            delete_vocabulary_rows(tx, manifestation_id, field).await?;
+            insert_vocabulary_rows(tx, manifestation_id, field, &trimmed, version_id).await?;
+        }
+    }
+    enqueue_writeback(tx, manifestation_id, key).await?;
+    Ok(())
+}
+
 // ── manual metadata edit (RFC 7396 JSON Merge Patch) ──────────────────────
 
 /// Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.
@@ -1087,6 +1370,28 @@ struct UpdateMetadataFields {
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[schema(value_type = Option<i32>, minimum = 1)]
     pages: Option<Option<i32>>,
+    /// New content rating tier. Absent = unchanged; `null` clears.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<ContentRating>)]
+    content_rating: Option<Option<ContentRating>>,
+    /// Full replacement genre list. Absent = unchanged; `null` or `[]`
+    /// clears. Handled separately from the scalar fields; not part of
+    /// [`Self::populated`].
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<Vec<String>>, max_items = 50)]
+    genres: Option<Option<Vec<String>>>,
+    /// Full replacement mood list. Absent = unchanged; `null` or `[]`
+    /// clears. Handled separately from the scalar fields; not part of
+    /// [`Self::populated`].
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<Vec<String>>, max_items = 50)]
+    moods: Option<Option<Vec<String>>>,
+    /// Full replacement tag list. Absent = unchanged; `null` or `[]`
+    /// clears. Handled separately from the scalar fields; not part of
+    /// [`Self::populated`].
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    #[schema(value_type = Option<Vec<String>>, max_items = 50)]
+    tags: Option<Option<Vec<String>>>,
     /// Per-role contributor replace/clear. Absent = unchanged; `null` clears
     /// author, editor, and translator together (pure RFC 7396 member removal).
     /// Handled separately from the other fields — not part of [`Self::populated`].
@@ -1124,7 +1429,7 @@ struct ContributorsPatch {
 }
 
 /// Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`
-/// wrapper keeps the door open for future top-level keys (eg. `tags`,
+/// wrapper keeps the door open for future top-level keys (eg.
 /// `series_position`) without forcing a body-shape migration.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateMetadataRequest {
@@ -1172,6 +1477,12 @@ impl UpdateMetadataFields {
         if let Some(v) = self.pages {
             out.push(("pages", v.map(Value::from)));
         }
+        if let Some(v) = self.content_rating {
+            out.push((
+                "content_rating",
+                v.map(|r| Value::String(r.as_str().to_owned())),
+            ));
+        }
         out
     }
 }
@@ -1188,8 +1499,10 @@ impl UpdateMetadataFields {
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the body has no populated fields,
-///   when an ISBN/date value fails parsing, or when the operator tries
-///   to clear `title` (canonical title is `NOT NULL` on `works`).
+///   when an ISBN/date value fails parsing, when a vocabulary list
+///   (`genres`/`moods`/`tags`) contains an empty, duplicate, or
+///   over-length term, or when the operator tries to clear `title`
+///   (canonical title is `NOT NULL` on `works`).
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden
 ///   by RLS for the current user (existence-not-leaked).
 /// - [`AppError::Forbidden`] when the caller is a child account.
@@ -1222,8 +1535,16 @@ async fn update_book_metadata(
     // handled separately from the other (scalar) fields.
     let mut req_fields = req.fields;
     let contributors = req_fields.contributors.take();
+    let genres = req_fields.genres.take();
+    let moods = req_fields.moods.take();
+    let tags = req_fields.tags.take();
     let fields = req_fields.populated();
-    if fields.is_empty() && contributors.is_none() {
+    if fields.is_empty()
+        && contributors.is_none()
+        && genres.is_none()
+        && moods.is_none()
+        && tags.is_none()
+    {
         return Err(AppError::Validation("no fields".into()));
     }
 
@@ -1263,6 +1584,23 @@ async fn update_book_metadata(
             maybe_value,
         )
         .await?;
+    }
+
+    for (vocab, patch) in [
+        (VocabularyField::Genres, genres),
+        (VocabularyField::Moods, moods),
+        (VocabularyField::Tags, tags),
+    ] {
+        if let Some(maybe_names) = patch {
+            apply_vocabulary_patch(
+                &mut tx,
+                manifestation_id,
+                current_user.user_id,
+                vocab,
+                maybe_names,
+            )
+            .await?;
+        }
     }
 
     if let Some(patch) = contributors {
@@ -1426,6 +1764,7 @@ fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
 #[cfg(test)]
 mod tests {
     use super::parse_iso_date;
+    use crate::models::content_rating::ContentRating;
     use crate::test_support;
     use axum::http::StatusCode;
     use uuid::Uuid;
@@ -3442,6 +3781,599 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY,
             "body = {}",
             response.text()
+        );
+    }
+
+    // ── PATCH genres / moods / tags / content_rating ───────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_genres_sets_journals_and_links(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"genres": ["Astrophysics", "Carpentry"]}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        let version = sqlx::query!(
+            "SELECT id, status::text AS \"status!\", resolved_by \
+             FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'genres'",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch genres version");
+        assert_eq!(version.status, "pending");
+        assert_eq!(
+            version.resolved_by,
+            Some(admin_id),
+            "resolved_by should record the operator"
+        );
+
+        let genre_names: Vec<String> = sqlx::query_scalar!(
+            "SELECT g.name FROM genres g \
+             JOIN manifestation_genres mg ON mg.genre_id = g.id \
+             WHERE mg.manifestation_id = $1 ORDER BY g.name",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch genre names");
+        assert_eq!(
+            genre_names,
+            vec!["Astrophysics".to_string(), "Carpentry".to_string()]
+        );
+
+        let source_version_ids: Vec<Option<Uuid>> = sqlx::query_scalar!(
+            "SELECT DISTINCT source_version_id FROM manifestation_genres \
+             WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch junction source_version_id");
+        assert_eq!(
+            source_version_ids,
+            vec![Some(version.id)],
+            "both junction rows must carry the journal row's id"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_genres_replaces_wholesale(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let first = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"genres": ["Astrophysics", "Carpentry"]}}))
+            .await;
+        assert_eq!(first.status_code(), StatusCode::NO_CONTENT);
+
+        let second = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"genres": ["Numismatics"]}}))
+            .await;
+        assert_eq!(second.status_code(), StatusCode::NO_CONTENT);
+
+        let genre_names: Vec<String> = sqlx::query_scalar!(
+            "SELECT g.name FROM genres g \
+             JOIN manifestation_genres mg ON mg.genre_id = g.id \
+             WHERE mg.manifestation_id = $1",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch genre names after replace");
+        assert_eq!(
+            genre_names,
+            vec!["Numismatics".to_string()],
+            "second PATCH must replace the junction wholesale, not merge"
+        );
+
+        let orphaned_vocab_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM genres \
+             WHERE lower(name) IN ('astrophysics', 'carpentry')",
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch orphaned vocab count");
+        assert_eq!(
+            orphaned_vocab_count, 2,
+            "vocabulary rows are never garbage-collected"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_moods_and_tags_smoke(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"moods": ["Gloomy"], "tags": ["Signed"]}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            response.text()
+        );
+
+        let mood_name: String = sqlx::query_scalar!(
+            "SELECT mo.name FROM moods mo \
+             JOIN manifestation_moods mm ON mm.mood_id = mo.id \
+             WHERE mm.manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch mood name");
+        assert_eq!(mood_name, "Gloomy");
+
+        let tag_name: String = sqlx::query_scalar!(
+            "SELECT t.name FROM tags t \
+             JOIN manifestation_tags mt ON mt.tag_id = t.id \
+             WHERE mt.manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch tag name");
+        assert_eq!(tag_name, "Signed");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_genres_null_clears_and_journals(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // `null` clears.
+        let marker_a = Uuid::new_v4().simple().to_string();
+        let (_work_a, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker_a).await;
+        let set_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"genres": ["Origami"]}}))
+            .await;
+        assert_eq!(set_a.status_code(), StatusCode::NO_CONTENT);
+        let clear_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"genres": serde_json::Value::Null}}))
+            .await;
+        assert_eq!(clear_a.status_code(), StatusCode::NO_CONTENT);
+
+        let junction_count_a: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM manifestation_genres WHERE manifestation_id = $1",
+            m_a,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch junction count a");
+        assert_eq!(junction_count_a, 0);
+
+        let null_journal_a: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' \
+               AND field_name = 'genres' AND new_value = 'null'::jsonb",
+            m_a,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch null journal count a");
+        assert_eq!(null_journal_a, 1, "null-valued manual journal row missing");
+
+        // Empty array must clear identically to `null`.
+        let marker_b = Uuid::new_v4().simple().to_string();
+        let (_work_b, m_b) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker_b).await;
+        let set_b = server
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"genres": ["Beekeeping"]}}))
+            .await;
+        assert_eq!(set_b.status_code(), StatusCode::NO_CONTENT);
+        let clear_b = server
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"genres": []}}))
+            .await;
+        assert_eq!(clear_b.status_code(), StatusCode::NO_CONTENT);
+
+        let junction_count_b: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM manifestation_genres WHERE manifestation_id = $1",
+            m_b,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch junction count b");
+        assert_eq!(junction_count_b, 0, "[] must clear identically to null");
+
+        let null_journal_b: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' \
+               AND field_name = 'genres' AND new_value = 'null'::jsonb",
+            m_b,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch null journal count b");
+        assert_eq!(null_journal_b, 1, "null-valued manual journal row missing");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_genres_duplicate_case_insensitive_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"genres": ["SciFi", "scifi"]}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_genres_over_cap_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let terms: Vec<String> = (0..51).map(|i| format!("VocabTerm{i}")).collect();
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"genres": terms}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_genres_repeat_save_dedupes_journal(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // Same order twice — must dedupe onto one journal row via observation_count.
+        for _ in 0..2 {
+            let response = server
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"fields": {"genres": ["Falconry", "Glassblowing"]}}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        }
+
+        // A distinct set, submitted, then reordered — the order-insensitive
+        // hash must collapse the reorder onto that same second journal row.
+        let first_order = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"genres": ["Alchemy", "Basketry"]}}))
+            .await;
+        assert_eq!(first_order.status_code(), StatusCode::NO_CONTENT);
+        let reordered = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"genres": ["Basketry", "Alchemy"]}}))
+            .await;
+        assert_eq!(reordered.status_code(), StatusCode::NO_CONTENT);
+
+        let rows = sqlx::query!(
+            "SELECT observation_count, new_value AS \"new_value!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 AND source = 'manual' AND field_name = 'genres'",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch genres journal rows");
+        assert_eq!(
+            rows.len(),
+            2,
+            "two distinct value sets must produce exactly two journal rows; got {}",
+            rows.len()
+        );
+
+        let falconry_row = rows
+            .iter()
+            .find(|r| r.new_value.to_string().contains("Falconry"))
+            .expect("falconry/glassblowing row present");
+        assert_eq!(
+            falconry_row.observation_count, 2,
+            "repeat same-order save must bump observation_count, not insert a new row"
+        );
+
+        let alchemy_row = rows
+            .iter()
+            .find(|r| r.new_value.to_string().contains("Alchemy"))
+            .expect("alchemy/basketry row present");
+        assert_eq!(
+            alchemy_row.observation_count, 2,
+            "reordered save must collide on the order-insensitive hash, not insert a new row"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_content_rating_set_and_clear(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let set_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"fields": {"content_rating": "teen"}}))
+            .await;
+        assert_eq!(
+            set_response.status_code(),
+            StatusCode::NO_CONTENT,
+            "body = {}",
+            set_response.text()
+        );
+
+        let row = sqlx::query!(
+            "SELECT content_rating AS \"content_rating: ContentRating\", \
+                    content_rating_version_id \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch manifestation after set");
+        assert_eq!(row.content_rating, Some(ContentRating::Teen));
+        let version_id = row
+            .content_rating_version_id
+            .expect("content_rating_version_id wired");
+
+        let version = sqlx::query!(
+            "SELECT source, field_name FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch content_rating version");
+        assert_eq!(version.source, "manual");
+        assert_eq!(version.field_name, "content_rating");
+
+        let clear_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"content_rating": serde_json::Value::Null}}))
+            .await;
+        assert_eq!(clear_response.status_code(), StatusCode::NO_CONTENT);
+
+        let row_after = sqlx::query!(
+            "SELECT content_rating AS \"content_rating: ContentRating\", \
+                    content_rating_version_id \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch manifestation after clear");
+        assert!(row_after.content_rating.is_none());
+        assert!(row_after.content_rating_version_id.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_content_rating_invalid_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"content_rating": "ultra_violent"}}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn lock_does_not_block_manual_content_rating(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let lock_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/lock"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({
+                "field_name": "content_rating",
+                "entity_type": "manifestation",
+            }))
+            .await;
+        assert_eq!(
+            lock_response.status_code(),
+            StatusCode::CREATED,
+            "body = {}",
+            lock_response.text()
+        );
+
+        let patch_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"content_rating": "mature"}}))
+            .await;
+        assert_eq!(
+            patch_response.status_code(),
+            StatusCode::NO_CONTENT,
+            "locks gate automated enrichment only, not the manual PATCH surface; body = {}",
+            patch_response.text()
+        );
+
+        let rating = sqlx::query_scalar!(
+            "SELECT content_rating AS \"content_rating: ContentRating\" \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch content_rating");
+        assert_eq!(rating, Some(ContentRating::Mature));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accept_genres_version_applies_junctions(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id = insert_version(
+            &ing_pool,
+            m_id,
+            "genres",
+            serde_json::json!(["Falconry", "Glassblowing"]),
+        )
+        .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let genre_names: Vec<String> = sqlx::query_scalar!(
+            "SELECT g.name FROM genres g \
+             JOIN manifestation_genres mg ON mg.genre_id = g.id \
+             WHERE mg.manifestation_id = $1 ORDER BY g.name",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch genre names");
+        assert_eq!(
+            genre_names,
+            vec!["Falconry".to_string(), "Glassblowing".to_string()]
+        );
+
+        let source_version_ids: Vec<Option<Uuid>> = sqlx::query_scalar!(
+            "SELECT DISTINCT source_version_id FROM manifestation_genres \
+             WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch junction source_version_id");
+        assert_eq!(source_version_ids, vec![Some(version_id)]);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_genres_to_null_clears(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id = insert_version(
+            &ing_pool,
+            m_id,
+            "genres",
+            serde_json::json!(["Falconry", "Glassblowing"]),
+        )
+        .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let accept_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        assert_eq!(accept_response.status_code(), StatusCode::OK);
+
+        let revert_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "genres",
+                "version_id": serde_json::Value::Null,
+            }))
+            .await;
+        assert_eq!(
+            revert_response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert_response.text()
+        );
+
+        let junction_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM manifestation_genres WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch junction count after revert");
+        assert_eq!(
+            junction_count, 0,
+            "revert-to-null must clear the junction rows"
         );
     }
 }

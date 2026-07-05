@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestation_genres (manifestation_id, genre_id) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "83a3d4d59d88828745a2783ba53a8ebc174b09979ba16bd7cb4965f9db1c417a"
+}

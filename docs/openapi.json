@@ -77,13 +77,108 @@
         ]
       }
     },
+    "/api/v1/authors/suggest": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/authors/suggest`: author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Any contributor\nrole counts (see [`query_authors`]), not just the `author` role.",
+        "description": "# Errors\nSame as [`suggest_genres`].",
+        "operationId": "suggest_authors",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form typeahead text. Trimmed before matching; empty after\ntrimming, or longer than 100 characters, is rejected with 422.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows returned. Clamped to 1..=20 (default 10); never rejects.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Author names in use on a visible manifestation, ranked prefix-first then by similarity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty or over-length q",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/books": {
       "get": {
         "tags": [
           "library"
         ],
         "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort axis.",
-        "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (e.g. a malformed UUID in `?author=`/`?series=`/\n  `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the\n  `From<QueryRejection>` impl.\n- [`AppError::Validation`] when the cursor is malformed, the sort\n  tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.\n- [`AppError::Internal`] on database errors.",
+        "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (e.g. a malformed UUID in `?author=`/`?series=`/\n  `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the\n  `From<QueryRejection>` impl.\n- [`AppError::Validation`] when the cursor is malformed, the sort\n  tag mismatches the cursor, or any vocabulary filter param carries\n  more than [`MAX_TAG_FILTERS`] values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list",
         "parameters": [
           {
@@ -139,6 +234,102 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "description": "All-of genre filter: every listed genre name must be attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "genre_any",
+            "in": "query",
+            "description": "Any-of genre filter: at least one listed genre name is attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "genre_none",
+            "in": "query",
+            "description": "None-of genre filter: no listed genre name is attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "mood",
+            "in": "query",
+            "description": "All-of mood filter: every listed mood name must be attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "mood_any",
+            "in": "query",
+            "description": "Any-of mood filter: at least one listed mood name is attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "mood_none",
+            "in": "query",
+            "description": "None-of mood filter: no listed mood name is attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "tag_any",
+            "in": "query",
+            "description": "Any-of tag filter: at least one listed tag name is attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "tag_none",
+            "in": "query",
+            "description": "None-of tag filter: no listed tag name is attached.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {
@@ -181,7 +372,7 @@
             }
           },
           "422": {
-            "description": "Invalid cursor or too many tag filters",
+            "description": "Invalid cursor or too many filter values",
             "content": {
               "application/json": {
                 "schema": {
@@ -441,7 +632,7 @@
           "metadata"
         ],
         "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
-        "description": "RFC 7396 JSON Merge Patch shape. For each touched field the handler\ninserts a `metadata_versions` row with `source = 'manual'` and then\neither promotes that row to canonical via [`apply_version`] (when a\nvalue is supplied) or clears the canonical column via [`clear_field`]\n(when the value is `null`). The pending AI/OPF drafts on the same\nfield stay `status = 'pending'` — the operator can revert to one of\nthem later.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, or when the operator tries\n  to clear `title` (canonical title is `NOT NULL` on `works`).\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "description": "RFC 7396 JSON Merge Patch shape. For each touched field the handler\ninserts a `metadata_versions` row with `source = 'manual'` and then\neither promotes that row to canonical via [`apply_version`] (when a\nvalue is supplied) or clears the canonical column via [`clear_field`]\n(when the value is `null`). The pending AI/OPF drafts on the same\nfield stay `status = 'pending'` — the operator can revert to one of\nthem later.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`).\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -887,6 +1078,101 @@
           },
           "403": {
             "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/genres/suggest": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/genres/suggest`: genre names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "description": "Read-scope gated exactly like `GET /api/v1/books` (the least-privilege\nfloor); every other suggest handler below shares the same shape.\n\n# Errors\n- [`AppError::MalformedQuery`] when `?limit=` fails to parse as an\n  integer; HTTP 400 via the `From<QueryRejection>` impl.\n- [`AppError::Validation`] when `q` is empty after trimming or exceeds\n  [`MAX_Q_CHARS`] characters.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "suggest_genres",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form typeahead text. Trimmed before matching; empty after\ntrimming, or longer than 100 characters, is rejected with 422.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows returned. Clamped to 1..=20 (default 10); never rejects.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Genre names in use on a visible manifestation, ranked prefix-first then by similarity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty or over-length q",
             "content": {
               "application/json": {
                 "schema": {
@@ -1703,6 +1989,196 @@
         ]
       }
     },
+    "/api/v1/moods/suggest": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/moods/suggest`: mood names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "description": "# Errors\nSame as [`suggest_genres`].",
+        "operationId": "suggest_moods",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form typeahead text. Trimmed before matching; empty after\ntrimming, or longer than 100 characters, is rejected with 422.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows returned. Clamped to 1..=20 (default 10); never rejects.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mood names in use on a visible manifestation, ranked prefix-first then by similarity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty or over-length q",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/publishers/suggest": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/publishers/suggest`: distinct publisher values in use on a\nvisible manifestation, ranked prefix-first then by similarity. Every\nreturned [`Suggestion`] carries `id: None` (publishers have no dedicated\nvocabulary table; see [`query_publishers`]).",
+        "description": "# Errors\nSame as [`suggest_genres`].",
+        "operationId": "suggest_publishers",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form typeahead text. Trimmed before matching; empty after\ntrimming, or longer than 100 characters, is rejected with 422.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows returned. Clamped to 1..=20 (default 10); never rejects.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Distinct publisher values in use on a visible manifestation, ranked prefix-first then by similarity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty or over-length q",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "tags": [
@@ -1755,6 +2231,101 @@
           },
           "422": {
             "description": "Empty, missing, or over-length query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/series/suggest": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/series/suggest`: series names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "description": "# Errors\nSame as [`suggest_genres`].",
+        "operationId": "suggest_series",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form typeahead text. Trimmed before matching; empty after\ntrimming, or longer than 100 characters, is rejected with 422.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows returned. Clamped to 1..=20 (default 10); never rejects.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Series names in use on a visible manifestation, ranked prefix-first then by similarity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty or over-length q",
             "content": {
               "application/json": {
                 "schema": {
@@ -2825,6 +3396,101 @@
           {
             "opds_basic": [
               "write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/tags/suggest": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/tags/suggest`: tag names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "description": "# Errors\nSame as [`suggest_genres`].",
+        "operationId": "suggest_tags",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Free-form typeahead text. Trimmed before matching; empty after\ntrimming, or longer than 100 characters, is rejected with 422.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows returned. Clamped to 1..=20 (default 10); never rejects.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tag names in use on a visible manifestation, ranked prefix-first then by similarity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty or over-length q",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
             ]
           }
         ]
@@ -5775,6 +6441,8 @@
           "authors",
           "cover_url",
           "tags",
+          "genres",
+          "moods",
           "ingestion_status",
           "validation_status",
           "enrichment_status",
@@ -5790,6 +6458,17 @@
               "type": "string"
             },
             "description": "Author display names ordered by `work_authors.position`."
+          },
+          "content_rating": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContentRating",
+                "description": "Audience-suitability rating (`manifestations.content_rating`);\n`None` when unrated."
+              }
+            ]
           },
           "cover_url": {
             "type": "string",
@@ -5810,6 +6489,13 @@
           "enrichment_status": {
             "$ref": "#/components/schemas/EnrichmentStatus",
             "description": "Enrichment lifecycle state."
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Genre names attached to the manifestation."
           },
           "id": {
             "type": "string",
@@ -5851,6 +6537,13 @@
               "$ref": "#/components/schemas/MetadataVersionRow"
             },
             "description": "Pending `metadata_versions` rows for this manifestation. Filtered\nto `status = 'pending'` AND not currently promoted as a canonical\npointer. Ordered by `last_seen_at DESC`. Empty when the operator\nhas no drafts to review. Surfaced for the Versions-tab UI; the\nsummary counts above remain so clients can render the tab badge\nwithout parsing the full list."
+          },
+          "moods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Mood names attached to the manifestation."
           },
           "pages": {
             "type": [
@@ -6062,6 +6755,17 @@
           "all",
           "ingested",
           "none"
+        ]
+      },
+      "ContentRating": {
+        "type": "string",
+        "description": "The audience-suitability classification of a manifestation's content.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].",
+        "enum": [
+          "everyone",
+          "teen",
+          "mature",
+          "adult",
+          "explicit"
         ]
       },
       "ContributorsPatch": {
@@ -7569,6 +8273,42 @@
           }
         }
       },
+      "SuggestResponse": {
+        "type": "object",
+        "description": "`GET .../suggest` response envelope.",
+        "required": [
+          "suggestions"
+        ],
+        "properties": {
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Suggestion"
+            }
+          }
+        }
+      },
+      "Suggestion": {
+        "type": "object",
+        "description": "One typeahead suggestion.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Row id in the backing vocabulary table. `None` for publisher\nsuggestions, which have no dedicated table of their own."
+          },
+          "value": {
+            "type": "string",
+            "description": "Display text to show in the typeahead and to resubmit as a filter."
+          }
+        }
+      },
       "ThemePreference": {
         "type": "string",
         "description": "Per-user theme selection mirrored across DB, JSON, and the FOUC theme cookie.\n\nWire-format drift across these three surfaces is tracked under UNK-105;\nthe variant strings declared here are authoritative.",
@@ -7657,6 +8397,17 @@
         "type": "object",
         "description": "Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.\n\nEncodes RFC 7396 JSON Merge Patch semantics via\n`serde_with::rust::double_option` (per\n`adr/2026-05-22-backend-aux-crates.md`):\n* absent key → `None`         → leave field unchanged.\n* key = `null` → `Some(None)` → clear the canonical value.\n* key = value → `Some(Some(v))` → set the canonical value.\n\n`cover` is not yet operator-editable from this endpoint — cover\npromotion happens via a separate file-upload path.",
         "properties": {
+          "content_rating": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContentRating",
+                "description": "New content rating tier. Absent = unchanged; `null` clears."
+              }
+            ]
+          },
           "contributors": {
             "oneOf": [
               {
@@ -7674,6 +8425,17 @@
               "null"
             ],
             "description": "New description. Absent = unchanged; `null` clears."
+          },
+          "genres": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Full replacement genre list. Absent = unchanged; `null` or `[]`\nclears. Handled separately from the scalar fields; not part of\n[`Self::populated`].",
+            "maxItems": 50
           },
           "isbn_10": {
             "type": [
@@ -7695,6 +8457,17 @@
               "null"
             ],
             "description": "New language. Absent = unchanged; `null` clears."
+          },
+          "moods": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Full replacement mood list. Absent = unchanged; `null` or `[]`\nclears. Handled separately from the scalar fields; not part of\n[`Self::populated`].",
+            "maxItems": 50
           },
           "pages": {
             "type": [
@@ -7726,6 +8499,17 @@
             ],
             "description": "New subtitle. Absent = unchanged; `null` clears."
           },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Full replacement tag list. Absent = unchanged; `null` or `[]`\nclears. Handled separately from the scalar fields; not part of\n[`Self::populated`].",
+            "maxItems": 50
+          },
           "title": {
             "type": [
               "string",
@@ -7737,7 +8521,7 @@
       },
       "UpdateMetadataRequest": {
         "type": "object",
-        "description": "Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`\nwrapper keeps the door open for future top-level keys (eg. `tags`,\n`series_position`) without forcing a body-shape migration.",
+        "description": "Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`\nwrapper keeps the door open for future top-level keys (eg.\n`series_position`) without forcing a body-shape migration.",
         "required": [
           "fields"
         ],
@@ -8228,6 +9012,10 @@
     {
       "name": "library",
       "description": "Books, works, and full-text search."
+    },
+    {
+      "name": "suggest",
+      "description": "Typeahead suggestions over the metadata vocabularies (genres, moods, tags, authors, series, publishers)."
     },
     {
       "name": "series",

@@ -22,6 +22,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::models::content_rating::ContentRating;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::reading_state::ReadingStateSummary;
@@ -131,6 +132,13 @@ pub struct BookDetail {
     pub cover_url: String,
     /// Tag names attached to the manifestation.
     pub tags: Vec<String>,
+    /// Genre names attached to the manifestation.
+    pub genres: Vec<String>,
+    /// Mood names attached to the manifestation.
+    pub moods: Vec<String>,
+    /// Audience-suitability rating (`manifestations.content_rating`);
+    /// `None` when unrated.
+    pub content_rating: Option<ContentRating>,
     /// Ingestion lifecycle state.
     pub ingestion_status: IngestionStatus,
     /// Validation lifecycle state.

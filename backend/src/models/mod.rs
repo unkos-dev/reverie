@@ -4,6 +4,8 @@
 //! shape: row structs, query helpers, and — for closed-set columns — a
 //! typed [`sqlx::Type`] wrapper that fails closed on unknown DB variants.
 
+/// Closed value set for the `content_rating` Postgres `ENUM`.
+pub mod content_rating;
 /// Per-user device tokens for OPDS / mobile-client Basic-auth flows.
 pub mod device_token;
 /// Closed value set for the `enrichment_status` Postgres `ENUM`.

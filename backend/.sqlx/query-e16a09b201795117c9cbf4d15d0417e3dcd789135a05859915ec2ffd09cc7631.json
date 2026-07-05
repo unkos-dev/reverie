@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.source_version_id AS \"id!\" FROM ( SELECT source_version_id FROM manifestation_genres WHERE manifestation_id = $1 UNION SELECT source_version_id FROM manifestation_moods WHERE manifestation_id = $1 UNION SELECT source_version_id FROM manifestation_tags WHERE manifestation_id = $1 UNION SELECT source_version_id FROM work_authors WHERE work_id = $2 ) t WHERE t.source_version_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e16a09b201795117c9cbf4d15d0417e3dcd789135a05859915ec2ffd09cc7631"
+}

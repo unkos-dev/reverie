@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH terms AS ( INSERT INTO genres (name) SELECT DISTINCT ON (lower(name)) name FROM unnest($2::text[]) AS t(name) ORDER BY lower(name) ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name RETURNING id ) INSERT INTO manifestation_genres (manifestation_id, genre_id, source_version_id) SELECT $1, id, $3 FROM terms ON CONFLICT (manifestation_id, genre_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a6ca5800df95c4d3f7a04f220c5414431a1774e062bc77413621c40d5c6fc45"
+}

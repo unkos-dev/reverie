@@ -36,6 +36,7 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::db;
 use crate::error::AppError;
+use crate::models::content_rating::ContentRating;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::library::{
@@ -67,12 +68,13 @@ pub fn router() -> OpenApiRouter<AppState> {
         .merge(search::router())
 }
 
-/// Upper bound on `?tag=` repetitions accepted by `GET /api/v1/books`.
-/// Practical input is ≤ 10 (UI palette caps at a handful); the limit
-/// is set higher than expected use to leave headroom but small enough
-/// to bound the COUNT subquery's parameter array. Exceeding the cap
-/// returns a 422 `validation` problem rather than executing a
-/// pathologically large query.
+/// Upper bound on repetitions of any single vocabulary filter param
+/// (`?tag=`, `?genre=`, `?mood=`, and their `_any`/`_none` variants)
+/// accepted by `GET /api/v1/books`. Practical input is ≤ 10 (UI
+/// palette caps at a handful); the limit is set higher than expected
+/// use to leave headroom but small enough to bound each predicate's
+/// parameter array. Exceeding the cap returns a 422 `validation`
+/// problem rather than executing a pathologically large query.
 const MAX_TAG_FILTERS: usize = 20;
 
 /// `?cursor=` / `?sort=` / filter query parameters for `GET /api/v1/books`.
@@ -88,6 +90,12 @@ const MAX_TAG_FILTERS: usize = 20;
 /// - `tag`: multi-value AND-match — a row qualifies only when its
 ///   `manifestation_tags` set covers every supplied tag name (see
 ///   [`push_filter_predicates`]). Capped at [`MAX_TAG_FILTERS`] entries.
+/// - `genre`, `mood`: multi-value AND-match over the genre/mood
+///   vocabularies, same shape as `tag`.
+/// - `tag_any`, `genre_any`, `mood_any`: any-of match (`EXISTS`).
+/// - `tag_none`, `genre_none`, `mood_none`: none-of match
+///   (`NOT EXISTS`). Every vocabulary param shares the
+///   [`MAX_TAG_FILTERS`] cap, enforced per param.
 /// - `shelf` filter is RLS-aware via the join on `shelves.user_id =
 ///   current_setting('app.current_user_id', true)::uuid` so a caller
 ///   cannot probe another user's shelf membership.
@@ -106,6 +114,30 @@ struct ListParams {
     shelf: Option<Uuid>,
     #[serde(default)]
     tag: Vec<String>,
+    /// All-of genre filter: every listed genre name must be attached.
+    #[serde(default)]
+    genre: Vec<String>,
+    /// Any-of genre filter: at least one listed genre name is attached.
+    #[serde(default)]
+    genre_any: Vec<String>,
+    /// None-of genre filter: no listed genre name is attached.
+    #[serde(default)]
+    genre_none: Vec<String>,
+    /// All-of mood filter: every listed mood name must be attached.
+    #[serde(default)]
+    mood: Vec<String>,
+    /// Any-of mood filter: at least one listed mood name is attached.
+    #[serde(default)]
+    mood_any: Vec<String>,
+    /// None-of mood filter: no listed mood name is attached.
+    #[serde(default)]
+    mood_none: Vec<String>,
+    /// Any-of tag filter: at least one listed tag name is attached.
+    #[serde(default)]
+    tag_any: Vec<String>,
+    /// None-of tag filter: no listed tag name is attached.
+    #[serde(default)]
+    tag_none: Vec<String>,
 }
 
 /// `GET /api/v1/books` response envelope. Carries the page rows plus
@@ -128,7 +160,8 @@ struct BookListResponse {
 ///   `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the
 ///   `From<QueryRejection>` impl.
 /// - [`AppError::Validation`] when the cursor is malformed, the sort
-///   tag mismatches the cursor, or `tag.len() > MAX_TAG_FILTERS`.
+///   tag mismatches the cursor, or any vocabulary filter param carries
+///   more than [`MAX_TAG_FILTERS`] values.
 /// - [`AppError::Internal`] on database errors.
 #[expect(
     clippy::too_many_lines,
@@ -145,7 +178,7 @@ struct BookListResponse {
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Invalid cursor or too many tag filters", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Invalid cursor or too many filter values", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn list(
@@ -157,10 +190,22 @@ async fn list(
     let Query(params) = params?;
     let page_size = i64::from(state.config.opds.page_size);
 
-    if params.tag.len() > MAX_TAG_FILTERS {
-        return Err(AppError::Validation(format!(
-            "too many tag filters: maximum {MAX_TAG_FILTERS}"
-        )));
+    for (param, values) in [
+        ("tag", &params.tag),
+        ("tag_any", &params.tag_any),
+        ("tag_none", &params.tag_none),
+        ("genre", &params.genre),
+        ("genre_any", &params.genre_any),
+        ("genre_none", &params.genre_none),
+        ("mood", &params.mood),
+        ("mood_any", &params.mood_any),
+        ("mood_none", &params.mood_none),
+    ] {
+        if values.len() > MAX_TAG_FILTERS {
+            return Err(AppError::Validation(format!(
+                "too many {param} filters: maximum {MAX_TAG_FILTERS}"
+            )));
+        }
     }
 
     let cursor = match params.cursor.as_deref() {
@@ -337,11 +382,12 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
 /// `shelves.user_id = current_setting('app.current_user_id', true)::uuid`
 /// rejects shelf ids the caller does not own.
 ///
-/// `tag` AND-matches every supplied name via a scalar correlated
-/// subquery `(SELECT COUNT(DISTINCT t.name) …) = N` — not a GROUP BY
-/// / HAVING. Empty `tag` list → no predicate. Caller validates
-/// `params.tag.len() <= MAX_TAG_FILTERS` before calling, so the
-/// `i64::from(u32)` cast on `tag.len()` is provably in range.
+/// The vocabulary filters (`tag`/`genre`/`mood` plus their `_any` and
+/// `_none` variants) are delegated to [`push_vocab_predicates`], one
+/// call per junction+vocabulary pair. Empty lists push no predicate.
+/// Caller validates every list against [`MAX_TAG_FILTERS`] before
+/// calling, so the `i64::from(u32)` cast on the all-of count is
+/// provably in range.
 fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) {
     if let Some(author_id) = params.author {
         // Role-scoped to match the response surface: `authors[]` carries the
@@ -372,21 +418,95 @@ fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) 
         qb.push_bind(shelf_id);
         qb.push(" AND s.user_id = current_setting('app.current_user_id', true)::uuid)");
     }
-    if !params.tag.is_empty() {
-        qb.push(
-            " AND (SELECT COUNT(DISTINCT t.name) FROM manifestation_tags mt \
-              JOIN tags t ON t.id = mt.tag_id \
-              WHERE mt.manifestation_id = m.id AND t.name = ANY(",
-        );
-        qb.push_bind(params.tag.clone());
-        qb.push(")) = ");
-        // Caller has already validated `params.tag.len() <= MAX_TAG_FILTERS`
+    push_vocab_predicates(
+        qb,
+        "COUNT(DISTINCT lower(t.name))",
+        "FROM manifestation_tags mt \
+          JOIN tags t ON t.id = mt.tag_id \
+          WHERE mt.manifestation_id = m.id AND lower(t.name) = ANY(",
+        &params.tag,
+        &params.tag_any,
+        &params.tag_none,
+    );
+    push_vocab_predicates(
+        qb,
+        "COUNT(DISTINCT lower(g.name))",
+        "FROM manifestation_genres mg \
+          JOIN genres g ON g.id = mg.genre_id \
+          WHERE mg.manifestation_id = m.id AND lower(g.name) = ANY(",
+        &params.genre,
+        &params.genre_any,
+        &params.genre_none,
+    );
+    push_vocab_predicates(
+        qb,
+        "COUNT(DISTINCT lower(md.name))",
+        "FROM manifestation_moods mm \
+          JOIN moods md ON md.id = mm.mood_id \
+          WHERE mm.manifestation_id = m.id AND lower(md.name) = ANY(",
+        &params.mood,
+        &params.mood_any,
+        &params.mood_none,
+    );
+}
+
+/// Push up to three vocabulary predicates for one junction+vocabulary
+/// pair onto the dynamic list query. `count_expr` and `core` are
+/// static SQL fragments (never user input); user-supplied names travel
+/// exclusively through `push_bind`.
+///
+/// Names match case-insensitively: vocabulary identity is `lower(name)`
+/// (the tables are unique on it and suggest matches via `ILIKE`), so the
+/// fragments compare `lower(name)` and the bound values are lowercased
+/// here to mirror that.
+///
+/// - all-of: scalar correlated subquery
+///   `(SELECT COUNT(DISTINCT lower(name)) ...) = N`, not a GROUP BY/HAVING.
+/// - any-of: `EXISTS (SELECT 1 ...)`.
+/// - none-of: `NOT EXISTS (SELECT 1 ...)`.
+fn push_vocab_predicates(
+    qb: &mut QueryBuilder<Postgres>,
+    count_expr: &str,
+    core: &str,
+    all_of: &[String],
+    any_of: &[String],
+    none_of: &[String],
+) {
+    let lowered =
+        |names: &[String]| -> Vec<String> { names.iter().map(|n| n.to_lowercase()).collect() };
+    if !all_of.is_empty() {
+        // Dedupe before binding: COUNT(DISTINCT ..) compares against the
+        // requested count, so a repeated name (`?genre=X&genre=X`, or the
+        // same name in two casings) would make the predicate
+        // unsatisfiable (1 = 2) and silently return zero rows.
+        let mut all_of = lowered(all_of);
+        all_of.sort_unstable();
+        all_of.dedup();
+        // Caller has already validated `all_of.len() <= MAX_TAG_FILTERS`
         // (a small constant), so the `usize → u32 → i64` step is exact.
         // `u32::try_from` cannot fail here; the fallback is purely a
         // defensive layer and would still emit a sensible (non-matching)
         // predicate rather than 0 rows.
-        let tag_count_u32 = u32::try_from(params.tag.len()).unwrap_or(u32::MAX);
-        qb.push_bind(i64::from(tag_count_u32));
+        let count = i64::from(u32::try_from(all_of.len()).unwrap_or(u32::MAX));
+        qb.push(" AND (SELECT ");
+        qb.push(count_expr);
+        qb.push(" ");
+        qb.push(core);
+        qb.push_bind(all_of);
+        qb.push(")) = ");
+        qb.push_bind(count);
+    }
+    if !any_of.is_empty() {
+        qb.push(" AND EXISTS (SELECT 1 ");
+        qb.push(core);
+        qb.push_bind(lowered(any_of));
+        qb.push("))");
+    }
+    if !none_of.is_empty() {
+        qb.push(" AND NOT EXISTS (SELECT 1 ");
+        qb.push(core);
+        qb.push_bind(lowered(none_of));
+        qb.push("))");
     }
 }
 
@@ -661,10 +781,18 @@ async fn detail(
         .remove(&work_id)
         .unwrap_or_default();
     let tags = load_manifestation_tags(&mut tx, id).await?;
-    let canonical_ids = canonical_pointer_ids(&row);
+    let genres = load_manifestation_genres(&mut tx, id).await?;
+    let moods = load_manifestation_moods(&mut tx, id).await?;
+    let mut canonical_ids = canonical_pointer_ids(&row);
+    let junction_ids = junction_pointer_ids(&mut tx, id, work_id).await?;
+    // Junction-held pointers are applied versions too: without them the
+    // summary would report an accepted count that drops every vocabulary
+    // and contributor edit.
+    let accepted_count = accepted_pointer_count(&row)
+        .saturating_add(u32::try_from(junction_ids.len()).unwrap_or(u32::MAX));
+    canonical_ids.extend(junction_ids);
     let pending_versions = load_pending_versions(&mut tx, id, &canonical_ids).await?;
     let pending = u32::try_from(pending_versions.len()).unwrap_or(u32::MAX);
-    let accepted_count = accepted_pointer_count(&row);
 
     tx.commit()
         .await
@@ -702,6 +830,9 @@ async fn detail(
         pub_date: pub_date_str,
         cover_url: format!("/api/v1/books/{}/cover/thumb", row.id),
         tags,
+        genres,
+        moods,
+        content_rating: row.content_rating,
         ingestion_status: parse_ingestion(&row.ingestion_status)?,
         validation_status: row.validation_status,
         enrichment_status: parse_enrichment(&row.enrichment_status)?,
@@ -736,6 +867,7 @@ struct DetailRow {
     ingestion_status: String,
     validation_status: ValidationStatus,
     enrichment_status: String,
+    content_rating: Option<ContentRating>,
     w_title_v: Option<Uuid>,
     w_subtitle_v: Option<Uuid>,
     w_desc_v: Option<Uuid>,
@@ -746,6 +878,7 @@ struct DetailRow {
     m_isbn13_v: Option<Uuid>,
     m_cover_v: Option<Uuid>,
     m_pages_v: Option<Uuid>,
+    m_content_rating_v: Option<Uuid>,
     series_id: Option<Uuid>,
     series_name: Option<String>,
     series_position: Option<f64>,
@@ -781,6 +914,7 @@ async fn fetch_detail_row(
                m.ingestion_status::text  AS "ingestion_status!",
                m.validation_status       AS "validation_status!: ValidationStatus",
                m.enrichment_status::text AS "enrichment_status!",
+               m.content_rating          AS "content_rating: ContentRating",
                w.title_version_id        AS w_title_v,
                w.subtitle_version_id     AS w_subtitle_v,
                w.description_version_id  AS w_desc_v,
@@ -791,6 +925,7 @@ async fn fetch_detail_row(
                m.isbn_13_version_id      AS m_isbn13_v,
                m.cover_version_id        AS m_cover_v,
                m.pages_version_id        AS m_pages_v,
+               m.content_rating_version_id AS m_content_rating_v,
                series_one.series_id      AS "series_id?",
                series_one.series_name    AS "series_name?",
                series_one.series_position AS "series_position?: f64"
@@ -831,6 +966,7 @@ async fn fetch_detail_row(
         ingestion_status: r.ingestion_status,
         validation_status: r.validation_status,
         enrichment_status: r.enrichment_status,
+        content_rating: r.content_rating,
         w_title_v: r.w_title_v,
         w_subtitle_v: r.w_subtitle_v,
         w_desc_v: r.w_desc_v,
@@ -841,6 +977,7 @@ async fn fetch_detail_row(
         m_isbn13_v: r.m_isbn13_v,
         m_cover_v: r.m_cover_v,
         m_pages_v: r.m_pages_v,
+        m_content_rating_v: r.m_content_rating_v,
         series_id: r.series_id,
         series_name: r.series_name,
         series_position: r.series_position,
@@ -856,6 +993,38 @@ async fn load_manifestation_tags(
          JOIN tags t ON t.id = mt.tag_id \
          WHERE mt.manifestation_id = $1 \
          ORDER BY t.name ASC",
+        manifestation_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))
+}
+
+async fn load_manifestation_genres(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<Vec<String>, AppError> {
+    sqlx::query_scalar!(
+        "SELECT g.name FROM manifestation_genres mg \
+         JOIN genres g ON g.id = mg.genre_id \
+         WHERE mg.manifestation_id = $1 \
+         ORDER BY g.name ASC",
+        manifestation_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))
+}
+
+async fn load_manifestation_moods(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<Vec<String>, AppError> {
+    sqlx::query_scalar!(
+        "SELECT md.name FROM manifestation_moods mm \
+         JOIN moods md ON md.id = mm.mood_id \
+         WHERE mm.manifestation_id = $1 \
+         ORDER BY md.name ASC",
         manifestation_id,
     )
     .fetch_all(&mut **tx)
@@ -932,6 +1101,35 @@ async fn load_pending_versions(
         .collect())
 }
 
+/// Collect the journal pointers held on junction rows (vocabularies and
+/// contributors) for the manifestation. Junction-backed fields carry their
+/// canonical pointer per row instead of on a scalar `*_version_id` column,
+/// so without this set an applied vocabulary or contributor version would
+/// surface in the Versions tab as a phantom pending draft.
+async fn junction_pointer_ids(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    work_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar!(
+        "SELECT t.source_version_id AS \"id!\" FROM ( \
+             SELECT source_version_id FROM manifestation_genres WHERE manifestation_id = $1 \
+             UNION \
+             SELECT source_version_id FROM manifestation_moods WHERE manifestation_id = $1 \
+             UNION \
+             SELECT source_version_id FROM manifestation_tags WHERE manifestation_id = $1 \
+             UNION \
+             SELECT source_version_id FROM work_authors WHERE work_id = $2 \
+         ) t \
+         WHERE t.source_version_id IS NOT NULL",
+        manifestation_id,
+        work_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))
+}
+
 /// Collect the non-NULL canonical pointer ids on the given detail row
 /// — the set the pending-count query excludes and `accepted_pointer_count`
 /// derives its count from.
@@ -947,6 +1145,7 @@ fn canonical_pointer_ids(row: &DetailRow) -> Vec<Uuid> {
         row.m_isbn13_v,
         row.m_cover_v,
         row.m_pages_v,
+        row.m_content_rating_v,
     ]
     .into_iter()
     .flatten()
@@ -969,6 +1168,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
         row.m_isbn13_v.is_some(),
         row.m_cover_v.is_some(),
         row.m_pages_v.is_some(),
+        row.m_content_rating_v.is_some(),
     ]
     .into_iter()
     .filter(|b| *b)

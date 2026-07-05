@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.name\n                 FROM tags t\n                WHERE EXISTS (\n                          SELECT 1 FROM manifestation_tags mt\n                          JOIN manifestations m ON m.id = mt.manifestation_id\n                         WHERE mt.tag_id = t.id\n                      )\n                  AND (t.name ILIKE $1 || '%' OR $2 <% t.name)\n                ORDER BY (t.name ILIKE $1 || '%') DESC,\n                         word_similarity($2, t.name) DESC,\n                         t.name ASC\n                LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b30493a579538066f5a4600444061c524ebc1dd007c4da8e542476ac082a8f90"
+}

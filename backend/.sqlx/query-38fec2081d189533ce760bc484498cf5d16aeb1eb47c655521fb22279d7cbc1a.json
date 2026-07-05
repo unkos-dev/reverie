@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET content_rating = 'mature'::content_rating WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38fec2081d189533ce760bc484498cf5d16aeb1eb47c655521fb22279d7cbc1a"
+}

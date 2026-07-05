@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO genres (name) SELECT 'bulkgenre-' || g.n FROM generate_series(1, 200) AS g(n)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7ef5fa3d30cfc24aff5ce5ac3fda34efab661de8fb9c1d9c4c26e9aa8501d6cb"
+}

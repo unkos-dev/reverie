@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status) SELECT w.id, 'epub'::manifestation_format, '/tmp/bulk-' || w.id, 'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, 'complete'::ingestion_status, 'clean'::validation_status FROM works w",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "18a8e24978fbd34e407edfd8cefe4568f5fe0fe12feb2d4497db6687d599972f"
+}
