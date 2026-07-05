@@ -2569,3 +2569,122 @@ async fn list_endpoint_reading_state_is_caller_scoped(pool: PgPool) {
         "user B has no reading_state row for this book: {b_item}"
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn seed_library_50k_script_seeds_and_pages(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // psql meta-commands (`\set ...`) aren't valid SQL; sqlx executes the
+    // rest of the script verbatim as one multi-statement batch, same as
+    // `reverie-dev psql-rw -f ...` would send it.
+    let seed_sql: String = include_str!("../../../scripts/seed_library_50k.sql")
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('\\'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // CARVE-OUT (runtime-sqlx allowlist): the seed script is a static,
+    // operator-run file executed exactly as written (BEGIN/DO
+    // guard/bulk INSERT/ANALYZE/COMMIT), not a `query!` candidate. Runs
+    // on `pool`, the schema-owner connection under `#[sqlx::test]`,
+    // mirroring `reverie_migrator` (which owns every app table in a real
+    // deploy and so bypasses `manifestations` RLS the same way).
+    sqlx::raw_sql(sqlx::AssertSqlSafe(seed_sql.as_str()))
+        .execute(&pool)
+        .await
+        .expect("seed script executes cleanly against an empty DB");
+
+    // CARVE-OUT (runtime-sqlx allowlist): count probes over a script this
+    // test just ran at runtime; no compile-time cache exists for them
+    // and there is no local DB available here to `cargo sqlx prepare`.
+    let work_count: i64 = sqlx::query_scalar("SELECT count(*) FROM works")
+        .fetch_one(&pool)
+        .await
+        .expect("count works");
+    assert_eq!(work_count, 50_000, "expected 50k seeded works");
+
+    let manifestation_count: i64 = sqlx::query_scalar("SELECT count(*) FROM manifestations")
+        .fetch_one(&pool)
+        .await
+        .expect("count manifestations");
+    assert_eq!(
+        manifestation_count, 50_000,
+        "expected 50k seeded manifestations"
+    );
+
+    let work_author_count: i64 = sqlx::query_scalar("SELECT count(*) FROM work_authors")
+        .fetch_one(&pool)
+        .await
+        .expect("count work_authors");
+    assert!(
+        work_author_count > 0,
+        "expected seeded work_authors rows, got {work_author_count}"
+    );
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let first = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(first.status_code(), StatusCode::OK);
+    let first_body: serde_json::Value = first.json();
+    let first_items = first_body["items"].as_array().expect("items array");
+    assert_eq!(
+        first_items.len(),
+        50,
+        "first page is a full page over 50k seeded rows"
+    );
+    let first_ids: std::collections::HashSet<&str> = first_items
+        .iter()
+        .map(|it| it["id"].as_str().expect("item id"))
+        .collect();
+
+    let next_cursor = first_body["next_cursor"]
+        .as_str()
+        .expect("50k rows over page_size=50 must carry a next_cursor")
+        .to_owned();
+
+    let second = server
+        .get(&format!("/api/v1/books?cursor={next_cursor}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(second.status_code(), StatusCode::OK);
+    let second_body: serde_json::Value = second.json();
+    let second_items = second_body["items"].as_array().expect("items array");
+    assert_eq!(
+        second_items.len(),
+        50,
+        "second page is also a full page this far from the tail"
+    );
+    let second_ids: std::collections::HashSet<&str> = second_items
+        .iter()
+        .map(|it| it["id"].as_str().expect("item id"))
+        .collect();
+
+    assert!(
+        first_ids.is_disjoint(&second_ids),
+        "cursor paging must not repeat ids across pages"
+    );
+
+    // Guard: re-running the full script against the now-50k-seeded DB
+    // must abort inside the DO block instead of doubling the corpus.
+    let rerun = sqlx::raw_sql(sqlx::AssertSqlSafe(seed_sql.as_str()))
+        .execute(&pool)
+        .await;
+    assert!(
+        rerun.is_err(),
+        "re-running the seed script against a 50k-seeded DB must error (idempotence guard)"
+    );
+
+    let work_count_after_rerun: i64 = sqlx::query_scalar("SELECT count(*) FROM works")
+        .fetch_one(&pool)
+        .await
+        .expect("count works after guarded rerun attempt");
+    assert_eq!(
+        work_count_after_rerun, 50_000,
+        "guard must roll back the whole rerun transaction; works count must not double"
+    );
+}

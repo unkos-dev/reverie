@@ -61,6 +61,17 @@ sqlx::query("ANALYZE manifestation_genres, genres, manifestations, works")
 sqlx::query(explain_any_of_sql)
 sqlx::query(explain_all_of_sql)
 
+# (2) UNK-483 seed_library_50k test (routes/library/tests.rs) — count
+# probes over data inserted at runtime by an include_str!-ed, executed
+# `sqlx::raw_sql` batch (backend/scripts/seed_library_50k.sql itself
+# never appears as a `sqlx::query...(` call, so it needs no entry here).
+# There is no local dev DB to `cargo sqlx prepare` these query strings
+# against, and macro-checking them would gain nothing beyond what the
+# seed script's own row-count assertions already verify at runtime.
+sqlx::query_scalar("SELECT count(*) FROM works")
+sqlx::query_scalar("SELECT count(*) FROM manifestations")
+sqlx::query_scalar("SELECT count(*) FROM work_authors")
+
 # (3, 4) test_support.rs file-blanket — set_config('app.system_context', ...) in after_connect callback (class 3) plus role-cast drift fixtures for admin/child/adult (class 4); test-only fixture module
 backend/src/test_support.rs:
 
