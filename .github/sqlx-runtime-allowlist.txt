@@ -50,6 +50,10 @@ backend/src/models/reading_status.rs:
 # (1, 4) models/content_rating.rs file-blanket — content_rating enum-drift detection test (ALTER TYPE + ::content_rating cast probe)
 backend/src/models/content_rating.rs:
 
+# (3) suggest fuzzy leg — SET LOCAL pg_trgm.word_similarity_threshold GUC
+# (default 0.6 is too strict for typeahead typos); transaction-scoped
+sqlx::query("SET LOCAL pg_trgm.word_similarity_threshold = 0.3")
+
 # (2) library filter EXPLAIN test — planner introspection over the literal
 # any-of/all-of vocabulary filter SQL plus a pre-EXPLAIN ANALYZE; test-only,
 # exact strings (tests.rs mixes legitimate macros, no blanket).

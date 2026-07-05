@@ -163,6 +163,26 @@ impl From<VocabRow> for Suggestion {
     }
 }
 
+/// Lower `pg_trgm.word_similarity_threshold` for the current transaction.
+///
+/// The `<%` operator is gated by that GUC, which defaults to 0.6: too strict
+/// for typeahead, where a common one-letter typo against a short vocabulary
+/// name scores 0.5 to 0.59 and would never match. 0.3 matches the trigram
+/// floor the search endpoint uses. `SET LOCAL` keeps `<%` index-eligible
+/// where a bare `word_similarity(..) >= x` predicate would not be, and
+/// expires with the transaction.
+async fn lower_word_similarity_threshold(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<(), AppError> {
+    // Runtime query: GUC mutation (allowlist class 3); macros cannot
+    // validate SET LOCAL.
+    sqlx::query("SET LOCAL pg_trgm.word_similarity_threshold = 0.3")
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(())
+}
+
 async fn query_genres(
     tx: &mut Transaction<'_, Postgres>,
     q: &SuggestInput,
@@ -186,6 +206,7 @@ async fn query_genres(
         .fetch_all(&mut **tx)
         .await
     } else {
+        lower_word_similarity_threshold(tx).await?;
         sqlx::query_as!(
             VocabRow,
             r#"SELECT g.id, g.name
@@ -237,6 +258,7 @@ async fn query_moods(
         .fetch_all(&mut **tx)
         .await
     } else {
+        lower_word_similarity_threshold(tx).await?;
         sqlx::query_as!(
             VocabRow,
             r#"SELECT mo.id, mo.name
@@ -288,6 +310,7 @@ async fn query_tags(
         .fetch_all(&mut **tx)
         .await
     } else {
+        lower_word_similarity_threshold(tx).await?;
         sqlx::query_as!(
             VocabRow,
             r#"SELECT t.id, t.name
@@ -345,6 +368,7 @@ async fn query_authors(
         .fetch_all(&mut **tx)
         .await
     } else {
+        lower_word_similarity_threshold(tx).await?;
         sqlx::query_as!(
             VocabRow,
             r#"SELECT a.id, a.name
@@ -401,6 +425,7 @@ async fn query_series(
         .fetch_all(&mut **tx)
         .await
     } else {
+        lower_word_similarity_threshold(tx).await?;
         sqlx::query_as!(
             VocabRow,
             r#"SELECT s.id, s.name
@@ -455,6 +480,7 @@ async fn query_publishers(
         .fetch_all(&mut **tx)
         .await
     } else {
+        lower_word_similarity_threshold(tx).await?;
         sqlx::query_scalar!(
             r#"WITH pubs AS (
                    SELECT DISTINCT publisher AS name

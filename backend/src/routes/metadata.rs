@@ -1192,9 +1192,14 @@ async fn delete_vocabulary_rows(
 /// Find-or-create every term and link it to the manifestation, carrying the
 /// journal pointer onto each junction row. Set-based: one statement per call.
 /// The `ON CONFLICT ((lower(name))) DO UPDATE` leg returns ids for existing
-/// terms too, with last-writer-wins display casing. Callers must pass
-/// case-insensitively deduplicated terms or the upsert would touch one
-/// vocabulary row twice in a single statement, which Postgres rejects.
+/// terms too, with last-writer-wins display casing.
+///
+/// The `DISTINCT ON (lower(name)) .. ORDER BY lower(name)` source does two
+/// jobs: it guards the single-statement upsert against case collisions the
+/// Rust-side validation missed (Postgres `lower()` can fold pairs that
+/// `str::to_lowercase` keeps distinct, and upserting the same row twice in
+/// one statement is an error), and it fixes the row-lock acquisition order
+/// so concurrent patches upserting overlapping terms cannot deadlock.
 async fn insert_vocabulary_rows(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -1207,7 +1212,9 @@ async fn insert_vocabulary_rows(
             sqlx::query!(
                 "WITH terms AS ( \
                      INSERT INTO genres (name) \
-                     SELECT * FROM unnest($2::text[]) \
+                     SELECT DISTINCT ON (lower(name)) name \
+                       FROM unnest($2::text[]) AS t(name) \
+                      ORDER BY lower(name) \
                      ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
                      RETURNING id \
                  ) \
@@ -1225,7 +1232,9 @@ async fn insert_vocabulary_rows(
             sqlx::query!(
                 "WITH terms AS ( \
                      INSERT INTO moods (name) \
-                     SELECT * FROM unnest($2::text[]) \
+                     SELECT DISTINCT ON (lower(name)) name \
+                       FROM unnest($2::text[]) AS t(name) \
+                      ORDER BY lower(name) \
                      ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
                      RETURNING id \
                  ) \
@@ -1243,7 +1252,9 @@ async fn insert_vocabulary_rows(
             sqlx::query!(
                 "WITH terms AS ( \
                      INSERT INTO tags (name) \
-                     SELECT * FROM unnest($2::text[]) \
+                     SELECT DISTINCT ON (lower(name)) name \
+                       FROM unnest($2::text[]) AS t(name) \
+                      ORDER BY lower(name) \
                      ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
                      RETURNING id \
                  ) \

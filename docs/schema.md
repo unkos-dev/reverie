@@ -26,7 +26,9 @@ works ────┬──── work_authors ──── authors           �
           └──── manifestations ◄───────────────────┘
                     │
                     ├──── metadata_versions
-                    └──── manifestation_tags ──── tags
+                    ├──── manifestation_tags ──── tags
+                    ├──── manifestation_genres ──── genres
+                    └──── manifestation_moods ──── moods
 
 reading_sessions ──── users, manifestations
 reading_positions ──── users, manifestations (reserved)
@@ -49,14 +51,18 @@ ingestion_jobs     (standalone)
 
 ### Series & Metadata
 
-| Table                | Purpose                                       | Key Columns                                                                    |
-| -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
-| `series`             | Series with self-referential nesting          | `name`, `parent_id`                                                            |
-| `series_works`       | Series-Work join                              | `series_id`, `work_id`, `position` (NUMERIC for fractional ordering)           |
-| `omnibus_contents`   | Omnibus edition mapping                       | `omnibus_manifestation_id`, `contained_work_id`, `position`                    |
-| `metadata_versions`  | Metadata versioning (draft/accepted/rejected) | `manifestation_id`, `source`, `field_name`, `old_value`, `new_value`, `status` |
-| `tags`               | Genre, sub-genre, trope, theme tags           | `name`, `tag_type`                                                             |
-| `manifestation_tags` | Manifestation-Tag join                        | `manifestation_id`, `tag_id`                                                   |
+| Table                  | Purpose                                       | Key Columns                                                                    |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `series`               | Series with self-referential nesting          | `name`, `parent_id`                                                            |
+| `series_works`         | Series-Work join                              | `series_id`, `work_id`, `position` (NUMERIC for fractional ordering)           |
+| `omnibus_contents`     | Omnibus edition mapping                       | `omnibus_manifestation_id`, `contained_work_id`, `position`                    |
+| `metadata_versions`    | Metadata versioning (draft/accepted/rejected) | `manifestation_id`, `source`, `field_name`, `old_value`, `new_value`, `status` |
+| `tags`                 | Flat tag vocabulary, unique on `lower(name)`  | `name`                                                                         |
+| `manifestation_tags`   | Manifestation-Tag join                        | `manifestation_id`, `tag_id`, `source_version_id`                              |
+| `genres`               | Genre vocabulary, unique on `lower(name)`     | `name`                                                                         |
+| `manifestation_genres` | Manifestation-Genre join                      | `manifestation_id`, `genre_id`, `source_version_id`                            |
+| `moods`                | Mood vocabulary, unique on `lower(name)`      | `name`                                                                         |
+| `manifestation_moods`  | Manifestation-Mood join                       | `manifestation_id`, `mood_id`, `source_version_id`                             |
 
 ### User Features
 
@@ -103,7 +109,7 @@ ingestion_jobs     (standalone)
 | `ingestion_status`       | pending, processing, complete, failed, skipped  | `manifestations.ingestion_status`  |
 | `metadata_source`        | opf, openlibrary, googlebooks, manual, ai       | `metadata_versions.source`         |
 | `metadata_review_status` | draft, accepted, rejected                       | `metadata_versions.status`         |
-| `tag_type`               | genre, sub_genre, trope, theme                  | `tags.tag_type`                    |
+| `content_rating`         | everyone, teen, mature, adult, explicit         | `manifestations.content_rating`    |
 | `job_status`             | queued, running, complete, failed               | `ingestion_jobs.status`            |
 | `writeback_status`       | pending, in_progress, complete, failed, skipped | `writeback_jobs.status`            |
 
@@ -133,7 +139,8 @@ migration credential at all on the default path; see
 
 Has DML on: `works`, `authors`, `work_authors`, `manifestations`, `series`,
 `series_works`, `omnibus_contents`, `metadata_versions`, `tags`, `manifestation_tags`,
-`api_cache`, `ingestion_jobs`.
+`genres`, `manifestation_genres`, `moods`, `manifestation_moods`, `api_cache`,
+`ingestion_jobs`.
 
 Denied: `users`, `user_identities`, `local_credentials`, `shelves`, `shelf_items`,
 `device_tokens`, `webhooks`, `webhook_deliveries`, `reading_sessions`,

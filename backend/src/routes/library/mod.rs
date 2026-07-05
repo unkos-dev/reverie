@@ -468,19 +468,26 @@ fn push_vocab_predicates(
     none_of: &[String],
 ) {
     if !all_of.is_empty() {
-        qb.push(" AND (SELECT ");
-        qb.push(count_expr);
-        qb.push(" ");
-        qb.push(core);
-        qb.push_bind(all_of.to_vec());
-        qb.push(")) = ");
+        // Dedupe before binding: COUNT(DISTINCT name) compares against the
+        // requested count, so a repeated name (`?genre=X&genre=X`) would
+        // make the predicate unsatisfiable (1 = 2) and silently return
+        // zero rows.
+        let mut all_of = all_of.to_vec();
+        all_of.sort_unstable();
+        all_of.dedup();
         // Caller has already validated `all_of.len() <= MAX_TAG_FILTERS`
         // (a small constant), so the `usize → u32 → i64` step is exact.
         // `u32::try_from` cannot fail here; the fallback is purely a
         // defensive layer and would still emit a sensible (non-matching)
         // predicate rather than 0 rows.
-        let all_of_count_u32 = u32::try_from(all_of.len()).unwrap_or(u32::MAX);
-        qb.push_bind(i64::from(all_of_count_u32));
+        let count = i64::from(u32::try_from(all_of.len()).unwrap_or(u32::MAX));
+        qb.push(" AND (SELECT ");
+        qb.push(count_expr);
+        qb.push(" ");
+        qb.push(core);
+        qb.push_bind(all_of);
+        qb.push(")) = ");
+        qb.push_bind(count);
     }
     if !any_of.is_empty() {
         qb.push(" AND EXISTS (SELECT 1 ");
@@ -769,7 +776,8 @@ async fn detail(
     let tags = load_manifestation_tags(&mut tx, id).await?;
     let genres = load_manifestation_genres(&mut tx, id).await?;
     let moods = load_manifestation_moods(&mut tx, id).await?;
-    let canonical_ids = canonical_pointer_ids(&row);
+    let mut canonical_ids = canonical_pointer_ids(&row);
+    canonical_ids.extend(junction_pointer_ids(&mut tx, id, work_id).await?);
     let pending_versions = load_pending_versions(&mut tx, id, &canonical_ids).await?;
     let pending = u32::try_from(pending_versions.len()).unwrap_or(u32::MAX);
     let accepted_count = accepted_pointer_count(&row);
@@ -1079,6 +1087,35 @@ async fn load_pending_versions(
             observation_count: r.observation_count,
         })
         .collect())
+}
+
+/// Collect the journal pointers held on junction rows (vocabularies and
+/// contributors) for the manifestation. Junction-backed fields carry their
+/// canonical pointer per row instead of on a scalar `*_version_id` column,
+/// so without this set an applied vocabulary or contributor version would
+/// surface in the Versions tab as a phantom pending draft.
+async fn junction_pointer_ids(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    work_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar!(
+        "SELECT t.source_version_id AS \"id!\" FROM ( \
+             SELECT source_version_id FROM manifestation_genres WHERE manifestation_id = $1 \
+             UNION \
+             SELECT source_version_id FROM manifestation_moods WHERE manifestation_id = $1 \
+             UNION \
+             SELECT source_version_id FROM manifestation_tags WHERE manifestation_id = $1 \
+             UNION \
+             SELECT source_version_id FROM work_authors WHERE work_id = $2 \
+         ) t \
+         WHERE t.source_version_id IS NOT NULL",
+        manifestation_id,
+        work_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))
 }
 
 /// Collect the non-NULL canonical pointer ids on the given detail row

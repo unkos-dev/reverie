@@ -1996,6 +1996,40 @@ async fn detail_endpoint_returns_genres_moods_and_content_rating(pool: PgPool) {
     assert_eq!(body["content_rating"], "mature", "got {body}");
 }
 
+#[sqlx::test(migrations = "./migrations")]
+async fn manual_vocab_patch_does_not_inflate_pending_count(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_work_id, m_id) = insert_book(&ingestion_pool, "vocab-pending", "Basalt Compendium").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let patch = server
+        .patch(&format!("/api/v1/books/{m_id}/metadata"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .json(&serde_json::json!({
+            "fields": {"genres": ["Falconry"], "moods": ["Wistful"], "tags": ["Heirloom"]}
+        }))
+        .await;
+    assert_eq!(patch.status_code(), StatusCode::NO_CONTENT);
+
+    // The three manual journal rows are applied (their pointers live on the
+    // junction rows), so none of them may resurface as a pending draft.
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["pending"], 0, "got {body}");
+    assert_eq!(
+        body["genres"],
+        serde_json::json!(["Falconry"]),
+        "got {body}"
+    );
+}
+
 /// Walk an `EXPLAIN (FORMAT JSON)` plan tree and fail on any Seq Scan
 /// node whose Relation Name is `relation`.
 fn assert_no_seq_scan_on(plan: &serde_json::Value, relation: &str, label: &str) {
