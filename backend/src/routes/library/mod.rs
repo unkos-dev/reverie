@@ -420,30 +420,30 @@ fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) 
     }
     push_vocab_predicates(
         qb,
-        "COUNT(DISTINCT t.name)",
+        "COUNT(DISTINCT lower(t.name))",
         "FROM manifestation_tags mt \
           JOIN tags t ON t.id = mt.tag_id \
-          WHERE mt.manifestation_id = m.id AND t.name = ANY(",
+          WHERE mt.manifestation_id = m.id AND lower(t.name) = ANY(",
         &params.tag,
         &params.tag_any,
         &params.tag_none,
     );
     push_vocab_predicates(
         qb,
-        "COUNT(DISTINCT g.name)",
+        "COUNT(DISTINCT lower(g.name))",
         "FROM manifestation_genres mg \
           JOIN genres g ON g.id = mg.genre_id \
-          WHERE mg.manifestation_id = m.id AND g.name = ANY(",
+          WHERE mg.manifestation_id = m.id AND lower(g.name) = ANY(",
         &params.genre,
         &params.genre_any,
         &params.genre_none,
     );
     push_vocab_predicates(
         qb,
-        "COUNT(DISTINCT md.name)",
+        "COUNT(DISTINCT lower(md.name))",
         "FROM manifestation_moods mm \
           JOIN moods md ON md.id = mm.mood_id \
-          WHERE mm.manifestation_id = m.id AND md.name = ANY(",
+          WHERE mm.manifestation_id = m.id AND lower(md.name) = ANY(",
         &params.mood,
         &params.mood_any,
         &params.mood_none,
@@ -453,10 +453,15 @@ fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) 
 /// Push up to three vocabulary predicates for one junction+vocabulary
 /// pair onto the dynamic list query. `count_expr` and `core` are
 /// static SQL fragments (never user input); user-supplied names travel
-/// exclusively through `push_bind`. Names match case-sensitively.
+/// exclusively through `push_bind`.
+///
+/// Names match case-insensitively: vocabulary identity is `lower(name)`
+/// (the tables are unique on it and suggest matches via `ILIKE`), so the
+/// fragments compare `lower(name)` and the bound values are lowercased
+/// here to mirror that.
 ///
 /// - all-of: scalar correlated subquery
-///   `(SELECT COUNT(DISTINCT name) ...) = N`, not a GROUP BY/HAVING.
+///   `(SELECT COUNT(DISTINCT lower(name)) ...) = N`, not a GROUP BY/HAVING.
 /// - any-of: `EXISTS (SELECT 1 ...)`.
 /// - none-of: `NOT EXISTS (SELECT 1 ...)`.
 fn push_vocab_predicates(
@@ -467,12 +472,14 @@ fn push_vocab_predicates(
     any_of: &[String],
     none_of: &[String],
 ) {
+    let lowered =
+        |names: &[String]| -> Vec<String> { names.iter().map(|n| n.to_lowercase()).collect() };
     if !all_of.is_empty() {
-        // Dedupe before binding: COUNT(DISTINCT name) compares against the
-        // requested count, so a repeated name (`?genre=X&genre=X`) would
-        // make the predicate unsatisfiable (1 = 2) and silently return
-        // zero rows.
-        let mut all_of = all_of.to_vec();
+        // Dedupe before binding: COUNT(DISTINCT ..) compares against the
+        // requested count, so a repeated name (`?genre=X&genre=X`, or the
+        // same name in two casings) would make the predicate
+        // unsatisfiable (1 = 2) and silently return zero rows.
+        let mut all_of = lowered(all_of);
         all_of.sort_unstable();
         all_of.dedup();
         // Caller has already validated `all_of.len() <= MAX_TAG_FILTERS`
@@ -492,13 +499,13 @@ fn push_vocab_predicates(
     if !any_of.is_empty() {
         qb.push(" AND EXISTS (SELECT 1 ");
         qb.push(core);
-        qb.push_bind(any_of.to_vec());
+        qb.push_bind(lowered(any_of));
         qb.push("))");
     }
     if !none_of.is_empty() {
         qb.push(" AND NOT EXISTS (SELECT 1 ");
         qb.push(core);
-        qb.push_bind(none_of.to_vec());
+        qb.push_bind(lowered(none_of));
         qb.push("))");
     }
 }
@@ -777,10 +784,15 @@ async fn detail(
     let genres = load_manifestation_genres(&mut tx, id).await?;
     let moods = load_manifestation_moods(&mut tx, id).await?;
     let mut canonical_ids = canonical_pointer_ids(&row);
-    canonical_ids.extend(junction_pointer_ids(&mut tx, id, work_id).await?);
+    let junction_ids = junction_pointer_ids(&mut tx, id, work_id).await?;
+    // Junction-held pointers are applied versions too: without them the
+    // summary would report an accepted count that drops every vocabulary
+    // and contributor edit.
+    let accepted_count = accepted_pointer_count(&row)
+        .saturating_add(u32::try_from(junction_ids.len()).unwrap_or(u32::MAX));
+    canonical_ids.extend(junction_ids);
     let pending_versions = load_pending_versions(&mut tx, id, &canonical_ids).await?;
     let pending = u32::try_from(pending_versions.len()).unwrap_or(u32::MAX);
-    let accepted_count = accepted_pointer_count(&row);
 
     tx.commit()
         .await

@@ -1782,6 +1782,30 @@ async fn list_filter_genre_any_or_match(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_filter_genre_matches_case_insensitively(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ci", "Lantern Almanac").await;
+    genre_book(&ingestion_pool, m1, "Horology").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    // Vocabulary identity is lower(name): a lowercase query value must match
+    // the stored display casing, same as suggest does.
+    let r = server
+        .get("/api/v1/books?genre=horology")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1, "case-insensitive match, got {items:?}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_filter_genre_none_excludes_match(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2022,7 +2046,14 @@ async fn manual_vocab_patch_does_not_inflate_pending_count(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
     let body: serde_json::Value = response.json();
-    assert_eq!(body["pending"], 0, "got {body}");
+    assert_eq!(body["metadata_version_summary"]["pending"], 0, "got {body}");
+    // The three junction-held manual versions count as accepted: they are
+    // applied metadata, just pointed at from junction rows instead of
+    // scalar pointer columns.
+    assert_eq!(
+        body["metadata_version_summary"]["accepted"], 3,
+        "got {body}"
+    );
     assert_eq!(
         body["genres"],
         serde_json::json!(["Falconry"]),
@@ -2123,14 +2154,14 @@ async fn list_filter_genre_predicates_use_indexes_at_scale(pool: PgPool) {
         JOIN works w ON w.id = m.work_id \
         WHERE TRUE AND EXISTS (SELECT 1 FROM manifestation_genres mg \
           JOIN genres g ON g.id = mg.genre_id \
-          WHERE mg.manifestation_id = m.id AND g.name = ANY($1)) \
+          WHERE mg.manifestation_id = m.id AND lower(g.name) = ANY($1)) \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
     let explain_all_of_sql = "EXPLAIN (FORMAT JSON) \
         SELECT m.id FROM manifestations m \
         JOIN works w ON w.id = m.work_id \
         WHERE TRUE AND (SELECT COUNT(DISTINCT g.name) FROM manifestation_genres mg \
           JOIN genres g ON g.id = mg.genre_id \
-          WHERE mg.manifestation_id = m.id AND g.name = ANY($1)) = $2 \
+          WHERE mg.manifestation_id = m.id AND lower(g.name) = ANY($1)) = $2 \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
     // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner
