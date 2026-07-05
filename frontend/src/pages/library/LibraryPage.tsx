@@ -158,6 +158,37 @@ function LibraryContent(): ReactElement {
     setSearchParams(updated, { replace: true });
   }
 
+  /** Empty states first, then one branch per view mode. */
+  function renderBooks(): ReactElement {
+    if (items.length === 0) {
+      if (hasActiveFilters(searchParams)) return <FilteredEmptyState onClear={clearAllFilters} />;
+      return <EmptyState />;
+    }
+    if (viewMode === "grid") return <BookGrid items={items} />;
+    if (viewMode === "list") return <BookList items={items} />;
+    return (
+      <TableChunkBoundary
+        onFallbackToGrid={() => {
+          setView("grid");
+        }}
+      >
+        <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+          <LibraryTableView
+            items={items}
+            sort={params.sort ?? "recent"}
+            onSortChange={setSortFromTable}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+            onLoadMore={() => {
+              void fetchNextPage();
+            }}
+          />
+        </Suspense>
+      </TableChunkBoundary>
+    );
+  }
+
   // Facet options derive from the loaded pages — `SeriesRef` carries
   // the id the backend filter wants; authors have no stable id, so they
   // group by display name only.
@@ -264,37 +295,7 @@ function LibraryContent(): ReactElement {
             </div>
             <Separator className="mb-8" />
 
-            {items.length === 0 ? (
-              hasActiveFilters(searchParams) ? (
-                <FilteredEmptyState onClear={clearAllFilters} />
-              ) : (
-                <EmptyState />
-              )
-            ) : viewMode === "grid" ? (
-              <BookGrid items={items} />
-            ) : viewMode === "list" ? (
-              <BookList items={items} />
-            ) : (
-              <TableChunkBoundary
-                onFallbackToGrid={() => {
-                  setView("grid");
-                }}
-              >
-                <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                  <LibraryTableView
-                    items={items}
-                    sort={params.sort ?? "recent"}
-                    onSortChange={setSortFromTable}
-                    hasNextPage={hasNextPage}
-                    isFetchingNextPage={isFetchingNextPage}
-                    isFetchNextPageError={isFetchNextPageError}
-                    onLoadMore={() => {
-                      void fetchNextPage();
-                    }}
-                  />
-                </Suspense>
-              </TableChunkBoundary>
-            )}
+            {renderBooks()}
 
             {/* Table mode owns its paging UI (loading, error, Load-more,
                 end-of-list) inside LibraryTableView; rendering this block

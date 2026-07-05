@@ -68,12 +68,11 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
     key: "series",
     name: "Series",
     sortable: false,
-    accessor: (row) =>
-      row.series === null
-        ? EMPTY_CELL
-        : row.series.position === null
-          ? row.series.name
-          : `${row.series.name} · #${String(row.series.position)}`,
+    accessor: (row) => {
+      if (row.series === null) return EMPTY_CELL;
+      if (row.series.position === null) return row.series.name;
+      return `${row.series.name} · #${String(row.series.position)}`;
+    },
   },
   {
     key: "isbn_13",
@@ -145,12 +144,13 @@ export function LibraryTableView({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useShortcutsHotkey(setShortcutsOpen);
 
+  const COLUMN_BY_SORT: Partial<Record<ListSort, string>> = {
+    title: "title",
+    author: "authors",
+  };
+  const sortColumn = COLUMN_BY_SORT[sort];
   const sortState: SortState =
-    sort === "title"
-      ? { columnKey: "title", direction: "asc" }
-      : sort === "author"
-        ? { columnKey: "authors", direction: "asc" }
-        : null;
+    sortColumn === undefined ? null : { columnKey: sortColumn, direction: "asc" };
 
   function handleSortChange(next: SortState): void {
     if (next === null) {
@@ -187,33 +187,68 @@ export function LibraryTableView({
       />
       {/* Single owner of every paging state in table mode; the page-level
           Load-more block stays out of table view so a failure or fetch is
-          announced exactly once. Ordering is the precedence: an in-flight
-          fetch displaces the error state until it settles. */}
+          announced exactly once. */}
       <div className="text-fg-muted mt-3 flex min-h-6 items-center justify-center gap-2 text-sm">
-        {isFetchingNextPage ? (
-          <span role="status" className="flex items-center gap-2">
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            Loading more…
-          </span>
-        ) : isFetchNextPageError ? (
-          <span role="alert">
-            Couldn&apos;t load more books.{" "}
-            <button type="button" className="hover:text-accent underline" onClick={onLoadMore}>
-              Retry
-            </button>
-          </span>
-        ) : hasNextPage ? (
-          // Scroll is the primary paging path; the button is the escape hatch
-          // when the viewport is too tall for a scrollbar, and the
-          // keyboard-reachable path either way.
-          <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>
-            Load more
-          </Button>
-        ) : items.length > 0 ? (
-          <span>{items.length} books loaded · end of list</span>
-        ) : null}
+        <PagingFooter
+          loadedCount={items.length}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          isFetchNextPageError={isFetchNextPageError}
+          onLoadMore={onLoadMore}
+        />
       </div>
       <GridShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
+}
+
+type PagingFooterProps = {
+  loadedCount: number;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  isFetchNextPageError: boolean;
+  onLoadMore: () => void;
+};
+
+/**
+ * The table's one paging status line. Branch order is the precedence: an
+ * in-flight fetch displaces the error state until it settles.
+ */
+function PagingFooter({
+  loadedCount,
+  hasNextPage,
+  isFetchingNextPage,
+  isFetchNextPageError,
+  onLoadMore,
+}: PagingFooterProps): ReactElement | null {
+  if (isFetchingNextPage) {
+    return (
+      <output className="flex items-center gap-2">
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        Loading more…
+      </output>
+    );
+  }
+  if (isFetchNextPageError) {
+    return (
+      <span role="alert">
+        Couldn&apos;t load more books.{" "}
+        <button type="button" className="hover:text-accent underline" onClick={onLoadMore}>
+          Retry
+        </button>
+      </span>
+    );
+  }
+  if (hasNextPage) {
+    // Scroll is the primary paging path; the button is the escape hatch when
+    // the viewport is too tall for a scrollbar, and the keyboard-reachable
+    // path either way.
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>
+        Load more
+      </Button>
+    );
+  }
+  if (loadedCount > 0) return <span>{loadedCount} books loaded · end of list</span>;
+  return null;
 }
