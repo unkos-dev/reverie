@@ -125,6 +125,37 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
+ * Sorted-view cache, one entry deep. A fetch-on-scroll walk issues many
+ * sequential pages over one (dataset, sort) pair; re-sorting 50K rows per
+ * page would bill O(n log n) mock work against the latency numbers the
+ * harness exists to isolate. The real endpoint pays sort cost once per
+ * page inside the measured server time, so the mock must not multiply it.
+ */
+let sortCache: {
+  dataset: readonly SpikeBookRow[];
+  sort: NonNullable<MockListParams["sort"]>;
+  ordered: readonly SpikeBookRow[];
+} | null = null;
+
+function sortedView(
+  dataset: readonly SpikeBookRow[],
+  sort: MockListParams["sort"],
+): readonly SpikeBookRow[] {
+  if (sort === null) return dataset;
+  if (
+    sortCache !== null &&
+    sortCache.dataset === dataset &&
+    sortCache.sort.columnKey === sort.columnKey &&
+    sortCache.sort.direction === sort.direction
+  ) {
+    return sortCache.ordered;
+  }
+  const ordered = [...dataset].sort(comparator(sort));
+  sortCache = { dataset, sort, ordered };
+  return ordered;
+}
+
+/**
  * Return one page of the sorted dataset starting at `cursor`. A `null`
  * `next_cursor` marks end-of-list; a partial final page returns fewer than
  * `pageSize` items and a `null` cursor.
@@ -137,7 +168,7 @@ export async function listSpikeBooks(
   await sleep(params.latencyMs, signal);
 
   const offset = params.cursor === undefined ? 0 : decodeCursor(params.cursor);
-  const ordered = params.sort === null ? dataset : [...dataset].sort(comparator(params.sort));
+  const ordered = sortedView(dataset, params.sort);
 
   const items = ordered.slice(offset, offset + params.pageSize);
   const nextOffset = offset + items.length;

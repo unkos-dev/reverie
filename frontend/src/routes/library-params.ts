@@ -18,7 +18,7 @@ export type LibraryView = (typeof LIBRARY_VIEWS)[number];
 
 /** Type guard narrowing an arbitrary string into the `LibraryView` union. */
 export function isLibraryView(value: string): value is LibraryView {
-  return (LIBRARY_VIEWS as readonly string[]).includes(value);
+  return LIBRARY_VIEWS.some((view) => view === value);
 }
 
 /**

@@ -401,7 +401,7 @@ function BenchBar(props: BenchBarProps): ReactElement {
         {props.isFetchingNextPage ? "Loading…" : "Load all pages"}
       </Button>
       <Button size="sm" variant="outline" disabled={props.running} onClick={props.onKeystroke}>
-        Keystroke bench ({200} moves)
+        Keystroke bench ({KEYSTROKE_MOVES} moves)
       </Button>
       <Button size="sm" variant="outline" disabled={props.running} onClick={props.onScroll}>
         Scroll + Ctrl+End

@@ -2616,9 +2616,9 @@ async fn seed_library_50k_script_seeds_and_pages(pool: PgPool) {
         .fetch_one(&pool)
         .await
         .expect("count work_authors");
-    assert!(
-        work_author_count > 0,
-        "expected seeded work_authors rows, got {work_author_count}"
+    assert_eq!(
+        work_author_count, 50_000,
+        "seed links exactly one author per work; a different count means the sort_name join matched wrong"
     );
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
