@@ -40,7 +40,12 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
     sortable: true,
     accessor: (row) => row.title,
     renderCell: (row) => (
-      <Link to={`/b/${row.id}`} className="text-fg hover:text-accent font-medium">
+      // min-h-6 keeps the link's hit target at the 24px WCAG 2.2 AA floor;
+      // an inline anchor's line box alone falls under it.
+      <Link
+        to={`/b/${row.id}`}
+        className="text-fg hover:text-accent inline-flex min-h-6 items-center font-medium"
+      >
         {row.title}
       </Link>
     ),
