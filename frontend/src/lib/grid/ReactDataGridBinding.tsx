@@ -33,13 +33,24 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
     name: col.name,
     sortable: col.sortable,
     width: col.width,
-    renderCell: ({ row }: { row: R }): ReactNode => col.accessor(row),
+    renderCell: ({ row }: { row: R }): ReactNode =>
+      col.renderCell === undefined ? col.accessor(row) : col.renderCell(row),
   }));
 }
 
 export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): ReactElement {
-  const { rows, columns, sort, onSortChange, onCellFocus, onScroll, rowKey, className, height } =
-    props;
+  const {
+    rows,
+    columns,
+    label,
+    sort,
+    onSortChange,
+    onCellFocus,
+    onScroll,
+    rowKey,
+    className,
+    height,
+  } = props;
 
   const rdgColumns = useMemo(() => toRdgColumns(columns), [columns]);
 
@@ -63,9 +74,11 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
   const wrapperClass = className === undefined ? "rv-grid" : `rv-grid ${className}`;
 
   return (
-    // Height is a dynamic, prop-driven scroll viewport (cardinal-rule exception).
-    <div className={wrapperClass} style={{ height }}>
+    // Height is a dynamic, prop-driven scroll viewport (cardinal-rule
+    // exception); when omitted the caller's className must size the wrapper.
+    <div className={wrapperClass} style={height === undefined ? undefined : { height }}>
       <DataGrid
+        aria-label={label}
         columns={rdgColumns}
         rows={rows}
         rowKeyGetter={rowKey}

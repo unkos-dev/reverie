@@ -12,6 +12,25 @@ function isListSort(value: string): value is ListSort {
   return value === "recent" || value === "title" || value === "author";
 }
 
+const LIBRARY_VIEWS = ["grid", "list", "table"] as const;
+/** The library's browse presentation modes. */
+export type LibraryView = (typeof LIBRARY_VIEWS)[number];
+
+/** Type guard narrowing an arbitrary string into the `LibraryView` union. */
+export function isLibraryView(value: string): value is LibraryView {
+  return (LIBRARY_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * Parse `?view=` into a {@link LibraryView}, or `null` when the param is
+ * absent or out of range. `null` lets the caller fall back through its own
+ * default chain (persisted preference, then `grid`).
+ */
+export function viewFromSearch(search: URLSearchParams): LibraryView | null {
+  const raw = search.get("view");
+  return raw !== null && isLibraryView(raw) ? raw : null;
+}
+
 /**
  * Parse the URL search params into a {@link ListBooksParams}. Unknown
  * keys are dropped; an out-of-range `sort` value falls through to the

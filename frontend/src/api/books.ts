@@ -47,17 +47,36 @@ const SeriesRefSchema = z.object({
  */
 export type SeriesRef = z.infer<typeof SeriesRefSchema>;
 
+const ReadingStatusSchema = z.enum(["want_to_read", "reading", "on_hold", "finished", "abandoned"]);
+/** Per-user reading lifecycle state. Matches `backend/src/models/reading_status.rs`. */
+export type ReadingStatus = z.infer<typeof ReadingStatusSchema>;
+
+const ReadingStateSummarySchema = z.object({
+  status: ReadingStatusSchema.nullable(),
+  rating: z.number().int().nullable(),
+  progress_pct: z.number().nullable(),
+});
+/**
+ * Caller-scoped reading-state summary batch-loaded onto list rows.
+ * Mirrors `ReadingStateSummary` in `backend/src/models/reading_state.rs`;
+ * `null` when the caller has no reading-state row for the book.
+ */
+export type ReadingStateSummary = z.infer<typeof ReadingStateSummarySchema>;
+
 const BookListItemSchema = z.object({
   id: z.string(),
   work_id: z.string(),
   title: z.string(),
+  subtitle: z.string().nullable(),
   authors: z.array(z.string()),
   series: SeriesRefSchema.nullable(),
   isbn_13: z.string().nullable(),
+  pages: z.number().int().nullable(),
   cover_url: z.string(),
   ingestion_status: IngestionStatusSchema,
   validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
+  reading_state: ReadingStateSummarySchema.nullable(),
 });
 /**
  * One row of a paginated book list response. Mirrors

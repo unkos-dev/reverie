@@ -12,13 +12,16 @@
  * write surface (cell editors, commit/cancel) is a later addition to this
  * same contract, not a replacement for it.
  */
-import type { UIEvent } from "react";
+import type { ReactNode, UIEvent } from "react";
 
 /**
  * Binding-agnostic column definition for a row of type `R`. `key` is the
  * stable column identifier and doubles as the sort key when the column is
  * sortable. `accessor` returns the display string for the column, so the
  * caller owns projection and every binding renders identical cell text.
+ * `renderCell`, when present, wins over `accessor` for display and lets a
+ * column carry markup (a link, a badge); `accessor` still supplies the
+ * plain-text projection for non-visual consumers.
  */
 export type GridColumn<R> = {
   key: string;
@@ -26,6 +29,7 @@ export type GridColumn<R> = {
   sortable: boolean;
   width?: number;
   accessor: (row: R) => string;
+  renderCell?: (row: R) => ReactNode;
 };
 
 /** Single-column sort state. Multi-column sort is out of scope for this contract. */
@@ -43,6 +47,8 @@ export type FocusReport = { rowIdx: number; columnKey: string };
 export type GridBindingProps<R> = {
   rows: readonly R[];
   columns: readonly GridColumn<R>[];
+  /** Accessible name announced for the grid region. */
+  label?: string;
   sort: SortState;
   onSortChange: (sort: SortState) => void;
   onCellFocus: (report: FocusReport) => void;
@@ -50,6 +56,10 @@ export type GridBindingProps<R> = {
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
   /** Wrapper class carrying the Reverie-token theme bridge. */
   className?: string;
-  /** Fixed pixel height; the binding needs an explicit scroll viewport. */
-  height: number;
+  /**
+   * Fixed pixel height for the scroll viewport. Omit when the caller sizes
+   * the wrapper through CSS instead; the binding needs a definite height
+   * from one of the two.
+   */
+  height?: number;
 };
