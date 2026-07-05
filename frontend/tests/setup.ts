@@ -21,6 +21,11 @@ Element.prototype.setPointerCapture = (): void => {};
 Element.prototype.releasePointerCapture = (): void => {};
 Element.prototype.scrollIntoView = (): void => {};
 
+// jsdom reports a zero-size layout box, so react-data-grid measures a
+// zero-width viewport and renders only the first column. A fixed non-zero
+// stub gives it a viewport wide enough to lay out every column under test.
+Element.prototype.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 1024, 768);
+
 afterEach(() => {
   cleanup();
 });
