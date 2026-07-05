@@ -21,10 +21,11 @@
 -- similarity checks in find_or_create paths never cross the 0.6 threshold
 -- against this corpus.
 --
--- Idempotence guard: aborts if `works` already holds more than 1,000 rows,
--- so this script can never double-seed an already-seeded DB or run
--- against a DB carrying real library data. Reset with `reverie-dev
--- reset-library` before re-running.
+-- Idempotence guard: aborts only if `works` already holds more than 1,000
+-- rows. That stops double-seeding, but up to 1,000 pre-existing works WILL
+-- pass the guard, get 50k synthetic rows mixed in beside them, and be
+-- destroyed together with the seeds by the `reset-library` teardown. Do
+-- not run this against a dev library whose contents you want to keep.
 
 \set ON_ERROR_STOP on
 

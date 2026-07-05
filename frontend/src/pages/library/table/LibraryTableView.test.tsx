@@ -137,6 +137,14 @@ describe("LibraryTableView", () => {
     expect(onLoadMore).not.toHaveBeenCalled();
   });
 
+  test("scrolling to the bottom does NOT call onLoadMore after a failed fetch; Retry is the only refire path", async () => {
+    const onLoadMore = vi.fn();
+    renderTableView({ hasNextPage: true, isFetchNextPageError: true, onLoadMore });
+    const grid = await screen.findByRole("grid");
+    scrollToBottom(grid);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
   test("shows the end-of-list line once every loaded row has been fetched", async () => {
     renderTableView({ hasNextPage: false });
     expect(await screen.findByText(/30 books loaded/)).toBeInTheDocument();

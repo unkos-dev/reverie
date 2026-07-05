@@ -289,7 +289,11 @@ function LibraryContent(): ReactElement {
               </Suspense>
             )}
 
-            {viewMode !== "table" && hasNextPage ? (
+            {/* Kept in table mode too: scroll-driven paging needs a scrollbar,
+                and a tall or zoomed-out viewport can swallow a whole page
+                without one — the button is the escape hatch (and the
+                keyboard-reachable path) when scrolling can't fire. */}
+            {hasNextPage ? (
               <div className="mt-10 flex flex-col items-center gap-3">
                 {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
                     error is hue-less (One-Accent rule — the danger hue is reserved

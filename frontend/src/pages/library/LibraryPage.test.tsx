@@ -257,6 +257,33 @@ describe("LibraryPage", () => {
     expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
   });
 
+  test("clicking a view toggle persists the choice to the cookie", async () => {
+    try {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      const group = await screen.findByRole("group", { name: "View mode" });
+      const user = userEvent.setup();
+      await user.click(within(group).getByRole("button", { name: "List" }));
+      expect(document.cookie).toContain(`${VIEW_COOKIE_NAME}=list`);
+    } finally {
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
+  });
+
+  test("URL ?view= beats the cookie default", async () => {
+    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
+    try {
+      renderLibrary({
+        items: [bookFixture({ title: "Stoner" })],
+        nextCursor: null,
+        initialEntries: ["/library?view=list"],
+      });
+      expect(await screen.findByTestId("library-list")).toBeInTheDocument();
+      expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
+    } finally {
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
+  });
+
   test("renders the empty state when items is empty", async () => {
     renderLibrary({ items: [], nextCursor: null });
     expect(await screen.findByText("No books yet")).toBeInTheDocument();

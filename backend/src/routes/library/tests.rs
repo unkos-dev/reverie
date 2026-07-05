@@ -2596,25 +2596,23 @@ async fn seed_library_50k_script_seeds_and_pages(pool: PgPool) {
         .await
         .expect("seed script executes cleanly against an empty DB");
 
-    // CARVE-OUT (runtime-sqlx allowlist): count probes over a script this
-    // test just ran at runtime; no compile-time cache exists for them
-    // and there is no local DB available here to `cargo sqlx prepare`.
-    let work_count: i64 = sqlx::query_scalar("SELECT count(*) FROM works")
+    let work_count = sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM works")
         .fetch_one(&pool)
         .await
         .expect("count works");
     assert_eq!(work_count, 50_000, "expected 50k seeded works");
 
-    let manifestation_count: i64 = sqlx::query_scalar("SELECT count(*) FROM manifestations")
-        .fetch_one(&pool)
-        .await
-        .expect("count manifestations");
+    let manifestation_count =
+        sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM manifestations")
+            .fetch_one(&pool)
+            .await
+            .expect("count manifestations");
     assert_eq!(
         manifestation_count, 50_000,
         "expected 50k seeded manifestations"
     );
 
-    let work_author_count: i64 = sqlx::query_scalar("SELECT count(*) FROM work_authors")
+    let work_author_count = sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM work_authors")
         .fetch_one(&pool)
         .await
         .expect("count work_authors");
@@ -2679,7 +2677,7 @@ async fn seed_library_50k_script_seeds_and_pages(pool: PgPool) {
         "re-running the seed script against a 50k-seeded DB must error (idempotence guard)"
     );
 
-    let work_count_after_rerun: i64 = sqlx::query_scalar("SELECT count(*) FROM works")
+    let work_count_after_rerun = sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM works")
         .fetch_one(&pool)
         .await
         .expect("count works after guarded rerun attempt");

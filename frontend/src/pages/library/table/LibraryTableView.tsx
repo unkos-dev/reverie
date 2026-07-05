@@ -157,7 +157,10 @@ export function LibraryTableView({
   }
 
   function handleScroll(event: UIEvent<HTMLDivElement>): void {
-    if (!hasNextPage || isFetchingNextPage || !isAtBottom(event)) return;
+    // After a failed page fetch the explicit Retry control is the only
+    // refire path; without the error gate, wheel movement inside the
+    // bottom slack would hammer a failing endpoint on every scroll event.
+    if (!hasNextPage || isFetchingNextPage || isFetchNextPageError || !isAtBottom(event)) return;
     onLoadMore();
   }
 

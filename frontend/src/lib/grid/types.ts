@@ -19,9 +19,10 @@ import type { ReactNode, UIEvent } from "react";
  * stable column identifier and doubles as the sort key when the column is
  * sortable. `accessor` returns the display string for the column, so the
  * caller owns projection and every binding renders identical cell text.
- * `renderCell`, when present, wins over `accessor` for display and lets a
- * column carry markup (a link, a badge); `accessor` still supplies the
- * plain-text projection for non-visual consumers.
+ * `renderCell`, when present, fully replaces `accessor` for rendering and
+ * lets a column carry markup (a link, a badge). `accessor` stays mandatory
+ * as the column's canonical plain-text projection so a later export or
+ * clipboard surface has a markup-free value to read.
  */
 export type GridColumn<R> = {
   key: string;
