@@ -40,7 +40,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 - **No ORM:** Use explicit `sqlx` queries.
 - **Compile-Time SQL:** `query!`, `query_as!`, and `query_scalar!` are mandatory for the data path. If the macro fails because of a missing schema change, update the `.sqlx` cache (`DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests` from `backend/`). DO NOT downgrade to runtime `sqlx::query()` to bypass the compiler.
 - **Transaction Binding:** When executing a query inside a transaction, you MUST pass the transaction reference (e.g., `&mut *tx`) to the query executor. Passing the connection `&pool` will execute outside the transaction and silently break atomicity.
-- **Runtime SQL Ban:** Runtime `sqlx::query(...)` is strictly reserved for DDL, dynamic SQL, Postgres GUCs, and enum-drift tests. A CI grep-gate rejects every other invocation: add a justified entry to `.github/sqlx-runtime-allowlist.txt` (with reviewer rationale in the PR) in the same PR, or CI fails.
+- **Runtime SQL Ban:** Runtime `sqlx::query(...)` and `sqlx::raw_sql(...)` are strictly reserved for DDL, dynamic SQL, Postgres GUCs, enum-drift tests, and static multi-statement operator scripts executed verbatim. A CI grep-gate rejects every other invocation: add a justified entry to `.github/sqlx-runtime-allowlist.txt` (with reviewer rationale in the PR) in the same PR, or CI fails.
 - **Transactions:** Wrap multi-statement state changes in an atomic transaction.
 - **Bounded Queries:** Every list must be bounded by construction (keyset/cursor or hard limit). No unbounded scans.
 - **Migration Mutations:** If altering an Enum column type, you must `DROP DEFAULT` before `ALTER COLUMN TYPE`, then `SET DEFAULT` after.
