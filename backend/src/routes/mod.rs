@@ -35,6 +35,8 @@ pub mod settings;
 pub mod shelves;
 /// Single-page-app asset-serving router (`/assets/*` mount).
 pub mod spa;
+/// Typeahead suggest endpoints for metadata vocabularies (`/api/v1/{genres,moods,tags,authors,series,publishers}/suggest`).
+pub mod suggest;
 /// Per-user device-token issue / list / revoke endpoints.
 pub mod tokens;
 /// Admin-only user management (`/api/v1/users*`).

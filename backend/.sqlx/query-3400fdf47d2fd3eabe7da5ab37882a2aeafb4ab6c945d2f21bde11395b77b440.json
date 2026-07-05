@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestation_genres (manifestation_id, genre_id) SELECT m.id, g.id FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM manifestations) m CROSS JOIN generate_series(0, 2) AS k(k) JOIN (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM genres) g ON g.rn = ((m.rn + k.k * 67) % 200) + 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3400fdf47d2fd3eabe7da5ab37882a2aeafb4ab6c945d2f21bde11395b77b440"
+}

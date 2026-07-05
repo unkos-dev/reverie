@@ -47,6 +47,16 @@ backend/src/models/validation_status.rs:
 # (1, 4) models/reading_status.rs file-blanket — reading_status enum-drift detection test (ALTER TYPE + ::reading_status cast probe)
 backend/src/models/reading_status.rs:
 
+# (1, 4) models/content_rating.rs file-blanket — content_rating enum-drift detection test (ALTER TYPE + ::content_rating cast probe)
+backend/src/models/content_rating.rs:
+
+# (2) library filter EXPLAIN test — planner introspection over the literal
+# any-of/all-of vocabulary filter SQL plus a pre-EXPLAIN ANALYZE; test-only,
+# exact strings (tests.rs mixes legitimate macros, no blanket).
+sqlx::query("ANALYZE manifestation_genres, genres, manifestations, works")
+sqlx::query(explain_any_of_sql)
+sqlx::query(explain_all_of_sql)
+
 # (3, 4) test_support.rs file-blanket — set_config('app.system_context', ...) in after_connect callback (class 3) plus role-cast drift fixtures for admin/child/adult (class 4); test-only fixture module
 backend/src/test_support.rs:
 

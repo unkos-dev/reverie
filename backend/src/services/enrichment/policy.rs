@@ -48,6 +48,9 @@ pub fn default_policy(field: &str) -> FieldPolicy {
         | "cover" | "subtitle" | "pages" => FieldPolicy::AutoFill,
         // All other known fields ("description", "series", "contributors.*", etc.)
         // and any unknown fields default to Propose: cautious until a human promotes.
+        // THREAT: content_rating must stay Propose, never AutoFill: it is the
+        // future enforcement input for the child-account safety layer, so
+        // automated sources must never auto-apply it. A policy test pins this.
         _ => FieldPolicy::Propose,
     }
 }
@@ -103,6 +106,13 @@ mod tests {
             id: Uuid::new_v4(),
             value_hash: hash.to_vec(),
         }
+    }
+
+    #[test]
+    fn content_rating_never_autofills() {
+        // Safety pin: a failure here means someone promoted content_rating
+        // into the AutoFill list. See the THREAT note in default_policy.
+        assert_eq!(default_policy("content_rating"), FieldPolicy::Propose);
     }
 
     #[test]

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM manifestation_tags WHERE manifestation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f2289359b7cb797bffc11f74b646d98ab7b7cec9bcd6aaee6045f09329972f6"
+}

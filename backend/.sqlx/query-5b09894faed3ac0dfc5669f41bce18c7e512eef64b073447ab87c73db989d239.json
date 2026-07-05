@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH terms AS ( INSERT INTO tags (name) SELECT * FROM unnest($2::text[]) ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name RETURNING id ) INSERT INTO manifestation_tags (manifestation_id, tag_id, source_version_id) SELECT $1, id, $3 FROM terms ON CONFLICT (manifestation_id, tag_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b09894faed3ac0dfc5669f41bce18c7e512eef64b073447ab87c73db989d239"
+}

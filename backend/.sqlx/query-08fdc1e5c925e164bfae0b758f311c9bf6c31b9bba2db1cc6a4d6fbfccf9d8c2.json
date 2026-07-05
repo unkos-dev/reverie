@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.name FROM manifestation_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.manifestation_id = $1 ORDER BY g.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "genres",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "08fdc1e5c925e164bfae0b758f311c9bf6c31b9bba2db1cc6a4d6fbfccf9d8c2"
+}

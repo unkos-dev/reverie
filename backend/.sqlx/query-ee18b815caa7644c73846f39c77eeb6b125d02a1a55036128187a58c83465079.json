@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT content_rating AS \"content_rating: ContentRating\" FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content_rating: ContentRating",
+        "type_info": {
+          "Custom": {
+            "name": "content_rating",
+            "kind": {
+              "Enum": [
+                "everyone",
+                "teen",
+                "mature",
+                "adult",
+                "explicit"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "content_rating"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ee18b815caa7644c73846f39c77eeb6b125d02a1a55036128187a58c83465079"
+}

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.name\n                 FROM series s\n                WHERE EXISTS (\n                          SELECT 1 FROM series_works sw\n                          JOIN manifestations m ON m.work_id = sw.work_id\n                         WHERE sw.series_id = s.id\n                      )\n                  AND s.name ILIKE $1 || '%'\n                ORDER BY s.name ASC\n                LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "836b6960320786ee32606ebc7953823518eaddb4ca8844827d4dd5602a73171a"
+}

@@ -832,6 +832,19 @@ async fn detail_endpoint_returns_book_with_version_summary(pool: PgPool) {
         "tags must surface as an array (empty when no tags), got {body}",
     );
     assert!(
+        body.get("genres").is_some_and(serde_json::Value::is_array),
+        "genres must surface as an array (empty when no genres), got {body}",
+    );
+    assert!(
+        body.get("moods").is_some_and(serde_json::Value::is_array),
+        "moods must surface as an array (empty when no moods), got {body}",
+    );
+    assert!(
+        body.get("content_rating")
+            .is_some_and(serde_json::Value::is_null),
+        "content_rating must surface as null when unrated, got {body}",
+    );
+    assert!(
         body.get("series").is_some_and(serde_json::Value::is_null),
         "series must surface as null when the work isn't on a series, got {body}",
     );
@@ -1302,8 +1315,8 @@ async fn work_endpoint_child_without_shelf_returns_404_not_empty_array(pool: PgP
 /// Insert a tag and link it to a manifestation via `manifestation_tags`.
 async fn tag_book(ingestion_pool: &PgPool, manifestation_id: Uuid, tag_name: &str) {
     let tag_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO tags (name, tag_type) VALUES ($1, 'genre'::tag_type) \
-         ON CONFLICT (name, tag_type) DO UPDATE SET name = EXCLUDED.name \
+        "INSERT INTO tags (name) VALUES ($1) \
+         ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
          RETURNING id",
         tag_name,
     )
@@ -1319,6 +1332,50 @@ async fn tag_book(ingestion_pool: &PgPool, manifestation_id: Uuid, tag_name: &st
     .execute(ingestion_pool)
     .await
     .expect("insert manifestation_tags");
+}
+
+/// Insert a genre and link it to a manifestation via `manifestation_genres`.
+async fn genre_book(ingestion_pool: &PgPool, manifestation_id: Uuid, genre_name: &str) {
+    let genre_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO genres (name) VALUES ($1) \
+         ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+         RETURNING id",
+        genre_name,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert genre");
+    sqlx::query!(
+        "INSERT INTO manifestation_genres (manifestation_id, genre_id) \
+         VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        manifestation_id,
+        genre_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("insert manifestation_genres");
+}
+
+/// Insert a mood and link it to a manifestation via `manifestation_moods`.
+async fn mood_book(ingestion_pool: &PgPool, manifestation_id: Uuid, mood_name: &str) {
+    let mood_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO moods (name) VALUES ($1) \
+         ON CONFLICT ((lower(name))) DO UPDATE SET name = EXCLUDED.name \
+         RETURNING id",
+        mood_name,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert mood");
+    sqlx::query!(
+        "INSERT INTO manifestation_moods (manifestation_id, mood_id) \
+         VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        manifestation_id,
+        mood_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("insert manifestation_moods");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -1607,6 +1664,460 @@ async fn list_filter_multi_tag_and_match(pool: PgPool) {
         .expect("items");
     assert_eq!(items.len(), 1, "AND-match — only the book with BOTH tags");
     assert_eq!(items[0]["title"], "Both Tags");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_tag_any_or_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ta", "Orchid Files").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "tb", "Corduroy Notes").await;
+    insert_book(&ingestion_pool, "tc", "Silent Reams").await;
+
+    tag_book(&ingestion_pool, m1, "spearmint").await;
+    tag_book(&ingestion_pool, m2, "juniper").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?tag_any=spearmint&tag_any=juniper")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 2, "any-of matches either tag, got {items:?}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_tag_none_excludes_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "na", "Harbor Sketch").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "nb", "Ember Recital").await;
+    insert_book(&ingestion_pool, "nc", "Fresh Quire").await;
+
+    tag_book(&ingestion_pool, m1, "walrus").await;
+    tag_book(&ingestion_pool, m2, "obsidian").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?tag_none=walrus")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    let titles: Vec<&str> = items.iter().filter_map(|i| i["title"].as_str()).collect();
+    assert_eq!(
+        items.len(),
+        2,
+        "none-of keeps untagged rows, got {titles:?}"
+    );
+    assert!(
+        !titles.contains(&"Harbor Sketch"),
+        "the excluded tag's book must not surface, got {titles:?}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_multi_genre_and_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ga", "Quasar Handbook").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "gb", "Lathe Primer").await;
+    insert_book(&ingestion_pool, "gc", "Plain Volume").await;
+
+    genre_book(&ingestion_pool, m1, "Astrophysics").await;
+    genre_book(&ingestion_pool, m1, "Woodworking").await;
+    genre_book(&ingestion_pool, m2, "Astrophysics").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?genre=Astrophysics&genre=Woodworking")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1, "AND-match — only the book with BOTH genres");
+    assert_eq!(items[0]["title"], "Quasar Handbook");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_genre_any_or_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ha", "Sourdough Diary").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "hb", "Atlas Fragments").await;
+    insert_book(&ingestion_pool, "hc", "Empty Codex").await;
+
+    genre_book(&ingestion_pool, m1, "Baking").await;
+    genre_book(&ingestion_pool, m2, "Cartography").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?genre_any=Baking&genre_any=Cartography")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 2, "any-of matches either genre, got {items:?}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_genre_none_excludes_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ia", "Midnight Static").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "ib", "Trellis Guide").await;
+    insert_book(&ingestion_pool, "ic", "Blank Folio").await;
+
+    genre_book(&ingestion_pool, m1, "Horror").await;
+    genre_book(&ingestion_pool, m2, "Gardening").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?genre_none=Horror")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    let titles: Vec<&str> = items.iter().filter_map(|i| i["title"].as_str()).collect();
+    assert_eq!(
+        items.len(),
+        2,
+        "none-of keeps ungenred rows, got {titles:?}"
+    );
+    assert!(
+        !titles.contains(&"Midnight Static"),
+        "the excluded genre's book must not surface, got {titles:?}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_multi_mood_and_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ja", "Confetti Album").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "jb", "Granite Elegy").await;
+    insert_book(&ingestion_pool, "jc", "Bare Booklet").await;
+
+    mood_book(&ingestion_pool, m1, "Whimsical").await;
+    mood_book(&ingestion_pool, m1, "Somber").await;
+    mood_book(&ingestion_pool, m2, "Whimsical").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?mood=Whimsical&mood=Somber")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 1, "AND-match — only the book with BOTH moods");
+    assert_eq!(items[0]["title"], "Confetti Album");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_mood_any_or_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ka", "Hearth Sketches").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "kb", "Ticking Vault").await;
+    insert_book(&ingestion_pool, "kc", "Vacant Tome").await;
+
+    mood_book(&ingestion_pool, m1, "Cozy").await;
+    mood_book(&ingestion_pool, m2, "Tense").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?mood_any=Cozy&mood_any=Tense")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(items.len(), 2, "any-of matches either mood, got {items:?}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_mood_none_excludes_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "la", "Ashen Spiral").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "lb", "Meadow Romp").await;
+    insert_book(&ingestion_pool, "lc", "Untouched Quarto").await;
+
+    mood_book(&ingestion_pool, m1, "Bleak").await;
+    mood_book(&ingestion_pool, m2, "Playful").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?mood_none=Bleak")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    let titles: Vec<&str> = items.iter().filter_map(|i| i["title"].as_str()).collect();
+    assert_eq!(
+        items.len(),
+        2,
+        "none-of keeps unmooded rows, got {titles:?}"
+    );
+    assert!(
+        !titles.contains(&"Ashen Spiral"),
+        "the excluded mood's book must not surface, got {titles:?}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_combined_genre_any_mood_all_tag_none(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_w1, m1) = insert_book(&ingestion_pool, "ca", "Cipher Meadowlark").await;
+    let (_w2, m2) = insert_book(&ingestion_pool, "cb", "Smoke Register").await;
+    let (_w3, m3) = insert_book(&ingestion_pool, "cc", "Quiet Jetty").await;
+    let (_w4, m4) = insert_book(&ingestion_pool, "cd", "Rapid Descent").await;
+
+    genre_book(&ingestion_pool, m1, "Espionage").await;
+    mood_book(&ingestion_pool, m1, "Frantic").await;
+    genre_book(&ingestion_pool, m2, "Espionage").await;
+    mood_book(&ingestion_pool, m2, "Frantic").await;
+    tag_book(&ingestion_pool, m2, "houndstooth").await;
+    genre_book(&ingestion_pool, m3, "Espionage").await;
+    mood_book(&ingestion_pool, m4, "Frantic").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/books?genre_any=Espionage&mood=Frantic&tag_none=houndstooth")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert_eq!(
+        items.len(),
+        1,
+        "combined filters intersect — only the genre+mood book without the tag, got {items:?}"
+    );
+    assert_eq!(items[0]["title"], "Cipher Meadowlark");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_too_many_genre_any_returns_422(pool: PgPool) {
+    // Same MAX_TAG_FILTERS=20 cap as ?tag=, enforced per param: 21
+    // genre_any values must surface as a validation problem.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let qs: String = (0..21)
+        .map(|i| format!("genre_any=g{i}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    let r = server
+        .get(&format!("/api/v1/books?{qs}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_returns_genres_moods_and_content_rating(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_work_id, m_id) = insert_book(&ingestion_pool, "vocab", "Meridian Ledger").await;
+    genre_book(&ingestion_pool, m_id, "Astrophysics").await;
+    genre_book(&ingestion_pool, m_id, "Woodworking").await;
+    mood_book(&ingestion_pool, m_id, "Somber").await;
+    sqlx::query!(
+        "UPDATE manifestations SET content_rating = 'mature'::content_rating WHERE id = $1",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("set content_rating");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(
+        body["genres"],
+        serde_json::json!(["Astrophysics", "Woodworking"]),
+        "genres ordered by name, got {body}"
+    );
+    assert_eq!(body["moods"], serde_json::json!(["Somber"]), "got {body}");
+    assert_eq!(body["content_rating"], "mature", "got {body}");
+}
+
+/// Walk an `EXPLAIN (FORMAT JSON)` plan tree and fail on any Seq Scan
+/// node whose Relation Name is `relation`.
+fn assert_no_seq_scan_on(plan: &serde_json::Value, relation: &str, label: &str) {
+    match plan {
+        serde_json::Value::Object(obj) => {
+            if obj.get("Node Type").and_then(serde_json::Value::as_str) == Some("Seq Scan") {
+                assert_ne!(
+                    obj.get("Relation Name").and_then(serde_json::Value::as_str),
+                    Some(relation),
+                    "{label}: planner chose a Seq Scan over {relation}"
+                );
+            }
+            for child in obj.values() {
+                assert_no_seq_scan_on(child, relation, label);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                assert_no_seq_scan_on(child, relation, label);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_genre_predicates_use_indexes_at_scale(pool: PgPool) {
+    use sqlx::Row as _;
+
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    // Set-based bulk seed: 50k works + manifestations, 200 genres,
+    // 3 genres per manifestation (150k junction rows).
+    sqlx::query!(
+        "INSERT INTO works (title, sort_title) \
+         SELECT 'Bulk Opus ' || g.n, 'Bulk Opus ' || g.n \
+         FROM generate_series(1, 50000) AS g(n)"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed works");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         SELECT w.id, 'epub'::manifestation_format, '/tmp/bulk-' || w.id, \
+                'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
+                'complete'::ingestion_status, 'clean'::validation_status \
+         FROM works w"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed manifestations");
+    sqlx::query!(
+        "INSERT INTO genres (name) \
+         SELECT 'bulkgenre-' || g.n FROM generate_series(1, 200) AS g(n)"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed genres");
+    // Offsets 0/67/134 are pairwise distinct mod 200, so the composite
+    // PK never conflicts.
+    sqlx::query!(
+        "INSERT INTO manifestation_genres (manifestation_id, genre_id) \
+         SELECT m.id, g.id \
+         FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM manifestations) m \
+         CROSS JOIN generate_series(0, 2) AS k(k) \
+         JOIN (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM genres) g \
+           ON g.rn = ((m.rn + k.k * 67) % 200) + 1"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed manifestation_genres");
+
+    // CARVE-OUT (runtime-sqlx allowlist): ANALYZE is maintenance DDL the
+    // macros cannot validate; fresh stats keep the planner from choosing
+    // empty-table plans for the bulk seed. Runs on the owner pool
+    // (ANALYZE requires table ownership).
+    sqlx::query("ANALYZE manifestation_genres, genres, manifestations, works")
+        .execute(&pool)
+        .await
+        .expect("analyze seeded tables");
+
+    let genre_names: Vec<String> = vec!["bulkgenre-7".into(), "bulkgenre-93".into()];
+
+    // Literal SQL twins of the QueryBuilder output assembled by
+    // `push_vocab_predicates` for the genre any-of and all-of legs of
+    // GET /api/v1/books (recent sort, default page size + 1).
+    let explain_any_of_sql = "EXPLAIN (FORMAT JSON) \
+        SELECT m.id FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        WHERE TRUE AND EXISTS (SELECT 1 FROM manifestation_genres mg \
+          JOIN genres g ON g.id = mg.genre_id \
+          WHERE mg.manifestation_id = m.id AND g.name = ANY($1)) \
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
+    let explain_all_of_sql = "EXPLAIN (FORMAT JSON) \
+        SELECT m.id FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        WHERE TRUE AND (SELECT COUNT(DISTINCT g.name) FROM manifestation_genres mg \
+          JOIN genres g ON g.id = mg.genre_id \
+          WHERE mg.manifestation_id = m.id AND g.name = ANY($1)) = $2 \
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
+
+    // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner
+    // introspection over dynamic filter SQL; the compile-time macros
+    // cannot prepare it.
+    let row = sqlx::query(explain_any_of_sql)
+        .bind(&genre_names)
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("explain any-of genre filter");
+    let any_plan: serde_json::Value = row.get("QUERY PLAN");
+    assert_no_seq_scan_on(&any_plan, "manifestation_genres", "any-of");
+
+    let row = sqlx::query(explain_all_of_sql)
+        .bind(&genre_names)
+        .bind(2_i64)
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("explain all-of genre filter");
+    let all_plan: serde_json::Value = row.get("QUERY PLAN");
+    assert_no_seq_scan_on(&all_plan, "manifestation_genres", "all-of");
 }
 
 // ─── 11b — search endpoint ───────────────────────────────────────────────

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestation_tags (manifestation_id, tag_id) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1660ef36683246dde0e88a1f49a02b50ac4f22add3c225fa20de8ff3329aa5d2"
+}

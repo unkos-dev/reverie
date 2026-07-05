@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 /// The hash is stable across:
 /// * JSON object key ordering,
 /// * insignificant whitespace,
-/// * list-field item order (creators, subjects, genres, tags),
+/// * list-field item order (creators, subjects, genres, moods, tags),
 /// * publisher leading/trailing whitespace,
 /// * `pub_date` alternate ISO representations.
 pub fn value_hash(field_name: &str, value: &Value) -> Vec<u8> {
@@ -48,6 +48,7 @@ fn normalise(field: &str, v: &Value) -> Value {
         f if f == "creators"
             || f == "subjects"
             || f == "genres"
+            || f == "moods"
             || f == "tags"
             || f.starts_with("contributors.") =>
         {
@@ -123,6 +124,15 @@ mod tests {
         let a = value_hash("subjects", &json!(["a", "b", "c"]));
         let b = value_hash("subjects", &json!(["c", "a", "b"]));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn vocabulary_fields_order_insensitive() {
+        for field in ["genres", "moods", "tags"] {
+            let a = value_hash(field, &json!(["a", "b"]));
+            let b = value_hash(field, &json!(["b", "a"]));
+            assert_eq!(a, b, "{field} hash must ignore item order");
+        }
     }
 
     #[test]
