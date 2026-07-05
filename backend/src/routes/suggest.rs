@@ -340,7 +340,7 @@ async fn query_tags(
 }
 
 /// Scope join deviation: authors have no direct `manifestation_authors`
-/// junction — linkage runs `authors -> work_authors -> manifestations` via
+/// junction; linkage runs `authors -> work_authors -> manifestations` via
 /// `manifestations.work_id`, any [`crate::models::author_role::AuthorRole`]
 /// (author/editor/translator/narrator) counting as "in use", unlike the
 /// `?author=` list filter which narrows to the `author` role for display
@@ -508,7 +508,7 @@ async fn query_publishers(
         .collect())
 }
 
-/// `GET /api/v1/genres/suggest` — genre names in use on a visible
+/// `GET /api/v1/genres/suggest`: genre names in use on a visible
 /// manifestation, ranked prefix-first then by similarity.
 ///
 /// Read-scope gated exactly like `GET /api/v1/books` (the least-privilege
@@ -516,7 +516,7 @@ async fn query_publishers(
 ///
 /// # Errors
 /// - [`AppError::MalformedQuery`] when `?limit=` fails to parse as an
-///   integer — HTTP 400 via the `From<QueryRejection>` impl.
+///   integer; HTTP 400 via the `From<QueryRejection>` impl.
 /// - [`AppError::Validation`] when `q` is empty after trimming or exceeds
 ///   [`MAX_Q_CHARS`] characters.
 /// - [`AppError::Internal`] on database errors.
@@ -552,7 +552,7 @@ async fn suggest_genres(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/moods/suggest` — mood names in use on a visible
+/// `GET /api/v1/moods/suggest`: mood names in use on a visible
 /// manifestation, ranked prefix-first then by similarity.
 ///
 /// # Errors
@@ -589,7 +589,7 @@ async fn suggest_moods(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/tags/suggest` — tag names in use on a visible
+/// `GET /api/v1/tags/suggest`: tag names in use on a visible
 /// manifestation, ranked prefix-first then by similarity.
 ///
 /// # Errors
@@ -626,7 +626,7 @@ async fn suggest_tags(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/authors/suggest` — author names in use on a visible
+/// `GET /api/v1/authors/suggest`: author names in use on a visible
 /// manifestation, ranked prefix-first then by similarity. Any contributor
 /// role counts (see [`query_authors`]), not just the `author` role.
 ///
@@ -664,7 +664,7 @@ async fn suggest_authors(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/series/suggest` — series names in use on a visible
+/// `GET /api/v1/series/suggest`: series names in use on a visible
 /// manifestation, ranked prefix-first then by similarity.
 ///
 /// # Errors
@@ -701,7 +701,7 @@ async fn suggest_series(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/publishers/suggest` — distinct publisher values in use on a
+/// `GET /api/v1/publishers/suggest`: distinct publisher values in use on a
 /// visible manifestation, ranked prefix-first then by similarity. Every
 /// returned [`Suggestion`] carries `id: None` (publishers have no dedicated
 /// vocabulary table; see [`query_publishers`]).
@@ -1007,8 +1007,13 @@ mod tests {
             "literal %% must match: {values:?}"
         );
 
+        // Two-char query stays on the prefix-only branch, isolating the
+        // escape behavior from the fuzzy leg (which may legitimately
+        // trigram-match a longer query like "100_" against "100% Wool").
+        // An unescaped underscore would wildcard-match here ("1" + any
+        // char prefixes "100% Wool"); the escaped one must not.
         let r = server
-            .get("/api/v1/genres/suggest?q=100_")
+            .get("/api/v1/genres/suggest?q=1_")
             .add_header(auth(&basic).0, auth(&basic).1)
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());

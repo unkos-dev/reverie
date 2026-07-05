@@ -82,7 +82,7 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/authors/suggest` — author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Any contributor\nrole counts (see [`query_authors`]), not just the `author` role.",
+        "summary": "`GET /api/v1/authors/suggest`: author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Any contributor\nrole counts (see [`query_authors`]), not just the `author` role.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_authors",
         "parameters": [
@@ -1116,8 +1116,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/genres/suggest` — genre names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
-        "description": "Read-scope gated exactly like `GET /api/v1/books` (the least-privilege\nfloor); every other suggest handler below shares the same shape.\n\n# Errors\n- [`AppError::MalformedQuery`] when `?limit=` fails to parse as an\n  integer — HTTP 400 via the `From<QueryRejection>` impl.\n- [`AppError::Validation`] when `q` is empty after trimming or exceeds\n  [`MAX_Q_CHARS`] characters.\n- [`AppError::Internal`] on database errors.",
+        "summary": "`GET /api/v1/genres/suggest`: genre names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "description": "Read-scope gated exactly like `GET /api/v1/books` (the least-privilege\nfloor); every other suggest handler below shares the same shape.\n\n# Errors\n- [`AppError::MalformedQuery`] when `?limit=` fails to parse as an\n  integer; HTTP 400 via the `From<QueryRejection>` impl.\n- [`AppError::Validation`] when `q` is empty after trimming or exceeds\n  [`MAX_Q_CHARS`] characters.\n- [`AppError::Internal`] on database errors.",
         "operationId": "suggest_genres",
         "parameters": [
           {
@@ -1994,7 +1994,7 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/moods/suggest` — mood names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "summary": "`GET /api/v1/moods/suggest`: mood names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_moods",
         "parameters": [
@@ -2089,7 +2089,7 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/publishers/suggest` — distinct publisher values in use on a\nvisible manifestation, ranked prefix-first then by similarity. Every\nreturned [`Suggestion`] carries `id: None` (publishers have no dedicated\nvocabulary table; see [`query_publishers`]).",
+        "summary": "`GET /api/v1/publishers/suggest`: distinct publisher values in use on a\nvisible manifestation, ranked prefix-first then by similarity. Every\nreturned [`Suggestion`] carries `id: None` (publishers have no dedicated\nvocabulary table; see [`query_publishers`]).",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_publishers",
         "parameters": [
@@ -2269,7 +2269,7 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/series/suggest` — series names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "summary": "`GET /api/v1/series/suggest`: series names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_series",
         "parameters": [
@@ -3406,7 +3406,7 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/tags/suggest` — tag names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
+        "summary": "`GET /api/v1/tags/suggest`: tag names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_tags",
         "parameters": [
