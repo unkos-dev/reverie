@@ -10,19 +10,23 @@ import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 import { LibraryPage } from "./LibraryPage";
+import { VIEW_COOKIE_NAME } from "./view-cookie";
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   return {
     id: "11111111-1111-1111-1111-111111111111",
     work_id: "22222222-2222-2222-2222-222222222222",
     title: "The Brothers Karamazov",
+    subtitle: null,
     authors: ["Fyodor Dostoevsky"],
     series: null,
     isbn_13: "9780374528379",
+    pages: null,
     cover_url: "/api/v1/books/11111111/cover/thumb",
     ingestion_status: "complete",
     validation_status: "clean",
     enrichment_status: "complete",
+    reading_state: null,
     ...overrides,
   };
 }
@@ -212,6 +216,45 @@ describe("LibraryPage", () => {
     });
     const list = await screen.findByTestId("library-list");
     expect(within(list).getByText("Stoner")).toBeInTheDocument();
+  });
+
+  test("view toggle group renders three buttons; Table reflects aria-pressed", async () => {
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    const group = await screen.findByRole("group", { name: "View mode" });
+    expect(within(group).getByRole("button", { name: "Grid", pressed: true })).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: "List", pressed: false })).toBeInTheDocument();
+    expect(
+      within(group).getByRole("button", { name: "Table", pressed: false }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders the table view when ?view=table (lazy-loaded)", async () => {
+    renderLibrary({
+      items: [bookFixture({ title: "Stoner" })],
+      nextCursor: null,
+      initialEntries: ["/library?view=table"],
+    });
+    expect(await screen.findByTestId("library-table")).toBeInTheDocument();
+  });
+
+  test("cookie default mounts the table view when ?view= is absent", async () => {
+    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
+    try {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      expect(await screen.findByTestId("library-table")).toBeInTheDocument();
+    } finally {
+      // Explicit expiry so the cookie can't leak into a later test in this file.
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
+  });
+
+  test("invalid ?view= value falls back to grid", async () => {
+    renderLibrary({
+      items: [bookFixture({ title: "Stoner" })],
+      nextCursor: null,
+      initialEntries: ["/library?view=xyz"],
+    });
+    expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
   });
 
   test("renders the empty state when items is empty", async () => {

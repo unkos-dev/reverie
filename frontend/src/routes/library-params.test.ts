@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { paramsFromSearch } from "./library-params";
+import { paramsFromSearch, viewFromSearch } from "./library-params";
 
 function search(qs: string): URLSearchParams {
   return new URLSearchParams(qs);
@@ -52,5 +52,21 @@ describe("paramsFromSearch", () => {
     // shape-conversion layer and forwards what's there.
     const result = paramsFromSearch(search("q="));
     expect(result.q).toBe("");
+  });
+});
+
+describe("viewFromSearch", () => {
+  test("returns each valid view", () => {
+    expect(viewFromSearch(search("view=grid"))).toBe("grid");
+    expect(viewFromSearch(search("view=list"))).toBe("list");
+    expect(viewFromSearch(search("view=table"))).toBe("table");
+  });
+
+  test("returns null when the param is absent", () => {
+    expect(viewFromSearch(search(""))).toBeNull();
+  });
+
+  test("returns null for an out-of-range value", () => {
+    expect(viewFromSearch(search("view=xyz"))).toBeNull();
   });
 });
