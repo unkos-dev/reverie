@@ -12,8 +12,8 @@
  * grid/list toggle, and Load-more pagination over the fetched pages.
  */
 import { useQuery, useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
-import { Filter, LayoutGrid, List, Loader2, X } from "lucide-react";
-import { Suspense, useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import { Filter, LayoutGrid, List, Loader2, Table2, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import {
@@ -53,9 +53,19 @@ import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
-import { paramsFromSearch } from "@/routes/library-params";
+import { paramsFromSearch, viewFromSearch, type LibraryView } from "@/routes/library-params";
 
-type ViewMode = "grid" | "list";
+import { TableChunkBoundary } from "./TableChunkBoundary";
+import { readViewCookie, writeViewCookie } from "./view-cookie";
+
+/**
+ * The table view carries the grid vendor chunk, so it loads lazily: grid and
+ * list browsing never pay its bundle cost, and the chunk stays out of the
+ * route's critical path.
+ */
+const LibraryTableView = lazy(() =>
+  import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
+);
 
 const SORT_OPTIONS: { value: ListSort; label: string }[] = [
   { value: "recent", label: "Recent" },
@@ -82,7 +92,9 @@ function LibraryContent(): ReactElement {
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
-  const viewMode: ViewMode = searchParams.get("view") === "list" ? "list" : "grid";
+  // URL param is canonical (shareable); the cookie only supplies the default
+  // when the param is absent, so a chosen view survives leaving and returning.
+  const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
   const params = paramsFromSearch(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
   const cacheParams = { ...params };
@@ -123,10 +135,20 @@ function LibraryContent(): ReactElement {
 
   const items: BookListItem[] = data.pages.flatMap((p) => p.items);
 
-  function setView(next: ViewMode): void {
+  function setView(next: LibraryView): void {
+    writeViewCookie(next);
     const updated = new URLSearchParams(searchParams);
     if (next === "grid") updated.delete("view");
     else updated.set("view", next);
+    setSearchParams(updated, { replace: true });
+  }
+
+  /** Table-header sort writes the same `?sort=` contract as {@link SortMenu}. */
+  function setSortFromTable(value: ListSort): void {
+    const updated = new URLSearchParams(searchParams);
+    if (value === "recent") updated.delete("sort");
+    else updated.set("sort", value);
+    updated.delete("cursor");
     setSearchParams(updated, { replace: true });
   }
 
@@ -134,6 +156,37 @@ function LibraryContent(): ReactElement {
     const updated = new URLSearchParams(searchParams);
     for (const key of ["author", "series", "shelf", "tag", "q", "cursor"]) updated.delete(key);
     setSearchParams(updated, { replace: true });
+  }
+
+  /** Empty states first, then one branch per view mode. */
+  function renderBooks(): ReactElement {
+    if (items.length === 0) {
+      if (hasActiveFilters(searchParams)) return <FilteredEmptyState onClear={clearAllFilters} />;
+      return <EmptyState />;
+    }
+    if (viewMode === "grid") return <BookGrid items={items} />;
+    if (viewMode === "list") return <BookList items={items} />;
+    return (
+      <TableChunkBoundary
+        onFallbackToGrid={() => {
+          setView("grid");
+        }}
+      >
+        <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+          <LibraryTableView
+            items={items}
+            sort={params.sort ?? "recent"}
+            onSortChange={setSortFromTable}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+            onLoadMore={() => {
+              void fetchNextPage();
+            }}
+          />
+        </Suspense>
+      </TableChunkBoundary>
+    );
   }
 
   // Facet options derive from the loaded pages — `SeriesRef` carries
@@ -222,24 +275,33 @@ function LibraryContent(): ReactElement {
                     <List className="size-4" aria-hidden="true" />
                     <span className="sr-only">List</span>
                   </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={viewMode === "table"}
+                    onClick={() => {
+                      setView("table");
+                    }}
+                    className={
+                      viewMode === "table" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
+                    }
+                  >
+                    <Table2 className="size-4" aria-hidden="true" />
+                    <span className="sr-only">Table</span>
+                  </Button>
                 </div>
               </div>
             </div>
             <Separator className="mb-8" />
 
-            {items.length === 0 ? (
-              hasActiveFilters(searchParams) ? (
-                <FilteredEmptyState onClear={clearAllFilters} />
-              ) : (
-                <EmptyState />
-              )
-            ) : viewMode === "grid" ? (
-              <BookGrid items={items} />
-            ) : (
-              <BookList items={items} />
-            )}
+            {renderBooks()}
 
-            {hasNextPage ? (
+            {/* Table mode owns its paging UI (loading, error, Load-more,
+                end-of-list) inside LibraryTableView; rendering this block
+                there too would announce the same failure twice and offer two
+                Retry controls. */}
+            {viewMode !== "table" && hasNextPage ? (
               <div className="mt-10 flex flex-col items-center gap-3">
                 {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
                     error is hue-less (One-Accent rule — the danger hue is reserved

@@ -144,6 +144,7 @@ no translation pass.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [cssMinify forced to esbuild while lightningcss corrupts light-dark()](2026-07-05-cssminify-esbuild-lightdark.md): adopted from PR review; rolldown-vite's default minifier miscompiles light-dark() and every grid color token uses it; lifts when the pinned vite-plus ships the lightningcss fix and the default minifier passes the built-CSS check
 - [OPF writeback rewrites every dc:title, destroying the declared subtitle](2026-07-03-opf-rewrite-stomps-subtitle.md): adopted from PR #574 review; Target has no subtitle arm so writeback stomps subtitle-refined titles; lifts when opf_rewrite handles title-type refines with a round-trip test
 - [dependency-review allow-ghsas suppresses vite-alias false positives](2026-06-30-vite-plus-alias-dependency-review.md): adopted from PR #558; vp's `vite` npm alias makes the fork match real-vite advisories, so the gate suppresses 14 GHSAs; lifts when vp drops the alias or dependency-review resolves npm aliases
 - [Forwarded client-IP header trusted by name, not proxy identity](2026-06-27-forwarded-header-trust-unbound.md): adopted from PR #511 review; the login/recovery limiter honors trusted_client_ip_header without a peer-CIDR binding; lifts when forwarded-IP trust is bound to an allow-listed reverse-proxy CIDR

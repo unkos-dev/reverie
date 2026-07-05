@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vite-plus/test";
-import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import type { BookListItem, BookListResponse, ListBooksParams } from "@/api";
@@ -10,19 +10,23 @@ import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 import { LibraryPage } from "./LibraryPage";
+import { VIEW_COOKIE_NAME } from "./view-cookie";
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   return {
     id: "11111111-1111-1111-1111-111111111111",
     work_id: "22222222-2222-2222-2222-222222222222",
     title: "The Brothers Karamazov",
+    subtitle: null,
     authors: ["Fyodor Dostoevsky"],
     series: null,
     isbn_13: "9780374528379",
+    pages: null,
     cover_url: "/api/v1/books/11111111/cover/thumb",
     ingestion_status: "complete",
     validation_status: "clean",
     enrichment_status: "complete",
+    reading_state: null,
     ...overrides,
   };
 }
@@ -75,8 +79,25 @@ function renderLibrary({
   }
   if (me !== undefined) client.setQueryData(queryKeys.auth.me(), me);
 
+  // Sibling probe exposing the live search string, since the memory router
+  // instance is scoped to this wrapper and not reachable from assertions.
+  function LocationProbe(): ReactElement {
+    const location = useLocation();
+    return <div data-testid="location-search">{location.search}</div>;
+  }
+
   function Wrapper(): ReactElement {
-    const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+    const routes: RouteObject[] = [
+      {
+        path: "/library",
+        element: (
+          <>
+            <LibraryPage />
+            <LocationProbe />
+          </>
+        ),
+      },
+    ];
     const router = createMemoryRouter(routes, {
       initialEntries: initialEntries ?? ["/library"],
     });
@@ -212,6 +233,89 @@ describe("LibraryPage", () => {
     });
     const list = await screen.findByTestId("library-list");
     expect(within(list).getByText("Stoner")).toBeInTheDocument();
+  });
+
+  test("view toggle group renders three buttons; Table reflects aria-pressed", async () => {
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    const group = await screen.findByRole("group", { name: "View mode" });
+    expect(within(group).getByRole("button", { name: "Grid", pressed: true })).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: "List", pressed: false })).toBeInTheDocument();
+    expect(
+      within(group).getByRole("button", { name: "Table", pressed: false }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders the table view when ?view=table (lazy-loaded)", async () => {
+    renderLibrary({
+      items: [bookFixture({ title: "Stoner" })],
+      nextCursor: null,
+      initialEntries: ["/library?view=table"],
+    });
+    expect(await screen.findByTestId("library-table")).toBeInTheDocument();
+  });
+
+  test("cookie default mounts the table view when ?view= is absent", async () => {
+    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
+    try {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      expect(await screen.findByTestId("library-table")).toBeInTheDocument();
+    } finally {
+      // Explicit expiry so the cookie can't leak into a later test in this file.
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
+  });
+
+  test("invalid ?view= value falls back to grid", async () => {
+    renderLibrary({
+      items: [bookFixture({ title: "Stoner" })],
+      nextCursor: null,
+      initialEntries: ["/library?view=xyz"],
+    });
+    expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
+  });
+
+  test("clicking a view toggle persists the choice to the cookie", async () => {
+    try {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      const group = await screen.findByRole("group", { name: "View mode" });
+      const user = userEvent.setup();
+      await user.click(within(group).getByRole("button", { name: "List" }));
+      expect(document.cookie).toContain(`${VIEW_COOKIE_NAME}=list`);
+    } finally {
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
+  });
+
+  test("table header click writes ?sort= and clears any cursor param", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?view=table&cursor=stale123"],
+      extraCacheParams: [{ sort: "title" }],
+    });
+    await screen.findByTestId("library-table");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("sort=title");
+      expect(search).not.toContain("cursor=");
+    });
+  });
+
+  test("URL ?view= beats the cookie default", async () => {
+    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
+    try {
+      renderLibrary({
+        items: [bookFixture({ title: "Stoner" })],
+        nextCursor: null,
+        initialEntries: ["/library?view=list"],
+      });
+      expect(await screen.findByTestId("library-list")).toBeInTheDocument();
+      expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
+    } finally {
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
   });
 
   test("renders the empty state when items is empty", async () => {

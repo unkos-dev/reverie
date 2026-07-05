@@ -1,0 +1,53 @@
+/**
+ * react-data-grid theme bridge.
+ *
+ * RDG reads its own `--rdg-*` custom properties, so mapping them onto Reverie
+ * semantic tokens is the whole bridge: no hex, no override of RDG internals.
+ * Every mapped value is itself a token that flips under `[data-theme]`, so
+ * light and dark both fall out of the existing primitive swap.
+ *
+ * The token map is written directly on `.rdg`, RDG's own root class, rather
+ * than on the `.rv-grid` wrapper. RDG's stylesheet sets these same variables
+ * inside an `@layer`, and a custom property is inherited only where nothing
+ * sets it directly on the element; RDG's rule targets the same element
+ * through its own hashed class, so an
+ * ancestor-only override on the wrapper would never reach it. Declaring the
+ * map on `.rdg` directly wins instead, because unlayered rules always beat
+ * layered ones regardless of specificity.
+ *
+ * RDG beta.59 additionally colors itself with `light-dark()` functions keyed
+ * off the standard CSS `color-scheme`, read here from `--rdg-color-scheme`.
+ * That property defaults to following the OS `prefers-color-scheme`, which
+ * silently diverges from `[data-theme]` when a user overrides their OS
+ * preference in-app. The two rules below are the bridge for that gap.
+ */
+
+.rv-grid .rdg {
+  --rdg-color: var(--fg);
+  --rdg-background-color: var(--canvas);
+  --rdg-header-background-color: var(--surface-2);
+  --rdg-row-hover-background-color: var(--surface);
+  --rdg-row-selected-background-color: var(--accent-soft);
+  --rdg-border-color: var(--border);
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  block-size: 100%;
+
+  /* RDG's root ships `content-visibility: auto`, and Chromium caches the
+   * rasterized grid from its first paint. When the theme-bridge variables
+   * above settle after that paint, the stale vendor-palette pixels stay on
+   * screen until a scroll forces re-rasterization. The grid is this page's
+   * main content and never offscreen at mount, so the skip-when-offscreen
+   * optimization buys nothing; disabling it removes the stale paint cache.
+   */
+  content-visibility: visible;
+}
+
+[data-theme="light"] .rv-grid .rdg {
+  --rdg-color-scheme: light;
+}
+
+[data-theme="dark"] .rv-grid .rdg {
+  --rdg-color-scheme: dark;
+}

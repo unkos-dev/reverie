@@ -52,13 +52,16 @@ const BOOK_LIST_ITEM = {
   id: "b1",
   work_id: "w1",
   title: "Guards! Guards!",
+  subtitle: null,
   authors: ["Terry Pratchett"],
   series: { id: "series-1", name: "Discworld", position: 8 },
   isbn_13: null,
+  pages: null,
   cover_url: "",
   ingestion_status: "complete",
   validation_status: "clean",
   enrichment_status: "complete",
+  reading_state: null,
 };
 
 const FILTERED_BOOK_LIST_ITEM = {

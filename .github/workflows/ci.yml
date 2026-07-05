@@ -224,7 +224,7 @@ jobs:
           set -euo pipefail
           allow=$(grep -vE '^\s*(#|$)' .github/sqlx-runtime-allowlist.txt)
           rc=0
-          matches=$(grep -rnE 'sqlx::query[a-z_]*\(' backend/src/) || rc=$?
+          matches=$(grep -rnE 'sqlx::(query[a-z_]*|raw_sql)\(' backend/src/) || rc=$?
           if [ "$rc" -gt 1 ]; then
               exit "$rc"
           fi

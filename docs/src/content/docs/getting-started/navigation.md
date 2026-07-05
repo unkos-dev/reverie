@@ -49,6 +49,33 @@ inline search box; one surface means search behaves identically
 wherever you invoke it, and the palette can grow into a broader command
 surface later without a migration.
 
+## Three library views
+
+The Library shows the same collection three ways: a cover **grid**, a
+compact **list**, and a spreadsheet-style **table**. The toggle sits
+with the sort control above the books. Grid is for recognising books by
+cover; the table is for scanning dense metadata (subtitle, ISBN, pages,
+reading state) across many books without opening each one.
+
+The table carries a full keyboard model: arrow keys move cell by cell,
+`Home` and `End` jump within a row, `Ctrl Home` and `Ctrl End` jump to
+the first and last loaded row, and `PageUp`/`PageDown` move a viewport
+at a time. Press `?` inside the table for the complete shortcut list.
+
+Rows stream in as you scroll rather than loading all at once, which is
+why the table says "loaded": with a large library the first screen
+appears immediately and the count grows as you go. A **Load more**
+button beneath the rows is the keyboard-reachable fallback for when
+scrolling can't trigger loading, such as a viewport tall enough to
+show a whole page without a scrollbar. Sorting by title or
+author happens on the server through a column header press, so the
+order is correct across the whole collection, not just the rows on
+screen.
+
+Your view choice travels in the URL (`?view=table`), so a shared link
+opens exactly what you see; Reverie also remembers your last choice
+and uses it the next time you open the Library without one.
+
 ## Cinematic mode
 
 On the Library page, press `F` (outside any text field) to dissolve the
