@@ -150,6 +150,42 @@ describe("LibraryTableView", () => {
     expect(await screen.findByText(/30 books loaded/)).toBeInTheDocument();
   });
 
+  test("idle state with a next page renders the Load more fallback, which calls onLoadMore", async () => {
+    const onLoadMore = vi.fn();
+    renderTableView({ hasNextPage: true, isFetchingNextPage: false, onLoadMore });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Load more" }));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  test("populated series and status cells render their projections, not placeholders", async () => {
+    renderTableView({
+      items: [
+        rowFixture(1, {
+          series: { id: "s1", name: "Discworld", position: 8 },
+          reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+        }),
+      ],
+    });
+    const grid = await screen.findByRole("grid");
+    // With this single short row the grid computes columns
+    // 1024/1024/50/50/140/80/120/90 (total 2578), so Series onward sits past
+    // the initial 1024px window. Scrolling to the max position (2578 - 1024)
+    // mounts everything from Series through Rating in one shot.
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
+    fireEvent.scroll(grid);
+    expect(await within(grid).findByText("Discworld · #8")).toBeInTheDocument();
+    // Mounting Series re-measures the auto columns to the 1024px viewport
+    // stub (template becomes 4x1024 + fixed), pushing Status and Rating out
+    // of the window again; a second max-position scroll reaches them.
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
+    fireEvent.scroll(grid);
+    expect(await within(grid).findByText("want to read")).toBeInTheDocument();
+    expect(within(grid).getByText("★★★")).toBeInTheDocument();
+  });
+
   test("a failed next-page fetch renders an alert with a Retry control that calls onLoadMore", async () => {
     const onLoadMore = vi.fn();
     renderTableView({ isFetchNextPageError: true, onLoadMore });

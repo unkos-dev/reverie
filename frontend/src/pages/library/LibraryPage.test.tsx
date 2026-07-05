@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vite-plus/test";
-import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import type { BookListItem, BookListResponse, ListBooksParams } from "@/api";
@@ -79,8 +79,25 @@ function renderLibrary({
   }
   if (me !== undefined) client.setQueryData(queryKeys.auth.me(), me);
 
+  // Sibling probe exposing the live search string, since the memory router
+  // instance is scoped to this wrapper and not reachable from assertions.
+  function LocationProbe(): ReactElement {
+    const location = useLocation();
+    return <div data-testid="location-search">{location.search}</div>;
+  }
+
   function Wrapper(): ReactElement {
-    const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+    const routes: RouteObject[] = [
+      {
+        path: "/library",
+        element: (
+          <>
+            <LibraryPage />
+            <LocationProbe />
+          </>
+        ),
+      },
+    ];
     const router = createMemoryRouter(routes, {
       initialEntries: initialEntries ?? ["/library"],
     });
@@ -267,6 +284,23 @@ describe("LibraryPage", () => {
     } finally {
       document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
     }
+  });
+
+  test("table header click writes ?sort= and clears any cursor param", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?view=table&cursor=stale123"],
+      extraCacheParams: [{ sort: "title" }],
+    });
+    await screen.findByTestId("library-table");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("sort=title");
+      expect(search).not.toContain("cursor=");
+    });
   });
 
   test("URL ?view= beats the cookie default", async () => {

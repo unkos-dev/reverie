@@ -64,7 +64,10 @@ at a time. Press `?` inside the table for the complete shortcut list.
 
 Rows stream in as you scroll rather than loading all at once, which is
 why the table says "loaded": with a large library the first screen
-appears immediately and the count grows as you go. Sorting by title or
+appears immediately and the count grows as you go. A **Load more**
+button beneath the rows is the keyboard-reachable fallback for when
+scrolling can't trigger loading, such as a viewport tall enough to
+show a whole page without a scrollbar. Sorting by title or
 author happens on the server through a column header press, so the
 order is correct across the whole collection, not just the rows on
 screen.

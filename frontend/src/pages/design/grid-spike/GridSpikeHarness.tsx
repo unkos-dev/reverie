@@ -214,7 +214,7 @@ function GridStage(props: GridStageProps): ReactElement {
   const samplesRef = useRef<number[]>([]);
   const mountStartRef = useRef(0);
 
-  const handleCellFocus = useCallback((_report: FocusReport): void => {
+  const handleCellFocus = useCallback((_report: FocusReport<SpikeBookRow>): void => {
     if (!benchActiveRef.current) return;
     requestAnimationFrame(() => {
       const resolve = moveResolveRef.current;

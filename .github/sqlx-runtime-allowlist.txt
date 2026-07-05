@@ -61,7 +61,7 @@ sqlx::query("ANALYZE manifestation_genres, genres, manifestations, works")
 sqlx::query(explain_any_of_sql)
 sqlx::query(explain_all_of_sql)
 
-# (2) seed_library_50k test (routes/library/tests.rs) — a static,
+# (2) seed_library_50k test (routes/library/tests.rs): a static,
 # multi-statement operator script (BEGIN/DO guard/bulk INSERT/ANALYZE/
 # COMMIT) executed verbatim via raw_sql; a batch is structurally not a
 # `query!` candidate. The count probes around it use `query_scalar!`

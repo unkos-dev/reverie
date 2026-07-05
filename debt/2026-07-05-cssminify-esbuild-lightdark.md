@@ -1,6 +1,6 @@
 ---
 severity: low
-surfaces: [frontend, build]
+surfaces: [developer, end-user]
 adopted: 2026-07-05
 adopted-because: react-data-grid's color tokens are all light-dark() functions; rolldown-vite's default lightningcss minifier miscompiles light-dark() (parcel-bundler/lightningcss#873), silently corrupting the grid's dark palette in production builds
 lift-when-class: dep-unblocks
@@ -14,7 +14,8 @@ rolldown-vite's default CSS minifier for the whole app. The default
 (lightningcss) miscompiles the `light-dark()` color function, and every
 react-data-grid color token uses it, so the grid's dark palette breaks
 silently in production output under the default. react-data-grid's own
-vite config carries the identical workaround.
+vite config works around the same bug, through a narrower mechanism
+(excluding the light-dark feature from the lightningcss transform).
 
 The override is app-wide, not grid-scoped: one minifier setting covers
 all emitted CSS. esbuild's CSS minification is safe but less aggressive

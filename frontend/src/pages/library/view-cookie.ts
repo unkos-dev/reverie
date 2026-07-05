@@ -23,7 +23,13 @@ export function readViewCookie(): LibraryView | null {
   return isLibraryView(value) ? value : null;
 }
 
-/** Persist the view choice for a year. */
+/**
+ * Persist the view choice for a year. Browsers drop cookie writes that
+ * violate an attribute constraint (Secure on plain HTTP, for one) without
+ * throwing, so this write is unobservable by design; the read path treats
+ * an absent cookie as "no preference" and nothing depends on the write
+ * having landed.
+ */
 export function writeViewCookie(value: LibraryView): void {
   document.cookie = `${VIEW_COOKIE_NAME}=${value}; Path=/; Max-Age=${String(ONE_YEAR_SECONDS)}; SameSite=Lax; Secure`;
 }

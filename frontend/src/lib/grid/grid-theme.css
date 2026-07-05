@@ -9,7 +9,8 @@
  * The token map is written directly on `.rdg`, RDG's own root class, rather
  * than on the `.rv-grid` wrapper. RDG's stylesheet sets these same variables
  * inside an `@layer`, and a custom property is inherited only where nothing
- * sets it directly on the element; RDG's rule targets `.rdg` itself, so an
+ * sets it directly on the element; RDG's rule targets the same element
+ * through its own hashed class, so an
  * ancestor-only override on the wrapper would never reach it. Declaring the
  * map on `.rdg` directly wins instead, because unlayered rules always beat
  * layered ones regardless of specificity.

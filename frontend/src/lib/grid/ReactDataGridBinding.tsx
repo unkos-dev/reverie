@@ -84,8 +84,10 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
         rowKeyGetter={rowKey}
         sortColumns={sortColumns}
         onSortColumnsChange={handleSortColumnsChange}
-        onSelectedCellChange={({ rowIdx, column }) => {
-          onCellFocus({ rowIdx, columnKey: column.key });
+        onSelectedCellChange={({ row, rowIdx, column }) => {
+          // Header-row selection reports no row object; only cell focus does.
+          if (row === undefined) return;
+          onCellFocus({ row, rowIdx, columnKey: column.key });
         }}
         onScroll={onScroll}
         rowHeight={ROW_HEIGHT}

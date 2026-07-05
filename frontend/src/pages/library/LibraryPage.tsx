@@ -55,6 +55,7 @@ import { queryKeys } from "@/lib/query/keys";
 
 import { paramsFromSearch, viewFromSearch, type LibraryView } from "@/routes/library-params";
 
+import { TableChunkBoundary } from "./TableChunkBoundary";
 import { readViewCookie, writeViewCookie } from "./view-cookie";
 
 /**
@@ -274,26 +275,32 @@ function LibraryContent(): ReactElement {
             ) : viewMode === "list" ? (
               <BookList items={items} />
             ) : (
-              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                <LibraryTableView
-                  items={items}
-                  sort={params.sort ?? "recent"}
-                  onSortChange={setSortFromTable}
-                  hasNextPage={hasNextPage}
-                  isFetchingNextPage={isFetchingNextPage}
-                  isFetchNextPageError={isFetchNextPageError}
-                  onLoadMore={() => {
-                    void fetchNextPage();
-                  }}
-                />
-              </Suspense>
+              <TableChunkBoundary
+                onFallbackToGrid={() => {
+                  setView("grid");
+                }}
+              >
+                <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                  <LibraryTableView
+                    items={items}
+                    sort={params.sort ?? "recent"}
+                    onSortChange={setSortFromTable}
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                    isFetchNextPageError={isFetchNextPageError}
+                    onLoadMore={() => {
+                      void fetchNextPage();
+                    }}
+                  />
+                </Suspense>
+              </TableChunkBoundary>
             )}
 
-            {/* Kept in table mode too: scroll-driven paging needs a scrollbar,
-                and a tall or zoomed-out viewport can swallow a whole page
-                without one — the button is the escape hatch (and the
-                keyboard-reachable path) when scrolling can't fire. */}
-            {hasNextPage ? (
+            {/* Table mode owns its paging UI (loading, error, Load-more,
+                end-of-list) inside LibraryTableView; rendering this block
+                there too would announce the same failure twice and offer two
+                Retry controls. */}
+            {viewMode !== "table" && hasNextPage ? (
               <div className="mt-10 flex flex-col items-center gap-3">
                 {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
                     error is hue-less (One-Accent rule — the danger hue is reserved

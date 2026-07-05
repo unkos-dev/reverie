@@ -36,8 +36,13 @@ export type GridColumn<R> = {
 /** Single-column sort state. Multi-column sort is out of scope for this contract. */
 export type SortState = { columnKey: string; direction: "asc" | "desc" } | null;
 
-/** Selected-cell report emitted on focus change. */
-export type FocusReport = { rowIdx: number; columnKey: string };
+/**
+ * Selected-cell report emitted on focus change. Carries the row itself, not
+ * just its position: with fetch-on-scroll paging the loaded window grows and
+ * can reorder, so a positional index captured at focus time does not reliably
+ * name the same row later. Any future edit-commit event must key on `row`.
+ */
+export type FocusReport<R> = { row: R; rowIdx: number; columnKey: string };
 
 /**
  * The prop contract a grid binding satisfies for row type `R`. The binding
@@ -52,7 +57,7 @@ export type GridBindingProps<R> = {
   label?: string;
   sort: SortState;
   onSortChange: (sort: SortState) => void;
-  onCellFocus: (report: FocusReport) => void;
+  onCellFocus: (report: FocusReport<R>) => void;
   /** Passthrough for the binding's native scroll container; drives fetch-on-scroll paging. */
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
   /** Wrapper class carrying the Reverie-token theme bridge. */

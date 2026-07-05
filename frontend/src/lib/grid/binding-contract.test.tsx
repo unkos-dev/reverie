@@ -21,7 +21,7 @@ const COLUMNS: readonly GridColumn<TestRow>[] = [
 
 type HarnessProps = {
   onSortChange?: (sort: SortState) => void;
-  onCellFocus?: (report: FocusReport) => void;
+  onCellFocus?: (report: FocusReport<TestRow>) => void;
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
 };
 
@@ -77,7 +77,20 @@ describe("ReactDataGridBinding contract", () => {
     const firstTitle = await screen.findByText(ROWS[0].title);
     await user.click(firstTitle);
     await waitFor(() => {
-      expect(onCellFocus).toHaveBeenCalledWith({ rowIdx: 0, columnKey: "title" });
+      expect(onCellFocus).toHaveBeenCalledWith({ row: ROWS[0], rowIdx: 0, columnKey: "title" });
+    });
+  });
+
+  test("third header activation clears the sort back to null", async () => {
+    const onSortChange = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onSortChange={onSortChange} />);
+    const header = await screen.findByRole("columnheader", { name: "Title" });
+    await user.click(header);
+    await user.click(header);
+    await user.click(header);
+    await waitFor(() => {
+      expect(onSortChange).toHaveBeenLastCalledWith(null);
     });
   });
 

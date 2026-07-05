@@ -11,6 +11,8 @@ import { Loader2 } from "lucide-react";
 import { useState, type ReactElement, type UIEvent } from "react";
 import { Link } from "react-router";
 
+import { Button } from "@/components/ui/button";
+
 import type { BookListItem, ListSort } from "@/api";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type { GridColumn, SortState } from "@/lib/grid/types";
@@ -104,7 +106,10 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
     width: 90,
     accessor: (row) => {
       const rating = row.reading_state?.rating ?? null;
-      return rating === null ? EMPTY_CELL : "★".repeat(rating);
+      // Guarding below 1 here rather than in the zod schema: a schema bound
+      // would fail the whole page parse over one bad row, while this degrades
+      // a single cell. repeat() throws on negative counts.
+      return rating === null || rating < 1 ? EMPTY_CELL : "★".repeat(rating);
     },
   },
 ];
@@ -180,6 +185,10 @@ export function LibraryTableView({
         rowKey={(row) => row.id}
         className="h-[calc(100dvh-22rem)] min-h-96"
       />
+      {/* Single owner of every paging state in table mode; the page-level
+          Load-more block stays out of table view so a failure or fetch is
+          announced exactly once. Ordering is the precedence: an in-flight
+          fetch displaces the error state until it settles. */}
       <div className="text-fg-muted mt-3 flex min-h-6 items-center justify-center gap-2 text-sm">
         {isFetchingNextPage ? (
           <span role="status" className="flex items-center gap-2">
@@ -193,7 +202,14 @@ export function LibraryTableView({
               Retry
             </button>
           </span>
-        ) : !hasNextPage && items.length > 0 ? (
+        ) : hasNextPage ? (
+          // Scroll is the primary paging path; the button is the escape hatch
+          // when the viewport is too tall for a scrollbar, and the
+          // keyboard-reachable path either way.
+          <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>
+            Load more
+          </Button>
+        ) : items.length > 0 ? (
           <span>{items.length} books loaded · end of list</span>
         ) : null}
       </div>
