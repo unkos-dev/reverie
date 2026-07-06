@@ -234,11 +234,36 @@ describe("LibraryTableView", () => {
   });
 
   test("work-scoped columns carry an 'all editions' suffix in their header, non-scoped columns don't", async () => {
-    renderTableView();
-    await screen.findByRole("grid");
+    renderTableView({
+      items: [
+        rowFixture(1, {
+          series: { id: "s1", name: "Discworld", position: 8 },
+          reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+        }),
+      ],
+    });
+    const grid = await screen.findByRole("grid");
     expect(
       await screen.findByRole("columnheader", { name: "Title (all editions)" }),
     ).toBeInTheDocument();
+
+    // Same scroll dance as the "populated series and status" render test:
+    // ISBN and Pages sit past the initial 1024px window until scrolled in.
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
+    fireEvent.scroll(grid);
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
+    fireEvent.scroll(grid);
+
+    expect(await within(grid).findByRole("columnheader", { name: "ISBN" })).toBeInTheDocument();
+    expect(within(grid).getByRole("columnheader", { name: "Pages" })).toBeInTheDocument();
+    expect(
+      within(grid).queryByRole("columnheader", { name: "ISBN (all editions)" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(grid).queryByRole("columnheader", { name: "Pages (all editions)" }),
+    ).not.toBeInTheDocument();
   });
 
   describe("cell editing", () => {
@@ -373,6 +398,29 @@ describe("LibraryTableView", () => {
       const pendingCell = await within(grid).findByText("★★★★★");
       expect(pendingCell).toHaveAttribute("aria-busy", "true");
       expect(updateReadingState).toHaveBeenCalled();
+    });
+
+    test("a pending cell blocks its own editor from reopening while the commit is in flight", async () => {
+      vi.mocked(updateReadingState).mockImplementation(() => new Promise(() => undefined));
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("★★★");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      await screen.findByRole("group", { name: "Rating" });
+      // Digit "5" both sets and commits the rating (RatingCellEditor),
+      // closing the editor and leaving the cell pending.
+      await user.keyboard("5");
+      const pendingCell = await within(grid).findByText("★★★★★");
+
+      await user.click(pendingCell);
+      await user.keyboard("{Enter}");
+
+      expect(screen.queryByRole("group", { name: "Rating" })).not.toBeInTheDocument();
     });
   });
 });

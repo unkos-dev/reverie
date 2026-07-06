@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 
 import type { BookListItem } from "@/api";
 import type { FieldVersionChange } from "@/api/books";
@@ -68,13 +68,12 @@ describe.each([
   { key: "pages" as const, field: "pages", workScoped: false },
   { key: "authors" as const, field: "contributors.author", workScoped: true },
 ])("$key column", ({ key, field, workScoped }) => {
-  test("routes through the metadata pipeline with the declared field, work scope, and revert undo", () => {
+  test("routes through the metadata pipeline with the declared field and work scope", () => {
     const route = EDIT_ROUTES[key];
     expect(route.pipeline).toBe("metadata");
     if (route.pipeline !== "metadata") return;
     expect(route.field).toBe(field);
     expect(route.workScoped).toBe(workScoped);
-    expect(route.undo).toBe("revert");
   });
 });
 
@@ -249,5 +248,85 @@ describe("rating route", () => {
       rating: 1,
       progress_pct: 40,
     });
+  });
+});
+
+describe("coercion fallback logging", () => {
+  test("an unexpected non-string title value logs and falls back to the row's own title", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const route = EDIT_ROUTES.title;
+    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
+    const row = rowFixture();
+    const applied = route.applyToRow(row, fieldChange(42));
+    expect(applied.title).toBe(row.title);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[edit-routing] unexpected applied-value type for title",
+      42,
+    );
+    errorSpy.mockRestore();
+  });
+
+  test("a null subtitle value clears the field without logging", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const route = EDIT_ROUTES.subtitle;
+    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
+    const row = rowFixture();
+    const applied = route.applyToRow(row, fieldChange(null));
+    expect(applied.subtitle).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  test("an unexpected non-string subtitle value logs and falls back to null", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const route = EDIT_ROUTES.subtitle;
+    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
+    const row = rowFixture();
+    const applied = route.applyToRow(row, fieldChange(42));
+    expect(applied.subtitle).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[edit-routing] unexpected applied-value type for subtitle",
+      42,
+    );
+    errorSpy.mockRestore();
+  });
+
+  test("an unexpected non-number pages value logs and falls back to null", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const route = EDIT_ROUTES.pages;
+    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
+    const row = rowFixture();
+    const applied = route.applyToRow(row, fieldChange("not-a-number"));
+    expect(applied.pages).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[edit-routing] unexpected applied-value type for pages",
+      "not-a-number",
+    );
+    errorSpy.mockRestore();
+  });
+
+  test("a null authors value clears the list without logging", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const route = EDIT_ROUTES.authors;
+    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
+    const row = rowFixture();
+    const applied = route.applyToRow(row, fieldChange(null));
+    expect(applied.authors).toEqual([]);
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  test("an unexpected non-array authors value logs and falls back to an empty list", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const route = EDIT_ROUTES.authors;
+    if (route.pipeline !== "metadata") throw new Error("expected metadata pipeline");
+    const row = rowFixture();
+    const applied = route.applyToRow(row, fieldChange("not-an-array"));
+    expect(applied.authors).toEqual([]);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[edit-routing] unexpected applied-value type for contributors.author",
+      "not-an-array",
+    );
+    errorSpy.mockRestore();
   });
 });

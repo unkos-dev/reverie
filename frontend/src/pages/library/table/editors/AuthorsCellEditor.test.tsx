@@ -83,4 +83,50 @@ describe("AuthorsCellEditor", () => {
     expect(onCancel).toHaveBeenCalled();
     expect(onCommit).not.toHaveBeenCalled();
   });
+
+  test("Enter inside an author input neither cancels nor commits, and the popover stays open", async () => {
+    const onCommit = vi.fn();
+    const onCancel = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AuthorsCellEditor
+        authors={["Frank Herbert", "Brian Herbert"]}
+        onCommit={onCommit}
+        onCancel={onCancel}
+      />,
+    );
+    const input = screen.getByLabelText("Author 1");
+    input.focus();
+
+    await user.keyboard("{Enter}");
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Author 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Author 2")).toBeInTheDocument();
+  });
+
+  test("blanking an existing author's name disables Save", async () => {
+    const user = userEvent.setup();
+    render(<AuthorsCellEditor authors={["Frank Herbert"]} onCommit={vi.fn()} onCancel={vi.fn()} />);
+
+    await user.clear(screen.getByLabelText("Author 1"));
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  test("saving trims leading and trailing whitespace from each committed author name", async () => {
+    const onCommit = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AuthorsCellEditor authors={["Frank Herbert"]} onCommit={onCommit} onCancel={vi.fn()} />,
+    );
+    const input = screen.getByLabelText("Author 1");
+    await user.clear(input);
+    await user.type(input, "  Frank Herbert  ");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onCommit).toHaveBeenCalledWith(["Frank Herbert"]);
+  });
 });

@@ -426,20 +426,9 @@ async fn revert_manifestation(
 
     match payload.version_id {
         Some(vid) => {
-            // Work-scoped fields (title/subtitle/description/language,
-            // contributors.*) are journaled per-manifestation but their
-            // canonical pointer lives on the shared `works` row, so a
-            // sibling manifestation of the same work can legitimately own
-            // the version an editor now wants to restore: a first-ingest
-            // draft filed under manifestation A, an enrichment pass, or a
-            // manual edit made while reviewing manifestation B all land
-            // in `metadata_versions` rows stamped with that manifestation's
-            // id, not the one the canonical pointer was last read through.
-            // Manifestation-scoped fields (pages, publisher, isbn_10,
-            // isbn_13, pub_date, content_rating) keep the strict same-row
-            // match: their canonical column lives on `manifestations`
-            // itself, so a sibling's journal row describes a different
-            // edition and must not be applicable here.
+            // Sibling manifestations of the same work may legitimately own
+            // the version being restored for work-scoped fields; see
+            // `is_work_scoped_field`.
             let is_work_scoped = is_work_scoped_field(&payload.field_name);
             let new_value: Option<Value> = sqlx::query_scalar!(
                 "SELECT mv.new_value AS \"new_value!\" \
@@ -797,7 +786,7 @@ async fn apply_version(
                 AppError::Validation(format!("{field} must be an array of strings"))
             })?;
             let trimmed = validated_role_names(role, &names)?;
-            let previous = capture_role_pointer(tx, work_id, role).await?;
+            let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
             delete_role_rows(tx, work_id, role).await?;
             insert_role_rows(tx, work_id, role, &trimmed, version_id).await?;
             if role == "author" {
@@ -818,7 +807,7 @@ async fn apply_version(
                     .await
                     .map_err(|e| AppError::Internal(e.into()))?;
             }
-            previous
+            previous_version_id
         }
         other => {
             return Err(AppError::Validation(format!(
@@ -991,9 +980,9 @@ async fn clear_field(
                     ));
                 }
                 "editor" | "translator" => {
-                    let previous = capture_role_pointer(tx, work_id, role).await?;
+                    let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
                     delete_role_rows(tx, work_id, role).await?;
-                    previous
+                    previous_version_id
                 }
                 other => {
                     return Err(AppError::Validation(format!(
@@ -2070,6 +2059,15 @@ mod tests {
         .expect("insert sibling manifestation")
     }
 
+    /// Pull `body["fields"][field]["version_id"]` as an owned `String`,
+    /// panicking with the field name and full body if it's missing.
+    fn version_id_of(body: &serde_json::Value, field: &str) -> String {
+        body["fields"][field]["version_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("expected a version_id for field '{field}' in {body}"))
+            .to_string()
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn accept_admin_writes_canonical_title(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -2304,7 +2302,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_old_fields_envelope_returns_422(pool: sqlx::PgPool) {
-        // The body is now a bare RFC 7396 merge patch (Task A0): the
+        // The body is now a bare RFC 7396 merge patch: the
         // previous `{"fields": {...}}` envelope carries no recognized
         // top-level key, so every field is treated as absent and the
         // handler's "no populated fields" guard rejects it. Pins the break
@@ -2420,10 +2418,7 @@ mod tests {
             .await;
         assert_eq!(first_response.status_code(), StatusCode::OK);
         let first_body: serde_json::Value = first_response.json();
-        let first_version_id = first_body["fields"]["title"]["version_id"]
-            .as_str()
-            .expect("first patch must return a version_id")
-            .to_string();
+        let first_version_id = version_id_of(&first_body, "title");
 
         let second_title = format!("Second Title {marker}");
         let second_response = server
@@ -3444,7 +3439,7 @@ mod tests {
         );
     }
 
-    // ── revert learns contributors.<role> (Task A1b) ────────────────────────
+    // ── revert learns contributors.<role> ───────────────────────────────────
 
     #[sqlx::test(migrations = "./migrations")]
     async fn revert_contributors_author_restores_prior_set(pool: sqlx::PgPool) {
@@ -3467,10 +3462,7 @@ mod tests {
             .await;
         assert_eq!(first_response.status_code(), StatusCode::OK);
         let first_body: serde_json::Value = first_response.json();
-        let first_version_id = first_body["fields"]["contributors.author"]["version_id"]
-            .as_str()
-            .expect("first patch must journal a contributors.author version")
-            .to_string();
+        let first_version_id = version_id_of(&first_body, "contributors.author");
 
         let name_c = format!("Gamma Author {marker}");
         let second_response = server
@@ -3637,10 +3629,7 @@ mod tests {
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
         let body_a: serde_json::Value = patch_a.json();
-        let version_a = body_a["fields"]["title"]["version_id"]
-            .as_str()
-            .expect("patch via A must journal a title version")
-            .to_string();
+        let version_a = version_id_of(&body_a, "title");
 
         // Patch title via manifestation B: the canonical pointer is
         // work-scoped, so B's response must report A's version as the
@@ -3708,10 +3697,7 @@ mod tests {
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
         let body_a: serde_json::Value = patch_a.json();
-        let version_a = body_a["fields"]["pages"]["version_id"]
-            .as_str()
-            .expect("patch via A must journal a pages version")
-            .to_string();
+        let version_a = version_id_of(&body_a, "pages");
 
         // Revert on B with A's version id must 404: pages is
         // manifestation-scoped, so a sibling's journal row must not be
@@ -3754,10 +3740,7 @@ mod tests {
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
         let body_a: serde_json::Value = patch_a.json();
-        let version_a = body_a["fields"]["contributors.author"]["version_id"]
-            .as_str()
-            .expect("patch via A must journal a contributors.author version")
-            .to_string();
+        let version_a = version_id_of(&body_a, "contributors.author");
 
         let name_b = format!("Beta Author {marker}");
         let patch_b = server
@@ -3823,10 +3806,7 @@ mod tests {
             serde_json::Value::Null,
             "the work's first author edit has no prior single stamp to report"
         );
-        let first_version_id = first_body["fields"]["contributors.author"]["version_id"]
-            .as_str()
-            .expect("first patch must journal a version")
-            .to_string();
+        let first_version_id = version_id_of(&first_body, "contributors.author");
 
         let name_b = format!("Beta Author {marker}");
         let second = server
@@ -4384,6 +4364,39 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn patch_mixed_valid_invalid_fields_rolls_back_all(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // description is applied before isbn_13 in field order, so its
+        // write has already been issued inside the transaction when the
+        // invalid ISBN rejects the patch: this pins genuine rollback of an
+        // in-flight write, not just fail-fast ordering.
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"description": "New", "isbn_13": "not-an-isbn"}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+
+        let row = sqlx::query!("SELECT description FROM works WHERE id = $1", work_id)
+            .fetch_one(&app_pool)
+            .await
+            .expect("fetch work after rejected patch");
+        assert!(row.description.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn patch_sets_and_clears_pages(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -4543,20 +4556,22 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn accept_contributors_author_version_returns_422(pool: sqlx::PgPool) {
-        // Pins that per-role contributor keys stay accept-unsupported, same as
-        // the legacy "creators" key was before this change.
+    async fn accept_contributors_author_version_rebuilds_role_rows(pool: sqlx::PgPool) {
+        // Contributor versions used to be accept-unsupported (422); the
+        // shared apply path now rebuilds the role rows, so accepting a
+        // pending contributors draft promotes it like any scalar field.
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) =
+        let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let author_name = format!("Pending Author {marker}");
         let version_id = insert_version(
             &ing_pool,
             m_id,
             "contributors.author",
-            serde_json::json!([format!("Pending Author {marker}")]),
+            serde_json::json!([author_name.clone()]),
         )
         .await;
 
@@ -4568,10 +4583,32 @@ mod tests {
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
+
+        let author_names: Vec<String> = sqlx::query_scalar!(
+            "SELECT a.name FROM authors a \
+             JOIN work_authors wa ON wa.author_id = a.id \
+             WHERE wa.work_id = $1 AND wa.role = 'author' \
+             ORDER BY wa.position",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch author names");
+        assert_eq!(author_names, vec![author_name]);
+
+        let stamps: Vec<Option<Uuid>> = sqlx::query_scalar!(
+            "SELECT DISTINCT source_version_id FROM work_authors \
+             WHERE work_id = $1 AND role = 'author'",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch work_authors stamps");
+        assert_eq!(stamps, vec![Some(version_id)]);
     }
 
     // ── PATCH genres / moods / tags / content_rating ───────────────────────

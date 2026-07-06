@@ -1,14 +1,14 @@
 /**
  * Cell-edit orchestration for the library table.
  *
- * `EDIT_ROUTES` describes how a column writes and undoes; this hook is the
- * plumbing that runs on top of it: firing the right mutation for a
- * committed cell edit, patching the TanStack Query list cache from the
- * server's applied value (never the local draft, since the server
- * normalizes input, e.g. ISBN checksums), tracking in-flight cells so the
- * table can render a draft overlay, and a bounded undo stack (toast action
- * plus Ctrl+Z). The query cache stays server-confirmed throughout: there is
- * no optimistic commit, per the ADR this feature extends.
+ * `EDIT_ROUTES` describes how a column writes; this hook is the plumbing
+ * that runs on top of it, including deriving each edit's undo strategy:
+ * firing the right mutation for a committed cell edit, patching the
+ * TanStack Query list cache from the server's applied value (never the
+ * local draft, since the server normalizes input, e.g. ISBN checksums),
+ * tracking in-flight cells so the table can render a draft overlay, and a
+ * bounded undo stack (toast action plus Ctrl+Z). The query cache stays
+ * server-confirmed throughout: there is no optimistic commit.
  *
  * `listKey` must be the exact key the library page's suspense query reads
  * (cursor stripped). The caller owns computing that key; this hook only
@@ -61,11 +61,11 @@ function isEditableColumnKey(key: string): key is EditableColumnKey {
 }
 
 function isMetadataColumnKey(key: EditableColumnKey): key is MetadataColumnKey {
-  return key !== "status" && key !== "rating";
+  return EDIT_ROUTES[key].pipeline === "metadata";
 }
 
 function isReadingColumnKey(key: EditableColumnKey): key is ReadingColumnKey {
-  return key === "status" || key === "rating";
+  return EDIT_ROUTES[key].pipeline === "reading";
 }
 
 /** One undo-stack entry. `previousRow` is the full pre-edit snapshot so a
@@ -102,8 +102,36 @@ type ReadingUndoEntry = {
 
 type UndoEntry = MetadataUndoEntry | ReadingUndoEntry;
 
-function pendingKey(rowId: string, columnKey: string): string {
+/** `${row.id}:${columnKey}`, the shared key shape for the pending-cells map. */
+export function pendingKey(rowId: string, columnKey: string): string {
   return `${rowId}:${columnKey}`;
+}
+
+/**
+ * `response.fields` types as `Record<string, FieldVersionChange>`, a
+ * compile-time promise that every key exists. The server only actually
+ * populates it per touched field, so a route's own field can be absent at
+ * runtime despite the type. Reading through this narrower boundary (rather
+ * than indexing `response.fields` directly at the call site) keeps the
+ * caller's missing-field guard a real runtime check instead of a condition
+ * the type checker can prove impossible.
+ */
+function lookupAppliedField(
+  fields: Record<string, FieldVersionChange>,
+  field: string,
+): FieldVersionChange | undefined {
+  return fields[field];
+}
+
+/** True when `item` is the edited manifestation itself, or a sibling
+ *  edition of the same work on a field that fans out across editions. */
+function affectsManifestation(
+  item: BookListItem,
+  manifestationId: string,
+  workId: string,
+  workScoped: boolean,
+): boolean {
+  return item.id === manifestationId || (workScoped && item.work_id === workId);
 }
 
 function displayValue(
@@ -118,8 +146,8 @@ function displayValue(
 /**
  * Builds the patch a commit would send, or `null` when the committed row
  * is unchanged for this column (a no-op edit fires no mutation). Comparing
- * against the patch `toPatch` would build from the row's own prior value
- * keeps this generic over every route's patch shape.
+ * against the patch that `toPatch` would build from the row's own prior
+ * value keeps this generic over every route's patch shape.
  */
 function buildPatchIfChanged<P>(
   route: { toPatch: (row: BookListItem, draft: BookListItem) => P },
@@ -147,6 +175,44 @@ function updateListCache(
       })),
     };
   });
+}
+
+/** Every loaded manifestation id `affectsManifestation` would patch, read
+ *  from the current list cache. Always includes `manifestationId` itself,
+ *  even if the edited row isn't (yet) present in the loaded window. */
+function collectAffectedIds(
+  queryClient: QueryClient,
+  listKey: BooksListKey,
+  manifestationId: string,
+  workId: string,
+  workScoped: boolean,
+): readonly string[] {
+  const ids = new Set<string>([manifestationId]);
+  const data = queryClient.getQueryData<InfiniteData<BookListResponse>>(listKey);
+  if (data !== undefined) {
+    for (const page of data.pages) {
+      for (const item of page.items) {
+        if (affectsManifestation(item, manifestationId, workId, workScoped)) ids.add(item.id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+/** Invalidates the book-detail query for the edited manifestation and, for
+ *  a work-scoped field, every loaded sibling edition too: a fan-out edit
+ *  patches every sibling's row in the list cache, and a stale detail view
+ *  open on any of them must not keep serving the pre-edit value. */
+function invalidateAffectedDetails(
+  queryClient: QueryClient,
+  listKey: BooksListKey,
+  manifestationId: string,
+  workId: string,
+  workScoped: boolean,
+): void {
+  for (const id of collectAffectedIds(queryClient, listKey, manifestationId, workId, workScoped)) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(id) });
+  }
 }
 
 /**
@@ -210,8 +276,12 @@ function restoreMetadataRow(
     queryClient,
     listKey,
     (item) =>
-      item.id === entry.manifestationId ||
-      (route.workScoped && item.work_id === entry.previousRow.work_id),
+      affectsManifestation(
+        item,
+        entry.manifestationId,
+        entry.previousRow.work_id,
+        route.workScoped,
+      ),
     (item) => route.applyToRow(item, { value, version_id: null, previous_version_id: null }),
   );
 }
@@ -339,19 +409,29 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
           });
         }
         restoreMetadataRow(queryClient, listKey, entry);
+        // Mirrors handleCellEdit's own invalidation, including the sibling
+        // fan-out for a work-scoped field: without it, a book-detail view
+        // open on any restored sibling can keep serving the undone value
+        // for the remainder of its staleTime.
+        const route = EDIT_ROUTES[entry.columnKey];
+        invalidateAffectedDetails(
+          queryClient,
+          listKey,
+          entry.manifestationId,
+          entry.previousRow.work_id,
+          route.pipeline === "metadata" && route.workScoped,
+        );
       } else {
         const response = await readingMutation.mutateAsync({
           manifestationId: entry.manifestationId,
           patch: entry.counterPatch,
         });
         restoreReadingRow(queryClient, listKey, entry, response);
+        // The reading pipeline never fans out across sibling editions.
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.books.detail(entry.manifestationId),
+        });
       }
-      // Mirrors handleCellEdit's own invalidation: without this, a
-      // book-detail view open on the reverted field can keep serving the
-      // undone value for the remainder of its staleTime.
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.books.detail(entry.manifestationId),
-      });
       toast.success("Reverted.", { id: entry.id });
     } catch (err) {
       console.error("[useCellEdit.handleUndo] undo failed", err);
@@ -393,14 +473,27 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
         const response = await metadataMutation.mutateAsync({ manifestationId: row.id, patch });
         // Invariant: a successful metadata PATCH always echoes every
         // touched field back in `fields`, keyed by the same field name.
-        const applied = response.fields[route.field];
+        const applied = lookupAppliedField(response.fields, route.field);
+        if (applied === undefined) {
+          // Distinct from the mutation-failure branch below: the server
+          // accepted the write (2xx) but its response didn't carry the
+          // field this route needs, so there's nothing safe to fold into
+          // the cache.
+          console.error(
+            "[useCellEdit.onCellEdit] metadata response missing echoed field",
+            route.field,
+          );
+          clearPending(key);
+          toast.error("The server response was missing the edited field.");
+          return;
+        }
         updateListCache(
           queryClient,
           listKey,
-          (item) => item.id === row.id || (route.workScoped && item.work_id === row.work_id),
+          (item) => affectsManifestation(item, row.id, row.work_id, route.workScoped),
           (item) => route.applyToRow(item, applied),
         );
-        void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(row.id) });
+        invalidateAffectedDetails(queryClient, listKey, row.id, row.work_id, route.workScoped);
         clearPending(key);
         announceSuccess(
           columnKey,

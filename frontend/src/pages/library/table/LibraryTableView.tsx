@@ -31,7 +31,7 @@ import {
   GridShortcutsTrigger,
   useShortcutsHotkey,
 } from "./GridShortcutsDialog";
-import { useCellEdit } from "./useCellEdit";
+import { pendingKey, useCellEdit } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
 
@@ -40,7 +40,7 @@ const EMPTY_CELL = "—";
  * committed edit fans out to every loaded sibling edition of the same work.
  * The grid contract's `name` is a plain string rendered as the column
  * header's accessible name, with no separate slot for a tooltip attribute
- * (that would need a contract change outside this column's ownership) — a
+ * (that would need a contract change outside this column's ownership). A
  * plain-language suffix reads the same for a sighted user scanning the
  * header row and a screen reader announcing it, rather than a glyph that
  * would need the tooltip to explain itself.
@@ -262,7 +262,7 @@ function useEditableColumns(
         if (col.renderEditCell === undefined) return col;
         const renderFinal = col.renderCell ?? col.accessor;
         const renderCell = (row: BookListItem): ReactNode => {
-          const draft = pendingCells.get(`${row.id}:${col.key}`);
+          const draft = pendingCells.get(pendingKey(row.id, col.key));
           if (draft === undefined) return renderFinal(row);
           return (
             <span aria-busy="true" className="text-fg-muted italic">
@@ -272,7 +272,7 @@ function useEditableColumns(
         };
         return {
           ...col,
-          editable: (row: BookListItem) => !pendingCells.has(`${row.id}:${col.key}`),
+          editable: (row: BookListItem) => !pendingCells.has(pendingKey(row.id, col.key)),
           renderCell,
         };
       }),

@@ -12,7 +12,7 @@ describe("TextCellEditor", () => {
     const input = screen.getByRole("textbox");
     expect(input).toHaveFocus();
 
-    // skipClick: the real editor is never clicked into — it mounts already
+    // skipClick: the real editor is never clicked into. It mounts already
     // focused with its text selected, and a click here would collapse that
     // selection before typing starts, defeating the very thing under test.
     await user.type(input, "Foundation", { skipClick: true });

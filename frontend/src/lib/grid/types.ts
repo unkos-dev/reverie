@@ -41,9 +41,11 @@ export type GridEditorProps<R> = {
  *
  * `renderEditCell`, when present, makes the column editable. `editable`
  * further gates editing per row (for example a locked field); omit it for a
- * column that is editable on every row. `editorOptions` forwards the small
- * set of binding-level editor behaviors a column can tune without reaching
- * into a vendor type.
+ * column that is editable on every row. `editable` and `editorOptions` take
+ * effect only when `renderEditCell` is also set; on a column without an
+ * editor they are inert. `editorOptions` forwards the small set of
+ * binding-level editor behaviors a column can tune without reaching into a
+ * vendor type.
  */
 export type GridColumn<R> = {
   key: string;

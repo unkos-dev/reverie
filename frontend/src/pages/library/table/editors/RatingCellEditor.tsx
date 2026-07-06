@@ -73,8 +73,8 @@ export function RatingCellEditor({
     if (event.key === "Enter") {
       // The draft-then-Enter model is local to this editor (arrows never
       // call onCommit), so finish the interaction here rather than let the
-      // grid binding's own Enter handling — which commits whatever row
-      // `update()` last staged — race a second commit of the same value.
+      // grid binding's own Enter handling, which commits whatever row
+      // `update()` last staged, race a second commit of the same value.
       event.stopPropagation();
       onCommit(draft);
     }

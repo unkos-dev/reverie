@@ -32,7 +32,7 @@ export function AuthorsCellEditor({
   onCancel,
 }: AuthorsCellEditorProps): ReactElement {
   // Numeric ids exist purely so list items keep a stable React key across
-  // add/remove/edit — author names are plain strings on the wire (no id of
+  // add/remove/edit: author names are plain strings on the wire (no id of
   // their own) and are not necessarily unique.
   const [names, setNames] = useState<DraftAuthor[]>(() =>
     authors.map((value, index) => ({ id: index, value })),
@@ -59,7 +59,7 @@ export function AuthorsCellEditor({
 
   function handleAddKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.key !== "Enter") return;
-    // Enter here means "add this author," not "commit the row" — this
+    // Enter here means "add this author," not "commit the row." This
     // editor has no `update()` draft for the grid binding's own Enter
     // handling to commit, so let it stop here rather than bubble into a
     // discard/commit-of-nothing at the editor container.
@@ -68,13 +68,23 @@ export function AuthorsCellEditor({
     addName();
   }
 
+  // Enter inside a per-author name input means "stop here," the same as
+  // the Add-author input above: without this, the keystroke bubbles to the
+  // grid's editor container, which reads a bare Enter as a commit and
+  // closes the popover mid-edit.
+  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   // Any dismiss that isn't our own Save/Cancel button (Escape, outside
   // click) lands here; both mean "discard."
   function handleOpenChange(open: boolean): void {
     if (!open) onCancel();
   }
 
-  const canSave = names.length > 0;
+  const canSave = names.length > 0 && names.every((entry) => entry.value.trim() !== "");
 
   return (
     <Popover open onOpenChange={handleOpenChange}>
@@ -91,6 +101,7 @@ export function AuthorsCellEditor({
                 onChange={(event) => {
                   updateName(entry.id, event.target.value);
                 }}
+                onKeyDown={handleNameKeyDown}
               />
               <Button
                 type="button"
@@ -134,7 +145,7 @@ export function AuthorsCellEditor({
             size="sm"
             disabled={!canSave}
             onClick={() => {
-              onCommit(names.map((entry) => entry.value));
+              onCommit(names.map((entry) => entry.value.trim()));
             }}
           >
             Save

@@ -357,8 +357,8 @@ describe("useCellEdit", () => {
     });
 
     // The counter-patch response carries a server-computed side effect
-    // (progress_pct 55) that diverges from the pre-edit snapshot's 40 —
-    // the applied cache value must come from this response, not the snapshot.
+    // (progress_pct 55) that diverges from the pre-edit snapshot's 40.
+    // The applied cache value must come from this response, not the snapshot.
     vi.mocked(updateReadingState).mockResolvedValueOnce(
       readingStateFixture({ rating: 2, progress_pct: 55 }),
     );
@@ -654,6 +654,213 @@ describe("useCellEdit", () => {
     expect(readCache(client)[0].title).toBe("Original Title");
     await waitFor(() => {
       expect(screen.getByTestId("pending-keys")).toHaveTextContent("");
+    });
+  });
+
+  test("a failed reading-pipeline edit leaves the cache untouched, clears the pending entry, and toasts", async () => {
+    const client = makeClient();
+    const row = rowFixture({ reading_state: { status: "reading", rating: 3, progress_pct: 40 } });
+    seedCache(client, [row]);
+    vi.mocked(updateReadingState).mockRejectedValue(
+      new ApiError(422, null, "Validation Error", "Rating must be between 1 and 5."),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, reading_state: { status: "reading", rating: 5, progress_pct: 40 } },
+      previousRow: row,
+      columnKey: "rating",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Validation Error: Rating must be between 1 and 5.");
+    });
+    expect(readCache(client)[0].reading_state).toEqual({
+      status: "reading",
+      rating: 3,
+      progress_pct: 40,
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("pending-keys")).toHaveTextContent("");
+    });
+  });
+
+  test("a no-op commit (an unchanged value) fires no mutation", async () => {
+    const client = makeClient();
+    const row = rowFixture();
+    seedCache(client, [row]);
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row },
+      previousRow: row,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    expect(updateBookMetadata).not.toHaveBeenCalled();
+    expect(updateReadingState).not.toHaveBeenCalled();
+  });
+
+  test("a metadata response missing the echoed field logs a contract violation, toasts, and leaves the cache untouched", async () => {
+    const client = makeClient();
+    const row = rowFixture();
+    seedCache(client, [row]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // The write succeeded (2xx), but the echoed `fields` map is missing the
+    // `title` key this route reads: a malformed response, not a rejection.
+    vi.mocked(updateBookMetadata).mockResolvedValue({ fields: {} });
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, title: "New Title" },
+      previousRow: row,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("The server response was missing the edited field.");
+    });
+    expect(readCache(client)[0].title).toBe("Original Title");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[useCellEdit.onCellEdit] metadata response missing echoed field",
+      "title",
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("pending-keys")).toHaveTextContent("");
+    });
+    errorSpy.mockRestore();
+  });
+
+  test("a work-scoped edit invalidates the detail query for the loaded sibling id too", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1" });
+    seedCache(client, [rowA, rowB]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { title: fieldChange("New Title") },
+    });
+    const report: CellEditReport<BookListItem> = {
+      row: { ...rowA, title: "New Title" },
+      previousRow: rowA,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-1") });
+  });
+
+  test("an isbn_13 edit does not invalidate the detail query for a sibling id", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1", isbn_13: "9780000000001" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1", isbn_13: "9780000000002" });
+    seedCache(client, [rowA, rowB]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { isbn_13: fieldChange("9781111111111") },
+    });
+    const report: CellEditReport<BookListItem> = {
+      row: { ...rowA, isbn_13: "9781111111111" },
+      previousRow: rowA,
+      columnKey: "isbn_13",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-1") });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+  });
+
+  test("undoing a work-scoped metadata edit invalidates the detail query for the loaded sibling id too", async () => {
+    const client = makeClient();
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1" });
+    seedCache(client, [rowA, rowB]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { title: fieldChange("New Title", "prev-version-id") },
+    });
+    vi.mocked(revertField).mockResolvedValue(undefined);
+    const report: CellEditReport<BookListItem> = {
+      row: { ...rowA, title: "New Title" },
+      previousRow: rowA,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalled();
+    });
+
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    getUndoAction(0)();
+
+    await waitFor(() => {
+      expect(revertField).toHaveBeenCalledWith("book-1", "title", "prev-version-id");
+    });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+    });
+  });
+
+  test("undo restores sibling editions: a title edit fanned out to a sibling is restored on undo too", async () => {
+    const client = makeClient();
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1", title: "Original Title" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1", title: "Original Title" });
+    seedCache(client, [rowA, rowB]);
+    vi.mocked(updateBookMetadata).mockResolvedValueOnce({
+      fields: { title: fieldChange("New Title", "prev-version-id") },
+    });
+    vi.mocked(revertField).mockResolvedValue(undefined);
+    const report: CellEditReport<BookListItem> = {
+      row: { ...rowA, title: "New Title" },
+      previousRow: rowA,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+    await waitFor(() => {
+      expect(readCache(client).find((item) => item.id === "book-2")?.title).toBe("New Title");
+    });
+
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(revertField).toHaveBeenCalledWith("book-1", "title", "prev-version-id");
+    });
+    await waitFor(() => {
+      expect(readCache(client).find((item) => item.id === "book-2")?.title).toBe("Original Title");
+    });
+  });
+
+  test("undo of a cleared field revert-calls with the response's previous_version_id, not null", async () => {
+    const client = makeClient();
+    const row = rowFixture({ subtitle: "Original Subtitle" });
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { subtitle: fieldChange(null, "v-prev") },
+    });
+    vi.mocked(revertField).mockResolvedValue(undefined);
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, subtitle: null },
+      previousRow: row,
+      columnKey: "subtitle",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalled();
+    });
+
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(revertField).toHaveBeenCalledWith(row.id, "subtitle", "v-prev");
     });
   });
 });
