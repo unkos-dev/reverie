@@ -283,19 +283,59 @@ describe("response schema validation (zod boundary)", () => {
 });
 
 describe("updateBookMetadata", () => {
-  test("PATCHes /api/v1/books/{id}/metadata with the fields envelope", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+  test("PATCHes /api/v1/books/{id}/metadata with a bare merge-patch body", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        fields: {
+          title: {
+            value: "New",
+            version_id: "11111111-1111-4111-8111-111111111111",
+            previous_version_id: null,
+          },
+        },
+      }),
+    );
 
     await updateBookMetadata("abc-123", { title: "New", description: null });
 
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
     expect(input).toBe("/api/v1/books/abc-123/metadata");
     expect(init?.method).toBe("PATCH");
-    expect(parseJsonBody(init?.body)).toEqual({
-      fields: { title: "New", description: null },
+    expect(parseJsonBody(init?.body)).toEqual({ title: "New", description: null });
+  });
+
+  test("returns the parsed per-field version-change map", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        fields: {
+          isbn_13: {
+            value: "9781590171998",
+            version_id: "22222222-2222-4222-8222-222222222222",
+            previous_version_id: "33333333-3333-4333-8333-333333333333",
+          },
+        },
+      }),
+    );
+
+    const result = await updateBookMetadata("abc-123", { isbn_13: "978-1-59017-199-8" });
+
+    expect(result.fields.isbn_13).toEqual({
+      value: "9781590171998",
+      version_id: "22222222-2222-4222-8222-222222222222",
+      previous_version_id: "33333333-3333-4333-8333-333333333333",
     });
+  });
+
+  test("throws when the response body does not match UpdateMetadataResponseSchema", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        fields: {
+          title: { value: "New", version_id: "not-a-uuid", previous_version_id: null },
+        },
+      }),
+    );
+
+    await expect(updateBookMetadata("abc-123", { title: "New" })).rejects.toThrow();
   });
 
   test("surfaces 422 validation as ApiError with the title preserved", async () => {

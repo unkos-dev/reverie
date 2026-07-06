@@ -5,10 +5,11 @@
  * everything else in the app depends on `./types`, never on RDG's own types.
  * RDG ships native ARIA grid semantics and CSS-variable theming; the theme
  * half of the bridge is `grid-theme.css`, imported here alongside RDG's own
- * stylesheet. Read-only tranche: no editor wiring.
+ * stylesheet. `RenderEditCellProps` types the editor-props translation below
+ * but, like every other RDG type, never appears in this module's exports.
  */
 import { useMemo, type ReactElement, type ReactNode } from "react";
-import { DataGrid, type Column, type SortColumn } from "react-data-grid";
+import { DataGrid, type Column, type RenderEditCellProps, type SortColumn } from "react-data-grid";
 import "react-data-grid/lib/styles.css";
 import "./grid-theme.css";
 
@@ -28,14 +29,40 @@ export type ReactDataGridBindingProps<R> = GridBindingProps<R> & {
 };
 
 function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Column<R>[] {
-  return columns.map((col) => ({
-    key: col.key,
-    name: col.name,
-    sortable: col.sortable,
-    width: col.width,
-    renderCell: ({ row }: { row: R }): ReactNode =>
-      col.renderCell === undefined ? col.accessor(row) : col.renderCell(row),
-  }));
+  return columns.map((col) => {
+    // Captured in a local so the undefined check below narrows it for the
+    // closure; a non-null assertion on `col.renderEditCell` is forbidden.
+    const renderEditCell = col.renderEditCell;
+    const editFields =
+      renderEditCell === undefined
+        ? {}
+        : {
+            editable: col.editable,
+            editorOptions: col.editorOptions,
+            renderEditCell: ({ row, onRowChange, onClose }: RenderEditCellProps<R>): ReactNode =>
+              renderEditCell({
+                row,
+                update: (next: R) => {
+                  onRowChange(next);
+                },
+                commit: (next: R) => {
+                  onRowChange(next, true);
+                },
+                cancel: () => {
+                  onClose();
+                },
+              }),
+          };
+    return {
+      key: col.key,
+      name: col.name,
+      sortable: col.sortable,
+      width: col.width,
+      renderCell: ({ row }: { row: R }): ReactNode =>
+        col.renderCell === undefined ? col.accessor(row) : col.renderCell(row),
+      ...editFields,
+    };
+  });
 }
 
 export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): ReactElement {
@@ -46,6 +73,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
     sort,
     onSortChange,
     onCellFocus,
+    onCellEdit,
     onScroll,
     rowKey,
     className,
@@ -88,6 +116,13 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
           // Header-row selection reports no row object; only cell focus does.
           if (row === undefined) return;
           onCellFocus({ row, rowIdx, columnKey: column.key });
+        }}
+        onRowsChange={(nextRows, { indexes, column }) => {
+          // Fill/paste touch multiple rows in one event; bulk editing is a
+          // later tranche, so multi-index commits are deliberately dropped.
+          if (indexes.length !== 1 || onCellEdit === undefined) return;
+          const index = indexes[0];
+          onCellEdit({ row: nextRows[index], previousRow: rows[index], columnKey: column.key });
         }}
         onScroll={onScroll}
         rowHeight={ROW_HEIGHT}

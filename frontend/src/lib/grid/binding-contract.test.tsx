@@ -4,28 +4,85 @@ import { useState, type ReactElement, type UIEvent } from "react";
 import { describe, expect, test, vi } from "vite-plus/test";
 
 import { ReactDataGridBinding } from "./ReactDataGridBinding";
-import type { FocusReport, GridColumn, SortState } from "./types";
+import type { CellEditReport, FocusReport, GridColumn, GridEditorProps, SortState } from "./types";
 
-type TestRow = { id: string; title: string; author: string };
+type TestRow = { id: string; title: string; author: string; status: string };
 
 const ROWS: readonly TestRow[] = Array.from({ length: 20 }, (_, index) => ({
   id: `row-${String(index)}`,
   title: `Title ${String(index)}`,
   author: `Author ${String(index)}`,
+  // Unique per row (rather than a shared "reading") so tests can locate one
+  // row's status cell unambiguously with findByText.
+  status: `status-${String(index)}`,
 }));
 
+/** Uncontrolled text editor: stages a draft on every keystroke via `update`. */
+function TitleEditor({ row, update }: GridEditorProps<TestRow>): ReactElement {
+  return (
+    <input
+      aria-label="Title editor"
+      defaultValue={row.title}
+      onChange={(event) => {
+        update({ ...row, title: event.target.value });
+      }}
+    />
+  );
+}
+
+/** Select-and-done editor: commits immediately on change, mirroring StatusCellEditor. */
+function StatusEditor({ row, commit }: GridEditorProps<TestRow>): ReactElement {
+  return (
+    <select
+      aria-label="Status editor"
+      defaultValue={row.status}
+      onChange={(event) => {
+        commit({ ...row, status: event.target.value });
+      }}
+    >
+      <option value="reading">reading</option>
+      <option value="read">read</option>
+    </select>
+  );
+}
+
 const COLUMNS: readonly GridColumn<TestRow>[] = [
-  { key: "title", name: "Title", sortable: true, width: 200, accessor: (row) => row.title },
+  {
+    key: "title",
+    name: "Title",
+    sortable: true,
+    width: 200,
+    accessor: (row) => row.title,
+    renderEditCell: TitleEditor,
+  },
   { key: "author", name: "Author", sortable: true, width: 160, accessor: (row) => row.author },
+  {
+    key: "status",
+    name: "Status",
+    sortable: false,
+    width: 120,
+    accessor: (row) => row.status,
+    renderEditCell: StatusEditor,
+  },
+  {
+    key: "locked",
+    name: "Locked Title",
+    sortable: false,
+    width: 200,
+    accessor: (row) => `${row.title} [locked]`,
+    renderEditCell: TitleEditor,
+    editable: () => false,
+  },
 ];
 
 type HarnessProps = {
   onSortChange?: (sort: SortState) => void;
   onCellFocus?: (report: FocusReport<TestRow>) => void;
+  onCellEdit?: (report: CellEditReport<TestRow>) => void;
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
 };
 
-function Harness({ onSortChange, onCellFocus, onScroll }: HarnessProps): ReactElement {
+function Harness({ onSortChange, onCellFocus, onCellEdit, onScroll }: HarnessProps): ReactElement {
   const [sort, setSort] = useState<SortState>(null);
   return (
     <ReactDataGridBinding<TestRow>
@@ -40,6 +97,7 @@ function Harness({ onSortChange, onCellFocus, onScroll }: HarnessProps): ReactEl
       onCellFocus={(report) => {
         onCellFocus?.(report);
       }}
+      onCellEdit={onCellEdit}
       onScroll={onScroll}
       height={400}
     />
@@ -100,5 +158,97 @@ describe("ReactDataGridBinding contract", () => {
     const grid = await screen.findByRole("grid");
     fireEvent.scroll(grid);
     expect(onScroll).toHaveBeenCalled();
+  });
+});
+
+describe("ReactDataGridBinding edit surface", () => {
+  test("opens an editor on Enter for an editable column", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const cell = await screen.findByText(ROWS[0].title);
+    await user.click(cell);
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("textbox", { name: "Title editor" })).toBeInTheDocument();
+  });
+
+  test("opens an editor when typing a printable key", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const cell = await screen.findByText(ROWS[0].title);
+    await user.click(cell);
+    await user.keyboard("x");
+    expect(await screen.findByRole("textbox", { name: "Title editor" })).toBeInTheDocument();
+  });
+
+  test("update then Enter commits the draft and reports both row snapshots", async () => {
+    const onCellEdit = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onCellEdit={onCellEdit} />);
+    const cell = await screen.findByText(ROWS[0].title);
+    await user.click(cell);
+    await user.keyboard("{Enter}");
+    const input = await screen.findByRole("textbox", { name: "Title editor" });
+    await user.clear(input);
+    await user.type(input, "Edited Title");
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(onCellEdit).toHaveBeenCalledWith({
+        row: { ...ROWS[0], title: "Edited Title" },
+        previousRow: ROWS[0],
+        columnKey: "title",
+      });
+    });
+  });
+
+  test("commit fires onCellEdit immediately, without a separate Enter", async () => {
+    const onCellEdit = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onCellEdit={onCellEdit} />);
+    const cell = await screen.findByText(ROWS[2].status);
+    await user.click(cell);
+    await user.keyboard("{Enter}");
+    const select = await screen.findByRole("combobox", { name: "Status editor" });
+    await user.selectOptions(select, "read");
+    await waitFor(() => {
+      expect(onCellEdit).toHaveBeenCalledWith({
+        row: { ...ROWS[2], status: "read" },
+        previousRow: ROWS[2],
+        columnKey: "status",
+      });
+    });
+  });
+
+  test("Escape discards the draft without firing onCellEdit", async () => {
+    const onCellEdit = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onCellEdit={onCellEdit} />);
+    const cell = await screen.findByText(ROWS[1].title);
+    await user.click(cell);
+    await user.keyboard("{Enter}");
+    const input = await screen.findByRole("textbox", { name: "Title editor" });
+    await user.type(input, "Should not commit");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("textbox", { name: "Title editor" })).not.toBeInTheDocument();
+    });
+    expect(onCellEdit).not.toHaveBeenCalled();
+  });
+
+  test("a column without renderEditCell never opens an editor", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const cell = await screen.findByText(ROWS[0].author);
+    await user.click(cell);
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  test("editable: () => false blocks opening the editor", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const cell = await screen.findByText(`${ROWS[0].title} [locked]`);
+    await user.click(cell);
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("textbox", { name: "Title editor" })).not.toBeInTheDocument();
   });
 });
