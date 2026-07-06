@@ -16,6 +16,8 @@ import type { ListBooksParams } from "@/api";
 export type BooksAllKey = readonly ["books"];
 /** Tuple for the books-list cache slot, keyed by filter/sort/cursor params. */
 export type BooksListKey = readonly ["books", "list", ListBooksParams];
+/** Tuple prefix shared by every books-detail cache slot. */
+export type BookDetailsAllKey = readonly ["books", "detail"];
 /** Tuple for the books-detail cache slot, keyed by manifestation id. */
 export type BookDetailKey = readonly ["books", "detail", string];
 /** Tuple for the works-detail cache slot, keyed by work id. */
@@ -30,6 +32,9 @@ export const queryKeys = {
     all: ["books"] as const satisfies BooksAllKey,
     /** List endpoint with filters/sort/cursor. Distinct params = distinct slot. */
     list: (params: ListBooksParams): BooksListKey => ["books", "list", params] as const,
+    /** Prefix of the whole detail family; invalidate to mark every cached
+     *  book detail stale (refetches only the ones currently on screen). */
+    detailsAll: ["books", "detail"] as const satisfies BookDetailsAllKey,
     /** Detail endpoint for one manifestation. */
     detail: (id: string): BookDetailKey => ["books", "detail", id] as const,
   },

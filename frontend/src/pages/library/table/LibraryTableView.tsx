@@ -1,29 +1,146 @@
 /**
- * Read-only table view of the library: the production face of the grid
- * adapter. Presentational per the container split; `LibraryContent` owns the
- * infinite query and hands loaded rows down. Paging is fetch-on-scroll over
- * the keyset cursor, so the grid always operates on the loaded window: the
- * scrollbar, Ctrl+End, and the row count all reflect rows fetched so far,
- * never a pretend 50K extent. Sorting is single-column and fixed-direction,
- * bounded by the list contract's sort modes.
+ * Editable table view of the library: the production face of the grid
+ * adapter. Presentational per the container split for data fetching:
+ * `LibraryContent` owns the infinite query and hands loaded rows plus the
+ * query's cache key down. Cell-edit orchestration (`useCellEdit`) lives
+ * here as the table's own concern instead, since it is scoped entirely to
+ * this view's columns and has no bearing on how the page fetches rows.
+ * Paging is fetch-on-scroll over the keyset cursor, so the grid always
+ * operates on the loaded window: the scrollbar, Ctrl+End, and the row count
+ * all reflect rows fetched so far, never a pretend 50K extent. Sorting is
+ * single-column and fixed-direction, bounded by the list contract's sort
+ * modes.
  */
 import { Loader2 } from "lucide-react";
-import { useState, type ReactElement, type UIEvent } from "react";
+import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 
 import type { BookListItem, ListSort } from "@/api";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
-import type { GridColumn, SortState } from "@/lib/grid/types";
+import type { BooksListKey } from "@/lib/query/keys";
+import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
 
+import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
+import { RatingCellEditor } from "./editors/RatingCellEditor";
+import { StatusCellEditor } from "./editors/StatusCellEditor";
+import { TextCellEditor } from "./editors/TextCellEditor";
 import {
   GridShortcutsDialog,
   GridShortcutsTrigger,
   useShortcutsHotkey,
 } from "./GridShortcutsDialog";
+import { pendingKey, useCellEdit } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
+
+/**
+ * Suffix marking a work-scoped column header (title/subtitle/authors): a
+ * committed edit fans out to every loaded sibling edition of the same work.
+ * The grid contract's `name` is a plain string rendered as the column
+ * header's accessible name, with no separate slot for a tooltip attribute
+ * (that would need a contract change outside this column's ownership). A
+ * plain-language suffix reads the same for a sighted user scanning the
+ * header row and a screen reader announcing it, rather than a glyph that
+ * would need the tooltip to explain itself.
+ */
+const WORK_SCOPED_SUFFIX = " (all editions)";
+
+const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
+  status: null,
+  rating: null,
+  progress_pct: null,
+};
+
+function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  return (
+    <TextCellEditor
+      value={editorProps.row.title}
+      kind="text"
+      required
+      onDraft={(value) => {
+        editorProps.update({ ...editorProps.row, title: value ?? editorProps.row.title });
+      }}
+    />
+  );
+}
+
+function renderSubtitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  return (
+    <TextCellEditor
+      value={editorProps.row.subtitle}
+      kind="text"
+      onDraft={(value) => {
+        editorProps.update({ ...editorProps.row, subtitle: value });
+      }}
+    />
+  );
+}
+
+function renderIsbnEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  return (
+    <TextCellEditor
+      value={editorProps.row.isbn_13}
+      kind="text"
+      onDraft={(value) => {
+        editorProps.update({ ...editorProps.row, isbn_13: value });
+      }}
+    />
+  );
+}
+
+function renderPagesEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  const { pages } = editorProps.row;
+  return (
+    <TextCellEditor
+      value={pages === null ? null : String(pages)}
+      kind="positive-int"
+      onDraft={(value) => {
+        editorProps.update({
+          ...editorProps.row,
+          pages: value === null ? null : Number(value),
+        });
+      }}
+    />
+  );
+}
+
+function renderAuthorsEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  return (
+    <AuthorsCellEditor
+      authors={editorProps.row.authors}
+      onCommit={(authors) => {
+        editorProps.commit({ ...editorProps.row, authors });
+      }}
+      onCancel={editorProps.cancel}
+    />
+  );
+}
+
+function renderStatusEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
+  return (
+    <StatusCellEditor
+      value={readingState.status}
+      onCommit={(status) => {
+        editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, status } });
+      }}
+    />
+  );
+}
+
+function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
+  const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
+  return (
+    <RatingCellEditor
+      value={readingState.rating}
+      onCommit={(rating) => {
+        editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, rating } });
+      }}
+    />
+  );
+}
 
 /**
  * Sortable columns map onto the list contract's sort modes; direction is
@@ -35,10 +152,16 @@ const SORT_BY_COLUMN: Partial<Record<string, ListSort>> = {
   authors: "author",
 };
 
-const COLUMNS: readonly GridColumn<BookListItem>[] = [
+/**
+ * Base column defs: accessor projections, sort wiring, and per-column
+ * editors. `editable`/`renderCell` are layered on top per render in
+ * {@link useEditableColumns} once pending-cell state exists to gate them;
+ * `accessor` here stays the export-safe plain-text projection either way.
+ */
+const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
   {
     key: "title",
-    name: "Title",
+    name: `Title${WORK_SCOPED_SUFFIX}`,
     sortable: true,
     accessor: (row) => row.title,
     renderCell: (row) => (
@@ -51,18 +174,22 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
         {row.title}
       </Link>
     ),
+    renderEditCell: renderTitleEditCell,
   },
   {
     key: "subtitle",
-    name: "Subtitle",
+    name: `Subtitle${WORK_SCOPED_SUFFIX}`,
     sortable: false,
     accessor: (row) => row.subtitle ?? EMPTY_CELL,
+    renderEditCell: renderSubtitleEditCell,
   },
   {
     key: "authors",
-    name: "Authors",
+    name: `Authors${WORK_SCOPED_SUFFIX}`,
     sortable: true,
     accessor: (row) => (row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL),
+    renderEditCell: renderAuthorsEditCell,
+    editorOptions: { commitOnOutsideClick: false },
   },
   {
     key: "series",
@@ -80,6 +207,7 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
     sortable: false,
     width: 140,
     accessor: (row) => row.isbn_13 ?? EMPTY_CELL,
+    renderEditCell: renderIsbnEditCell,
   },
   {
     key: "pages",
@@ -87,6 +215,7 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
     sortable: false,
     width: 80,
     accessor: (row) => (row.pages === null ? EMPTY_CELL : String(row.pages)),
+    renderEditCell: renderPagesEditCell,
   },
   {
     key: "status",
@@ -97,6 +226,7 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
       const status = row.reading_state?.status ?? null;
       return status === null ? EMPTY_CELL : status.replaceAll("_", " ");
     },
+    renderEditCell: renderStatusEditCell,
   },
   {
     key: "rating",
@@ -110,8 +240,45 @@ const COLUMNS: readonly GridColumn<BookListItem>[] = [
       // a single cell. repeat() throws on negative counts.
       return rating === null || rating < 1 ? EMPTY_CELL : "★".repeat(rating);
     },
+    renderEditCell: renderRatingEditCell,
   },
 ];
+
+/**
+ * Layers pending-edit state onto {@link BASE_COLUMNS}: an editable column is
+ * blocked from re-opening its editor while its own commit is in flight, and
+ * renders the in-flight draft (muted, `aria-busy`) instead of the cached
+ * value until the server confirms. Memoized on `pendingCells` alone: column
+ * identity otherwise never changes, and a fresh array every render would
+ * invalidate the binding's own `toRdgColumns` memo on every unrelated
+ * re-render (scroll, sort) at up to 50K loaded rows.
+ */
+function useEditableColumns(
+  pendingCells: ReadonlyMap<string, string>,
+): readonly GridColumn<BookListItem>[] {
+  return useMemo(
+    () =>
+      BASE_COLUMNS.map((col) => {
+        if (col.renderEditCell === undefined) return col;
+        const renderFinal = col.renderCell ?? col.accessor;
+        const renderCell = (row: BookListItem): ReactNode => {
+          const draft = pendingCells.get(pendingKey(row.id, col.key));
+          if (draft === undefined) return renderFinal(row);
+          return (
+            <span aria-busy="true" className="text-fg-muted italic">
+              {draft}
+            </span>
+          );
+        };
+        return {
+          ...col,
+          editable: (row: BookListItem) => !pendingCells.has(pendingKey(row.id, col.key)),
+          renderCell,
+        };
+      }),
+    [pendingCells],
+  );
+}
 
 /**
  * Near-bottom detector from the grid vendor's own infinite-scroll recipe.
@@ -130,6 +297,9 @@ type Props = {
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
   onLoadMore: () => void;
+  /** Exact key of the page's suspense list query (cursor stripped); cell
+   *  edits patch this same cache slot rather than triggering a refetch. */
+  listQueryKey: BooksListKey;
 };
 
 export function LibraryTableView({
@@ -140,9 +310,15 @@ export function LibraryTableView({
   isFetchingNextPage,
   isFetchNextPageError,
   onLoadMore,
+  listQueryKey,
 }: Props): ReactElement {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useShortcutsHotkey(setShortcutsOpen);
+  const { pendingCells, onCellEdit, onGridKeyDown } = useCellEdit({
+    listKey: listQueryKey,
+    columns: BASE_COLUMNS,
+  });
+  const columns = useEditableColumns(pendingCells);
 
   const COLUMN_BY_SORT: Partial<Record<ListSort, string>> = {
     title: "title",
@@ -170,17 +346,21 @@ export function LibraryTableView({
   }
 
   return (
-    <div data-testid="library-table">
+    // onKeyDown here (not window) is the Ctrl+Z undo trigger: it only fires
+    // while focus sits somewhere inside the table, and bubbles up from the
+    // grid's own cells and any open editor without needing a ref.
+    <div data-testid="library-table" onKeyDown={onGridKeyDown}>
       <div className="mb-2 flex items-center justify-end">
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       </div>
       <ReactDataGridBinding<BookListItem>
         rows={items}
-        columns={COLUMNS}
+        columns={columns}
         label="Library books"
         sort={sortState}
         onSortChange={handleSortChange}
         onCellFocus={() => undefined}
+        onCellEdit={onCellEdit}
         onScroll={handleScroll}
         rowKey={(row) => row.id}
         className="h-[calc(100dvh-22rem)] min-h-96"

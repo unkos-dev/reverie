@@ -295,7 +295,7 @@ describe("LibraryPage", () => {
     });
     await screen.findByTestId("library-table");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+    await user.click(await screen.findByRole("columnheader", { name: "Title (all editions)" }));
     await waitFor(() => {
       const search = screen.getByTestId("location-search").textContent;
       expect(search).toContain("sort=title");

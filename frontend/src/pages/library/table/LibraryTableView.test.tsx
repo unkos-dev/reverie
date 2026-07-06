@@ -1,12 +1,40 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
-import { describe, expect, test, vi } from "vite-plus/test";
-import type { ComponentProps } from "react";
+import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import type { ComponentProps, ReactElement } from "react";
 
 import type { BookListItem } from "@/api";
+import { updateReadingState } from "@/api/reading";
+import { queryKeys } from "@/lib/query/keys";
 
 import { LibraryTableView } from "./LibraryTableView";
+
+// Cell-edit orchestration (`useCellEdit`) fires through these clients on
+// commit; none of these tests exercise a real network call, so the
+// network-calling export of each is stubbed. Real exports are preserved via
+// `importOriginal`: `@/api/reading` calls `.nullable()` on `@/api/books`'s
+// `ReadingStatusSchema` at module load, which a bare automock would break
+// (automocking drops the zod prototype). `sonner` is stubbed too since a
+// commit path always calls `toast.success`/`toast.error`.
+vi.mock("@/api/books", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return { ...original, updateBookMetadata: vi.fn() };
+});
+vi.mock("@/api/reading", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return { ...original, updateReadingState: vi.fn() };
+});
+vi.mock("@/api/metadata", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return { ...original, revertField: vi.fn() };
+});
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+beforeEach(() => {
+  vi.resetAllMocks();
+});
 
 type TableProps = ComponentProps<typeof LibraryTableView>;
 
@@ -49,11 +77,21 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
     isFetchingNextPage: false,
     isFetchNextPageError: false,
     onLoadMore: vi.fn(),
+    listQueryKey: queryKeys.books.list({}),
     ...overrides,
   };
   const routes: RouteObject[] = [{ path: "/library", element: <LibraryTableView {...props} /> }];
   const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
-  render(<RouterProvider router={router} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  function Wrapper(): ReactElement {
+    return (
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    );
+  }
+  render(<Wrapper />);
   return props;
 }
 
@@ -99,7 +137,7 @@ describe("LibraryTableView", () => {
     Object.defineProperty(grid, "scrollLeft", { value: 1500, configurable: true });
     fireEvent.scroll(grid);
     const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Authors" });
+    const header = await screen.findByRole("columnheader", { name: "Authors (all editions)" });
     await user.click(header);
     expect(onSortChange).toHaveBeenCalledWith("author");
   });
@@ -108,7 +146,7 @@ describe("LibraryTableView", () => {
     const onSortChange = vi.fn();
     renderTableView({ onSortChange });
     const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Title" });
+    const header = await screen.findByRole("columnheader", { name: "Title (all editions)" });
     await user.click(header);
     expect(onSortChange).toHaveBeenCalledWith("title");
   });
@@ -193,5 +231,196 @@ describe("LibraryTableView", () => {
     const user = userEvent.setup();
     await user.click(within(alert).getByRole("button", { name: "Retry" }));
     expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  test("work-scoped columns carry an 'all editions' suffix in their header, non-scoped columns don't", async () => {
+    renderTableView({
+      items: [
+        rowFixture(1, {
+          series: { id: "s1", name: "Discworld", position: 8 },
+          reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+        }),
+      ],
+    });
+    const grid = await screen.findByRole("grid");
+    expect(
+      await screen.findByRole("columnheader", { name: "Title (all editions)" }),
+    ).toBeInTheDocument();
+
+    // Same scroll dance as the "populated series and status" render test:
+    // ISBN and Pages sit past the initial 1024px window until scrolled in.
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
+    fireEvent.scroll(grid);
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
+    fireEvent.scroll(grid);
+
+    expect(await within(grid).findByRole("columnheader", { name: "ISBN" })).toBeInTheDocument();
+    expect(within(grid).getByRole("columnheader", { name: "Pages" })).toBeInTheDocument();
+    expect(
+      within(grid).queryByRole("columnheader", { name: "ISBN (all editions)" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(grid).queryByRole("columnheader", { name: "Pages (all editions)" }),
+    ).not.toBeInTheDocument();
+  });
+
+  describe("cell editing", () => {
+    /** Same shape as the series/status/rating render test above: a single
+     *  short row with every editable field populated, so the already-proven
+     *  scroll-to-max-position dance reveals every column in one grid. */
+    function editableRowFixture(): BookListItem {
+      return rowFixture(1, {
+        series: { id: "s1", name: "Discworld", position: 8 },
+        reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+      });
+    }
+
+    function scrollToRevealRightColumns(grid: HTMLElement): void {
+      Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+      Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
+      fireEvent.scroll(grid);
+    }
+
+    function scrollToRevealTrailingColumns(grid: HTMLElement): void {
+      Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+      Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
+      fireEvent.scroll(grid);
+    }
+
+    test("Enter opens the title text editor prefilled with the current value", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const user = userEvent.setup();
+      // Click a plain-text neighbor cell rather than the title cell itself:
+      // the title cell renders a react-router Link, and clicking straight
+      // into it would navigate instead of only selecting the grid cell.
+      const subtitleCell = await screen.findByText(row.subtitle ?? "");
+      await user.click(subtitleCell);
+      await user.keyboard("{ArrowLeft}");
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("textbox")).toHaveValue(row.title);
+    });
+
+    test("Enter opens the ISBN text editor", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText(row.isbn_13 ?? "");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("textbox")).toHaveValue(row.isbn_13);
+    });
+
+    test("Enter opens the pages text editor", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText(String(row.pages));
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("textbox")).toHaveValue(String(row.pages));
+    });
+
+    test("Enter opens the status select editor", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("want to read");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("combobox")).toHaveValue("want_to_read");
+    });
+
+    test("Enter opens the rating star editor", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("★★★");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("group", { name: "Rating" })).toBeInTheDocument();
+    });
+
+    test("Enter opens the authors popover editor", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText(row.authors.join(", "));
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("textbox", { name: "Author 1" })).toBeInTheDocument();
+    });
+
+    test("the series cell never opens an editor", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("Discworld · #8");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    });
+
+    test("a pending cell renders aria-busy with the draft value while its commit is in flight", async () => {
+      vi.mocked(updateReadingState).mockImplementation(() => new Promise(() => undefined));
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("★★★");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      await screen.findByRole("group", { name: "Rating" });
+      // Digit "5" both sets and commits the rating (RatingCellEditor).
+      await user.keyboard("5");
+
+      const pendingCell = await within(grid).findByText("★★★★★");
+      expect(pendingCell).toHaveAttribute("aria-busy", "true");
+      expect(updateReadingState).toHaveBeenCalled();
+    });
+
+    test("a pending cell blocks its own editor from reopening while the commit is in flight", async () => {
+      vi.mocked(updateReadingState).mockImplementation(() => new Promise(() => undefined));
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("★★★");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      await screen.findByRole("group", { name: "Rating" });
+      // Digit "5" both sets and commits the rating (RatingCellEditor),
+      // closing the editor and leaving the cell pending.
+      await user.keyboard("5");
+      const pendingCell = await within(grid).findByText("★★★★★");
+
+      await user.click(pendingCell);
+      await user.keyboard("{Enter}");
+
+      expect(screen.queryByRole("group", { name: "Rating" })).not.toBeInTheDocument();
+    });
   });
 });

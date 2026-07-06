@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (SELECT title_version_id FROM works WHERE id = $3) UPDATE works SET title = $1, sort_title = lower($1), title_version_id = $2 WHERE id = $3 RETURNING (SELECT title_version_id FROM old) AS previous_version_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "previous_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a2db702aa10ae2a9c06104fb3cf36ed599a818d98d58efbe26e92c5131339aa8"
+}

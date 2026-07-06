@@ -183,6 +183,7 @@ function LibraryContent(): ReactElement {
             onLoadMore={() => {
               void fetchNextPage();
             }}
+            listQueryKey={queryKeys.books.list(cacheParams)}
           />
         </Suspense>
       </TableChunkBoundary>

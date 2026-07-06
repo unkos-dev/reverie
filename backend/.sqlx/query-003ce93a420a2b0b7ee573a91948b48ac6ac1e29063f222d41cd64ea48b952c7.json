@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (SELECT pub_date_version_id FROM manifestations WHERE id = $3) UPDATE manifestations SET pub_date = $1, pub_date_version_id = $2 WHERE id = $3 RETURNING (SELECT pub_date_version_id FROM old) AS previous_version_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "previous_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "003ce93a420a2b0b7ee573a91948b48ac6ac1e29063f222d41cd64ea48b952c7"
+}

@@ -632,7 +632,7 @@
           "metadata"
         ],
         "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
-        "description": "RFC 7396 JSON Merge Patch shape. For each touched field the handler\ninserts a `metadata_versions` row with `source = 'manual'` and then\neither promotes that row to canonical via [`apply_version`] (when a\nvalue is supplied) or clears the canonical column via [`clear_field`]\n(when the value is `null`). The pending AI/OPF drafts on the same\nfield stay `status = 'pending'` — the operator can revert to one of\nthem later.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`).\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`).\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -647,19 +647,26 @@
           }
         ],
         "requestBody": {
-          "description": "RFC 7396 JSON Merge Patch under a `fields` envelope: absent fields are unchanged, `null` clears (except `title`)",
+          "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateMetadataRequest"
+                "$ref": "#/components/schemas/UpdateMetadataFields"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"
+          "200": {
+            "description": "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateMetadataResponse"
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication required",
@@ -7011,6 +7018,31 @@
           }
         }
       },
+      "FieldVersionChange": {
+        "type": "object",
+        "description": "One field's outcome from `PATCH /api/v1/books/{id}/metadata`.",
+        "properties": {
+          "previous_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Version pointer that was canonical before this patch (null when the\nfield was previously unset, or when no pointer exists for the field\nkind)."
+          },
+          "value": {
+            "description": "Canonical value as applied, after server normalization (null when the\nfield was cleared)."
+          },
+          "version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Journal row now wired as canonical (null when the field was cleared\nto no version)."
+          }
+        }
+      },
       "ForgotPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/forgot-password`.",
@@ -8519,16 +8551,22 @@
           }
         }
       },
-      "UpdateMetadataRequest": {
+      "UpdateMetadataResponse": {
         "type": "object",
-        "description": "Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`\nwrapper keeps the door open for future top-level keys (eg.\n`series_position`) without forcing a body-shape migration.",
+        "description": "Response body for `PATCH /api/v1/books/{id}/metadata`.",
         "required": [
           "fields"
         ],
         "properties": {
           "fields": {
-            "$ref": "#/components/schemas/UpdateMetadataFields",
-            "description": "RFC 7396 sparse field set; at least one field must be populated."
+            "type": "object",
+            "description": "Keyed by patched field name, including `contributors.<role>` keys.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FieldVersionChange"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },

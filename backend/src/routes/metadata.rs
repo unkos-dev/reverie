@@ -4,6 +4,8 @@
 //! transaction, `SELECT ... FOR UPDATE` on the owning entity, apply the change,
 //! and commit.
 
+use std::collections::BTreeMap;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -288,7 +290,9 @@ async fn accept_manifestation(
     let new_value = row.new_value;
     let work_id = row.work_id;
 
-    apply_version(
+    // Accept promotes the version to canonical; the caller has no use for
+    // the prior pointer (that's the revert/undo surface's concern).
+    let _ = apply_version(
         &mut tx,
         &field_name,
         &new_value,
@@ -422,17 +426,28 @@ async fn revert_manifestation(
 
     match payload.version_id {
         Some(vid) => {
+            // Sibling manifestations of the same work may legitimately own
+            // the version being restored for work-scoped fields; see
+            // `is_work_scoped_field`.
+            let is_work_scoped = is_work_scoped_field(&payload.field_name);
             let new_value: Option<Value> = sqlx::query_scalar!(
-                "SELECT new_value AS \"new_value!\" FROM metadata_versions \
-                 WHERE id = $1 AND manifestation_id = $2",
+                "SELECT mv.new_value AS \"new_value!\" \
+                 FROM metadata_versions mv \
+                 JOIN manifestations vm ON vm.id = mv.manifestation_id \
+                 WHERE mv.id = $1 \
+                   AND (vm.id = $2 OR ($3::bool AND vm.work_id = $4))",
                 vid,
                 manifestation_id,
+                is_work_scoped,
+                work_id,
             )
             .fetch_optional(&mut *tx)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
             let new_value = new_value.ok_or(AppError::NotFound)?;
-            apply_version(
+            // Revert-to-version restores canonical state; the review UI
+            // does not surface the prior pointer from this endpoint today.
+            let _ = apply_version(
                 &mut tx,
                 &payload.field_name,
                 &new_value,
@@ -443,7 +458,7 @@ async fn revert_manifestation(
             .await?;
         }
         None => {
-            clear_field(&mut tx, &payload.field_name, manifestation_id, work_id).await?;
+            let _ = clear_field(&mut tx, &payload.field_name, manifestation_id, work_id).await?;
         }
     }
 
@@ -538,6 +553,22 @@ async fn unlock_field(
     Ok(StatusCode::OK)
 }
 
+/// Whether `field_name`'s canonical pointer lives on the shared `works`
+/// row rather than on a specific `manifestations` row.
+///
+/// `title`/`subtitle`/`description`/`language` and every `contributors.*`
+/// role write through to `works` (see `apply_version`), so a version
+/// journaled under any manifestation of that work is a valid revert
+/// target. `genres`/`moods`/`tags` are per-manifestation vocabulary
+/// junctions despite also hanging off the work's editions, so they stay
+/// out of this set and use the strict same-manifestation match.
+fn is_work_scoped_field(field_name: &str) -> bool {
+    matches!(
+        field_name,
+        "title" | "subtitle" | "description" | "language"
+    ) || field_name.starts_with("contributors.")
+}
+
 fn parse_entity(s: &str) -> Result<EntityType, AppError> {
     match s {
         "work" => Ok(EntityType::Work),
@@ -550,6 +581,10 @@ fn parse_entity(s: &str) -> Result<EntityType, AppError> {
 
 /// Apply a specific version to its canonical column + pointer.
 /// Reused by `/accept` and `/revert`.
+///
+/// Returns the pointer that was canonical for this field before the write
+/// (`None` when the field was previously unset, or when the field kind has
+/// no single-pointer concept, e.g. the vocabulary junctions).
 //
 // Field-dispatch with one `sqlx::query!` per supported field; macro-form
 // expansion pushed this just past clippy's 100-line threshold.
@@ -564,7 +599,7 @@ async fn apply_version(
     version_id: Uuid,
     manifestation_id: Uuid,
     work_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<Option<Uuid>, AppError> {
     // Refuse to promote a null-valued audit row to canonical. Manual
     // clears (PATCH `{field}: null`) write a `'null'::jsonb` audit row
     // with `status = 'pending'` so operators can revert to them; the
@@ -583,126 +618,130 @@ async fn apply_version(
     let str_val = value
         .as_str()
         .map_or_else(|| value.to_string(), str::to_owned);
-    match field {
-        "title" => {
-            sqlx::query!(
-                "UPDATE works \
-                 SET title = $1, sort_title = lower($1), title_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "description" => {
-            sqlx::query!(
-                "UPDATE works SET description = $1, description_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "language" => {
-            sqlx::query!(
-                "UPDATE works SET language = $1, language_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "subtitle" => {
-            sqlx::query!(
-                "UPDATE works SET subtitle = $1, subtitle_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
+    let previous_version_id: Option<Uuid> = match field {
+        "title" => sqlx::query_scalar!(
+            "WITH old AS (SELECT title_version_id FROM works WHERE id = $3) \
+             UPDATE works \
+             SET title = $1, sort_title = lower($1), title_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT title_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "description" => sqlx::query_scalar!(
+            "WITH old AS (SELECT description_version_id FROM works WHERE id = $3) \
+             UPDATE works SET description = $1, description_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT description_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "language" => sqlx::query_scalar!(
+            "WITH old AS (SELECT language_version_id FROM works WHERE id = $3) \
+             UPDATE works SET language = $1, language_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT language_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "subtitle" => sqlx::query_scalar!(
+            "WITH old AS (SELECT subtitle_version_id FROM works WHERE id = $3) \
+             UPDATE works SET subtitle = $1, subtitle_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT subtitle_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
         "pages" => {
             let pages = value
                 .as_i64()
                 .and_then(|n| i32::try_from(n).ok())
                 .filter(|n| *n > 0)
                 .ok_or_else(|| AppError::Validation("pages must be a positive integer".into()))?;
-            sqlx::query!(
-                "UPDATE manifestations SET pages = $1, pages_version_id = $2 \
-                 WHERE id = $3",
+            sqlx::query_scalar!(
+                "WITH old AS (SELECT pages_version_id FROM manifestations WHERE id = $3) \
+                 UPDATE manifestations SET pages = $1, pages_version_id = $2 \
+                 WHERE id = $3 \
+                 RETURNING (SELECT pages_version_id FROM old) AS previous_version_id",
                 pages,
                 version_id,
                 manifestation_id,
             )
-            .execute(&mut **tx)
+            .fetch_one(&mut **tx)
             .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+            .map_err(|e| AppError::Internal(e.into()))?
         }
-        "publisher" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET publisher = $1, publisher_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "isbn_10" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET isbn_10 = $1, isbn_10_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "isbn_13" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET isbn_13 = $1, isbn_13_version_id = $2 \
-                 WHERE id = $3",
-                str_val,
-                version_id,
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
+        "publisher" => sqlx::query_scalar!(
+            "WITH old AS (SELECT publisher_version_id FROM manifestations WHERE id = $3) \
+             UPDATE manifestations \
+             SET publisher = $1, publisher_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT publisher_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "isbn_10" => sqlx::query_scalar!(
+            "WITH old AS (SELECT isbn_10_version_id FROM manifestations WHERE id = $3) \
+             UPDATE manifestations \
+             SET isbn_10 = $1, isbn_10_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT isbn_10_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "isbn_13" => sqlx::query_scalar!(
+            "WITH old AS (SELECT isbn_13_version_id FROM manifestations WHERE id = $3) \
+             UPDATE manifestations \
+             SET isbn_13 = $1, isbn_13_version_id = $2 \
+             WHERE id = $3 \
+             RETURNING (SELECT isbn_13_version_id FROM old) AS previous_version_id",
+            str_val,
+            version_id,
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
         "pub_date" => {
             let date = parse_iso_date(&str_val)
                 .map_err(|e| AppError::Validation(format!("invalid pub_date: {e}")))?;
-            sqlx::query!(
-                "UPDATE manifestations \
+            sqlx::query_scalar!(
+                "WITH old AS (SELECT pub_date_version_id FROM manifestations WHERE id = $3) \
+                 UPDATE manifestations \
                  SET pub_date = $1, pub_date_version_id = $2 \
-                 WHERE id = $3",
+                 WHERE id = $3 \
+                 RETURNING (SELECT pub_date_version_id FROM old) AS previous_version_id",
                 date,
                 version_id,
                 manifestation_id,
             )
-            .execute(&mut **tx)
+            .fetch_one(&mut **tx)
             .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+            .map_err(|e| AppError::Internal(e.into()))?
         }
         "content_rating" => {
             let rating: ContentRating = serde_json::from_value(value.clone()).map_err(|_| {
@@ -710,17 +749,19 @@ async fn apply_version(
                     "content_rating must be one of everyone, teen, mature, adult, explicit".into(),
                 )
             })?;
-            sqlx::query!(
-                "UPDATE manifestations \
+            sqlx::query_scalar!(
+                "WITH old AS (SELECT content_rating_version_id FROM manifestations WHERE id = $3) \
+                 UPDATE manifestations \
                  SET content_rating = $1, content_rating_version_id = $2 \
-                 WHERE id = $3",
+                 WHERE id = $3 \
+                 RETURNING (SELECT content_rating_version_id FROM old) AS previous_version_id",
                 rating as ContentRating,
                 version_id,
                 manifestation_id,
             )
-            .execute(&mut **tx)
+            .fetch_one(&mut **tx)
             .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+            .map_err(|e| AppError::Internal(e.into()))?
         }
         "genres" | "moods" | "tags" => {
             let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
@@ -732,15 +773,50 @@ async fn apply_version(
             let trimmed = validated_vocabulary_terms(field, &names)?;
             delete_vocabulary_rows(tx, manifestation_id, vocab).await?;
             insert_vocabulary_rows(tx, manifestation_id, vocab, &trimmed, version_id).await?;
+            None
+        }
+        _ if field.starts_with("contributors.") => {
+            let role = &field["contributors.".len()..];
+            if !matches!(role, "author" | "editor" | "translator") {
+                return Err(AppError::Validation(format!(
+                    "unsupported contributor role '{role}'"
+                )));
+            }
+            let names: Vec<String> = serde_json::from_value(value.clone()).map_err(|_| {
+                AppError::Validation(format!("{field} must be an array of strings"))
+            })?;
+            let trimmed = validated_role_names(role, &names)?;
+            let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
+            delete_role_rows(tx, work_id, role).await?;
+            insert_role_rows(tx, work_id, role, &trimmed, version_id).await?;
+            if role == "author" {
+                let post_author_count: i64 = sqlx::query_scalar!(
+                    "SELECT COUNT(*) AS \"count!\" FROM work_authors \
+                     WHERE work_id = $1 AND role = 'author'",
+                    work_id,
+                )
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+                if post_author_count == 0 {
+                    return Err(AppError::Validation(
+                        "a work must retain at least one author".into(),
+                    ));
+                }
+                work::refresh_first_author_sort(tx, work_id)
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?;
+            }
+            previous_version_id
         }
         other => {
             return Err(AppError::Validation(format!(
                 "unsupported auto-apply field '{other}' (list/complex fields must be accepted via their dedicated routes)"
             )));
         }
-    }
+    };
     enqueue_writeback(tx, manifestation_id, field).await?;
-    Ok(())
+    Ok(previous_version_id)
 }
 
 /// Insert a writeback job in the caller's tx.  Shared by `apply_version`
@@ -767,6 +843,12 @@ async fn enqueue_writeback(
     Ok(())
 }
 
+/// Clear a field's canonical value and pointer. Reused by `/revert` (with
+/// `version_id = null`) and the manual PATCH clear path.
+///
+/// Returns the pointer that was canonical before the clear (`None` when the
+/// field was already unset, or when the field kind has no single-pointer
+/// concept).
 #[expect(
     clippy::too_many_lines,
     reason = "field dispatch with one sqlx::query! per supported field; macro-form expansion pushes this past the 100-line threshold"
@@ -776,120 +858,145 @@ async fn clear_field(
     field: &str,
     manifestation_id: Uuid,
     work_id: Uuid,
-) -> Result<(), AppError> {
-    match field {
+) -> Result<Option<Uuid>, AppError> {
+    let previous_version_id: Option<Uuid> = match field {
         "title" => {
             return Err(AppError::Validation(
                 "cannot clear title — revert to a specific version instead".into(),
             ));
         }
-        "description" => {
-            sqlx::query!(
-                "UPDATE works SET description = NULL, description_version_id = NULL \
-                 WHERE id = $1",
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "language" => {
-            sqlx::query!(
-                "UPDATE works SET language = NULL, language_version_id = NULL \
-                 WHERE id = $1",
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "subtitle" => {
-            sqlx::query!(
-                "UPDATE works SET subtitle = NULL, subtitle_version_id = NULL \
-                 WHERE id = $1",
-                work_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "pages" => {
-            sqlx::query!(
-                "UPDATE manifestations SET pages = NULL, pages_version_id = NULL \
-                 WHERE id = $1",
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "publisher" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET publisher = NULL, publisher_version_id = NULL \
-                 WHERE id = $1",
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "pub_date" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET pub_date = NULL, pub_date_version_id = NULL \
-                 WHERE id = $1",
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "isbn_10" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET isbn_10 = NULL, isbn_10_version_id = NULL \
-                 WHERE id = $1",
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "isbn_13" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET isbn_13 = NULL, isbn_13_version_id = NULL \
-                 WHERE id = $1",
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
-        "content_rating" => {
-            sqlx::query!(
-                "UPDATE manifestations \
-                 SET content_rating = NULL, content_rating_version_id = NULL \
-                 WHERE id = $1",
-                manifestation_id,
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
-        }
+        "description" => sqlx::query_scalar!(
+            "WITH old AS (SELECT description_version_id FROM works WHERE id = $1) \
+             UPDATE works SET description = NULL, description_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT description_version_id FROM old) AS previous_version_id",
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "language" => sqlx::query_scalar!(
+            "WITH old AS (SELECT language_version_id FROM works WHERE id = $1) \
+             UPDATE works SET language = NULL, language_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT language_version_id FROM old) AS previous_version_id",
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "subtitle" => sqlx::query_scalar!(
+            "WITH old AS (SELECT subtitle_version_id FROM works WHERE id = $1) \
+             UPDATE works SET subtitle = NULL, subtitle_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT subtitle_version_id FROM old) AS previous_version_id",
+            work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "pages" => sqlx::query_scalar!(
+            "WITH old AS (SELECT pages_version_id FROM manifestations WHERE id = $1) \
+             UPDATE manifestations SET pages = NULL, pages_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT pages_version_id FROM old) AS previous_version_id",
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "publisher" => sqlx::query_scalar!(
+            "WITH old AS (SELECT publisher_version_id FROM manifestations WHERE id = $1) \
+             UPDATE manifestations \
+             SET publisher = NULL, publisher_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT publisher_version_id FROM old) AS previous_version_id",
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "pub_date" => sqlx::query_scalar!(
+            "WITH old AS (SELECT pub_date_version_id FROM manifestations WHERE id = $1) \
+             UPDATE manifestations \
+             SET pub_date = NULL, pub_date_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT pub_date_version_id FROM old) AS previous_version_id",
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "isbn_10" => sqlx::query_scalar!(
+            "WITH old AS (SELECT isbn_10_version_id FROM manifestations WHERE id = $1) \
+             UPDATE manifestations \
+             SET isbn_10 = NULL, isbn_10_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT isbn_10_version_id FROM old) AS previous_version_id",
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "isbn_13" => sqlx::query_scalar!(
+            "WITH old AS (SELECT isbn_13_version_id FROM manifestations WHERE id = $1) \
+             UPDATE manifestations \
+             SET isbn_13 = NULL, isbn_13_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT isbn_13_version_id FROM old) AS previous_version_id",
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
+        "content_rating" => sqlx::query_scalar!(
+            "WITH old AS (SELECT content_rating_version_id FROM manifestations WHERE id = $1) \
+             UPDATE manifestations \
+             SET content_rating = NULL, content_rating_version_id = NULL \
+             WHERE id = $1 \
+             RETURNING (SELECT content_rating_version_id FROM old) AS previous_version_id",
+            manifestation_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?,
         "genres" | "moods" | "tags" => {
             let vocab = VocabularyField::from_field_name(field).ok_or_else(|| {
                 AppError::Validation(format!("unsupported vocabulary field '{field}'"))
             })?;
             delete_vocabulary_rows(tx, manifestation_id, vocab).await?;
+            None
+        }
+        _ if field.starts_with("contributors.") => {
+            let role = &field["contributors.".len()..];
+            match role {
+                // Mirrors the title arm above: clearing the sole author role
+                // would leave the work with zero authors, which the schema's
+                // consumers (sort, display) do not expect.
+                "author" => {
+                    return Err(AppError::Validation(
+                        "cannot clear contributors.author: a work must retain at least one author"
+                            .into(),
+                    ));
+                }
+                "editor" | "translator" => {
+                    let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
+                    delete_role_rows(tx, work_id, role).await?;
+                    previous_version_id
+                }
+                other => {
+                    return Err(AppError::Validation(format!(
+                        "unsupported contributor role '{other}'"
+                    )));
+                }
+            }
         }
         other => {
             return Err(AppError::Validation(format!("unsupported field '{other}'")));
         }
-    }
+    };
     enqueue_writeback(tx, manifestation_id, field).await?;
-    Ok(())
+    Ok(previous_version_id)
 }
 
 /// Maximum length (in `char`s) for a manually-entered contributor name.
@@ -929,6 +1036,33 @@ fn validated_role_names(role: &str, names: &[String]) -> Result<Vec<String>, App
         }
     }
     Ok(trimmed)
+}
+
+/// Capture the version pointer a contributor role's `work_authors` rows
+/// currently carry, before a rebuild replaces them.
+///
+/// Returns `Some(id)` only when every row for the role stamps the same
+/// `source_version_id`; an empty role or a role whose rows disagree (mixed
+/// stamps, e.g. from edits made before this column was wired) has no single
+/// "previous version" to revert to, so both cases return `None`.
+async fn capture_role_pointer(
+    tx: &mut Transaction<'_, Postgres>,
+    work_id: Uuid,
+    role: &str,
+) -> Result<Option<Uuid>, AppError> {
+    let distinct: Vec<Option<Uuid>> = sqlx::query_scalar!(
+        "SELECT DISTINCT source_version_id FROM work_authors \
+         WHERE work_id = $1 AND role = ($2::text)::author_role",
+        work_id,
+        role,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    match distinct.as_slice() {
+        [single] => Ok(*single),
+        _ => Ok(None),
+    }
 }
 
 async fn delete_role_rows(
@@ -997,7 +1131,7 @@ async fn apply_contributors_patch(
     work_id: Uuid,
     user_id: Uuid,
     patch: Option<ContributorsPatch>,
-) -> Result<(), AppError> {
+) -> Result<BTreeMap<String, FieldVersionChange>, AppError> {
     let (author, editor, translator) = match patch {
         None => (Some(None), Some(None), Some(None)),
         Some(p) => (p.author, p.editor, p.translator),
@@ -1015,6 +1149,7 @@ async fn apply_contributors_patch(
 
     let mut author_touched = false;
     let mut touched = false;
+    let mut changes: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
 
     for (role, maybe_names) in [
         ("author", author),
@@ -1032,10 +1167,17 @@ async fn apply_contributors_patch(
         let names = names.filter(|v| !v.is_empty());
 
         let key = format!("contributors.{role}");
-        match names {
+        // Captured before `delete_role_rows` clears the role's `work_authors`
+        // rows, mirroring the `apply_version` contributors arm so a manual
+        // PATCH's undo pointer is as reliable as the accept/revert path's.
+        let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
+        let (value, version_id) = match names {
             None => {
-                insert_manual_version(tx, manifestation_id, user_id, &key, &Value::Null).await?;
+                let version_id =
+                    insert_manual_version(tx, manifestation_id, user_id, &key, &Value::Null)
+                        .await?;
                 delete_role_rows(tx, work_id, role).await?;
+                (None, version_id)
             }
             Some(names) => {
                 let trimmed = validated_role_names(role, &names)?;
@@ -1045,8 +1187,17 @@ async fn apply_contributors_patch(
                     insert_manual_version(tx, manifestation_id, user_id, &key, &json).await?;
                 delete_role_rows(tx, work_id, role).await?;
                 insert_role_rows(tx, work_id, role, &trimmed, version_id).await?;
+                (Some(json), version_id)
             }
-        }
+        };
+        changes.insert(
+            key,
+            FieldVersionChange {
+                value,
+                version_id: Some(version_id),
+                previous_version_id,
+            },
+        );
     }
 
     if author_touched {
@@ -1078,7 +1229,7 @@ async fn apply_contributors_patch(
     if touched {
         enqueue_writeback(tx, manifestation_id, "contributors").await?;
     }
-    Ok(())
+    Ok(changes)
 }
 
 // ── vocabulary junction fields (genres / moods / tags) ────────────────────
@@ -1291,14 +1442,16 @@ async fn apply_vocabulary_patch(
     user_id: Uuid,
     field: VocabularyField,
     maybe_names: Option<Vec<String>>,
-) -> Result<(), AppError> {
+) -> Result<FieldVersionChange, AppError> {
     let key = field.field_name();
     // Empty array ≡ null: both clear the field.
     let names = maybe_names.filter(|v| !v.is_empty());
-    match names {
+    let (value, version_id) = match names {
         None => {
-            insert_manual_version(tx, manifestation_id, user_id, key, &Value::Null).await?;
+            let version_id =
+                insert_manual_version(tx, manifestation_id, user_id, key, &Value::Null).await?;
             delete_vocabulary_rows(tx, manifestation_id, field).await?;
+            (None, version_id)
         }
         Some(names) => {
             let trimmed = validated_vocabulary_terms(key, &names)?;
@@ -1307,10 +1460,15 @@ async fn apply_vocabulary_patch(
                 insert_manual_version(tx, manifestation_id, user_id, key, &json).await?;
             delete_vocabulary_rows(tx, manifestation_id, field).await?;
             insert_vocabulary_rows(tx, manifestation_id, field, &trimmed, version_id).await?;
+            (Some(json), version_id)
         }
-    }
+    };
     enqueue_writeback(tx, manifestation_id, key).await?;
-    Ok(())
+    Ok(FieldVersionChange {
+        value,
+        version_id: Some(version_id),
+        previous_version_id: None,
+    })
 }
 
 // ── manual metadata edit (RFC 7396 JSON Merge Patch) ──────────────────────
@@ -1428,13 +1586,26 @@ struct ContributorsPatch {
     translator: Option<Option<Vec<String>>>,
 }
 
-/// Outer envelope for `PATCH /api/v1/books/{id}/metadata`. The `fields`
-/// wrapper keeps the door open for future top-level keys (eg.
-/// `series_position`) without forcing a body-shape migration.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct UpdateMetadataRequest {
-    /// RFC 7396 sparse field set; at least one field must be populated.
-    fields: UpdateMetadataFields,
+/// One field's outcome from `PATCH /api/v1/books/{id}/metadata`.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct FieldVersionChange {
+    /// Canonical value as applied, after server normalization (null when the
+    /// field was cleared).
+    value: Option<serde_json::Value>,
+    /// Journal row now wired as canonical (null when the field was cleared
+    /// to no version).
+    version_id: Option<Uuid>,
+    /// Version pointer that was canonical before this patch (null when the
+    /// field was previously unset, or when no pointer exists for the field
+    /// kind).
+    previous_version_id: Option<Uuid>,
+}
+
+/// Response body for `PATCH /api/v1/books/{id}/metadata`.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct UpdateMetadataResponse {
+    /// Keyed by patched field name, including `contributors.<role>` keys.
+    fields: BTreeMap<String, FieldVersionChange>,
 }
 
 impl UpdateMetadataFields {
@@ -1489,13 +1660,19 @@ impl UpdateMetadataFields {
 
 /// `PATCH /api/v1/books/{id}/metadata` — manual operator edit.
 ///
-/// RFC 7396 JSON Merge Patch shape. For each touched field the handler
-/// inserts a `metadata_versions` row with `source = 'manual'` and then
-/// either promotes that row to canonical via [`apply_version`] (when a
-/// value is supplied) or clears the canonical column via [`clear_field`]
-/// (when the value is `null`). The pending AI/OPF drafts on the same
-/// field stay `status = 'pending'` — the operator can revert to one of
-/// them later.
+/// Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are
+/// unchanged, `null` clears (except `title`). Accepts both
+/// `application/json` and `application/merge-patch+json`: axum's `Json`
+/// extractor already treats any `+json`-suffixed content type as JSON.
+///
+/// For each touched field the handler inserts a `metadata_versions` row
+/// with `source = 'manual'` and then either promotes that row to canonical
+/// via [`apply_version`] (when a value is supplied) or clears the
+/// canonical column via [`clear_field`] (when the value is `null`). The
+/// pending AI/OPF drafts on the same field stay `status = 'pending'`, so the
+/// operator can revert to one of them later. The response carries the
+/// applied (normalized) value plus the new and previous version pointers
+/// per field, so a caller can offer undo without a follow-up read.
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the body has no populated fields,
@@ -1513,9 +1690,9 @@ impl UpdateMetadataFields {
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
-    request_body(content = UpdateMetadataRequest, description = "RFC 7396 JSON Merge Patch under a `fields` envelope: absent fields are unchanged, `null` clears (except `title`)"),
+    request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
-        (status = 204, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared)"),
+        (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
@@ -1526,14 +1703,13 @@ async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
     Path(manifestation_id): Path<Uuid>,
-    body: Result<axum::Json<UpdateMetadataRequest>, axum::extract::rejection::JsonRejection>,
+    body: Result<axum::Json<UpdateMetadataFields>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
+    let axum::Json(mut req_fields) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
-    let mut req_fields = req.fields;
     let contributors = req_fields.contributors.take();
     let genres = req_fields.genres.take();
     let moods = req_fields.moods.take();
@@ -1567,6 +1743,7 @@ async fn update_book_metadata(
     .map_err(|e| AppError::Internal(e.into()))?;
     let work_id = work_id.ok_or(AppError::NotFound)?;
 
+    let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
     let mut touched_isbn = false;
     for (field, maybe_value) in fields {
         // ISBN edits — set OR clear — change the matching surface.
@@ -1575,7 +1752,7 @@ async fn update_book_metadata(
         if field == "isbn_10" || field == "isbn_13" {
             touched_isbn = true;
         }
-        apply_scalar_patch_field(
+        let change = apply_scalar_patch_field(
             &mut tx,
             manifestation_id,
             work_id,
@@ -1584,6 +1761,7 @@ async fn update_book_metadata(
             maybe_value,
         )
         .await?;
+        response_fields.insert(field.to_string(), change);
     }
 
     for (vocab, patch) in [
@@ -1592,7 +1770,7 @@ async fn update_book_metadata(
         (VocabularyField::Tags, tags),
     ] {
         if let Some(maybe_names) = patch {
-            apply_vocabulary_patch(
+            let change = apply_vocabulary_patch(
                 &mut tx,
                 manifestation_id,
                 current_user.user_id,
@@ -1600,11 +1778,12 @@ async fn update_book_metadata(
                 maybe_names,
             )
             .await?;
+            response_fields.insert(vocab.field_name().to_string(), change);
         }
     }
 
     if let Some(patch) = contributors {
-        apply_contributors_patch(
+        let changes = apply_contributors_patch(
             &mut tx,
             manifestation_id,
             work_id,
@@ -1612,6 +1791,7 @@ async fn update_book_metadata(
             patch,
         )
         .await?;
+        response_fields.extend(changes);
     }
 
     if touched_isbn {
@@ -1623,13 +1803,19 @@ async fn update_book_metadata(
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok((
+        StatusCode::OK,
+        axum::Json(UpdateMetadataResponse {
+            fields: response_fields,
+        }),
+    ))
 }
 
 /// Journal + apply one scalar field from the manual PATCH surface.
 /// A set (`Some`) journals the value and wires the canonical pointer via
 /// `apply_version`; a clear (`None`) journals an accountability row and
-/// nulls the canonical via `clear_field`.
+/// nulls the canonical via `clear_field`. Returns the field's applied value
+/// alongside its new and previous version pointers for the PATCH response.
 async fn apply_scalar_patch_field(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -1637,7 +1823,7 @@ async fn apply_scalar_patch_field(
     user_id: Uuid,
     field: &str,
     maybe_value: Option<serde_json::Value>,
-) -> Result<(), AppError> {
+) -> Result<FieldVersionChange, AppError> {
     if let Some(value) = maybe_value {
         // Reject malformed ISBNs (wrong length, bad check digit,
         // non-numeric) and normalise valid ones to digits-only so the
@@ -1661,7 +1847,13 @@ async fn apply_scalar_patch_field(
             _ => value,
         };
         let version_id = insert_manual_version(tx, manifestation_id, user_id, field, &json).await?;
-        apply_version(tx, field, &json, version_id, manifestation_id, work_id).await?;
+        let previous_version_id =
+            apply_version(tx, field, &json, version_id, manifestation_id, work_id).await?;
+        Ok(FieldVersionChange {
+            value: Some(json),
+            version_id: Some(version_id),
+            previous_version_id,
+        })
     } else {
         // Audit-trail row: source='manual', new_value=null,
         // resolved_by = caller. `clear_field` does NOT wire a
@@ -1676,9 +1868,13 @@ async fn apply_scalar_patch_field(
             &serde_json::Value::Null,
         )
         .await?;
-        clear_field(tx, field, manifestation_id, work_id).await?;
+        let previous_version_id = clear_field(tx, field, manifestation_id, work_id).await?;
+        Ok(FieldVersionChange {
+            value: None,
+            version_id: None,
+            previous_version_id,
+        })
     }
-    Ok(())
 }
 
 /// Insert one `metadata_versions` row with `source='manual'`, returning
@@ -1837,6 +2033,39 @@ mod tests {
         .fetch_one(ingestion_pool)
         .await
         .expect("insert metadata_versions")
+    }
+
+    /// Insert a second manifestation on an existing work, mirroring
+    /// `insert_work_and_manifestation`'s row shape. Used by the sibling-
+    /// manifestation revert tests below, which need two editions of the
+    /// same work.
+    async fn insert_sibling_manifestation(ingestion_pool: &sqlx::PgPool, work_id: Uuid) -> Uuid {
+        let marker = Uuid::new_v4().simple().to_string();
+        let file_path = format!("/tmp/admin-test-sibling-{marker}.epub");
+        let file_hash = format!("admin-test-sibling-hash-{marker}");
+        sqlx::query_scalar!(
+            "INSERT INTO manifestations \
+                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING id",
+            work_id,
+            file_path,
+            file_hash,
+        )
+        .fetch_one(ingestion_pool)
+        .await
+        .expect("insert sibling manifestation")
+    }
+
+    /// Pull `body["fields"][field]["version_id"]` as an owned `String`,
+    /// panicking with the field name and full body if it's missing.
+    fn version_id_of(body: &serde_json::Value, field: &str) -> String {
+        body["fields"][field]["version_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("expected a version_id for field '{field}' in {body}"))
+            .to_string()
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2066,9 +2295,37 @@ mod tests {
         let id = Uuid::new_v4();
         let response = server
             .patch(&format!("/api/v1/books/{id}/metadata"))
-            .json(&serde_json::json!({"fields": {"title": "X"}}))
+            .json(&serde_json::json!({"title": "X"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_old_fields_envelope_returns_422(pool: sqlx::PgPool) {
+        // The body is now a bare RFC 7396 merge patch: the
+        // previous `{"fields": {...}}` envelope carries no recognized
+        // top-level key, so every field is treated as absent and the
+        // handler's "no populated fields" guard rejects it. Pins the break
+        // as a deliberate, visible change for API consumers.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"fields": {"title": "Enveloped"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "the enveloped shape must no longer be accepted; body = {}",
+            response.text()
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2085,14 +2342,15 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"title": new_title}}))
+            .json(&serde_json::json!({"title": new_title}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
+        let body: serde_json::Value = response.json();
 
         let row = sqlx::query!(
             "SELECT title, title_version_id FROM works WHERE id = $1",
@@ -2104,6 +2362,22 @@ mod tests {
         assert_eq!(row.title, new_title, "canonical title not written");
 
         let version_id = row.title_version_id.expect("title_version_id wired");
+        assert_eq!(
+            body["fields"]["title"]["version_id"],
+            serde_json::json!(version_id),
+            "response version_id must equal the new canonical pointer"
+        );
+        assert_eq!(
+            body["fields"]["title"]["previous_version_id"],
+            serde_json::Value::Null,
+            "a freshly created work has no prior title pointer"
+        );
+        assert_eq!(
+            body["fields"]["title"]["value"],
+            serde_json::json!(new_title),
+            "response must echo the applied title"
+        );
+
         let v = sqlx::query!(
             "SELECT source, status::text AS \"status!\", new_value AS \"new_value!\" \
              FROM metadata_versions WHERE id = $1",
@@ -2124,6 +2398,97 @@ mod tests {
         .await
         .expect("fetch job count");
         assert_eq!(job_count, 1, "manual edit must enqueue one writeback");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_title_response_reports_previous_pointer(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let first_title = format!("First Title {marker}");
+        let first_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": first_title}))
+            .await;
+        assert_eq!(first_response.status_code(), StatusCode::OK);
+        let first_body: serde_json::Value = first_response.json();
+        let first_version_id = version_id_of(&first_body, "title");
+
+        let second_title = format!("Second Title {marker}");
+        let second_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"title": second_title}))
+            .await;
+        assert_eq!(second_response.status_code(), StatusCode::OK);
+        let second_body: serde_json::Value = second_response.json();
+        assert_eq!(
+            second_body["fields"]["title"]["previous_version_id"],
+            serde_json::json!(first_version_id),
+            "second patch must report the first patch's version as the previous pointer"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_title_then_revert_restores_previous_value(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let first_title = format!("First Title {marker}");
+        let first_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": first_title.clone()}))
+            .await;
+        assert_eq!(first_response.status_code(), StatusCode::OK);
+
+        let second_title = format!("Second Title {marker}");
+        let second_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": second_title}))
+            .await;
+        assert_eq!(second_response.status_code(), StatusCode::OK);
+        let second_body: serde_json::Value = second_response.json();
+        let previous_version_id = second_body["fields"]["title"]["previous_version_id"]
+            .as_str()
+            .expect("second patch must report a previous_version_id")
+            .to_string();
+
+        let revert_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "title",
+                "version_id": previous_version_id,
+            }))
+            .await;
+        assert_eq!(
+            revert_response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert_response.text()
+        );
+
+        let title: String = sqlx::query_scalar!("SELECT title FROM works WHERE id = $1", work_id)
+            .fetch_one(&app_pool)
+            .await
+            .expect("fetch title after revert");
+        assert_eq!(
+            title, first_title,
+            "revert to the previous_version_id must restore the original title"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2151,11 +2516,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"description": serde_json::Value::Null}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -2200,7 +2565,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {}}))
+            .json(&serde_json::json!({}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = response.text();
@@ -2229,7 +2594,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"title": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"title": serde_json::Value::Null}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -2282,7 +2647,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"title": "Nope"}}))
+            .json(&serde_json::json!({"title": "Nope"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
     }
@@ -2309,9 +2674,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"title": "Operator-chosen"}}))
+            .json(&serde_json::json!({"title": "Operator-chosen"}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         // AI draft stays pending — operator can later revert to it.
         let status: Option<String> = sqlx::query_scalar!(
@@ -2339,7 +2704,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{fake}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"title": "ghost"}}))
+            .json(&serde_json::json!({"title": "ghost"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     }
@@ -2376,11 +2741,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_13": isbn}}))
+            .json(&serde_json::json!({"isbn_13": isbn}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -2416,7 +2781,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_13": "9780306406150"}}))
+            .json(&serde_json::json!({"isbn_13": "9780306406150"}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -2438,7 +2803,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_10": "12345"}}))
+            .json(&serde_json::json!({"isbn_10": "12345"}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -2461,7 +2826,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_13": "978030640615X"}}))
+            .json(&serde_json::json!({"isbn_13": "978030640615X"}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -2484,11 +2849,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_10": "0306406152"}}))
+            .json(&serde_json::json!({"isbn_10": "0306406152"}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -2506,13 +2871,19 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_13": "978-0-306-40615-7"}}))
+            .json(&serde_json::json!({"isbn_13": "978-0-306-40615-7"}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
+        );
+        let body: serde_json::Value = response.json();
+        assert_eq!(
+            body["fields"]["isbn_13"]["value"],
+            serde_json::json!("9780306406157"),
+            "response must echo the normalized value, not the raw hyphenated input"
         );
 
         // Stored canonical value is digits-only, matching the ingestion
@@ -2554,11 +2925,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"isbn_13": "978-0-306-40615-7"}}))
+            .json(&serde_json::json!({"isbn_13": "978-0-306-40615-7"}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -2697,9 +3068,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"description": serde_json::Value::Null}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         // Now GET the detail and confirm the audit row is absent.
         let detail = server
@@ -2753,9 +3124,9 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"description": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"description": serde_json::Value::Null}))
             .await;
-        assert_eq!(r.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(r.status_code(), StatusCode::OK);
 
         // Fetch the null-value row id directly. The Versions tab filter
         // hides it, so we read it from the table.
@@ -2815,9 +3186,9 @@ mod tests {
         let r1 = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"title": value.clone()}}))
+            .json(&serde_json::json!({"title": value.clone()}))
             .await;
-        assert_eq!(r1.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(r1.status_code(), StatusCode::OK);
 
         // Mark that manual row rejected directly (simulates an operator
         // rejecting their own manual entry via the per-row Reject button).
@@ -2841,9 +3212,9 @@ mod tests {
         let r2 = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"title": value}}))
+            .json(&serde_json::json!({"title": value}))
             .await;
-        assert_eq!(r2.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(r2.status_code(), StatusCode::OK);
 
         let status: String = sqlx::query_scalar!(
             "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
@@ -2874,9 +3245,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"publisher": "  Acme Press  "}}))
+            .json(&serde_json::json!({"publisher": "  Acme Press  "}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         // The stored manual hash must equal the enrichment pipeline's
         // canonical hash for the trimmed-equivalent value — byte for byte.
@@ -2914,11 +3285,11 @@ mod tests {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
-                .json(&serde_json::json!({"fields": {"publisher": publisher}}))
+                .json(&serde_json::json!({"publisher": publisher}))
                 .await;
             assert_eq!(
                 response.status_code(),
-                StatusCode::NO_CONTENT,
+                StatusCode::OK,
                 "body = {}",
                 response.text()
             );
@@ -2962,9 +3333,9 @@ mod tests {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
-                .json(&serde_json::json!({"fields": {"pub_date": pub_date}}))
+                .json(&serde_json::json!({"pub_date": pub_date}))
                 .await;
-            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+            assert_eq!(response.status_code(), StatusCode::OK);
         }
 
         let rows = sqlx::query!(
@@ -3005,11 +3376,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [name_a, name_b]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [name_a, name_b]}}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -3068,6 +3439,391 @@ mod tests {
         );
     }
 
+    // ── revert learns contributors.<role> ───────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_contributors_author_restores_prior_set(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let name_a = format!("Alpha Author {marker}");
+        let name_b = format!("Beta Author {marker}");
+        let first_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(
+                &serde_json::json!({"contributors": {"author": [name_a.clone(), name_b.clone()]}}),
+            )
+            .await;
+        assert_eq!(first_response.status_code(), StatusCode::OK);
+        let first_body: serde_json::Value = first_response.json();
+        let first_version_id = version_id_of(&first_body, "contributors.author");
+
+        let name_c = format!("Gamma Author {marker}");
+        let second_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_c]}}))
+            .await;
+        assert_eq!(second_response.status_code(), StatusCode::OK);
+
+        // Regression: this endpoint used to 422 on any `contributors.*`
+        // field name because `apply_version`'s catch-all rejected it.
+        let revert_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "contributors.author",
+                "version_id": first_version_id,
+            }))
+            .await;
+        assert_eq!(
+            revert_response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert_response.text()
+        );
+
+        let rows = sqlx::query!(
+            "SELECT a.name, wa.position FROM work_authors wa \
+             JOIN authors a ON a.id = wa.author_id \
+             WHERE wa.work_id = $1 AND wa.role = 'author' ORDER BY wa.position",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch work_authors after revert");
+        assert_eq!(
+            rows.len(),
+            2,
+            "revert must restore the exact prior author set"
+        );
+        assert_eq!(rows[0].name, name_a);
+        assert_eq!(rows[0].position, 0);
+        assert_eq!(rows[1].name, name_b);
+        assert_eq!(rows[1].position, 1);
+
+        let sort_name = sqlx::query_scalar!(
+            "SELECT first_author_sort_name FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch sort name after revert");
+        assert_eq!(
+            sort_name.as_deref(),
+            Some(format!("{marker}, Alpha Author").as_str()),
+            "revert must refresh the denormalized sort column"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_contributors_author_to_null_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let name = format!("Solo Author {marker}");
+        let patch_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name]}}))
+            .await;
+        assert_eq!(patch_response.status_code(), StatusCode::OK);
+
+        let revert_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "contributors.author",
+                "version_id": serde_json::Value::Null,
+            }))
+            .await;
+        assert_eq!(
+            revert_response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "clearing the sole author role must be rejected like title's clear guard"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_contributors_translator_to_null_clears_role(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let translator = format!("Translator Name {marker}");
+        let patch_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"translator": [translator]}}))
+            .await;
+        assert_eq!(patch_response.status_code(), StatusCode::OK);
+
+        let revert_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "contributors.translator",
+                "version_id": serde_json::Value::Null,
+            }))
+            .await;
+        assert_eq!(
+            revert_response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert_response.text()
+        );
+
+        let remaining: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM work_authors \
+             WHERE work_id = $1 AND role = 'translator'",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("count translator rows");
+        assert_eq!(
+            remaining, 0,
+            "revert-to-null must clear the translator role"
+        );
+    }
+
+    // ── revert accepts a sibling manifestation's version for work-scoped
+    //    fields, but keeps the strict same-manifestation match for
+    //    manifestation-scoped fields ─────────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_title_accepts_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // Patch title via manifestation A: journals a version under A and
+        // wires it as the work's canonical title_version_id.
+        let title_a = format!("Title Via A {marker}");
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": title_a}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = version_id_of(&body_a, "title");
+
+        // Patch title via manifestation B: the canonical pointer is
+        // work-scoped, so B's response must report A's version as the
+        // prior pointer even though the row was journaled under A.
+        let title_b = format!("Title Via B {marker}");
+        let patch_b = server
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": title_b}))
+            .await;
+        assert_eq!(patch_b.status_code(), StatusCode::OK);
+        let body_b: serde_json::Value = patch_b.json();
+        assert_eq!(
+            body_b["fields"]["title"]["previous_version_id"].as_str(),
+            Some(version_a.as_str()),
+            "title's canonical pointer lives on works, so B's previous_version_id \
+             must be A's version"
+        );
+
+        // Undo on B for that A-owned version must succeed: title is
+        // work-scoped, so the sibling's journal row is a valid revert target.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "title",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert.text()
+        );
+
+        let row = sqlx::query!("SELECT title FROM works WHERE id = $1", work_id,)
+            .fetch_one(&app_pool)
+            .await
+            .expect("fetch work title");
+        assert_eq!(
+            row.title, title_a,
+            "revert on B must restore A's title as canonical"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_pages_rejects_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // Patch pages (manifestation-scoped) via A.
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"pages": 250}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = version_id_of(&body_a, "pages");
+
+        // Revert on B with A's version id must 404: pages is
+        // manifestation-scoped, so a sibling's journal row must not be
+        // applicable to another edition's columns.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "pages",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::NOT_FOUND,
+            "manifestation-scoped fields must keep the strict same-manifestation \
+             match; body = {}",
+            revert.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_contributors_author_accepts_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let name_a = format!("Alpha Author {marker}");
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_a.clone()]}}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = version_id_of(&body_a, "contributors.author");
+
+        let name_b = format!("Beta Author {marker}");
+        let patch_b = server
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_b]}}))
+            .await;
+        assert_eq!(patch_b.status_code(), StatusCode::OK);
+
+        // contributors.* is work-scoped (work_authors keys off work_id, not
+        // manifestation_id), so B can undo to the version A journaled.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "contributors.author",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert.text()
+        );
+
+        let rows = sqlx::query!(
+            "SELECT a.name FROM work_authors wa \
+             JOIN authors a ON a.id = wa.author_id \
+             WHERE wa.work_id = $1 AND wa.role = 'author'",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch work_authors after revert");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, name_a);
+    }
+
+    // ── manual PATCH threads the prior contributors.<role> stamp instead of
+    //    always reporting previous_version_id: None ──────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_contributors_author_second_edit_reports_prior_version_id(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let name_a = format!("Alpha Author {marker}");
+        let first = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_a]}}))
+            .await;
+        assert_eq!(first.status_code(), StatusCode::OK);
+        let first_body: serde_json::Value = first.json();
+        assert_eq!(
+            first_body["fields"]["contributors.author"]["previous_version_id"],
+            serde_json::Value::Null,
+            "the work's first author edit has no prior single stamp to report"
+        );
+        let first_version_id = version_id_of(&first_body, "contributors.author");
+
+        let name_b = format!("Beta Author {marker}");
+        let second = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"contributors": {"author": [name_b]}}))
+            .await;
+        assert_eq!(second.status_code(), StatusCode::OK);
+        let second_body: serde_json::Value = second.json();
+        assert_eq!(
+            second_body["fields"]["contributors.author"]["previous_version_id"].as_str(),
+            Some(first_version_id.as_str()),
+            "the second edit must thread the first edit's version as its \
+             previous_version_id instead of reporting null"
+        );
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_contributors_empty_object_enqueues_no_writeback(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -3081,11 +3837,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {}}}))
+            .json(&serde_json::json!({"contributors": {}}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -3116,7 +3872,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": names}}}))
+            .json(&serde_json::json!({"contributors": {"author": names}}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -3141,18 +3897,18 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [&name_a, &name_b]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [&name_a, &name_b]}}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         // The reorder hashes identically (order-insensitive normalisation),
         // collides with the first row, and must refresh its new_value.
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [&name_b, &name_a]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [&name_b, &name_a]}}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let rows = sqlx::query!(
             "SELECT new_value, observation_count FROM metadata_versions \
@@ -3188,9 +3944,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [name_b, name_a]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [name_b, name_a]}}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let rows = sqlx::query!(
             "SELECT a.name, wa.position FROM work_authors wa \
@@ -3224,11 +3980,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"editor": [editor_name]}}}))
+            .json(&serde_json::json!({"contributors": {"editor": [editor_name]}}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -3265,9 +4021,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"editor": null}}}))
+            .json(&serde_json::json!({"contributors": {"editor": null}}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let editor_count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM work_authors \
@@ -3312,9 +4068,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"translator": []}}}))
+            .json(&serde_json::json!({"contributors": {"translator": []}}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let translator_count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM work_authors \
@@ -3348,7 +4104,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"contributors": serde_json::Value::Null}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -3392,11 +4148,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"contributors": serde_json::Value::Null}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "authorless stub has nothing to violate the last-author guard; body = {}",
             response.text()
         );
@@ -3429,11 +4185,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": []}}}))
+            .json(&serde_json::json!({"contributors": {"author": []}}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -3453,9 +4209,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(
-                &serde_json::json!({"fields": {"contributors": {"author": [name.clone(), name]}}}),
-            )
+            .json(&serde_json::json!({"contributors": {"author": [name.clone(), name]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -3473,7 +4227,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": ["   "]}}}))
+            .json(&serde_json::json!({"contributors": {"author": ["   "]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -3492,7 +4246,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [long_name]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [long_name]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -3510,7 +4264,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"narrator": ["Someone"]}}}))
+            .json(&serde_json::json!({"contributors": {"narrator": ["Someone"]}}))
             .await;
         assert_eq!(
             response.status_code(),
@@ -3528,8 +4282,7 @@ mod tests {
         let (_work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let subtitle = format!("Merge Patch Subtitle {marker}");
-        let body =
-            serde_json::to_vec(&serde_json::json!({"fields": {"subtitle": subtitle}})).unwrap();
+        let body = serde_json::to_vec(&serde_json::json!({"subtitle": subtitle})).unwrap();
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let response = server
@@ -3540,7 +4293,7 @@ mod tests {
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "stock axum Json must accept the +json suffix; body = {}",
             response.text()
         );
@@ -3560,9 +4313,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"subtitle": subtitle}}))
+            .json(&serde_json::json!({"subtitle": subtitle}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let row = sqlx::query!(
             "SELECT subtitle, subtitle_version_id FROM works WHERE id = $1",
@@ -3573,14 +4326,31 @@ mod tests {
         .expect("fetch work");
         assert_eq!(row.subtitle.as_deref(), Some(subtitle.as_str()));
         assert!(row.subtitle_version_id.is_some());
+        let set_version_id = row.subtitle_version_id.expect("subtitle_version_id wired");
 
         // Clear round-trip.
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"subtitle": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"subtitle": serde_json::Value::Null}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let body: serde_json::Value = response.json();
+        assert_eq!(
+            body["fields"]["subtitle"]["value"],
+            serde_json::Value::Null,
+            "cleared field must echo a null applied value"
+        );
+        assert_eq!(
+            body["fields"]["subtitle"]["version_id"],
+            serde_json::Value::Null,
+            "a clear wires no canonical pointer"
+        );
+        assert_eq!(
+            body["fields"]["subtitle"]["previous_version_id"],
+            serde_json::json!(set_version_id),
+            "clear must report the pointer that was canonical beforehand"
+        );
 
         let row = sqlx::query!(
             "SELECT subtitle, subtitle_version_id FROM works WHERE id = $1",
@@ -3591,6 +4361,39 @@ mod tests {
         .expect("fetch work after clear");
         assert!(row.subtitle.is_none());
         assert!(row.subtitle_version_id.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_mixed_valid_invalid_fields_rolls_back_all(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // description is applied before isbn_13 in field order, so its
+        // write has already been issued inside the transaction when the
+        // invalid ISBN rejects the patch: this pins genuine rollback of an
+        // in-flight write, not just fail-fast ordering.
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"description": "New", "isbn_13": "not-an-isbn"}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+
+        let row = sqlx::query!("SELECT description FROM works WHERE id = $1", work_id)
+            .fetch_one(&app_pool)
+            .await
+            .expect("fetch work after rejected patch");
+        assert!(row.description.is_none());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -3606,9 +4409,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"pages": 353}}))
+            .json(&serde_json::json!({"pages": 353}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let row = sqlx::query!(
             "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
@@ -3623,9 +4426,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"pages": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"pages": serde_json::Value::Null}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let row = sqlx::query!(
             "SELECT pages, pages_version_id FROM manifestations WHERE id = $1",
@@ -3651,7 +4454,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"pages": 0}}))
+            .json(&serde_json::json!({"pages": 0}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -3669,7 +4472,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"pages": "not-a-number"}}))
+            .json(&serde_json::json!({"pages": "not-a-number"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -3699,11 +4502,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [name.clone()]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [name.clone()]}}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "PATCH does not check field_locks today; body = {}",
             response.text()
         );
@@ -3738,9 +4541,9 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"contributors": {"author": [name]}}}))
+            .json(&serde_json::json!({"contributors": {"author": [name]}}))
             .await;
-        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status_code(), StatusCode::OK);
 
         let after = sqlx::query_scalar!("SELECT updated_at FROM works WHERE id = $1", work_id)
             .fetch_one(&app_pool)
@@ -3753,20 +4556,22 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn accept_contributors_author_version_returns_422(pool: sqlx::PgPool) {
-        // Pins that per-role contributor keys stay accept-unsupported, same as
-        // the legacy "creators" key was before this change.
+    async fn accept_contributors_author_version_rebuilds_role_rows(pool: sqlx::PgPool) {
+        // Contributor versions used to be accept-unsupported (422); the
+        // shared apply path now rebuilds the role rows, so accepting a
+        // pending contributors draft promotes it like any scalar field.
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let marker = Uuid::new_v4().simple().to_string();
-        let (_work_id, m_id) =
+        let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let author_name = format!("Pending Author {marker}");
         let version_id = insert_version(
             &ing_pool,
             m_id,
             "contributors.author",
-            serde_json::json!([format!("Pending Author {marker}")]),
+            serde_json::json!([author_name.clone()]),
         )
         .await;
 
@@ -3778,10 +4583,32 @@ mod tests {
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
+
+        let author_names: Vec<String> = sqlx::query_scalar!(
+            "SELECT a.name FROM authors a \
+             JOIN work_authors wa ON wa.author_id = a.id \
+             WHERE wa.work_id = $1 AND wa.role = 'author' \
+             ORDER BY wa.position",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch author names");
+        assert_eq!(author_names, vec![author_name]);
+
+        let stamps: Vec<Option<Uuid>> = sqlx::query_scalar!(
+            "SELECT DISTINCT source_version_id FROM work_authors \
+             WHERE work_id = $1 AND role = 'author'",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch work_authors stamps");
+        assert_eq!(stamps, vec![Some(version_id)]);
     }
 
     // ── PATCH genres / moods / tags / content_rating ───────────────────────
@@ -3799,11 +4626,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"genres": ["Astrophysics", "Carpentry"]}}))
+            .json(&serde_json::json!({"genres": ["Astrophysics", "Carpentry"]}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -3866,16 +4693,16 @@ mod tests {
         let first = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"genres": ["Astrophysics", "Carpentry"]}}))
+            .json(&serde_json::json!({"genres": ["Astrophysics", "Carpentry"]}))
             .await;
-        assert_eq!(first.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(first.status_code(), StatusCode::OK);
 
         let second = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"genres": ["Numismatics"]}}))
+            .json(&serde_json::json!({"genres": ["Numismatics"]}))
             .await;
-        assert_eq!(second.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(second.status_code(), StatusCode::OK);
 
         let genre_names: Vec<String> = sqlx::query_scalar!(
             "SELECT g.name FROM genres g \
@@ -3918,11 +4745,11 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"moods": ["Gloomy"], "tags": ["Signed"]}}))
+            .json(&serde_json::json!({"moods": ["Gloomy"], "tags": ["Signed"]}))
             .await;
         assert_eq!(
             response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             response.text()
         );
@@ -3964,15 +4791,15 @@ mod tests {
         let set_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"genres": ["Origami"]}}))
+            .json(&serde_json::json!({"genres": ["Origami"]}))
             .await;
-        assert_eq!(set_a.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(set_a.status_code(), StatusCode::OK);
         let clear_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"genres": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"genres": serde_json::Value::Null}))
             .await;
-        assert_eq!(clear_a.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(clear_a.status_code(), StatusCode::OK);
 
         let junction_count_a: i64 = sqlx::query_scalar!(
             "SELECT count(*) AS \"count!\" FROM manifestation_genres WHERE manifestation_id = $1",
@@ -4001,15 +4828,15 @@ mod tests {
         let set_b = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"genres": ["Beekeeping"]}}))
+            .json(&serde_json::json!({"genres": ["Beekeeping"]}))
             .await;
-        assert_eq!(set_b.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(set_b.status_code(), StatusCode::OK);
         let clear_b = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"genres": []}}))
+            .json(&serde_json::json!({"genres": []}))
             .await;
-        assert_eq!(clear_b.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(clear_b.status_code(), StatusCode::OK);
 
         let junction_count_b: i64 = sqlx::query_scalar!(
             "SELECT count(*) AS \"count!\" FROM manifestation_genres WHERE manifestation_id = $1",
@@ -4045,7 +4872,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"genres": ["SciFi", "scifi"]}}))
+            .json(&serde_json::json!({"genres": ["SciFi", "scifi"]}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -4064,7 +4891,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"genres": terms}}))
+            .json(&serde_json::json!({"genres": terms}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -4085,9 +4912,9 @@ mod tests {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
-                .json(&serde_json::json!({"fields": {"genres": ["Falconry", "Glassblowing"]}}))
+                .json(&serde_json::json!({"genres": ["Falconry", "Glassblowing"]}))
                 .await;
-            assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+            assert_eq!(response.status_code(), StatusCode::OK);
         }
 
         // A distinct set, submitted, then reordered — the order-insensitive
@@ -4095,15 +4922,15 @@ mod tests {
         let first_order = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"genres": ["Alchemy", "Basketry"]}}))
+            .json(&serde_json::json!({"genres": ["Alchemy", "Basketry"]}))
             .await;
-        assert_eq!(first_order.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(first_order.status_code(), StatusCode::OK);
         let reordered = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"genres": ["Basketry", "Alchemy"]}}))
+            .json(&serde_json::json!({"genres": ["Basketry", "Alchemy"]}))
             .await;
-        assert_eq!(reordered.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(reordered.status_code(), StatusCode::OK);
 
         let rows = sqlx::query!(
             "SELECT observation_count, new_value AS \"new_value!\" FROM metadata_versions \
@@ -4152,11 +4979,11 @@ mod tests {
         let set_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
-            .json(&serde_json::json!({"fields": {"content_rating": "teen"}}))
+            .json(&serde_json::json!({"content_rating": "teen"}))
             .await;
         assert_eq!(
             set_response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "body = {}",
             set_response.text()
         );
@@ -4188,9 +5015,9 @@ mod tests {
         let clear_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"content_rating": serde_json::Value::Null}}))
+            .json(&serde_json::json!({"content_rating": serde_json::Value::Null}))
             .await;
-        assert_eq!(clear_response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(clear_response.status_code(), StatusCode::OK);
 
         let row_after = sqlx::query!(
             "SELECT content_rating AS \"content_rating: ContentRating\", \
@@ -4218,7 +5045,7 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"content_rating": "ultra_violent"}}))
+            .json(&serde_json::json!({"content_rating": "ultra_violent"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -4251,11 +5078,11 @@ mod tests {
         let patch_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
-            .json(&serde_json::json!({"fields": {"content_rating": "mature"}}))
+            .json(&serde_json::json!({"content_rating": "mature"}))
             .await;
         assert_eq!(
             patch_response.status_code(),
-            StatusCode::NO_CONTENT,
+            StatusCode::OK,
             "locks gate automated enrichment only, not the manual PATCH surface; body = {}",
             patch_response.text()
         );

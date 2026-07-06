@@ -76,6 +76,62 @@ Your view choice travels in the URL (`?view=table`), so a shared link
 opens exactly what you see; Reverie also remembers your last choice
 and uses it the next time you open the Library without one.
 
+## Editing from the table
+
+Most cells in the table edit in place. Title, subtitle, ISBN-13, pages,
+and authors write to the book's canonical metadata; reading status and
+rating write to your own reading state. Series stays read-only: no
+metadata field backs that column, so it never opens an editor.
+
+Press `Enter`, press `F2`, or start typing while a cell is selected to
+open its editor. `Enter` commits whatever you typed; `Escape` discards
+it and leaves the cell as it was. `F2` only opens the editor here; it
+does not also close one the way the WAI-ARIA grid pattern describes.
+The grid library Reverie is built on doesn't implement that half of the
+toggle, so `Escape` or `Enter` are what close an editor regardless of
+how you opened it.
+
+Title, subtitle, and authors describe the work rather than one edition
+of it, so editing any of them from one row updates every edition of
+that work currently loaded in the table, not just the row you touched.
+The column header names all three with an "(all editions)" suffix, so
+you know the reach of an edit before you commit. ISBN-13 and
+pages describe one edition and stay put. Status and rating are yours
+alone: nobody else browsing the same library sees them, and they never
+touch the book's version history.
+
+### Undo
+
+Every commit ends in a toast with an Undo button, and `Ctrl Z` undoes
+the most recent edit without needing the toast still on screen. The
+table remembers your last ten edits, so pressing undo repeatedly steps
+back through them in order.
+
+Undo works differently depending on what you edited. Title, subtitle,
+ISBN-13, pages, and author edits undo by restoring whichever metadata
+version was current immediately before your edit, the same version
+history the book page's Versions tab reads from. Status and rating have
+no version history behind them, so undoing one of those just writes
+your previous value back.
+
+### Why edits are staged, not overwritten
+
+The table records a canonical metadata edit as a new entry in the same
+version history the Versions tab shows, rather than overwriting the row.
+That is what makes undo possible: the value you had before is still
+there to restore. It also means a run of quick edits across a dense
+table stays reviewable afterward on the book page, not just the value
+that happens to be current.
+
+### While a write is in flight
+
+A cell shows what you typed the moment you commit, marked as busy until
+the server confirms it. On success the cell settles on the value the
+server stored, which can differ slightly from what you typed: an
+ISBN-13 you enter with hyphens, for example, comes back normalised.
+On failure the cell snaps back to the value it held before your edit,
+and a toast explains what went wrong.
+
 ## Cinematic mode
 
 On the Library page, press `F` (outside any text field) to dissolve the

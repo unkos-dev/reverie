@@ -213,7 +213,7 @@ fn body_for(method: &str, path: &str) -> Option<Value> {
             "entity_type": "manifestation"
         })),
         ("PATCH", "/api/v1/books/{id}/metadata") => {
-            Some(serde_json::json!({"fields": {"title": "Matrix Title"}}))
+            Some(serde_json::json!({"title": "Matrix Title"}))
         }
         ("PUT", "/api/v1/settings") => Some(serde_json::json!({"enrichment_enabled": true})),
         ("POST", "/api/v1/users") => Some(serde_json::json!({

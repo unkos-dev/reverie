@@ -51,6 +51,8 @@ const ReadingStatusSchema = z.enum(["want_to_read", "reading", "on_hold", "finis
 /** Per-user reading lifecycle state. Matches `backend/src/models/reading_status.rs`. */
 export type ReadingStatus = z.infer<typeof ReadingStatusSchema>;
 
+export { ReadingStatusSchema };
+
 const ReadingStateSummarySchema = z.object({
   status: ReadingStatusSchema.nullable(),
   rating: z.number().int().nullable(),
@@ -241,21 +243,36 @@ export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDet
   return WorkDetailSchema.parse(body);
 }
 
+/**
+ * Per-role contributor replace/clear, nested under `contributors`.
+ * Absent role = untouched; `null` or `[]` clears the role; a non-empty
+ * array replaces it wholesale in the given order. Strict: the backend
+ * rejects unknown role keys with 422.
+ */
+const ContributorsPatchSchema = z.strictObject({
+  author: z.array(z.string()).nullable().optional(),
+  editor: z.array(z.string()).nullable().optional(),
+  translator: z.array(z.string()).nullable().optional(),
+});
+
 const UpdateBookMetadataFieldsSchema = z.object({
   title: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   language: z.string().nullable().optional(),
   publisher: z.string().nullable().optional(),
   pub_date: z.string().nullable().optional(),
   isbn_10: z.string().nullable().optional(),
   isbn_13: z.string().nullable().optional(),
+  pages: z.number().int().positive().nullable().optional(),
+  contributors: ContributorsPatchSchema.nullable().optional(),
 });
 /**
  * RFC 7396 JSON Merge Patch body for `PATCH /api/v1/books/{id}/metadata`.
  *
  * Each field value distinguishes three states:
  * * key omitted → field unchanged
- * * key present, value = string → set field to that value
+ * * key present, value non-`null` → set field to that value
  * * key present, value = `null` → clear the canonical column
  *
  * The backend types ISBN / pub_date strings; per-field parsing happens
@@ -272,17 +289,47 @@ export type UpdateBookMetadataFields = z.infer<typeof UpdateBookMetadataFieldsSc
 
 export { UpdateBookMetadataFieldsSchema };
 
+const FieldVersionChangeSchema = z.object({
+  value: z.unknown().nullable(),
+  version_id: z.uuid().nullable(),
+  previous_version_id: z.uuid().nullable(),
+});
+/**
+ * One field's outcome from a metadata PATCH. `value` is the canonical
+ * value as applied, after server-side normalization (e.g. ISBN
+ * checksum), null when the field was cleared. `version_id` is the
+ * journal row now wired as canonical, null when cleared to no
+ * version. `previous_version_id` is the pointer that was canonical
+ * before this patch, null when the field was previously unset or has
+ * no version pointer of its own (vocabulary fields).
+ */
+export type FieldVersionChange = z.infer<typeof FieldVersionChangeSchema>;
+
+export const UpdateMetadataResponseSchema = z.object({
+  fields: z.record(z.string(), FieldVersionChangeSchema),
+});
+/**
+ * `PATCH /api/v1/books/{id}/metadata` response body. Keyed by patched
+ * field name, including `contributors.<role>` style keys, so a
+ * caller can diff the edited column and drive undo without a
+ * positional lookup. Mirrors `UpdateMetadataResponse` on the wire.
+ */
+export type UpdateMetadataResponse = z.infer<typeof UpdateMetadataResponseSchema>;
+
 /**
  * Manually edit canonical metadata for a book. Each touched field
  * lands as a new `metadata_versions` row (`source = 'manual'`) and the
  * canonical pointer is rewired in the same transaction. Pending AI/OPF
- * drafts on the same field are NOT auto-rejected — operators can
+ * drafts on the same field are NOT auto-rejected; operators can
  * revert to them later via `revertField`.
  *
  * Throws an `ApiError` with `status === 422` when the body has no
  * populated fields, or with `status === 403` for child accounts.
  *
- * On success the server returns 204 No Content. Callers should
+ * The request body is a bare RFC 7396 JSON Merge Patch, no `{fields}`
+ * envelope. On success the server returns 200 with the per-field
+ * applied values and version ids; callers that only need the
+ * side-effect can ignore the return value. Callers should still
  * invalidate the `["books", "detail", id]` query key so the Versions
  * tab + canonical fields refetch.
  */
@@ -290,14 +337,15 @@ export async function updateBookMetadata(
   id: string,
   fields: UpdateBookMetadataFields,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<UpdateMetadataResponse> {
   const init: RequestInit = {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify(fields),
     ...(signal ? { signal } : {}),
   };
-  await apiFetch(`/api/v1/books/${encodeURIComponent(id)}/metadata`, init);
+  const body = await apiFetch(`/api/v1/books/${encodeURIComponent(id)}/metadata`, init);
+  return UpdateMetadataResponseSchema.parse(body);
 }
 
 /**

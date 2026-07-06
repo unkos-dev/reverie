@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT new_value AS \"new_value!\" FROM metadata_versions WHERE id = $1 AND manifestation_id = $2",
+  "query": "SELECT mv.new_value AS \"new_value!\" FROM metadata_versions mv JOIN manifestations vm ON vm.id = mv.manifestation_id WHERE mv.id = $1 AND (vm.id = $2 OR ($3::bool AND vm.work_id = $4))",
   "describe": {
     "columns": [
       {
@@ -18,6 +18,8 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Uuid",
+        "Bool",
         "Uuid"
       ]
     },
@@ -25,5 +27,5 @@
       false
     ]
   },
-  "hash": "ca02341f3a63ba824f5aec374ff34cd58227c13283fcf09a05cacbb5ff39fc14"
+  "hash": "1dc0f3336f3674b2f4a4ccc4dbfe886f5ee036b7aaaceed956228276129a84bd"
 }
