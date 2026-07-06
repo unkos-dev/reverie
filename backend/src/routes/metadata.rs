@@ -426,11 +426,31 @@ async fn revert_manifestation(
 
     match payload.version_id {
         Some(vid) => {
+            // Work-scoped fields (title/subtitle/description/language,
+            // contributors.*) are journaled per-manifestation but their
+            // canonical pointer lives on the shared `works` row, so a
+            // sibling manifestation of the same work can legitimately own
+            // the version an editor now wants to restore: a first-ingest
+            // draft filed under manifestation A, an enrichment pass, or a
+            // manual edit made while reviewing manifestation B all land
+            // in `metadata_versions` rows stamped with that manifestation's
+            // id, not the one the canonical pointer was last read through.
+            // Manifestation-scoped fields (pages, publisher, isbn_10,
+            // isbn_13, pub_date, content_rating) keep the strict same-row
+            // match: their canonical column lives on `manifestations`
+            // itself, so a sibling's journal row describes a different
+            // edition and must not be applicable here.
+            let is_work_scoped = is_work_scoped_field(&payload.field_name);
             let new_value: Option<Value> = sqlx::query_scalar!(
-                "SELECT new_value AS \"new_value!\" FROM metadata_versions \
-                 WHERE id = $1 AND manifestation_id = $2",
+                "SELECT mv.new_value AS \"new_value!\" \
+                 FROM metadata_versions mv \
+                 JOIN manifestations vm ON vm.id = mv.manifestation_id \
+                 WHERE mv.id = $1 \
+                   AND (vm.id = $2 OR ($3::bool AND vm.work_id = $4))",
                 vid,
                 manifestation_id,
+                is_work_scoped,
+                work_id,
             )
             .fetch_optional(&mut *tx)
             .await
@@ -542,6 +562,22 @@ async fn unlock_field(
         return Err(AppError::NotFound);
     }
     Ok(StatusCode::OK)
+}
+
+/// Whether `field_name`'s canonical pointer lives on the shared `works`
+/// row rather than on a specific `manifestations` row.
+///
+/// `title`/`subtitle`/`description`/`language` and every `contributors.*`
+/// role write through to `works` (see `apply_version`), so a version
+/// journaled under any manifestation of that work is a valid revert
+/// target. `genres`/`moods`/`tags` are per-manifestation vocabulary
+/// junctions despite also hanging off the work's editions, so they stay
+/// out of this set and use the strict same-manifestation match.
+fn is_work_scoped_field(field_name: &str) -> bool {
+    matches!(
+        field_name,
+        "title" | "subtitle" | "description" | "language"
+    ) || field_name.starts_with("contributors.")
 }
 
 fn parse_entity(s: &str) -> Result<EntityType, AppError> {
@@ -950,7 +986,7 @@ async fn clear_field(
                 // consumers (sort, display) do not expect.
                 "author" => {
                     return Err(AppError::Validation(
-                        "cannot clear contributors.author — a work must retain at least one author"
+                        "cannot clear contributors.author: a work must retain at least one author"
                             .into(),
                     ));
                 }
@@ -1142,6 +1178,10 @@ async fn apply_contributors_patch(
         let names = names.filter(|v| !v.is_empty());
 
         let key = format!("contributors.{role}");
+        // Captured before `delete_role_rows` clears the role's `work_authors`
+        // rows, mirroring the `apply_version` contributors arm so a manual
+        // PATCH's undo pointer is as reliable as the accept/revert path's.
+        let previous_version_id = capture_role_pointer(tx, work_id, role).await?;
         let (value, version_id) = match names {
             None => {
                 let version_id =
@@ -1166,7 +1206,7 @@ async fn apply_contributors_patch(
             FieldVersionChange {
                 value,
                 version_id: Some(version_id),
-                previous_version_id: None,
+                previous_version_id,
             },
         );
     }
@@ -1633,14 +1673,14 @@ impl UpdateMetadataFields {
 ///
 /// Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are
 /// unchanged, `null` clears (except `title`). Accepts both
-/// `application/json` and `application/merge-patch+json` — axum's `Json`
+/// `application/json` and `application/merge-patch+json`: axum's `Json`
 /// extractor already treats any `+json`-suffixed content type as JSON.
 ///
 /// For each touched field the handler inserts a `metadata_versions` row
 /// with `source = 'manual'` and then either promotes that row to canonical
 /// via [`apply_version`] (when a value is supplied) or clears the
 /// canonical column via [`clear_field`] (when the value is `null`). The
-/// pending AI/OPF drafts on the same field stay `status = 'pending'` — the
+/// pending AI/OPF drafts on the same field stay `status = 'pending'`, so the
 /// operator can revert to one of them later. The response carries the
 /// applied (normalized) value plus the new and previous version pointers
 /// per field, so a caller can offer undo without a follow-up read.
@@ -2004,6 +2044,30 @@ mod tests {
         .fetch_one(ingestion_pool)
         .await
         .expect("insert metadata_versions")
+    }
+
+    /// Insert a second manifestation on an existing work, mirroring
+    /// `insert_work_and_manifestation`'s row shape. Used by the sibling-
+    /// manifestation revert tests below, which need two editions of the
+    /// same work.
+    async fn insert_sibling_manifestation(ingestion_pool: &sqlx::PgPool, work_id: Uuid) -> Uuid {
+        let marker = Uuid::new_v4().simple().to_string();
+        let file_path = format!("/tmp/admin-test-sibling-{marker}.epub");
+        let file_hash = format!("admin-test-sibling-hash-{marker}");
+        sqlx::query_scalar!(
+            "INSERT INTO manifestations \
+                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                 file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING id",
+            work_id,
+            file_path,
+            file_hash,
+        )
+        .fetch_one(ingestion_pool)
+        .await
+        .expect("insert sibling manifestation")
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -3543,6 +3607,240 @@ mod tests {
         assert_eq!(
             remaining, 0,
             "revert-to-null must clear the translator role"
+        );
+    }
+
+    // ── revert accepts a sibling manifestation's version for work-scoped
+    //    fields, but keeps the strict same-manifestation match for
+    //    manifestation-scoped fields ─────────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_title_accepts_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // Patch title via manifestation A: journals a version under A and
+        // wires it as the work's canonical title_version_id.
+        let title_a = format!("Title Via A {marker}");
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": title_a}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = body_a["fields"]["title"]["version_id"]
+            .as_str()
+            .expect("patch via A must journal a title version")
+            .to_string();
+
+        // Patch title via manifestation B: the canonical pointer is
+        // work-scoped, so B's response must report A's version as the
+        // prior pointer even though the row was journaled under A.
+        let title_b = format!("Title Via B {marker}");
+        let patch_b = server
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": title_b}))
+            .await;
+        assert_eq!(patch_b.status_code(), StatusCode::OK);
+        let body_b: serde_json::Value = patch_b.json();
+        assert_eq!(
+            body_b["fields"]["title"]["previous_version_id"].as_str(),
+            Some(version_a.as_str()),
+            "title's canonical pointer lives on works, so B's previous_version_id \
+             must be A's version"
+        );
+
+        // Undo on B for that A-owned version must succeed: title is
+        // work-scoped, so the sibling's journal row is a valid revert target.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "title",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert.text()
+        );
+
+        let row = sqlx::query!("SELECT title FROM works WHERE id = $1", work_id,)
+            .fetch_one(&app_pool)
+            .await
+            .expect("fetch work title");
+        assert_eq!(
+            row.title, title_a,
+            "revert on B must restore A's title as canonical"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_pages_rejects_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // Patch pages (manifestation-scoped) via A.
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"pages": 250}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = body_a["fields"]["pages"]["version_id"]
+            .as_str()
+            .expect("patch via A must journal a pages version")
+            .to_string();
+
+        // Revert on B with A's version id must 404: pages is
+        // manifestation-scoped, so a sibling's journal row must not be
+        // applicable to another edition's columns.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "pages",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::NOT_FOUND,
+            "manifestation-scoped fields must keep the strict same-manifestation \
+             match; body = {}",
+            revert.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_contributors_author_accepts_version_journaled_under_sibling_manifestation(
+        pool: sqlx::PgPool,
+    ) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let name_a = format!("Alpha Author {marker}");
+        let patch_a = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_a.clone()]}}))
+            .await;
+        assert_eq!(patch_a.status_code(), StatusCode::OK);
+        let body_a: serde_json::Value = patch_a.json();
+        let version_a = body_a["fields"]["contributors.author"]["version_id"]
+            .as_str()
+            .expect("patch via A must journal a contributors.author version")
+            .to_string();
+
+        let name_b = format!("Beta Author {marker}");
+        let patch_b = server
+            .patch(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_b]}}))
+            .await;
+        assert_eq!(patch_b.status_code(), StatusCode::OK);
+
+        // contributors.* is work-scoped (work_authors keys off work_id, not
+        // manifestation_id), so B can undo to the version A journaled.
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "contributors.author",
+                "version_id": version_a,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            revert.text()
+        );
+
+        let rows = sqlx::query!(
+            "SELECT a.name FROM work_authors wa \
+             JOIN authors a ON a.id = wa.author_id \
+             WHERE wa.work_id = $1 AND wa.role = 'author'",
+            work_id,
+        )
+        .fetch_all(&app_pool)
+        .await
+        .expect("fetch work_authors after revert");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, name_a);
+    }
+
+    // ── manual PATCH threads the prior contributors.<role> stamp instead of
+    //    always reporting previous_version_id: None ──────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_contributors_author_second_edit_reports_prior_version_id(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let name_a = format!("Alpha Author {marker}");
+        let first = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"contributors": {"author": [name_a]}}))
+            .await;
+        assert_eq!(first.status_code(), StatusCode::OK);
+        let first_body: serde_json::Value = first.json();
+        assert_eq!(
+            first_body["fields"]["contributors.author"]["previous_version_id"],
+            serde_json::Value::Null,
+            "the work's first author edit has no prior single stamp to report"
+        );
+        let first_version_id = first_body["fields"]["contributors.author"]["version_id"]
+            .as_str()
+            .expect("first patch must journal a version")
+            .to_string();
+
+        let name_b = format!("Beta Author {marker}");
+        let second = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"contributors": {"author": [name_b]}}))
+            .await;
+        assert_eq!(second.status_code(), StatusCode::OK);
+        let second_body: serde_json::Value = second.json();
+        assert_eq!(
+            second_body["fields"]["contributors.author"]["previous_version_id"].as_str(),
+            Some(first_version_id.as_str()),
+            "the second edit must thread the first edit's version as its \
+             previous_version_id instead of reporting null"
         );
     }
 
