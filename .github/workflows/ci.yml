@@ -1457,11 +1457,17 @@ jobs:
     # that stack as 0%. Hence on push both producers must have succeeded.
     # PR analyses never touch the main baseline, so single-stack PRs (one
     # producer skipped) still scan. Skip fork PRs: no SONAR_TOKEN, so the
-    # scan only fails. !cancelled(), not always(): always() runs even
-    # inside a cancelled run, and once scanned main with zero artifacts,
-    # wiping the baseline to 0%.
+    # scan only fails. Skip bot dependency PRs via the actor: Dependabot
+    # runs read a separate secrets store without SONAR_TOKEN and hard-fail,
+    # and Renovate scans waste a runner on diffs with no analyzable
+    # first-party code. A human pushing to a bot branch becomes the actor,
+    # re-enabling the scan (with normal secrets). !cancelled(), not
+    # always(): always() runs even inside a cancelled run, and once
+    # scanned main with zero artifacts, wiping the baseline to 0%.
     if: >-
       !cancelled() &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'push' ||
