@@ -19,6 +19,13 @@
  * caveat: the list endpoint is forward-only keyset with no total
  * count, so Ctrl+End jumps to the last row currently loaded in memory,
  * not the last row in the library.
+ *
+ * The editing rows document the vendor's own editing keyboard model
+ * (Enter/F2/type-to-open, Escape cancel) plus this feature's Ctrl+Z undo.
+ * One deviation from the WAI-ARIA APG grid pattern is called out: F2 opens
+ * an editor but, unlike the APG's toggle model, does not also close one.
+ * react-data-grid at the pinned tag implements F2-open only, so Escape or
+ * Enter are the close paths.
  */
 import { useEffect, useLayoutEffect, useRef, type ReactElement } from "react";
 
@@ -83,6 +90,15 @@ const SHORTCUT_ROWS: ShortcutRow[] = [
   },
   { keys: ["?"], description: "Open this shortcuts overlay" },
   { keys: ["Esc"], description: "Close this overlay" },
+  { keys: ["Enter"], description: "Edit the focused cell" },
+  {
+    keys: ["F2"],
+    description: "Edit the focused cell (opens only; Esc or Enter closes)",
+  },
+  { keys: ["A", "…", "Z"], description: "Type a character to start editing with that value" },
+  { keys: ["Esc"], description: "While editing: discard the edit" },
+  { keys: ["Enter"], description: "While editing: commit the edit" },
+  { keys: ["Ctrl", "Z"], description: "Undo the most recent edit" },
 ];
 
 type GridShortcutsDialogProps = {
