@@ -177,42 +177,22 @@ function updateListCache(
   });
 }
 
-/** Every loaded manifestation id `affectsManifestation` would patch, read
- *  from the current list cache. Always includes `manifestationId` itself,
- *  even if the edited row isn't (yet) present in the loaded window. */
-function collectAffectedIds(
-  queryClient: QueryClient,
-  listKey: BooksListKey,
-  manifestationId: string,
-  workId: string,
-  workScoped: boolean,
-): readonly string[] {
-  const ids = new Set<string>([manifestationId]);
-  const data = queryClient.getQueryData<InfiniteData<BookListResponse>>(listKey);
-  if (data !== undefined) {
-    for (const page of data.pages) {
-      for (const item of page.items) {
-        if (affectsManifestation(item, manifestationId, workId, workScoped)) ids.add(item.id);
-      }
-    }
-  }
-  return [...ids];
-}
-
-/** Invalidates the book-detail query for the edited manifestation and, for
- *  a work-scoped field, every loaded sibling edition too: a fan-out edit
- *  patches every sibling's row in the list cache, and a stale detail view
- *  open on any of them must not keep serving the pre-edit value. */
+/** Invalidates the book-detail caches a write may have left stale. A
+ *  work-scoped field can change editions the list cache has never loaded
+ *  (opened directly, on an unloaded page, or excluded by the active
+ *  filter), so it invalidates the whole detail family: inactive entries
+ *  are only marked stale, and at most one detail view is on screen to
+ *  refetch. Manifestation-scoped fields touch exactly one detail. */
 function invalidateAffectedDetails(
   queryClient: QueryClient,
-  listKey: BooksListKey,
   manifestationId: string,
-  workId: string,
   workScoped: boolean,
 ): void {
-  for (const id of collectAffectedIds(queryClient, listKey, manifestationId, workId, workScoped)) {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(id) });
+  if (workScoped) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.books.detailsAll });
+    return;
   }
+  void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(manifestationId) });
 }
 
 /**
@@ -416,9 +396,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
         const route = EDIT_ROUTES[entry.columnKey];
         invalidateAffectedDetails(
           queryClient,
-          listKey,
           entry.manifestationId,
-          entry.previousRow.work_id,
           route.pipeline === "metadata" && route.workScoped,
         );
       } else {
@@ -493,7 +471,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
           (item) => affectsManifestation(item, row.id, row.work_id, route.workScoped),
           (item) => route.applyToRow(item, applied),
         );
-        invalidateAffectedDetails(queryClient, listKey, row.id, row.work_id, route.workScoped);
+        invalidateAffectedDetails(queryClient, row.id, route.workScoped);
         clearPending(key);
         announceSuccess(
           columnKey,

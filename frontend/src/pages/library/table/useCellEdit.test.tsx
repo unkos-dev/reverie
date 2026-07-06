@@ -536,7 +536,7 @@ describe("useCellEdit", () => {
       expect(revertField).toHaveBeenCalledWith(row.id, "title", "prev-version-id");
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail(row.id) });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
     });
   });
 
@@ -731,7 +731,7 @@ describe("useCellEdit", () => {
     errorSpy.mockRestore();
   });
 
-  test("a work-scoped edit invalidates the detail query for the loaded sibling id too", async () => {
+  test("a work-scoped edit invalidates the whole book-detail family, covering siblings the list never loaded", async () => {
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, "invalidateQueries");
     const rowA = rowFixture({ id: "book-1", work_id: "work-1" });
@@ -749,12 +749,11 @@ describe("useCellEdit", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
 
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-1") });
   });
 
-  test("an isbn_13 edit does not invalidate the detail query for a sibling id", async () => {
+  test("an isbn_13 edit invalidates only the edited manifestation's detail query", async () => {
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, "invalidateQueries");
     const rowA = rowFixture({ id: "book-1", work_id: "work-1", isbn_13: "9780000000001" });
@@ -775,9 +774,10 @@ describe("useCellEdit", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-1") });
     });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
   });
 
-  test("undoing a work-scoped metadata edit invalidates the detail query for the loaded sibling id too", async () => {
+  test("undoing a work-scoped metadata edit invalidates the whole book-detail family too", async () => {
     const client = makeClient();
     const rowA = rowFixture({ id: "book-1", work_id: "work-1" });
     const rowB = rowFixture({ id: "book-2", work_id: "work-1" });
@@ -804,7 +804,7 @@ describe("useCellEdit", () => {
       expect(revertField).toHaveBeenCalledWith("book-1", "title", "prev-version-id");
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
     });
   });
 
