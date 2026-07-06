@@ -2033,10 +2033,10 @@ async fn manual_vocab_patch_does_not_inflate_pending_count(pool: PgPool) {
         .patch(&format!("/api/v1/books/{m_id}/metadata"))
         .add_header(AUTHORIZATION, basic.clone())
         .json(&serde_json::json!({
-            "fields": {"genres": ["Falconry"], "moods": ["Wistful"], "tags": ["Heirloom"]}
+            "genres": ["Falconry"], "moods": ["Wistful"], "tags": ["Heirloom"]
         }))
         .await;
-    assert_eq!(patch.status_code(), StatusCode::NO_CONTENT);
+    assert_eq!(patch.status_code(), StatusCode::OK);
 
     // The three manual journal rows are applied (their pointers live on the
     // junction rows), so none of them may resurface as a pending draft.
