@@ -251,4 +251,53 @@ describe("ReactDataGridBinding edit surface", () => {
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("textbox", { name: "Title editor" })).not.toBeInTheDocument();
   });
+
+  test("a multi-index rows-change (fill/paste) never fires onCellEdit", async () => {
+    const onCellEdit = vi.fn();
+    let capturedOnRowsChange:
+      | ((rows: readonly TestRow[], data: { indexes: number[]; column: { key: string } }) => void)
+      | undefined;
+
+    // RDG's own fill-drag and multi-cell paste interactions aren't
+    // reproducible through jsdom pointer events, so this seam is exercised
+    // by swapping in a stub DataGrid that hands back the exact
+    // `onRowsChange` callback the binding wires up, then invoking it
+    // directly with a synthetic multi-index event.
+    vi.doMock("react-data-grid", () => ({
+      DataGrid: (props: {
+        onRowsChange?: (
+          rows: readonly TestRow[],
+          data: { indexes: number[]; column: { key: string } },
+        ) => void;
+      }) => {
+        capturedOnRowsChange = props.onRowsChange;
+        return null;
+      },
+    }));
+    vi.resetModules();
+    const { ReactDataGridBinding: MockedBinding } = await import("./ReactDataGridBinding");
+
+    render(
+      <MockedBinding<TestRow>
+        rows={ROWS}
+        columns={COLUMNS}
+        rowKey={(row) => row.id}
+        sort={null}
+        onSortChange={() => undefined}
+        onCellFocus={() => undefined}
+        onCellEdit={onCellEdit}
+        height={400}
+      />,
+    );
+
+    if (capturedOnRowsChange === undefined) {
+      throw new Error("expected the stub DataGrid to receive onRowsChange");
+    }
+    capturedOnRowsChange([...ROWS], { indexes: [0, 1], column: { key: "title" } });
+
+    expect(onCellEdit).not.toHaveBeenCalled();
+
+    vi.doUnmock("react-data-grid");
+    vi.resetModules();
+  });
 });

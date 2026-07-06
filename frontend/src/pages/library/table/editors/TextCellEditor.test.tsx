@@ -59,6 +59,26 @@ describe("TextCellEditor", () => {
     expect(onDraft).not.toHaveBeenCalledWith(junk);
   });
 
+  test("positive-int recovers from an invalid draft: a valid follow-up stages the draft and clears aria-invalid", async () => {
+    const onDraft = vi.fn();
+    const user = userEvent.setup();
+    render(<TextCellEditor value="100" onDraft={onDraft} kind="positive-int" />);
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    onDraft.mockClear();
+
+    await user.type(input, "abc");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(onDraft).not.toHaveBeenCalledWith("abc");
+
+    await user.clear(input);
+    await user.type(input, "412");
+
+    expect(onDraft).toHaveBeenLastCalledWith("412");
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+  });
+
   test("positive-int accepts a valid page count", async () => {
     const onDraft = vi.fn();
     const user = userEvent.setup();

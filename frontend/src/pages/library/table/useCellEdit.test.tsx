@@ -508,6 +508,131 @@ describe("useCellEdit", () => {
     expect(revertField).not.toHaveBeenCalledWith(row.id, "title", "v-0");
   });
 
+  test("undoing a metadata edit invalidates the book-detail query so a stale detail view can't outlive the revert", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const row = rowFixture();
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { title: fieldChange("New Title", "prev-version-id") },
+    });
+    vi.mocked(revertField).mockResolvedValue(undefined);
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, title: "New Title" },
+      previousRow: row,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalled();
+    });
+    // Drop the commit's own detail invalidation so only undo's call remains below.
+    invalidateSpy.mockClear();
+
+    getUndoAction(0)();
+
+    await waitFor(() => {
+      expect(revertField).toHaveBeenCalledWith(row.id, "title", "prev-version-id");
+    });
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail(row.id) });
+    });
+  });
+
+  test("undoing the first authors edit on an authorless work is not offered, since the counter-patch would violate the last-author guard", async () => {
+    const client = makeClient();
+    const row = rowFixture({ authors: [] });
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { "contributors.author": fieldChange(["New Author"], null) },
+    });
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, authors: ["New Author"] },
+      previousRow: row,
+      columnKey: "authors",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      // A single-argument call (no options object) means announceSuccess
+      // took its no-undo-entry branch: no toast action, nothing pushed.
+      expect(toast.success).toHaveBeenCalledWith("Authors updated.");
+    });
+  });
+
+  test("undoing an authors counter-patch edit calls updateBookMetadata with the prior author list, not revertField", async () => {
+    const client = makeClient();
+    const row = rowFixture({ authors: ["Original Author"] });
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockResolvedValueOnce({
+      fields: { "contributors.author": fieldChange(["New Author"], null) },
+    });
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, authors: ["New Author"] },
+      previousRow: row,
+      columnKey: "authors",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalled();
+    });
+
+    vi.mocked(updateBookMetadata).mockResolvedValueOnce({
+      fields: { "contributors.author": fieldChange(["Original Author"], "v-restore") },
+    });
+    getUndoAction(0)();
+
+    await waitFor(() => {
+      expect(updateBookMetadata).toHaveBeenNthCalledWith(2, row.id, {
+        contributors: { author: ["Original Author"] },
+      });
+    });
+    expect(revertField).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(readCache(client)[0].authors).toEqual(["Original Author"]);
+    });
+  });
+
+  test("a failed undo toasts an error, leaves the cache at the edited value, and consumes the entry so a second Ctrl+Z is a no-op", async () => {
+    const client = makeClient();
+    const row = rowFixture();
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockResolvedValue({
+      fields: { title: fieldChange("New Title", "prev-version-id") },
+    });
+    vi.mocked(revertField).mockRejectedValueOnce(
+      new ApiError(404, null, "Not Found", "Version prev-version-id no longer exists."),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, title: "New Title" },
+      previousRow: row,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+    await waitFor(() => {
+      expect(readCache(client)[0].title).toBe("New Title");
+    });
+
+    const wrapper = screen.getByTestId("wrapper");
+    fireEvent.keyDown(wrapper, { key: "z", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Not Found: Version prev-version-id no longer exists.",
+      );
+    });
+    expect(readCache(client)[0].title).toBe("New Title");
+
+    fireEvent.keyDown(wrapper, { key: "z", ctrlKey: true });
+    await waitFor(() => {
+      expect(revertField).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test("a failed metadata edit leaves the cache untouched, clears the pending entry, and toasts", async () => {
     const client = makeClient();
     const row = rowFixture();

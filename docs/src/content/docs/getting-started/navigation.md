@@ -94,8 +94,8 @@ how you opened it.
 Title, subtitle, and authors describe the work rather than one edition
 of it, so editing any of them from one row updates every edition of
 that work currently loaded in the table, not just the row you touched.
-The column header carries a marker on these three, with a tooltip
-spelling out the fan-out, so you know before you commit. ISBN-13 and
+The column header names all three with an "(all editions)" suffix, so
+you know the reach of an edit before you commit. ISBN-13 and
 pages describe one edition and stay put. Status and rating are yours
 alone: nobody else browsing the same library sees them, and they never
 touch the book's version history.

@@ -154,9 +154,12 @@ function updateListCache(
  * previous version once set (guarded defensively: the invariant should
  * hold, but undo is disabled rather than trusted blindly); authors falls
  * back to a counter-patch when the response carries no previous pointer
- * (unstamped `work_authors` rows); every other field reverts with
- * `previous_version_id`, including `null`, which the revert endpoint reads
- * as "clear."
+ * (unstamped `work_authors` rows), unless the work was authorless before
+ * this edit, in which case undo is disabled the same way title's is (the
+ * counter-patch would restore an empty author list, which the metadata
+ * endpoint's last-author guard always rejects); every other field reverts
+ * with `previous_version_id`, including `null`, which the revert endpoint
+ * reads as "clear."
  */
 function buildMetadataUndoEntry(
   id: string,
@@ -168,6 +171,7 @@ function buildMetadataUndoEntry(
 ): MetadataUndoEntry | null {
   if (route.field === "title" && applied.previous_version_id === null) return null;
   if (route.field === "contributors.author" && applied.previous_version_id === null) {
+    if (previousRow.authors.length === 0) return null;
     return {
       id,
       pipeline: "metadata",
@@ -342,6 +346,12 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
         });
         restoreReadingRow(queryClient, listKey, entry, response);
       }
+      // Mirrors handleCellEdit's own invalidation: without this, a
+      // book-detail view open on the reverted field can keep serving the
+      // undone value for the remainder of its staleTime.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.books.detail(entry.manifestationId),
+      });
       toast.success("Reverted.", { id: entry.id });
     } catch (err) {
       console.error("[useCellEdit.handleUndo] undo failed", err);
