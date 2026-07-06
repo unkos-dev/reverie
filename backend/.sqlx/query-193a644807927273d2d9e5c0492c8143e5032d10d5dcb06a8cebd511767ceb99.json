@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (SELECT language_version_id FROM works WHERE id = $1) UPDATE works SET language = NULL, language_version_id = NULL WHERE id = $1 RETURNING (SELECT language_version_id FROM old) AS previous_version_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "previous_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "193a644807927273d2d9e5c0492c8143e5032d10d5dcb06a8cebd511767ceb99"
+}

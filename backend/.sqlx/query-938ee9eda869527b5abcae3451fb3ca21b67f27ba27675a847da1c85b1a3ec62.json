@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT source_version_id FROM work_authors WHERE work_id = $1 AND role = ($2::text)::author_role",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "work_authors",
+            "name": "source_version_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "938ee9eda869527b5abcae3451fb3ca21b67f27ba27675a847da1c85b1a3ec62"
+}

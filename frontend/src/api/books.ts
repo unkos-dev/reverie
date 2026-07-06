@@ -243,21 +243,36 @@ export async function getWork(id: string, signal?: AbortSignal): Promise<WorkDet
   return WorkDetailSchema.parse(body);
 }
 
+/**
+ * Per-role contributor replace/clear, nested under `contributors`.
+ * Absent role = untouched; `null` or `[]` clears the role; a non-empty
+ * array replaces it wholesale in the given order. Strict: the backend
+ * rejects unknown role keys with 422.
+ */
+const ContributorsPatchSchema = z.strictObject({
+  author: z.array(z.string()).nullable().optional(),
+  editor: z.array(z.string()).nullable().optional(),
+  translator: z.array(z.string()).nullable().optional(),
+});
+
 const UpdateBookMetadataFieldsSchema = z.object({
   title: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   language: z.string().nullable().optional(),
   publisher: z.string().nullable().optional(),
   pub_date: z.string().nullable().optional(),
   isbn_10: z.string().nullable().optional(),
   isbn_13: z.string().nullable().optional(),
+  pages: z.number().int().positive().nullable().optional(),
+  contributors: ContributorsPatchSchema.nullable().optional(),
 });
 /**
  * RFC 7396 JSON Merge Patch body for `PATCH /api/v1/books/{id}/metadata`.
  *
  * Each field value distinguishes three states:
  * * key omitted → field unchanged
- * * key present, value = string → set field to that value
+ * * key present, value non-`null` → set field to that value
  * * key present, value = `null` → clear the canonical column
  *
  * The backend types ISBN / pub_date strings; per-field parsing happens

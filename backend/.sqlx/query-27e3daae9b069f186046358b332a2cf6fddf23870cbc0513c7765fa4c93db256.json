@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (SELECT isbn_13_version_id FROM manifestations WHERE id = $3) UPDATE manifestations SET isbn_13 = $1, isbn_13_version_id = $2 WHERE id = $3 RETURNING (SELECT isbn_13_version_id FROM old) AS previous_version_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "previous_version_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "27e3daae9b069f186046358b332a2cf6fddf23870cbc0513c7765fa4c93db256"
+}
