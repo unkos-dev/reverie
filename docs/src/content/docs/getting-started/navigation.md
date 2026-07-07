@@ -76,6 +76,29 @@ Your view choice travels in the URL (`?view=table`), so a shared link
 opens exactly what you see; Reverie also remembers your last choice
 and uses it the next time you open the Library without one.
 
+## Sorting the library table
+
+Click a column header to sort the table by that column: the first
+click sorts ascending, the second descending, and a third turns the
+sort off. `⌘-click` / `Ctrl-click` a header to add it as another sort
+level instead of replacing the current one, so you can sort by author
+and then, within each author, by newest first. You can stack up to
+three levels at once.
+
+A plain click on any header resets the sort back down to that single
+column. Once more than one level is active, use the sort chips bar
+above the table instead: reorder levels, flip a level's direction,
+remove one, or clear the sort entirely. None of that needs a modifier
+key.
+
+Books with nothing to sort on, no page count, no author yet, always
+sort to the end, whichever direction you're sorting in.
+
+Multi-level sort exists so a large library can be scanned in exactly
+the order you want, author then most recent within each author, for
+example, while paging stays stable: rows don't get skipped or repeated
+as you load more.
+
 ## Editing from the table
 
 Most cells in the table edit in place. Title, subtitle, ISBN-13, pages,
