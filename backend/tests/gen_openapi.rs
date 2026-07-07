@@ -190,16 +190,28 @@ fn spec_covers_library_routes() {
         "BookDetail",
         "WorkDetail",
         "SearchResponse",
-        // SortMode is referenced by the list `?sort=` param via `$ref`; it must be
-        // registered as a component or the docs-site `$ref` parse fails (the
-        // byte-drift gate does not catch a dangling-but-consistent ref).
-        "SortMode",
     ] {
         assert!(
             schemas.get(schema).is_some(),
             "{schema} schema component present"
         );
     }
+
+    // The `?sort=` param is a free-form JSON:API stack string validated
+    // server-side against the sort whitelist, not an enum `$ref`. Assert the
+    // query param exists and is a plain string so a regression back to an
+    // enum component (or a dropped param) fails loudly.
+    let params = doc["paths"]["/api/v1/books"]["get"]["parameters"]
+        .as_array()
+        .expect("GET /api/v1/books parameters array");
+    let sort_param = params
+        .iter()
+        .find(|p| p["name"] == "sort" && p["in"] == "query")
+        .expect("GET /api/v1/books documents a `sort` query param");
+    assert_eq!(
+        sort_param["schema"]["type"], "string",
+        "the sort param is a free-form string, not an enum ref"
+    );
 
     // The detail route documents its 404 (RLS-hidden / missing) against ProblemDetails.
     assert!(

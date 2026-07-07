@@ -6,6 +6,7 @@
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
 use axum_test::TestServer;
+use base64ct::{Base64UrlUnpadded, Encoding};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -103,6 +104,138 @@ async fn insert_book(ingestion_pool: &PgPool, marker: &str, title: &str) -> (Uui
     .await
     .expect("insert manifestation");
     (work_id, m_id)
+}
+
+/// Insert a `(work, manifestation)` pair with an explicit `created_at`,
+/// for sort-walk fixtures that need deterministic timestamp ordering
+/// (the column default is `now()`, which cannot express intentional
+/// ties or cross-row ordering within one test). Mirrors
+/// [`insert_book`]'s query shape with `created_at` added as a bound
+/// column.
+async fn insert_book_at(
+    ingestion_pool: &PgPool,
+    marker: &str,
+    title: &str,
+    created_at: time::OffsetDateTime,
+) -> (Uuid, Uuid) {
+    let work_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+        title,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert work");
+
+    let file_path = format!("/tmp/library-test-{marker}.epub");
+    let hash = format!("library-test-hash-{marker}");
+    let m_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status, created_at) \
+         VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                 'complete'::ingestion_status, 'clean'::validation_status, $4) \
+         RETURNING id",
+        work_id,
+        file_path,
+        hash,
+        created_at,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert manifestation");
+    (work_id, m_id)
+}
+
+/// Like [`insert_book_with_author`], but with an explicit `sort_name`
+/// (distinct from the author's display `name`, so two different
+/// authors can collide on `first_author_sort_name` without violating
+/// `authors_name_unique`) and an explicit `created_at` for
+/// deterministic multi-level ordering.
+async fn insert_book_with_author_sort_name(
+    ingestion_pool: &PgPool,
+    marker: &str,
+    title: &str,
+    author_name: &str,
+    sort_name: &str,
+    created_at: time::OffsetDateTime,
+) -> Uuid {
+    let (work_id, m_id) = insert_book_at(ingestion_pool, marker, title, created_at).await;
+    let author_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO authors (name, sort_name) VALUES ($1, $2) RETURNING id",
+        author_name,
+        sort_name,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert author");
+    sqlx::query!(
+        "INSERT INTO work_authors (work_id, author_id, position) VALUES ($1, $2, 0)",
+        work_id,
+        author_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("insert work_authors");
+    let mut conn = ingestion_pool.acquire().await.expect("acquire conn");
+    crate::models::work::refresh_first_author_sort(&mut conn, work_id)
+        .await
+        .expect("refresh first_author_sort_name");
+    m_id
+}
+
+/// Set a manifestation's `pages` for sort-walk fixtures needing a
+/// non-NULL boundary value.
+async fn set_pages(ingestion_pool: &PgPool, m_id: Uuid, pages: i32) {
+    sqlx::query!(
+        "UPDATE manifestations SET pages = $1 WHERE id = $2",
+        pages,
+        m_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("set pages");
+}
+
+/// Deterministic `created_at` boundary value for walk tests: seconds
+/// past a fixed epoch, so relative ordering across fixture rows is
+/// exact rather than depending on wall-clock insert timing.
+fn ts(offset_seconds: i64) -> time::OffsetDateTime {
+    time::OffsetDateTime::from_unix_timestamp(1_700_000_000 + offset_seconds)
+        .expect("valid unix timestamp")
+}
+
+/// Walk every page from `first_url` via the `next_cursor` chain,
+/// collecting each item's manifestation id in return order. Shared by
+/// the multi-level sort-walk tests below; caps at 20 pages as a
+/// runaway-pagination guard.
+async fn walk_all_ids(server: &TestServer, basic: &str, first_url: &str) -> Vec<Uuid> {
+    let sep = if first_url.contains('?') { "&" } else { "?" };
+    let mut seen = Vec::new();
+    let mut url = first_url.to_owned();
+    let mut walked = 0u32;
+    loop {
+        let response = server
+            .get(&url)
+            .add_header(AUTHORIZATION, basic.to_owned())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "page {walked} at {url}"
+        );
+        let body: serde_json::Value = response.json();
+        for item in body["items"].as_array().unwrap() {
+            let id: Uuid = item["id"].as_str().unwrap().parse().expect("uuid id");
+            seen.push(id);
+        }
+        walked += 1;
+        assert!(walked < 20, "runaway pagination: seen = {seen:?}");
+        match body["next_cursor"].as_str() {
+            Some(nc) => url = format!("{first_url}{sep}cursor={nc}"),
+            None => break,
+        }
+    }
+    seen
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -366,9 +499,14 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-    // Mint a recent-tagged cursor, then try to replay it under sort=title.
-    let recent = crate::routes::cursor::CursorKey::Recent {
-        created_at: time::OffsetDateTime::now_utc(),
+    // Mint a cursor under the default (-created_at) stack, then try to
+    // replay it under sort=title.
+    let default_spec = crate::routes::sort_spec::SortSpec::default();
+    let recent = crate::routes::cursor::SortCursor {
+        spec: default_spec.canonical(),
+        keys: vec![crate::routes::cursor::CursorValue::Ts(
+            time::OffsetDateTime::now_utc(),
+        )],
         id: Uuid::new_v4(),
     }
     .encode()
@@ -727,6 +865,349 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
         "all 4 manifestations across 2 works must surface exactly once — regression guard \
          against `(sort_title, work_id)` tuple comparison dropping sibling manifestations"
     );
+}
+
+// ─── multi-column sort stack: boundary walks + error paths ──────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn default_sort_unchanged(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let mut ids = Vec::new();
+    for (marker, title, offset) in [
+        ("orbit", "Orbital Decay", 300),
+        ("comet", "Comet Tail", 200),
+        ("nebula", "Nebula Drift", 100),
+    ] {
+        let (_w, m_id) = insert_book_at(&ingestion_pool, marker, title, ts(offset)).await;
+        ids.push(m_id);
+    }
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let default_seen = walk_all_ids(&server, &basic, "/api/v1/books").await;
+    let explicit_seen = walk_all_ids(&server, &basic, "/api/v1/books?sort=-created_at").await;
+
+    assert_eq!(
+        default_seen, explicit_seen,
+        "an omitted ?sort= must walk identically to the explicit default stack"
+    );
+    assert_eq!(
+        default_seen, ids,
+        "default stack is -created_at: newest manifestation first"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn two_level_mixed_direction_walk(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Three works share the title "Mistwood Tandem"; page_size=2 lands
+    // a page boundary inside that tie group, so the walk must fall
+    // through to the created_at DESC tiebreak rather than dropping or
+    // duplicating a sibling.
+    let mut expected_order = Vec::new();
+    for (marker, title) in [("amber", "Amber Grove"), ("brindle", "Brindle Hollow")] {
+        let (_w, m_id) = insert_book(&ingestion_pool, marker, title).await;
+        expected_order.push(m_id);
+    }
+    for (marker, offset) in [("mist-1", 300), ("mist-2", 200), ("mist-3", 100)] {
+        let (_w, m_id) =
+            insert_book_at(&ingestion_pool, marker, "Mistwood Tandem", ts(offset)).await;
+        expected_order.push(m_id);
+    }
+    for (marker, title) in [("willow", "Willow Path"), ("zenith", "Zenith Point")] {
+        let (_w, m_id) = insert_book(&ingestion_pool, marker, title).await;
+        expected_order.push(m_id);
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let seen = walk_all_ids(&server, &basic, "/api/v1/books?sort=title,-created_at").await;
+
+    assert_eq!(
+        seen, expected_order,
+        "title ASC, then created_at DESC, must walk in this exact order with no drops or dupes"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn three_level_walk(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Five works share the author sort name "Bramblewood, Ida" (via
+    // distinct display names, since `authors_name_unique` forbids
+    // reusing a display name); two of them additionally tie on
+    // created_at, so the walk must fall through all three levels
+    // (author, then created_at DESC, then title ASC) before the id
+    // tiebreaker is ever needed.
+    let mut expected_order = Vec::new();
+    for (marker, title, author_name, offset) in [
+        ("falcon", "Falcon Point", "Bramblewood One", 500),
+        ("ember", "Ember Falls", "Bramblewood Two", 400),
+        ("copper", "Copper Vale", "Bramblewood Three", 300),
+        ("amber3", "Amber Isle", "Bramblewood Four", 200),
+        ("birch", "Birch Hollow", "Bramblewood Five", 200),
+    ] {
+        let m_id = insert_book_with_author_sort_name(
+            &ingestion_pool,
+            marker,
+            title,
+            author_name,
+            "Bramblewood, Ida",
+            ts(offset),
+        )
+        .await;
+        expected_order.push(m_id);
+    }
+    let harbor_id = insert_book_with_author_sort_name(
+        &ingestion_pool,
+        "harbor",
+        "Harbor Light",
+        "Thistledown Original",
+        "Thistledown, Wren",
+        ts(100),
+    )
+    .await;
+    expected_order.push(harbor_id);
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let seen = walk_all_ids(
+        &server,
+        &basic,
+        "/api/v1/books?sort=author,-created_at,title",
+    )
+    .await;
+
+    assert_eq!(
+        seen, expected_order,
+        "author ASC, then created_at DESC, then title ASC must resolve every tie with no \
+         drops or dupes"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn null_bucket_author_boundary(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Descending primary sort with a NULL bucket: exercises the DESC
+    // side of the nullable-column advance clause, which the existing
+    // ASC-only author walk test does not cover.
+    let voss_id =
+        insert_book_with_author(&ingestion_pool, "voss", "Voss Chronicle", "Voss, Elena").await;
+    let larkin_id =
+        insert_book_with_author(&ingestion_pool, "larkin", "Larkin Verses", "Larkin, Theo").await;
+    let mut stub_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    for (marker, title) in [
+        ("stub-x", "Stub Xenon"),
+        ("stub-y", "Stub Yttrium"),
+        ("stub-z", "Stub Zirconium"),
+    ] {
+        let (_w, m_id) = insert_book(&ingestion_pool, marker, title).await;
+        stub_ids.insert(m_id);
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let seen = walk_all_ids(&server, &basic, "/api/v1/books?sort=-author").await;
+
+    assert_eq!(seen.len(), 5, "no duplicates or drops across the walk");
+    assert_eq!(
+        &seen[..2],
+        &[voss_id, larkin_id],
+        "non-NULL authors sort DESC by sort_name before the NULL bucket"
+    );
+    let tail: std::collections::HashSet<Uuid> = seen[2..].iter().copied().collect();
+    assert_eq!(
+        tail, stub_ids,
+        "every NULL-bucket row must surface exactly once after a DESC primary sort"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn null_bucket_pages_desc(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // DESC + nullable: the direction where a naive advance clause
+    // (`pages < boundary` with no `OR pages IS NULL`) would silently
+    // drop the entire NULL bucket the first time a non-NULL boundary
+    // is crossed. NULLS LAST puts NULL rows at the tail in either
+    // direction, so this must behave the same as the ASC case.
+    let (_w1, heavy_id) = insert_book(&ingestion_pool, "heavy", "Page Heavy Tome").await;
+    set_pages(&ingestion_pool, heavy_id, 800).await;
+    let (_w2, medium_id) = insert_book(&ingestion_pool, "medium", "Page Medium Tome").await;
+    set_pages(&ingestion_pool, medium_id, 400).await;
+    let mut slim_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    for (marker, title) in [
+        ("slim-a", "Slim Alpha"),
+        ("slim-b", "Slim Bravo"),
+        ("slim-c", "Slim Charlie"),
+    ] {
+        let (_w, m_id) = insert_book(&ingestion_pool, marker, title).await;
+        slim_ids.insert(m_id);
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let seen = walk_all_ids(&server, &basic, "/api/v1/books?sort=-pages").await;
+
+    assert_eq!(seen.len(), 5, "no duplicates or drops across the walk");
+    assert_eq!(
+        &seen[..2],
+        &[heavy_id, medium_id],
+        "non-NULL pages sort DESC before the NULL bucket"
+    );
+    let tail: std::collections::HashSet<Uuid> = seen[2..].iter().copied().collect();
+    assert_eq!(
+        tail, slim_ids,
+        "every NULL-pages row must surface exactly once after a DESC primary sort"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn pages_sort_walk(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let mut tied_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    for (marker, title) in [
+        ("novella-a", "Novella Aurora"),
+        ("novella-b", "Novella Borealis"),
+        ("novella-c", "Novella Cascade"),
+    ] {
+        let (_w, m_id) = insert_book(&ingestion_pool, marker, title).await;
+        set_pages(&ingestion_pool, m_id, 100).await;
+        tied_ids.insert(m_id);
+    }
+    let (_w, longer_id) = insert_book(&ingestion_pool, "epic", "Epic Longform").await;
+    set_pages(&ingestion_pool, longer_id, 200).await;
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let seen = walk_all_ids(&server, &basic, "/api/v1/books?sort=pages").await;
+
+    assert_eq!(seen.len(), 4, "no duplicates or drops across the walk");
+    let head: std::collections::HashSet<Uuid> = seen[..3].iter().copied().collect();
+    assert_eq!(
+        head, tied_ids,
+        "every 100-page row must surface exactly once; m.id tiebreak resolves the tie"
+    );
+    assert_eq!(
+        seen[3], longer_id,
+        "the untied 200-page row sorts after the tied 100-page group"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_duplicate_sort_column_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/v1/books?sort=title,-title")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    let body = test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+    let detail = body["detail"].as_str().expect("detail string");
+    assert!(detail.contains("invalid sort"), "got detail: {detail}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_filter_too_many_sort_levels_returns_400(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get("/api/v1/books?sort=title,author,created_at,pages")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    let body = test_support::assert_problem(
+        &response,
+        problems::MALFORMED_QUERY,
+        StatusCode::BAD_REQUEST,
+    );
+    let detail = body["detail"].as_str().expect("detail string");
+    assert!(detail.contains("invalid sort"), "got detail: {detail}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Mint a cursor under `title` (ascending), then replay it under
+    // `-title` (descending): same column, different direction, so the
+    // canonical spec strings differ and the request must reject.
+    let minted_spec = crate::routes::sort_spec::SortSpec::parse("title").expect("valid spec");
+    let cursor = crate::routes::cursor::SortCursor {
+        spec: minted_spec.canonical(),
+        keys: vec![crate::routes::cursor::CursorValue::Text(Some(
+            "neuromancer".to_owned(),
+        ))],
+        id: Uuid::new_v4(),
+    }
+    .encode()
+    .expect("encode");
+
+    let response = server
+        .get(&format!("/api/v1/books?sort=-title&cursor={cursor}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    let body = test_support::assert_problem(
+        &response,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    );
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("cursor sort mismatch")
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_legacy_cursor_tag_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Hand-encode a pre-v2 `r`-tagged (pipe-delimited Recent) payload.
+    // `SortCursor::parse_for` only recognizes tag `m`, so a stale
+    // bookmark carrying the old cursor shape must reject as an unknown
+    // tag rather than attempt to decode it.
+    let legacy = Base64UrlUnpadded::encode_string(
+        format!("r|2026-05-22T09:30:00Z|{}", Uuid::new_v4().as_hyphenated()).as_bytes(),
+    );
+
+    let response = server
+        .get(&format!("/api/v1/books?cursor={legacy}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    let body = test_support::assert_problem(
+        &response,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    );
+    let detail = body["detail"].as_str().unwrap();
+    assert!(detail.contains("invalid cursor"), "got detail: {detail}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1592,9 +2073,10 @@ async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
-    // `?sort=` decodes into the `SortMode` enum, a structurally
-    // distinct decode path from the `Option<Uuid>` filter params: an
-    // unknown variant must still surface as RFC 9457 400, not a silent
+    // `?sort=` is validated in-handler against the `SortColumn`
+    // whitelist (`SortSpec::parse`), a structurally distinct decode
+    // path from the `Option<Uuid>` filter params: a field outside the
+    // whitelist must still surface as RFC 9457 400, not a silent
     // default-sort fallthrough.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1602,7 +2084,7 @@ async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
     let response = server
-        .get("/api/v1/books?sort=garbage")
+        .get("/api/v1/books?sort=isbn_13")
         .add_header(AUTHORIZATION, basic)
         .await;
     let body = test_support::assert_problem(
@@ -1611,10 +2093,7 @@ async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
         StatusCode::BAD_REQUEST,
     );
     let detail = body["detail"].as_str().expect("detail string");
-    assert!(
-        detail.contains("malformed query parameter"),
-        "got detail: {detail}"
-    );
+    assert!(detail.contains("invalid sort"), "got detail: {detail}");
 }
 
 #[sqlx::test(migrations = "./migrations")]

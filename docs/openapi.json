@@ -178,7 +178,7 @@
           "library"
         ],
         "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort axis.",
-        "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (e.g. a malformed UUID in `?author=`/`?series=`/\n  `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the\n  `From<QueryRejection>` impl.\n- [`AppError::Validation`] when the cursor is malformed, the sort\n  tag mismatches the cursor, or any vocabulary filter param carries\n  more than [`MAX_TAG_FILTERS`] values.\n- [`AppError::Internal`] on database errors.",
+        "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (a malformed UUID in `?author=`/`?series=`/`?shelf=`,\n  via the `From<QueryRejection>` impl), or when `?sort=` names an\n  unwhitelisted field, repeats a column, or exceeds\n  [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.\n- [`AppError::Validation`] when the cursor is malformed, its\n  embedded sort spec mismatches the requested stack, or any\n  vocabulary filter param carries more than [`MAX_TAG_FILTERS`]\n  values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list",
         "parameters": [
           {
@@ -192,10 +192,12 @@
           {
             "name": "sort",
             "in": "query",
+            "description": "Sort stack, JSON:API grammar: comma-separated whitelisted field\nnames (`title`, `author`, `created_at`, `pages`); a leading `-`\nreverses that level to descending; order of appearance sets\npriority (the first field is the primary key). An unwhitelisted\nfield, a repeated column, or more than three levels is a 400.\nOmitted, this is `-created_at` (today's \"recent\" order).",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/SortMode"
-            }
+              "type": "string"
+            },
+            "example": "-created_at,title"
           },
           {
             "name": "author",
@@ -8163,15 +8165,6 @@
             ]
           }
         }
-      },
-      "SortMode": {
-        "type": "string",
-        "description": "Sort axis selectable via `?sort=...` on `/api/v1/books`.",
-        "enum": [
-          "recent",
-          "title",
-          "author"
-        ]
       },
       "SourceFailureSummary": {
         "type": "object",

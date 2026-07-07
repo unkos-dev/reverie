@@ -18,9 +18,13 @@
 //!   [`crate::db::acquire_with_rls`]; the handler never adds an
 //!   ad-hoc `WHERE user_id = …` predicate because doing so would
 //!   bypass the unified policy set on `manifestations`.
-//! - Cursor tags are verified against the requested `?sort=` axis so
-//!   a cursor minted for one sort cannot be replayed against
-//!   another (see [`crate::routes::cursor::CursorKey::parse_for`]).
+//! - `?sort=` is a validated, ordered stack of whitelisted columns
+//!   ([`crate::routes::sort_spec::SortSpec`]), not a single fixed
+//!   axis; `push_order_by` and `push_cursor_predicate` iterate its
+//!   levels to build the `ORDER BY` and the general keyset cascade.
+//!   Cursor tags are verified against the requested stack so a
+//!   cursor minted for one sort cannot be replayed against another
+//!   (see [`crate::routes::cursor::SortCursor::parse_for`]).
 
 use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
@@ -46,7 +50,8 @@ use crate::models::library::{
 use crate::models::reading_state::ReadingStateSummary;
 use crate::models::reading_status::ReadingStatus;
 use crate::models::validation_status::ValidationStatus;
-use crate::routes::cursor::{CursorKey, SortMode};
+use crate::routes::cursor::{CursorValue, SortCursor};
+use crate::routes::sort_spec::{SortColumn, SortDirection, SortSpec};
 use crate::state::AppState;
 
 mod search;
@@ -104,8 +109,15 @@ const MAX_TAG_FILTERS: usize = 20;
 struct ListParams {
     #[serde(default)]
     cursor: Option<String>,
+    /// Sort stack, JSON:API grammar: comma-separated whitelisted field
+    /// names (`title`, `author`, `created_at`, `pages`); a leading `-`
+    /// reverses that level to descending; order of appearance sets
+    /// priority (the first field is the primary key). An unwhitelisted
+    /// field, a repeated column, or more than three levels is a 400.
+    /// Omitted, this is `-created_at` (today's "recent" order).
     #[serde(default)]
-    sort: SortMode,
+    #[param(example = "-created_at,title")]
+    sort: Option<String>,
     #[serde(default)]
     author: Option<Uuid>,
     #[serde(default)]
@@ -156,12 +168,14 @@ struct BookListResponse {
 ///
 /// # Errors
 /// - [`AppError::MalformedQuery`] when a filter param fails to
-///   deserialize (e.g. a malformed UUID in `?author=`/`?series=`/
-///   `?shelf=`, or an unknown `?sort=` variant) — HTTP 400 via the
-///   `From<QueryRejection>` impl.
-/// - [`AppError::Validation`] when the cursor is malformed, the sort
-///   tag mismatches the cursor, or any vocabulary filter param carries
-///   more than [`MAX_TAG_FILTERS`] values.
+///   deserialize (a malformed UUID in `?author=`/`?series=`/`?shelf=`,
+///   via the `From<QueryRejection>` impl), or when `?sort=` names an
+///   unwhitelisted field, repeats a column, or exceeds
+///   [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.
+/// - [`AppError::Validation`] when the cursor is malformed, its
+///   embedded sort spec mismatches the requested stack, or any
+///   vocabulary filter param carries more than [`MAX_TAG_FILTERS`]
+///   values.
 /// - [`AppError::Internal`] on database errors.
 #[expect(
     clippy::too_many_lines,
@@ -208,9 +222,17 @@ async fn list(
         }
     }
 
+    let spec = params
+        .sort
+        .as_deref()
+        .map(SortSpec::parse)
+        .transpose()
+        .map_err(|e| AppError::MalformedQuery(format!("invalid sort: {e}")))?
+        .unwrap_or_default();
+
     let cursor = match params.cursor.as_deref() {
         Some(raw) => Some(
-            CursorKey::parse_for(raw, params.sort)
+            SortCursor::parse_for(raw, &spec)
                 .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?,
         ),
         None => None,
@@ -251,8 +273,8 @@ async fn list(
          WHERE TRUE",
     );
     push_filter_predicates(&mut qb, &params);
-    push_cursor_predicate(&mut qb, params.sort, cursor.as_ref());
-    push_order_by(&mut qb, params.sort);
+    push_cursor_predicate(&mut qb, &spec, cursor.as_ref());
+    push_order_by(&mut qb, &spec);
     qb.push(" LIMIT ");
     qb.push_bind(page_size + 1);
 
@@ -314,12 +336,10 @@ async fn list(
     let next_cursor = match page_rows.last() {
         Some(last) if has_more => {
             let row_id = last.get::<Uuid, _>("id");
-            let encoded = next_cursor_for_row(last, params.sort)
-                .encode()
-                .map_err(|e| {
-                    tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
-                    AppError::Internal(e.into())
-                })?;
+            let encoded = next_cursor_for_row(last, &spec)?.encode().map_err(|e| {
+                tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
+                AppError::Internal(e.into())
+            })?;
             Some(encoded)
         }
         _ => None,
@@ -510,109 +530,177 @@ fn push_vocab_predicates(
     }
 }
 
-fn push_cursor_predicate(qb: &mut QueryBuilder<Postgres>, sort: SortMode, key: Option<&CursorKey>) {
-    let Some(key) = key else {
+/// Push the generalized keyset "advance past the cursor" predicate for
+/// `spec`. For levels `L1..Lk` plus the implicit `m.id` tiebreaker this
+/// is `AND ( T1 OR T2 OR ... OR Tk OR Tid )`, where `Ti` requires exact
+/// equality on every level before `i` plus a strict advance on level
+/// `i`, and `Tid` requires exact equality on every level plus a strict
+/// `m.id` advance. This is the single-level author arm generalized to N
+/// levels: a bare tuple comparison is wrong once any level is nullable
+/// or levels mix `ASC`/`DESC`, so each level gets its own OR-branch
+/// instead of a `(a, b, c) > (x, y, z)` row-value comparison.
+fn push_cursor_predicate(
+    qb: &mut QueryBuilder<Postgres>,
+    spec: &SortSpec,
+    cursor: Option<&SortCursor>,
+) {
+    let Some(cursor) = cursor else {
         return;
     };
-    match (sort, key) {
-        (SortMode::Recent, CursorKey::Recent { created_at, id }) => {
-            qb.push(" AND (m.created_at, m.id) < (");
-            qb.push_bind(*created_at);
-            qb.push(", ");
-            qb.push_bind(*id);
-            qb.push(")");
+    let levels = spec.levels();
+    let tiebreak_dir = levels
+        .last()
+        .map_or(SortDirection::Desc, |level| level.direction);
+
+    qb.push(" AND (");
+    let mut wrote_branch = false;
+    for (i, level) in levels.iter().enumerate() {
+        let key = &cursor.keys[i];
+        // A nullable column whose own boundary is NULL has nothing
+        // "after" it within this level: NULLS LAST puts every NULL row
+        // at the tail regardless of direction, so a deeper level or the
+        // id tiebreaker below is what continues the walk.
+        if level.column.nullable() && is_null_boundary(key) {
+            continue;
         }
-        (
-            SortMode::Title,
-            CursorKey::Title {
-                sort_title,
-                work_id,
-                manifestation_id,
-            },
-        ) => {
-            // Triple-row tuple comparison. The `m.id` tiebreaker is
-            // required because a single work can carry multiple
-            // manifestations (epub + pdf of the same edition), and
-            // they all share `(sort_title, work_id)`; without
-            // `m.id` the page boundary between two such siblings
-            // silently drops the second from page N+1.
-            qb.push(" AND (w.sort_title, w.id, m.id) > (");
-            qb.push_bind(sort_title.clone());
-            qb.push(", ");
-            qb.push_bind(*work_id);
-            qb.push(", ");
-            qb.push_bind(*manifestation_id);
-            qb.push(")");
+        qb.push(if wrote_branch { " OR (" } else { "(" });
+        for (prior_level, prior_key) in levels[..i].iter().zip(&cursor.keys[..i]) {
+            push_boundary_equality(qb, prior_level.column, prior_key);
+            qb.push(" AND ");
         }
-        (
-            SortMode::Author,
-            CursorKey::Author {
-                sort_name: Some(sort_name),
-                work_id,
-                manifestation_id,
-            },
-        ) => {
-            // ORDER BY first_author_sort_name ASC NULLS LAST means the
-            // NULL-author bucket sits at the tail. Cursor was minted
-            // off a non-NULL boundary row, so the next page must
-            // emit: rows whose sort_name compares strictly after
-            // `(sort_name, work_id, m.id)` in lexicographic ASC
-            // order, PLUS the entire trailing NULL bucket. Postgres
-            // three-valued logic would silently drop the NULL bucket
-            // from a naive tuple `>` comparison.
-            qb.push(" AND (w.first_author_sort_name > ");
-            qb.push_bind(sort_name.clone());
-            qb.push(" OR (w.first_author_sort_name = ");
-            qb.push_bind(sort_name.clone());
-            qb.push(" AND (w.id, m.id) > (");
-            qb.push_bind(*work_id);
-            qb.push(", ");
-            qb.push_bind(*manifestation_id);
-            qb.push(")) OR w.first_author_sort_name IS NULL)");
+        push_boundary_advance(qb, level.column, level.direction, key);
+        qb.push(")");
+        wrote_branch = true;
+    }
+
+    // Every level ties the boundary exactly; `m.id` (unique per row)
+    // breaks it. Direction follows the last explicit level so a
+    // single-level stack reproduces the pre-stack tuple-comparison
+    // arms exactly.
+    qb.push(if wrote_branch { " OR (" } else { "(" });
+    for (level, key) in levels.iter().zip(&cursor.keys) {
+        push_boundary_equality(qb, level.column, key);
+        qb.push(" AND ");
+    }
+    qb.push("m.id ");
+    qb.push(tiebreak_dir.comparison_op());
+    qb.push(" ");
+    qb.push_bind(cursor.id);
+    qb.push(")");
+
+    qb.push(")");
+}
+
+/// Whether a cascade boundary value sits in a nullable column's NULLS
+/// LAST bucket. Only [`CursorValue::Text`] and [`CursorValue::Int`] can
+/// carry `None`; [`SortCursor::parse_for`] already rejected any other
+/// arity or value-type mismatch against the spec.
+const fn is_null_boundary(value: &CursorValue) -> bool {
+    matches!(value, CursorValue::Text(None) | CursorValue::Int(None))
+}
+
+/// Push an equality term against `column`'s boundary `value`: `IS NULL`
+/// when the boundary itself is NULL, `= $bind` otherwise.
+fn push_boundary_equality(
+    qb: &mut QueryBuilder<Postgres>,
+    column: SortColumn,
+    value: &CursorValue,
+) {
+    qb.push(column.sql_expr());
+    match value {
+        CursorValue::Text(None) | CursorValue::Int(None) => {
+            qb.push(" IS NULL");
         }
-        (
-            SortMode::Author,
-            CursorKey::Author {
-                sort_name: None,
-                work_id,
-                manifestation_id,
-            },
-        ) => {
-            // Cursor pointed at a NULL-author boundary row; remaining
-            // page is the rest of the NULL bucket ordered by
-            // `(w.id, m.id)`.
-            qb.push(
-                " AND w.first_author_sort_name IS NULL \
-                  AND (w.id, m.id) > (",
-            );
-            qb.push_bind(*work_id);
-            qb.push(", ");
-            qb.push_bind(*manifestation_id);
-            qb.push(")");
+        CursorValue::Text(Some(v)) => {
+            qb.push(" = ");
+            qb.push_bind(v.clone());
         }
-        // `parse_for` already rejected cross-sort cursors; this arm is
-        // unreachable but kept exhaustive to satisfy the compiler.
-        _ => {}
+        CursorValue::Int(Some(v)) => {
+            qb.push(" = ");
+            qb.push_bind(*v);
+        }
+        CursorValue::Ts(ts) => {
+            qb.push(" = ");
+            qb.push_bind(*ts);
+        }
     }
 }
 
-fn push_order_by(qb: &mut QueryBuilder<Postgres>, sort: SortMode) {
-    match sort {
-        SortMode::Recent => {
-            // `m.id` alone is unique per row, but pair it with
-            // created_at for index-friendly DESC scan.
-            qb.push(" ORDER BY m.created_at DESC, m.id DESC");
-        }
-        SortMode::Title => {
-            // `m.id` is the final tiebreaker because a work can have
-            // multiple manifestations (epub + pdf) that share
-            // `(sort_title, w.id)`.
-            qb.push(" ORDER BY w.sort_title ASC, w.id ASC, m.id ASC");
-        }
-        SortMode::Author => {
-            qb.push(" ORDER BY w.first_author_sort_name ASC NULLS LAST, w.id ASC, m.id ASC");
-        }
+/// Push the "strictly past this level's boundary" clause. A nullable
+/// column with a non-NULL boundary wraps in `(expr OP $bind OR expr IS
+/// NULL)` in BOTH directions: NULLS LAST means the NULL bucket sits
+/// after every non-NULL value regardless of direction, so a bare `<`
+/// (DESC) would silently drop the entire NULL bucket the first time a
+/// non-NULL boundary is used, the same bug class a bare `>` (ASC) would
+/// have without the `OR IS NULL` arm. A NULL boundary itself never
+/// reaches here; the caller skips this level's branch instead (see
+/// [`is_null_boundary`]).
+fn push_boundary_advance(
+    qb: &mut QueryBuilder<Postgres>,
+    column: SortColumn,
+    direction: SortDirection,
+    value: &CursorValue,
+) {
+    let expr = column.sql_expr();
+    let op = direction.comparison_op();
+    let nullable = column.nullable();
+    match value {
+        // Unreachable: push_cursor_predicate filters null boundaries
+        // out before calling. Kept to satisfy exhaustiveness.
+        CursorValue::Text(None) | CursorValue::Int(None) => {}
+        CursorValue::Text(Some(v)) => push_advance_bind(qb, expr, op, nullable, v.clone()),
+        CursorValue::Int(Some(v)) => push_advance_bind(qb, expr, op, nullable, *v),
+        CursorValue::Ts(ts) => push_advance_bind(qb, expr, op, nullable, *ts),
     }
+}
+
+/// Bind-generic core of [`push_boundary_advance`]: `expr op $bind`,
+/// wrapped in `(... OR expr IS NULL)` when `nullable`.
+fn push_advance_bind<'q, T>(
+    qb: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
+    op: char,
+    nullable: bool,
+    value: T,
+) where
+    T: sqlx::Encode<'q, Postgres> + sqlx::Type<Postgres>,
+{
+    if nullable {
+        qb.push("(");
+    }
+    qb.push(expr);
+    qb.push(" ");
+    qb.push(op);
+    qb.push(" ");
+    qb.push_bind(value);
+    if nullable {
+        qb.push(" OR ");
+        qb.push(expr);
+        qb.push(" IS NULL)");
+    }
+}
+
+/// Push the `ORDER BY` clause for `spec`: each level's column and
+/// direction, `NULLS LAST` when the column is nullable, and a final
+/// `m.id` tiebreaker in the last level's direction so equal-key rows
+/// still resolve to a total order (required for keyset pagination).
+fn push_order_by(qb: &mut QueryBuilder<Postgres>, spec: &SortSpec) {
+    qb.push(" ORDER BY ");
+    let mut tiebreak_dir = SortDirection::Desc;
+    for (i, level) in spec.levels().iter().enumerate() {
+        if i > 0 {
+            qb.push(", ");
+        }
+        qb.push(level.column.sql_expr());
+        qb.push(" ");
+        qb.push(level.direction.sql());
+        if level.column.nullable() {
+            qb.push(" NULLS LAST");
+        }
+        tiebreak_dir = level.direction;
+    }
+    qb.push(", m.id ");
+    qb.push(tiebreak_dir.sql());
 }
 
 pub(crate) fn split_page(
@@ -629,28 +717,55 @@ pub(crate) fn split_page(
     (page_rows, has_more)
 }
 
-fn next_cursor_for_row(row: &sqlx::postgres::PgRow, sort: SortMode) -> CursorKey {
-    match sort {
-        SortMode::Recent => CursorKey::Recent {
-            created_at: row.get::<OffsetDateTime, _>("created_at"),
-            id: row.get::<Uuid, _>("id"),
-        },
-        SortMode::Title => CursorKey::Title {
-            sort_title: row.get::<String, _>("sort_title"),
-            work_id: row.get::<Uuid, _>("work_id"),
-            manifestation_id: row.get::<Uuid, _>("id"),
-        },
-        SortMode::Author => CursorKey::Author {
-            sort_name: row
-                .try_get::<Option<String>, _>("first_author_sort_name")
-                .ok()
-                .flatten(),
-            work_id: row.get::<Uuid, _>("work_id"),
-            manifestation_id: row.get::<Uuid, _>("id"),
-        },
+/// Build the `next_cursor` boundary for `row` under `spec`: one typed
+/// value per level (read from `select_alias()`) plus the `m.id`
+/// tiebreaker. Uses `try_get`, not the panicking `Row::get`; this
+/// dynamic `QueryBuilder` path has no compile-time schema check, so a
+/// decode failure becomes a clean 500 instead of a panic (mirrors the
+/// `validation_status` decode above).
+fn next_cursor_for_row(
+    row: &sqlx::postgres::PgRow,
+    spec: &SortSpec,
+) -> Result<SortCursor, AppError> {
+    let mut keys = Vec::with_capacity(spec.levels().len());
+    for level in spec.levels() {
+        let alias = level.column.select_alias();
+        let value = match level.column {
+            SortColumn::Title => CursorValue::Text(Some(decode_cursor_column(row, alias)?)),
+            SortColumn::Author => CursorValue::Text(decode_cursor_column(row, alias)?),
+            SortColumn::CreatedAt => CursorValue::Ts(decode_cursor_column(row, alias)?),
+            SortColumn::Pages => CursorValue::Int(decode_cursor_column(row, alias)?),
+        };
+        keys.push(value);
     }
+    Ok(SortCursor {
+        spec: spec.canonical(),
+        keys,
+        id: decode_cursor_column(row, "id")?,
+    })
 }
 
+/// `try_get` wrapper shared by [`next_cursor_for_row`]'s per-column
+/// reads: maps a decode failure to [`AppError::Internal`] instead of
+/// panicking or silently defaulting.
+fn decode_cursor_column<'r, T>(row: &'r sqlx::postgres::PgRow, alias: &str) -> Result<T, AppError>
+where
+    T: sqlx::Decode<'r, Postgres> + sqlx::Type<Postgres>,
+{
+    row.try_get(alias).map_err(|e| {
+        AppError::Internal(anyhow::anyhow!("failed to decode {alias} for cursor: {e}"))
+    })
+}
+
+/// Rewrite `uri`'s query string for the `Link: rel="next"` header and
+/// the body's `next_cursor` echo, replacing (or appending) `cursor` and
+/// passing every other param through unchanged. Shared with the
+/// shelves pagination surface, so this stays sort-agnostic; a `sort`
+/// param survives the round trip unmodified because
+/// [`crate::routes::sort_spec::SortSpec::canonical`] reproduces
+/// whatever raw string parsed successfully (its own round-trip
+/// invariant), and an absent `sort` is never added here, so the
+/// default stack keeps producing clean `?cursor=`-only URLs.
 pub(crate) fn build_next_url(uri: &axum::http::Uri, next_cursor: &str) -> String {
     let path = uri.path();
     let mut pairs: Vec<(String, String)> = Vec::new();
