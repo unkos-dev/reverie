@@ -11,6 +11,7 @@
  * equality on the key, so equal params hit the same cache slot.
  */
 import type { ListBooksParams } from "@/api";
+import type { SuggestKind } from "@/api/suggest";
 
 /** Tuple for the root books namespace. */
 export type BooksAllKey = readonly ["books"];
@@ -44,6 +45,16 @@ export const queryKeys = {
   },
   /** Search-results cache slot. Distinct trimmed `q` = distinct slot. */
   search: (q: string): SearchKey => ["search", q] as const,
+  suggest: {
+    /** One vocabulary's typeahead rows, keyed by kind + trimmed query. */
+    vocab: (kind: SuggestKind, q: string) => ["suggest", kind, q] as const,
+  },
+  authors: {
+    /** Author id → label resolution for chip hydration. Ids are sorted so the
+     *  same set hits one cache slot regardless of the order they appear in
+     *  the URL. */
+    resolve: (ids: readonly string[]) => ["authors", "resolve", [...ids].sort()] as const,
+  },
   series: {
     /** Root namespace; invalidate to wipe every series-* cache slot. */
     all: ["series"] as const,
