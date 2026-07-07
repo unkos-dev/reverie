@@ -59,8 +59,15 @@ export type GridColumn<R> = {
   editorOptions?: { commitOnOutsideClick?: boolean };
 };
 
-/** Single-column sort state. Multi-column sort is out of scope for this contract. */
-export type SortState = { columnKey: string; direction: "asc" | "desc" } | null;
+/** One column's position in a sort stack, in priority order (index 0 = primary). */
+export type SortLevel = { columnKey: string; direction: "asc" | "desc" };
+
+/**
+ * Ordered sort stack; an empty array means unsorted. The binding neither
+ * caps the stack length nor reorders levels; stack policy belongs to the
+ * caller.
+ */
+export type SortState = readonly SortLevel[];
 
 /**
  * Selected-cell report emitted on focus change. Carries the row itself, not

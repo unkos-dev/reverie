@@ -33,6 +33,8 @@ pub mod series;
 pub mod settings;
 /// Shelves CRUD JSON API (`/api/v1/shelves*`).
 pub mod shelves;
+/// Whitelisted sort columns and the `?sort=` grammar for `/api/v1/books`.
+pub mod sort_spec;
 /// Single-page-app asset-serving router (`/assets/*` mount).
 pub mod spa;
 /// Typeahead suggest endpoints for metadata vocabularies (`/api/v1/{genres,moods,tags,authors,series,publishers}/suggest`).

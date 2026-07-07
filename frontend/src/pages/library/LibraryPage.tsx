@@ -19,10 +19,12 @@ import { Link, useSearchParams } from "react-router";
 import {
   listBooks,
   listShelves,
+  parseSortParam,
+  serializeSortParam,
   type BookListItem,
   type BookListResponse,
-  type ListSort,
   type Shelf,
+  type SortLevelParam,
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
@@ -67,11 +69,47 @@ const LibraryTableView = lazy(() =>
   import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
 );
 
-const SORT_OPTIONS: { value: ListSort; label: string }[] = [
-  { value: "recent", label: "Recent" },
-  { value: "title", label: "Title" },
-  { value: "author", label: "Author" },
+/**
+ * A preset's `levels` is the exact stack it writes and the exact stack that
+ * marks it selected; anything else (a table-built stack, or a stack a
+ * preset never produces) shows the menu's "Custom" state instead.
+ */
+type SortPreset = {
+  value: "recent" | "title" | "author";
+  label: string;
+  levels: readonly SortLevelParam[];
+};
+
+const SORT_PRESETS: readonly SortPreset[] = [
+  { value: "recent", label: "Recent", levels: [] },
+  { value: "title", label: "Title", levels: [{ field: "title", desc: false }] },
+  { value: "author", label: "Author", levels: [{ field: "author", desc: false }] },
 ];
+
+function sortLevelsEqual(a: readonly SortLevelParam[], b: readonly SortLevelParam[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((level, index) => level.field === b[index].field && level.desc === b[index].desc)
+  );
+}
+
+/**
+ * Shared `?sort=` write path for both the table's header/chip sort and the
+ * `SortMenu` presets. Clears `cursor` because a new sort invalidates the
+ * keyset boundary the old cursor encoded; omits `sort` entirely for the
+ * server's default order instead of writing an empty value.
+ */
+function applySortToSearchParams(
+  current: URLSearchParams,
+  levels: readonly SortLevelParam[],
+): URLSearchParams {
+  const updated = new URLSearchParams(current);
+  const serialized = serializeSortParam(levels);
+  if (serialized === "") updated.delete("sort");
+  else updated.set("sort", serialized);
+  updated.delete("cursor");
+  return updated;
+}
 
 /**
  * Top-level page component. The `<Suspense>` boundary catches the
@@ -143,13 +181,9 @@ function LibraryContent(): ReactElement {
     setSearchParams(updated, { replace: true });
   }
 
-  /** Table-header sort writes the same `?sort=` contract as {@link SortMenu}. */
-  function setSortFromTable(value: ListSort): void {
-    const updated = new URLSearchParams(searchParams);
-    if (value === "recent") updated.delete("sort");
-    else updated.set("sort", value);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
+  /** Table-header/chip sort writes the same `?sort=` contract as {@link SortMenu}. */
+  function setSortFromTable(levels: readonly SortLevelParam[]): void {
+    setSearchParams(applySortToSearchParams(searchParams, levels), { replace: true });
   }
 
   function clearAllFilters(): void {
@@ -175,7 +209,7 @@ function LibraryContent(): ReactElement {
         <Suspense fallback={<Skeleton className="h-96 w-full" />}>
           <LibraryTableView
             items={items}
-            sort={params.sort ?? "recent"}
+            sort={parseSortParam(params.sort ?? "")}
             onSortChange={setSortFromTable}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
@@ -350,36 +384,35 @@ interface SortMenuProps {
 }
 
 /**
- * Sort control — a real `<button>` menu (spec §9.3), wired to the
- * existing `?sort=` contract (`recent` is the backend default, so it
- * clears the param instead of writing it).
+ * Sort control: a real `<button>` menu (spec §9.3), wired to the existing
+ * `?sort=` contract via single-level presets (`recent` is the backend
+ * default, so it clears the param instead of writing it). A stack the table
+ * built (multi-level, or a direction/column no preset produces) matches no
+ * preset, so the trigger falls back to a "Custom" label and no radio item
+ * shows checked, rather than misreporting the stack as one of the presets.
  */
 function SortMenu({ searchParams, setSearchParams }: SortMenuProps): ReactElement {
-  const raw = searchParams.get("sort");
-  const active = SORT_OPTIONS.find((o) => o.value === raw) ?? { value: "recent", label: "Recent" };
+  const levels = parseSortParam(searchParams.get("sort") ?? "");
+  const active = SORT_PRESETS.find((preset) => sortLevelsEqual(preset.levels, levels));
 
-  function setSort(value: string): void {
-    const opt = SORT_OPTIONS.find((o) => o.value === value);
-    if (opt === undefined) return;
-    const updated = new URLSearchParams(searchParams);
-    if (opt.value === "recent") updated.delete("sort");
-    else updated.set("sort", opt.value);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
+  function setPreset(value: string): void {
+    const preset = SORT_PRESETS.find((p) => p.value === value);
+    if (preset === undefined) return;
+    setSearchParams(applySortToSearchParams(searchParams, preset.levels), { replace: true });
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline" size="sm">
-          Sort: {active.label}
+          Sort: {active?.label ?? "Custom"}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={active.value} onValueChange={setSort}>
-          {SORT_OPTIONS.map((opt) => (
-            <DropdownMenuRadioItem key={opt.value} value={opt.value}>
-              {opt.label}
+        <DropdownMenuRadioGroup value={active?.value ?? ""} onValueChange={setPreset}>
+          {SORT_PRESETS.map((preset) => (
+            <DropdownMenuRadioItem key={preset.value} value={preset.value}>
+              {preset.label}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

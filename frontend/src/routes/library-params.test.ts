@@ -36,10 +36,37 @@ describe("paramsFromSearch", () => {
     expect(paramsFromSearch(search("sort="))).toEqual({});
   });
 
-  test("accepts all valid sort enum values", () => {
-    expect(paramsFromSearch(search("sort=recent")).sort).toBe("recent");
+  test("drops the legacy `recent` value (absent `sort` already gets the server default)", () => {
+    expect(paramsFromSearch(search("sort=recent"))).toEqual({});
+  });
+
+  test("accepts a single-level sort", () => {
     expect(paramsFromSearch(search("sort=title")).sort).toBe("title");
     expect(paramsFromSearch(search("sort=author")).sort).toBe("author");
+  });
+
+  test("accepts a two-level sort stack, preserving a descending prefix", () => {
+    expect(paramsFromSearch(search("sort=author,-created_at")).sort).toBe("author,-created_at");
+  });
+
+  test("accepts a three-level sort stack with mixed directions", () => {
+    expect(paramsFromSearch(search("sort=-created_at,title,pages")).sort).toBe(
+      "-created_at,title,pages",
+    );
+  });
+
+  test("drops unknown fields out of a stack, keeping the valid levels", () => {
+    expect(paramsFromSearch(search("sort=title,bogus,author")).sort).toBe("title,author");
+  });
+
+  test("drops a duplicate field, keeping its first occurrence", () => {
+    expect(paramsFromSearch(search("sort=title,-title")).sort).toBe("title");
+  });
+
+  test("caps a four-level stack at three", () => {
+    expect(paramsFromSearch(search("sort=title,-author,created_at,pages")).sort).toBe(
+      "title,-author,created_at",
+    );
   });
 
   test("does NOT include the `sort` key when the URL omits it", () => {

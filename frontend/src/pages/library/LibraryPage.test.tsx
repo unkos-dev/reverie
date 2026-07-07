@@ -27,6 +27,7 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     validation_status: "clean",
     enrichment_status: "complete",
     reading_state: null,
+    created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -153,6 +154,25 @@ describe("LibraryPage", () => {
     title.focus();
     await user.keyboard("{Enter}");
     expect(await screen.findByRole("button", { name: /Sort: Title/i })).toBeInTheDocument();
+  });
+
+  test("a table-built stack matching no preset shows the Custom sort state", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?sort=author,-created_at"],
+      cacheParams: { sort: "author,-created_at" },
+    });
+    const sortButton = await screen.findByRole("button", { name: "Sort: Custom" });
+    const user = userEvent.setup();
+    await user.click(sortButton);
+    // None of the three presets match a two-level stack, so none is checked.
+    for (const label of ["Recent", "Title", "Author"]) {
+      expect(await screen.findByRole("menuitemradio", { name: label })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+    }
   });
 
   test("grid tiles carry a focus treatment equal to the hover treatment", async () => {

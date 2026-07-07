@@ -9,7 +9,14 @@
  * but, like every other RDG type, never appears in this module's exports.
  */
 import { useMemo, type ReactElement, type ReactNode } from "react";
-import { DataGrid, type Column, type RenderEditCellProps, type SortColumn } from "react-data-grid";
+import {
+  DataGrid,
+  renderSortIcon,
+  type Column,
+  type RenderEditCellProps,
+  type RenderSortStatusProps,
+  type SortColumn,
+} from "react-data-grid";
 import "react-data-grid/lib/styles.css";
 import "./grid-theme.css";
 
@@ -17,6 +24,26 @@ import type { GridBindingProps } from "./types";
 
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 40;
+
+/**
+ * Overrides RDG's default sort-status renderer to add an accessible label
+ * next to the bare priority number: the vendor's own render leaves the
+ * digit unlabeled, so a screen reader announces "2" with no indication
+ * it names a sort priority.
+ */
+function renderSortStatus({ sortDirection, priority }: RenderSortStatusProps): ReactNode {
+  return (
+    <>
+      {renderSortIcon({ sortDirection })}
+      {priority === undefined ? null : (
+        <span>
+          {priority}
+          <span className="sr-only">{` sort level ${String(priority)}`}</span>
+        </span>
+      )}
+    </>
+  );
+}
 
 /**
  * The RDG binding's own props: the shared contract plus a row-identity
@@ -82,21 +109,18 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
 
   const rdgColumns = useMemo(() => toRdgColumns(columns), [columns]);
 
-  const sortColumns: readonly SortColumn[] =
-    sort === null
-      ? []
-      : [{ columnKey: sort.columnKey, direction: sort.direction === "asc" ? "ASC" : "DESC" }];
+  const sortColumns: readonly SortColumn[] = sort.map((level) => ({
+    columnKey: level.columnKey,
+    direction: level.direction === "asc" ? "ASC" : "DESC",
+  }));
 
   function handleSortColumnsChange(next: SortColumn[]): void {
-    if (next.length === 0) {
-      onSortChange(null);
-      return;
-    }
-    const first = next[0];
-    onSortChange({
-      columnKey: first.columnKey,
-      direction: first.direction === "ASC" ? "asc" : "desc",
-    });
+    onSortChange(
+      next.map((col) => ({
+        columnKey: col.columnKey,
+        direction: col.direction === "ASC" ? "asc" : "desc",
+      })),
+    );
   }
 
   const wrapperClass = className === undefined ? "rv-grid" : `rv-grid ${className}`;
@@ -127,6 +151,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
         onScroll={onScroll}
         rowHeight={ROW_HEIGHT}
         headerRowHeight={HEADER_HEIGHT}
+        renderers={{ renderSortStatus }}
       />
     </div>
   );

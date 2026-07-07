@@ -162,12 +162,9 @@ already follows this pattern (no `skip_serializing_if` anywhere).
 ### Pagination model: opaque base64url cursor
 
 `/api/books` and every list endpoint paginates with cursors, not
-offsets. Cursors are opaque base64url-encoded payloads carrying
-the sort key + tiebreaker (e.g. `(created_at, id)` for
-`sort=recent`). Sub-phase 11a Task 4 introduces a tagged
-`CursorKey` enum (variant tag `r`/`t`/`a` for `Recent` / `Title`
-/ `Author`); the OPDS path keeps using only `Recent` and is
-forward-compatible via the tag byte.
+offsets. Cursors are opaque base64url payloads carrying the sort
+key(s) plus a tiebreaker; see the multi-column sort stack ADR
+(2026-07-07-multi-column-sort-stack.md) for the current cursor shape.
 
 Pagination model is not IETF-specified; modern consensus across
 GitHub, Stripe, Slack, and Twitter v2 is cursor-based for one

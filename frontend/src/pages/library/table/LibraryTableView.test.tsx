@@ -1,15 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import type { ComponentProps, ReactElement } from "react";
+import { useState, type ComponentProps, type ReactElement } from "react";
 
-import type { BookListItem } from "@/api";
+import type { BookListItem, SortLevelParam } from "@/api";
 import { updateReadingState } from "@/api/reading";
+import type { SortState } from "@/lib/grid/types";
 import { queryKeys } from "@/lib/query/keys";
 
 import { LibraryTableView } from "./LibraryTableView";
+import { SORT_SUMMARY_ID } from "./SortChips";
 
 // Cell-edit orchestration (`useCellEdit`) fires through these clients on
 // commit; none of these tests exercise a real network call, so the
@@ -53,6 +55,7 @@ function rowFixture(index: number, overrides: Partial<BookListItem> = {}): BookL
     validation_status: "clean",
     enrichment_status: "complete",
     reading_state: null,
+    created_at: `2026-01-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
     ...overrides,
   };
 }
@@ -68,10 +71,30 @@ const ROWS: BookListItem[] = Array.from({ length: 30 }, (_, index) =>
     : rowFixture(index),
 );
 
+/**
+ * Feeds a click's resulting stack back into `sort` as local state, the way
+ * `LibraryPage` does via the URL: without this, a second ctrl-click would
+ * see the binding still controlled by the stale, pre-click stack instead of
+ * accumulating a second level.
+ */
+function TableHarness({ sort, onSortChange, ...rest }: TableProps): ReactElement {
+  const [stack, setStack] = useState<readonly SortLevelParam[]>(sort);
+  return (
+    <LibraryTableView
+      {...rest}
+      sort={stack}
+      onSortChange={(next) => {
+        setStack(next);
+        onSortChange(next);
+      }}
+    />
+  );
+}
+
 function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
   const props: TableProps = {
     items: ROWS,
-    sort: "recent",
+    sort: [],
     onSortChange: vi.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
@@ -80,7 +103,7 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
     listQueryKey: queryKeys.books.list({}),
     ...overrides,
   };
-  const routes: RouteObject[] = [{ path: "/library", element: <LibraryTableView {...props} /> }];
+  const routes: RouteObject[] = [{ path: "/library", element: <TableHarness {...props} /> }];
   const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -139,7 +162,7 @@ describe("LibraryTableView", () => {
     const user = userEvent.setup();
     const header = await screen.findByRole("columnheader", { name: "Authors (all editions)" });
     await user.click(header);
-    expect(onSortChange).toHaveBeenCalledWith("author");
+    expect(onSortChange).toHaveBeenCalledWith([{ field: "author", desc: false }]);
   });
 
   test("clicking the Title header sorts by title", async () => {
@@ -148,7 +171,192 @@ describe("LibraryTableView", () => {
     const user = userEvent.setup();
     const header = await screen.findByRole("columnheader", { name: "Title (all editions)" });
     await user.click(header);
-    expect(onSortChange).toHaveBeenCalledWith("title");
+    expect(onSortChange).toHaveBeenCalledWith([{ field: "title", desc: false }]);
+  });
+
+  test("clicking the Pages header sorts by pages", async () => {
+    const onSortChange = vi.fn();
+    renderTableView({
+      onSortChange,
+      items: [rowFixture(1, { series: { id: "s1", name: "Discworld", position: 8 } })],
+    });
+    const grid = await screen.findByRole("grid");
+    // Same two-step scroll dance as the "populated series and status cells"
+    // test below: with this single short row the grid auto-sizes Title and
+    // Subtitle to 1024px each, so every fixed-width column (incl. Pages)
+    // sits past the initial viewport until both scrolls land.
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
+    fireEvent.scroll(grid);
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
+    fireEvent.scroll(grid);
+    const user = userEvent.setup();
+    const header = await within(grid).findByRole("columnheader", { name: "Pages" });
+    await user.click(header);
+    expect(onSortChange).toHaveBeenCalledWith([{ field: "pages", desc: false }]);
+  });
+
+  test("ctrl-click on a second header appends a level to the sort stack", async () => {
+    const onSortChange = vi.fn();
+    renderTableView({
+      onSortChange,
+      items: [rowFixture(1, { series: { id: "s1", name: "Discworld", position: 8 } })],
+    });
+    const grid = await screen.findByRole("grid");
+    const user = userEvent.setup();
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title (all editions)" });
+    await user.click(titleHeader);
+
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
+    fireEvent.scroll(grid);
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
+    fireEvent.scroll(grid);
+
+    const authorsHeader = await within(grid).findByRole("columnheader", {
+      name: "Authors (all editions)",
+    });
+    await user.keyboard("{Control>}");
+    await user.click(authorsHeader);
+    await user.keyboard("{/Control}");
+
+    await waitFor(() => {
+      expect(onSortChange).toHaveBeenLastCalledWith([
+        { field: "title", desc: false },
+        { field: "author", desc: false },
+      ]);
+    });
+  });
+
+  // The Added column carries the created_at sort key so react-data-grid has a
+  // header for that level; a sort key with no matching column key is silently
+  // dropped from the grid's own sort state.
+  test("exposes an Added column that sorts by created_at", async () => {
+    const onSortChange = vi.fn();
+    renderTableView({ onSortChange });
+    const grid = await screen.findByRole("grid");
+    // aria-colcount reflects the full column set regardless of horizontal
+    // virtualization: without the Added column this is 8, not 9.
+    expect(grid).toHaveAttribute("aria-colcount", "9");
+    // Scroll fully right so the trailing Added header mounts, then click it.
+    Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
+    fireEvent.scroll(grid);
+    const user = userEvent.setup();
+    const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
+    await user.click(addedHeader);
+    expect(onSortChange).toHaveBeenCalledWith([{ field: "created_at", desc: false }]);
+  });
+
+  // Regression, incoming-prop direction: a `created_at` sort level arriving
+  // as the initial `sort` prop (not a click) must still resolve to the
+  // `added` column key, or the Added header never picks up the grid's own
+  // sorted state despite the sort being active.
+  test("an initial created_at sort prop marks the Added header as sorted", async () => {
+    renderTableView({ sort: [{ field: "created_at", desc: true }] });
+    const grid = await screen.findByRole("grid");
+    // Scroll fully right so the trailing Added header mounts, same geometry
+    // as the "exposes an Added column" test above.
+    Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
+    fireEvent.scroll(grid);
+    const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
+    expect(addedHeader).toHaveAttribute("aria-sort", "descending");
+  });
+
+  test("reordering via the sort chips round-trips through onSortChange", async () => {
+    const onSortChange = vi.fn();
+    renderTableView({
+      onSortChange,
+      sort: [
+        { field: "title", desc: false },
+        { field: "author", desc: false },
+      ],
+    });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Move Title later in sort priority" }),
+    );
+    expect(onSortChange).toHaveBeenCalledWith([
+      { field: "author", desc: false },
+      { field: "title", desc: false },
+    ]);
+  });
+
+  test("the sort summary is always present in the DOM, for aria-describedby to resolve", async () => {
+    renderTableView();
+    await screen.findByRole("grid");
+    expect(document.getElementById(SORT_SUMMARY_ID)).not.toBeNull();
+  });
+
+  test("a header-driven sort is reflected in the sr-only summary", async () => {
+    renderTableView();
+    const user = userEvent.setup();
+    const header = await screen.findByRole("columnheader", { name: "Title (all editions)" });
+    await user.click(header);
+    await waitFor(() => {
+      expect(document.getElementById(SORT_SUMMARY_ID)).toHaveTextContent(
+        "Sorted by Title ascending",
+      );
+    });
+  });
+
+  describe("sort stack cap", () => {
+    test("a 4th sorted column is capped to MAX_SORT_LEVELS when applied", async () => {
+      const onSortChange = vi.fn();
+      let capturedOnSortChange: ((next: SortState) => void) | undefined;
+
+      // RDG's own multi-sort ctrl-click can't be driven past the three
+      // sortable columns this view currently exposes, so the cap in
+      // `handleSortChange` is exercised directly against the binding's own
+      // callback prop, mirroring the stub-DataGrid technique the contract
+      // test suite uses for its own multi-index rows-change case.
+      vi.doMock("@/lib/grid/ReactDataGridBinding", () => ({
+        ReactDataGridBinding: (props: { onSortChange: (next: SortState) => void }) => {
+          capturedOnSortChange = props.onSortChange;
+          return null;
+        },
+      }));
+      vi.resetModules();
+      const { LibraryTableView: MockedView } = await import("./LibraryTableView");
+      try {
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        render(
+          <QueryClientProvider client={client}>
+            <MockedView
+              items={ROWS}
+              sort={[]}
+              onSortChange={onSortChange}
+              hasNextPage={false}
+              isFetchingNextPage={false}
+              isFetchNextPageError={false}
+              onLoadMore={vi.fn()}
+              listQueryKey={queryKeys.books.list({})}
+            />
+          </QueryClientProvider>,
+        );
+        await screen.findByTestId("library-table");
+        if (capturedOnSortChange === undefined) {
+          throw new Error("expected the stubbed binding to receive onSortChange");
+        }
+        capturedOnSortChange([
+          { columnKey: "title", direction: "asc" },
+          { columnKey: "authors", direction: "desc" },
+          { columnKey: "pages", direction: "asc" },
+          { columnKey: "added", direction: "desc" },
+        ]);
+        expect(onSortChange).toHaveBeenCalledWith([
+          { field: "title", desc: false },
+          { field: "author", desc: true },
+          { field: "pages", desc: false },
+        ]);
+      } finally {
+        vi.doUnmock("@/lib/grid/ReactDataGridBinding");
+        vi.resetModules();
+      }
+    });
   });
 
   test("scrolling to the bottom calls onLoadMore when a next page is available", async () => {

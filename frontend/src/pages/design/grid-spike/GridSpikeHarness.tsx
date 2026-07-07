@@ -90,7 +90,7 @@ export function GridSpikeError(): ReactElement {
 export default function GridSpikeHarness(): ReactElement {
   const [latencyMs, setLatencyMs] = useState<number>(0);
   const [rowCount, setRowCount] = useState<number>(DEFAULT_ROW_COUNT);
-  const [sort, setSort] = useState<SortState>(null);
+  const [sort, setSort] = useState<SortState>([]);
 
   return (
     <main className="bg-canvas text-fg flex h-dvh flex-col gap-4 p-6">
@@ -106,7 +106,7 @@ export default function GridSpikeHarness(): ReactElement {
         onLatencyChange={setLatencyMs}
         onRowCountChange={setRowCount}
         onResetSort={() => {
-          setSort(null);
+          setSort([]);
         }}
       />
 
@@ -161,9 +161,9 @@ function ConfigToolbar(props: ConfigToolbarProps): ReactElement {
         ))}
       </fieldset>
 
-      {props.sort !== null && (
+      {props.sort.length > 0 && (
         <Button size="sm" variant="ghost" onClick={props.onResetSort}>
-          Clear sort ({props.sort.columnKey} {props.sort.direction})
+          Clear sort ({props.sort[0].columnKey} {props.sort[0].direction})
         </Button>
       )}
     </section>

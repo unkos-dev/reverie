@@ -79,6 +79,7 @@ const BookListItemSchema = z.object({
   validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
   reading_state: ReadingStateSummarySchema.nullable(),
+  created_at: z.string(),
 });
 /**
  * One row of a paginated book list response. Mirrors
@@ -93,8 +94,49 @@ const BookListResponseSchema = z.object({
 /** Envelope returned by `GET /api/v1/books`. `next_cursor === null` means end-of-list. */
 export type BookListResponse = z.infer<typeof BookListResponseSchema>;
 
-/** Sort modes accepted by `GET /api/v1/books?sort=…`. */
-export type ListSort = "recent" | "title" | "author";
+const SORT_FIELDS = ["title", "author", "created_at", "pages"] as const;
+
+/** Sortable column names accepted by `GET /api/v1/books?sort=…`. */
+export type SortField = (typeof SORT_FIELDS)[number];
+
+/** One level of a sort stack: a wire field name plus its direction. */
+export type SortLevelParam = { field: SortField; desc: boolean };
+
+/** Server-side cap on stack length; `SortSpec::parse` enforces the same limit. */
+export const MAX_SORT_LEVELS = 3;
+
+function isSortField(value: string): value is SortField {
+  return (SORT_FIELDS as readonly string[]).includes(value);
+}
+
+/**
+ * Parse a `?sort=` value into an ordered stack. Tolerant of stale or
+ * hand-crafted input: unknown fields and repeated columns are dropped
+ * silently, the stack is capped at {@link MAX_SORT_LEVELS}, and an
+ * all-invalid or empty input degrades to `[]` (the server's default order).
+ */
+export function parseSortParam(raw: string): SortLevelParam[] {
+  const levels: SortLevelParam[] = [];
+  const seen = new Set<SortField>();
+  for (const token of raw.split(",")) {
+    const desc = token.startsWith("-");
+    const field = desc ? token.slice(1) : token;
+    if (!isSortField(field) || seen.has(field)) continue;
+    seen.add(field);
+    levels.push({ field, desc });
+    if (levels.length === MAX_SORT_LEVELS) break;
+  }
+  return levels;
+}
+
+/**
+ * Serialize a sort stack into the JSON:API `?sort=` wire string (`-` prefix
+ * for descending). Inverse of {@link parseSortParam} for a stack that
+ * already passed through it.
+ */
+export function serializeSortParam(levels: readonly SortLevelParam[]): string {
+  return levels.map((level) => (level.desc ? `-${level.field}` : level.field)).join(",");
+}
 
 /** Query parameters for `GET /api/v1/books`. Every field is optional. */
 export interface ListBooksParams {
@@ -103,7 +145,8 @@ export interface ListBooksParams {
   series?: string;
   shelf?: string;
   q?: string;
-  sort?: ListSort;
+  /** Pre-validated JSON:API sort string; build via {@link serializeSortParam}. */
+  sort?: string;
 }
 
 const MetadataVersionSummarySchema = z.object({

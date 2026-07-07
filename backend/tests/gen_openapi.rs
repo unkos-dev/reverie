@@ -183,23 +183,35 @@ fn spec_covers_library_routes() {
     for schema in [
         "BookListResponse",
         // BookListRow must be a standalone component for the `created_at` guard
-        // below to be non-vacuous: if utoipa stopped emitting it, `schemas["BookListRow"]`
-        // would be null and the guard would pass against nothing. Assert presence here
-        // so that regression fails loudly first.
+        // below to assert against a real schema: if utoipa stopped emitting it,
+        // `schemas["BookListRow"]` would be null and the field assertions would
+        // fail here first, loudly.
         "BookListRow",
         "BookDetail",
         "WorkDetail",
         "SearchResponse",
-        // SortMode is referenced by the list `?sort=` param via `$ref`; it must be
-        // registered as a component or the docs-site `$ref` parse fails (the
-        // byte-drift gate does not catch a dangling-but-consistent ref).
-        "SortMode",
     ] {
         assert!(
             schemas.get(schema).is_some(),
             "{schema} schema component present"
         );
     }
+
+    // The `?sort=` param is a free-form JSON:API stack string validated
+    // server-side against the sort whitelist, not an enum `$ref`. Assert the
+    // query param exists and is a plain string so a regression back to an
+    // enum component (or a dropped param) fails loudly.
+    let params = doc["paths"]["/api/v1/books"]["get"]["parameters"]
+        .as_array()
+        .expect("GET /api/v1/books parameters array");
+    let sort_param = params
+        .iter()
+        .find(|p| p["name"] == "sort" && p["in"] == "query")
+        .expect("GET /api/v1/books documents a `sort` query param");
+    assert_eq!(
+        sort_param["schema"]["type"], "string",
+        "the sort param is a free-form string, not an enum ref"
+    );
 
     // The detail route documents its 404 (RLS-hidden / missing) against ProblemDetails.
     assert!(
@@ -209,12 +221,17 @@ fn spec_covers_library_routes() {
         "GET /api/v1/books/{{id}} documents a 404 response"
     );
 
-    // Edge guard (a): `created_at` is `#[serde(skip)]`/`#[schema(ignore)]` on
-    // BookListRow — it must not leak into the documented schema.
-    let book_list_row_props = &schemas["BookListRow"]["properties"];
-    assert!(
-        book_list_row_props.get("created_at").is_none(),
-        "BookListRow schema must not expose created_at (serde-skipped cursor key)"
+    // Edge guard (a): `created_at` is RFC 3339 on the wire (it sources the
+    // "Added" sort column), so it must appear in the documented schema as a
+    // date-time string.
+    let created_at = &schemas["BookListRow"]["properties"]["created_at"];
+    assert_eq!(
+        created_at["type"], "string",
+        "BookListRow.created_at is documented as a string"
+    );
+    assert_eq!(
+        created_at["format"], "date-time",
+        "BookListRow.created_at is documented as an RFC 3339 date-time"
     );
 
     // Edge guard (b): the list 200 response documents the RFC 8288 Link header.

@@ -7,9 +7,10 @@
  * this view's columns and has no bearing on how the page fetches rows.
  * Paging is fetch-on-scroll over the keyset cursor, so the grid always
  * operates on the loaded window: the scrollbar, Ctrl+End, and the row count
- * all reflect rows fetched so far, never a pretend 50K extent. Sorting is
- * single-column and fixed-direction, bounded by the list contract's sort
- * modes.
+ * all reflect rows fetched so far, never a pretend 50K extent. Sorting is a
+ * capped multi-level stack (see `MAX_SORT_LEVELS`): each level carries its
+ * own direction, and both a header click/ctrl-click and the `SortChips` bar
+ * write into the same stack via `onSortChange`.
  */
 import { Loader2 } from "lucide-react";
 import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
@@ -17,7 +18,7 @@ import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 
-import type { BookListItem, ListSort } from "@/api";
+import { MAX_SORT_LEVELS, type BookListItem, type SortField, type SortLevelParam } from "@/api";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
@@ -31,6 +32,7 @@ import {
   GridShortcutsTrigger,
   useShortcutsHotkey,
 } from "./GridShortcutsDialog";
+import { SORT_SUMMARY_ID, SortChips } from "./SortChips";
 import { pendingKey, useCellEdit } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
@@ -143,14 +145,48 @@ function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): React
 }
 
 /**
- * Sortable columns map onto the list contract's sort modes; direction is
- * server-fixed per mode, so the header indicator always shows ascending and
- * a second activation keeps the same order rather than reversing it.
+ * Wire sort field to grid column key. Two fields diverge from their column
+ * key: `author` sources the `authors` column and `created_at` the `added`
+ * column. Every sortable field must map to a real column key here, or RDG
+ * silently drops a sort level whose key names no column.
  */
-const SORT_BY_COLUMN: Partial<Record<string, ListSort>> = {
+const COLUMN_BY_FIELD: Record<SortField, string> = {
   title: "title",
-  authors: "author",
+  author: "authors",
+  created_at: "added",
+  pages: "pages",
 };
+
+/**
+ * Grid column key to wire sort field, the reverse of {@link COLUMN_BY_FIELD}.
+ * Derived rather than hand-maintained so the two maps cannot drift; lossless
+ * because every value in `COLUMN_BY_FIELD` is distinct. `handleSortChange`
+ * reads this to translate RDG's column-keyed sort back to wire fields.
+ */
+const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = Object.fromEntries(
+  (Object.entries(COLUMN_BY_FIELD) as [SortField, string][]).map(
+    ([field, column]) => [column, field] as const,
+  ),
+);
+
+/** Chip/summary labels; kept in sync with each column's header name. */
+const SORT_FIELD_LABELS: Record<SortField, string> = {
+  title: "Title",
+  author: "Authors",
+  created_at: "Added",
+  pages: "Pages",
+};
+
+/** Renders the `created_at` RFC 3339 timestamp as a locale date for the
+ *  read-only "Added" column and its plain-text export projection. */
+function formatAddedDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    console.error("[LibraryTableView] unparsable created_at", iso);
+    return EMPTY_CELL;
+  }
+  return date.toLocaleDateString();
+}
 
 /**
  * Base column defs: accessor projections, sort wiring, and per-column
@@ -212,7 +248,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
   {
     key: "pages",
     name: "Pages",
-    sortable: false,
+    sortable: true,
     width: 80,
     accessor: (row) => (row.pages === null ? EMPTY_CELL : String(row.pages)),
     renderEditCell: renderPagesEditCell,
@@ -241,6 +277,13 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
       return rating === null || rating < 1 ? EMPTY_CELL : "★".repeat(rating);
     },
     renderEditCell: renderRatingEditCell,
+  },
+  {
+    key: "added",
+    name: "Added",
+    sortable: true,
+    width: 120,
+    accessor: (row) => formatAddedDate(row.created_at),
   },
 ];
 
@@ -291,8 +334,8 @@ function isAtBottom({ currentTarget }: UIEvent<HTMLDivElement>): boolean {
 
 type Props = {
   items: readonly BookListItem[];
-  sort: ListSort;
-  onSortChange: (sort: ListSort) => void;
+  sort: readonly SortLevelParam[];
+  onSortChange: (levels: readonly SortLevelParam[]) => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
@@ -320,21 +363,22 @@ export function LibraryTableView({
   });
   const columns = useEditableColumns(pendingCells);
 
-  const COLUMN_BY_SORT: Partial<Record<ListSort, string>> = {
-    title: "title",
-    author: "authors",
-  };
-  const sortColumn = COLUMN_BY_SORT[sort];
-  const sortState: SortState =
-    sortColumn === undefined ? null : { columnKey: sortColumn, direction: "asc" };
+  const sortState: SortState = sort.map((level) => ({
+    columnKey: COLUMN_BY_FIELD[level.field],
+    direction: level.desc ? "desc" : "asc",
+  }));
 
   function handleSortChange(next: SortState): void {
-    if (next === null) {
-      onSortChange("recent");
-      return;
+    const levels: SortLevelParam[] = [];
+    for (const entry of next) {
+      const field = FIELD_BY_COLUMN[entry.columnKey];
+      if (field === undefined) {
+        console.error("[LibraryTableView] sortable column has no wire mapping", entry.columnKey);
+        continue;
+      }
+      levels.push({ field, desc: entry.direction === "desc" });
     }
-    const mapped = SORT_BY_COLUMN[next.columnKey];
-    onSortChange(mapped ?? "recent");
+    onSortChange(levels.slice(0, MAX_SORT_LEVELS));
   }
 
   function handleScroll(event: UIEvent<HTMLDivElement>): void {
@@ -350,21 +394,29 @@ export function LibraryTableView({
     // while focus sits somewhere inside the table, and bubbles up from the
     // grid's own cells and any open editor without needing a ref.
     <div data-testid="library-table" onKeyDown={onGridKeyDown}>
-      <div className="mb-2 flex items-center justify-end">
+      <div className="mb-2 flex items-center justify-between gap-4">
+        <SortChips levels={sort} labels={SORT_FIELD_LABELS} onChange={onSortChange} />
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       </div>
-      <ReactDataGridBinding<BookListItem>
-        rows={items}
-        columns={columns}
-        label="Library books"
-        sort={sortState}
-        onSortChange={handleSortChange}
-        onCellFocus={() => undefined}
-        onCellEdit={onCellEdit}
-        onScroll={handleScroll}
-        rowKey={(row) => row.id}
-        className="h-[calc(100dvh-22rem)] min-h-96"
-      />
+      {/* SortChips renders its sr-only summary unconditionally (even for an
+          empty stack) as an aria-live region, so a screen reader announces
+          every sort change and reads the current order in document order,
+          including a header-driven single-level sort. aria-describedby here is
+          a best-effort association; the live summary is what carries it. */}
+      <div aria-describedby={SORT_SUMMARY_ID}>
+        <ReactDataGridBinding<BookListItem>
+          rows={items}
+          columns={columns}
+          label="Library books"
+          sort={sortState}
+          onSortChange={handleSortChange}
+          onCellFocus={() => undefined}
+          onCellEdit={onCellEdit}
+          onScroll={handleScroll}
+          rowKey={(row) => row.id}
+          className="h-[calc(100dvh-22rem)] min-h-96"
+        />
+      </div>
       {/* Single owner of every paging state in table mode; the page-level
           Load-more block stays out of table view so a failure or fetch is
           announced exactly once. */}

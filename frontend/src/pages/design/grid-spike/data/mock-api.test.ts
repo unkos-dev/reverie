@@ -11,7 +11,7 @@ const DATA = generateRows(42, 205);
 async function collectAll(
   dataset: readonly SpikeBookRow[],
   pageSize: number,
-  sort: SortState = null,
+  sort: SortState = [],
 ): Promise<SpikeBookRow[]> {
   const all: SpikeBookRow[] = [];
   let cursor: string | undefined;
@@ -26,7 +26,7 @@ async function collectAll(
 
 describe("listSpikeBooks paging", () => {
   test("first page returns pageSize items and a continuation cursor", async () => {
-    const page = await listSpikeBooks(DATA, { pageSize: 50, sort: null, latencyMs: 0 });
+    const page = await listSpikeBooks(DATA, { pageSize: 50, sort: [], latencyMs: 0 });
     expect(page.items).toHaveLength(50);
     expect(page.next_cursor).not.toBeNull();
   });
@@ -40,17 +40,17 @@ describe("listSpikeBooks paging", () => {
   test("final partial page is short and terminates the cursor", async () => {
     // 205 rows / 50 => pages of 50,50,50,50,5.
     let cursor: string | undefined;
-    let last = await listSpikeBooks(DATA, { pageSize: 50, sort: null, latencyMs: 0 });
+    let last = await listSpikeBooks(DATA, { pageSize: 50, sort: [], latencyMs: 0 });
     while (last.next_cursor !== null) {
       cursor = last.next_cursor;
-      last = await listSpikeBooks(DATA, { cursor, pageSize: 50, sort: null, latencyMs: 0 });
+      last = await listSpikeBooks(DATA, { cursor, pageSize: 50, sort: [], latencyMs: 0 });
     }
     expect(last.items).toHaveLength(5);
     expect(last.next_cursor).toBeNull();
   });
 
   test("an empty dataset returns an empty first page and no cursor", async () => {
-    const page = await listSpikeBooks([], { pageSize: 50, sort: null, latencyMs: 0 });
+    const page = await listSpikeBooks([], { pageSize: 50, sort: [], latencyMs: 0 });
     expect(page.items).toHaveLength(0);
     expect(page.next_cursor).toBeNull();
   });
@@ -58,7 +58,7 @@ describe("listSpikeBooks paging", () => {
 
 describe("listSpikeBooks sort", () => {
   test("ascending title sort is monotonic across the whole set", async () => {
-    const all = await collectAll(DATA, 40, { columnKey: "title", direction: "asc" });
+    const all = await collectAll(DATA, 40, [{ columnKey: "title", direction: "asc" }]);
     const titles = all.map((r) => r.title);
     const sorted = [...titles].sort((a, b) => a.localeCompare(b));
     expect(titles).toEqual(sorted);
@@ -67,7 +67,7 @@ describe("listSpikeBooks sort", () => {
   test("descending pages sort puts nulls last within the ordering", async () => {
     const page = await listSpikeBooks(DATA, {
       pageSize: DATA.length,
-      sort: { columnKey: "pages", direction: "desc" },
+      sort: [{ columnKey: "pages", direction: "desc" }],
       latencyMs: 0,
     });
     const pages = page.items.map((r) => r.pages);
@@ -84,7 +84,7 @@ describe("listSpikeBooks sort", () => {
 describe("listSpikeBooks cursor edges", () => {
   test("a malformed cursor throws MockCursorError", async () => {
     await expect(
-      listSpikeBooks(DATA, { cursor: "!!!not-base64!!!", pageSize: 10, sort: null, latencyMs: 0 }),
+      listSpikeBooks(DATA, { cursor: "!!!not-base64!!!", pageSize: 10, sort: [], latencyMs: 0 }),
     ).rejects.toBeInstanceOf(MockCursorError);
   });
 
@@ -93,7 +93,7 @@ describe("listSpikeBooks cursor edges", () => {
     const page = await listSpikeBooks(DATA, {
       cursor: beyond,
       pageSize: 10,
-      sort: null,
+      sort: [],
       latencyMs: 0,
     });
     expect(page.items).toHaveLength(0);
@@ -106,7 +106,7 @@ describe("listSpikeBooks latency", () => {
     const controller = new AbortController();
     const pending = listSpikeBooks(
       DATA,
-      { pageSize: 10, sort: null, latencyMs: 200 },
+      { pageSize: 10, sort: [], latencyMs: 200 },
       controller.signal,
     );
     controller.abort();

@@ -5,12 +5,7 @@
  * its single-component export shape (the `react/only-export-components`
  * rule requires component-only exports).
  */
-import type { ListBooksParams, ListSort } from "@/api";
-
-/** Type guard narrowing an arbitrary string into the `ListSort` union. */
-function isListSort(value: string): value is ListSort {
-  return value === "recent" || value === "title" || value === "author";
-}
+import { parseSortParam, serializeSortParam, type ListBooksParams } from "@/api";
 
 const LIBRARY_VIEWS = ["grid", "list", "table"] as const;
 /** The library's browse presentation modes. */
@@ -32,15 +27,18 @@ export function viewFromSearch(search: URLSearchParams): LibraryView | null {
 }
 
 /**
- * Parse the URL search params into a {@link ListBooksParams}. Unknown
- * keys are dropped; an out-of-range `sort` value falls through to the
- * backend default (`recent`).
+ * Parse the URL search params into a {@link ListBooksParams}. Unknown keys
+ * are dropped; `sort` is round-tripped through `parseSortParam`/
+ * `serializeSortParam` so invalid levels (unknown fields, duplicates, a
+ * stack past the cap) are normalized out before the value reaches the API.
+ * An absent or all-invalid `sort` omits the key entirely, so the backend
+ * applies its own default order.
  */
 export function paramsFromSearch(search: URLSearchParams): ListBooksParams {
   const sortRaw = search.get("sort");
-  const sort = sortRaw !== null && isListSort(sortRaw) ? sortRaw : undefined;
+  const sort = sortRaw === null ? "" : serializeSortParam(parseSortParam(sortRaw));
   const params: ListBooksParams = {};
-  if (sort !== undefined) params.sort = sort;
+  if (sort !== "") params.sort = sort;
   const cursor = search.get("cursor");
   if (cursor !== null) params.cursor = cursor;
   const author = search.get("author");
