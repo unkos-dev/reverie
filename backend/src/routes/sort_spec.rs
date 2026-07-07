@@ -3,12 +3,14 @@
 //! Client sort strings are JSON:API-style comma-separated stacks
 //! (`"author,-created_at"`): each field names a whitelisted column, an
 //! optional leading `-` reverses that level to descending, and the order
-//! of appearance sets priority. [`SortSpec::parse`] is the sole entry
-//! point from untrusted input - nothing outside this module resolves a
-//! client string against SQL directly. Only [`SortColumn::sql_expr`]'s
-//! fixed `&'static str` fragments ever reach a `QueryBuilder`.
+//! of appearance sets priority. [`crate::routes::sort_spec::SortSpec::parse`]
+//! is the sole entry point from untrusted input - nothing outside this module
+//! resolves a client string against SQL directly. Only
+//! [`crate::routes::sort_spec::SortColumn::sql_expr`]'s fixed `&'static str`
+//! fragments ever reach a `QueryBuilder`.
 //!
-//! A column enters [`SortColumn`] only once its ordering indexes exist.
+//! A column enters [`crate::routes::sort_spec::SortColumn`] only once its
+//! ordering indexes exist.
 //! Nullable columns need both an ascending and a `DESC NULLS LAST`
 //! composite index, because Postgres's default DESC ordering is NULLS
 //! FIRST and cannot ride a backward scan of an ascending index.
