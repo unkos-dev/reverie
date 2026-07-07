@@ -16,6 +16,7 @@ export {
   parseSortParam,
   serializeSortParam,
   MAX_SORT_LEVELS,
+  ReadingStatusSchema,
 } from "./books";
 export type {
   BookListItem,
@@ -28,6 +29,7 @@ export type {
   MetadataVersionRow,
   IngestionStatus,
   EnrichmentStatus,
+  ReadingStatus,
   SortField,
   SortLevelParam,
   ListBooksParams,

@@ -365,7 +365,7 @@ describe("LibraryPage", () => {
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: [`/library?author=${authorId}`],
-      cacheParams: { author: authorId },
+      cacheParams: { author: [authorId] },
     });
     await screen.findByTestId("active-filters");
     expect(screen.getByRole("button", { name: /clear author filter/i })).toBeInTheDocument();
@@ -376,7 +376,7 @@ describe("LibraryPage", () => {
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: ["/library?tag=scifi&tag=hugo"],
-      cacheParams: {},
+      cacheParams: { tag: ["scifi", "hugo"] },
     });
     await screen.findByTestId("active-filters");
     expect(screen.getByRole("button", { name: /clear tag scifi filter/i })).toBeInTheDocument();
@@ -390,7 +390,7 @@ describe("LibraryPage", () => {
     // changes the cache key.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
-    client.setQueryData(queryKeys.books.list({ author: authorId }), {
+    client.setQueryData(queryKeys.books.list({ author: [authorId] }), {
       pages: [response],
       pageParams: [undefined],
     });
@@ -434,7 +434,7 @@ describe("LibraryPage", () => {
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: ["/library?author=Fyodor%20Dostoevsky"],
-      cacheParams: { author: "Fyodor Dostoevsky" },
+      cacheParams: { author: ["Fyodor Dostoevsky"] },
     });
     const chips = await screen.findByTestId("active-filters");
     expect(within(chips).getByRole("button", { name: /Fyodor Dostoevsky/ })).toBeInTheDocument();

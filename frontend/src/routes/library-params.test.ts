@@ -1,9 +1,25 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { paramsFromSearch, viewFromSearch } from "./library-params";
+import {
+  emptyFilterState,
+  filterStateToParams,
+  hasActiveFilterState,
+  parseFilterParams,
+  paramsFromSearch,
+  serializeFilterParams,
+  viewFromSearch,
+  type FilterState,
+} from "./library-params";
 
 function search(qs: string): URLSearchParams {
   return new URLSearchParams(qs);
+}
+
+/** Serialize a state to URL params and parse it back, for round-trip checks. */
+function roundTrip(state: FilterState): FilterState {
+  const params = new URLSearchParams();
+  serializeFilterParams(state, params);
+  return parseFilterParams(params);
 }
 
 describe("paramsFromSearch", () => {
@@ -11,13 +27,13 @@ describe("paramsFromSearch", () => {
     expect(paramsFromSearch(search(""))).toEqual({});
   });
 
-  test("parses the known params", () => {
+  test("parses the known params (author is a repeated multi-value key)", () => {
     const result = paramsFromSearch(
       search("cursor=abc&author=a1&series=s1&shelf=sh1&q=war&sort=title"),
     );
     expect(result).toEqual({
       cursor: "abc",
-      author: "a1",
+      author: ["a1"],
       series: "s1",
       shelf: "sh1",
       q: "war",
@@ -74,11 +90,156 @@ describe("paramsFromSearch", () => {
     expect("sort" in result).toBe(false);
   });
 
-  test("preserves empty-string filter values (caller decides semantics)", () => {
-    // The backend treats `?q=` as "no query"; the parser is purely a
-    // shape-conversion layer and forwards what's there.
-    const result = paramsFromSearch(search("q="));
-    expect(result.q).toBe("");
+  test("drops an empty `q` (a no-op filter, not sent to the server)", () => {
+    expect("q" in paramsFromSearch(search("q="))).toBe(false);
+  });
+
+  test("projects typed filters onto the flat wire shape", () => {
+    const result = paramsFromSearch(
+      search("title_contains=dune&pages_gte=300&status_any=unread&genre_any=fantasy"),
+    );
+    expect(result).toEqual({
+      title_contains: "dune",
+      pages_gte: 300,
+      status_any: ["unread"],
+      genre_any: ["fantasy"],
+    });
+  });
+});
+
+describe("parseFilterParams", () => {
+  test("returns an all-empty state for empty search params", () => {
+    expect(parseFilterParams(search(""))).toEqual(emptyFilterState());
+  });
+
+  test("parses each text operator on its own column", () => {
+    const state = parseFilterParams(
+      search("title_contains=du&title_eq=Dune&title_ne=Junk&subtitle_empty=true"),
+    );
+    expect(state.title).toEqual({ contains: "du", eq: "Dune", ne: "Junk" });
+    expect(state.subtitle).toEqual({ empty: true });
+  });
+
+  test("parses numeric ranges and the is-empty toggle", () => {
+    const state = parseFilterParams(search("pages_gte=100&pages_lte=500&rating_empty=false"));
+    expect(state.pages).toEqual({ gte: 100, lte: 500 });
+    expect(state.rating).toEqual({ empty: false });
+  });
+
+  test("parses added-date bounds", () => {
+    const state = parseFilterParams(search("created_at_gte=2026-01-01&created_at_lte=2026-06-30"));
+    expect(state.addedAfter).toBe("2026-01-01");
+    expect(state.addedBefore).toBe("2026-06-30");
+  });
+
+  test("parses the three vocab modes and de-duplicates each set", () => {
+    const state = parseFilterParams(search("genre=a&genre=a&genre_any=b&genre_none=c"));
+    expect(state.genres).toEqual({ all: ["a"], any: ["b"], none: ["c"] });
+  });
+
+  test("keeps only known status tokens", () => {
+    const state = parseFilterParams(
+      search("status_any=unread&status_any=reading&status_any=bogus"),
+    );
+    expect(state.status.any).toEqual(["unread", "reading"]);
+  });
+
+  test("drops a non-integer number", () => {
+    expect(parseFilterParams(search("pages_gte=abc")).pages).toEqual({});
+  });
+
+  test("drops an ill-formed date", () => {
+    expect(parseFilterParams(search("created_at_gte=2026-13-99x")).addedAfter).toBeUndefined();
+  });
+
+  test("drops a non-boolean empty toggle", () => {
+    expect(parseFilterParams(search("subtitle_empty=maybe")).subtitle).toEqual({});
+  });
+
+  test("clamps an over-long value set to the server cap", () => {
+    const qs = Array.from({ length: 25 }, (_, i) => `author_any=a${String(i)}`).join("&");
+    expect(parseFilterParams(search(qs)).authors.any).toHaveLength(20);
+  });
+});
+
+describe("serializeFilterParams", () => {
+  test("round-trips every filter family", () => {
+    const state: FilterState = {
+      ...emptyFilterState(),
+      q: "war",
+      title: { contains: "du", eq: "Dune", ne: "Junk" },
+      subtitle: { contains: "one", empty: false },
+      isbn13: { eq: "9780000000001", empty: true },
+      pages: { gte: 100, lte: 500 },
+      rating: { gte: 3, empty: false },
+      addedAfter: "2026-01-01",
+      addedBefore: "2026-06-30",
+      status: { any: ["unread", "reading"], none: ["abandoned"] },
+      authors: { all: ["a1"], any: ["a2", "a3"], none: [] },
+      tags: { all: [], any: ["scifi"], none: [] },
+      genres: { all: ["fantasy"], any: [], none: ["horror"] },
+      moods: { all: [], any: [], none: ["bleak"] },
+      series: "s1",
+      shelf: "sh1",
+    };
+    expect(roundTrip(state)).toEqual(state);
+  });
+
+  test("delete-then-set clears a stale param on the target search object", () => {
+    const params = search("title_contains=stale&pages_gte=9");
+    serializeFilterParams({ ...emptyFilterState(), q: "fresh" }, params);
+    expect(params.has("title_contains")).toBe(false);
+    expect(params.has("pages_gte")).toBe(false);
+    expect(params.get("q")).toBe("fresh");
+  });
+
+  test("leaves non-filter params (cursor, sort, view) untouched", () => {
+    const params = search("cursor=abc&sort=title&view=table&title_contains=stale");
+    serializeFilterParams(emptyFilterState(), params);
+    expect(params.get("cursor")).toBe("abc");
+    expect(params.get("sort")).toBe("title");
+    expect(params.get("view")).toBe("table");
+    expect(params.has("title_contains")).toBe(false);
+  });
+
+  test("omits inactive groups entirely", () => {
+    const params = new URLSearchParams();
+    serializeFilterParams(emptyFilterState(), params);
+    expect([...params.keys()]).toEqual([]);
+  });
+});
+
+describe("filterStateToParams", () => {
+  test("maps grouped state to the flat wire keys", () => {
+    const params = filterStateToParams({
+      ...emptyFilterState(),
+      status: { any: ["unread"], none: [] },
+      authors: { all: ["a1"], any: [], none: ["a2"] },
+      pages: { gte: 500 },
+    });
+    expect(params).toEqual({
+      status_any: ["unread"],
+      author: ["a1"],
+      author_none: ["a2"],
+      pages_gte: 500,
+    });
+  });
+
+  test("emits nothing for a pristine state", () => {
+    expect(filterStateToParams(emptyFilterState())).toEqual({});
+  });
+});
+
+describe("hasActiveFilterState", () => {
+  test("is false for a pristine state", () => {
+    expect(hasActiveFilterState(emptyFilterState())).toBe(false);
+  });
+
+  test("is true when any condition is set", () => {
+    expect(hasActiveFilterState({ ...emptyFilterState(), q: "x" })).toBe(true);
+    expect(
+      hasActiveFilterState({ ...emptyFilterState(), status: { any: ["unread"], none: [] } }),
+    ).toBe(true);
   });
 });
 

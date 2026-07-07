@@ -66,7 +66,7 @@ describe("listBooks", () => {
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
 
     await listBooks({
-      author: "aaaa1111",
+      author: ["aaaa1111"],
       series: "bbbb2222",
       sort: "title",
       cursor: "eyJ4Ijox",
@@ -84,7 +84,7 @@ describe("listBooks", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
 
-    await listBooks({ author: "aaaa1111" });
+    await listBooks({ author: ["aaaa1111"] });
 
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
     expect(url.searchParams.has("series")).toBe(false);
