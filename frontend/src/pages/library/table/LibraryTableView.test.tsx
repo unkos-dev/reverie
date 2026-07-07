@@ -230,11 +230,9 @@ describe("LibraryTableView", () => {
     });
   });
 
-  // Regression: a `created_at` sort level maps to the `added` grid column key.
-  // Before this column existed that key named no column, so the grid received a
-  // sort key the chips and server had but no header could show — a divergence.
-  // The grid must expose a real Added column so the key resolves to a header
-  // that also round-trips a header click back to a `created_at` sort.
+  // The Added column carries the created_at sort key so react-data-grid has a
+  // header for that level; a sort key with no matching column key is silently
+  // dropped from the grid's own sort state.
   test("exposes an Added column that sorts by created_at", async () => {
     const onSortChange = vi.fn();
     renderTableView({ onSortChange });
@@ -250,6 +248,22 @@ describe("LibraryTableView", () => {
     const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
     await user.click(addedHeader);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "created_at", desc: false }]);
+  });
+
+  // Regression, incoming-prop direction: a `created_at` sort level arriving
+  // as the initial `sort` prop (not a click) must still resolve to the
+  // `added` column key, or the Added header never picks up the grid's own
+  // sorted state despite the sort being active.
+  test("an initial created_at sort prop marks the Added header as sorted", async () => {
+    renderTableView({ sort: [{ field: "created_at", desc: true }] });
+    const grid = await screen.findByRole("grid");
+    // Scroll fully right so the trailing Added header mounts, same geometry
+    // as the "exposes an Added column" test above.
+    Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
+    fireEvent.scroll(grid);
+    const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
+    expect(addedHeader).toHaveAttribute("aria-sort", "descending");
   });
 
   test("reordering via the sort chips round-trips through onSortChange", async () => {
@@ -307,39 +321,41 @@ describe("LibraryTableView", () => {
       }));
       vi.resetModules();
       const { LibraryTableView: MockedView } = await import("./LibraryTableView");
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      render(
-        <QueryClientProvider client={client}>
-          <MockedView
-            items={ROWS}
-            sort={[]}
-            onSortChange={onSortChange}
-            hasNextPage={false}
-            isFetchingNextPage={false}
-            isFetchNextPageError={false}
-            onLoadMore={vi.fn()}
-            listQueryKey={queryKeys.books.list({})}
-          />
-        </QueryClientProvider>,
-      );
-      await screen.findByTestId("library-table");
-      if (capturedOnSortChange === undefined) {
-        throw new Error("expected the stubbed binding to receive onSortChange");
+      try {
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        render(
+          <QueryClientProvider client={client}>
+            <MockedView
+              items={ROWS}
+              sort={[]}
+              onSortChange={onSortChange}
+              hasNextPage={false}
+              isFetchingNextPage={false}
+              isFetchNextPageError={false}
+              onLoadMore={vi.fn()}
+              listQueryKey={queryKeys.books.list({})}
+            />
+          </QueryClientProvider>,
+        );
+        await screen.findByTestId("library-table");
+        if (capturedOnSortChange === undefined) {
+          throw new Error("expected the stubbed binding to receive onSortChange");
+        }
+        capturedOnSortChange([
+          { columnKey: "title", direction: "asc" },
+          { columnKey: "authors", direction: "desc" },
+          { columnKey: "pages", direction: "asc" },
+          { columnKey: "added", direction: "desc" },
+        ]);
+        expect(onSortChange).toHaveBeenCalledWith([
+          { field: "title", desc: false },
+          { field: "author", desc: true },
+          { field: "pages", desc: false },
+        ]);
+      } finally {
+        vi.doUnmock("@/lib/grid/ReactDataGridBinding");
+        vi.resetModules();
       }
-      capturedOnSortChange([
-        { columnKey: "title", direction: "asc" },
-        { columnKey: "authors", direction: "desc" },
-        { columnKey: "pages", direction: "asc" },
-        { columnKey: "added", direction: "desc" },
-      ]);
-      expect(onSortChange).toHaveBeenCalledWith([
-        { field: "title", desc: false },
-        { field: "author", desc: true },
-        { field: "pages", desc: false },
-      ]);
-
-      vi.doUnmock("@/lib/grid/ReactDataGridBinding");
-      vi.resetModules();
     });
   });
 

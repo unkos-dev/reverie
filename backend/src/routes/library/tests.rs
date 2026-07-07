@@ -1072,6 +1072,67 @@ async fn null_bucket_pages_desc(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn null_bucket_author_at_non_primary_level(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // sort=created_at,author,title with every row tying on created_at, so the
+    // walk always falls through to `author` at level 1: the nullable, non-primary
+    // level. Some rows carry a NULL author, so a page boundary landing inside the
+    // NULLS LAST bucket mints a cursor whose author boundary is NULL at a
+    // non-primary level. push_cursor_predicate then skips that level's advance
+    // branch and every later branch must render the author boundary as
+    // `first_author_sort_name IS NULL` equality. The single-level null-bucket
+    // tests never reach that equality arm, because their NULL level is primary
+    // with no prior levels to equate and no later level to continue the walk.
+    let tie = ts(100);
+    let mut expected = Vec::new();
+    for (marker, title, author_name, sort_name) in [
+        ("named-ash", "Named Ash", "Vera Ash", "Ash, Vera"),
+        ("named-cole", "Named Cole", "Ida Cole", "Cole, Ida"),
+        ("named-frost", "Named Frost", "Nils Frost", "Frost, Nils"),
+    ] {
+        expected.push(
+            insert_book_with_author_sort_name(
+                &ingestion_pool,
+                marker,
+                title,
+                author_name,
+                sort_name,
+                tie,
+            )
+            .await,
+        );
+    }
+    // NULL-author rows (no work_authors row leaves first_author_sort_name NULL),
+    // tie-broken by title ASC within the NULLS LAST bucket.
+    for (marker, title) in [
+        ("null-alpha", "Null Alpha"),
+        ("null-bravo", "Null Bravo"),
+        ("null-charlie", "Null Charlie"),
+    ] {
+        let (_w, m_id) = insert_book_at(&ingestion_pool, marker, title, tie).await;
+        expected.push(m_id);
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let seen = walk_all_ids(
+        &server,
+        &basic,
+        "/api/v1/books?sort=created_at,author,title",
+    )
+    .await;
+
+    assert_eq!(
+        seen, expected,
+        "created_at ASC (all tied), then author ASC NULLS LAST, then title ASC: the three named \
+         authors sort ahead of the NULL bucket, the NULL rows tie-break by title, and the page \
+         boundary that lands inside the NULL bucket drops or duplicates nothing"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn pages_sort_walk(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2663,6 +2724,67 @@ async fn list_filter_genre_predicates_use_indexes_at_scale(pool: PgPool) {
         .expect("explain all-of genre filter");
     let all_plan: serde_json::Value = row.get("QUERY PLAN");
     assert_no_seq_scan_on(&all_plan, "manifestation_genres", "all-of");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn pages_sort_rides_desc_nulls_last_index_at_scale(pool: PgPool) {
+    use sqlx::Row as _;
+
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    // Set-based bulk seed: 50k works + manifestations. `pages` is left NULL, so
+    // the whole corpus is the NULLS LAST bucket: the exact shape a fresh library
+    // has before page counts are enriched, and the case the ADR calls out as
+    // load-bearing for the DESC NULLS LAST index.
+    sqlx::query!(
+        "INSERT INTO works (title, sort_title) \
+         SELECT 'Bulk Opus ' || g.n, 'Bulk Opus ' || g.n \
+         FROM generate_series(1, 50000) AS g(n)"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed works");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         SELECT w.id, 'epub'::manifestation_format, '/tmp/bulk-' || w.id, \
+                'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
+                'complete'::ingestion_status, 'clean'::validation_status \
+         FROM works w"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed manifestations");
+
+    // CARVE-OUT (runtime-sqlx allowlist): ANALYZE is maintenance DDL the
+    // macros cannot validate; fresh stats keep the planner from choosing an
+    // empty-table plan for the bulk seed. Runs on the owner pool (ANALYZE
+    // requires table ownership). The genre tables are empty here (harmless).
+    sqlx::query("ANALYZE manifestation_genres, genres, manifestations, works")
+        .execute(&pool)
+        .await
+        .expect("analyze seeded tables");
+
+    // Literal twin of push_order_by's output for `?sort=-pages` (default page
+    // size + 1). The gate: even an all-NULL corpus must ride the DESC NULLS
+    // LAST pages index added in the sort-whitelist migration, never a
+    // full-table Seq Scan + Sort (the degradation the ADR's revisit trigger
+    // names).
+    let explain_pages_sql = "EXPLAIN (FORMAT JSON) \
+        SELECT m.id FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        ORDER BY m.pages DESC NULLS LAST, m.id DESC LIMIT 61";
+
+    // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection
+    // over the dynamic sort SQL the QueryBuilder assembles; the compile-time
+    // macros cannot prepare it.
+    let row = sqlx::query(explain_pages_sql)
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("explain -pages sort");
+    let pages_plan: serde_json::Value = row.get("QUERY PLAN");
+    assert_no_seq_scan_on(&pages_plan, "manifestations", "-pages");
 }
 
 // ─── 11b — search endpoint ───────────────────────────────────────────────
