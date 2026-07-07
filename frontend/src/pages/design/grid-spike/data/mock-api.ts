@@ -13,7 +13,7 @@
  */
 import { z } from "zod";
 
-import type { SortState } from "@/lib/grid/types";
+import type { SortLevel, SortState } from "@/lib/grid/types";
 
 import { SpikeBookRowSchema, type SpikeBookRow } from "../types";
 
@@ -92,7 +92,7 @@ function sortValue(columnKey: string, row: SpikeBookRow): string | number | null
  * Field comparator. Nulls always sort last (independent of direction), then the
  * non-null values compare in `direction`, with a stable `id` tiebreak.
  */
-function comparator(sort: NonNullable<SortState>): (a: SpikeBookRow, b: SpikeBookRow) => number {
+function comparator(sort: SortLevel): (a: SpikeBookRow, b: SpikeBookRow) => number {
   const dir = sort.direction === "asc" ? 1 : -1;
   return (a, b) => {
     const av = sortValue(sort.columnKey, a);
@@ -133,25 +133,29 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  */
 let sortCache: {
   dataset: readonly SpikeBookRow[];
-  sort: NonNullable<MockListParams["sort"]>;
+  sort: SortLevel;
   ordered: readonly SpikeBookRow[];
 } | null = null;
 
+// The mock orders by the primary level only; multi-level ordering is the
+// real endpoint's concern and adds nothing to the latency isolation this
+// harness exists for.
 function sortedView(
   dataset: readonly SpikeBookRow[],
   sort: MockListParams["sort"],
 ): readonly SpikeBookRow[] {
-  if (sort === null) return dataset;
+  if (sort.length === 0) return dataset;
+  const level = sort[0];
   if (
     sortCache !== null &&
     sortCache.dataset === dataset &&
-    sortCache.sort.columnKey === sort.columnKey &&
-    sortCache.sort.direction === sort.direction
+    sortCache.sort.columnKey === level.columnKey &&
+    sortCache.sort.direction === level.direction
   ) {
     return sortCache.ordered;
   }
-  const ordered = [...dataset].sort(comparator(sort));
-  sortCache = { dataset, sort, ordered };
+  const ordered = [...dataset].sort(comparator(level));
+  sortCache = { dataset, sort: level, ordered };
   return ordered;
 }
 

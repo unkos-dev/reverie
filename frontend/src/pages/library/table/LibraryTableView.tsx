@@ -17,7 +17,7 @@ import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 
-import type { BookListItem, ListSort } from "@/api";
+import type { BookListItem } from "@/api";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
@@ -147,7 +147,7 @@ function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): React
  * server-fixed per mode, so the header indicator always shows ascending and
  * a second activation keeps the same order rather than reversing it.
  */
-const SORT_BY_COLUMN: Partial<Record<string, ListSort>> = {
+const SORT_BY_COLUMN: Partial<Record<string, string>> = {
   title: "title",
   authors: "author",
 };
@@ -291,8 +291,8 @@ function isAtBottom({ currentTarget }: UIEvent<HTMLDivElement>): boolean {
 
 type Props = {
   items: readonly BookListItem[];
-  sort: ListSort;
-  onSortChange: (sort: ListSort) => void;
+  sort: string;
+  onSortChange: (sort: string) => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
@@ -320,20 +320,20 @@ export function LibraryTableView({
   });
   const columns = useEditableColumns(pendingCells);
 
-  const COLUMN_BY_SORT: Partial<Record<ListSort, string>> = {
+  const COLUMN_BY_SORT: Partial<Record<string, string>> = {
     title: "title",
     author: "authors",
   };
   const sortColumn = COLUMN_BY_SORT[sort];
   const sortState: SortState =
-    sortColumn === undefined ? null : { columnKey: sortColumn, direction: "asc" };
+    sortColumn === undefined ? [] : [{ columnKey: sortColumn, direction: "asc" }];
 
   function handleSortChange(next: SortState): void {
-    if (next === null) {
+    if (next.length === 0) {
       onSortChange("recent");
       return;
     }
-    const mapped = SORT_BY_COLUMN[next.columnKey];
+    const mapped = SORT_BY_COLUMN[next[0].columnKey];
     onSortChange(mapped ?? "recent");
   }
 

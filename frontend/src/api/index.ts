@@ -13,6 +13,9 @@ export {
   getWork,
   updateBookMetadata,
   UpdateBookMetadataFieldsSchema,
+  parseSortParam,
+  serializeSortParam,
+  MAX_SORT_LEVELS,
 } from "./books";
 export type {
   BookListItem,
@@ -25,7 +28,8 @@ export type {
   MetadataVersionRow,
   IngestionStatus,
   EnrichmentStatus,
-  ListSort,
+  SortField,
+  SortLevelParam,
   ListBooksParams,
   UpdateBookMetadataFields,
 } from "./books";

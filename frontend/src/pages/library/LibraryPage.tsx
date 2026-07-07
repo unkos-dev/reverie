@@ -21,7 +21,6 @@ import {
   listShelves,
   type BookListItem,
   type BookListResponse,
-  type ListSort,
   type Shelf,
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
@@ -67,7 +66,7 @@ const LibraryTableView = lazy(() =>
   import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
 );
 
-const SORT_OPTIONS: { value: ListSort; label: string }[] = [
+const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "recent", label: "Recent" },
   { value: "title", label: "Title" },
   { value: "author", label: "Author" },
@@ -144,7 +143,7 @@ function LibraryContent(): ReactElement {
   }
 
   /** Table-header sort writes the same `?sort=` contract as {@link SortMenu}. */
-  function setSortFromTable(value: ListSort): void {
+  function setSortFromTable(value: string): void {
     const updated = new URLSearchParams(searchParams);
     if (value === "recent") updated.delete("sort");
     else updated.set("sort", value);

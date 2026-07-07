@@ -83,7 +83,7 @@ type HarnessProps = {
 };
 
 function Harness({ onSortChange, onCellFocus, onCellEdit, onScroll }: HarnessProps): ReactElement {
-  const [sort, setSort] = useState<SortState>(null);
+  const [sort, setSort] = useState<SortState>([]);
   return (
     <ReactDataGridBinding<TestRow>
       rows={ROWS}
@@ -124,8 +124,64 @@ describe("ReactDataGridBinding contract", () => {
     const header = await screen.findByRole("columnheader", { name: "Title" });
     await user.click(header);
     await waitFor(() => {
-      expect(onSortChange).toHaveBeenCalledWith({ columnKey: "title", direction: "asc" });
+      expect(onSortChange).toHaveBeenCalledWith([{ columnKey: "title", direction: "asc" }]);
     });
+  });
+
+  test("ctrl-click on a second header appends a level in insertion order", async () => {
+    const onSortChange = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onSortChange={onSortChange} />);
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    await user.click(titleHeader);
+    const authorHeader = await screen.findByRole("columnheader", { name: "Author" });
+    await user.keyboard("{Control>}");
+    await user.click(authorHeader);
+    await user.keyboard("{/Control}");
+    await waitFor(() => {
+      expect(onSortChange).toHaveBeenLastCalledWith([
+        { columnKey: "title", direction: "asc" },
+        { columnKey: "author", direction: "asc" },
+      ]);
+    });
+  });
+
+  test("a plain click mid-stack collapses the stack to that single column", async () => {
+    const onSortChange = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness onSortChange={onSortChange} />);
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    await user.click(titleHeader);
+    const authorHeader = await screen.findByRole("columnheader", { name: "Author" });
+    await user.keyboard("{Control>}");
+    await user.click(authorHeader);
+    await user.keyboard("{/Control}");
+    await waitFor(() => {
+      expect(onSortChange).toHaveBeenLastCalledWith([
+        { columnKey: "title", direction: "asc" },
+        { columnKey: "author", direction: "asc" },
+      ]);
+    });
+    // A subsequent plain click (no modifier) documents RDG's own behavior at
+    // this contract seam: it silently drops the rest of the stack (advancing
+    // the clicked column's asc/desc cycle) rather than just reordering the
+    // clicked column to the front.
+    await user.click(authorHeader);
+    await waitFor(() => {
+      expect(onSortChange).toHaveBeenLastCalledWith([{ columnKey: "author", direction: "desc" }]);
+    });
+  });
+
+  test("a sort-priority indicator exposes an accessible sort-level label", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    await user.click(titleHeader);
+    const authorHeader = await screen.findByRole("columnheader", { name: "Author" });
+    await user.keyboard("{Control>}");
+    await user.click(authorHeader);
+    await user.keyboard("{/Control}");
+    expect(await screen.findByText("sort level 2", { exact: false })).toBeInTheDocument();
   });
 
   test("reports focus when a cell is activated", async () => {
@@ -139,7 +195,7 @@ describe("ReactDataGridBinding contract", () => {
     });
   });
 
-  test("third header activation clears the sort back to null", async () => {
+  test("third header activation clears the sort back to an empty stack", async () => {
     const onSortChange = vi.fn();
     const user = userEvent.setup();
     render(<Harness onSortChange={onSortChange} />);
@@ -148,7 +204,7 @@ describe("ReactDataGridBinding contract", () => {
     await user.click(header);
     await user.click(header);
     await waitFor(() => {
-      expect(onSortChange).toHaveBeenLastCalledWith(null);
+      expect(onSortChange).toHaveBeenLastCalledWith([]);
     });
   });
 
@@ -282,7 +338,7 @@ describe("ReactDataGridBinding edit surface", () => {
         rows={ROWS}
         columns={COLUMNS}
         rowKey={(row) => row.id}
-        sort={null}
+        sort={[]}
         onSortChange={() => undefined}
         onCellFocus={() => undefined}
         onCellEdit={onCellEdit}
