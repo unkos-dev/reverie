@@ -183,9 +183,9 @@ fn spec_covers_library_routes() {
     for schema in [
         "BookListResponse",
         // BookListRow must be a standalone component for the `created_at` guard
-        // below to be non-vacuous: if utoipa stopped emitting it, `schemas["BookListRow"]`
-        // would be null and the guard would pass against nothing. Assert presence here
-        // so that regression fails loudly first.
+        // below to assert against a real schema: if utoipa stopped emitting it,
+        // `schemas["BookListRow"]` would be null and the field assertions would
+        // fail here first, loudly.
         "BookListRow",
         "BookDetail",
         "WorkDetail",
@@ -221,12 +221,17 @@ fn spec_covers_library_routes() {
         "GET /api/v1/books/{{id}} documents a 404 response"
     );
 
-    // Edge guard (a): `created_at` is `#[serde(skip)]`/`#[schema(ignore)]` on
-    // BookListRow — it must not leak into the documented schema.
-    let book_list_row_props = &schemas["BookListRow"]["properties"];
-    assert!(
-        book_list_row_props.get("created_at").is_none(),
-        "BookListRow schema must not expose created_at (serde-skipped cursor key)"
+    // Edge guard (a): `created_at` is RFC 3339 on the wire (it sources the
+    // "Added" sort column), so it must appear in the documented schema as a
+    // date-time string.
+    let created_at = &schemas["BookListRow"]["properties"]["created_at"];
+    assert_eq!(
+        created_at["type"], "string",
+        "BookListRow.created_at is documented as a string"
+    );
+    assert_eq!(
+        created_at["format"], "date-time",
+        "BookListRow.created_at is documented as an RFC 3339 date-time"
     );
 
     // Edge guard (b): the list 200 response documents the RFC 8288 Link header.

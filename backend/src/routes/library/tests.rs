@@ -273,12 +273,13 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
     assert_eq!(items[0]["validation_status"].as_str().unwrap(), "clean");
     assert!(items[0]["ingestion_status"].is_string());
     assert!(items[0]["enrichment_status"].is_string());
-    // created_at must be elided per the wire-format invariant.
-    assert!(
-        items[0].get("created_at").is_none(),
-        "created_at must be #[serde(skip)]'d, got {}",
-        items[0]
-    );
+    // created_at is RFC 3339 on the wire; it sources the "Added" sort column
+    // and the frontend BookListItemSchema expects z.string().
+    let created_at = items[0]["created_at"]
+        .as_str()
+        .unwrap_or_else(|| panic!("created_at must be a JSON string, got {}", items[0]));
+    time::OffsetDateTime::parse(created_at, &time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|e| panic!("created_at must parse as RFC 3339 ({e}): {created_at}"));
 }
 
 #[sqlx::test(migrations = "./migrations")]

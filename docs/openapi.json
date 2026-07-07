@@ -6653,7 +6653,8 @@
           "cover_url",
           "ingestion_status",
           "validation_status",
-          "enrichment_status"
+          "enrichment_status",
+          "created_at"
         ],
         "properties": {
           "authors": {
@@ -6666,6 +6667,11 @@
           "cover_url": {
             "type": "string",
             "description": "Cover thumbnail URL — relative path served by the\n`/api/v1/books/{id}/cover/thumb` handler under the caller's\nsession. Not pre-signed; access is gated by the session cookie.\nBackend constructs it so the frontend has a single source of\ntruth for the cover surface."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "`manifestations.created_at`. RFC 3339 on the wire; also the\nrecent-sort cursor key and the value behind the \"Added\" sort column."
           },
           "enrichment_status": {
             "$ref": "#/components/schemas/EnrichmentStatus",

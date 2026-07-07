@@ -79,6 +79,7 @@ const BookListItemSchema = z.object({
   validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
   reading_state: ReadingStateSummarySchema.nullable(),
+  created_at: z.string(),
 });
 /**
  * One row of a paginated book list response. Mirrors

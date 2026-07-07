@@ -21,6 +21,7 @@ function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     validation_status: "clean",
     enrichment_status: "complete",
     reading_state: { status: "reading", rating: 3, progress_pct: 40 },
+    created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }

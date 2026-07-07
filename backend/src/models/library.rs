@@ -7,10 +7,10 @@
 //! default. Mirrors [`crate::models::user::User`] shape.
 //!
 //! [`crate::models::library::BookListRow`] doubles as the `sqlx::FromRow` decode target and
-//! the API response item. The `created_at` field is decoded for use
-//! as a cursor key but is `#[serde(skip)]`-elided from the wire to
-//! keep the response payload aligned with the frontend
-//! `BookListItem` interface in `frontend/src/api/books.ts`.
+//! the API response item. The `created_at` field is the recent-sort
+//! cursor key and, as RFC 3339 on the wire, the value behind the
+//! "Added" sort column in the frontend `BookListItem` interface in
+//! `frontend/src/api/books.ts`.
 //!
 //! `authors` is loaded via a separate batch query (`ANY($1::uuid[])`)
 //! after the page rows arrive — the join cannot be expressed in a
@@ -84,10 +84,9 @@ pub struct BookListRow {
     /// Caller's reading state for this book; `None` when unread (no
     /// `reading_state` row). Batch-loaded alongside `authors`.
     pub reading_state: Option<ReadingStateSummary>,
-    /// `manifestations.created_at`; used as the recent-sort cursor
-    /// key and elided from the JSON wire shape.
-    #[serde(skip)]
-    #[schema(ignore)]
+    /// `manifestations.created_at`. RFC 3339 on the wire; also the
+    /// recent-sort cursor key and the value behind the "Added" sort column.
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
 

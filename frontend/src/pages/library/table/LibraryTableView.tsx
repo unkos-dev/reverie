@@ -145,13 +145,12 @@ function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): React
 }
 
 /**
- * Wire sort field <-> grid column key, both directions. `created_at` maps
- * to the `added` column key for forward compatibility with the planned
- * "Added" column: `created_at` is currently elided from the `/api/v1/books`
- * response (`#[serde(skip)]` on `BookListRow.created_at`), so no column
- * sources it yet. A `created_at` level still round-trips through the sort
- * stack and the `SortChips` bar; it just has no header to click until the
- * column exists.
+ * Wire sort field <-> grid column key, both directions. Two fields diverge
+ * from their column key: `author` sources the `authors` column and
+ * `created_at` the `added` column. `handleSortChange` reads the reverse map
+ * to translate RDG's column-keyed sort back to wire fields. Every sortable
+ * field must map to a real column key here, or RDG silently drops a sort
+ * level whose key names no column.
  */
 const COLUMN_BY_FIELD: Record<SortField, string> = {
   title: "title",
@@ -174,6 +173,12 @@ const SORT_FIELD_LABELS: Record<SortField, string> = {
   created_at: "Added",
   pages: "Pages",
 };
+
+/** Renders the `created_at` RFC 3339 timestamp as a locale date for the
+ *  read-only "Added" column and its plain-text export projection. */
+function formatAddedDate(iso: string): string {
+  return new Date(iso).toLocaleDateString();
+}
 
 /**
  * Base column defs: accessor projections, sort wiring, and per-column
@@ -264,6 +269,13 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
       return rating === null || rating < 1 ? EMPTY_CELL : "★".repeat(rating);
     },
     renderEditCell: renderRatingEditCell,
+  },
+  {
+    key: "added",
+    name: "Added",
+    sortable: true,
+    width: 120,
+    accessor: (row) => formatAddedDate(row.created_at),
   },
 ];
 

@@ -55,6 +55,7 @@ function rowFixture(index: number, overrides: Partial<BookListItem> = {}): BookL
     validation_status: "clean",
     enrichment_status: "complete",
     reading_state: null,
+    created_at: `2026-01-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
     ...overrides,
   };
 }
@@ -225,6 +226,29 @@ describe("LibraryTableView", () => {
       expect(onSortChange).toHaveBeenLastCalledWith([
         { field: "title", desc: false },
         { field: "author", desc: false },
+      ]);
+    });
+  });
+
+  // Regression: a `created_at` level maps to the `added` column key. Before the
+  // "Added" column existed, that key named no column, so react-data-grid dropped
+  // the sort entry and the level vanished on the first header re-emit. The column
+  // now sources `created_at`, so the level is a real grid sort and survives a
+  // ctrl-click that appends another column.
+  test("a created_at sort level survives a ctrl-click on another header", async () => {
+    const onSortChange = vi.fn();
+    renderTableView({ onSortChange, sort: [{ field: "created_at", desc: true }] });
+    await screen.findByRole("grid");
+    const user = userEvent.setup();
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title (all editions)" });
+    await user.keyboard("{Control>}");
+    await user.click(titleHeader);
+    await user.keyboard("{/Control}");
+
+    await waitFor(() => {
+      expect(onSortChange).toHaveBeenLastCalledWith([
+        { field: "created_at", desc: true },
+        { field: "title", desc: false },
       ]);
     });
   });

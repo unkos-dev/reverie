@@ -62,6 +62,7 @@ const BOOK_LIST_ITEM = {
   validation_status: "clean",
   enrichment_status: "complete",
   reading_state: null,
+  created_at: "2026-01-01T00:00:00Z",
 };
 
 const FILTERED_BOOK_LIST_ITEM = {
