@@ -55,8 +55,10 @@ describe("SortChips", () => {
     ];
     render(<SortChips levels={levels} labels={LABELS} onChange={onChange} />);
     const user = userEvent.setup();
-    // Ascending currently, so the button's action is to flip to descending.
-    await user.click(screen.getByRole("button", { name: "Sort by Title descending" }));
+    // Ascending currently, so clicking flips it to descending.
+    await user.click(
+      screen.getByRole("button", { name: "Change Title sort direction (currently ascending)" }),
+    );
     expect(onChange).toHaveBeenCalledWith([
       { field: "title", desc: true },
       { field: "pages", desc: false },

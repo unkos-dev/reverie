@@ -87,7 +87,7 @@ export function SortChips({ levels, labels, onChange }: Props): ReactElement {
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`Sort by ${label} ${level.desc ? "ascending" : "descending"}`}
+                aria-label={`Change ${label} sort direction (currently ${level.desc ? "descending" : "ascending"})`}
                 onClick={() => {
                   toggleDirection(index);
                 }}
