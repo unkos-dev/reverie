@@ -34,6 +34,7 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::db;
 use crate::error::AppError;
+use crate::routes::library::filters::escape_like;
 use crate::state::AppState;
 
 /// Build the `/api/v1/*/suggest` router as an [`OpenApiRouter`] so each
@@ -47,7 +48,13 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(suggest_authors))
         .routes(routes!(suggest_series))
         .routes(routes!(suggest_publishers))
+        .routes(routes!(authors_by_id))
 }
+
+/// Upper bound on `?id=` repetitions for the authors batch-get. Author-chip
+/// hydration never needs more than a page's worth of distinct authors; the
+/// cap keeps the `= ANY($)` array bounded by construction.
+const MAX_RESOLVE_IDS: usize = 20;
 
 /// Below this character count, `word_similarity` runs on too few trigrams to
 /// be a meaningful signal, so only the `ILIKE` prefix leg is used.
@@ -90,6 +97,25 @@ struct SuggestResponse {
     suggestions: Vec<Suggestion>,
 }
 
+/// `?id=` repeated query parameter for the authors batch-get. Required by
+/// construction: an absent or empty `id` is a 422, never an unbounded list.
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct AuthorsByIdParams {
+    /// Author ids to resolve, repeated (`?id=<uuid>&id=<uuid>`). Required
+    /// (empty is 422) and capped at [`MAX_RESOLVE_IDS`]; unknown or
+    /// out-of-scope ids are silently omitted rather than 404'd.
+    #[serde(default)]
+    id: Vec<Uuid>,
+}
+
+/// `GET /api/v1/authors` response envelope: the resolved author labels for
+/// the requested ids, as a plain collection.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct AuthorsResponse {
+    items: Vec<Suggestion>,
+}
+
 /// Validated, normalized inputs shared by every entity's query pair, so each
 /// handler validates once and the six query functions take one argument.
 struct SuggestInput {
@@ -130,21 +156,6 @@ fn prepare(params: &SuggestParams) -> Result<SuggestInput, AppError> {
         short: raw.chars().count() < FUZZY_MIN_CHARS,
         limit,
     })
-}
-
-/// Backslash-escape `\`, `%`, and `_` so `raw` is matched literally by
-/// `ILIKE` rather than as a wildcard pattern. Postgres's default `LIKE`
-/// escape character is already `\`, so callers need no explicit `ESCAPE`
-/// clause on the query side.
-fn escape_like(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    for c in raw.chars() {
-        if matches!(c, '\\' | '%' | '_') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
 }
 
 /// Row shape shared by the five vocabulary-table entities (genres, moods,
@@ -664,6 +675,82 @@ async fn suggest_authors(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
+/// `GET /api/v1/authors?id=<uuid>&id=<uuid>`: resolve author ids to their
+/// display names so a filter chip restored from a bookmarked URL can label
+/// itself (the list payload carries author names, not ids, and a none-of
+/// filter hides the author's rows entirely).
+///
+/// The `id` filter is required and capped, keeping this route bounded by
+/// construction: it is the seed of a future paginated authors collection,
+/// but until that lands a bare `GET /api/v1/authors` is a 422, not a
+/// list-all. Ids are RLS-scoped through the same in-use join as
+/// `authors/suggest` (any contributor role counts), so an id the caller
+/// cannot see is silently omitted rather than 404'd, and unknown ids drop
+/// out the same way.
+///
+/// # Errors
+/// - [`AppError::MalformedQuery`] when an `id` value is not a UUID.
+/// - [`AppError::Validation`] when `id` is absent/empty or over
+///   [`MAX_RESOLVE_IDS`] values.
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/authors",
+    tag = "suggest",
+    params(AuthorsByIdParams),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    responses(
+        (status = 200, description = "Resolved author labels for the requested ids", body = AuthorsResponse),
+        (status = 400, description = "Malformed id parameter", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Missing id filter or too many ids", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn authors_by_id(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    params: Result<Query<AuthorsByIdParams>, QueryRejection>,
+) -> Result<Json<AuthorsResponse>, AppError> {
+    let Query(params) = params?;
+    if params.id.is_empty() {
+        return Err(AppError::Validation("id filter is required".into()));
+    }
+    if params.id.len() > MAX_RESOLVE_IDS {
+        return Err(AppError::Validation(format!(
+            "too many id filters: maximum {MAX_RESOLVE_IDS}"
+        )));
+    }
+    let mut ids = params.id.clone();
+    ids.sort_unstable();
+    ids.dedup();
+
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let rows = sqlx::query_as!(
+        VocabRow,
+        r#"SELECT a.id, a.name
+             FROM authors a
+            WHERE a.id = ANY($1)
+              AND EXISTS (
+                      SELECT 1 FROM work_authors wa
+                      JOIN manifestations m ON m.work_id = wa.work_id
+                     WHERE wa.author_id = a.id
+                  )
+            ORDER BY a.name ASC"#,
+        &ids,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let items = rows.into_iter().map(Suggestion::from).collect();
+    Ok(Json(AuthorsResponse { items }))
+}
+
 /// `GET /api/v1/series/suggest`: series names in use on a visible
 /// manifestation, ranked prefix-first then by similarity.
 ///
@@ -746,6 +833,7 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
+    use super::MAX_RESOLVE_IDS;
     use crate::test_support;
 
     fn auth(header: &str) -> (HeaderName, HeaderValue) {
@@ -1195,5 +1283,166 @@ mod tests {
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
         assert!(suggestion_values(&r.json()).contains(&"Foundation".to_owned()));
+    }
+
+    /// The `items[]` labels from an authors batch-get response body.
+    fn author_values(body: &serde_json::Value) -> Vec<String> {
+        body["items"]
+            .as_array()
+            .expect("items array")
+            .iter()
+            .map(|s| s["value"].as_str().expect("value string").to_owned())
+            .collect()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_by_id_requires_auth(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get(&format!("/api/v1/authors?id={}", Uuid::new_v4()))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_by_id_requires_id_filter(pool: PgPool) {
+        // A bare `GET /api/v1/authors` must never list all authors: the id
+        // filter is required, so the endpoint stays bounded by construction.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "authors-req").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get("/api/v1/authors")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(
+            r.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body: {}",
+            r.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_by_id_over_cap_is_rejected(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "authors-cap").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let ids = (0..=MAX_RESOLVE_IDS)
+            .map(|_| format!("id={}", Uuid::new_v4()))
+            .collect::<Vec<_>>()
+            .join("&");
+        let r = server
+            .get(&format!("/api/v1/authors?{ids}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(
+            r.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body: {}",
+            r.text()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_by_id_resolves_known_and_omits_unknown(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (work_a, _m_a) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "authres-a").await;
+        let (work_b, _m_b) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "authres-b").await;
+        let author_a = test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_a,
+            "Ursula Le Guin",
+            "author",
+            0,
+        )
+        .await;
+        let author_b = test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_b,
+            "Gene Wolfe",
+            "author",
+            0,
+        )
+        .await;
+        let unknown = Uuid::new_v4();
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "authres").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get(&format!(
+                "/api/v1/authors?id={author_a}&id={author_b}&id={unknown}"
+            ))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = author_values(&r.json());
+        assert!(values.contains(&"Ursula Le Guin".to_owned()), "{values:?}");
+        assert!(values.contains(&"Gene Wolfe".to_owned()), "{values:?}");
+        assert_eq!(
+            values.len(),
+            2,
+            "unknown id must be omitted, not 404: {values:?}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_by_id_omits_out_of_rls_scope(pool: PgPool) {
+        // An author linked only through a manifestation the caller cannot see
+        // is omitted, mirroring the suggest endpoint's RLS scoping.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (work_a, m_a) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "authrls-a").await;
+        let (work_b, _m_b) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "authrls-b").await;
+        let author_shelved = test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_a,
+            "Shelved Scribe",
+            "author",
+            0,
+        )
+        .await;
+        let author_hidden = test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_b,
+            "Hidden Hand",
+            "author",
+            0,
+        )
+        .await;
+        let (child_id, child_basic) =
+            test_support::db::create_child_user_and_basic_auth(&app_pool, "authrls-child").await;
+        let shelf_id = test_support::db::create_shelf(&app_pool, child_id, "Child shelf").await;
+        test_support::db::add_to_shelf(&app_pool, shelf_id, m_a).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get(&format!(
+                "/api/v1/authors?id={author_shelved}&id={author_hidden}"
+            ))
+            .add_header(auth(&child_basic).0, auth(&child_basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = author_values(&r.json());
+        assert!(values.contains(&"Shelved Scribe".to_owned()), "{values:?}");
+        assert!(
+            !values.contains(&"Hidden Hand".to_owned()),
+            "child must not resolve an author from an unshelved manifestation: {values:?}"
+        );
     }
 }

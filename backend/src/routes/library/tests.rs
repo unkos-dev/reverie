@@ -509,6 +509,8 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
             time::OffsetDateTime::now_utc(),
         )],
         id: Uuid::new_v4(),
+        // Inert here: the sort mismatch is detected before the fingerprint.
+        filter_fp: String::new(),
     }
     .encode()
     .expect("encode");
@@ -1223,6 +1225,10 @@ async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
             "neuromancer".to_owned(),
         ))],
         id: Uuid::new_v4(),
+        // Sort mismatch is checked before the filter fingerprint, so this
+        // value is inert for this test; empty is the no-filter fingerprint's
+        // preimage regardless.
+        filter_fp: String::new(),
     }
     .encode()
     .expect("encode");

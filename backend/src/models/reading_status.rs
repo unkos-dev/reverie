@@ -55,6 +55,21 @@ impl ReadingStatus {
             Self::Abandoned => "abandoned",
         }
     }
+
+    /// Parse a canonical wire string back into a variant, the inverse of
+    /// [`Self::as_str`]. `None` for any string that is not one of the five
+    /// wire names, so a caller can reject an unknown status token without
+    /// routing it through serde.
+    pub fn from_wire(raw: &str) -> Option<Self> {
+        match raw {
+            "want_to_read" => Some(Self::WantToRead),
+            "reading" => Some(Self::Reading),
+            "on_hold" => Some(Self::OnHold),
+            "finished" => Some(Self::Finished),
+            "abandoned" => Some(Self::Abandoned),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for ReadingStatus {

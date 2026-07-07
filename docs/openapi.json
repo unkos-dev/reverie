@@ -77,6 +77,95 @@
         ]
       }
     },
+    "/api/v1/authors": {
+      "get": {
+        "tags": [
+          "suggest"
+        ],
+        "summary": "`GET /api/v1/authors?id=<uuid>&id=<uuid>`: resolve author ids to their\ndisplay names so a filter chip restored from a bookmarked URL can label\nitself (the list payload carries author names, not ids, and a none-of\nfilter hides the author's rows entirely).",
+        "description": "The `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` (any contributor role counts), so an id the caller\ncannot see is silently omitted rather than 404'd, and unknown ids drop\nout the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "authors_by_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Author ids to resolve, repeated (`?id=<uuid>&id=<uuid>`). Required\n(empty is 422) and capped at [`MAX_RESOLVE_IDS`]; unknown or\nout-of-scope ids are silently omitted rather than 404'd.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved author labels for the requested ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed id parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing id filter or too many ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/authors/suggest": {
       "get": {
         "tags": [
@@ -202,10 +291,40 @@
           {
             "name": "author",
             "in": "query",
+            "description": "All-of author filter: every listed author id must be linked to\nthe work in the `author` role. A single `?author=<uuid>` is the\none-element case, wire-compatible with the pre-11c single filter.",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "name": "author_any",
+            "in": "query",
+            "description": "Any-of author filter: at least one listed author id is linked.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "name": "author_none",
+            "in": "query",
+            "description": "None-of author filter: no listed author id is linked.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
             }
           },
           {
@@ -331,6 +450,189 @@
               "items": {
                 "type": "string"
               }
+            }
+          },
+          {
+            "name": "title_contains",
+            "in": "query",
+            "description": "Case-insensitive substring match on the work title.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "title_eq",
+            "in": "query",
+            "description": "Case-insensitive exact match on the work title (no wildcards).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "title_ne",
+            "in": "query",
+            "description": "Case-insensitive exact non-match on the work title.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtitle_contains",
+            "in": "query",
+            "description": "Case-insensitive substring match on the work subtitle.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtitle_empty",
+            "in": "query",
+            "description": "`true` keeps only rows with no subtitle; `false` keeps only rows\nthat have one.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isbn_13_contains",
+            "in": "query",
+            "description": "Case-insensitive substring match on the manifestation ISBN-13.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "isbn_13_eq",
+            "in": "query",
+            "description": "Case-insensitive exact match on the manifestation ISBN-13.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "isbn_13_empty",
+            "in": "query",
+            "description": "`true` keeps only rows with no ISBN-13; `false` only rows with one.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "pages_gte",
+            "in": "query",
+            "description": "Lower bound (inclusive) on page count.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pages_lte",
+            "in": "query",
+            "description": "Upper bound (inclusive) on page count.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pages_empty",
+            "in": "query",
+            "description": "`true` keeps only rows with no page count; `false` only rows with one.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "created_at_gte",
+            "in": "query",
+            "description": "Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.\nThe `time` crate's default serde reads a component form, not a `YYYY-MM-DD`\nstring, so the query value is parsed through [`filters::iso_date_opt`]; a\nmalformed date fails deserialization and is a 400.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "created_at_lte",
+            "in": "query",
+            "description": "Upper bound (day-inclusive) on the added date, ISO 8601 calendar date.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "status_any",
+            "in": "query",
+            "description": "Any-of reading-status filter. Each value is a `reading_status` wire\nname or the `unread` pseudo-value (no status set); a row qualifies\nwhen it matches at least one.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "status_none",
+            "in": "query",
+            "description": "None-of reading-status filter: excludes rows matching any value.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "rating_gte",
+            "in": "query",
+            "description": "Lower bound (inclusive) on the caller's rating (1 to 5).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "rating_lte",
+            "in": "query",
+            "description": "Upper bound (inclusive) on the caller's rating (1 to 5).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "rating_empty",
+            "in": "query",
+            "description": "`true` keeps only rows the caller has not rated; `false` only rated rows.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Quick-search text: narrows the current result set to rows whose\ntitle or full-text vector matches, within the active sort order.\nA filter, not a ranked search (that lives at `/api/v1/search`).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -6387,6 +6689,21 @@
           "new_password": {
             "type": "string",
             "description": "New password the admin sets for the target and relays out-of-band.\nEnforced against the password policy."
+          }
+        }
+      },
+      "AuthorsResponse": {
+        "type": "object",
+        "description": "`GET /api/v1/authors` response envelope: the resolved author labels for\nthe requested ids, as a plain collection.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Suggestion"
+            }
           }
         }
       },

@@ -109,6 +109,15 @@ pub struct SortCursor {
     /// Final-tiebreaker `manifestations.id` (primary key, always
     /// unique per row).
     pub(crate) id: Uuid,
+    /// Fingerprint of the active filter set the cursor was minted under
+    /// (a short hex digest supplied by the list handler). Binds the
+    /// cursor to its filters exactly as `spec` binds it to the sort
+    /// stack: [`Self::parse_for`] rejects a cursor whose fingerprint
+    /// differs from the current request's with
+    /// [`CursorError::FilterMismatch`], so a cursor replayed after the
+    /// filters changed cannot walk a boundary computed under the old set.
+    #[serde(rename = "f")]
+    pub(crate) filter_fp: String,
 }
 
 /// Parse and encode failures for the cursor family.
@@ -142,6 +151,14 @@ pub enum CursorError {
     /// under `?sort=-title`).
     #[error("cursor sort mismatch")]
     SortMismatch,
+    /// Cursor's embedded filter fingerprint did not match the request's
+    /// active filter set (e.g. a page-2 cursor replayed after a filter
+    /// was added or removed). Mapped to the same 422 as
+    /// [`Self::SortMismatch`]: the boundary it encodes was computed under
+    /// a different filter set, so continuing the walk would skip or
+    /// repeat rows.
+    #[error("cursor filter mismatch")]
+    FilterMismatch,
     /// A cursor timestamp had a year outside RFC 3339's representable
     /// range (`-9999..=9999`) during encode.
     #[error("timestamp not representable as RFC 3339")]
@@ -172,16 +189,19 @@ impl SortCursor {
         ))
     }
 
-    /// Parse a base64url cursor and assert it was minted under `spec`.
+    /// Parse a base64url cursor and assert it was minted under `spec` and
+    /// `filter_fp` (the fingerprint of the request's active filter set).
     ///
     /// # Errors
     ///
     /// Returns the matching [`CursorError`] variant for bad base64,
     /// non-UTF-8 bytes, a missing delimiter, a foreign tag byte, an
     /// undecodable JSON payload, a key list whose arity or value
-    /// types disagree with `spec`'s columns, or an embedded spec
-    /// string minted under a different stack.
-    pub fn parse_for(raw: &str, spec: &SortSpec) -> Result<Self, CursorError> {
+    /// types disagree with `spec`'s columns, an embedded spec string
+    /// minted under a different stack ([`CursorError::SortMismatch`]), or
+    /// an embedded filter fingerprint minted under a different filter set
+    /// ([`CursorError::FilterMismatch`]).
+    pub fn parse_for(raw: &str, spec: &SortSpec, filter_fp: &str) -> Result<Self, CursorError> {
         let mut buf = vec![0u8; raw.len()];
         let decoded = Base64UrlUnpadded::decode(raw.as_bytes(), &mut buf)
             .map_err(|_| CursorError::InvalidBase64)?;
@@ -196,15 +216,18 @@ impl SortCursor {
         if cursor.spec != spec.canonical() {
             return Err(CursorError::SortMismatch);
         }
+        if cursor.filter_fp != filter_fp {
+            return Err(CursorError::FilterMismatch);
+        }
         validate_keys(&cursor.keys, spec)?;
         Ok(cursor)
     }
 
-    /// Build a cursor for `spec` on the mint path, validating that `keys`
-    /// match the spec's arity, per-level value kinds, and null-legality
-    /// before it can be encoded. Sharing [`validate_keys`] with
-    /// [`Self::parse_for`] means a minted cursor can never be one its own
-    /// decode would reject.
+    /// Build a cursor for `spec` and `filter_fp` on the mint path,
+    /// validating that `keys` match the spec's arity, per-level value
+    /// kinds, and null-legality before it can be encoded. Sharing
+    /// [`validate_keys`] with [`Self::parse_for`] means a minted cursor
+    /// can never be one its own decode would reject.
     ///
     /// # Errors
     ///
@@ -215,12 +238,14 @@ impl SortCursor {
         spec: &SortSpec,
         keys: Vec<CursorValue>,
         id: Uuid,
+        filter_fp: String,
     ) -> Result<Self, CursorError> {
         validate_keys(&keys, spec)?;
         Ok(Self {
             spec: spec.canonical(),
             keys,
             id,
+            filter_fp,
         })
     }
 }
@@ -401,6 +426,12 @@ mod tests {
 
     use crate::routes::sort_spec::SortSpec;
 
+    /// Fingerprint stand-in for the sort-mechanics tests: they exercise the
+    /// spec/key cascade under a fixed (empty-filter) fingerprint, so both
+    /// mint and parse use this same value. The dedicated fingerprint tests
+    /// below vary it deliberately.
+    const NO_FILTERS: &str = "";
+
     fn spec_of(raw: &str) -> SortSpec {
         SortSpec::parse(raw).expect("valid spec")
     }
@@ -410,6 +441,7 @@ mod tests {
             spec: spec.canonical(),
             keys,
             id: Uuid::new_v4(),
+            filter_fp: NO_FILTERS.to_owned(),
         }
     }
 
@@ -419,7 +451,7 @@ mod tests {
         let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
         let cursor = cursor_under(&spec, vec![CursorValue::Ts(ts)]);
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -428,7 +460,7 @@ mod tests {
         let spec = spec_of("title");
         let cursor = cursor_under(&spec, vec![CursorValue::Text(Some("neuromancer".into()))]);
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -437,7 +469,7 @@ mod tests {
         let spec = spec_of("author");
         let cursor = cursor_under(&spec, vec![CursorValue::Text(None)]);
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -446,7 +478,7 @@ mod tests {
         let spec = spec_of("-pages");
         let cursor = cursor_under(&spec, vec![CursorValue::Int(Some(466))]);
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -455,7 +487,7 @@ mod tests {
         let spec = spec_of("pages");
         let cursor = cursor_under(&spec, vec![CursorValue::Int(None)]);
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -472,7 +504,7 @@ mod tests {
             ],
         );
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -484,7 +516,7 @@ mod tests {
         let hostile = "wei|rd, \"quoted\" \\ 本のタイトル".to_owned();
         let cursor = cursor_under(&spec, vec![CursorValue::Text(Some(hostile))]);
         let encoded = cursor.encode().expect("encode");
-        let parsed = SortCursor::parse_for(&encoded, &spec).expect("roundtrip");
+        let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
         assert_eq!(parsed, cursor);
     }
 
@@ -494,8 +526,43 @@ mod tests {
         let cursor = cursor_under(&minted, vec![CursorValue::Text(Some("x".into()))]);
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec_of("-title")),
+            SortCursor::parse_for(&encoded, &spec_of("-title"), NO_FILTERS),
             Err(CursorError::SortMismatch)
+        ));
+    }
+
+    #[test]
+    fn filter_fingerprint_roundtrips() {
+        let spec = spec_of("title");
+        let cursor = SortCursor::for_spec(
+            &spec,
+            vec![CursorValue::Text(Some("dune".into()))],
+            Uuid::new_v4(),
+            "deadbeefcafef00d".to_owned(),
+        )
+        .expect("mint");
+        let encoded = cursor.encode().expect("encode");
+        let parsed =
+            SortCursor::parse_for(&encoded, &spec, "deadbeefcafef00d").expect("same fingerprint");
+        assert_eq!(parsed, cursor);
+    }
+
+    #[test]
+    fn rejects_filter_fingerprint_mismatch() {
+        // A cursor minted under one filter set replayed under another (same
+        // sort stack) is a 422, distinct from the sort-mismatch family.
+        let spec = spec_of("title");
+        let cursor = SortCursor::for_spec(
+            &spec,
+            vec![CursorValue::Text(Some("dune".into()))],
+            Uuid::new_v4(),
+            "1111111111111111".to_owned(),
+        )
+        .expect("mint");
+        let encoded = cursor.encode().expect("encode");
+        assert!(matches!(
+            SortCursor::parse_for(&encoded, &spec, "2222222222222222"),
+            Err(CursorError::FilterMismatch)
         ));
     }
 
@@ -511,7 +578,7 @@ mod tests {
         );
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec_of("author,title")),
+            SortCursor::parse_for(&encoded, &spec_of("author,title"), NO_FILTERS),
             Err(CursorError::SortMismatch)
         ));
     }
@@ -522,7 +589,7 @@ mod tests {
         let cursor = cursor_under(&minted, vec![CursorValue::Text(Some("x".into()))]);
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec_of("author")),
+            SortCursor::parse_for(&encoded, &spec_of("author"), NO_FILTERS),
             Err(CursorError::SortMismatch)
         ));
     }
@@ -533,7 +600,7 @@ mod tests {
         let cursor = cursor_under(&spec, vec![CursorValue::Text(Some("x".into()))]);
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec),
+            SortCursor::parse_for(&encoded, &spec, NO_FILTERS),
             Err(CursorError::MalformedKey)
         ));
     }
@@ -544,7 +611,7 @@ mod tests {
         let cursor = cursor_under(&spec, vec![CursorValue::Int(Some(3))]);
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec),
+            SortCursor::parse_for(&encoded, &spec, NO_FILTERS),
             Err(CursorError::MalformedKey)
         ));
     }
@@ -555,7 +622,7 @@ mod tests {
         let cursor = cursor_under(&spec, vec![CursorValue::Text(None)]);
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &spec),
+            SortCursor::parse_for(&encoded, &spec, NO_FILTERS),
             Err(CursorError::MalformedKey)
         ));
     }
@@ -563,7 +630,7 @@ mod tests {
     #[test]
     fn rejects_garbage_base64() {
         assert!(matches!(
-            SortCursor::parse_for("!!!not-b64!!!", &SortSpec::default()),
+            SortCursor::parse_for("!!!not-b64!!!", &SortSpec::default(), NO_FILTERS),
             Err(CursorError::InvalidBase64)
         ));
     }
@@ -572,7 +639,7 @@ mod tests {
     fn rejects_malformed_json_payload() {
         let encoded = Base64UrlUnpadded::encode_string(b"m|not-json");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &SortSpec::default()),
+            SortCursor::parse_for(&encoded, &SortSpec::default(), NO_FILTERS),
             Err(CursorError::MalformedKey)
         ));
     }
@@ -587,7 +654,7 @@ mod tests {
         for payload in legacy {
             let encoded = Base64UrlUnpadded::encode_string(payload);
             assert!(matches!(
-                SortCursor::parse_for(&encoded, &SortSpec::default()),
+                SortCursor::parse_for(&encoded, &SortSpec::default(), NO_FILTERS),
                 Err(CursorError::UnknownTag)
             ));
         }
@@ -598,7 +665,7 @@ mod tests {
         let encoded =
             Base64UrlUnpadded::encode_string(b"z|whatever|550e8400-e29b-41d4-a716-446655440000");
         assert!(matches!(
-            SortCursor::parse_for(&encoded, &SortSpec::default()),
+            SortCursor::parse_for(&encoded, &SortSpec::default(), NO_FILTERS),
             Err(CursorError::UnknownTag)
         ));
     }
@@ -633,6 +700,7 @@ mod tests {
             spec: SortSpec::default().canonical(),
             keys: vec![CursorValue::Ts(ts)],
             id,
+            filter_fp: NO_FILTERS.to_owned(),
         }
         .encode()
         .expect("encode");
