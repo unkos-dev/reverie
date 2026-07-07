@@ -164,7 +164,7 @@ struct BookListResponse {
 }
 
 /// List the manifestations visible to the current user, paginated
-/// via an opaque cursor and ordered per the requested sort axis.
+/// via an opaque cursor and ordered per the requested sort stack.
 ///
 /// # Errors
 /// - [`AppError::MalformedQuery`] when a filter param fails to
@@ -599,6 +599,28 @@ const fn is_null_boundary(value: &CursorValue) -> bool {
     matches!(value, CursorValue::Text(None) | CursorValue::Int(None))
 }
 
+/// Push the correctly-typed `push_bind` for a non-null `CursorValue`. The
+/// single place a `CursorValue` variant is matched down to a concrete
+/// bindable type, shared by [`push_boundary_equality`] and
+/// [`push_boundary_advance`] so neither re-enumerates the four variants.
+/// Both callers guard the null-bucket case themselves (`IS NULL` in
+/// [`push_boundary_equality`]; an early return in [`push_boundary_advance`]),
+/// so the null arm here is a no-op kept only for exhaustiveness.
+fn push_typed_bind(qb: &mut QueryBuilder<Postgres>, value: &CursorValue) {
+    match value {
+        CursorValue::Text(None) | CursorValue::Int(None) => {}
+        CursorValue::Text(Some(v)) => {
+            qb.push_bind(v.clone());
+        }
+        CursorValue::Int(Some(v)) => {
+            qb.push_bind(*v);
+        }
+        CursorValue::Ts(ts) => {
+            qb.push_bind(*ts);
+        }
+    }
+}
+
 /// Push an equality term against `column`'s boundary `value`: `IS NULL`
 /// when the boundary itself is NULL, `= $bind` otherwise.
 fn push_boundary_equality(
@@ -607,22 +629,11 @@ fn push_boundary_equality(
     value: &CursorValue,
 ) {
     qb.push(column.sql_expr());
-    match value {
-        CursorValue::Text(None) | CursorValue::Int(None) => {
-            qb.push(" IS NULL");
-        }
-        CursorValue::Text(Some(v)) => {
-            qb.push(" = ");
-            qb.push_bind(v.clone());
-        }
-        CursorValue::Int(Some(v)) => {
-            qb.push(" = ");
-            qb.push_bind(*v);
-        }
-        CursorValue::Ts(ts) => {
-            qb.push(" = ");
-            qb.push_bind(*ts);
-        }
+    if is_null_boundary(value) {
+        qb.push(" IS NULL");
+    } else {
+        qb.push(" = ");
+        push_typed_bind(qb, value);
     }
 }
 
@@ -632,48 +643,28 @@ fn push_boundary_equality(
 /// after every non-NULL value regardless of direction, so a bare `<`
 /// (DESC) would silently drop the entire NULL bucket the first time a
 /// non-NULL boundary is used, the same bug class a bare `>` (ASC) would
-/// have without the `OR IS NULL` arm. A NULL boundary itself never
-/// reaches here; the caller skips this level's branch instead (see
-/// [`is_null_boundary`]).
+/// have without the `OR IS NULL` arm. A NULL boundary returns early here;
+/// the caller already skips this level's branch (see [`is_null_boundary`]),
+/// so this is defense in depth.
 fn push_boundary_advance(
     qb: &mut QueryBuilder<Postgres>,
     column: SortColumn,
     direction: SortDirection,
     value: &CursorValue,
 ) {
-    let expr = column.sql_expr();
-    let op = direction.comparison_op();
-    let nullable = column.nullable();
-    match value {
-        // Unreachable: a null boundary on a nullable column is skipped by
-        // push_cursor_predicate, and a null boundary on a non-nullable column
-        // is rejected by SortCursor::parse_for. Kept to satisfy exhaustiveness.
-        CursorValue::Text(None) | CursorValue::Int(None) => {}
-        CursorValue::Text(Some(v)) => push_advance_bind(qb, expr, op, nullable, v.clone()),
-        CursorValue::Int(Some(v)) => push_advance_bind(qb, expr, op, nullable, *v),
-        CursorValue::Ts(ts) => push_advance_bind(qb, expr, op, nullable, *ts),
+    if is_null_boundary(value) {
+        return;
     }
-}
-
-/// Bind-generic core of [`push_boundary_advance`]: `expr op $bind`,
-/// wrapped in `(... OR expr IS NULL)` when `nullable`.
-fn push_advance_bind<'q, T>(
-    qb: &mut QueryBuilder<Postgres>,
-    expr: &'static str,
-    op: char,
-    nullable: bool,
-    value: T,
-) where
-    T: sqlx::Encode<'q, Postgres> + sqlx::Type<Postgres>,
-{
+    let expr = column.sql_expr();
+    let nullable = column.nullable();
     if nullable {
         qb.push("(");
     }
     qb.push(expr);
     qb.push(" ");
-    qb.push(op);
+    qb.push(direction.comparison_op());
     qb.push(" ");
-    qb.push_bind(value);
+    push_typed_bind(qb, value);
     if nullable {
         qb.push(" OR ");
         qb.push(expr);
@@ -739,11 +730,9 @@ fn next_cursor_for_row(
         };
         keys.push(value);
     }
-    Ok(SortCursor {
-        spec: spec.canonical(),
-        keys,
-        id: decode_cursor_column(row, "id")?,
-    })
+    let id = decode_cursor_column(row, "id")?;
+    SortCursor::for_spec(spec, keys, id)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("minted an invalid cursor: {e}")))
 }
 
 /// `try_get` wrapper shared by [`next_cursor_for_row`]'s per-column

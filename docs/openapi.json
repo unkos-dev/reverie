@@ -177,7 +177,7 @@
         "tags": [
           "library"
         ],
-        "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort axis.",
+        "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort stack.",
         "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (a malformed UUID in `?author=`/`?series=`/`?shelf=`,\n  via the `From<QueryRejection>` impl), or when `?sort=` names an\n  unwhitelisted field, repeats a column, or exceeds\n  [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.\n- [`AppError::Validation`] when the cursor is malformed, its\n  embedded sort spec mismatches the requested stack, or any\n  vocabulary filter param carries more than [`MAX_TAG_FILTERS`]\n  values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list",
         "parameters": [

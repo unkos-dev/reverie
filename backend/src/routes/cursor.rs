@@ -49,7 +49,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use crate::routes::sort_spec::{SortColumn, SortSpec};
+use crate::routes::sort_spec::{SortSpec, SortValueKind};
 
 /// One typed boundary value inside a [`SortCursor`], externally
 /// tagged in the JSON payload so a forged cursor cannot smuggle a
@@ -71,6 +71,24 @@ pub enum CursorValue {
     Int(Option<i32>),
 }
 
+impl CursorValue {
+    /// The [`SortValueKind`] this boundary value carries, matched against
+    /// its level's [`crate::routes::sort_spec::SortColumn::value_kind`] so
+    /// a forged cursor cannot smuggle a value of the wrong SQL type.
+    const fn kind(&self) -> SortValueKind {
+        match self {
+            Self::Text(_) => SortValueKind::Text,
+            Self::Ts(_) => SortValueKind::Timestamp,
+            Self::Int(_) => SortValueKind::Int,
+        }
+    }
+
+    /// Whether this value sits in a nullable column's NULLS LAST bucket.
+    const fn is_null(&self) -> bool {
+        matches!(self, Self::Text(None) | Self::Int(None))
+    }
+}
+
 /// Keyset boundary for `GET /api/v1/books` under a validated sort
 /// stack.
 ///
@@ -83,13 +101,14 @@ pub enum CursorValue {
 pub struct SortCursor {
     /// Canonical spec string
     /// ([`crate::routes::sort_spec::SortSpec::canonical`]) the cursor
-    /// was minted under.
-    pub spec: String,
+    /// was minted under. Crate-private: mint through [`Self::for_spec`]
+    /// so an internally inconsistent cursor cannot be built.
+    pub(crate) spec: String,
     /// One boundary value per spec level, in level order.
-    pub keys: Vec<CursorValue>,
+    pub(crate) keys: Vec<CursorValue>,
     /// Final-tiebreaker `manifestations.id` (primary key, always
     /// unique per row).
-    pub id: Uuid,
+    pub(crate) id: Uuid,
 }
 
 /// Parse and encode failures for the cursor family.
@@ -177,31 +196,55 @@ impl SortCursor {
         if cursor.spec != spec.canonical() {
             return Err(CursorError::SortMismatch);
         }
-        let levels = spec.levels();
-        if cursor.keys.len() != levels.len() {
-            return Err(CursorError::MalformedKey);
-        }
-        for (key, level) in cursor.keys.iter().zip(levels) {
-            let type_matches = matches!(
-                (key, level.column),
-                (CursorValue::Text(_), SortColumn::Title | SortColumn::Author)
-                    | (CursorValue::Ts(_), SortColumn::CreatedAt)
-                    | (CursorValue::Int(_), SortColumn::Pages)
-            );
-            if !type_matches {
-                return Err(CursorError::MalformedKey);
-            }
-            // A non-nullable column never yields a NULL boundary; a cursor
-            // claiming one is crafted or corrupt. Reject it here so the query
-            // assembler is never handed a NULL boundary for a column whose
-            // cascade has no null branch (which would emit an empty predicate).
-            let null_boundary = matches!(key, CursorValue::Text(None) | CursorValue::Int(None));
-            if null_boundary && !level.column.nullable() {
-                return Err(CursorError::MalformedKey);
-            }
-        }
+        validate_keys(&cursor.keys, spec)?;
         Ok(cursor)
     }
+
+    /// Build a cursor for `spec` on the mint path, validating that `keys`
+    /// match the spec's arity, per-level value kinds, and null-legality
+    /// before it can be encoded. Sharing [`validate_keys`] with
+    /// [`Self::parse_for`] means a minted cursor can never be one its own
+    /// decode would reject.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CursorError::MalformedKey`] if `keys` disagree with
+    /// `spec`'s arity, a level's value kind, or place a NULL boundary
+    /// under a non-nullable column.
+    pub(crate) fn for_spec(
+        spec: &SortSpec,
+        keys: Vec<CursorValue>,
+        id: Uuid,
+    ) -> Result<Self, CursorError> {
+        validate_keys(&keys, spec)?;
+        Ok(Self {
+            spec: spec.canonical(),
+            keys,
+            id,
+        })
+    }
+}
+
+/// Check a cursor key list against `spec`: one key per level, each key's
+/// value kind matching its level's column, and a NULL boundary only under
+/// a nullable column (a non-nullable column never yields NULL, so a cursor
+/// claiming one is forged or corrupt and would hand the query assembler a
+/// column whose cascade has no null branch). Shared by the decode path
+/// ([`SortCursor::parse_for`]) and the encode path ([`SortCursor::for_spec`]).
+fn validate_keys(keys: &[CursorValue], spec: &SortSpec) -> Result<(), CursorError> {
+    let levels = spec.levels();
+    if keys.len() != levels.len() {
+        return Err(CursorError::MalformedKey);
+    }
+    for (key, level) in keys.iter().zip(levels) {
+        if key.kind() != level.column.value_kind() {
+            return Err(CursorError::MalformedKey);
+        }
+        if key.is_null() && !level.column.nullable() {
+            return Err(CursorError::MalformedKey);
+        }
+    }
+    Ok(())
 }
 
 /// Keyset boundary for `GET /api/v1/shelves`.

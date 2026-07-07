@@ -145,12 +145,10 @@ function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): React
 }
 
 /**
- * Wire sort field <-> grid column key, both directions. Two fields diverge
- * from their column key: `author` sources the `authors` column and
- * `created_at` the `added` column. `handleSortChange` reads the reverse map
- * to translate RDG's column-keyed sort back to wire fields. Every sortable
- * field must map to a real column key here, or RDG silently drops a sort
- * level whose key names no column.
+ * Wire sort field to grid column key. Two fields diverge from their column
+ * key: `author` sources the `authors` column and `created_at` the `added`
+ * column. Every sortable field must map to a real column key here, or RDG
+ * silently drops a sort level whose key names no column.
  */
 const COLUMN_BY_FIELD: Record<SortField, string> = {
   title: "title",
@@ -159,12 +157,17 @@ const COLUMN_BY_FIELD: Record<SortField, string> = {
   pages: "pages",
 };
 
-const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = {
-  title: "title",
-  authors: "author",
-  added: "created_at",
-  pages: "pages",
-};
+/**
+ * Grid column key to wire sort field, the reverse of {@link COLUMN_BY_FIELD}.
+ * Derived rather than hand-maintained so the two maps cannot drift; lossless
+ * because every value in `COLUMN_BY_FIELD` is distinct. `handleSortChange`
+ * reads this to translate RDG's column-keyed sort back to wire fields.
+ */
+const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = Object.fromEntries(
+  (Object.entries(COLUMN_BY_FIELD) as [SortField, string][]).map(
+    ([field, column]) => [column, field] as const,
+  ),
+);
 
 /** Chip/summary labels; kept in sync with each column's header name. */
 const SORT_FIELD_LABELS: Record<SortField, string> = {
@@ -177,7 +180,12 @@ const SORT_FIELD_LABELS: Record<SortField, string> = {
 /** Renders the `created_at` RFC 3339 timestamp as a locale date for the
  *  read-only "Added" column and its plain-text export projection. */
 function formatAddedDate(iso: string): string {
-  return new Date(iso).toLocaleDateString();
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    console.error("[LibraryTableView] unparsable created_at", iso);
+    return EMPTY_CELL;
+  }
+  return date.toLocaleDateString();
 }
 
 /**
@@ -364,7 +372,10 @@ export function LibraryTableView({
     const levels: SortLevelParam[] = [];
     for (const entry of next) {
       const field = FIELD_BY_COLUMN[entry.columnKey];
-      if (field === undefined) continue;
+      if (field === undefined) {
+        console.error("[LibraryTableView] sortable column has no wire mapping", entry.columnKey);
+        continue;
+      }
       levels.push({ field, desc: entry.direction === "desc" });
     }
     onSortChange(levels.slice(0, MAX_SORT_LEVELS));

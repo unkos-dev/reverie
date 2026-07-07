@@ -94,6 +94,24 @@ function sortLevelsEqual(a: readonly SortLevelParam[], b: readonly SortLevelPara
 }
 
 /**
+ * Shared `?sort=` write path for both the table's header/chip sort and the
+ * `SortMenu` presets. Clears `cursor` because a new sort invalidates the
+ * keyset boundary the old cursor encoded; omits `sort` entirely for the
+ * server's default order instead of writing an empty value.
+ */
+function applySortToSearchParams(
+  current: URLSearchParams,
+  levels: readonly SortLevelParam[],
+): URLSearchParams {
+  const updated = new URLSearchParams(current);
+  const serialized = serializeSortParam(levels);
+  if (serialized === "") updated.delete("sort");
+  else updated.set("sort", serialized);
+  updated.delete("cursor");
+  return updated;
+}
+
+/**
  * Top-level page component. The `<Suspense>` boundary catches the
  * initial fetch (already prefetched by the loader, but the boundary
  * is required by `useSuspenseInfiniteQuery` semantics in failure /
@@ -165,12 +183,7 @@ function LibraryContent(): ReactElement {
 
   /** Table-header/chip sort writes the same `?sort=` contract as {@link SortMenu}. */
   function setSortFromTable(levels: readonly SortLevelParam[]): void {
-    const updated = new URLSearchParams(searchParams);
-    const serialized = serializeSortParam(levels);
-    if (serialized === "") updated.delete("sort");
-    else updated.set("sort", serialized);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
+    setSearchParams(applySortToSearchParams(searchParams, levels), { replace: true });
   }
 
   function clearAllFilters(): void {
@@ -385,12 +398,7 @@ function SortMenu({ searchParams, setSearchParams }: SortMenuProps): ReactElemen
   function setPreset(value: string): void {
     const preset = SORT_PRESETS.find((p) => p.value === value);
     if (preset === undefined) return;
-    const updated = new URLSearchParams(searchParams);
-    const serialized = serializeSortParam(preset.levels);
-    if (serialized === "") updated.delete("sort");
-    else updated.set("sort", serialized);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
+    setSearchParams(applySortToSearchParams(searchParams, preset.levels), { replace: true });
   }
 
   return (

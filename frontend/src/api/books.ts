@@ -94,8 +94,10 @@ const BookListResponseSchema = z.object({
 /** Envelope returned by `GET /api/v1/books`. `next_cursor === null` means end-of-list. */
 export type BookListResponse = z.infer<typeof BookListResponseSchema>;
 
+const SORT_FIELDS = ["title", "author", "created_at", "pages"] as const;
+
 /** Sortable column names accepted by `GET /api/v1/books?sort=…`. */
-export type SortField = "title" | "author" | "created_at" | "pages";
+export type SortField = (typeof SORT_FIELDS)[number];
 
 /** One level of a sort stack: a wire field name plus its direction. */
 export type SortLevelParam = { field: SortField; desc: boolean };
@@ -104,7 +106,7 @@ export type SortLevelParam = { field: SortField; desc: boolean };
 export const MAX_SORT_LEVELS = 3;
 
 function isSortField(value: string): value is SortField {
-  return value === "title" || value === "author" || value === "created_at" || value === "pages";
+  return (SORT_FIELDS as readonly string[]).includes(value);
 }
 
 /**

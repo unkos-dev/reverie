@@ -67,10 +67,9 @@ why the table says "loaded": with a large library the first screen
 appears immediately and the count grows as you go. A **Load more**
 button beneath the rows is the keyboard-reachable fallback for when
 scrolling can't trigger loading, such as a viewport tall enough to
-show a whole page without a scrollbar. Sorting by title or
-author happens on the server through a column header press, so the
-order is correct across the whole collection, not just the rows on
-screen.
+show a whole page without a scrollbar. Sorting happens on the server
+through a column header press (see below), so the order is correct
+across the whole collection, not just the rows on screen.
 
 Your view choice travels in the URL (`?view=table`), so a shared link
 opens exactly what you see; Reverie also remembers your last choice
@@ -94,7 +93,7 @@ key.
 Books with nothing to sort on, no page count, no author yet, always
 sort to the end, whichever direction you're sorting in.
 
-Multi-level sort exists so a large library can be scanned in exactly
+Multi-level sort exists so that a large library can be scanned in exactly
 the order you want, author then most recent within each author, for
 example, while paging stays stable: rows don't get skipped or repeated
 as you load more.

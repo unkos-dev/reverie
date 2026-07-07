@@ -84,6 +84,30 @@ impl SortColumn {
             Self::Pages => "pages",
         }
     }
+
+    /// The value domain this column sorts on. A cursor boundary value for
+    /// this column must carry the matching [`SortValueKind`]; the sole
+    /// consumer is the cursor decode/encode type check, kept exhaustive
+    /// here so adding a column forces its kind to be declared.
+    pub const fn value_kind(self) -> SortValueKind {
+        match self {
+            Self::Title | Self::Author => SortValueKind::Text,
+            Self::CreatedAt => SortValueKind::Timestamp,
+            Self::Pages => SortValueKind::Int,
+        }
+    }
+}
+
+/// The value domain a [`SortColumn`] sorts on, used to check that a cursor
+/// boundary value carries the right type for the level it claims to bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortValueKind {
+    /// Text sort key (`sort_title`, `first_author_sort_name`).
+    Text,
+    /// Timestamp sort key (`created_at`).
+    Timestamp,
+    /// Integer sort key (`pages`).
+    Int,
 }
 
 /// Ascending or descending order for one [`SortLevel`].
