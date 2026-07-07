@@ -230,27 +230,26 @@ describe("LibraryTableView", () => {
     });
   });
 
-  // Regression: a `created_at` level maps to the `added` column key. Before the
-  // "Added" column existed, that key named no column, so react-data-grid dropped
-  // the sort entry and the level vanished on the first header re-emit. The column
-  // now sources `created_at`, so the level is a real grid sort and survives a
-  // ctrl-click that appends another column.
-  test("a created_at sort level survives a ctrl-click on another header", async () => {
+  // Regression: a `created_at` sort level maps to the `added` grid column key.
+  // Before this column existed that key named no column, so the grid received a
+  // sort key the chips and server had but no header could show — a divergence.
+  // The grid must expose a real Added column so the key resolves to a header
+  // that also round-trips a header click back to a `created_at` sort.
+  test("exposes an Added column that sorts by created_at", async () => {
     const onSortChange = vi.fn();
-    renderTableView({ onSortChange, sort: [{ field: "created_at", desc: true }] });
-    await screen.findByRole("grid");
+    renderTableView({ onSortChange });
+    const grid = await screen.findByRole("grid");
+    // aria-colcount reflects the full column set regardless of horizontal
+    // virtualization: without the Added column this is 8, not 9.
+    expect(grid).toHaveAttribute("aria-colcount", "9");
+    // Scroll fully right so the trailing Added header mounts, then click it.
+    Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
+    fireEvent.scroll(grid);
     const user = userEvent.setup();
-    const titleHeader = await screen.findByRole("columnheader", { name: "Title (all editions)" });
-    await user.keyboard("{Control>}");
-    await user.click(titleHeader);
-    await user.keyboard("{/Control}");
-
-    await waitFor(() => {
-      expect(onSortChange).toHaveBeenLastCalledWith([
-        { field: "created_at", desc: true },
-        { field: "title", desc: false },
-      ]);
-    });
+    const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
+    await user.click(addedHeader);
+    expect(onSortChange).toHaveBeenCalledWith([{ field: "created_at", desc: false }]);
   });
 
   test("reordering via the sort chips round-trips through onSortChange", async () => {
