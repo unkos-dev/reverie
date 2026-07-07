@@ -645,8 +645,9 @@ fn push_boundary_advance(
     let op = direction.comparison_op();
     let nullable = column.nullable();
     match value {
-        // Unreachable: push_cursor_predicate filters null boundaries
-        // out before calling. Kept to satisfy exhaustiveness.
+        // Unreachable: a null boundary on a nullable column is skipped by
+        // push_cursor_predicate, and a null boundary on a non-nullable column
+        // is rejected by SortCursor::parse_for. Kept to satisfy exhaustiveness.
         CursorValue::Text(None) | CursorValue::Int(None) => {}
         CursorValue::Text(Some(v)) => push_advance_bind(qb, expr, op, nullable, v.clone()),
         CursorValue::Int(Some(v)) => push_advance_bind(qb, expr, op, nullable, *v),

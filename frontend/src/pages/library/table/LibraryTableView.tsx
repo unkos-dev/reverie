@@ -375,10 +375,11 @@ export function LibraryTableView({
         <SortChips levels={sort} labels={SORT_FIELD_LABELS} onChange={onSortChange} />
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       </div>
-      {/* aria-describedby targets SortChips' sr-only summary, which renders
-          unconditionally (even for an empty stack), so the description
-          resolves for a header-driven single-level sort too, not only when
-          the chips themselves are visible. */}
+      {/* SortChips renders its sr-only summary unconditionally (even for an
+          empty stack) as an aria-live region, so a screen reader announces
+          every sort change and reads the current order in document order,
+          including a header-driven single-level sort. aria-describedby here is
+          a best-effort association; the live summary is what carries it. */}
       <div aria-describedby={SORT_SUMMARY_ID}>
         <ReactDataGridBinding<BookListItem>
           rows={items}

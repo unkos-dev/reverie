@@ -40,7 +40,7 @@ export function SortChips({ levels, labels, onChange }: Props): ReactElement {
 
   if (levels.length === 0) {
     return (
-      <p id={SORT_SUMMARY_ID} className="sr-only">
+      <p id={SORT_SUMMARY_ID} className="sr-only" aria-live="polite">
         {summary}
       </p>
     );
@@ -70,7 +70,7 @@ export function SortChips({ levels, labels, onChange }: Props): ReactElement {
 
   return (
     <div className="mb-2 flex flex-wrap items-center gap-2">
-      <p id={SORT_SUMMARY_ID} className="sr-only">
+      <p id={SORT_SUMMARY_ID} className="sr-only" aria-live="polite">
         {summary}
       </p>
       <div role="group" aria-label="Sort order" className="flex flex-wrap items-center gap-2">

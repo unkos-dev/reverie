@@ -1,8 +1,10 @@
 -- Sort-whitelist indexes for the /api/v1/books multi-level sort stack
 -- (indexing discipline: a column enters the sort whitelist only with its
--- ordering indexes in the same migration; index keyset sort keys exactly,
--- including the unique final tiebreaker, so keyset WHERE + ORDER BY + LIMIT
--- resolves as an index range scan instead of a sort).
+-- ordering indexes in the same migration; each index keys the leading sort
+-- column so keyset WHERE + ORDER BY + LIMIT resolves against the index rather
+-- than a full-table sort. A cross-table m.id tiebreaker (author lives on
+-- works, m.id on manifestations) still adds a LIMIT-bounded incremental sort
+-- within a tie group, which the plan verification accepts).
 --
 -- title and created_at are NOT NULL and already covered: forward/backward
 -- scans of idx_works_sort_title_id and idx_manifestations_recent_keyset

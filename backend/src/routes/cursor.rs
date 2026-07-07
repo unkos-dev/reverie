@@ -191,6 +191,14 @@ impl SortCursor {
             if !type_matches {
                 return Err(CursorError::MalformedKey);
             }
+            // A non-nullable column never yields a NULL boundary; a cursor
+            // claiming one is crafted or corrupt. Reject it here so the query
+            // assembler is never handed a NULL boundary for a column whose
+            // cascade has no null branch (which would emit an empty predicate).
+            let null_boundary = matches!(key, CursorValue::Text(None) | CursorValue::Int(None));
+            if null_boundary && !level.column.nullable() {
+                return Err(CursorError::MalformedKey);
+            }
         }
         Ok(cursor)
     }
@@ -491,6 +499,17 @@ mod tests {
     fn rejects_wrong_value_type() {
         let spec = spec_of("title");
         let cursor = cursor_under(&spec, vec![CursorValue::Int(Some(3))]);
+        let encoded = cursor.encode().expect("encode");
+        assert!(matches!(
+            SortCursor::parse_for(&encoded, &spec),
+            Err(CursorError::MalformedKey)
+        ));
+    }
+
+    #[test]
+    fn rejects_null_boundary_for_non_nullable_column() {
+        let spec = spec_of("title");
+        let cursor = cursor_under(&spec, vec![CursorValue::Text(None)]);
         let encoded = cursor.encode().expect("encode");
         assert!(matches!(
             SortCursor::parse_for(&encoded, &spec),
