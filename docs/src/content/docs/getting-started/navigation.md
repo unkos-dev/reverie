@@ -98,6 +98,35 @@ the order you want, author then most recent within each author, for
 example, while paging stays stable: rows don't get skipped or repeated
 as you load more.
 
+## Filtering the library table
+
+The table view carries a filter bar above the grid: a quick search box
+on one side and an **Add filter** builder on the other.
+
+Quick search narrows the table you are already looking at. Type into
+it and the currently sorted rows shrink to the ones whose title or text
+matches, without leaving the view. This is a different job from the
+command palette (`⌘K` / `Ctrl K`). The palette takes you to one book,
+jumping you out to whatever you pick; quick search never navigates. It
+refines the rows in front of you and keeps your sort order intact.
+Reach for the palette to find a book, the search box to whittle down
+the ones already on screen.
+
+**Add filter** builds per-column conditions. Text columns (title,
+subtitle, ISBN) filter by contains, equals, or is-empty; page count and
+rating filter by range; **added** filters by a date range; and reading
+status filters to a single state, including **Unread** for books you
+have not started. Authors, tags, genres, and moods each get a typeahead
+that accepts several values at once, in any-of, all-of, or none-of mode,
+so you can ask for books tagged both X and Y, in any of three genres, or
+in none of a set of moods.
+
+Every active filter shows as a chip in the bar. Press the x on a chip to
+drop that one condition, or use **Clear filters** to remove them all at
+once. Filters live in the URL the same way your view and sort do, so a
+filtered table is bookmarkable and shareable, and reloading the page
+brings back exactly the filters you had.
+
 ## Editing from the table
 
 Most cells in the table edit in place. Title, subtitle, ISBN-13, pages,

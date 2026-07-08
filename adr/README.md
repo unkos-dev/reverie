@@ -66,3 +66,4 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Lint suppressions must be self-purging: #[expect] with a reason, never #[allow]](2026-07-04-expect-over-allow-lint-suppressions.md) (accepted, 2026-07-04)
 - [Library data-grid stack: two-way bake-off behind a local adapter](2026-07-04-library-grid-stack-bakeoff.md) (accepted, 2026-07-04)
 - [Multi-column sort stack on the keyset list contract](2026-07-07-multi-column-sort-stack.md) (accepted, 2026-07-07)
+- [Typed filter grammar on list endpoints](2026-07-07-typed-filter-grammar-list-endpoints.md) (accepted, 2026-07-07)

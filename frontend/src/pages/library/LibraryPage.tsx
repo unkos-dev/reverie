@@ -55,7 +55,15 @@ import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
-import { paramsFromSearch, viewFromSearch, type LibraryView } from "@/routes/library-params";
+import {
+  FILTER_PARAM_KEYS,
+  paramsFromSearch,
+  parseFilterParams,
+  serializeFilterParams,
+  viewFromSearch,
+  type FilterState,
+  type LibraryView,
+} from "@/routes/library-params";
 
 import { TableChunkBoundary } from "./TableChunkBoundary";
 import { readViewCookie, writeViewCookie } from "./view-cookie";
@@ -134,6 +142,7 @@ function LibraryContent(): ReactElement {
   // when the param is absent, so a chosen view survives leaving and returning.
   const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
   const params = paramsFromSearch(searchParams);
+  const filterState = parseFilterParams(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
   const cacheParams = { ...params };
   delete cacheParams.cursor;
@@ -188,7 +197,17 @@ function LibraryContent(): ReactElement {
 
   function clearAllFilters(): void {
     const updated = new URLSearchParams(searchParams);
-    for (const key of ["author", "series", "shelf", "tag", "q", "cursor"]) updated.delete(key);
+    for (const key of FILTER_PARAM_KEYS) updated.delete(key);
+    updated.delete("cursor");
+    setSearchParams(updated, { replace: true });
+  }
+
+  /** Write a filter change from the table's FilterBar, clearing the cursor
+   *  because a filter change invalidates the keyset boundary it encoded. */
+  function setFilters(next: FilterState): void {
+    const updated = new URLSearchParams(searchParams);
+    serializeFilterParams(next, updated);
+    updated.delete("cursor");
     setSearchParams(updated, { replace: true });
   }
 
@@ -211,6 +230,9 @@ function LibraryContent(): ReactElement {
             items={items}
             sort={parseSortParam(params.sort ?? "")}
             onSortChange={setSortFromTable}
+            filters={filterState}
+            onFiltersChange={setFilters}
+            seriesLabels={seriesById}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
@@ -265,14 +287,24 @@ function LibraryContent(): ReactElement {
           <div className="px-6 py-10 sm:px-10">
             <LibraryMasthead />
             <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
-                <ActiveFilterChips
-                  searchParams={searchParams}
-                  setSearchParams={setSearchParams}
-                  seriesNames={seriesById}
-                />
-              </div>
+              {viewMode === "table" ? (
+                // Table view owns its own filter surface (FilterBar inside the
+                // grid), so the masthead shelf picker and chip row would double
+                // up. Render a spacer to keep sort/view controls right-aligned.
+                <div />
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <ShelfPickerButton
+                    searchParams={searchParams}
+                    setSearchParams={setSearchParams}
+                  />
+                  <ActiveFilterChips
+                    searchParams={searchParams}
+                    setSearchParams={setSearchParams}
+                    seriesNames={seriesById}
+                  />
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
                 <div
@@ -599,20 +631,14 @@ function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement 
 }
 
 /**
- * True when any browse filter (author / series / shelf / tag / q) is
- * active. Drives the empty-state split: filters present means a
- * zero-result set is "filtered to nothing", not "library is empty".
+ * True when any typed filter, vocabulary set, or quick search is active.
+ * Drives the empty-state split: filters present means a zero-result set is
+ * "filtered to nothing", not "library is empty". Every filter key is checked
+ * with `getAll` so multi-value params (`?tag=a&tag=b`) count, and the set is
+ * the shared {@link FILTER_PARAM_KEYS} so it cannot drift from the codec.
  */
 function hasActiveFilters(search: URLSearchParams): boolean {
-  for (const key of ["author", "series", "shelf", "q"]) {
-    const value = search.get(key);
-    if (value !== null && value !== "") return true;
-  }
-  // `tag` is multi-value (`?tag=a&tag=b`), so `getAll`, not `get`. Keep this
-  // key set in sync with `clearAllFilters` and `paramsFromSearch`: `?tag=` is
-  // currently URL-only (the API filter is not wired yet), so a tag-only URL
-  // does not narrow the query — the chip and clear affordance still work.
-  return search.getAll("tag").some((tag) => tag !== "");
+  return FILTER_PARAM_KEYS.some((key) => search.getAll(key).some((value) => value !== ""));
 }
 
 /**
@@ -638,15 +664,20 @@ interface ActiveFilterChipsProps {
 
 type ChipKey = "author" | "series" | "shelf" | "tag";
 
+/** Keys that repeat in the URL (`?author=a&author=b`); their chips clear a
+ *  single value rather than deleting the whole param. */
+const MULTI_VALUE_CHIP_KEYS: ReadonlySet<ChipKey> = new Set(["author", "tag"]);
+
 interface ActiveChip {
-  /** Unique chip id (`"tag:scifi"` for tag chips, plain key otherwise). */
+  /** Unique chip id (`"tag:scifi"` for multi-value chips, plain key otherwise). */
   id: string;
   /** Which URL param the chip controls. */
   key: ChipKey;
   /** Human-readable chip label. */
   label: string;
-  /** Tag value the chip clears, for multi-value `?tag=` chips. */
-  tagValue?: string;
+  /** The single value a multi-value chip clears; absent for single-value keys,
+   *  which clear the whole param. */
+  value?: string;
 }
 
 function ActiveFilterChips({
@@ -679,38 +710,42 @@ function ActiveFilterChips({
   };
 
   const filters: ActiveChip[] = [];
-  for (const key of ["author", "series", "shelf"] as const) {
+  // `?author=a&author=b` and `?tag=a&tag=b` repeat — one chip per value so the
+  // user can clear each independently, mirroring the backend's multi-value
+  // semantics. Reading via `getAll` (not `get`) and clearing a single value is
+  // what stops one removal from nuking every author or tag at once.
+  for (const authorValue of searchParams.getAll("author")) {
+    if (authorValue === "") continue;
+    filters.push({
+      id: `author:${authorValue}`,
+      key: "author",
+      label: `author: ${authorValue}`,
+      value: authorValue,
+    });
+  }
+  for (const key of ["series", "shelf"] as const) {
     const value = searchParams.get(key);
     if (value === null || value === "") continue;
     // Resolve ids to readable names: shelf via its cache, series via the
-    // loaded-pages map. `?author=` already carries a display name, so show
-    // it whole rather than truncating a readable value through `shortId`.
-    let label: string;
-    if (key === "shelf") label = `shelf: ${shelfNameFor(value)}`;
-    else if (key === "series") label = `series: ${seriesNames.get(value) ?? shortId(value)}`;
-    else label = `author: ${value}`;
+    // loaded-pages map.
+    const label =
+      key === "shelf"
+        ? `shelf: ${shelfNameFor(value)}`
+        : `series: ${seriesNames.get(value) ?? shortId(value)}`;
     filters.push({ id: key, key, label });
   }
-  // `?tag=a&tag=b` repeats — one chip per value so the user can clear
-  // them independently. Mirrors the backend's multi-value AND-match
-  // semantics; clearing one tag removes only that name from the filter.
   for (const tagValue of searchParams.getAll("tag")) {
     if (tagValue === "") continue;
-    filters.push({
-      id: `tag:${tagValue}`,
-      key: "tag",
-      label: `tag: ${tagValue}`,
-      tagValue,
-    });
+    filters.push({ id: `tag:${tagValue}`, key: "tag", label: `tag: ${tagValue}`, value: tagValue });
   }
   if (filters.length === 0) return null;
 
   function clear(chip: ActiveChip): void {
     const updated = new URLSearchParams(searchParams);
-    if (chip.key === "tag" && chip.tagValue !== undefined) {
-      const remaining = updated.getAll("tag").filter((v) => v !== chip.tagValue);
-      updated.delete("tag");
-      for (const t of remaining) updated.append("tag", t);
+    if (chip.value !== undefined && MULTI_VALUE_CHIP_KEYS.has(chip.key)) {
+      const remaining = updated.getAll(chip.key).filter((v) => v !== chip.value);
+      updated.delete(chip.key);
+      for (const v of remaining) updated.append(chip.key, v);
     } else {
       updated.delete(chip.key);
     }
@@ -736,7 +771,7 @@ function ActiveFilterChips({
           <X className="size-3" aria-hidden="true" />
           <span className="sr-only">
             Clear {chip.key}
-            {chip.tagValue !== undefined ? ` ${chip.tagValue}` : ""} filter
+            {chip.value !== undefined ? ` ${chip.value}` : ""} filter
           </span>
         </Button>
       ))}

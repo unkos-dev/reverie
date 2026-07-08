@@ -66,7 +66,7 @@ describe("library loader", () => {
     await loader(loaderArgs("http://localhost/library?sort=title&author=a1"));
 
     expect(
-      queryClient.getQueryData(queryKeys.books.list({ sort: "title", author: "a1" })),
+      queryClient.getQueryData(queryKeys.books.list({ sort: "title", author: ["a1"] })),
     ).toBeDefined();
   });
 

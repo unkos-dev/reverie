@@ -323,6 +323,66 @@ describe("LibraryPage", () => {
     });
   });
 
+  test("table quick search writes ?q= and clears any cursor param", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?view=table&cursor=stale123"],
+      extraCacheParams: [{ q: "war" }],
+    });
+    await screen.findByTestId("library-table");
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Quick search"), "war");
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("q=war");
+      expect(search).not.toContain("cursor=");
+    });
+  });
+
+  test("table view shows only the FilterBar chip row, not the masthead chip row", async () => {
+    renderLibrary({
+      items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+      nextCursor: null,
+      initialEntries: ["/library?view=table&series=s-1"],
+      cacheParams: { series: "s-1" },
+    });
+    await screen.findByTestId("library-table");
+    // The masthead chip row is suppressed in table view so its chips do not
+    // double up the FilterBar's. Only the FilterBar chip row remains.
+    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
+    const chips = screen.getByTestId("filter-chips");
+    expect(within(chips).getByText("Series: Discworld")).toBeInTheDocument();
+  });
+
+  test("a typed filter with no matches shows the filtered-empty state", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?status_any=unread"],
+      cacheParams: { status_any: ["unread"] },
+      extraCacheParams: [{}],
+    });
+    expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
+  });
+
+  test("clear-all from the filtered-empty state drops typed filter params", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?status_any=unread&pages_gte=500"],
+      cacheParams: { status_any: ["unread"], pages_gte: 500 },
+      extraCacheParams: [{}],
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).not.toContain("status_any");
+      expect(search).not.toContain("pages_gte");
+    });
+  });
+
   test("URL ?view= beats the cookie default", async () => {
     document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
     try {
@@ -365,10 +425,57 @@ describe("LibraryPage", () => {
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: [`/library?author=${authorId}`],
-      cacheParams: { author: authorId },
+      cacheParams: { author: [authorId] },
     });
     await screen.findByTestId("active-filters");
-    expect(screen.getByRole("button", { name: /clear author filter/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear author .* filter/i })).toBeInTheDocument();
+  });
+
+  test("renders a chip per ?author= value and clears each independently", async () => {
+    const a1 = "aaaa1111-0000-0000-0000-000000000000";
+    const a2 = "bbbb2222-0000-0000-0000-000000000000";
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
+    client.setQueryData(queryKeys.books.list({ author: [a1, a2] }), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+    client.setQueryData(queryKeys.books.list({ author: [a2] }), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+    function Wrapper(): ReactElement {
+      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+      const router = createMemoryRouter(routes, {
+        initialEntries: [`/library?author=${a1}&author=${a2}`],
+      });
+      return (
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      );
+    }
+    render(<Wrapper />);
+
+    // The old single `get("author")` rendered one chip for the whole set; now
+    // each value gets its own.
+    await screen.findByTestId("active-filters");
+    const chip1 = screen.getByRole("button", {
+      name: new RegExp(`clear author ${a1} filter`, "i"),
+    });
+    expect(
+      screen.getByRole("button", { name: new RegExp(`clear author ${a2} filter`, "i") }),
+    ).toBeInTheDocument();
+
+    // Clearing one removes only its value; the other author survives.
+    const user = userEvent.setup();
+    await user.click(chip1);
+    expect(
+      screen.queryByRole("button", { name: new RegExp(`clear author ${a1} filter`, "i") }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: new RegExp(`clear author ${a2} filter`, "i") }),
+    ).toBeInTheDocument();
   });
 
   test("renders one tag chip per ?tag= repetition", async () => {
@@ -376,7 +483,7 @@ describe("LibraryPage", () => {
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: ["/library?tag=scifi&tag=hugo"],
-      cacheParams: {},
+      cacheParams: { tag: ["scifi", "hugo"] },
     });
     await screen.findByTestId("active-filters");
     expect(screen.getByRole("button", { name: /clear tag scifi filter/i })).toBeInTheDocument();
@@ -390,7 +497,7 @@ describe("LibraryPage", () => {
     // changes the cache key.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
-    client.setQueryData(queryKeys.books.list({ author: authorId }), {
+    client.setQueryData(queryKeys.books.list({ author: [authorId] }), {
       pages: [response],
       pageParams: [undefined],
     });
@@ -411,7 +518,7 @@ describe("LibraryPage", () => {
     }
     render(<Wrapper />);
 
-    const chip = await screen.findByRole("button", { name: /clear author filter/i });
+    const chip = await screen.findByRole("button", { name: /clear author .* filter/i });
     const user = userEvent.setup();
     await user.click(chip);
     expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
@@ -434,7 +541,7 @@ describe("LibraryPage", () => {
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: ["/library?author=Fyodor%20Dostoevsky"],
-      cacheParams: { author: "Fyodor Dostoevsky" },
+      cacheParams: { author: ["Fyodor Dostoevsky"] },
     });
     const chips = await screen.findByTestId("active-filters");
     expect(within(chips).getByRole("button", { name: /Fyodor Dostoevsky/ })).toBeInTheDocument();

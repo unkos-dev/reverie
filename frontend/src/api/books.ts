@@ -138,16 +138,58 @@ export function serializeSortParam(levels: readonly SortLevelParam[]): string {
   return levels.map((level) => (level.desc ? `-${level.field}` : level.field)).join(",");
 }
 
-/** Query parameters for `GET /api/v1/books`. Every field is optional. */
-export interface ListBooksParams {
+/**
+ * Query parameters for `GET /api/v1/books`. Every field is optional; the
+ * flat suffix grammar mirrors the backend `ListParams` one-to-one (the
+ * operator is a suffix on the key, e.g. `pages_gte`, `title_contains`). Array
+ * fields serialize as a repeated key (`?author=a&author=b`). Grouped, tolerant
+ * URL codecs live in {@link ../routes/library-params}; this is the flat wire
+ * shape the client sends.
+ */
+export type ListBooksParams = {
   cursor?: string;
-  author?: string;
-  series?: string;
-  shelf?: string;
-  q?: string;
   /** Pre-validated JSON:API sort string; build via {@link serializeSortParam}. */
   sort?: string;
-}
+  q?: string;
+  // Author id filters (all-of / any-of / none-of), role-scoped to `author`.
+  author?: string[];
+  author_any?: string[];
+  author_none?: string[];
+  series?: string;
+  shelf?: string;
+  // Vocabulary set filters (all-of / any-of / none-of).
+  tag?: string[];
+  tag_any?: string[];
+  tag_none?: string[];
+  genre?: string[];
+  genre_any?: string[];
+  genre_none?: string[];
+  mood?: string[];
+  mood_any?: string[];
+  mood_none?: string[];
+  // Reading-status set filters; values are wire status names or `unread`.
+  status_any?: string[];
+  status_none?: string[];
+  // Text column filters.
+  title_contains?: string;
+  title_eq?: string;
+  title_ne?: string;
+  subtitle_contains?: string;
+  subtitle_empty?: boolean;
+  isbn_13_contains?: string;
+  isbn_13_eq?: string;
+  isbn_13_empty?: boolean;
+  // Numeric column filters.
+  pages_gte?: number;
+  pages_lte?: number;
+  pages_empty?: boolean;
+  rating_gte?: number;
+  rating_lte?: number;
+  rating_empty?: boolean;
+  // Added-date bounds, day-inclusive ISO 8601 calendar dates (`YYYY-MM-DD`).
+  created_at_gte?: string;
+  created_at_lte?: string;
+};
 
 const MetadataVersionSummarySchema = z.object({
   pending: z.number().int().nonnegative(),
@@ -249,14 +291,7 @@ export async function listBooks(
   params: ListBooksParams = {},
   signal?: AbortSignal,
 ): Promise<BookListResponse> {
-  const url = buildUrl("/api/v1/books", {
-    cursor: params.cursor,
-    author: params.author,
-    series: params.series,
-    shelf: params.shelf,
-    q: params.q,
-    sort: params.sort,
-  });
+  const url = buildUrl("/api/v1/books", params);
   const body = await apiFetch(url, signal ? { method: "GET", signal } : { method: "GET" });
   return BookListResponseSchema.parse(body);
 }
@@ -392,14 +427,26 @@ export async function updateBookMetadata(
 }
 
 /**
- * Build a `URL` for an `/api/v1/*` endpoint, dropping `undefined` params.
- * Uses `window.location.origin` as the base so the URL is parseable;
- * the same-origin prefix is stripped by the proxy/route on the server.
+ * Build a `URL` for an `/api/v1/*` endpoint. `undefined` params are dropped;
+ * arrays serialize as a repeated key (`?tag=a&tag=b`, the backend's multi-value
+ * shape), skipping empty elements; booleans and numbers stringify. Uses
+ * `window.location.origin` as the base so the URL is parseable; the same-origin
+ * prefix is stripped by the proxy/route on the server.
  */
-function buildUrl(path: string, params: Record<string, string | undefined>): URL {
+function buildUrl(
+  path: string,
+  params: Record<string, string | number | boolean | readonly string[] | undefined>,
+): URL {
   const url = new URL(path, window.location.origin);
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined) url.searchParams.set(k, v);
+    if (v === undefined) continue;
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        if (typeof item === "string" && item !== "") url.searchParams.append(k, item);
+      }
+    } else {
+      url.searchParams.set(k, String(v));
+    }
   }
   return url;
 }

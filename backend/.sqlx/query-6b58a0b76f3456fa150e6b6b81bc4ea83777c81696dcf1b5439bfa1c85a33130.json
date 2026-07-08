@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.name\n             FROM authors a\n            WHERE a.id = ANY($1)\n              AND EXISTS (\n                      SELECT 1 FROM work_authors wa\n                      JOIN manifestations m ON m.work_id = wa.work_id\n                     WHERE wa.author_id = a.id AND wa.role = 'author'\n                  )\n            ORDER BY a.name ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6b58a0b76f3456fa150e6b6b81bc4ea83777c81696dcf1b5439bfa1c85a33130"
+}

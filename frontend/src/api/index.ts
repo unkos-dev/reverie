@@ -16,6 +16,7 @@ export {
   parseSortParam,
   serializeSortParam,
   MAX_SORT_LEVELS,
+  ReadingStatusSchema,
 } from "./books";
 export type {
   BookListItem,
@@ -28,6 +29,7 @@ export type {
   MetadataVersionRow,
   IngestionStatus,
   EnrichmentStatus,
+  ReadingStatus,
   SortField,
   SortLevelParam,
   ListBooksParams,
@@ -35,6 +37,8 @@ export type {
 } from "./books";
 export { searchLibrary } from "./search";
 export type { SearchHit, SearchHitKind, SearchResponse } from "./search";
+export { suggestVocab, resolveAuthors, MAX_RESOLVE_IDS } from "./suggest";
+export type { Suggestion, SuggestKind } from "./suggest";
 export { acceptVersion, rejectVersion, revertField } from "./metadata";
 export { getSeries } from "./series";
 export type { SeriesDetail, SeriesWork, SeriesWorkManifestation } from "./series";

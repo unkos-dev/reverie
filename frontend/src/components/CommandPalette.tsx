@@ -36,6 +36,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { useDebounced } from "@/lib/hooks/use-debounced";
 import { setCommandPaletteOpener } from "@/lib/command-palette";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -106,20 +107,6 @@ function useCmdKToggle(): [boolean, (open: boolean) => void, RefObject<HTMLEleme
     };
   }, []);
   return [open, setOpen, invokerRef];
-}
-
-/** Debounced echo of `value` — updates `DEBOUNCE_MS` after the last change. */
-function useDebounced<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handle = window.setTimeout(() => {
-      setDebounced(value);
-    }, delay);
-    return () => {
-      window.clearTimeout(handle);
-    };
-  }, [value, delay]);
-  return debounced;
 }
 
 /** Global Cmd-K search palette. */

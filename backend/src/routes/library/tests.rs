@@ -509,6 +509,8 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
             time::OffsetDateTime::now_utc(),
         )],
         id: Uuid::new_v4(),
+        // Inert here: the sort mismatch is detected before the fingerprint.
+        filter_fp: String::new(),
     }
     .encode()
     .expect("encode");
@@ -1223,6 +1225,10 @@ async fn list_endpoint_cursor_direction_mismatch_returns_422(pool: PgPool) {
             "neuromancer".to_owned(),
         ))],
         id: Uuid::new_v4(),
+        // Sort mismatch is checked before the filter fingerprint, so this
+        // value is inert for this test; empty is the no-filter fingerprint's
+        // preimage regardless.
+        filter_fp: String::new(),
     }
     .encode()
     .expect("encode");
@@ -2627,6 +2633,100 @@ fn assert_no_seq_scan_on(plan: &serde_json::Value, relation: &str, label: &str) 
     }
 }
 
+/// Walk an `EXPLAIN (FORMAT JSON)` plan tree and report whether any node reads
+/// the named index (an Index Scan / Bitmap Index Scan / Index Only Scan whose
+/// `Index Name` matches). Stronger than [`assert_no_seq_scan_on`]: a
+/// leading-wildcard `ILIKE` that fell back to a full index-order scan with the
+/// predicate applied as a per-row Filter still avoids a Seq Scan node, so
+/// proving the trigram index is the actual access path needs this.
+fn plan_uses_index(plan: &serde_json::Value, index: &str) -> bool {
+    match plan {
+        serde_json::Value::Object(obj) => {
+            obj.get("Index Name").and_then(serde_json::Value::as_str) == Some(index)
+                || obj.values().any(|child| plan_uses_index(child, index))
+        }
+        serde_json::Value::Array(items) => items.iter().any(|child| plan_uses_index(child, index)),
+        _ => false,
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
+    use sqlx::Row as _;
+
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    // 50k works, each with a distinct subtitle, so a selective substring needle
+    // matches a single row: the case the subtitle trigram index must serve.
+    sqlx::query!(
+        "INSERT INTO works (title, sort_title, subtitle) \
+         SELECT 'Bulk Opus ' || g.n, 'Bulk Opus ' || g.n, 'Bulk Subtitle ' || g.n \
+         FROM generate_series(1, 50000) AS g(n)"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed works");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         SELECT w.id, 'epub'::manifestation_format, '/tmp/bulk-' || w.id, \
+                'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
+                'complete'::ingestion_status, 'clean'::validation_status \
+         FROM works w"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed manifestations");
+
+    // CARVE-OUT (runtime-sqlx allowlist): ANALYZE is maintenance DDL the macros
+    // cannot validate; fresh stats keep the planner from choosing empty-table
+    // plans for the bulk seed. Runs on the owner pool (ANALYZE needs ownership).
+    sqlx::query("ANALYZE works, manifestations")
+        .execute(&pool)
+        .await
+        .expect("analyze seeded tables");
+
+    // Literal twin of push_ilike_contains' output for subtitle_contains on the
+    // recent-sort list query (default page size + 1). A selective needle so the
+    // planner must reach for the trigram index over a full-scan Filter.
+    let explain_subtitle_sql = "EXPLAIN (FORMAT JSON) \
+        SELECT m.id FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        WHERE TRUE AND w.subtitle ILIKE $1 \
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
+
+    // Discourage seq scans for this probe inside a throwaway transaction. The
+    // planner's cost tipping point between the trigram index and a Seq Scan is
+    // borderline at this scale and can flip on ANALYZE's sample, so a bare
+    // EXPLAIN is flaky. `enable_seqscan = off` penalizes (does not forbid) seq
+    // scans, so the index must be the access path when it exists and can serve
+    // the filter; a missing or unusable index still forces a Seq Scan and fails
+    // the guard. SET LOCAL is transaction-scoped, so it cannot leak to a pooled
+    // connection reused by another test.
+    let mut tx = ingestion_pool.begin().await.expect("begin explain txn");
+    // CARVE-OUT (runtime-sqlx allowlist): SET LOCAL is a transaction-scoped GUC
+    // mutation the compile-time macros cannot validate.
+    sqlx::query("SET LOCAL enable_seqscan = off")
+        .execute(&mut *tx)
+        .await
+        .expect("disable seqscan for the probe");
+    // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection over
+    // the dynamic filter SQL the compile-time macros cannot prepare.
+    let row = sqlx::query(explain_subtitle_sql)
+        .bind("%Subtitle 12345%")
+        .fetch_one(&mut *tx)
+        .await
+        .expect("explain subtitle_contains");
+    let plan: serde_json::Value = row.get("QUERY PLAN");
+    tx.rollback().await.expect("rollback explain txn");
+    assert_no_seq_scan_on(&plan, "works", "subtitle_contains");
+    assert!(
+        plan_uses_index(&plan, "idx_works_subtitle_trgm"),
+        "subtitle_contains must ride the trigram index, not a full-scan Filter: {plan}"
+    );
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn list_filter_genre_predicates_use_indexes_at_scale(pool: PgPool) {
     use sqlx::Row as _;
@@ -2970,6 +3070,43 @@ async fn search_sql_injection_probe_is_safe(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn books_filter_sql_injection_probe_is_safe(pool: PgPool) {
+    // Every typed filter value reaches SQL through `push_bind`; a hostile needle
+    // in a text filter or the quick search is bound, not interpolated, so the
+    // schema survives. Guards the larger new user-controlled surface on
+    // `/api/v1/books` the way the sibling `/search` probe guards its own.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "x", "Harmless Title").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    // `');DROP TABLE works;--` delivered through both a text column filter and
+    // the full-text quick search. Both are valid (if hostile) strings, so the
+    // request is a normal 200 with zero matches, not an error.
+    let response = server
+        .get("/api/v1/books?title_contains=%27%29%3B+DROP+TABLE+works%3B--&q=%27%3B+DROP+TABLE+works%3B--")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    // The hostile payload is a valid string that matches no title, so the list
+    // must come back empty. Asserting zero matches (not just 200) rules out the
+    // injection silently widening the result set instead of narrowing it.
+    let body: serde_json::Value = response.json();
+    assert!(
+        body["items"].as_array().expect("items array").is_empty(),
+        "hostile filter must match nothing, got {body}"
+    );
+
+    let still_there: i64 = sqlx::query_scalar!("SELECT COUNT(*) AS \"c!\" FROM works")
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("works survives");
+    assert!(still_there > 0, "works table must survive the SQL probe");
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn search_unauthenticated_returns_401(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -3286,5 +3423,639 @@ async fn seed_library_50k_script_seeds_and_pages(pool: PgPool) {
     assert_eq!(
         work_count_after_rerun, 50_000,
         "guard must roll back the whole rerun transaction; works count must not double"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Typed per-column filters + quick search.
+// ---------------------------------------------------------------------------
+
+use crate::models::reading_status::ReadingStatus;
+
+/// Set a manifestation's `subtitle` (the column lives on `works`).
+async fn set_subtitle(ingestion_pool: &PgPool, work_id: Uuid, subtitle: &str) {
+    sqlx::query!(
+        "UPDATE works SET subtitle = $1 WHERE id = $2",
+        subtitle,
+        work_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("set subtitle");
+}
+
+/// Set a manifestation's `isbn_13`.
+async fn set_isbn(ingestion_pool: &PgPool, m_id: Uuid, isbn: &str) {
+    sqlx::query!(
+        "UPDATE manifestations SET isbn_13 = $1 WHERE id = $2",
+        isbn,
+        m_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("set isbn_13");
+}
+
+/// Insert a caller-scoped `reading_state` row (status and/or rating) through
+/// an RLS transaction, matching the write path the reading-domain endpoint
+/// uses. A `None` status leaves the column NULL, which is what the `unread`
+/// pseudo-value keys on.
+async fn set_reading(
+    app_pool: &PgPool,
+    user_id: Uuid,
+    m_id: Uuid,
+    status: Option<ReadingStatus>,
+    rating: Option<i16>,
+) {
+    let mut tx = crate::db::acquire_with_rls(app_pool, user_id)
+        .await
+        .expect("rls tx");
+    // Bind the status through a text cast: sqlx has no built-in Rust mapping
+    // for the `reading_status` enum param, so `$3::text::reading_status` lets
+    // it describe the bind as text and the wire name casts to the enum.
+    let status_wire = status.map(ReadingStatus::as_str);
+    sqlx::query!(
+        "INSERT INTO reading_state (user_id, manifestation_id, status, rating) \
+         VALUES ($1, $2, $3::text::reading_status, $4)",
+        user_id,
+        m_id,
+        status_wire,
+        rating,
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("insert reading_state");
+    tx.commit().await.expect("commit reading_state");
+}
+
+/// Insert a work + manifestation with one contributor in `role`, returning
+/// `(work_id, manifestation_id, author_id)` so author-filter tests can add
+/// co-contributors and pass the id.
+async fn insert_book_with_role(
+    ingestion_pool: &PgPool,
+    marker: &str,
+    title: &str,
+    author_name: &str,
+    role: &str,
+) -> (Uuid, Uuid, Uuid) {
+    let (work_id, m_id) = insert_book(ingestion_pool, marker, title).await;
+    let author_id =
+        test_support::db::insert_contributor(ingestion_pool, work_id, author_name, role, 0).await;
+    (work_id, m_id, author_id)
+}
+
+/// GET a filtered list as admin and return the item titles in response order.
+async fn filtered_titles(server: &TestServer, basic: &str, url: &str) -> Vec<String> {
+    let response = server
+        .get(url)
+        .add_header(AUTHORIZATION, basic.to_owned())
+        .await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "GET {url}: {}",
+        response.text()
+    );
+    let body: serde_json::Value = response.json();
+    body["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .map(|i| i["title"].as_str().expect("title").to_owned())
+        .collect()
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_title_contains_is_case_insensitive_and_escapes_wildcards(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    insert_book(&ingestion_pool, "dune", "Dune Messiah").await;
+    insert_book(&ingestion_pool, "pct", "50% Discount Manual").await;
+    insert_book(&ingestion_pool, "other", "Foundation").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // Case-insensitive substring.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=dune").await;
+    assert_eq!(hits, vec!["Dune Messiah"]);
+
+    // A literal `%` in the needle must not act as a wildcard: it matches the
+    // title that literally contains `%`, and nothing else.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=50%25").await;
+    assert_eq!(hits, vec!["50% Discount Manual"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_title_eq_and_ne(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    insert_book(&ingestion_pool, "exact", "Exact Title").await;
+    insert_book(&ingestion_pool, "exactly", "Exact Title Longer").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // `_eq` is a whole-value case-insensitive match, not a substring.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_eq=exact%20title").await;
+    assert_eq!(hits, vec!["Exact Title"]);
+
+    // `_ne` excludes the exact match, keeping the rest.
+    let mut hits = filtered_titles(&server, &basic, "/api/v1/books?title_ne=Exact%20Title").await;
+    hits.sort();
+    assert_eq!(hits, vec!["Exact Title Longer"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_subtitle_empty_both_values(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (with_sub_work, _m) = insert_book(&ingestion_pool, "subbed", "Has Subtitle").await;
+    set_subtitle(&ingestion_pool, with_sub_work, "A Reckoning").await;
+    insert_book(&ingestion_pool, "plain", "No Subtitle").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    let empty = filtered_titles(&server, &basic, "/api/v1/books?subtitle_empty=true").await;
+    assert_eq!(empty, vec!["No Subtitle"]);
+    let present = filtered_titles(&server, &basic, "/api/v1/books?subtitle_empty=false").await;
+    assert_eq!(present, vec!["Has Subtitle"]);
+    // Contains matches only the row whose subtitle carries the needle.
+    let present = filtered_titles(&server, &basic, "/api/v1/books?subtitle_contains=reckon").await;
+    assert_eq!(present, vec!["Has Subtitle"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_isbn_13_eq_is_case_insensitive_and_empty(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_w, m_isbn) = insert_book(&ingestion_pool, "isbn", "Coded").await;
+    set_isbn(&ingestion_pool, m_isbn, "978X000111222").await;
+    insert_book(&ingestion_pool, "noisbn", "Uncoded").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // Exact match, folding case on the `X` check digit.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?isbn_13_eq=978x000111222").await;
+    assert_eq!(hits, vec!["Coded"]);
+    let missing = filtered_titles(&server, &basic, "/api/v1/books?isbn_13_empty=true").await;
+    assert_eq!(missing, vec!["Uncoded"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_pages_band_and_empty(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_w1, thin) = insert_book(&ingestion_pool, "thin", "Thin").await;
+    set_pages(&ingestion_pool, thin, 120).await;
+    let (_w2, mid) = insert_book(&ingestion_pool, "mid", "Middle").await;
+    set_pages(&ingestion_pool, mid, 400).await;
+    let (_w3, fat) = insert_book(&ingestion_pool, "fat", "Doorstop").await;
+    set_pages(&ingestion_pool, fat, 900).await;
+    insert_book(&ingestion_pool, "unpaged", "Unpaged").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    let mut band =
+        filtered_titles(&server, &basic, "/api/v1/books?pages_gte=200&pages_lte=500").await;
+    band.sort();
+    assert_eq!(band, vec!["Middle"]);
+    // A NULL page count is excluded from a bounded range but caught by `_empty`.
+    let empty = filtered_titles(&server, &basic, "/api/v1/books?pages_empty=true").await;
+    assert_eq!(empty, vec!["Unpaged"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_created_at_bounds_are_day_inclusive(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    // Three books on three distinct calendar days (UTC).
+    let day = |iso: &str| {
+        time::OffsetDateTime::parse(iso, &time::format_description::well_known::Rfc3339).unwrap()
+    };
+    insert_book_at(
+        &ingestion_pool,
+        "d1",
+        "June 29",
+        day("2026-06-29T23:59:00Z"),
+    )
+    .await;
+    insert_book_at(
+        &ingestion_pool,
+        "d2",
+        "June 30",
+        day("2026-06-30T12:00:00Z"),
+    )
+    .await;
+    insert_book_at(&ingestion_pool, "d3", "July 1", day("2026-07-01T00:01:00Z")).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // gte is inclusive of the whole start day; lte is inclusive of the whole
+    // end day (a same-day upper bound keeps that day's late rows).
+    let mut band = filtered_titles(
+        &server,
+        &basic,
+        "/api/v1/books?created_at_gte=2026-06-30&created_at_lte=2026-06-30",
+    )
+    .await;
+    band.sort();
+    assert_eq!(band, vec!["June 30"]);
+
+    let mut through_july =
+        filtered_titles(&server, &basic, "/api/v1/books?created_at_gte=2026-06-30").await;
+    through_july.sort();
+    assert_eq!(through_july, vec!["July 1", "June 30"]);
+
+    // A malformed date is a 400 (type-level), not a 422.
+    let bad = server
+        .get("/api/v1/books?created_at_gte=2026-13-40")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(bad.status_code(), StatusCode::BAD_REQUEST, "{}", bad.text());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_status_unread_pseudo_value_semantics(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    // "No Row" gets no reading_state at all; the other two do.
+    insert_book(&ingestion_pool, "norow", "No Row").await;
+    let (_w2, rating_only) = insert_book(&ingestion_pool, "ratingonly", "Rating Only").await;
+    let (_w3, reading) = insert_book(&ingestion_pool, "reading", "Now Reading").await;
+    set_reading(&app_pool, admin, rating_only, None, Some(4)).await;
+    set_reading(
+        &app_pool,
+        admin,
+        reading,
+        Some(ReadingStatus::Reading),
+        None,
+    )
+    .await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // Unread = no status set: the row with no reading_state AND the row that
+    // carries only a rating both qualify; the row with a real status does not.
+    let mut unread = filtered_titles(&server, &basic, "/api/v1/books?status_any=unread").await;
+    unread.sort();
+    assert_eq!(unread, vec!["No Row", "Rating Only"]);
+
+    // A real status matches only its row.
+    let now = filtered_titles(&server, &basic, "/api/v1/books?status_any=reading").await;
+    assert_eq!(now, vec!["Now Reading"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_status_any_unions_and_none_excludes(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_w1, reading) = insert_book(&ingestion_pool, "reading", "Reading Now").await;
+    let (_w2, done) = insert_book(&ingestion_pool, "done", "All Done").await;
+    let (_w3, quit) = insert_book(&ingestion_pool, "quit", "Gave Up").await;
+    set_reading(
+        &app_pool,
+        admin,
+        reading,
+        Some(ReadingStatus::Reading),
+        None,
+    )
+    .await;
+    set_reading(&app_pool, admin, done, Some(ReadingStatus::Finished), None).await;
+    set_reading(&app_pool, admin, quit, Some(ReadingStatus::Abandoned), None).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    let mut union = filtered_titles(
+        &server,
+        &basic,
+        "/api/v1/books?status_any=reading&status_any=finished",
+    )
+    .await;
+    union.sort();
+    assert_eq!(union, vec!["All Done", "Reading Now"]);
+
+    let mut kept = filtered_titles(&server, &basic, "/api/v1/books?status_none=abandoned").await;
+    kept.sort();
+    assert_eq!(kept, vec!["All Done", "Reading Now"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_rating_bounds_and_empty(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_w1, low) = insert_book(&ingestion_pool, "low", "Two Stars").await;
+    let (_w2, high) = insert_book(&ingestion_pool, "high", "Five Stars").await;
+    insert_book(&ingestion_pool, "unrated", "Unrated").await;
+    set_reading(&app_pool, admin, low, None, Some(2)).await;
+    set_reading(&app_pool, admin, high, None, Some(5)).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    let good = filtered_titles(&server, &basic, "/api/v1/books?rating_gte=4").await;
+    assert_eq!(good, vec!["Five Stars"]);
+    let unrated = filtered_titles(&server, &basic, "/api/v1/books?rating_empty=true").await;
+    assert_eq!(unrated, vec!["Unrated"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_author_triple_is_role_scoped(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    // One book authored by two people; another edited (not authored) by a third.
+    let (co_work, _co_m, ursula) =
+        insert_book_with_role(&ingestion_pool, "coauth", "Co-Authored", "Ursula", "author").await;
+    let gene =
+        test_support::db::insert_contributor(&ingestion_pool, co_work, "Gene", "author", 1).await;
+    let (_ed_work, _ed_m, editrix) = insert_book_with_role(
+        &ingestion_pool,
+        "edited",
+        "Only Edited",
+        "Editrix",
+        "editor",
+    )
+    .await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // all-of: both authors must be attached (only the co-authored book).
+    let all_of = filtered_titles(
+        &server,
+        &basic,
+        &format!("/api/v1/books?author={ursula}&author={gene}"),
+    )
+    .await;
+    assert_eq!(all_of, vec!["Co-Authored"]);
+
+    // any-of one author matches; none-of excludes.
+    let any_of = filtered_titles(
+        &server,
+        &basic,
+        &format!("/api/v1/books?author_any={ursula}"),
+    )
+    .await;
+    assert_eq!(any_of, vec!["Co-Authored"]);
+    let none_of = filtered_titles(
+        &server,
+        &basic,
+        &format!("/api/v1/books?author_none={ursula}"),
+    )
+    .await;
+    assert_eq!(none_of, vec!["Only Edited"]);
+
+    // Role scoping: filtering by an editor-only credit's author id matches no
+    // book (the `authors[]` surface and the filter both narrow to `author`).
+    let editor_hits =
+        filtered_titles(&server, &basic, &format!("/api/v1/books?author={editrix}")).await;
+    assert!(
+        editor_hits.is_empty(),
+        "editor-only credit must not match ?author="
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_q_matches_tsvector_and_ilike_legs(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    insert_book(&ingestion_pool, "leguin", "The Left Hand of Darkness").await;
+    insert_book(&ingestion_pool, "gibson", "Neuromancer").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // Full-text leg: a two-word websearch hits the tsvector even though the
+    // words are not a contiguous substring of the title.
+    let ts_hit = filtered_titles(&server, &basic, "/api/v1/books?q=darkness%20left").await;
+    assert_eq!(ts_hit, vec!["The Left Hand of Darkness"]);
+
+    // Substring leg: a mid-word fragment the stemmed tsvector never carries
+    // still matches via ILIKE.
+    let ilike_hit = filtered_titles(&server, &basic, "/api/v1/books?q=euroman").await;
+    assert_eq!(ilike_hit, vec!["Neuromancer"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_combination_conjunction_and_contradiction_is_empty(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (target_work, target) = insert_book(&ingestion_pool, "target", "Fantasy Doorstop").await;
+    set_subtitle(&ingestion_pool, target_work, "Book One").await;
+    set_pages(&ingestion_pool, target, 800).await;
+    let (_w2, decoy) = insert_book(&ingestion_pool, "decoy", "Fantasy Novella").await;
+    set_pages(&ingestion_pool, decoy, 120).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // Three families combined with AND narrow to the one row satisfying all.
+    let both = filtered_titles(
+        &server,
+        &basic,
+        "/api/v1/books?title_contains=fantasy&pages_gte=500&subtitle_empty=false",
+    )
+    .await;
+    assert_eq!(both, vec!["Fantasy Doorstop"]);
+
+    // Contradictory conditions AND to unsatisfiable: 200 with an empty page.
+    let response = server
+        .get("/api/v1/books?subtitle_empty=true&subtitle_contains=book")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert!(
+        body["items"].as_array().unwrap().is_empty(),
+        "contradiction must be an empty page"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_validation_errors_400_and_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    let status_of = |url: String| {
+        let basic = basic.clone();
+        let server = &server;
+        async move {
+            server
+                .get(&url)
+                .add_header(AUTHORIZATION, basic)
+                .await
+                .status_code()
+        }
+    };
+
+    // 21 author_any ids -> 422 (over the value cap).
+    let many = (0..=20)
+        .map(|_| format!("author_any={}", Uuid::new_v4()))
+        .collect::<Vec<_>>()
+        .join("&");
+    assert_eq!(
+        status_of(format!("/api/v1/books?{many}")).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // 201-char title_contains -> 422 (over the text cap).
+    let long = "a".repeat(201);
+    assert_eq!(
+        status_of(format!("/api/v1/books?title_contains={long}")).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // Unknown status token -> 422.
+    assert_eq!(
+        status_of("/api/v1/books?status_any=currently_reading".to_owned()).await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // Non-integer pages -> 400 (type-level serde rejection).
+    assert_eq!(
+        status_of("/api/v1/books?pages_gte=lots".to_owned()).await,
+        StatusCode::BAD_REQUEST
+    );
+
+    // Malformed author uuid -> 400.
+    assert_eq!(
+        status_of("/api/v1/books?author=not-a-uuid".to_owned()).await,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (w1, thin) = insert_book_at(&ingestion_pool, "thin", "Thin", ts(1)).await;
+    set_pages(&ingestion_pool, thin, 100).await;
+    let (w2, thick) = insert_book_at(&ingestion_pool, "thick", "Thick", ts(2)).await;
+    set_pages(&ingestion_pool, thick, 200).await;
+    // Share one author across both books so the `author_any` walk below actually
+    // matches and mints a cursor; an unmatched author filter would leave
+    // next_cursor null and let the value-order replay silently skip.
+    let shared =
+        test_support::db::insert_contributor(&ingestion_pool, w1, "Shared", "author", 0).await;
+    sqlx::query!(
+        "INSERT INTO work_authors (work_id, author_id, role, position) \
+         VALUES ($1, $2, ($3::text)::author_role, $4)",
+        w2,
+        shared,
+        "author",
+        1,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("link shared author to second work");
+    // page_size 1 so page 1 yields a cursor mid-walk.
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
+
+    let page1 = server
+        .get("/api/v1/books?pages_gte=50")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(page1.status_code(), StatusCode::OK);
+    let body: serde_json::Value = page1.json();
+    let nc = body["next_cursor"]
+        .as_str()
+        .expect("cursor on page 1")
+        .to_owned();
+
+    // Replayed under a changed filter: 422 (fingerprint mismatch).
+    let changed = server
+        .get(&format!("/api/v1/books?pages_gte=150&cursor={nc}"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let problem = test_support::assert_problem(
+        &changed,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    );
+    assert!(
+        problem["detail"]
+            .as_str()
+            .unwrap()
+            .contains("cursor filter mismatch"),
+        "got {problem}"
+    );
+
+    // Replayed under the same filter: 200, continuing the walk.
+    let same = server
+        .get(&format!("/api/v1/books?pages_gte=50&cursor={nc}"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(same.status_code(), StatusCode::OK, "{}", same.text());
+
+    // Value order within a multi-value param does not change the fingerprint:
+    // a cursor minted under one ordering validates under the reverse. `shared`
+    // matches both books, so at page_size 1 the walk spans two pages and mints
+    // a cursor; `other` is an unrelated id that any-of tolerates.
+    let other = Uuid::new_v4();
+    let minted = server
+        .get(&format!(
+            "/api/v1/books?author_any={shared}&author_any={other}&pages_gte=50"
+        ))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(minted.status_code(), StatusCode::OK);
+    let body: serde_json::Value = minted.json();
+    let nc = body["next_cursor"]
+        .as_str()
+        .expect("author_any spanning both books must mint a cursor")
+        .to_owned();
+    let reordered = server
+        .get(&format!(
+            "/api/v1/books?author_any={other}&author_any={shared}&pages_gte=50&cursor={nc}"
+        ))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(
+        reordered.status_code(),
+        StatusCode::OK,
+        "reordered values must keep the fingerprint: {}",
+        reordered.text()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_composes_with_pagination_exactly_once(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    // Five matching books plus one that fails the filter; page_size 2 forces a
+    // multi-page walk across a boundary.
+    for (i, (m, t)) in [
+        ("f1", "Filtered Alpha"),
+        ("f2", "Filtered Bravo"),
+        ("f3", "Filtered Charlie"),
+        ("f4", "Filtered Delta"),
+        ("f5", "Filtered Echo"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let seconds = i64::try_from(i).expect("small fixture index");
+        let (_w, id) = insert_book_at(&ingestion_pool, m, t, ts(seconds)).await;
+        set_pages(&ingestion_pool, id, 300).await;
+    }
+    let (_w, excluded) = insert_book(&ingestion_pool, "short", "Excluded Short").await;
+    set_pages(&ingestion_pool, excluded, 50).await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+
+    let walked = walk_all_ids(&server, &basic, "/api/v1/books?pages_gte=100").await;
+    let mut walked_sorted = walked.clone();
+    walked_sorted.sort();
+    walked_sorted.dedup();
+    assert_eq!(
+        walked.len(),
+        walked_sorted.len(),
+        "no row seen twice across the filtered walk"
+    );
+    assert_eq!(
+        walked.len(),
+        5,
+        "every matching row seen once; the short book excluded"
+    );
+    assert!(
+        !walked.contains(&excluded),
+        "the sub-100-page book must not appear"
     );
 }

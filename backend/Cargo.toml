@@ -140,6 +140,14 @@ must_use_candidate = "allow"
 too_long_first_doc_paragraph = "allow"
 implicit_hasher = "allow"
 
+# nursery lint that fires inside the `utoipa::IntoParams` derive for query
+# param structs with many fields (the books-list filter grammar): the derive
+# materializes one array over every parameter while building the OpenAPI spec
+# at startup, never on a request path. A per-item `#[expect]` cannot catch a
+# lint raised inside a derive-macro expansion (the diagnostic span sits in the
+# generated code), so the carve-out lives here. See the strict-lint-policy ADR.
+large_stack_arrays = "allow"
+
 # Project-specific hard rules from backend/CLAUDE.md.
 #
 # Suppressions must be self-purging and justified: #[expect] errors via

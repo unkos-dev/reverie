@@ -11,6 +11,7 @@
  * equality on the key, so equal params hit the same cache slot.
  */
 import type { ListBooksParams } from "@/api";
+import type { SuggestKind } from "@/api/suggest";
 
 /** Tuple for the root books namespace. */
 export type BooksAllKey = readonly ["books"];
@@ -24,6 +25,14 @@ export type BookDetailKey = readonly ["books", "detail", string];
 export type WorkDetailKey = readonly ["works", "detail", string];
 /** Tuple for the search cache slot, keyed by the trimmed query string. */
 export type SearchKey = readonly ["search", string];
+
+/** Locale-independent string order (codepoint), so a set of ids sorts to the
+ *  same sequence regardless of the caller's locale and hits one cache slot. */
+function byCodepoint(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
 
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
@@ -44,6 +53,17 @@ export const queryKeys = {
   },
   /** Search-results cache slot. Distinct trimmed `q` = distinct slot. */
   search: (q: string): SearchKey => ["search", q] as const,
+  suggest: {
+    /** One vocabulary's typeahead rows, keyed by kind + trimmed query. */
+    vocab: (kind: SuggestKind, q: string) => ["suggest", kind, q] as const,
+  },
+  authors: {
+    /** Author id → label resolution for chip hydration. Ids are sorted with an
+     *  explicit, locale-independent comparator so the same set hits one cache
+     *  slot regardless of the order they appear in the URL. */
+    resolve: (ids: readonly string[]) =>
+      ["authors", "resolve", [...ids].sort(byCodepoint)] as const,
+  },
   series: {
     /** Root namespace; invalidate to wipe every series-* cache slot. */
     all: ["series"] as const,

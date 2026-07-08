@@ -54,6 +54,7 @@ use crate::routes::cursor::{CursorValue, SortCursor};
 use crate::routes::sort_spec::{SortColumn, SortDirection, SortSpec};
 use crate::state::AppState;
 
+pub(crate) mod filters;
 mod search;
 
 #[cfg(test)]
@@ -104,6 +105,19 @@ const MAX_TAG_FILTERS: usize = 20;
 /// - `shelf` filter is RLS-aware via the join on `shelves.user_id =
 ///   current_setting('app.current_user_id', true)::uuid` so a caller
 ///   cannot probe another user's shelf membership.
+///
+/// # Typed column filters
+/// A flat suffix grammar of typed per-column conditions, AND-combined with the
+/// vocabulary filters above and each other. Text (`title_contains/_eq/_ne`,
+/// `subtitle_contains/_empty`, `isbn_13_contains/_eq/_empty`) is
+/// case-insensitive `ILIKE`; numeric (`pages_gte/_lte/_empty`) and date
+/// (`created_at_gte/_lte`, day-inclusive) are scalar bounds; `status_any/_none`
+/// (with the `unread` pseudo-value) and `rating_gte/_lte/_empty` probe the
+/// caller's RLS-scoped `reading_state`; `author`/`author_any`/`author_none`
+/// mirror the vocabulary triple over the `author` role; `q` is a full-text
+/// OR title-trigram filter (no ranking). Building and validation live in
+/// [`filters`]; see [`filters::push_filter_predicates`] and
+/// [`filters::validate`].
 #[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 struct ListParams {
@@ -118,8 +132,17 @@ struct ListParams {
     #[serde(default)]
     #[param(example = "-created_at,title")]
     sort: Option<String>,
+    /// All-of author filter: every listed author id must be linked to
+    /// the work in the `author` role. A single `?author=<uuid>` is the
+    /// one-element case.
     #[serde(default)]
-    author: Option<Uuid>,
+    author: Vec<Uuid>,
+    /// Any-of author filter: at least one listed author id is linked.
+    #[serde(default)]
+    author_any: Vec<Uuid>,
+    /// None-of author filter: no listed author id is linked.
+    #[serde(default)]
+    author_none: Vec<Uuid>,
     #[serde(default)]
     series: Option<Uuid>,
     #[serde(default)]
@@ -150,6 +173,71 @@ struct ListParams {
     /// None-of tag filter: no listed tag name is attached.
     #[serde(default)]
     tag_none: Vec<String>,
+    /// Case-insensitive substring match on the work title.
+    #[serde(default)]
+    title_contains: Option<String>,
+    /// Case-insensitive exact match on the work title (no wildcards).
+    #[serde(default)]
+    title_eq: Option<String>,
+    /// Case-insensitive exact non-match on the work title.
+    #[serde(default)]
+    title_ne: Option<String>,
+    /// Case-insensitive substring match on the work subtitle.
+    #[serde(default)]
+    subtitle_contains: Option<String>,
+    /// `true` keeps only rows with no subtitle; `false` keeps only rows
+    /// that have one.
+    #[serde(default)]
+    subtitle_empty: Option<bool>,
+    /// Case-insensitive substring match on the manifestation ISBN-13.
+    #[serde(default)]
+    isbn_13_contains: Option<String>,
+    /// Case-insensitive exact match on the manifestation ISBN-13.
+    #[serde(default)]
+    isbn_13_eq: Option<String>,
+    /// `true` keeps only rows with no ISBN-13; `false` only rows with one.
+    #[serde(default)]
+    isbn_13_empty: Option<bool>,
+    /// Lower bound (inclusive) on page count.
+    #[serde(default)]
+    pages_gte: Option<i32>,
+    /// Upper bound (inclusive) on page count.
+    #[serde(default)]
+    pages_lte: Option<i32>,
+    /// `true` keeps only rows with no page count; `false` only rows with one.
+    #[serde(default)]
+    pages_empty: Option<bool>,
+    /// Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.
+    /// The `time` crate's default serde reads a component form, not a `YYYY-MM-DD`
+    /// string, so the query value is parsed through [`filters::iso_date_opt`]; a
+    /// malformed date fails deserialization and is a 400.
+    #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
+    created_at_gte: Option<time::Date>,
+    /// Upper bound (day-inclusive) on the added date, ISO 8601 calendar date.
+    #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
+    created_at_lte: Option<time::Date>,
+    /// Any-of reading-status filter. Each value is a `reading_status` wire
+    /// name or the `unread` pseudo-value (no status set); a row qualifies
+    /// when it matches at least one.
+    #[serde(default)]
+    status_any: Vec<String>,
+    /// None-of reading-status filter: excludes rows matching any value.
+    #[serde(default)]
+    status_none: Vec<String>,
+    /// Lower bound (inclusive) on the caller's rating (1 to 5).
+    #[serde(default)]
+    rating_gte: Option<i16>,
+    /// Upper bound (inclusive) on the caller's rating (1 to 5).
+    #[serde(default)]
+    rating_lte: Option<i16>,
+    /// `true` keeps only rows the caller has not rated; `false` only rated rows.
+    #[serde(default)]
+    rating_empty: Option<bool>,
+    /// Quick-search text: narrows the current result set to rows whose
+    /// title or full-text vector matches, within the active sort order.
+    /// A filter, not a ranked search (that lives at `/api/v1/search`).
+    #[serde(default)]
+    q: Option<String>,
 }
 
 /// `GET /api/v1/books` response envelope. Carries the page rows plus
@@ -204,23 +292,7 @@ async fn list(
     let Query(params) = params?;
     let page_size = i64::from(state.config.opds.page_size);
 
-    for (param, values) in [
-        ("tag", &params.tag),
-        ("tag_any", &params.tag_any),
-        ("tag_none", &params.tag_none),
-        ("genre", &params.genre),
-        ("genre_any", &params.genre_any),
-        ("genre_none", &params.genre_none),
-        ("mood", &params.mood),
-        ("mood_any", &params.mood_any),
-        ("mood_none", &params.mood_none),
-    ] {
-        if values.len() > MAX_TAG_FILTERS {
-            return Err(AppError::Validation(format!(
-                "too many {param} filters: maximum {MAX_TAG_FILTERS}"
-            )));
-        }
-    }
+    filters::validate(&params)?;
 
     let spec = params
         .sort
@@ -230,9 +302,15 @@ async fn list(
         .map_err(|e| AppError::MalformedQuery(format!("invalid sort: {e}")))?
         .unwrap_or_default();
 
+    // One fingerprint of the active filter set, computed once and used for
+    // both cursor legs: it rejects an incoming cursor minted under a different
+    // filter set, and it stamps the minted next cursor so the same check holds
+    // on the following page.
+    let filter_fp = filters::filter_fingerprint(&params);
+
     let cursor = match params.cursor.as_deref() {
         Some(raw) => Some(
-            SortCursor::parse_for(raw, &spec)
+            SortCursor::parse_for(raw, &spec, &filter_fp)
                 .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?,
         ),
         None => None,
@@ -272,7 +350,7 @@ async fn list(
          ) series_one ON TRUE \
          WHERE TRUE",
     );
-    push_filter_predicates(&mut qb, &params);
+    filters::push_filter_predicates(&mut qb, &params);
     push_cursor_predicate(&mut qb, &spec, cursor.as_ref());
     push_order_by(&mut qb, &spec);
     qb.push(" LIMIT ");
@@ -336,10 +414,12 @@ async fn list(
     let next_cursor = match page_rows.last() {
         Some(last) if has_more => {
             let row_id = last.get::<Uuid, _>("id");
-            let encoded = next_cursor_for_row(last, &spec)?.encode().map_err(|e| {
-                tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
-                AppError::Internal(e.into())
-            })?;
+            let encoded = next_cursor_for_row(last, &spec, &filter_fp)?
+                .encode()
+                .map_err(|e| {
+                    tracing::warn!(error = %e, %row_id, "failed to encode pagination cursor");
+                    AppError::Internal(e.into())
+                })?;
             Some(encoded)
         }
         _ => None,
@@ -389,144 +469,6 @@ fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
     match (id, name) {
         (Some(id), Some(name)) => Some(SeriesRef { id, name, position }),
         _ => None,
-    }
-}
-
-/// Push `author` / `series` / `shelf` / `tag` filter predicates onto
-/// the dynamic list query (11b). `author`, `series`, and `shelf` are
-/// `EXISTS (SELECT 1 …)` subqueries so the row set stays at "one
-/// manifestation per row" — the LIMIT and cursor math both assume this
-/// invariant.
-///
-/// `shelf` is hardened against cross-user probes: the inner join on
-/// `shelves.user_id = current_setting('app.current_user_id', true)::uuid`
-/// rejects shelf ids the caller does not own.
-///
-/// The vocabulary filters (`tag`/`genre`/`mood` plus their `_any` and
-/// `_none` variants) are delegated to [`push_vocab_predicates`], one
-/// call per junction+vocabulary pair. Empty lists push no predicate.
-/// Caller validates every list against [`MAX_TAG_FILTERS`] before
-/// calling, so the `i64::from(u32)` cast on the all-of count is
-/// provably in range.
-fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, params: &ListParams) {
-    if let Some(author_id) = params.author {
-        // Role-scoped to match the response surface: `authors[]` carries the
-        // author role only, so `?author=` must not match a work where the
-        // supplied id is linked as editor/translator.
-        qb.push(
-            " AND EXISTS (SELECT 1 FROM work_authors wa \
-              WHERE wa.work_id = w.id AND wa.role = 'author' AND wa.author_id = ",
-        );
-        qb.push_bind(author_id);
-        qb.push(")");
-    }
-    if let Some(series_id) = params.series {
-        qb.push(
-            " AND EXISTS (SELECT 1 FROM series_works sw2 \
-              WHERE sw2.work_id = w.id AND sw2.series_id = ",
-        );
-        qb.push_bind(series_id);
-        qb.push(")");
-    }
-    if let Some(shelf_id) = params.shelf {
-        qb.push(
-            " AND EXISTS (SELECT 1 FROM shelf_items si \
-              JOIN shelves s ON s.id = si.shelf_id \
-              WHERE si.manifestation_id = m.id \
-                AND si.shelf_id = ",
-        );
-        qb.push_bind(shelf_id);
-        qb.push(" AND s.user_id = current_setting('app.current_user_id', true)::uuid)");
-    }
-    push_vocab_predicates(
-        qb,
-        "COUNT(DISTINCT lower(t.name))",
-        "FROM manifestation_tags mt \
-          JOIN tags t ON t.id = mt.tag_id \
-          WHERE mt.manifestation_id = m.id AND lower(t.name) = ANY(",
-        &params.tag,
-        &params.tag_any,
-        &params.tag_none,
-    );
-    push_vocab_predicates(
-        qb,
-        "COUNT(DISTINCT lower(g.name))",
-        "FROM manifestation_genres mg \
-          JOIN genres g ON g.id = mg.genre_id \
-          WHERE mg.manifestation_id = m.id AND lower(g.name) = ANY(",
-        &params.genre,
-        &params.genre_any,
-        &params.genre_none,
-    );
-    push_vocab_predicates(
-        qb,
-        "COUNT(DISTINCT lower(md.name))",
-        "FROM manifestation_moods mm \
-          JOIN moods md ON md.id = mm.mood_id \
-          WHERE mm.manifestation_id = m.id AND lower(md.name) = ANY(",
-        &params.mood,
-        &params.mood_any,
-        &params.mood_none,
-    );
-}
-
-/// Push up to three vocabulary predicates for one junction+vocabulary
-/// pair onto the dynamic list query. `count_expr` and `core` are
-/// static SQL fragments (never user input); user-supplied names travel
-/// exclusively through `push_bind`.
-///
-/// Names match case-insensitively: vocabulary identity is `lower(name)`
-/// (the tables are unique on it and suggest matches via `ILIKE`), so the
-/// fragments compare `lower(name)` and the bound values are lowercased
-/// here to mirror that.
-///
-/// - all-of: scalar correlated subquery
-///   `(SELECT COUNT(DISTINCT lower(name)) ...) = N`, not a GROUP BY/HAVING.
-/// - any-of: `EXISTS (SELECT 1 ...)`.
-/// - none-of: `NOT EXISTS (SELECT 1 ...)`.
-fn push_vocab_predicates(
-    qb: &mut QueryBuilder<Postgres>,
-    count_expr: &str,
-    core: &str,
-    all_of: &[String],
-    any_of: &[String],
-    none_of: &[String],
-) {
-    let lowered =
-        |names: &[String]| -> Vec<String> { names.iter().map(|n| n.to_lowercase()).collect() };
-    if !all_of.is_empty() {
-        // Dedupe before binding: COUNT(DISTINCT ..) compares against the
-        // requested count, so a repeated name (`?genre=X&genre=X`, or the
-        // same name in two casings) would make the predicate
-        // unsatisfiable (1 = 2) and silently return zero rows.
-        let mut all_of = lowered(all_of);
-        all_of.sort_unstable();
-        all_of.dedup();
-        // Caller has already validated `all_of.len() <= MAX_TAG_FILTERS`
-        // (a small constant), so the `usize → u32 → i64` step is exact.
-        // `u32::try_from` cannot fail here; the fallback is purely a
-        // defensive layer and would still emit a sensible (non-matching)
-        // predicate rather than 0 rows.
-        let count = i64::from(u32::try_from(all_of.len()).unwrap_or(u32::MAX));
-        qb.push(" AND (SELECT ");
-        qb.push(count_expr);
-        qb.push(" ");
-        qb.push(core);
-        qb.push_bind(all_of);
-        qb.push(")) = ");
-        qb.push_bind(count);
-    }
-    if !any_of.is_empty() {
-        qb.push(" AND EXISTS (SELECT 1 ");
-        qb.push(core);
-        qb.push_bind(lowered(any_of));
-        qb.push("))");
-    }
-    if !none_of.is_empty() {
-        qb.push(" AND NOT EXISTS (SELECT 1 ");
-        qb.push(core);
-        qb.push_bind(lowered(none_of));
-        qb.push("))");
     }
 }
 
@@ -711,13 +653,16 @@ pub(crate) fn split_page(
 
 /// Build the `next_cursor` boundary for `row` under `spec`: one typed
 /// value per level (read from `select_alias()`) plus the `m.id`
-/// tiebreaker. Uses `try_get`, not the panicking `Row::get`; this
-/// dynamic `QueryBuilder` path has no compile-time schema check, so a
-/// decode failure becomes a clean 500 instead of a panic (mirrors the
-/// `validation_status` decode above).
+/// tiebreaker, stamped with `filter_fp` so the following page's request
+/// (which carries the same filters) validates the replayed cursor. Uses
+/// `try_get`, not the panicking `Row::get`; this dynamic `QueryBuilder`
+/// path has no compile-time schema check, so a decode failure becomes a
+/// clean 500 instead of a panic (mirrors the `validation_status` decode
+/// above).
 fn next_cursor_for_row(
     row: &sqlx::postgres::PgRow,
     spec: &SortSpec,
+    filter_fp: &str,
 ) -> Result<SortCursor, AppError> {
     let mut keys = Vec::with_capacity(spec.levels().len());
     for level in spec.levels() {
@@ -731,7 +676,7 @@ fn next_cursor_for_row(
         keys.push(value);
     }
     let id = decode_cursor_column(row, "id")?;
-    SortCursor::for_spec(spec, keys, id)
+    SortCursor::for_spec(spec, keys, id, filter_fp.to_owned())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("minted an invalid cursor: {e}")))
 }
 
