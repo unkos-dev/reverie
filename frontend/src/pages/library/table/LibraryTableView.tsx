@@ -19,9 +19,11 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 
 import { MAX_SORT_LEVELS, type BookListItem, type SortField, type SortLevelParam } from "@/api";
+import { FilterBar } from "@/components/library/FilterBar";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
+import type { FilterState } from "@/routes/library-params";
 
 import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
@@ -336,6 +338,10 @@ type Props = {
   items: readonly BookListItem[];
   sort: readonly SortLevelParam[];
   onSortChange: (levels: readonly SortLevelParam[]) => void;
+  filters: FilterState;
+  onFiltersChange: (next: FilterState) => void;
+  /** Series id to display name, from the loaded rows, for series chip labels. */
+  seriesLabels?: ReadonlyMap<string, string>;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
@@ -349,6 +355,9 @@ export function LibraryTableView({
   items,
   sort,
   onSortChange,
+  filters,
+  onFiltersChange,
+  seriesLabels,
   hasNextPage,
   isFetchingNextPage,
   isFetchNextPageError,
@@ -394,6 +403,7 @@ export function LibraryTableView({
     // while focus sits somewhere inside the table, and bubbles up from the
     // grid's own cells and any open editor without needing a ref.
     <div data-testid="library-table" onKeyDown={onGridKeyDown}>
+      <FilterBar filters={filters} onFiltersChange={onFiltersChange} seriesLabels={seriesLabels} />
       <div className="mb-2 flex items-center justify-between gap-4">
         <SortChips levels={sort} labels={SORT_FIELD_LABELS} onChange={onSortChange} />
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />

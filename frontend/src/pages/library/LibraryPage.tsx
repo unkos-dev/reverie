@@ -55,7 +55,15 @@ import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
-import { paramsFromSearch, viewFromSearch, type LibraryView } from "@/routes/library-params";
+import {
+  FILTER_PARAM_KEYS,
+  paramsFromSearch,
+  parseFilterParams,
+  serializeFilterParams,
+  viewFromSearch,
+  type FilterState,
+  type LibraryView,
+} from "@/routes/library-params";
 
 import { TableChunkBoundary } from "./TableChunkBoundary";
 import { readViewCookie, writeViewCookie } from "./view-cookie";
@@ -134,6 +142,7 @@ function LibraryContent(): ReactElement {
   // when the param is absent, so a chosen view survives leaving and returning.
   const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
   const params = paramsFromSearch(searchParams);
+  const filterState = parseFilterParams(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
   const cacheParams = { ...params };
   delete cacheParams.cursor;
@@ -188,7 +197,17 @@ function LibraryContent(): ReactElement {
 
   function clearAllFilters(): void {
     const updated = new URLSearchParams(searchParams);
-    for (const key of ["author", "series", "shelf", "tag", "q", "cursor"]) updated.delete(key);
+    for (const key of FILTER_PARAM_KEYS) updated.delete(key);
+    updated.delete("cursor");
+    setSearchParams(updated, { replace: true });
+  }
+
+  /** Write a filter change from the table's FilterBar, clearing the cursor
+   *  because a filter change invalidates the keyset boundary it encoded. */
+  function setFilters(next: FilterState): void {
+    const updated = new URLSearchParams(searchParams);
+    serializeFilterParams(next, updated);
+    updated.delete("cursor");
     setSearchParams(updated, { replace: true });
   }
 
@@ -211,6 +230,9 @@ function LibraryContent(): ReactElement {
             items={items}
             sort={parseSortParam(params.sort ?? "")}
             onSortChange={setSortFromTable}
+            filters={filterState}
+            onFiltersChange={setFilters}
+            seriesLabels={seriesById}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
@@ -599,20 +621,14 @@ function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement 
 }
 
 /**
- * True when any browse filter (author / series / shelf / tag / q) is
- * active. Drives the empty-state split: filters present means a
- * zero-result set is "filtered to nothing", not "library is empty".
+ * True when any typed filter, vocabulary set, or quick search is active.
+ * Drives the empty-state split: filters present means a zero-result set is
+ * "filtered to nothing", not "library is empty". Every filter key is checked
+ * with `getAll` so multi-value params (`?tag=a&tag=b`) count, and the set is
+ * the shared {@link FILTER_PARAM_KEYS} so it cannot drift from the codec.
  */
 function hasActiveFilters(search: URLSearchParams): boolean {
-  for (const key of ["author", "series", "shelf", "q"]) {
-    const value = search.get(key);
-    if (value !== null && value !== "") return true;
-  }
-  // `tag` is multi-value (`?tag=a&tag=b`), so `getAll`, not `get`. Keep this
-  // key set in sync with `clearAllFilters` and `paramsFromSearch`: `?tag=` is
-  // currently URL-only (the API filter is not wired yet), so a tag-only URL
-  // does not narrow the query — the chip and clear affordance still work.
-  return search.getAll("tag").some((tag) => tag !== "");
+  return FILTER_PARAM_KEYS.some((key) => search.getAll(key).some((value) => value !== ""));
 }
 
 /**

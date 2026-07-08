@@ -9,6 +9,7 @@ import type { BookListItem, SortLevelParam } from "@/api";
 import { updateReadingState } from "@/api/reading";
 import type { SortState } from "@/lib/grid/types";
 import { queryKeys } from "@/lib/query/keys";
+import { emptyFilterState } from "@/routes/library-params";
 
 import { LibraryTableView } from "./LibraryTableView";
 import { SORT_SUMMARY_ID } from "./SortChips";
@@ -96,6 +97,8 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
     items: ROWS,
     sort: [],
     onSortChange: vi.fn(),
+    filters: emptyFilterState(),
+    onFiltersChange: vi.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
     isFetchNextPageError: false,
@@ -137,6 +140,12 @@ describe("LibraryTableView", () => {
     const grid = await screen.findByRole("grid", { name: "Library books" });
     const link = within(grid).getByRole("link", { name: ROWS[0].title });
     expect(link.getAttribute("href")).toBe(`/b/${ROWS[0].id}`);
+  });
+
+  test("mounts the filter bar above the grid", () => {
+    renderTableView();
+    expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
+    expect(screen.getByLabelText("Quick search")).toBeInTheDocument();
   });
 
   test("a row with every nullable field null renders the em-dash placeholder", async () => {
@@ -329,6 +338,8 @@ describe("LibraryTableView", () => {
               items={ROWS}
               sort={[]}
               onSortChange={onSortChange}
+              filters={emptyFilterState()}
+              onFiltersChange={vi.fn()}
               hasNextPage={false}
               isFetchingNextPage={false}
               isFetchNextPageError={false}

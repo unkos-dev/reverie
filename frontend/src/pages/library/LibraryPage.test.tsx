@@ -323,6 +323,51 @@ describe("LibraryPage", () => {
     });
   });
 
+  test("table quick search writes ?q= and clears any cursor param", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?view=table&cursor=stale123"],
+      extraCacheParams: [{ q: "war" }],
+    });
+    await screen.findByTestId("library-table");
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Quick search"), "war");
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("q=war");
+      expect(search).not.toContain("cursor=");
+    });
+  });
+
+  test("a typed filter with no matches shows the filtered-empty state", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?status_any=unread"],
+      cacheParams: { status_any: ["unread"] },
+      extraCacheParams: [{}],
+    });
+    expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
+  });
+
+  test("clear-all from the filtered-empty state drops typed filter params", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?status_any=unread&pages_gte=500"],
+      cacheParams: { status_any: ["unread"], pages_gte: 500 },
+      extraCacheParams: [{}],
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).not.toContain("status_any");
+      expect(search).not.toContain("pages_gte");
+    });
+  });
+
   test("URL ?view= beats the cookie default", async () => {
     document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
     try {
