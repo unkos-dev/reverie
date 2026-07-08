@@ -177,7 +177,12 @@ function boolFromSearch(raw: string | null): boolean | undefined {
 
 function intFromSearch(raw: string | null): number | undefined {
   if (raw === null || !/^-?\d+$/.test(raw)) return undefined;
-  return Number(raw);
+  const value = Number(raw);
+  // A digit string long enough to exceed the safe-integer range parses to a
+  // rounded or infinite value that would serialize back as garbage (e.g.
+  // "Infinity"), breaking the round-trip. Drop it like any other malformed
+  // input; the server remains the authority on in-range validation.
+  return Number.isSafeInteger(value) ? value : undefined;
 }
 
 function dateFromSearch(raw: string | null): string | undefined {

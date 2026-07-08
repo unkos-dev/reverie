@@ -25,7 +25,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { queryKeys } from "@/lib/query/keys";
-import { emptyFilterState, type FilterState, type SetFilter } from "@/routes/library-params";
+import {
+  emptyFilterState,
+  serializeFilterParams,
+  type FilterState,
+  type SetFilter,
+} from "@/routes/library-params";
 
 import {
   DateRangeEditor,
@@ -40,6 +45,19 @@ import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSele
 const MIN_Q_LEN = 2;
 /** Debounce before a quick-search keystroke becomes a URL change. */
 const QUICK_SEARCH_DEBOUNCE_MS = 250;
+
+/** A stable, order-independent serialization of every filter *except* `q`.
+ *  Quick search watches this: it stays constant while the user types (and
+ *  across the debounced `q` write), and changes only on an external filter
+ *  edit (a chip removal, clear-all), which is the signal to discard an
+ *  uncommitted quick-search draft. */
+function filterResetToken(filters: FilterState): string {
+  const params = new URLSearchParams();
+  serializeFilterParams(filters, params);
+  params.delete("q");
+  params.sort();
+  return params.toString();
+}
 
 const STATUS_LABELS: Record<string, string> = {
   unread: "Unread",
@@ -121,6 +139,7 @@ export function FilterBar({ filters, onFiltersChange, seriesLabels }: Props): Re
       <div className="flex flex-wrap items-center gap-2">
         <QuickSearch
           value={filters.q ?? ""}
+          resetToken={filterResetToken(filters)}
           onCommit={(q) => {
             onFiltersChange({ ...filters, q });
           }}
@@ -129,6 +148,7 @@ export function FilterBar({ filters, onFiltersChange, seriesLabels }: Props): Re
           filters={filters}
           onApply={onFiltersChange}
           resolveAuthorLabel={authorNames.labelFor}
+          seriesLabels={seriesLabels}
         />
       </div>
       <ChipRow
@@ -146,41 +166,58 @@ function useAuthorLabels(filters: FilterState): { labelFor: (id: string) => stri
   const ids = [
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError, error } = useQuery({
     queryKey: queryKeys.authors.resolve(ids),
     queryFn: ({ signal }) => resolveAuthors(ids, signal),
     enabled: ids.length > 0,
     staleTime: 60_000,
   });
+  // A resolve failure must not read as "author doesn't exist": leave a console
+  // breadcrumb (QueryCache.onError forwards only 401s) and label the chip as
+  // unresolved rather than unknown, mirroring the next-page handler in
+  // LibraryContent.
+  useEffect(() => {
+    if (isError) console.error("[FilterBar] failed to resolve author labels", error);
+  }, [isError, error]);
   function labelFor(id: string): string {
     const hit = data?.find((row) => row.id === id);
     if (hit !== undefined) return hit.value;
-    return isFetching ? "resolving…" : "Unknown author";
+    if (isFetching) return "resolving…";
+    if (isError) return "author unavailable";
+    return "Unknown author";
   }
   return { labelFor };
 }
 
 type QuickSearchProps = {
   value: string;
+  resetToken: string;
   onCommit: (q: string | undefined) => void;
 };
 
-function QuickSearch({ value, onCommit }: QuickSearchProps): ReactElement {
+function QuickSearch({ value, resetToken, onCommit }: QuickSearchProps): ReactElement {
   const [draft, setDraft] = useState(value);
-  const [syncedValue, setSyncedValue] = useState(value);
-  // Reset the input when `q` changes from outside (clear-all, navigation). This
-  // is the render-phase alternative to a sync effect: React re-renders with the
-  // adjusted state before painting, and the compiler accepts it.
-  if (value !== syncedValue) {
-    setSyncedValue(value);
+  const [synced, setSynced] = useState({ value, resetToken });
+  // Reset the input to reflect `value` when the committed `q` changes from
+  // outside (navigation) OR when any other filter changes (a chip removal,
+  // clear-all). The second case discards an uncommitted draft so a pending
+  // keystroke cannot resurrect after the user clears filters. Render-phase
+  // state adjustment, the compiler-accepted alternative to a sync effect.
+  if (value !== synced.value || resetToken !== synced.resetToken) {
+    setSynced({ value, resetToken });
     setDraft(value);
   }
 
   useEffect(() => {
+    const trimmed = draft.trim();
+    const next = trimmed.length >= MIN_Q_LEN ? trimmed : undefined;
+    // Nothing to commit when the debounced draft already matches the committed
+    // value. Treating an empty box (`next` undefined) as equal to an absent `q`
+    // (`value` "") is what stops an untouched search from firing a spurious
+    // commit on every re-render.
+    if ((next ?? "") === value) return;
     const handle = window.setTimeout(() => {
-      const trimmed = draft.trim();
-      const next = trimmed.length >= MIN_Q_LEN ? trimmed : undefined;
-      if (next !== value) onCommit(next);
+      onCommit(next);
     }, QUICK_SEARCH_DEBOUNCE_MS);
     return () => {
       window.clearTimeout(handle);
@@ -205,9 +242,15 @@ type FilterBuilderProps = {
   filters: FilterState;
   onApply: (next: FilterState) => void;
   resolveAuthorLabel: (id: string) => string;
+  seriesLabels?: ReadonlyMap<string, string>;
 };
 
-function FilterBuilder({ filters, onApply, resolveAuthorLabel }: FilterBuilderProps): ReactElement {
+function FilterBuilder({
+  filters,
+  onApply,
+  resolveAuthorLabel,
+  seriesLabels,
+}: FilterBuilderProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [column, setColumn] = useState<ColumnId | null>(null);
   const [draft, setDraft] = useState<FilterState>(filters);
@@ -263,6 +306,7 @@ function FilterBuilder({ filters, onApply, resolveAuthorLabel }: FilterBuilderPr
               draft={draft}
               setDraft={setDraft}
               resolveAuthorLabel={resolveAuthorLabel}
+              seriesLabels={seriesLabels}
             />
             <div className="flex justify-end gap-2">
               <Button
@@ -291,6 +335,7 @@ type ColumnEditorProps = {
   draft: FilterState;
   setDraft: (next: FilterState) => void;
   resolveAuthorLabel: (id: string) => string;
+  seriesLabels?: ReadonlyMap<string, string>;
 };
 
 function ColumnEditor({
@@ -298,6 +343,7 @@ function ColumnEditor({
   draft,
   setDraft,
   resolveAuthorLabel,
+  seriesLabels,
 }: ColumnEditorProps): ReactElement {
   switch (column) {
     case "title":
@@ -373,7 +419,7 @@ function ColumnEditor({
         />
       );
     case "series":
-      return <SeriesEditor draft={draft} setDraft={setDraft} />;
+      return <SeriesEditor draft={draft} setDraft={setDraft} seriesLabels={seriesLabels} />;
     default:
       return (
         <VocabEditor
@@ -448,13 +494,18 @@ function VocabEditor({
 type SeriesEditorProps = {
   draft: FilterState;
   setDraft: (next: FilterState) => void;
+  seriesLabels?: ReadonlyMap<string, string>;
 };
 
 /** Single-select series filter reusing the multi-select widget: only the most
- *  recent pick is kept, so the URL's single `series` uuid stays single. */
-function SeriesEditor({ draft, setDraft }: SeriesEditorProps): ReactElement {
+ *  recent pick is kept, so the URL's single `series` uuid stays single. The
+ *  selected chip resolves to a series name via the page's loaded rows, falling
+ *  back to the id when the series is off the current page. */
+function SeriesEditor({ draft, setDraft, seriesLabels }: SeriesEditorProps): ReactElement {
   const selected: TypeaheadOption[] =
-    draft.series !== undefined ? [{ id: draft.series, value: draft.series }] : [];
+    draft.series !== undefined
+      ? [{ id: draft.series, value: seriesLabels?.get(draft.series) ?? draft.series }]
+      : [];
   return (
     <TypeaheadMultiSelect
       kind="series"

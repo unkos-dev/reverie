@@ -148,6 +148,14 @@ describe("parseFilterParams", () => {
     expect(parseFilterParams(search("pages_gte=abc")).pages).toEqual({});
   });
 
+  test("drops a digit string that overflows the safe-integer range", () => {
+    // A pure-digit string past 2^53 parses to a rounded/infinite Number that
+    // would serialize back as garbage ("Infinity"); it must be dropped, not
+    // carried, so the round-trip stays clean.
+    const huge = "1".repeat(400);
+    expect(parseFilterParams(search(`pages_gte=${huge}`)).pages).toEqual({});
+  });
+
   test("drops an ill-formed date", () => {
     expect(parseFilterParams(search("created_at_gte=2026-13-99x")).addedAfter).toBeUndefined();
   });

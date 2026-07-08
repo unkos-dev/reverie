@@ -79,6 +79,19 @@ describe("listBooks", () => {
     expect(url.searchParams.get("cursor")).toBe("eyJ4Ijox");
   });
 
+  test("serialises numeric, boolean, and multi-value array params", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
+
+    await listBooks({ pages_gte: 500, subtitle_empty: true, tag_any: ["fantasy", "horror"] });
+
+    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.get("pages_gte")).toBe("500");
+    expect(url.searchParams.get("subtitle_empty")).toBe("true");
+    expect(url.searchParams.getAll("tag_any")).toEqual(["fantasy", "horror"]);
+  });
+
   test("omits undefined params from the URL", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

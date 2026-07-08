@@ -18,14 +18,29 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-function Harness({ initial = emptyFilterState() }: { initial?: FilterState }): ReactElement {
+function Harness({
+  initial = emptyFilterState(),
+  onChange,
+  seriesLabels,
+}: {
+  initial?: FilterState;
+  onChange?: (next: FilterState) => void;
+  seriesLabels?: ReadonlyMap<string, string>;
+}): ReactElement {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
   const [filters, setFilters] = useState<FilterState>(initial);
   return (
     <QueryClientProvider client={client}>
-      <FilterBar filters={filters} onFiltersChange={setFilters} />
+      <FilterBar
+        filters={filters}
+        onFiltersChange={(next) => {
+          onChange?.(next);
+          setFilters(next);
+        }}
+        seriesLabels={seriesLabels}
+      />
     </QueryClientProvider>
   );
 }
@@ -57,6 +72,36 @@ describe("FilterBar quick search", () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     expect(screen.queryByText(/^Search:/)).not.toBeInTheDocument();
+  });
+
+  test("never commits while the search box stays empty", async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+
+    // An empty box past a full debounce window must not fire a commit. The
+    // debounced draft (undefined) equals the absent `q`, so a re-render cannot
+    // trip a spurious `onCommit(undefined)` loop.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("discards an uncommitted draft when filters are cleared", async () => {
+    render(<Harness initial={{ ...emptyFilterState(), pages: { gte: 500 } }} />);
+    const user = userEvent.setup();
+    const input = screen.getByLabelText("Quick search") as HTMLInputElement;
+
+    // Type but do not wait for the debounce to commit, then clear filters.
+    await user.type(input, "abc");
+    expect(input.value).toBe("abc");
+    await user.click(screen.getByRole("button", { name: /clear filters/i }));
+
+    // The box resets immediately, and the pending keystroke must not resurrect
+    // as a `q` chip after the debounce elapses.
+    expect(input.value).toBe("");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByText("Search: abc")).not.toBeInTheDocument();
+    expect(input.value).toBe("");
   });
 });
 
@@ -146,5 +191,44 @@ describe("FilterBar author hydration", () => {
     );
 
     expect(await screen.findByText(/Author any of: Unknown author/)).toBeInTheDocument();
+  });
+
+  test("labels an author as unavailable when resolution fails", async () => {
+    // A failed resolve must read differently from a genuine miss: "unavailable"
+    // (transient), not "Unknown author" (does not exist), plus a breadcrumb.
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <Harness
+        initial={{
+          ...emptyFilterState(),
+          authors: { all: [], any: [LE_GUIN], none: [] },
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(/Author any of: author unavailable/)).toBeInTheDocument();
+    expect(errorSpy).toHaveBeenCalled();
+  });
+});
+
+describe("FilterBar series editor", () => {
+  const EXPANSE = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  test("shows the resolved series name in the builder, not the raw id", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ items: [] }));
+    render(
+      <Harness
+        initial={{ ...emptyFilterState(), series: EXPANSE }}
+        seriesLabels={new Map([[EXPANSE, "The Expanse"]])}
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /add filter/i }));
+    await user.click(screen.getByRole("button", { name: "Series" }));
+
+    expect(await screen.findByText("The Expanse")).toBeInTheDocument();
+    expect(screen.queryByText(EXPANSE)).not.toBeInTheDocument();
   });
 });
