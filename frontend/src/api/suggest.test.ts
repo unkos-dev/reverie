@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { __resetCsrfTokenForTesting } from "./csrf";
-import { resolveAuthors, suggestVocab } from "./suggest";
+import { MAX_RESOLVE_IDS, resolveAuthors, suggestVocab } from "./suggest";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -95,5 +95,37 @@ describe("resolveAuthors", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ suggestions: [] }));
 
     await expect(resolveAuthors([AUTHOR_A])).rejects.toThrow();
+  });
+
+  test("resolves more than 20 ids in a single request without truncating", async () => {
+    // A filter URL carries up to 60 author ids (20 each across all/any/none);
+    // every chip must resolve, so none may be dropped before the request.
+    const ids = Array.from(
+      { length: 25 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    );
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [] }));
+
+    await resolveAuthors(ids);
+
+    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.getAll("id")).toHaveLength(25);
+  });
+
+  test("clamps to the resolve cap", async () => {
+    const ids = Array.from(
+      { length: MAX_RESOLVE_IDS + 1 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    );
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ items: [] }));
+
+    await resolveAuthors(ids);
+
+    const url = fetchSpy.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.getAll("id")).toHaveLength(MAX_RESOLVE_IDS);
   });
 });

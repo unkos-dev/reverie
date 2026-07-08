@@ -51,10 +51,13 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(authors_by_id))
 }
 
-/// Upper bound on `?id=` repetitions for the authors batch-get. Author-chip
-/// hydration never needs more than a page's worth of distinct authors; the
-/// cap keeps the `= ANY($)` array bounded by construction.
-const MAX_RESOLVE_IDS: usize = 20;
+/// Upper bound on `?id=` repetitions for the authors batch-get. Chip hydration
+/// resolves the union of a book filter's `author`, `author_any`, and
+/// `author_none` sets; each is capped at 20, so 60 is the largest set the
+/// filter grammar yields. Resolving the whole union in one request (rather than
+/// truncating) keeps every chip labelled while the `= ANY($)` array stays
+/// bounded by construction.
+const MAX_RESOLVE_IDS: usize = 60;
 
 /// Below this character count, `word_similarity` runs on too few trigrams to
 /// be a meaningful signal, so only the `ILIKE` prefix leg is used.
@@ -1421,6 +1424,29 @@ mod tests {
             "body: {}",
             r.text()
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_by_id_accepts_the_full_cap(pool: PgPool) {
+        // Exactly MAX_RESOLVE_IDS ids is accepted (the boundary the over-cap
+        // test rejects at +1), so the union of a 20-per-set author filter across
+        // all/any/none resolves in one request. Unknown ids drop to an empty set
+        // rather than 422.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "authors-cap-ok").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let ids = (0..MAX_RESOLVE_IDS)
+            .map(|_| format!("id={}", Uuid::new_v4()))
+            .collect::<Vec<_>>()
+            .join("&");
+        let r = server
+            .get(&format!("/api/v1/authors?{ids}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
     }
 
     #[sqlx::test(migrations = "./migrations")]

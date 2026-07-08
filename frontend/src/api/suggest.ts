@@ -47,8 +47,10 @@ const AuthorsResponseSchema = z.object({
 });
 
 /** Upper bound on `?id=` repetitions per resolve call; matches the backend
- *  `MAX_RESOLVE_IDS` cap, over which the endpoint returns 422. */
-export const MAX_RESOLVE_IDS = 20;
+ *  `MAX_RESOLVE_IDS` cap, over which the endpoint returns 422. Chip hydration
+ *  resolves the union of the `author`, `author_any`, and `author_none` filter
+ *  sets (each capped at 20), so 60 covers the largest set in one request. */
+export const MAX_RESOLVE_IDS = 60;
 
 /**
  * Fetch typeahead suggestions for one vocabulary. The backend trims `q`,
