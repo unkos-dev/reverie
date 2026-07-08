@@ -26,6 +26,14 @@ export type WorkDetailKey = readonly ["works", "detail", string];
 /** Tuple for the search cache slot, keyed by the trimmed query string. */
 export type SearchKey = readonly ["search", string];
 
+/** Locale-independent string order (codepoint), so a set of ids sorts to the
+ *  same sequence regardless of the caller's locale and hits one cache slot. */
+function byCodepoint(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
   books: {
@@ -54,7 +62,7 @@ export const queryKeys = {
      *  explicit, locale-independent comparator so the same set hits one cache
      *  slot regardless of the order they appear in the URL. */
     resolve: (ids: readonly string[]) =>
-      ["authors", "resolve", [...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))] as const,
+      ["authors", "resolve", [...ids].sort(byCodepoint)] as const,
   },
   series: {
     /** Root namespace; invalidate to wipe every series-* cache slot. */

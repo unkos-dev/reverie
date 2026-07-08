@@ -367,16 +367,24 @@ function assignSet(
   if (filter.none.length > 0) params[none] = filter.none;
 }
 
+/** Project a plain string field onto `params`, treating "" the same as absent.
+ *  The text codec reads "" as "no value", so a blank `q`/`series`/`shelf` must
+ *  not reach the wire (nor count as active via `hasActiveFilterState`). */
+function setIfNonEmpty(
+  params: ListBooksParams,
+  key: "q" | "series" | "shelf",
+  value: string | undefined,
+): void {
+  if (value !== undefined && value !== "") params[key] = value;
+}
+
 /**
  * Project a {@link FilterState} onto the flat {@link ListBooksParams} the client
  * sends. Empty groups contribute nothing, so the URL omits inactive filters.
  */
 export function filterStateToParams(state: FilterState): ListBooksParams {
   const params: ListBooksParams = {};
-  // Guard blanks, not just `undefined`: the text codec treats "" as "no value",
-  // so an empty `q`/`series`/`shelf` must not project onto the wire (nor count
-  // as an active filter via `hasActiveFilterState`).
-  if (state.q !== undefined && state.q !== "") params.q = state.q;
+  setIfNonEmpty(params, "q", state.q);
   assignText(params, "title", state.title);
   assignText(params, "subtitle", state.subtitle);
   assignText(params, "isbn_13", state.isbn13);
@@ -394,8 +402,8 @@ export function filterStateToParams(state: FilterState): ListBooksParams {
   assignSet(params, ["tag", "tag_any", "tag_none"], state.tags);
   assignSet(params, ["genre", "genre_any", "genre_none"], state.genres);
   assignSet(params, ["mood", "mood_any", "mood_none"], state.moods);
-  if (state.series !== undefined && state.series !== "") params.series = state.series;
-  if (state.shelf !== undefined && state.shelf !== "") params.shelf = state.shelf;
+  setIfNonEmpty(params, "series", state.series);
+  setIfNonEmpty(params, "shelf", state.shelf);
   return params;
 }
 
