@@ -291,7 +291,7 @@
           {
             "name": "author",
             "in": "query",
-            "description": "All-of author filter: every listed author id must be linked to\nthe work in the `author` role. A single `?author=<uuid>` is the\none-element case, wire-compatible with the pre-11c single filter.",
+            "description": "All-of author filter: every listed author id must be linked to\nthe work in the `author` role. A single `?author=<uuid>` is the\none-element case.",
             "required": false,
             "schema": {
               "type": "array",
