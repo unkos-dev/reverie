@@ -264,7 +264,11 @@ function FilterBuilder({
   }
 
   function apply(): void {
-    onApply(draft);
+    // The builder never edits `q`; quick search commits it on a debounce timer,
+    // the one filter that can change while this popover stays open. Take `q`
+    // from the live `filters` prop so a search committed after the builder
+    // opened is not clobbered by the older `draft` snapshot.
+    onApply({ ...draft, q: filters.q });
     setOpen(false);
     setColumn(null);
   }

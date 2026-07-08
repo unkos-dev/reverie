@@ -134,7 +134,7 @@ struct ListParams {
     sort: Option<String>,
     /// All-of author filter: every listed author id must be linked to
     /// the work in the `author` role. A single `?author=<uuid>` is the
-    /// one-element case, wire-compatible with the pre-11c single filter.
+    /// one-element case.
     #[serde(default)]
     author: Vec<Uuid>,
     /// Any-of author filter: at least one listed author id is linked.

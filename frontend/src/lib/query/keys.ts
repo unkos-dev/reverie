@@ -50,10 +50,11 @@ export const queryKeys = {
     vocab: (kind: SuggestKind, q: string) => ["suggest", kind, q] as const,
   },
   authors: {
-    /** Author id → label resolution for chip hydration. Ids are sorted so the
-     *  same set hits one cache slot regardless of the order they appear in
-     *  the URL. */
-    resolve: (ids: readonly string[]) => ["authors", "resolve", [...ids].sort()] as const,
+    /** Author id → label resolution for chip hydration. Ids are sorted with an
+     *  explicit, locale-independent comparator so the same set hits one cache
+     *  slot regardless of the order they appear in the URL. */
+    resolve: (ids: readonly string[]) =>
+      ["authors", "resolve", [...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))] as const,
   },
   series: {
     /** Root namespace; invalidate to wipe every series-* cache slot. */

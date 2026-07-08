@@ -236,6 +236,12 @@ describe("filterStateToParams", () => {
   test("emits nothing for a pristine state", () => {
     expect(filterStateToParams(emptyFilterState())).toEqual({});
   });
+
+  test("drops blank q/series/shelf so an empty string is not an active filter", () => {
+    const blank: FilterState = { ...emptyFilterState(), q: "", series: "", shelf: "" };
+    expect(filterStateToParams(blank)).toEqual({});
+    expect(hasActiveFilterState(blank)).toBe(false);
+  });
 });
 
 describe("hasActiveFilterState", () => {

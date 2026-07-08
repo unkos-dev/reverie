@@ -35,7 +35,8 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import { queryKeys } from "@/lib/query/keys";
 
-/** Debounce between a keystroke and the suggest request; matches the palette. */
+/** Debounce between a keystroke and the suggest request, long enough that a
+ *  fast typist fires one request instead of one per key. */
 const DEBOUNCE_MS = 250;
 /** Minimum query length before a request fires (pg_trgm needs 2+ characters). */
 const MIN_Q_LEN = 2;

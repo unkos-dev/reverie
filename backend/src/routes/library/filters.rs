@@ -341,10 +341,10 @@ pub(super) fn push_filter_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListPa
     push_q_predicate(qb, p);
 }
 
-/// Push the `author` vocabulary triple, role-scoped to `'author'` like the
-/// pre-11c single filter: all-of via a distinct-count scalar, any-of via
-/// `EXISTS`, none-of via `NOT EXISTS`. Ids are deduped before the all-of
-/// count so a repeated id cannot make the predicate unsatisfiable.
+/// Push the `author` vocabulary triple, role-scoped to `'author'`: all-of via
+/// a distinct-count scalar, any-of via `EXISTS`, none-of via `NOT EXISTS`. Ids
+/// are deduped before the all-of count so a repeated id cannot make the
+/// predicate unsatisfiable.
 fn push_author_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if !p.author.is_empty() {
         let mut ids = p.author.clone();
@@ -632,25 +632,41 @@ fn trimmed(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|s| !s.is_empty())
 }
 
+/// Escape the delimiter characters the canonical filter string uses to carry
+/// its own structure (`&` between parts, `=` between name and value, `,`
+/// between list items). A filter *value* is user-controlled free text, so
+/// without this a value containing one of them could be read as structure,
+/// letting two differently-shaped filter sets flatten to the same string and
+/// share a cursor fingerprint. Backslash is escaped first so the mapping stays
+/// unambiguous (and reversible).
+fn escape_canon(raw: &str) -> String {
+    raw.replace('\\', "\\\\")
+        .replace('&', "\\&")
+        .replace('=', "\\=")
+        .replace(',', "\\,")
+}
+
 /// Sorted, deduped canonical entry for a multi-value param, or nothing when
-/// the list is empty.
+/// the list is empty. Values are delimiter-escaped so a value containing a
+/// literal comma cannot masquerade as two separate values.
 fn push_multi(parts: &mut Vec<String>, name: &str, values: &[String]) {
     if values.is_empty() {
         return;
     }
-    let mut sorted: Vec<&str> = values.iter().map(String::as_str).collect();
+    let mut sorted: Vec<String> = values.iter().map(|v| escape_canon(v)).collect();
     sorted.sort_unstable();
     sorted.dedup();
     parts.push(format!("{name}={}", sorted.join(",")));
 }
 
 /// Canonical entry for a single text param, trimmed and dropped when blank
-/// so it mirrors the predicate's own blank-skip.
+/// so it mirrors the predicate's own blank-skip. The value is delimiter-escaped
+/// so free text containing `&`/`=`/`,` cannot forge the string's structure.
 fn push_text_part(parts: &mut Vec<String>, name: &str, value: Option<&str>) {
     if let Some(text) = value {
         let trimmed = text.trim();
         if !trimmed.is_empty() {
-            parts.push(format!("{name}={trimmed}"));
+            parts.push(format!("{name}={}", escape_canon(trimmed)));
         }
     }
 }
@@ -673,6 +689,44 @@ mod tests {
     fn escape_like_escapes_wildcards() {
         assert_eq!(escape_like("a%b_c\\d"), "a\\%b\\_c\\\\d");
         assert_eq!(escape_like("plain"), "plain");
+    }
+
+    #[test]
+    fn canonical_filter_string_is_injective_across_delimiter_collisions() {
+        // Two different filter sets that, unescaped, both flatten to
+        // "q=hello&title_contains=zzz". Escaping the delimiters in the values
+        // must keep their canonical strings (and fingerprints) distinct, or a
+        // cursor minted under one would be silently accepted under the other.
+        let mut a = params();
+        a.q = Some("hello".to_owned());
+        a.title_contains = Some("zzz".to_owned());
+
+        let mut b = params();
+        b.q = Some("hello&title_contains=zzz".to_owned());
+
+        assert_ne!(
+            canonical_filter_string(&a),
+            canonical_filter_string(&b),
+            "delimiter-bearing values must not collide"
+        );
+        assert_ne!(filter_fingerprint(&a), filter_fingerprint(&b));
+    }
+
+    #[test]
+    fn canonical_filter_string_separates_comma_bearing_vocab_value() {
+        // A single tag literally named "a,b" must not canonicalize the same as
+        // two separate tags "a" and "b".
+        let mut one = params();
+        one.tag = vec!["a,b".to_owned()];
+
+        let mut two = params();
+        two.tag = vec!["a".to_owned(), "b".to_owned()];
+
+        assert_ne!(
+            canonical_filter_string(&one),
+            canonical_filter_string(&two),
+            "a comma inside a vocab value must not read as a value separator"
+        );
     }
 
     #[test]

@@ -428,7 +428,54 @@ describe("LibraryPage", () => {
       cacheParams: { author: [authorId] },
     });
     await screen.findByTestId("active-filters");
-    expect(screen.getByRole("button", { name: /clear author filter/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear author .* filter/i })).toBeInTheDocument();
+  });
+
+  test("renders a chip per ?author= value and clears each independently", async () => {
+    const a1 = "aaaa1111-0000-0000-0000-000000000000";
+    const a2 = "bbbb2222-0000-0000-0000-000000000000";
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
+    client.setQueryData(queryKeys.books.list({ author: [a1, a2] }), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+    client.setQueryData(queryKeys.books.list({ author: [a2] }), {
+      pages: [response],
+      pageParams: [undefined],
+    });
+    function Wrapper(): ReactElement {
+      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
+      const router = createMemoryRouter(routes, {
+        initialEntries: [`/library?author=${a1}&author=${a2}`],
+      });
+      return (
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      );
+    }
+    render(<Wrapper />);
+
+    // The old single `get("author")` rendered one chip for the whole set; now
+    // each value gets its own.
+    await screen.findByTestId("active-filters");
+    const chip1 = screen.getByRole("button", {
+      name: new RegExp(`clear author ${a1} filter`, "i"),
+    });
+    expect(
+      screen.getByRole("button", { name: new RegExp(`clear author ${a2} filter`, "i") }),
+    ).toBeInTheDocument();
+
+    // Clearing one removes only its value; the other author survives.
+    const user = userEvent.setup();
+    await user.click(chip1);
+    expect(
+      screen.queryByRole("button", { name: new RegExp(`clear author ${a1} filter`, "i") }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: new RegExp(`clear author ${a2} filter`, "i") }),
+    ).toBeInTheDocument();
   });
 
   test("renders one tag chip per ?tag= repetition", async () => {
@@ -471,7 +518,7 @@ describe("LibraryPage", () => {
     }
     render(<Wrapper />);
 
-    const chip = await screen.findByRole("button", { name: /clear author filter/i });
+    const chip = await screen.findByRole("button", { name: /clear author .* filter/i });
     const user = userEvent.setup();
     await user.click(chip);
     expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();

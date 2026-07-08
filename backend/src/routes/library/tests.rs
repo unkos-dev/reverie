@@ -3074,6 +3074,14 @@ async fn books_filter_sql_injection_probe_is_safe(pool: PgPool) {
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
+    // The hostile payload is a valid string that matches no title, so the list
+    // must come back empty. Asserting zero matches (not just 200) rules out the
+    // injection silently widening the result set instead of narrowing it.
+    let body: serde_json::Value = response.json();
+    assert!(
+        body["items"].as_array().expect("items array").is_empty(),
+        "hostile filter must match nothing, got {body}"
+    );
 
     let still_there: i64 = sqlx::query_scalar!("SELECT COUNT(*) AS \"c!\" FROM works")
         .fetch_one(&ingestion_pool)
@@ -3901,10 +3909,26 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let (_w1, thin) = insert_book_at(&ingestion_pool, "thin", "Thin", ts(1)).await;
+    let (w1, thin) = insert_book_at(&ingestion_pool, "thin", "Thin", ts(1)).await;
     set_pages(&ingestion_pool, thin, 100).await;
-    let (_w2, thick) = insert_book_at(&ingestion_pool, "thick", "Thick", ts(2)).await;
+    let (w2, thick) = insert_book_at(&ingestion_pool, "thick", "Thick", ts(2)).await;
     set_pages(&ingestion_pool, thick, 200).await;
+    // Share one author across both books so the `author_any` walk below actually
+    // matches and mints a cursor; an unmatched author filter would leave
+    // next_cursor null and let the value-order replay silently skip.
+    let shared =
+        test_support::db::insert_contributor(&ingestion_pool, w1, "Shared", "author", 0).await;
+    sqlx::query!(
+        "INSERT INTO work_authors (work_id, author_id, role, position) \
+         VALUES ($1, $2, ($3::text)::author_role, $4)",
+        w2,
+        shared,
+        "author",
+        1,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("link shared author to second work");
     // page_size 1 so page 1 yields a cursor mid-walk.
     let server = server_with_page_size(&app_pool, &ingestion_pool, 1);
 
@@ -3945,31 +3969,34 @@ async fn filter_cursor_rejects_changed_filter_and_ignores_value_order(pool: PgPo
     assert_eq!(same.status_code(), StatusCode::OK, "{}", same.text());
 
     // Value order within a multi-value param does not change the fingerprint:
-    // a cursor minted under one ordering validates under the reverse.
-    let a = Uuid::new_v4();
-    let b = Uuid::new_v4();
+    // a cursor minted under one ordering validates under the reverse. `shared`
+    // matches both books, so at page_size 1 the walk spans two pages and mints
+    // a cursor; `other` is an unrelated id that any-of tolerates.
+    let other = Uuid::new_v4();
     let minted = server
         .get(&format!(
-            "/api/v1/books?author_any={a}&author_any={b}&pages_gte=50"
+            "/api/v1/books?author_any={shared}&author_any={other}&pages_gte=50"
         ))
         .add_header(AUTHORIZATION, basic.clone())
         .await;
     assert_eq!(minted.status_code(), StatusCode::OK);
     let body: serde_json::Value = minted.json();
-    if let Some(nc) = body["next_cursor"].as_str() {
-        let reordered = server
-            .get(&format!(
-                "/api/v1/books?author_any={b}&author_any={a}&pages_gte=50&cursor={nc}"
-            ))
-            .add_header(AUTHORIZATION, basic)
-            .await;
-        assert_eq!(
-            reordered.status_code(),
-            StatusCode::OK,
-            "reordered values must keep the fingerprint: {}",
-            reordered.text()
-        );
-    }
+    let nc = body["next_cursor"]
+        .as_str()
+        .expect("author_any spanning both books must mint a cursor")
+        .to_owned();
+    let reordered = server
+        .get(&format!(
+            "/api/v1/books?author_any={other}&author_any={shared}&pages_gte=50&cursor={nc}"
+        ))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(
+        reordered.status_code(),
+        StatusCode::OK,
+        "reordered values must keep the fingerprint: {}",
+        reordered.text()
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

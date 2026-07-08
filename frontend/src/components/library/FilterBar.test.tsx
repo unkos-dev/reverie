@@ -89,7 +89,7 @@ describe("FilterBar quick search", () => {
   test("discards an uncommitted draft when filters are cleared", async () => {
     render(<Harness initial={{ ...emptyFilterState(), pages: { gte: 500 } }} />);
     const user = userEvent.setup();
-    const input = screen.getByLabelText("Quick search") as HTMLInputElement;
+    const input = screen.getByLabelText<HTMLInputElement>("Quick search");
 
     // Type but do not wait for the debounce to commit, then clear filters.
     await user.type(input, "abc");
@@ -128,6 +128,27 @@ describe("FilterBar builder", () => {
     await user.click(screen.getByRole("button", { name: /apply/i }));
 
     expect(await screen.findByText("Status: Unread")).toBeInTheDocument();
+  });
+
+  test("preserves a quick-search commit that lands while the builder is open", async () => {
+    render(<Harness />);
+    const user = userEvent.setup();
+
+    // Type a query (schedules the debounce) then open the builder before it
+    // fires, so the builder snapshots a draft with no `q`.
+    await user.type(screen.getByLabelText("Quick search"), "war");
+    await user.click(screen.getByRole("button", { name: /add filter/i }));
+
+    // The debounce now commits `q` while the popover stays open.
+    await screen.findByText("Search: war");
+
+    // Applying a column filter must not clobber the just-committed quick search.
+    await user.click(screen.getByRole("button", { name: "Pages" }));
+    fireEvent.change(screen.getByLabelText("Min"), { target: { value: "500" } });
+    await user.click(screen.getByRole("button", { name: /apply/i }));
+
+    expect(await screen.findByText("Pages ≥ 500")).toBeInTheDocument();
+    expect(screen.getByText("Search: war")).toBeInTheDocument();
   });
 });
 

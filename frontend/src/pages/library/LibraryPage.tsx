@@ -664,15 +664,20 @@ interface ActiveFilterChipsProps {
 
 type ChipKey = "author" | "series" | "shelf" | "tag";
 
+/** Keys that repeat in the URL (`?author=a&author=b`); their chips clear a
+ *  single value rather than deleting the whole param. */
+const MULTI_VALUE_CHIP_KEYS: ReadonlySet<ChipKey> = new Set(["author", "tag"]);
+
 interface ActiveChip {
-  /** Unique chip id (`"tag:scifi"` for tag chips, plain key otherwise). */
+  /** Unique chip id (`"tag:scifi"` for multi-value chips, plain key otherwise). */
   id: string;
   /** Which URL param the chip controls. */
   key: ChipKey;
   /** Human-readable chip label. */
   label: string;
-  /** Tag value the chip clears, for multi-value `?tag=` chips. */
-  tagValue?: string;
+  /** The single value a multi-value chip clears; absent for single-value keys,
+   *  which clear the whole param. */
+  value?: string;
 }
 
 function ActiveFilterChips({
@@ -705,38 +710,42 @@ function ActiveFilterChips({
   };
 
   const filters: ActiveChip[] = [];
-  for (const key of ["author", "series", "shelf"] as const) {
+  // `?author=a&author=b` and `?tag=a&tag=b` repeat — one chip per value so the
+  // user can clear each independently, mirroring the backend's multi-value
+  // semantics. Reading via `getAll` (not `get`) and clearing a single value is
+  // what stops one removal from nuking every author or tag at once.
+  for (const authorValue of searchParams.getAll("author")) {
+    if (authorValue === "") continue;
+    filters.push({
+      id: `author:${authorValue}`,
+      key: "author",
+      label: `author: ${authorValue}`,
+      value: authorValue,
+    });
+  }
+  for (const key of ["series", "shelf"] as const) {
     const value = searchParams.get(key);
     if (value === null || value === "") continue;
     // Resolve ids to readable names: shelf via its cache, series via the
-    // loaded-pages map. `?author=` already carries a display name, so show
-    // it whole rather than truncating a readable value through `shortId`.
-    let label: string;
-    if (key === "shelf") label = `shelf: ${shelfNameFor(value)}`;
-    else if (key === "series") label = `series: ${seriesNames.get(value) ?? shortId(value)}`;
-    else label = `author: ${value}`;
+    // loaded-pages map.
+    const label =
+      key === "shelf"
+        ? `shelf: ${shelfNameFor(value)}`
+        : `series: ${seriesNames.get(value) ?? shortId(value)}`;
     filters.push({ id: key, key, label });
   }
-  // `?tag=a&tag=b` repeats — one chip per value so the user can clear
-  // them independently. Mirrors the backend's multi-value AND-match
-  // semantics; clearing one tag removes only that name from the filter.
   for (const tagValue of searchParams.getAll("tag")) {
     if (tagValue === "") continue;
-    filters.push({
-      id: `tag:${tagValue}`,
-      key: "tag",
-      label: `tag: ${tagValue}`,
-      tagValue,
-    });
+    filters.push({ id: `tag:${tagValue}`, key: "tag", label: `tag: ${tagValue}`, value: tagValue });
   }
   if (filters.length === 0) return null;
 
   function clear(chip: ActiveChip): void {
     const updated = new URLSearchParams(searchParams);
-    if (chip.key === "tag" && chip.tagValue !== undefined) {
-      const remaining = updated.getAll("tag").filter((v) => v !== chip.tagValue);
-      updated.delete("tag");
-      for (const t of remaining) updated.append("tag", t);
+    if (chip.value !== undefined && MULTI_VALUE_CHIP_KEYS.has(chip.key)) {
+      const remaining = updated.getAll(chip.key).filter((v) => v !== chip.value);
+      updated.delete(chip.key);
+      for (const v of remaining) updated.append(chip.key, v);
     } else {
       updated.delete(chip.key);
     }
@@ -762,7 +771,7 @@ function ActiveFilterChips({
           <X className="size-3" aria-hidden="true" />
           <span className="sr-only">
             Clear {chip.key}
-            {chip.tagValue !== undefined ? ` ${chip.tagValue}` : ""} filter
+            {chip.value !== undefined ? ` ${chip.value}` : ""} filter
           </span>
         </Button>
       ))}
