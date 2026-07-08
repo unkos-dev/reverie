@@ -11,7 +11,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { Filter, X } from "lucide-react";
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useEffect, useRef, useState } from "react";
 
 import { resolveAuthors, type SuggestKind } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -245,6 +245,16 @@ type FilterBuilderProps = {
   seriesLabels?: ReadonlyMap<string, string>;
 };
 
+/** Copy one filter field from `source` to `target`. The generic binds the key
+ *  to both records so the field keeps its type without a cast. */
+function copyFilterField<K extends keyof FilterState>(
+  target: Pick<FilterState, K>,
+  source: Pick<FilterState, K>,
+  key: K,
+): void {
+  target[key] = source[key];
+}
+
 function FilterBuilder({
   filters,
   onApply,
@@ -254,21 +264,33 @@ function FilterBuilder({
   const [open, setOpen] = useState(false);
   const [column, setColumn] = useState<ColumnId | null>(null);
   const [draft, setDraft] = useState<FilterState>(filters);
+  // The filter set captured when the popover opened. `draft` starts identical
+  // (same field references) and diverges only where the user edits, so a
+  // per-field reference compare on apply tells which fields the builder
+  // actually changed.
+  const baselineRef = useRef<FilterState>(filters);
 
   function openBuilder(next: boolean): void {
     setOpen(next);
     if (next) {
       setDraft(filters);
+      baselineRef.current = filters;
       setColumn(null);
     }
   }
 
   function apply(): void {
-    // The builder never edits `q`; quick search commits it on a debounce timer,
-    // the one filter that can change while this popover stays open. Take `q`
-    // from the live `filters` prop so a search committed after the builder
-    // opened is not clobbered by the older `draft` snapshot.
-    onApply({ ...draft, q: filters.q });
+    // Apply only the fields the user changed in the builder onto the *live*
+    // filters, so an edit committed elsewhere while the popover stayed open (a
+    // quick-search debounce, a chip removal) survives instead of being
+    // overwritten by the stale open-time snapshot.
+    const next: FilterState = { ...filters };
+    const baseline = baselineRef.current;
+    // Object.keys is typed as string[]; every key is a FilterState field here.
+    for (const key of Object.keys(draft) as (keyof FilterState)[]) {
+      if (draft[key] !== baseline[key]) copyFilterField(next, draft, key);
+    }
+    onApply(next);
     setOpen(false);
     setColumn(null);
   }
