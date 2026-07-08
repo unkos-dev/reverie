@@ -340,6 +340,21 @@ describe("LibraryPage", () => {
     });
   });
 
+  test("table view shows only the FilterBar chip row, not the masthead chip row", async () => {
+    renderLibrary({
+      items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+      nextCursor: null,
+      initialEntries: ["/library?view=table&series=s-1"],
+      cacheParams: { series: "s-1" },
+    });
+    await screen.findByTestId("library-table");
+    // The masthead chip row is suppressed in table view so its chips do not
+    // double up the FilterBar's. Only the FilterBar chip row remains.
+    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
+    const chips = screen.getByTestId("filter-chips");
+    expect(within(chips).getByText("Series: Discworld")).toBeInTheDocument();
+  });
+
   test("a typed filter with no matches shows the filtered-empty state", async () => {
     renderLibrary({
       items: [],

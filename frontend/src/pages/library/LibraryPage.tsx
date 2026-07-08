@@ -287,14 +287,24 @@ function LibraryContent(): ReactElement {
           <div className="px-6 py-10 sm:px-10">
             <LibraryMasthead />
             <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <ShelfPickerButton searchParams={searchParams} setSearchParams={setSearchParams} />
-                <ActiveFilterChips
-                  searchParams={searchParams}
-                  setSearchParams={setSearchParams}
-                  seriesNames={seriesById}
-                />
-              </div>
+              {viewMode === "table" ? (
+                // Table view owns its own filter surface (FilterBar inside the
+                // grid), so the masthead shelf picker and chip row would double
+                // up. Render a spacer to keep sort/view controls right-aligned.
+                <div />
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <ShelfPickerButton
+                    searchParams={searchParams}
+                    setSearchParams={setSearchParams}
+                  />
+                  <ActiveFilterChips
+                    searchParams={searchParams}
+                    setSearchParams={setSearchParams}
+                    seriesNames={seriesById}
+                  />
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
                 <div
