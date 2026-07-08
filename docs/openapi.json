@@ -83,7 +83,7 @@
           "suggest"
         ],
         "summary": "`GET /api/v1/authors?id=<uuid>&id=<uuid>`: resolve author ids to their\ndisplay names so a filter chip restored from a bookmarked URL can label\nitself (the list payload carries author names, not ids, and a none-of\nfilter hides the author's rows entirely).",
-        "description": "The `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` (any contributor role counts), so an id the caller\ncannot see is silently omitted rather than 404'd, and unknown ids drop\nout the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
+        "description": "The `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` and restricted to the `author` role, so the chip label\nresolves the same author set the `?author=` filter matches; an id the\ncaller cannot see (or one that is not an author) is silently omitted\nrather than 404'd, and unknown ids drop out the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "authors_by_id",
         "parameters": [
           {
@@ -171,7 +171,7 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/authors/suggest`: author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Any contributor\nrole counts (see [`query_authors`]), not just the `author` role.",
+        "summary": "`GET /api/v1/authors/suggest`: author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Scoped to the\n`author` role (see [`query_authors`]), matching the `?author=` filter it\nfeeds.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_authors",
         "parameters": [
