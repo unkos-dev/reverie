@@ -3296,7 +3296,7 @@ async fn seed_library_50k_script_seeds_and_pages(pool: PgPool) {
 }
 
 // ---------------------------------------------------------------------------
-// Typed per-column filters + quick search (11c).
+// Typed per-column filters + quick search.
 // ---------------------------------------------------------------------------
 
 use crate::models::reading_status::ReadingStatus;

@@ -106,7 +106,7 @@ const MAX_TAG_FILTERS: usize = 20;
 ///   current_setting('app.current_user_id', true)::uuid` so a caller
 ///   cannot probe another user's shelf membership.
 ///
-/// # Typed column filters (11c)
+/// # Typed column filters
 /// A flat suffix grammar of typed per-column conditions, AND-combined with the
 /// vocabulary filters above and each other. Text (`title_contains/_eq/_ne`,
 /// `subtitle_contains/_empty`, `isbn_13_contains/_eq/_empty`) is

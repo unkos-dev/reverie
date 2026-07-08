@@ -1,4 +1,4 @@
-//! Typed per-column filter grammar for `GET /api/v1/books` (11c).
+//! Typed per-column filter grammar for `GET /api/v1/books`.
 //!
 //! A flat suffix grammar (`title_contains`, `pages_gte`, `status_any`, ...)
 //! adapted from `PostgREST`'s horizontal filtering: one URL param per column

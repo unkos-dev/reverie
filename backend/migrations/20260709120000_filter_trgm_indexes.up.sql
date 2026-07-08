@@ -1,4 +1,4 @@
--- Trigram indexes backing the typed contains-filters (11c).
+-- Trigram indexes backing the typed contains-filters.
 --
 -- A column gains a case-insensitive `_contains` filter only together with its
 -- trigram index, the same "filterable iff index-backed" discipline the sort
