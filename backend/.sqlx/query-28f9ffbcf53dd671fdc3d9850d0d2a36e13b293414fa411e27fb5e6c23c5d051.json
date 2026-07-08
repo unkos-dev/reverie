@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.name\n                 FROM authors a\n                WHERE EXISTS (\n                          SELECT 1 FROM work_authors wa\n                          JOIN manifestations m ON m.work_id = wa.work_id\n                         WHERE wa.author_id = a.id AND wa.role = 'author'\n                      )\n                  AND (a.name ILIKE $1 || '%' OR $2 <% a.name)\n                ORDER BY (a.name ILIKE $1 || '%') DESC,\n                         word_similarity($2, a.name) DESC,\n                         a.name ASC\n                LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "28f9ffbcf53dd671fdc3d9850d0d2a36e13b293414fa411e27fb5e6c23c5d051"
+}

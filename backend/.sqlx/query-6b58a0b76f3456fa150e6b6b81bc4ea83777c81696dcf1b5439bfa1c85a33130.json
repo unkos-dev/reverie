@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.name\n                 FROM authors a\n                WHERE EXISTS (\n                          SELECT 1 FROM work_authors wa\n                          JOIN manifestations m ON m.work_id = wa.work_id\n                         WHERE wa.author_id = a.id\n                      )\n                  AND a.name ILIKE $1 || '%'\n                ORDER BY a.name ASC\n                LIMIT $2",
+  "query": "SELECT a.id, a.name\n             FROM authors a\n            WHERE a.id = ANY($1)\n              AND EXISTS (\n                      SELECT 1 FROM work_authors wa\n                      JOIN manifestations m ON m.work_id = wa.work_id\n                     WHERE wa.author_id = a.id AND wa.role = 'author'\n                  )\n            ORDER BY a.name ASC",
   "describe": {
     "columns": [
       {
@@ -28,8 +28,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8"
+        "UuidArray"
       ]
     },
     "nullable": [
@@ -37,5 +36,5 @@
       false
     ]
   },
-  "hash": "c415074f577d671f1d96c729b4214f7144816fb939cb296d632f3b40436a6014"
+  "hash": "6b58a0b76f3456fa150e6b6b81bc4ea83777c81696dcf1b5439bfa1c85a33130"
 }

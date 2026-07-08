@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO works (title, sort_title, subtitle) SELECT 'Bulk Opus ' || g.n, 'Bulk Opus ' || g.n, 'Bulk Subtitle ' || g.n FROM generate_series(1, 50000) AS g(n)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "1f34b332333c459d3119a6cb6da12e57b5dcbbd0e01489df1cbba393642e2b0b"
+}

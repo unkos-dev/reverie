@@ -352,10 +352,10 @@ async fn query_tags(
 
 /// Scope join deviation: authors have no direct `manifestation_authors`
 /// junction; linkage runs `authors -> work_authors -> manifestations` via
-/// `manifestations.work_id`, any [`crate::models::author_role::AuthorRole`]
-/// (author/editor/translator/narrator) counting as "in use", unlike the
-/// `?author=` list filter which narrows to the `author` role for display
-/// purposes.
+/// `manifestations.work_id`. Only the `author` role counts, matching the
+/// `?author=` list filter and the `authors[]` the list/detail payloads
+/// display, so the suggest, filter, and chip-label surfaces agree on one
+/// author set (editors/translators/narrators are excluded).
 async fn query_authors(
     tx: &mut Transaction<'_, Postgres>,
     q: &SuggestInput,
@@ -368,7 +368,7 @@ async fn query_authors(
                 WHERE EXISTS (
                           SELECT 1 FROM work_authors wa
                           JOIN manifestations m ON m.work_id = wa.work_id
-                         WHERE wa.author_id = a.id
+                         WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
                   AND a.name ILIKE $1 || '%'
                 ORDER BY a.name ASC
@@ -387,7 +387,7 @@ async fn query_authors(
                 WHERE EXISTS (
                           SELECT 1 FROM work_authors wa
                           JOIN manifestations m ON m.work_id = wa.work_id
-                         WHERE wa.author_id = a.id
+                         WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
                   AND (a.name ILIKE $1 || '%' OR $2 <% a.name)
                 ORDER BY (a.name ILIKE $1 || '%') DESC,
@@ -638,8 +638,9 @@ async fn suggest_tags(
 }
 
 /// `GET /api/v1/authors/suggest`: author names in use on a visible
-/// manifestation, ranked prefix-first then by similarity. Any contributor
-/// role counts (see [`query_authors`]), not just the `author` role.
+/// manifestation, ranked prefix-first then by similarity. Scoped to the
+/// `author` role (see [`query_authors`]), matching the `?author=` filter it
+/// feeds.
 ///
 /// # Errors
 /// Same as [`suggest_genres`].
@@ -684,9 +685,10 @@ async fn suggest_authors(
 /// construction: it is the seed of a future paginated authors collection,
 /// but until that lands a bare `GET /api/v1/authors` is a 422, not a
 /// list-all. Ids are RLS-scoped through the same in-use join as
-/// `authors/suggest` (any contributor role counts), so an id the caller
-/// cannot see is silently omitted rather than 404'd, and unknown ids drop
-/// out the same way.
+/// `authors/suggest` and restricted to the `author` role, so the chip label
+/// resolves the same author set the `?author=` filter matches; an id the
+/// caller cannot see (or one that is not an author) is silently omitted
+/// rather than 404'd, and unknown ids drop out the same way.
 ///
 /// # Errors
 /// - [`AppError::MalformedQuery`] when an `id` value is not a UUID.
@@ -735,7 +737,7 @@ async fn authors_by_id(
               AND EXISTS (
                       SELECT 1 FROM work_authors wa
                       JOIN manifestations m ON m.work_id = wa.work_id
-                     WHERE wa.author_id = a.id
+                     WHERE wa.author_id = a.id AND wa.role = 'author'
                   )
             ORDER BY a.name ASC"#,
         &ids,
@@ -1264,6 +1266,74 @@ mod tests {
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
         assert!(suggestion_values(&r.json()).contains(&"Ann Leckie".to_owned()));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn author_endpoints_exclude_non_author_roles(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (work_id, _m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "role-scope").await;
+        let author_id = test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_id,
+            "Rowan Wells",
+            "author",
+            0,
+        )
+        .await;
+        let editor_id = test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_id,
+            "Rowan Vane",
+            "editor",
+            1,
+        )
+        .await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "role-scope").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // Typeahead: the shared "Rowan" prefix matches both names, but the
+        // editor must not be offered as a pickable author.
+        let suggest = server
+            .get("/api/v1/authors/suggest?q=Rowan")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(
+            suggest.status_code(),
+            StatusCode::OK,
+            "body: {}",
+            suggest.text()
+        );
+        let suggested = suggestion_values(&suggest.json());
+        assert!(
+            suggested.contains(&"Rowan Wells".to_owned()),
+            "{suggested:?}"
+        );
+        assert!(
+            !suggested.contains(&"Rowan Vane".to_owned()),
+            "editor must not be suggested as an author: {suggested:?}"
+        );
+
+        // Resolve: both ids requested; only the author id resolves, so a chip
+        // never labels an id the filter cannot match.
+        let resolve = server
+            .get(&format!("/api/v1/authors?id={author_id}&id={editor_id}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(
+            resolve.status_code(),
+            StatusCode::OK,
+            "body: {}",
+            resolve.text()
+        );
+        let resolved = author_values(&resolve.json());
+        assert_eq!(
+            resolved,
+            vec!["Rowan Wells".to_owned()],
+            "editor id must be omitted from resolution: {resolved:?}"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

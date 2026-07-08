@@ -2633,6 +2633,84 @@ fn assert_no_seq_scan_on(plan: &serde_json::Value, relation: &str, label: &str) 
     }
 }
 
+/// Walk an `EXPLAIN (FORMAT JSON)` plan tree and report whether any node reads
+/// the named index (an Index Scan / Bitmap Index Scan / Index Only Scan whose
+/// `Index Name` matches). Stronger than [`assert_no_seq_scan_on`]: a
+/// leading-wildcard `ILIKE` that fell back to a full index-order scan with the
+/// predicate applied as a per-row Filter still avoids a Seq Scan node, so
+/// proving the trigram index is the actual access path needs this.
+fn plan_uses_index(plan: &serde_json::Value, index: &str) -> bool {
+    match plan {
+        serde_json::Value::Object(obj) => {
+            obj.get("Index Name").and_then(serde_json::Value::as_str) == Some(index)
+                || obj.values().any(|child| plan_uses_index(child, index))
+        }
+        serde_json::Value::Array(items) => items.iter().any(|child| plan_uses_index(child, index)),
+        _ => false,
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
+    use sqlx::Row as _;
+
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    // 50k works, each with a distinct subtitle, so a selective substring needle
+    // matches a single row: the case the subtitle trigram index must serve.
+    sqlx::query!(
+        "INSERT INTO works (title, sort_title, subtitle) \
+         SELECT 'Bulk Opus ' || g.n, 'Bulk Opus ' || g.n, 'Bulk Subtitle ' || g.n \
+         FROM generate_series(1, 50000) AS g(n)"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed works");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         SELECT w.id, 'epub'::manifestation_format, '/tmp/bulk-' || w.id, \
+                'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
+                'complete'::ingestion_status, 'clean'::validation_status \
+         FROM works w"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed manifestations");
+
+    // CARVE-OUT (runtime-sqlx allowlist): ANALYZE is maintenance DDL the macros
+    // cannot validate; fresh stats keep the planner from choosing empty-table
+    // plans for the bulk seed. Runs on the owner pool (ANALYZE needs ownership).
+    sqlx::query("ANALYZE works, manifestations")
+        .execute(&pool)
+        .await
+        .expect("analyze seeded tables");
+
+    // Literal twin of push_ilike_contains' output for subtitle_contains on the
+    // recent-sort list query (default page size + 1). A selective needle so the
+    // planner must reach for the trigram index over a full-scan Filter.
+    let explain_subtitle_sql = "EXPLAIN (FORMAT JSON) \
+        SELECT m.id FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        WHERE TRUE AND w.subtitle ILIKE $1 \
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
+
+    // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection over
+    // the dynamic filter SQL the compile-time macros cannot prepare.
+    let row = sqlx::query(explain_subtitle_sql)
+        .bind("%Subtitle 12345%")
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("explain subtitle_contains");
+    let plan: serde_json::Value = row.get("QUERY PLAN");
+    assert_no_seq_scan_on(&plan, "works", "subtitle_contains");
+    assert!(
+        plan_uses_index(&plan, "idx_works_subtitle_trgm"),
+        "subtitle_contains must ride the trigram index, not a full-scan Filter: {plan}"
+    );
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn list_filter_genre_predicates_use_indexes_at_scale(pool: PgPool) {
     use sqlx::Row as _;
@@ -2967,6 +3045,35 @@ async fn search_sql_injection_probe_is_safe(pool: PgPool) {
         .get("/api/v1/search?q=%27%29%3B+DROP+TABLE+works%3B--")
         .add_header(AUTHORIZATION, basic)
         .await;
+
+    let still_there: i64 = sqlx::query_scalar!("SELECT COUNT(*) AS \"c!\" FROM works")
+        .fetch_one(&ingestion_pool)
+        .await
+        .expect("works survives");
+    assert!(still_there > 0, "works table must survive the SQL probe");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn books_filter_sql_injection_probe_is_safe(pool: PgPool) {
+    // Every typed filter value reaches SQL through `push_bind`; a hostile needle
+    // in a text filter or the quick search is bound, not interpolated, so the
+    // schema survives. Guards the larger new user-controlled surface on
+    // `/api/v1/books` the way the sibling `/search` probe guards its own.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "x", "Harmless Title").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    // `');DROP TABLE works;--` delivered through both a text column filter and
+    // the full-text quick search. Both are valid (if hostile) strings, so the
+    // request is a normal 200 with zero matches, not an error.
+    let response = server
+        .get("/api/v1/books?title_contains=%27%29%3B+DROP+TABLE+works%3B--&q=%27%3B+DROP+TABLE+works%3B--")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
 
     let still_there: i64 = sqlx::query_scalar!("SELECT COUNT(*) AS \"c!\" FROM works")
         .fetch_one(&ingestion_pool)
