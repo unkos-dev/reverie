@@ -27,15 +27,15 @@
   "customContext": {
     "files": [
       {
-        "path": "CLAUDE.md",
+        "path": "AGENTS.md",
         "description": "Project-wide conventions: GitHub Flow, Conventional Commits, SemVer, hard rules (TDD mandatory, security scrutiny, no merge without human approval)."
       },
       {
-        "path": "backend/CLAUDE.md",
+        "path": "backend/AGENTS.md",
         "description": "Backend Rust conventions and cardinal rules (do not deviate): no unwrap()/expect() in production code, no silent error-swallowing (no `let _ = <Result>`, `.ok()`, or `.unwrap_or_default()` on critical operations), no blind `.clone()` to satisfy the borrow checker, no N+1 queries (set-based only). Parse-don't-validate at boundaries with newtypes, enums over bools, thiserror at library boundaries and anyhow with .context() in app logic, sqlx for queries, time crate (not chrono), RLS-aware DB access, and never expose internal DB errors or stack traces to clients."
       },
       {
-        "path": "frontend/CLAUDE.md",
+        "path": "frontend/AGENTS.md",
         "description": "Frontend React + TS conventions: functional components, ReactElement return type, no any/!/as-against-object-literals, AbortController in useEffect, Tailwind tokens (no raw hex, no inline JSX style), Zod at boundaries, shadcn via CLI only."
       },
       {

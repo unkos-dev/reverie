@@ -2,7 +2,7 @@
 severity: low
 surfaces: [developer]
 adopted: 2026-05-05
-adopted-because: openidconnect v4 CoreIdTokenClaims::new public API requires chrono types at the call site; documented inline in backend/CLAUDE.md and test_support.rs at adoption time
+adopted-because: openidconnect v4 CoreIdTokenClaims::new public API requires chrono types at the call site; documented inline in backend/AGENTS.md and test_support.rs at adoption time
 lift-when-class: dep-unblocks
 lift-when: openidconnect v5 stable release decouples chrono types, OR migrate to alternative OIDC lib, OR introduce a wrap-and-convert layer at the test boundary
 ---
@@ -12,7 +12,7 @@ lift-when: openidconnect v5 stable release decouples chrono types, OR migrate to
 ## Constraint
 
 The project standard for date/time handling is the `time` crate, not
-`chrono` (recorded in `backend/CLAUDE.md` and in memory
+`chrono` (recorded in `backend/AGENTS.md` and in memory
 `project_time_not_chrono.md`). The standard was set after the project
 scaffold predated the decision; the blueprint mentions chrono but the
 ratified posture is `time`.
@@ -30,7 +30,7 @@ The types are non-negotiable at the call site.
 chrono `DateTime<Utc>` values for the duration of the mock setup.
 No first-party code outside `oidc_mock` touches chrono.
 
-`backend/CLAUDE.md` documents the carve-out explicitly:
+`backend/AGENTS.md` documents the carve-out explicitly:
 
 > The single documented exception is `test_support.rs::oidc_mock`,
 > where `openidconnect` v4's public API (`CoreIdTokenClaims::new`)
@@ -74,13 +74,13 @@ When any path completes:
 
 1. Flip this entry to `status: lifted`, set `lifted`, set
    `superseded-by`.
-2. Update `backend/CLAUDE.md` to remove the carve-out (or narrow it
+2. Update `backend/AGENTS.md` to remove the carve-out (or narrow it
    if path 3 is taken).
 3. Remove chrono from `Cargo.toml` if path 1 or 2 is taken.
 
 ## Related
 
-- `backend/CLAUDE.md`: carve-out documentation (would update on
+- `backend/AGENTS.md`: carve-out documentation (would update on
   lift)
 - `backend/src/test_support.rs::oidc_mock`: workaround site
 - Memory: `project_time_not_chrono.md`: project posture

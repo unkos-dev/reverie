@@ -62,7 +62,9 @@ Frontend only (requires Node.js >=24.15.0):
 cd frontend && npm install && npm run dev
 ```
 
-Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/CLAUDE.md](../backend/CLAUDE.md) and [frontend/CLAUDE.md](../frontend/CLAUDE.md).
+Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/AGENTS.md](../backend/AGENTS.md) and [frontend/AGENTS.md](../frontend/AGENTS.md).
+
+Agent conventions live in [`AGENTS.md`](../AGENTS.md) files (the [agents.md](https://agents.md) standard), so any coding agent picks them up. The `CLAUDE.md` files are one-line import shims that point Claude Code at the same content.
 
 ### Pre-commit prerequisites
 

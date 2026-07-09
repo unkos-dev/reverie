@@ -278,7 +278,7 @@ jobs:
           fi
 
       # Grep-guard: the backend standardises on the `time` crate
-      # (backend/CLAUDE.md); chrono exists in Cargo.toml solely for
+      # (backend/AGENTS.md); chrono exists in Cargo.toml solely for
       # openidconnect's test-support signature. Allowlist covers that
       # carve-out.
       - name: Guard against chrono usage in runtime code
@@ -301,7 +301,7 @@ jobs:
           fi
           if [ -n "$violations" ]; then
               echo "chrono imports detected outside the allowlist." >&2
-              echo "Reverie uses the time crate (backend/CLAUDE.md); chrono is" >&2
+              echo "Reverie uses the time crate (backend/AGENTS.md); chrono is" >&2
               echo "reserved for the documented openidconnect test-support carve-out." >&2
               echo "Justify any new entry in .github/chrono-allowlist.txt." >&2
               echo "" >&2
