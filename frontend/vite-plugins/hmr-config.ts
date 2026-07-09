@@ -17,9 +17,6 @@
  * artefacts (a trailing newline, a stray whitespace character) survive to
  * the operator's terminal verbatim.
  *
- * Cross-reference: `frontend/CLAUDE.md` § Dev environment variables for the
- * operator contract.
- *
  * @param envValue - Raw `REVERIE_DEV_HMR_CLIENT_PORT` value or undefined.
  * @returns Empty object when the env var is unset; `{ hmr: { clientPort } }`
  *   when a valid port literal is supplied.

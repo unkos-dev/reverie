@@ -154,8 +154,8 @@ function EditMetadataForm({
         raw[field.name] = trimmed;
       }
     }
-    // Boundary parse — per `frontend/CLAUDE.md`, form inputs must be
-    // schema-validated before crossing into the API client. A parse
+    // Boundary parse — form inputs must be schema-validated before
+    // crossing into the API client. A parse
     // failure here is a programmer error (mismatch between the form
     // and `UpdateBookMetadataFieldsSchema`), not a user-input error.
     const body = UpdateBookMetadataFieldsSchema.parse(raw);

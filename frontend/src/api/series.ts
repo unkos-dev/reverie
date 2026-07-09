@@ -3,7 +3,7 @@
  *
  * Mirrors the response DTO in `backend/src/models/series.rs`. Snake_case
  * field names match the wire shape; the Zod schema is the boundary
- * guard per `frontend/CLAUDE.md`.
+ * guard.
  *
  * The frontend computes the "completeness" indicator (`own / total`)
  * from the response — `total = works.length`, `own = works.filter(w =>

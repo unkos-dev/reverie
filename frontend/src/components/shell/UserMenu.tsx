@@ -104,8 +104,7 @@ export function UserChip(): ReactElement | null {
               value={preference}
               onValueChange={(value) => {
                 // Narrow through the closed options list — the radio
-                // group's payload type is `string` (no `as` casts per
-                // frontend/CLAUDE.md).
+                // group's payload type is `string` (no `as` casts).
                 const opt = THEME_OPTIONS.find((o) => o.value === value);
                 if (opt) void setPreference(opt.value);
               }}

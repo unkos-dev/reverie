@@ -77,7 +77,7 @@ export default defineConfig({
     // the DNS-rebind path that previously reached those routes when
     // the guard was disabled. Cloud dev environments (Coder,
     // Codespaces) must export REVERIE_DEV_HOSTS to match their
-    // assigned hostname (see frontend/CLAUDE.md and dev/README.md).
+    // assigned hostname (see dev/README.md).
     allowedHosts: parseAllowedHosts(process.env.REVERIE_DEV_HOSTS),
     proxy: {
       "/api": { target: "http://localhost:3000", changeOrigin: true },

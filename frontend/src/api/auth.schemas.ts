@@ -3,7 +3,7 @@
  *
  * Kept separate from `auth.ts` so the auth forms can import these validators
  * without pulling in (or being affected by mocks of) the imperative request
- * wrappers. Per `frontend/CLAUDE.md`, form inputs and request bodies are
+ * wrappers. Form inputs and request bodies are
  * Zod-parsed before use; the server re-validates as the authority, so these
  * are the client-side UX and defense-in-depth gate.
  */

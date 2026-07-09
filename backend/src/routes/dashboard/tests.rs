@@ -28,8 +28,8 @@ async fn seed_work(ingestion_pool: &PgPool, title: &str) -> Uuid {
 }
 
 /// Insert a manifestation under `work_id`. `format` / `validation_status`
-/// are bound as text and cast to their enum types (see backend/CLAUDE.md
-/// enum-binding tactics). `marker` keeps `file_path` + hashes unique so the
+/// are bound as text and cast to their enum types. `marker` keeps
+/// `file_path` + hashes unique so the
 /// `manifestations_file_hash_unique` constraint is not tripped.
 async fn seed_manifestation(
     ingestion_pool: &PgPool,

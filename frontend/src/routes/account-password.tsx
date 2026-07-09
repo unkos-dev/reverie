@@ -5,7 +5,7 @@
  * every session on success, so this routes to the login screen afterwards
  * rather than keeping a now-dead session in the UI.
  *
- * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`.
+ * Forms are uncontrolled (`FormData`).
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";

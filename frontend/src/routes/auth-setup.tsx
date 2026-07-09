@@ -8,7 +8,7 @@
  * submit. Setup does not establish a session (parity with recovery), so on
  * success it routes to the login screen to sign in.
  *
- * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`.
+ * Forms are uncontrolled (`FormData`).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";

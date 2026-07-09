@@ -125,7 +125,7 @@ export function CommandPalette(): ReactElement {
 
   useEffect(() => {
     if (isError) {
-      // Surface the raw error to the console per frontend/CLAUDE.md.
+      // Surface the raw error to the console.
       // The visible <CommandEmpty> below stays user-friendly; the
       // console keeps the operator-actionable detail (ZodError, 5xx
       // status, network failure shape).

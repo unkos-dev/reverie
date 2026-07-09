@@ -21,8 +21,8 @@
 //! a live session row (the previous check-then-upsert left a TOCTOU window). A
 //! real collision is cryptographically improbable anyway (128-bit CSPRNG ids).
 //! The `tower_sessions.session` table is intentionally RLS-exempt — session
-//! load must precede user resolution, so RLS-gating it is chicken-and-egg
-//! (see `backend/CLAUDE.md`); access is bounded at the role-grant layer
+//! load must precede user resolution, so RLS-gating it is chicken-and-egg;
+//! access is bounded at the role-grant layer
 //! (`reverie_app` DML only).
 
 use async_trait::async_trait;

@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import { bookById, BOOKS, FEATURED_BOOK_ID, type Book } from "./fixtures/books";
 
-// Per `frontend/CLAUDE.md`, URL params are validated at the boundary
+// URL params are validated at the boundary
 // before use. Book ids are short kebab/alphanumeric slugs in the fixture
 // (e.g. "wind-up-bird"); cap length defensively and require non-empty
 // after trim. Failed parse is treated as "no id supplied".

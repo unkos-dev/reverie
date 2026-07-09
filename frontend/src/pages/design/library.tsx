@@ -15,7 +15,7 @@ import { BOOKS, SHELVES, type Book } from "./fixtures/books";
 
 type ViewMode = "grid" | "list";
 
-// Per `frontend/CLAUDE.md`, URL params and form inputs are validated at
+// URL params and form inputs are validated at
 // the boundary before use. The query string is bounded length-wise to
 // keep the case-insensitive substring scan predictable; the series
 // filter is a series-name slug from the fixture and is non-empty after

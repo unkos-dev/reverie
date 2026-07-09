@@ -5,7 +5,7 @@
  * `backend/src/models/library.rs`. Snake_case field names match the
  * wire shape — no transform on the frontend. Runtime parsed through
  * Zod so a schema-violating response surfaces as `ZodError` instead of
- * silently corrupting downstream state, per `frontend/CLAUDE.md`.
+ * silently corrupting downstream state.
  *
  * The `snippet` field carries ASCII `STX` (0x02) / `ETX` (0x03)
  * markers from Postgres `ts_headline` (non-HTML start/stop delimiters

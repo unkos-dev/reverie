@@ -26,8 +26,7 @@ const OPTIONS: { value: ThemePreference; label: string }[] = [
  *
  * The `onValueChange` handler narrows the radio group's `string` payload
  * through the closed `OPTIONS` list instead of an `as ThemePreference`
- * cast (`frontend/CLAUDE.md` § TypeScript bans object-literal `as`
- * assertions and the radio group's value type is `string`). An unknown
+ * cast (the radio group's value type is `string`). An unknown
  * value is silently ignored — the radio group cannot emit one in
  * practice, but defending against shadcn API drift here costs one
  * `.find` call.

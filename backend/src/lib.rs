@@ -657,7 +657,7 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 /// that keeps secrets out of the *schema*. Gated by the
 /// `config_schema_has_no_secret_default_values` test.
 ///
-/// `println!` is forbidden (see `backend/CLAUDE.md`), so this writes through
+/// `println!` is forbidden, so this writes through
 /// [`std::io::Write`] directly.
 ///
 /// # Errors

@@ -8,8 +8,8 @@
  * extend the schema here and the type-checker will surface every call
  * site that needs to handle it.
  *
- * **Runtime validation at the boundary.** Per `frontend/CLAUDE.md`,
- * every response body is parsed through a Zod schema before being
+ * **Runtime validation at the boundary.** Every response body is
+ * parsed through a Zod schema before being
  * returned to the caller — `apiFetch` returns `unknown`, and the
  * schemas here convert `unknown` into the strongly-typed shapes the
  * UI consumes. A schema-violating response surfaces as a `ZodError`
@@ -360,8 +360,7 @@ const UpdateBookMetadataFieldsSchema = z.object({
  *
  * The exported {@link UpdateBookMetadataFieldsSchema} is the runtime
  * boundary guard — form callers parse user-assembled bodies through it
- * before passing to {@link updateBookMetadata}, per the boundary-
- * validation rule in `frontend/CLAUDE.md`.
+ * before passing to {@link updateBookMetadata}.
  */
 export type UpdateBookMetadataFields = z.infer<typeof UpdateBookMetadataFieldsSchema>;
 
