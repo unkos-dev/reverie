@@ -474,7 +474,7 @@ impl FromRequestParts<AppState> for CurrentUser {
             // Invalid session — user deleted, or `session_version` stale. Wipe
             // the row server-side so an orphaned/stale session can't keep
             // re-loading on every request until 24h idle expiry, then fall
-            // through. No silent discard (backend/CLAUDE.md): log on failure.
+            // through. No silent discard: log on failure.
             if let Err(e) = session.flush().await {
                 tracing::warn!(error = %e, "session flush failed (force-logout / deleted user)");
             }

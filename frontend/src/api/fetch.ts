@@ -52,8 +52,8 @@ type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
  * authentication-failure handling.
  *
  * Returns `unknown` on 2xx. Each `api/*` module owns its Zod schema
- * and narrows the result after the call (per `frontend/CLAUDE.md` —
- * runtime validation at boundaries). Empty 2xx bodies (204/205 and
+ * and narrows the result after the call (runtime validation at
+ * boundaries). Empty 2xx bodies (204/205 and
  * legacy `200 OK` mutators) resolve to `undefined`; callers that
  * ignore the return value are unaffected.
  *

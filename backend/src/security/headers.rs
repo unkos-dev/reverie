@@ -25,9 +25,6 @@
 //! between the per-router CSP layers and the composite fallback (or
 //! adding a second CSP source from a reverse proxy) silently breaks
 //! the route-class differentiation that motivates having two policies.
-//! `backend/CLAUDE.md` § "Security headers" warns against
-//! duplicate CSP emission from a proxy; that warning lives or dies by
-//! what is wired here.
 
 use axum::body::Body;
 use axum::extract::{Request, State};

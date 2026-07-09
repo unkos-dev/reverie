@@ -10,7 +10,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - Sections (in order): Context and Problem Statement → Decision Drivers (opt) → Considered Options → Decision Outcome (Consequences, Confirmation) → Pros and Cons of the Options (opt) → More Information (opt)
 - Status values: `proposed`, `accepted`, `rejected`, `deprecated`, `superseded`
 - Supersession (header fields, not status prose): the replacement ADR carries `supersedes: ["superseded/<old>.md"]`; the replaced ADR carries `status: superseded` + `superseded-by: ["../<new>.md"]` and is moved into `adr/superseded/`. Paths are relative to the file.
-- **Not an implementation plan.** ADRs record the decision + rationale. Build steps, file lists, verification checklists → `prp-plan` output (`.claude/PRPs/plans/`). See [CLAUDE.md](CLAUDE.md).
+- **Not an implementation plan.** ADRs record the decision + rationale. Build steps, file lists, verification checklists → `prp-plan` output (`.claude/PRPs/plans/`). See [AGENTS.md](AGENTS.md).
 
 ## Workflow
 

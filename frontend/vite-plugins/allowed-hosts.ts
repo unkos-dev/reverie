@@ -59,7 +59,6 @@ const HOST_TOKEN = /^[A-Za-z0-9.\-:[\]]+$/;
  *
  * Cross-references:
  *   - `adr/2026-05-08-tiered-comment-policy.md` § Tier 2.
- *   - `frontend/CLAUDE.md` § Dev environment variables (operator contract).
  *
  * @param envValue - Raw `REVERIE_DEV_HOSTS` value or undefined.
  * @returns Mutable array safe to hand to Vite's config (never aliased onto

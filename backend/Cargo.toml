@@ -93,7 +93,7 @@ percent-encoding = "2.3.2"
 # OpenAPI 3.1 contract generated code-first from the handlers (docs-as-done,
 # UNK-370; adr/2026-06-08-api-versioning-openapi.md). `time`/`uuid` features
 # map those types into the schema; `chrono` is intentionally NOT enabled
-# (backend/CLAUDE.md mandates the `time` crate). utoipa-axum's `OpenApiRouter`
+# (backend/AGENTS.md mandates the `time` crate). utoipa-axum's `OpenApiRouter`
 # makes a handler routed without `#[utoipa::path]` a compile error.
 utoipa = { version = "5.5", features = ["axum_extras", "time", "uuid"] }
 utoipa-axum = "0.2"
@@ -106,7 +106,7 @@ zxcvbn = "3"
 
 [dev-dependencies]
 axum-test = "21.0.0"
-# chrono: backend/CLAUDE.md mandates the `time` crate over `chrono` in
+# chrono: backend/AGENTS.md mandates the `time` crate over `chrono` in
 # production code. Documented dev-only exception: openidconnect 4.x's
 # CoreIdTokenClaims::new signature accepts `chrono::DateTime<Utc>` for
 # `exp` / `iat`, with no `time`-crate alternative. Confined to test
@@ -148,7 +148,7 @@ implicit_hasher = "allow"
 # generated code), so the carve-out lives here. See the strict-lint-policy ADR.
 large_stack_arrays = "allow"
 
-# Project-specific hard rules from backend/CLAUDE.md.
+# Project-specific hard rules from backend/AGENTS.md.
 #
 # Suppressions must be self-purging and justified: #[expect] errors via
 # unfulfilled_lint_expectations the moment the suppressed lint stops

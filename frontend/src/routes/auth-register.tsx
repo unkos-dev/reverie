@@ -12,7 +12,7 @@
  * always an adult. Registration does not establish a session (parity with
  * setup and recovery), so on success it routes to the login screen.
  *
- * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`.
+ * Forms are uncontrolled (`FormData`).
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";

@@ -31,7 +31,7 @@ services:
       - "5433:5432"
 ```
 
-Connection string in `backend/CLAUDE.md` and other dev docs:
+Connection string in `backend/AGENTS.md` and other dev docs:
 
 > `postgres://reverie:reverie@localhost:5433/reverie_dev`
 
@@ -77,5 +77,5 @@ When that PR merges:
 
 - The postgres port revert (lift trigger)
 - `docker/compose.dev.yml`: workaround site
-- `backend/CLAUDE.md`: connection-string examples that will need
+- `backend/AGENTS.md`: connection-string examples that will need
   updating to `5432`

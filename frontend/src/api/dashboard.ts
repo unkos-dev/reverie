@@ -2,8 +2,8 @@
  * Admin-only library-health dashboard API client (`/api/v1/dashboard/*`).
  *
  * Both endpoints require `role = admin`; non-admin callers receive 403.
- * Response bodies are parsed through Zod schemas at the boundary (per
- * `frontend/CLAUDE.md`) — the shapes mirror the DTOs in
+ * Response bodies are parsed through Zod schemas at the boundary — the
+ * shapes mirror the DTOs in
  * `backend/src/routes/dashboard/mod.rs`.
  */
 import { z } from "zod";

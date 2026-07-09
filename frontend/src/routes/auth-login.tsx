@@ -7,7 +7,7 @@
  * action when OIDC is configured, and bounces to `/setup` on a fresh
  * instance with no administrator yet.
  *
- * Forms are uncontrolled (`FormData`) per `frontend/CLAUDE.md`. On success
+ * Forms are uncontrolled (`FormData`). On success
  * the local login establishes a session (CSRF token minted server-side,
  * hydrated by `loginLocal`), so the redirect to `/library` is a full-page
  * navigation that reloads with the live session rather than a client-side

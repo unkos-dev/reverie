@@ -14,8 +14,8 @@
  *   has and the list payload carries author names only.
  *
  * Snake_case is unused here (the wire fields are `id` / `value`), and
- * every body is parsed through Zod at the boundary per
- * `frontend/CLAUDE.md` so a schema-violating response surfaces as a
+ * every body is parsed through Zod at the boundary so a
+ * schema-violating response surfaces as a
  * `ZodError` rather than silently corrupting a chip label.
  */
 import { z } from "zod";
