@@ -37,7 +37,7 @@ export function FilterSummary({
   seriesNames,
   railExpanded,
   onToggleRail,
-}: FilterSummaryProps): ReactElement {
+}: Readonly<FilterSummaryProps>): ReactElement {
   const authorIds = [
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];

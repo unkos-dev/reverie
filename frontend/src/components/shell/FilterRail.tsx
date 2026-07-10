@@ -13,8 +13,9 @@
  * URL state is canonical: the rail parses the search params it edits and
  * every write goes through the filter codec (or the sort helper) and the
  * page-owned `applyParams` write authority, always dropping `cursor`
- * because a changed filter or sort invalidates the keyset position. Free-text and numeric inputs edit a local draft committed after
- * a debounce. A clear affordance or an external committed change (navigation,
+ * because a changed filter or sort invalidates the keyset position.
+ * Free-text and numeric inputs edit a local draft committed after a
+ * debounce. A clear affordance or an external committed change (navigation,
  * the page's clear-all) resyncs those drafts, so a pending keystroke can
  * never resurrect a cleared condition; the rail's own edits in other
  * sections leave them alone, so a sibling's commit never eats in-flight
@@ -178,10 +179,18 @@ interface FilterRailProps {
   /** The page-owned URL write authority; every rail write goes through it
    *  so rail and page writers cannot clobber each other in one frame. */
   applyParams: ApplyParams;
+  /** The write authority's clearing-write generation; pending debounced
+   *  drafts check it at fire time so any clearing writer, including the
+   *  page's clear-all, invalidates them. */
+  clearGen: RefObject<number>;
 }
 
 /** The library's filter and sort editing surface; see the module docstring. */
-export function FilterRail({ seriesOptions, applyParams }: FilterRailProps): ReactElement {
+export function FilterRail({
+  seriesOptions,
+  applyParams,
+  clearGen,
+}: Readonly<FilterRailProps>): ReactElement {
   const [searchParams] = useSearchParams();
   const filters = parseFilterParams(searchParams);
   const sortLevels = parseSortParam(searchParams.get("sort") ?? "");
@@ -197,12 +206,6 @@ export function FilterRail({ seriesOptions, applyParams }: FilterRailProps): Rea
   // elsewhere in the rail" (keep drafts) from everything else: clears,
   // navigation, and the page's clear-all (reset drafts).
   const lastEdit = useRef<EditTokens | null>(null);
-
-  // Bumped synchronously by every clear affordance. Pending debounced
-  // commits check it at fire time (see `useDraftSlice`), because the render
-  // that cancels their timers is transition-scheduled and can lose the race
-  // to a timer already due in the same frame.
-  const clearGen = useRef(0);
 
   /** Apply a user edit on top of the live committed state; `applyParams`
    *  hands the mutator the result of any write that landed since this
@@ -220,16 +223,20 @@ export function FilterRail({ seriesOptions, applyParams }: FilterRailProps): Rea
   }
 
   /** Clear-affordance write: pending drafts everywhere must die with it, or
-   *  a queued debounce could resurrect a condition the user just cleared. */
+   *  a queued debounce could resurrect a condition the user just cleared.
+   *  `clears: true` bumps the shared generation the drafts check at fire
+   *  time. */
   function clearFilters(patch: (current: FilterState) => FilterState): void {
     lastEdit.current = null;
-    clearGen.current += 1;
-    applyParams((params) => {
-      const next = patch(parseFilterParams(params));
-      serializeFilterParams(next, params);
-      params.delete("cursor");
-      return params;
-    });
+    applyParams(
+      (params) => {
+        const next = patch(parseFilterParams(params));
+        serializeFilterParams(next, params);
+        params.delete("cursor");
+        return params;
+      },
+      { clears: true },
+    );
   }
 
   function commitSort(levels: readonly SortLevelParam[]): void {
@@ -435,7 +442,7 @@ function QuickSearch({
   lastEdit,
   clearGen,
   onCommit,
-}: QuickSearchProps): ReactElement {
+}: Readonly<QuickSearchProps>): ReactElement {
   const [draft, setDraft] = useState(value);
   const [synced, setSynced] = useState({ value, resetToken });
   // Reset the input to reflect `value` when the committed `q` changes from
@@ -491,7 +498,12 @@ type RailSectionProps = {
  * never snaps a section the user toggled; a section that mounts with active
  * conditions starts open.
  */
-function RailSection({ title, activeCount, onClear, children }: RailSectionProps): ReactElement {
+function RailSection({
+  title,
+  activeCount,
+  onClear,
+  children,
+}: Readonly<RailSectionProps>): ReactElement {
   const [initialOpen] = useState(activeCount > 0);
   const active = activeCount > 0;
   return (
@@ -541,7 +553,7 @@ type SortSectionProps = {
  * mounted by `LibraryPage`, because the rail unmounts when collapsed and a
  * live region must stay mounted to announce.
  */
-function SortSection({ levels, onChange }: SortSectionProps): ReactElement {
+function SortSection({ levels, onChange }: Readonly<SortSectionProps>): ReactElement {
   const remaining = SORT_FIELDS.filter((field) => !levels.some((level) => level.field === field));
 
   function toggleDirection(index: number): void {
@@ -574,7 +586,7 @@ function SortSection({ levels, onChange }: SortSectionProps): ReactElement {
         onChange([]);
       }}
     >
-      <div role="group" aria-label="Sort order" className="flex flex-col gap-1">
+      <fieldset aria-label="Sort order" className="flex flex-col gap-1">
         {levels.map((level, index) => {
           const label = SORT_FIELD_LABELS[level.field];
           return (
@@ -637,7 +649,7 @@ function SortSection({ levels, onChange }: SortSectionProps): ReactElement {
             </div>
           );
         })}
-      </div>
+      </fieldset>
       {levels.length < MAX_SORT_LEVELS && remaining.length > 0 ? (
         <div className="mt-2">
           <Select
@@ -673,7 +685,7 @@ type FacetListProps = {
 
 /** Single-select checkbox facet: re-picking the active value clears it (the
  *  URL grammar carries one value; the checkbox previews future multi-select). */
-function FacetList({ options, active, emptyText, onPick }: FacetListProps): ReactElement {
+function FacetList({ options, active, emptyText, onPick }: Readonly<FacetListProps>): ReactElement {
   return (
     <div className="flex flex-col gap-0.5">
       {options.map((option) => (
@@ -705,7 +717,7 @@ type ShelfSectionProps = {
   onClear: () => void;
 };
 
-function ShelfSection({ activeShelf, onPick, onClear }: ShelfSectionProps): ReactElement {
+function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionProps>): ReactElement {
   const {
     data: shelves,
     isLoading,
@@ -723,11 +735,9 @@ function ShelfSection({ activeShelf, onPick, onClear }: ShelfSectionProps): Reac
   }, [isError, error]);
 
   const options = (shelves ?? []).map((shelf) => ({ id: shelf.id, name: shelf.name }));
-  const emptyText = isLoading
-    ? "Loading shelves…"
-    : isError
-      ? "Couldn't load shelves."
-      : "No shelves yet.";
+  let emptyText = "No shelves yet.";
+  if (isLoading) emptyText = "Loading shelves…";
+  else if (isError) emptyText = "Couldn't load shelves.";
 
   return (
     <RailSection title="Shelf" activeCount={activeShelf === undefined ? 0 : 1} onClear={onClear}>
@@ -759,7 +769,7 @@ function TextSection({
   activeCount,
   onCommit,
   onClear,
-}: TextSectionProps): ReactElement {
+}: Readonly<TextSectionProps>): ReactElement {
   const { draft, setDraft } = useDraftSlice(
     committed,
     fullToken,
@@ -800,7 +810,7 @@ function RangeSection({
   activeCount,
   onCommit,
   onClear,
-}: RangeSectionProps): ReactElement {
+}: Readonly<RangeSectionProps>): ReactElement {
   const { draft, setDraft } = useDraftSlice(
     committed,
     fullToken,

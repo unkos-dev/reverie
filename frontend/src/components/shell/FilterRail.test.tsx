@@ -45,7 +45,7 @@ function mockFetchByUrl(): void {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.includes("/shelves"))
       return Promise.resolve(jsonResponse({ items: SHELVES, next_cursor: null }));
-    if (url.includes("/authors")) return Promise.resolve(jsonResponse([]));
+    if (url.includes("/authors")) return Promise.resolve(jsonResponse({ items: [] }));
     return Promise.resolve(jsonResponse([]));
   });
 }
@@ -59,8 +59,8 @@ function Providers({ children }: { children: ReactElement }): ReactElement {
 
 /** Owns the write authority the page normally provides. */
 function RailHost(): ReactElement {
-  const { applyParams } = useLiveSearchParams();
-  return <FilterRail seriesOptions={SERIES} applyParams={applyParams} />;
+  const { applyParams, clearGen } = useLiveSearchParams();
+  return <FilterRail seriesOptions={SERIES} applyParams={applyParams} clearGen={clearGen} />;
 }
 
 function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRouter> {

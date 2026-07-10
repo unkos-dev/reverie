@@ -82,7 +82,7 @@ function LibraryContent(): ReactElement {
   // page's own writers (header sort, clear-all, view toggle) all go through
   // `applyParams`, so two writes landing in one frame cannot clobber each
   // other (see the hook's docstring).
-  const { searchParams, applyParams } = useLiveSearchParams();
+  const { searchParams, applyParams, clearGen } = useLiveSearchParams();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
@@ -169,11 +169,16 @@ function LibraryContent(): ReactElement {
   }
 
   function clearAllFilters(): void {
-    applyParams((params) => {
-      for (const key of FILTER_PARAM_KEYS) params.delete(key);
-      params.delete("cursor");
-      return params;
-    });
+    applyParams(
+      (params) => {
+        for (const key of FILTER_PARAM_KEYS) params.delete(key);
+        params.delete("cursor");
+        return params;
+      },
+      // Pending rail drafts must die with the clear, or a due debounce
+      // could re-write a filter the user just removed.
+      { clears: true },
+    );
   }
 
   /** Empty states first, then one branch per view mode. */
@@ -240,7 +245,13 @@ function LibraryContent(): ReactElement {
           content-only stacking context leaves it under `.lib-grain` (z-1). */}
       <div className="relative z-[2]">
         <BrowseLayout
-          rail={<FilterRail seriesOptions={seriesOptions} applyParams={applyParams} />}
+          rail={
+            <FilterRail
+              seriesOptions={seriesOptions}
+              applyParams={applyParams}
+              clearGen={clearGen}
+            />
+          }
           railCollapsed={railCollapsed}
           sheetOpen={sheetOpen}
           onSheetOpenChange={setSheetOpen}

@@ -291,7 +291,7 @@ export function VocabEditor({
   draft,
   setDraft,
   resolveAuthorLabel,
-}: VocabEditorProps): ReactElement {
+}: Readonly<VocabEditorProps>): ReactElement {
   const set = draft[family];
   const [mode, setMode] = useState<SetMode>(() => initialMode(set));
   const isAuthors = family === "authors";

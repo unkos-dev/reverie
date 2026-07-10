@@ -787,6 +787,27 @@ describe("LibraryPage", () => {
     errorSpy.mockRestore();
   });
 
+  test("clear-all discards a pending rail draft; the cleared filter cannot resurrect", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?series=s-1"],
+      cacheParams: { series: "s-1" },
+      extraCacheParams: [{}, { q: "du" }, { series: "s-1", q: "du" }],
+    });
+    const user = userEvent.setup();
+    const rail = await screen.findByRole("complementary", { name: "Filters" });
+    const quickSearch = within(rail).getByRole("searchbox", { name: "Quick search" });
+    await user.type(quickSearch, "du");
+    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
+    // Past the debounce window: the pending draft must not have committed.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const search = screen.getByTestId("location-search").textContent;
+    expect(search).not.toContain("q=");
+    expect(search).not.toContain("series=");
+    expect(quickSearch).toHaveValue("");
+  });
+
   test("clearing all filters preserves the active view and sort params", async () => {
     renderLibrary({
       items: [],

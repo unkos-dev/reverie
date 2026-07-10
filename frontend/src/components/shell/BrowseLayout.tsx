@@ -55,7 +55,7 @@ export function BrowseLayout({
   railCollapsed,
   sheetOpen,
   onSheetOpenChange,
-}: BrowseLayoutProps): ReactElement {
+}: Readonly<BrowseLayoutProps>): ReactElement {
   return (
     <div
       className={
