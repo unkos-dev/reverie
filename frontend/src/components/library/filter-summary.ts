@@ -65,21 +65,42 @@ function pushRange(
     });
 }
 
+/**
+ * None-of tokens are kept apart from the include modes: a readout that
+ * renders `status_none=abandoned` as "Status: Abandoned" states the
+ * opposite of the active condition, which misleads worse than saying
+ * nothing at all.
+ */
 function pushSet(
   segments: SummarySegment[],
   key: string,
   singular: string,
   plural: string,
-  tokens: readonly string[],
+  include: readonly string[],
+  exclude: readonly string[],
   resolve?: (token: string) => string,
 ): void {
-  if (tokens.length === 0) return;
-  if (tokens.length === 1) {
-    const name = resolve === undefined ? tokens[0] : resolve(tokens[0]);
-    segments.push({ key, text: `${singular}: ${name}` });
+  const total = include.length + exclude.length;
+  if (total === 0) return;
+  if (total === 1) {
+    const token = include.length === 1 ? include[0] : exclude[0];
+    const name = resolve === undefined ? token : resolve(token);
+    const text = include.length === 1 ? `${singular}: ${name}` : `${singular}: not ${name}`;
+    segments.push({ key, text });
     return;
   }
-  segments.push({ key, text: `${plural} (${String(tokens.length)})` });
+  if (exclude.length === 0) {
+    segments.push({ key, text: `${plural} (${String(total)})` });
+    return;
+  }
+  if (include.length === 0) {
+    segments.push({ key, text: `${plural} (${String(total)} not)` });
+    return;
+  }
+  segments.push({
+    key,
+    text: `${plural} (${String(include.length)}, ${String(exclude.length)} not)`,
+  });
 }
 
 /**
@@ -97,29 +118,46 @@ export function buildFilterSummary(
     segments.push({ key: "shelf", text: `Shelf: ${resolvers.shelfName(filters.shelf)}` });
   if (filters.series !== undefined)
     segments.push({ key: "series", text: `Series: ${resolvers.seriesName(filters.series)}` });
-  const authorTokens = [...filters.authors.all, ...filters.authors.any, ...filters.authors.none];
-  pushSet(segments, "authors", "Author", "Authors", authorTokens, resolvers.authorLabel);
-  pushSet(segments, "tags", "Tag", "Tags", [
-    ...filters.tags.all,
-    ...filters.tags.any,
-    ...filters.tags.none,
-  ]);
-  pushSet(segments, "genres", "Genre", "Genres", [
-    ...filters.genres.all,
-    ...filters.genres.any,
-    ...filters.genres.none,
-  ]);
-  pushSet(segments, "moods", "Mood", "Moods", [
-    ...filters.moods.all,
-    ...filters.moods.any,
-    ...filters.moods.none,
-  ]);
+  pushSet(
+    segments,
+    "authors",
+    "Author",
+    "Authors",
+    [...filters.authors.all, ...filters.authors.any],
+    filters.authors.none,
+    resolvers.authorLabel,
+  );
+  pushSet(
+    segments,
+    "tags",
+    "Tag",
+    "Tags",
+    [...filters.tags.all, ...filters.tags.any],
+    filters.tags.none,
+  );
+  pushSet(
+    segments,
+    "genres",
+    "Genre",
+    "Genres",
+    [...filters.genres.all, ...filters.genres.any],
+    filters.genres.none,
+  );
+  pushSet(
+    segments,
+    "moods",
+    "Mood",
+    "Moods",
+    [...filters.moods.all, ...filters.moods.any],
+    filters.moods.none,
+  );
   pushSet(
     segments,
     "status",
     "Status",
     "Statuses",
-    [...filters.status.any, ...filters.status.none],
+    filters.status.any,
+    filters.status.none,
     (token) => STATUS_LABELS[token] ?? token,
   );
   pushText(segments, "Title", "title", filters.title);

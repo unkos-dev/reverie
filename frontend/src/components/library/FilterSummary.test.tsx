@@ -42,7 +42,7 @@ describe("buildFilterSummary", () => {
       "Shelf: Wishlist",
       "Series: Discworld",
       "Author: Ursula K. Le Guin",
-      "Tags (3)",
+      "Tags (2, 1 not)",
       "Status: Reading",
       'Title contains "sea"',
       "Pages ≥ 300",
@@ -59,6 +59,28 @@ describe("buildFilterSummary", () => {
     const one = stateWith({ authors: { all: [], any: ["a-1"], none: [] } });
     expect(buildFilterSummary(one, RESOLVERS).map((segment) => segment.text)).toEqual([
       "Author: Ursula K. Le Guin",
+    ]);
+  });
+
+  test("a single none-of token reads as an exclusion, not a positive condition", () => {
+    const author = stateWith({ authors: { all: [], any: [], none: ["a-1"] } });
+    expect(buildFilterSummary(author, RESOLVERS).map((segment) => segment.text)).toEqual([
+      "Author: not Ursula K. Le Guin",
+    ]);
+    const status = stateWith({ status: { any: [], none: ["abandoned"] } });
+    expect(buildFilterSummary(status, RESOLVERS).map((segment) => segment.text)).toEqual([
+      "Status: not Abandoned",
+    ]);
+  });
+
+  test("multi-token counts split out the excluded tokens", () => {
+    const allNone = stateWith({ tags: { all: [], any: [], none: ["grimdark", "horror"] } });
+    expect(buildFilterSummary(allNone, RESOLVERS).map((segment) => segment.text)).toEqual([
+      "Tags (2 not)",
+    ]);
+    const mixed = stateWith({ tags: { all: ["fantasy"], any: ["magic"], none: ["grimdark"] } });
+    expect(buildFilterSummary(mixed, RESOLVERS).map((segment) => segment.text)).toEqual([
+      "Tags (2, 1 not)",
     ]);
   });
 
