@@ -1,12 +1,18 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test, vi } from "vite-plus/test";
+import { useState, type ReactElement } from "react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+
+import { __resetCsrfTokenForTesting } from "@/api/csrf";
+import { emptyFilterState, type FilterState, type SetFilter } from "@/routes/library-params";
 
 import {
   DateRangeEditor,
   RangeFilterEditor,
   StatusEditor,
   TextFilterEditor,
+  VocabEditor,
   type TextOp,
 } from "./editors";
 
@@ -111,5 +117,129 @@ describe("StatusEditor", () => {
     await user.click(screen.getByLabelText("Unread"));
 
     expect(onChange).toHaveBeenLastCalledWith(["reading"]);
+  });
+});
+
+describe("editor id scoping", () => {
+  test("two RangeFilterEditor instances render disjoint input ids", () => {
+    render(
+      <>
+        <RangeFilterEditor value={{}} allowEmpty onChange={vi.fn()} />
+        <RangeFilterEditor value={{}} allowEmpty onChange={vi.fn()} />
+      </>,
+    );
+
+    const [firstMin, secondMin] = screen.getAllByLabelText("Min");
+    const [firstMinLabel, secondMinLabel] = screen.getAllByText("Min");
+    expect(firstMin.id).not.toBe(secondMin.id);
+    expect(firstMinLabel.getAttribute("for")).toBe(firstMin.id);
+    expect(secondMinLabel.getAttribute("for")).toBe(secondMin.id);
+  });
+
+  test("two StatusEditor instances render disjoint checkbox ids", () => {
+    render(
+      <>
+        <StatusEditor value={[]} onChange={vi.fn()} />
+        <StatusEditor value={[]} onChange={vi.fn()} />
+      </>,
+    );
+
+    const [firstUnread, secondUnread] = screen.getAllByLabelText("Unread");
+    const [firstUnreadLabel, secondUnreadLabel] = screen.getAllByText("Unread");
+    expect(firstUnread.id).not.toBe(secondUnread.id);
+    expect(firstUnreadLabel.getAttribute("for")).toBe(firstUnread.id);
+    expect(secondUnreadLabel.getAttribute("for")).toBe(secondUnread.id);
+  });
+});
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function mockSuggest(suggestions: { id: string | null; value: string }[]): void {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ suggestions }));
+}
+
+function VocabHarness({ initial }: { initial: SetFilter }): ReactElement {
+  const [client] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
+  const [draft, setDraft] = useState<FilterState>({ ...emptyFilterState(), tags: initial });
+  return (
+    <QueryClientProvider client={client}>
+      <VocabEditor
+        family="tags"
+        draft={draft}
+        setDraft={setDraft}
+        resolveAuthorLabel={(id) => id}
+      />
+    </QueryClientProvider>
+  );
+}
+
+describe("VocabEditor", () => {
+  beforeEach(() => {
+    __resetCsrfTokenForTesting();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    __resetCsrfTokenForTesting();
+  });
+
+  test("mode switch preserves per-mode lists", async () => {
+    render(<VocabHarness initial={{ all: ["fiction"], any: ["mystery"], none: ["romance"] }} />);
+    const user = userEvent.setup();
+
+    // any.length > 0 wins the initial mode.
+    expect(screen.getByRole("button", { name: /remove mystery/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("option", { name: "all of" }));
+    expect(screen.getByRole("button", { name: /remove fiction/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove mystery/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("option", { name: "none of" }));
+    expect(screen.getByRole("button", { name: /remove romance/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove fiction/i })).not.toBeInTheDocument();
+  });
+
+  test("adding a token that exists in another mode removes it from that other mode", async () => {
+    mockSuggest([{ id: null, value: "mystery" }]);
+    render(<VocabHarness initial={{ all: [], any: ["mystery"], none: [] }} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("option", { name: "all of" }));
+
+    const input = screen.getByRole("combobox", { name: /add tags/i });
+    await user.type(input, "my");
+    await user.click(await screen.findByRole("option", { name: "mystery" }));
+
+    expect(screen.getByRole("button", { name: /remove mystery/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("option", { name: "any of" }));
+    expect(screen.queryByRole("button", { name: /remove mystery/i })).not.toBeInTheDocument();
+  });
+
+  test("ordinary add and remove round-trips", async () => {
+    mockSuggest([{ id: null, value: "fantasy" }]);
+    render(<VocabHarness initial={{ all: [], any: [], none: [] }} />);
+    const user = userEvent.setup();
+
+    const input = screen.getByRole("combobox", { name: /add tags/i });
+    await user.type(input, "fa");
+    await user.click(await screen.findByRole("option", { name: "fantasy" }));
+
+    const chip = screen.getByRole("button", { name: /remove fantasy/i });
+    expect(chip).toBeInTheDocument();
+
+    await user.click(chip);
+    expect(screen.queryByRole("button", { name: /remove fantasy/i })).not.toBeInTheDocument();
   });
 });

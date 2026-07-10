@@ -9,7 +9,7 @@
  * - {@link paramsFromSearch} produces the flat {@link ListBooksParams} the
  *   API client sends.
  * - {@link parseFilterParams} produces the grouped {@link FilterState} the
- *   FilterBar renders and edits; {@link serializeFilterParams} writes it back.
+ *   filter rail renders and edits; {@link serializeFilterParams} writes it back.
  *
  * Parsing is tolerant by design: a malformed value (non-integer number,
  * ill-formed date, unknown status token) is dropped rather than surfaced,
@@ -22,6 +22,7 @@ import {
   ReadingStatusSchema,
   serializeSortParam,
   type ListBooksParams,
+  type SortLevelParam,
 } from "@/api";
 
 const LIBRARY_VIEWS = ["grid", "list", "table"] as const;
@@ -125,7 +126,7 @@ export type StatusFilter = {
 };
 
 /**
- * Grouped, per-column filter model the FilterBar renders. A faithful mirror of
+ * Grouped, per-column filter model the filter rail renders. A faithful mirror of
  * the flat URL params: {@link parseFilterParams} and {@link serializeFilterParams}
  * round-trip it, and {@link filterStateToParams} projects it onto the wire shape.
  */
@@ -426,4 +427,22 @@ export function paramsFromSearch(search: URLSearchParams): ListBooksParams {
   const cursor = search.get("cursor");
   if (cursor !== null) params.cursor = cursor;
   return params;
+}
+
+/**
+ * Write a sort stack onto a copy of `current`: omits `sort` entirely for an
+ * empty stack (the server's default order) instead of writing an empty
+ * value, and always deletes `cursor` because a new sort invalidates the
+ * keyset boundary the old cursor encoded.
+ */
+export function applySortToSearchParams(
+  current: URLSearchParams,
+  levels: readonly SortLevelParam[],
+): URLSearchParams {
+  const updated = new URLSearchParams(current);
+  const serialized = serializeSortParam(levels);
+  if (serialized === "") updated.delete("sort");
+  else updated.set("sort", serialized);
+  updated.delete("cursor");
+  return updated;
 }
