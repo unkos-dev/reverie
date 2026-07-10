@@ -11,9 +11,9 @@
  * inactive sections mount collapsed to keep the column scannable.
  *
  * URL state is canonical: the rail parses the search params it edits and
- * every write goes through the filter codec (or the sort helper), always
- * dropping `cursor` because a changed filter or sort invalidates the keyset
- * position. Free-text and numeric inputs edit a local draft committed after
+ * every write goes through the filter codec (or the sort helper) and the
+ * page-owned `applyParams` write authority, always dropping `cursor`
+ * because a changed filter or sort invalidates the keyset position. Free-text and numeric inputs edit a local draft committed after
  * a debounce. A clear affordance or an external committed change (navigation,
  * the page's clear-all) resyncs those drafts, so a pending keystroke can
  * never resurrect a cleared condition; the rail's own edits in other
@@ -55,6 +55,7 @@ import {
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
 import { useDebouncedCommit } from "@/lib/hooks/use-debounced-commit";
+import type { ApplyParams } from "@/lib/hooks/use-live-search-params";
 import { queryKeys } from "@/lib/query/keys";
 import {
   applySortToSearchParams,
@@ -142,6 +143,7 @@ function useDraftSlice<T>(
   sliceToken: (value: T) => string,
   commit: (next: T) => void,
   lastEdit: RefObject<EditTokens | null>,
+  clearGen: RefObject<number>,
 ): { draft: T; setDraft: (next: T) => void } {
   const [draft, setDraft] = useState(committed);
   const [synced, setSynced] = useState({ full: fullToken, slice: sliceToken(committed) });
@@ -153,6 +155,11 @@ function useDraftSlice<T>(
     setSynced({ full: fullToken, slice: nextSlice });
     if (!editElsewhere) setDraft(committed);
   }
+  // A clear bumps the generation synchronously, but the render that resyncs
+  // the draft (and cancels the timer) rides a router transition, which an
+  // already-due timer can beat; the fire-time check keeps a stale draft from
+  // re-writing the condition the clear just removed.
+  const genAtRender = clearGen.current;
   useDebouncedCommit(
     sliceToken(draft),
     sliceToken(committed),
@@ -160,6 +167,7 @@ function useDraftSlice<T>(
       commit(draft);
     },
     FILTER_DEBOUNCE_MS,
+    () => clearGen.current !== genAtRender,
   );
   return { draft, setDraft };
 }
@@ -167,11 +175,14 @@ function useDraftSlice<T>(
 interface FilterRailProps {
   /** Distinct series from the loaded pages. */
   seriesOptions: SeriesFacetOption[];
+  /** The page-owned URL write authority; every rail write goes through it
+   *  so rail and page writers cannot clobber each other in one frame. */
+  applyParams: ApplyParams;
 }
 
 /** The library's filter and sort editing surface; see the module docstring. */
-export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
-  const [searchParams, setSearchParams] = useSearchParams();
+export function FilterRail({ seriesOptions, applyParams }: FilterRailProps): ReactElement {
+  const [searchParams] = useSearchParams();
   const filters = parseFilterParams(searchParams);
   const sortLevels = parseSortParam(searchParams.get("sort") ?? "");
   const fullToken = fullFilterToken(filters);
@@ -187,45 +198,42 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
   // navigation, and the page's clear-all (reset drafts).
   const lastEdit = useRef<EditTokens | null>(null);
 
-  // Live view of the URL params. The render snapshot goes stale when two
-  // debounced commits expire in the same frame: React re-renders on a
-  // scheduler task, which runs after every already-due timer, so the second
-  // commit would otherwise build on pre-first-commit state and silently
-  // drop the first write. Every rail write goes through and updates this
-  // ref; renders re-sync it to the router's truth.
-  const paramsRef = useRef(searchParams);
-  useEffect(() => {
-    paramsRef.current = searchParams;
-  }, [searchParams]);
+  // Bumped synchronously by every clear affordance. Pending debounced
+  // commits check it at fire time (see `useDraftSlice`), because the render
+  // that cancels their timers is transition-scheduled and can lose the race
+  // to a timer already due in the same frame.
+  const clearGen = useRef(0);
 
-  function writeFilters(next: FilterState): void {
-    const updated = new URLSearchParams(paramsRef.current);
-    serializeFilterParams(next, updated);
-    // A filter change invalidates keyset pagination position.
-    updated.delete("cursor");
-    paramsRef.current = updated;
-    setSearchParams(updated, { replace: true });
-  }
-
-  /** Apply a user edit on top of the live committed state. */
+  /** Apply a user edit on top of the live committed state; `applyParams`
+   *  hands the mutator the result of any write that landed since this
+   *  render, so same-frame commits build on each other instead of on a
+   *  shared stale snapshot. */
   function commitFilters(patch: (current: FilterState) => FilterState): void {
-    const next = patch(parseFilterParams(paramsRef.current));
-    lastEdit.current = { full: fullFilterToken(next), reset: filterResetToken(next) };
-    writeFilters(next);
+    applyParams((params) => {
+      const next = patch(parseFilterParams(params));
+      lastEdit.current = { full: fullFilterToken(next), reset: filterResetToken(next) };
+      serializeFilterParams(next, params);
+      // A filter change invalidates keyset pagination position.
+      params.delete("cursor");
+      return params;
+    });
   }
 
   /** Clear-affordance write: pending drafts everywhere must die with it, or
    *  a queued debounce could resurrect a condition the user just cleared. */
   function clearFilters(patch: (current: FilterState) => FilterState): void {
-    const next = patch(parseFilterParams(paramsRef.current));
     lastEdit.current = null;
-    writeFilters(next);
+    clearGen.current += 1;
+    applyParams((params) => {
+      const next = patch(parseFilterParams(params));
+      serializeFilterParams(next, params);
+      params.delete("cursor");
+      return params;
+    });
   }
 
   function commitSort(levels: readonly SortLevelParam[]): void {
-    const updated = applySortToSearchParams(paramsRef.current, levels);
-    paramsRef.current = updated;
-    setSearchParams(updated, { replace: true });
+    applyParams((params) => applySortToSearchParams(params, levels));
   }
 
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
@@ -263,6 +271,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         value={filters.q ?? ""}
         resetToken={filterResetToken(filters)}
         lastEdit={lastEdit}
+        clearGen={clearGen}
         onCommit={(q) => {
           commitFilters((current) => ({ ...current, q }));
         }}
@@ -317,6 +326,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         committed={filters.title}
         fullToken={fullToken}
         lastEdit={lastEdit}
+        clearGen={clearGen}
         activeCount={textCount(filters.title)}
         onCommit={(title) => {
           commitFilters((current) => ({ ...current, title }));
@@ -331,6 +341,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         committed={filters.subtitle}
         fullToken={fullToken}
         lastEdit={lastEdit}
+        clearGen={clearGen}
         activeCount={textCount(filters.subtitle)}
         onCommit={(subtitle) => {
           commitFilters((current) => ({ ...current, subtitle }));
@@ -345,6 +356,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         committed={filters.isbn13}
         fullToken={fullToken}
         lastEdit={lastEdit}
+        clearGen={clearGen}
         activeCount={textCount(filters.isbn13)}
         onCommit={(isbn13) => {
           commitFilters((current) => ({ ...current, isbn13 }));
@@ -359,6 +371,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         committed={filters.pages}
         fullToken={fullToken}
         lastEdit={lastEdit}
+        clearGen={clearGen}
         activeCount={rangeCount(filters.pages)}
         onCommit={(pages) => {
           commitFilters((current) => ({ ...current, pages }));
@@ -374,6 +387,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         committed={filters.rating}
         fullToken={fullToken}
         lastEdit={lastEdit}
+        clearGen={clearGen}
         activeCount={rangeCount(filters.rating)}
         onCommit={(rating) => {
           commitFilters((current) => ({ ...current, rating }));
@@ -411,10 +425,17 @@ type QuickSearchProps = {
   value: string;
   resetToken: string;
   lastEdit: RefObject<EditTokens | null>;
+  clearGen: RefObject<number>;
   onCommit: (q: string | undefined) => void;
 };
 
-function QuickSearch({ value, resetToken, lastEdit, onCommit }: QuickSearchProps): ReactElement {
+function QuickSearch({
+  value,
+  resetToken,
+  lastEdit,
+  clearGen,
+  onCommit,
+}: QuickSearchProps): ReactElement {
   const [draft, setDraft] = useState(value);
   const [synced, setSynced] = useState({ value, resetToken });
   // Reset the input to reflect `value` when the committed `q` changes from
@@ -429,6 +450,7 @@ function QuickSearch({ value, resetToken, lastEdit, onCommit }: QuickSearchProps
   }
   const trimmed = draft.trim();
   const next = trimmed.length >= MIN_Q_LEN ? trimmed : undefined;
+  const genAtRender = clearGen.current;
   // Treating an empty box (`next` undefined) as equal to an absent `q`
   // (`value` "") stops an untouched search from committing spuriously.
   useDebouncedCommit(
@@ -438,6 +460,7 @@ function QuickSearch({ value, resetToken, lastEdit, onCommit }: QuickSearchProps
       onCommit(next);
     },
     FILTER_DEBOUNCE_MS,
+    () => clearGen.current !== genAtRender,
   );
 
   return (
@@ -719,6 +742,7 @@ type TextSectionProps = {
   committed: TextFilter;
   fullToken: string;
   lastEdit: RefObject<EditTokens | null>;
+  clearGen: RefObject<number>;
   activeCount: number;
   onCommit: (next: TextFilter) => void;
   /** Clear-affordance path, distinct from `onCommit` so it resets drafts. */
@@ -731,6 +755,7 @@ function TextSection({
   committed,
   fullToken,
   lastEdit,
+  clearGen,
   activeCount,
   onCommit,
   onClear,
@@ -741,6 +766,7 @@ function TextSection({
     textSliceToken,
     onCommit,
     lastEdit,
+    clearGen,
   );
   return (
     <RailSection title={title} activeCount={activeCount} onClear={onClear}>
@@ -756,6 +782,7 @@ type RangeSectionProps = {
   committed: RangeFilter;
   fullToken: string;
   lastEdit: RefObject<EditTokens | null>;
+  clearGen: RefObject<number>;
   activeCount: number;
   onCommit: (next: RangeFilter) => void;
   /** Clear-affordance path, distinct from `onCommit` so it resets drafts. */
@@ -769,6 +796,7 @@ function RangeSection({
   committed,
   fullToken,
   lastEdit,
+  clearGen,
   activeCount,
   onCommit,
   onClear,
@@ -779,6 +807,7 @@ function RangeSection({
     rangeSliceToken,
     onCommit,
     lastEdit,
+    clearGen,
   );
   return (
     <RailSection title={title} activeCount={activeCount} onClear={onClear}>

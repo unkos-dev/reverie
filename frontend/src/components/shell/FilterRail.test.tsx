@@ -5,6 +5,8 @@ import { useState, type ReactElement } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
+
 import { FilterRail } from "./FilterRail";
 
 const SERIES = [
@@ -55,6 +57,12 @@ function Providers({ children }: { children: ReactElement }): ReactElement {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
+/** Owns the write authority the page normally provides. */
+function RailHost(): ReactElement {
+  const { applyParams } = useLiveSearchParams();
+  return <FilterRail seriesOptions={SERIES} applyParams={applyParams} />;
+}
+
 function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRouter> {
   const router = createMemoryRouter(
     [
@@ -62,7 +70,7 @@ function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRo
         path: "/library",
         element: (
           <Providers>
-            <FilterRail seriesOptions={SERIES} />
+            <RailHost />
           </Providers>
         ),
       },

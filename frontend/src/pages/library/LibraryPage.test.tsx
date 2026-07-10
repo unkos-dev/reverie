@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
@@ -30,6 +30,44 @@ function installDesktopMatchMedia(): void {
       dispatchEvent: () => true,
     }) as unknown as MediaQueryList;
   vi.stubGlobal("matchMedia", mediaQueryList);
+}
+
+/** Like {@link installDesktopMatchMedia}, but the desktop match is mutable
+ *  and flipping it fires the registered change listeners, driving
+ *  `useMediaQuery` the way a real viewport resize would. */
+function installSwitchableMatchMedia(initialDesktop: boolean): {
+  setDesktop: (next: boolean) => void;
+} {
+  let desktop = initialDesktop;
+  type Listener = (event: MediaQueryListEvent) => void;
+  const listeners = new Set<Listener>();
+  const mediaQueryList = (query: string): MediaQueryList =>
+    ({
+      get matches(): boolean {
+        return query === RAIL_DESKTOP_MEDIA_QUERY && desktop;
+      },
+      media: query,
+      onchange: null,
+      addEventListener: (_event: string, listener: Listener) => {
+        listeners.add(listener);
+      },
+      removeEventListener: (_event: string, listener: Listener) => {
+        listeners.delete(listener);
+      },
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => true,
+    }) as unknown as MediaQueryList;
+  vi.stubGlobal("matchMedia", mediaQueryList);
+  return {
+    setDesktop: (next: boolean) => {
+      desktop = next;
+      act(() => {
+        const event = { matches: next } as MediaQueryListEvent;
+        for (const listener of listeners) listener(event);
+      });
+    },
+  };
 }
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
@@ -324,6 +362,42 @@ describe("LibraryPage", () => {
     });
   });
 
+  test("a pending rail commit and a header sort preserve each other (rail first)", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?view=table"],
+      extraCacheParams: [{ q: "war" }, { sort: "title" }, { q: "war", sort: "title" }],
+    });
+    await screen.findByTestId("library-table");
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Quick search"), "war");
+    await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("q=war");
+      expect(search).toContain("sort=title");
+    });
+  });
+
+  test("a header sort and a following rail commit preserve each other (sort first)", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      initialEntries: ["/library?view=table"],
+      extraCacheParams: [{ q: "war" }, { sort: "title" }, { q: "war", sort: "title" }],
+    });
+    await screen.findByTestId("library-table");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+    await user.type(screen.getByLabelText("Quick search"), "war");
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("q=war");
+      expect(search).toContain("sort=title");
+    });
+  });
+
   test("table quick search writes ?q= and clears any cursor param", async () => {
     renderLibrary({
       items: [bookFixture()],
@@ -518,6 +592,28 @@ describe("LibraryPage", () => {
       expect(within(summary).getByRole("button", { name: "Filters" })).toHaveAttribute(
         "aria-expanded",
         "false",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      localStorage.removeItem(RAIL_STORAGE_KEY);
+    }
+  });
+
+  test("crossing up into the desktop breakpoint closes the rail sheet", async () => {
+    const media = installSwitchableMatchMedia(false);
+    try {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      const summary = await screen.findByTestId("filter-summary");
+      await userEvent.setup().click(within(summary).getByRole("button", { name: "Filters" }));
+      expect(await screen.findByRole("dialog", { name: /Filters/ })).toBeInTheDocument();
+      media.setDesktop(true);
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: /Filters/ })).not.toBeInTheDocument();
+      });
+      // The toggle now reports the desktop column, which is expanded.
+      expect(within(summary).getByRole("button", { name: "Filters" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
       );
     } finally {
       vi.unstubAllGlobals();

@@ -138,6 +138,52 @@ describe("useDebouncedCommit", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  test("a fire-time staleness check suppresses the pending commit", () => {
+    const onCommit = vi.fn();
+    let stale = false;
+    function StaleHarness(): ReactElement {
+      const [draft, setDraft] = useState("");
+      useDebouncedCommit(draft, "", onCommit, DELAY_MS, () => stale);
+      return (
+        <input
+          aria-label="draft"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+        />
+      );
+    }
+    render(<StaleHarness />);
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
+    // A clear affordance invalidates the draft after the timer is scheduled
+    // but before it fires (no re-render in between).
+    stale = true;
+    vi.advanceTimersByTime(DELAY_MS * 2);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  test("a false staleness check leaves the commit untouched", () => {
+    const onCommit = vi.fn();
+    function FreshHarness(): ReactElement {
+      const [draft, setDraft] = useState("");
+      useDebouncedCommit(draft, "", onCommit, DELAY_MS, () => false);
+      return (
+        <input
+          aria-label="draft"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+        />
+      );
+    }
+    render(<FreshHarness />);
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
+    vi.advanceTimersByTime(DELAY_MS);
+    expect(onCommit).toHaveBeenCalledWith("ab");
+  });
+
   test("unmount cancels a pending commit", () => {
     const onCommit = vi.fn();
     const { unmount } = render(<Harness onCommit={onCommit} />);

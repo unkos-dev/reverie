@@ -15,7 +15,7 @@
 import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import { LayoutGrid, List, Loader2, Table2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactElement } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 
 import {
   listBooks,
@@ -37,6 +37,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
+import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -77,7 +78,11 @@ export function LibraryPage(): ReactElement {
 }
 
 function LibraryContent(): ReactElement {
-  const [searchParams, setSearchParams] = useSearchParams();
+  // Single URL write authority for the route: the rail's commits and the
+  // page's own writers (header sort, clear-all, view toggle) all go through
+  // `applyParams`, so two writes landing in one frame cannot clobber each
+  // other (see the hook's docstring).
+  const { searchParams, applyParams } = useLiveSearchParams();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
@@ -87,6 +92,15 @@ function LibraryContent(): ReactElement {
   const isDesktop = useMediaQuery(RAIL_DESKTOP_MEDIA_QUERY);
   const [railCollapsed, setRailCollapsed] = useState(() => readRailCollapsed() ?? false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Crossing up into the desktop breakpoint retires the sheet: the rail
+  // column takes over and the toggle switches to driving the collapse, so a
+  // sheet left open would be a modal nothing controls any more. Render-phase
+  // state adjustment, the compiler-accepted alternative to a sync effect.
+  const [wasDesktop, setWasDesktop] = useState(isDesktop);
+  if (isDesktop !== wasDesktop) {
+    setWasDesktop(isDesktop);
+    if (isDesktop) setSheetOpen(false);
+  }
   function toggleRail(): void {
     if (isDesktop) {
       setRailCollapsed((collapsed) => {
@@ -142,22 +156,24 @@ function LibraryContent(): ReactElement {
 
   function setView(next: LibraryView): void {
     writeViewCookie(next);
-    const updated = new URLSearchParams(searchParams);
-    if (next === "grid") updated.delete("view");
-    else updated.set("view", next);
-    setSearchParams(updated, { replace: true });
+    applyParams((params) => {
+      if (next === "grid") params.delete("view");
+      else params.set("view", next);
+      return params;
+    });
   }
 
   /** Table-header sort writes the same `?sort=` contract as the rail's sort section. */
   function setSortFromTable(levels: readonly SortLevelParam[]): void {
-    setSearchParams(applySortToSearchParams(searchParams, levels), { replace: true });
+    applyParams((params) => applySortToSearchParams(params, levels));
   }
 
   function clearAllFilters(): void {
-    const updated = new URLSearchParams(searchParams);
-    for (const key of FILTER_PARAM_KEYS) updated.delete(key);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
+    applyParams((params) => {
+      for (const key of FILTER_PARAM_KEYS) params.delete(key);
+      params.delete("cursor");
+      return params;
+    });
   }
 
   /** Empty states first, then one branch per view mode. */
@@ -224,7 +240,7 @@ function LibraryContent(): ReactElement {
           content-only stacking context leaves it under `.lib-grain` (z-1). */}
       <div className="relative z-[2]">
         <BrowseLayout
-          rail={<FilterRail seriesOptions={seriesOptions} />}
+          rail={<FilterRail seriesOptions={seriesOptions} applyParams={applyParams} />}
           railCollapsed={railCollapsed}
           sheetOpen={sheetOpen}
           onSheetOpenChange={setSheetOpen}
