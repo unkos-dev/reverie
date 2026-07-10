@@ -5,8 +5,9 @@
  * (the text operator is the one exception, kept locally so a chosen operator
  * survives an empty value).
  */
-import { type ReactElement, useState } from "react";
+import { type ReactElement, useId, useState } from "react";
 
+import type { SuggestKind } from "@/api";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { RangeFilter, TextFilter } from "@/routes/library-params";
+import type { FilterState, RangeFilter, SetFilter, TextFilter } from "@/routes/library-params";
+
+import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
 /** A text-column comparator. `empty` filters on the column being null. */
 export type TextOp = "contains" | "eq" | "ne" | "empty";
@@ -56,6 +59,7 @@ type TextFilterEditorProps = {
 };
 
 export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps): ReactElement {
+  const id = useId();
   const [op, setOp] = useState<TextOp>(() => deriveTextOp(value, ops));
   const text = value.contains ?? value.eq ?? value.ne ?? "";
 
@@ -67,14 +71,14 @@ export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-1">
-        <Label htmlFor="text-op">Operator</Label>
+        <Label htmlFor={`${id}-op`}>Operator</Label>
         <Select
           value={op}
           onValueChange={(next) => {
             if (isTextOp(next)) changeOp(next);
           }}
         >
-          <SelectTrigger id="text-op" aria-label="Operator">
+          <SelectTrigger id={`${id}-op`} aria-label="Operator">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -88,9 +92,9 @@ export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps
       </div>
       {op === "empty" ? null : (
         <div className="flex flex-col gap-1">
-          <Label htmlFor="text-value">Value</Label>
+          <Label htmlFor={`${id}-value`}>Value</Label>
           <Input
-            id="text-value"
+            id={`${id}-value`}
             aria-label="Filter value"
             value={text}
             onChange={(event) => {
@@ -123,14 +127,15 @@ export function RangeFilterEditor({
   allowEmpty = false,
   onChange,
 }: RangeFilterEditorProps): ReactElement {
+  const id = useId();
   const isEmpty = value.empty === true;
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-end gap-2">
         <div className="flex flex-1 flex-col gap-1">
-          <Label htmlFor="range-min">Min</Label>
+          <Label htmlFor={`${id}-min`}>Min</Label>
           <Input
-            id="range-min"
+            id={`${id}-min`}
             type="number"
             min={min}
             max={max}
@@ -142,9 +147,9 @@ export function RangeFilterEditor({
           />
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label htmlFor="range-max">Max</Label>
+          <Label htmlFor={`${id}-max`}>Max</Label>
           <Input
-            id="range-max"
+            id={`${id}-max`}
             type="number"
             min={min}
             max={max}
@@ -159,13 +164,13 @@ export function RangeFilterEditor({
       {allowEmpty ? (
         <div className="flex items-center gap-2">
           <Checkbox
-            id="range-empty"
+            id={`${id}-empty`}
             checked={isEmpty}
             onCheckedChange={(checked) => {
               onChange(checked === true ? { empty: true } : {});
             }}
           />
-          <Label htmlFor="range-empty">Has no value</Label>
+          <Label htmlFor={`${id}-empty`}>Has no value</Label>
         </div>
       ) : null}
     </div>
@@ -179,12 +184,13 @@ type DateRangeEditorProps = {
 };
 
 export function DateRangeEditor({ after, before, onChange }: DateRangeEditorProps): ReactElement {
+  const id = useId();
   return (
     <div className="flex items-end gap-2">
       <div className="flex flex-1 flex-col gap-1">
-        <Label htmlFor="date-after">After</Label>
+        <Label htmlFor={`${id}-after`}>After</Label>
         <Input
-          id="date-after"
+          id={`${id}-after`}
           type="date"
           value={after ?? ""}
           onChange={(event) => {
@@ -193,9 +199,9 @@ export function DateRangeEditor({ after, before, onChange }: DateRangeEditorProp
         />
       </div>
       <div className="flex flex-1 flex-col gap-1">
-        <Label htmlFor="date-before">Before</Label>
+        <Label htmlFor={`${id}-before`}>Before</Label>
         <Input
-          id="date-before"
+          id={`${id}-before`}
           type="date"
           value={before ?? ""}
           onChange={(event) => {
@@ -222,6 +228,7 @@ type StatusEditorProps = {
 };
 
 export function StatusEditor({ value, onChange }: StatusEditorProps): ReactElement {
+  const id = useId();
   function toggle(token: string, checked: boolean): void {
     const without = value.filter((current) => current !== token);
     onChange(checked ? [...without, token] : without);
@@ -233,15 +240,104 @@ export function StatusEditor({ value, onChange }: StatusEditorProps): ReactEleme
       {STATUS_OPTIONS.map((option) => (
         <div key={option.token} className="flex items-center gap-2">
           <Checkbox
-            id={`status-${option.token}`}
+            id={`${id}-${option.token}`}
             checked={value.includes(option.token)}
             onCheckedChange={(checked) => {
               toggle(option.token, checked === true);
             }}
           />
-          <Label htmlFor={`status-${option.token}`}>{option.label}</Label>
+          <Label htmlFor={`${id}-${option.token}`}>{option.label}</Label>
         </div>
       ))}
     </fieldset>
+  );
+}
+
+/** Match modes for a vocabulary/author set condition. */
+export type SetMode = "all" | "any" | "none";
+
+const MODE_WORD: Record<SetMode, string> = { all: "all of", any: "any of", none: "none of" };
+
+/** Vocabulary families edited through the mode-select + typeahead widget. */
+export type VocabFamily = "authors" | "tags" | "genres" | "moods";
+
+const VOCAB_KIND: Record<VocabFamily, SuggestKind> = {
+  authors: "authors",
+  tags: "tags",
+  genres: "genres",
+  moods: "moods",
+};
+
+function initialMode(set: SetFilter): SetMode {
+  if (set.any.length > 0) return "any";
+  if (set.all.length > 0) return "all";
+  if (set.none.length > 0) return "none";
+  return "any";
+}
+
+function isSetMode(value: string): value is SetMode {
+  return value === "all" || value === "any" || value === "none";
+}
+
+type VocabEditorProps = {
+  family: VocabFamily;
+  draft: FilterState;
+  setDraft: (next: FilterState) => void;
+  resolveAuthorLabel: (id: string) => string;
+};
+
+export function VocabEditor({
+  family,
+  draft,
+  setDraft,
+  resolveAuthorLabel,
+}: VocabEditorProps): ReactElement {
+  const set = draft[family];
+  const [mode, setMode] = useState<SetMode>(() => initialMode(set));
+  const isAuthors = family === "authors";
+
+  const selected: TypeaheadOption[] = set[mode].map((token) =>
+    isAuthors ? { id: token, value: resolveAuthorLabel(token) } : { value: token },
+  );
+
+  function handleChange(next: TypeaheadOption[]): void {
+    // Authors store the id (uuid) as the URL token; other vocabularies store
+    // the display value, which is the token itself.
+    const tokens = next.map((option) => (isAuthors ? (option.id ?? option.value) : option.value));
+    // A token lives in at most one mode: writing it to the active mode drops
+    // it from the other two, so the same author cannot sit in both `any` and
+    // `none` at once.
+    const updated: SetFilter = {
+      all: mode === "all" ? tokens : set.all.filter((token) => !tokens.includes(token)),
+      any: mode === "any" ? tokens : set.any.filter((token) => !tokens.includes(token)),
+      none: mode === "none" ? tokens : set.none.filter((token) => !tokens.includes(token)),
+    };
+    setDraft({ ...draft, [family]: updated });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={mode}
+        onValueChange={(value) => {
+          if (isSetMode(value)) setMode(value);
+        }}
+      >
+        <SelectTrigger className="w-32" aria-label="Match mode">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="any">any of</SelectItem>
+          <SelectItem value="all">all of</SelectItem>
+          <SelectItem value="none">none of</SelectItem>
+        </SelectContent>
+      </Select>
+      <TypeaheadMultiSelect
+        kind={VOCAB_KIND[family]}
+        label={`${family} (${MODE_WORD[mode]})`}
+        selected={selected}
+        onChange={handleChange}
+      />
+    </div>
   );
 }

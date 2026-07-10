@@ -20,7 +20,6 @@ import {
   listBooks,
   listShelves,
   parseSortParam,
-  serializeSortParam,
   type BookListItem,
   type BookListResponse,
   type Shelf,
@@ -56,6 +55,7 @@ import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { queryKeys } from "@/lib/query/keys";
 
 import {
+  applySortToSearchParams,
   FILTER_PARAM_KEYS,
   paramsFromSearch,
   parseFilterParams,
@@ -99,24 +99,6 @@ function sortLevelsEqual(a: readonly SortLevelParam[], b: readonly SortLevelPara
     a.length === b.length &&
     a.every((level, index) => level.field === b[index].field && level.desc === b[index].desc)
   );
-}
-
-/**
- * Shared `?sort=` write path for both the table's header/chip sort and the
- * `SortMenu` presets. Clears `cursor` because a new sort invalidates the
- * keyset boundary the old cursor encoded; omits `sort` entirely for the
- * server's default order instead of writing an empty value.
- */
-function applySortToSearchParams(
-  current: URLSearchParams,
-  levels: readonly SortLevelParam[],
-): URLSearchParams {
-  const updated = new URLSearchParams(current);
-  const serialized = serializeSortParam(levels);
-  if (serialized === "") updated.delete("sort");
-  else updated.set("sort", serialized);
-  updated.delete("cursor");
-  return updated;
 }
 
 /**

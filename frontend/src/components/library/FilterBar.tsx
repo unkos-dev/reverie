@@ -9,36 +9,27 @@
  * only re-renders the local input; the debounced value is what reaches the
  * parent, so the grid does not refetch on every keystroke.
  */
-import { useQuery } from "@tanstack/react-query";
 import { Filter, X } from "lucide-react";
 import { type ReactElement, useEffect, useRef, useState } from "react";
 
-import { resolveAuthors, type SuggestKind } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { queryKeys } from "@/lib/query/keys";
-import {
-  emptyFilterState,
-  serializeFilterParams,
-  type FilterState,
-  type SetFilter,
-} from "@/routes/library-params";
+import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
+import { emptyFilterState, serializeFilterParams, type FilterState } from "@/routes/library-params";
 
 import {
   DateRangeEditor,
   RangeFilterEditor,
   StatusEditor,
   TextFilterEditor,
+  VocabEditor,
+  type SetMode,
   type TextOp,
+  type VocabFamily,
 } from "./editors";
+
+const MODE_WORD: Record<SetMode, string> = { all: "all of", any: "any of", none: "none of" };
 import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
 /** Minimum quick-search length; below it the input clears the `q` filter. */
@@ -112,18 +103,6 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   moods: "Moods",
 };
 
-/** Vocabulary families edited through the mode-select + typeahead widget. */
-type VocabFamily = "authors" | "tags" | "genres" | "moods";
-const VOCAB_KIND: Record<VocabFamily, SuggestKind> = {
-  authors: "authors",
-  tags: "tags",
-  genres: "genres",
-  moods: "moods",
-};
-
-type SetMode = "all" | "any" | "none";
-const MODE_WORD: Record<SetMode, string> = { all: "all of", any: "any of", none: "none of" };
-
 type Props = {
   filters: FilterState;
   onFiltersChange: (next: FilterState) => void;
@@ -132,7 +111,10 @@ type Props = {
 };
 
 export function FilterBar({ filters, onFiltersChange, seriesLabels }: Props): ReactElement {
-  const authorNames = useAuthorLabels(filters);
+  const authorIds = [
+    ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
+  ];
+  const authorNames = useAuthorLabels(authorIds);
 
   return (
     <div className="mb-4 flex flex-col gap-3" data-testid="filter-bar">
@@ -159,34 +141,6 @@ export function FilterBar({ filters, onFiltersChange, seriesLabels }: Props): Re
       />
     </div>
   );
-}
-
-/** Author id to display label resolution for chips and the authors editor. */
-function useAuthorLabels(filters: FilterState): { labelFor: (id: string) => string } {
-  const ids = [
-    ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
-  ];
-  const { data, isFetching, isError, error } = useQuery({
-    queryKey: queryKeys.authors.resolve(ids),
-    queryFn: ({ signal }) => resolveAuthors(ids, signal),
-    enabled: ids.length > 0,
-    staleTime: 60_000,
-  });
-  // A resolve failure must not read as "author doesn't exist": leave a console
-  // breadcrumb (QueryCache.onError forwards only 401s) and label the chip as
-  // unresolved rather than unknown, mirroring the next-page handler in
-  // LibraryContent.
-  useEffect(() => {
-    if (isError) console.error("[FilterBar] failed to resolve author labels", error);
-  }, [isError, error]);
-  function labelFor(id: string): string {
-    const hit = data?.find((row) => row.id === id);
-    if (hit !== undefined) return hit.value;
-    if (isFetching) return "resolving…";
-    if (isError) return "author unavailable";
-    return "Unknown author";
-  }
-  return { labelFor };
 }
 
 type QuickSearchProps = {
@@ -462,61 +416,6 @@ const TITLE_OPS: readonly TextOp[] = ["contains", "eq", "ne"];
 const SUBTITLE_OPS: readonly TextOp[] = ["contains", "empty"];
 const ISBN_OPS: readonly TextOp[] = ["contains", "eq", "empty"];
 
-type VocabEditorProps = {
-  family: VocabFamily;
-  draft: FilterState;
-  setDraft: (next: FilterState) => void;
-  resolveAuthorLabel: (id: string) => string;
-};
-
-function VocabEditor({
-  family,
-  draft,
-  setDraft,
-  resolveAuthorLabel,
-}: VocabEditorProps): ReactElement {
-  const set = draft[family];
-  const [mode, setMode] = useState<SetMode>(() => initialMode(set));
-  const isAuthors = family === "authors";
-
-  const selected: TypeaheadOption[] = set[mode].map((token) =>
-    isAuthors ? { id: token, value: resolveAuthorLabel(token) } : { value: token },
-  );
-
-  function handleChange(next: TypeaheadOption[]): void {
-    // Authors store the id (uuid) as the URL token; other vocabularies store
-    // the display value, which is the token itself.
-    const tokens = next.map((option) => (isAuthors ? (option.id ?? option.value) : option.value));
-    setDraft({ ...draft, [family]: { ...set, [mode]: tokens } });
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <Select
-        value={mode}
-        onValueChange={(value) => {
-          if (isSetMode(value)) setMode(value);
-        }}
-      >
-        <SelectTrigger className="w-32" aria-label="Match mode">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="any">any of</SelectItem>
-          <SelectItem value="all">all of</SelectItem>
-          <SelectItem value="none">none of</SelectItem>
-        </SelectContent>
-      </Select>
-      <TypeaheadMultiSelect
-        kind={VOCAB_KIND[family]}
-        label={`${COLUMN_LABELS[family].toLowerCase()} (${MODE_WORD[mode]})`}
-        selected={selected}
-        onChange={handleChange}
-      />
-    </div>
-  );
-}
-
 type SeriesEditorProps = {
   draft: FilterState;
   setDraft: (next: FilterState) => void;
@@ -593,17 +492,6 @@ function ChipRow({
       </Button>
     </div>
   );
-}
-
-function initialMode(set: SetFilter): SetMode {
-  if (set.any.length > 0) return "any";
-  if (set.all.length > 0) return "all";
-  if (set.none.length > 0) return "none";
-  return "any";
-}
-
-function isSetMode(value: string): value is SetMode {
-  return value === "all" || value === "any" || value === "none";
 }
 
 /**
