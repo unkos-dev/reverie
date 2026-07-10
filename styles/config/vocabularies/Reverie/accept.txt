@@ -66,6 +66,7 @@ bg
 Biome
 blocklist
 branding
+breakpoint
 buildkit
 buildx
 cacheable
@@ -74,6 +75,7 @@ canonicalises
 catalog
 changelog
 Changelogs
+checkboxes
 chroma
 chromedriver
 CI
@@ -285,6 +287,7 @@ relitigated
 relitigating
 renderable
 renderer
+reorderable
 repo
 repos
 representable
@@ -302,6 +305,7 @@ roundtrip
 ruleset
 rustdoc
 Satoshi
+scalable
 sccache
 schemaless
 schemars
@@ -352,6 +356,7 @@ tombstoned
 toolchain
 toolchains
 toolset
+tooltip
 tower_sessions
 tradeoff
 tradeoffs
@@ -369,6 +374,7 @@ unlayered
 unmerged
 unresolvable
 unscoped
+untick
 untyped
 unversioned
 unwired
