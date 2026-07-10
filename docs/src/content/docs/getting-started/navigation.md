@@ -132,8 +132,11 @@ so a long rail reads as a table of contents rather than a wall of
 form controls.
 
 Above the books, in every view, a one-line **filter summary** reads
-out what is active ("Author (1) · Pages ≥ 300") next to the
-**Filters** toggle that shows or hides the rail. The summary is
+out what is active ("Author: Le Guin · Pages ≥ 300") next to the
+**Filters** toggle that shows or hides the rail. Exclusions read as
+exclusions: a none-of condition shows as "Author: not Le Guin", and a
+mixed set splits the count ("Tags (2, 1 not)"), so the readout never
+states the opposite of what the filter does. The summary is
 read-only on purpose: it stays one constant line no matter how many
 conditions you stack, and it keeps state visible even with the rail
 hidden, so the collection can never be silently narrower than it
@@ -162,12 +165,15 @@ how you opened it.
 Title, subtitle, and authors describe the work rather than one edition
 of it, so editing any of them from one row updates every edition of
 that work currently loaded in the table, not just the row you touched.
-Those three column headers carry an info control (hover or focus it,
-dismiss with `Escape`) explaining that reach, so you know what an edit
-touches before you commit. ISBN-13 and
-pages describe one edition and stay put. Status and rating are yours
-alone: nobody else browsing the same library sees them, and they never
-touch the book's version history.
+Those three column headers carry an info control explaining that reach,
+so you know what an edit touches before you commit: hover it for the
+tooltip (dismiss with `Escape`), and screen readers hear the same note
+as the column's description when the header takes focus. The control
+stays out of the keyboard path on purpose, so pressing `Enter` or
+`Space` on the header sorts the column the same as any other. ISBN-13
+and pages describe one edition and stay put. Status and rating are
+yours alone: nobody else browsing the same library sees them, and they
+never touch the book's version history.
 
 ### Undo
 
