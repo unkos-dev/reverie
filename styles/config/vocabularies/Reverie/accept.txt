@@ -74,8 +74,8 @@ Caddy
 canonicalises
 catalog
 changelog
-checkboxes
 Changelogs
+checkboxes
 chroma
 chromedriver
 CI
@@ -286,8 +286,8 @@ Rekor
 relitigated
 relitigating
 renderable
-reorderable
 renderer
+reorderable
 repo
 repos
 representable

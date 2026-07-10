@@ -40,8 +40,9 @@ hidden?
   visible and recoverable in every mode, including when the editing surface
   is collapsed. An invisibly narrowed collection misrepresents the library.
 - **Room for the full grammar.** The filter surface spans facets, text
-  operators, numeric and date ranges, status, rating, three vocabulary
-  families with any/all/none match modes, and a reorderable sort stack.
+  operators, numeric and date ranges, status, rating, the tag, genre,
+  mood, and author families with per-family any/all/none match modes, and
+  a reorderable sort stack.
   A single toolbar or chip row does not scale to that breadth; a vertical
   column of collapsible sections does.
 - **Keep per-family match modes.** The per-family any/all/none grammar is
@@ -74,8 +75,8 @@ The shape of the decision:
 - **The filter rail is the sole filter editing surface in all view modes.**
   It carries a quick-search input at the top (writing the same quick-search
   filter the toolbar offered), one collapsible section per filterable
-  field: the existing facets plus inline section editors for the typed
-  grammar (page-count range, rating range, added-date range, status, tags,
+  field: the existing facet sections (series and author) plus inline
+  section editors for the typed grammar (page-count range, rating range, added-date range, status, tags,
   genres, moods, and title, subtitle, and ISBN text operators), reusing the
   per-column editors the table view already ships. Per-family any/all/none
   match modes stay. Active values are highlighted in their section, and
@@ -84,6 +85,8 @@ The shape of the decision:
   reorder, direction) is edited in the rail. The table view keeps header
   click and ctrl-click as the primary sort gesture; the rail section is the
   sort home for grid and list and the full-stack editor everywhere.
+  Table-header sorting is the one deliberate exception to the rail's
+  ownership of edit gestures.
 - **The masthead carries a compact always-visible summary.** A short
   active-filter readout (for example "Author (1) · Pages ≥ 300") plus a
   rail show/hide toggle with an active-filter badge, rendered in every view
@@ -162,9 +165,9 @@ reappear under new names.
   the two surfaces must stay visually synchronised: every rail section
   needs a chip renderer, which reintroduces the per-surface wiring cost.
 - Bad, because the full grammar as chips crowds the masthead: text
-  operators, ranges, dates, status, rating, and three vocabulary families
-  produce a chip row that competes with the collection for vertical space,
-  against the compact-masthead driver.
+  operators, ranges, dates, status, rating, and the tag, genre, mood, and
+  author families produce a chip row that competes with the collection for
+  vertical space, against the compact-masthead driver.
 
 ### C: rail owns editing and state; masthead summarises
 
