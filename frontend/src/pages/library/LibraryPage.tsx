@@ -238,9 +238,6 @@ function LibraryContent(): ReactElement {
   const seriesOptions: SeriesFacetOption[] = [...seriesById]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const authorNames = [...new Set(items.flatMap((b) => b.authors))].sort((a, b) =>
-    a.localeCompare(b),
-  );
 
   return (
     <>
@@ -262,7 +259,7 @@ function LibraryContent(): ReactElement {
           atmosphere layers. The rail renders outside `children`, so a
           content-only stacking context leaves it under `.lib-grain` (z-1). */}
       <div className="relative z-[2]">
-        <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} authorNames={authorNames} />}>
+        <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} />}>
           {/* No max-width cap — the browse room uses the full column so
             ultrawide gets ~10 columns, not 4 stamps in a void (spec §5).
             The auto-fill clamp(170px,10vw,240px) bounds tile size. */}

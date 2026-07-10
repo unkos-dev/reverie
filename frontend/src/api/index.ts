@@ -16,6 +16,7 @@ export {
   parseSortParam,
   serializeSortParam,
   MAX_SORT_LEVELS,
+  SORT_FIELDS,
   ReadingStatusSchema,
 } from "./books";
 export type {

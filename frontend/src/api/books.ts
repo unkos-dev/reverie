@@ -94,7 +94,8 @@ const BookListResponseSchema = z.object({
 /** Envelope returned by `GET /api/v1/books`. `next_cursor === null` means end-of-list. */
 export type BookListResponse = z.infer<typeof BookListResponseSchema>;
 
-const SORT_FIELDS = ["title", "author", "created_at", "pages"] as const;
+/** The sortable wire fields, in the order sort pickers offer them. */
+export const SORT_FIELDS = ["title", "author", "created_at", "pages"] as const;
 
 /** Sortable column names accepted by `GET /api/v1/books?sort=…`. */
 export type SortField = (typeof SORT_FIELDS)[number];
