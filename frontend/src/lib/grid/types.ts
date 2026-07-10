@@ -50,6 +50,15 @@ export type GridEditorProps<R> = {
 export type GridColumn<R> = {
   key: string;
   name: string;
+  /**
+   * Supplementary header explanation surfaced as a hoverable, dismissable
+   * tooltip behind a focusable info control next to the header text.
+   * `label` names the control and, because a columnheader's accessible name
+   * is computed from its contents, becomes an audible suffix on the column
+   * name (pick it to read naturally after `name`); `content` is the tooltip
+   * body shown on hover or focus.
+   */
+  headerTooltip?: { label: string; content: string };
   sortable: boolean;
   width?: number;
   accessor: (row: R) => string;

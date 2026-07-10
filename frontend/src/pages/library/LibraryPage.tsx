@@ -8,50 +8,35 @@
  * page 1 into the cache; this component subscribes and renders.
  *
  * Renders the editorial masthead and ambient atmosphere over the browse
- * column — the filter rail, the shelf/sort/active-filter controls, the
- * grid/list toggle, and Load-more pagination over the fetched pages.
+ * column — the filter rail (the sole filter and sort editor), the read-only
+ * filter summary with the rail toggle, the view-mode toggle, and Load-more
+ * pagination over the fetched pages.
  */
-import { useQuery, useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
-import { Filter, LayoutGrid, List, Loader2, Table2, X } from "lucide-react";
+import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { LayoutGrid, List, Loader2, Table2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import {
   listBooks,
-  listShelves,
   parseSortParam,
   type BookListItem,
   type BookListResponse,
-  type Shelf,
   type SortLevelParam,
 } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
+import { FilterSummary } from "@/components/library/FilterSummary";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { BrowseLayout } from "@/components/shell/BrowseLayout";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { queryKeys } from "@/lib/query/keys";
 
 import {
@@ -59,12 +44,11 @@ import {
   FILTER_PARAM_KEYS,
   paramsFromSearch,
   parseFilterParams,
-  serializeFilterParams,
   viewFromSearch,
-  type FilterState,
   type LibraryView,
 } from "@/routes/library-params";
 
+import { readRailCollapsed, writeRailCollapsed } from "./rail-storage";
 import { TableChunkBoundary } from "./TableChunkBoundary";
 import { readViewCookie, writeViewCookie } from "./view-cookie";
 
@@ -76,30 +60,6 @@ import { readViewCookie, writeViewCookie } from "./view-cookie";
 const LibraryTableView = lazy(() =>
   import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
 );
-
-/**
- * A preset's `levels` is the exact stack it writes and the exact stack that
- * marks it selected; anything else (a table-built stack, or a stack a
- * preset never produces) shows the menu's "Custom" state instead.
- */
-type SortPreset = {
-  value: "recent" | "title" | "author";
-  label: string;
-  levels: readonly SortLevelParam[];
-};
-
-const SORT_PRESETS: readonly SortPreset[] = [
-  { value: "recent", label: "Recent", levels: [] },
-  { value: "title", label: "Title", levels: [{ field: "title", desc: false }] },
-  { value: "author", label: "Author", levels: [{ field: "author", desc: false }] },
-];
-
-function sortLevelsEqual(a: readonly SortLevelParam[], b: readonly SortLevelParam[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every((level, index) => level.field === b[index].field && level.desc === b[index].desc)
-  );
-}
 
 /**
  * Top-level page component. The `<Suspense>` boundary catches the
@@ -120,6 +80,21 @@ function LibraryContent(): ReactElement {
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
+  // Rail visibility splits by width: ≥1280px toggles the persisted column
+  // collapse, below that the toggle drives the transient sheet.
+  const isDesktop = useMediaQuery("(min-width: 1280px)");
+  const [railCollapsed, setRailCollapsed] = useState(() => readRailCollapsed() ?? false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  function toggleRail(): void {
+    if (isDesktop) {
+      setRailCollapsed((collapsed) => {
+        writeRailCollapsed(!collapsed);
+        return !collapsed;
+      });
+      return;
+    }
+    setSheetOpen((open) => !open);
+  }
   // URL param is canonical (shareable); the cookie only supplies the default
   // when the param is absent, so a chosen view survives leaving and returning.
   const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
@@ -155,8 +130,7 @@ function LibraryContent(): ReactElement {
 
   // The user-facing Load-more error is rendered below; this routes the raw
   // error to the console too (QueryCache.onError only forwards 401s), so a
-  // 500 / parse failure leaves a developer breadcrumb. Mirrors the shelves
-  // handler in ActiveFilterChips.
+  // 500 / parse failure leaves a developer breadcrumb.
   useEffect(() => {
     if (isFetchNextPageError)
       console.error("[LibraryContent] failed to load the next page", fetchNextPageError);
@@ -172,7 +146,7 @@ function LibraryContent(): ReactElement {
     setSearchParams(updated, { replace: true });
   }
 
-  /** Table-header/chip sort writes the same `?sort=` contract as {@link SortMenu}. */
+  /** Table-header sort writes the same `?sort=` contract as the rail's sort section. */
   function setSortFromTable(levels: readonly SortLevelParam[]): void {
     setSearchParams(applySortToSearchParams(searchParams, levels), { replace: true });
   }
@@ -180,15 +154,6 @@ function LibraryContent(): ReactElement {
   function clearAllFilters(): void {
     const updated = new URLSearchParams(searchParams);
     for (const key of FILTER_PARAM_KEYS) updated.delete(key);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
-  }
-
-  /** Write a filter change from the table's FilterBar, clearing the cursor
-   *  because a filter change invalidates the keyset boundary it encoded. */
-  function setFilters(next: FilterState): void {
-    const updated = new URLSearchParams(searchParams);
-    serializeFilterParams(next, updated);
     updated.delete("cursor");
     setSearchParams(updated, { replace: true });
   }
@@ -212,9 +177,6 @@ function LibraryContent(): ReactElement {
             items={items}
             sort={parseSortParam(params.sort ?? "")}
             onSortChange={setSortFromTable}
-            filters={filterState}
-            onFiltersChange={setFilters}
-            seriesLabels={seriesById}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
@@ -259,33 +221,27 @@ function LibraryContent(): ReactElement {
           atmosphere layers. The rail renders outside `children`, so a
           content-only stacking context leaves it under `.lib-grain` (z-1). */}
       <div className="relative z-[2]">
-        <BrowseLayout rail={<FilterRail seriesOptions={seriesOptions} />}>
+        <BrowseLayout
+          rail={<FilterRail seriesOptions={seriesOptions} />}
+          railCollapsed={railCollapsed}
+          sheetOpen={sheetOpen}
+          onSheetOpenChange={setSheetOpen}
+        >
           {/* No max-width cap — the browse room uses the full column so
             ultrawide gets ~10 columns, not 4 stamps in a void (spec §5).
             The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
           <div className="px-6 py-10 sm:px-10">
             <LibraryMasthead />
             <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
-              {viewMode === "table" ? (
-                // Table view owns its own filter surface (FilterBar inside the
-                // grid), so the masthead shelf picker and chip row would double
-                // up. Render a spacer to keep sort/view controls right-aligned.
-                <div />
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <ShelfPickerButton
-                    searchParams={searchParams}
-                    setSearchParams={setSearchParams}
-                  />
-                  <ActiveFilterChips
-                    searchParams={searchParams}
-                    setSearchParams={setSearchParams}
-                    seriesNames={seriesById}
-                  />
-                </div>
-              )}
+              {/* Always-visible read-only readout + rail toggle, every view
+                  mode: state stays visible even with the rail collapsed. */}
+              <FilterSummary
+                filters={filterState}
+                seriesNames={seriesById}
+                railExpanded={isDesktop ? !railCollapsed : sheetOpen}
+                onToggleRail={toggleRail}
+              />
               <div className="flex flex-wrap items-center gap-2">
-                <SortMenu searchParams={searchParams} setSearchParams={setSearchParams} />
                 <div
                   role="group"
                   aria-label="View mode"
@@ -386,49 +342,6 @@ function LibraryContent(): ReactElement {
         </BrowseLayout>
       </div>
     </>
-  );
-}
-
-interface SortMenuProps {
-  searchParams: URLSearchParams;
-  setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
-}
-
-/**
- * Sort control: a real `<button>` menu (spec §9.3), wired to the existing
- * `?sort=` contract via single-level presets (`recent` is the backend
- * default, so it clears the param instead of writing it). A stack the table
- * built (multi-level, or a direction/column no preset produces) matches no
- * preset, so the trigger falls back to a "Custom" label and no radio item
- * shows checked, rather than misreporting the stack as one of the presets.
- */
-function SortMenu({ searchParams, setSearchParams }: SortMenuProps): ReactElement {
-  const levels = parseSortParam(searchParams.get("sort") ?? "");
-  const active = SORT_PRESETS.find((preset) => sortLevelsEqual(preset.levels, levels));
-
-  function setPreset(value: string): void {
-    const preset = SORT_PRESETS.find((p) => p.value === value);
-    if (preset === undefined) return;
-    setSearchParams(applySortToSearchParams(searchParams, preset.levels), { replace: true });
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
-          Sort: {active?.label ?? "Custom"}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={active?.value ?? ""} onValueChange={setPreset}>
-          {SORT_PRESETS.map((preset) => (
-            <DropdownMenuRadioItem key={preset.value} value={preset.value}>
-              {preset.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -618,228 +531,6 @@ function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement 
  */
 function hasActiveFilters(search: URLSearchParams): boolean {
   return FILTER_PARAM_KEYS.some((key) => search.getAll(key).some((value) => value !== ""));
-}
-
-/**
- * Active-filter chip row (11b). Renders one chip per URL search-param
- * filter (`?author=`, `?series=`, `?shelf=`) with a clear (`×`)
- * affordance — clicking removes that key and triggers a react-query
- * refetch via the route params hook. `aria-pressed` on the chip itself
- * signals the filter is on (matches the hero-page chip pattern in
- * `/design/hero/library`).
- *
- * Source-list affordances (browse-by-shelf / browse-by-series chips
- * with an "add" action) land alongside the GET `/api/v1/series/{id}` and
- * shelves CRUD endpoints in sub-phase 11d. Here we own the *clear*
- * half so navigation arrivals (CommandPalette, series link from a book
- * card) always have a way out.
- */
-interface ActiveFilterChipsProps {
-  searchParams: URLSearchParams;
-  setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
-  /** Series id → display name, from the loaded pages, for chip labels. */
-  seriesNames: ReadonlyMap<string, string>;
-}
-
-type ChipKey = "author" | "series" | "shelf" | "tag";
-
-/** Keys that repeat in the URL (`?author=a&author=b`); their chips clear a
- *  single value rather than deleting the whole param. */
-const MULTI_VALUE_CHIP_KEYS: ReadonlySet<ChipKey> = new Set(["author", "tag"]);
-
-interface ActiveChip {
-  /** Unique chip id (`"tag:scifi"` for multi-value chips, plain key otherwise). */
-  id: string;
-  /** Which URL param the chip controls. */
-  key: ChipKey;
-  /** Human-readable chip label. */
-  label: string;
-  /** The single value a multi-value chip clears; absent for single-value keys,
-   *  which clear the whole param. */
-  value?: string;
-}
-
-function ActiveFilterChips({
-  searchParams,
-  setSearchParams,
-  seriesNames,
-}: ActiveFilterChipsProps): ReactElement | null {
-  // 11d: resolve shelf id → name via the shelves cache when present
-  // so the chip reads "shelf: Wishlist" instead of "shelf: a1b2c3d4…".
-  // `useQuery` with `enabled: false` would block the first render; we
-  // unconditionally subscribe to the cache and let the picker mutation
-  // populate it on first use.
-  const {
-    data: shelves,
-    isError: shelvesError,
-    error: shelvesQueryError,
-  } = useQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-    staleTime: 60_000,
-  });
-  // "(unknown)" is acceptable UI degradation; the failure behind it
-  // must still reach the console (QueryCache.onError only routes 401s).
-  useEffect(() => {
-    if (shelvesError) console.error("[ActiveFilterChips] shelves fetch failed", shelvesQueryError);
-  }, [shelvesError, shelvesQueryError]);
-  const shelfNameFor = (id: string): string => {
-    if (shelvesError) return "(unknown)";
-    return shelves?.find((s) => s.id === id)?.name ?? shortId(id);
-  };
-
-  const filters: ActiveChip[] = [];
-  // `?author=a&author=b` and `?tag=a&tag=b` repeat — one chip per value so the
-  // user can clear each independently, mirroring the backend's multi-value
-  // semantics. Reading via `getAll` (not `get`) and clearing a single value is
-  // what stops one removal from nuking every author or tag at once.
-  for (const authorValue of searchParams.getAll("author")) {
-    if (authorValue === "") continue;
-    filters.push({
-      id: `author:${authorValue}`,
-      key: "author",
-      label: `author: ${authorValue}`,
-      value: authorValue,
-    });
-  }
-  for (const key of ["series", "shelf"] as const) {
-    const value = searchParams.get(key);
-    if (value === null || value === "") continue;
-    // Resolve ids to readable names: shelf via its cache, series via the
-    // loaded-pages map.
-    const label =
-      key === "shelf"
-        ? `shelf: ${shelfNameFor(value)}`
-        : `series: ${seriesNames.get(value) ?? shortId(value)}`;
-    filters.push({ id: key, key, label });
-  }
-  for (const tagValue of searchParams.getAll("tag")) {
-    if (tagValue === "") continue;
-    filters.push({ id: `tag:${tagValue}`, key: "tag", label: `tag: ${tagValue}`, value: tagValue });
-  }
-  if (filters.length === 0) return null;
-
-  function clear(chip: ActiveChip): void {
-    const updated = new URLSearchParams(searchParams);
-    if (chip.value !== undefined && MULTI_VALUE_CHIP_KEYS.has(chip.key)) {
-      const remaining = updated.getAll(chip.key).filter((v) => v !== chip.value);
-      updated.delete(chip.key);
-      for (const v of remaining) updated.append(chip.key, v);
-    } else {
-      updated.delete(chip.key);
-    }
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
-  }
-
-  return (
-    <div className="mb-6 flex flex-wrap items-center gap-2" data-testid="active-filters">
-      {filters.map((chip) => (
-        <Button
-          key={chip.id}
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-pressed
-          onClick={() => {
-            clear(chip);
-          }}
-          className="border-border bg-accent-soft text-fg hover:bg-accent-soft/80 h-7 gap-1 rounded-full px-3 font-mono text-xs"
-        >
-          {chip.label}
-          <X className="size-3" aria-hidden="true" />
-          <span className="sr-only">
-            Clear {chip.key}
-            {chip.value !== undefined ? ` ${chip.value}` : ""} filter
-          </span>
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-/** Render a UUID compactly (first 8 chars) for chip labels. */
-function shortId(value: string): string {
-  return value.length > 10 ? `${value.slice(0, 8)}…` : value;
-}
-
-interface ShelfPickerButtonProps {
-  searchParams: URLSearchParams;
-  setSearchParams: (next: URLSearchParams, options?: { replace?: boolean }) => void;
-}
-
-/**
- * Picker affordance for the `?shelf=` filter (11d). Opens a Command
- * popover listing the caller's shelves; selecting one sets the URL
- * param and triggers a refetch via the existing react-router data
- * mode. Author / series pickers are blocked on missing `GET
- * /api/v1/authors` and `GET /api/v1/series` list endpoints (recorded as a
- * follow-up in the 11d report).
- */
-function ShelfPickerButton({
-  searchParams,
-  setSearchParams,
-}: ShelfPickerButtonProps): ReactElement {
-  const [open, setOpen] = useState(false);
-  const {
-    data: shelves,
-    isLoading,
-    isError,
-  } = useQuery<Shelf[]>({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-    staleTime: 60_000,
-  });
-  function pick(shelfId: string): void {
-    const updated = new URLSearchParams(searchParams);
-    updated.set("shelf", shelfId);
-    updated.delete("cursor");
-    setSearchParams(updated, { replace: true });
-    setOpen(false);
-  }
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1 rounded-full px-3 text-xs"
-          aria-label="Filter by shelf"
-        >
-          <Filter className="size-3" aria-hidden="true" />
-          Shelf
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="p-0">
-        <Command>
-          <CommandInput placeholder="Filter by shelf…" />
-          <CommandList>
-            <CommandEmpty>
-              {isLoading
-                ? "Loading shelves…"
-                : isError
-                  ? "Could not load shelves."
-                  : "No shelves yet."}
-            </CommandEmpty>
-            <CommandGroup heading="Shelves">
-              {(shelves ?? []).map((shelf) => (
-                <CommandItem
-                  key={shelf.id}
-                  value={`${shelf.name} ${shelf.id}`}
-                  onSelect={() => {
-                    pick(shelf.id);
-                  }}
-                >
-                  {shelf.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 function LibrarySkeleton(): ReactElement {

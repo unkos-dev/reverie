@@ -9,10 +9,8 @@ import type { BookListItem, SortLevelParam } from "@/api";
 import { updateReadingState } from "@/api/reading";
 import type { SortState } from "@/lib/grid/types";
 import { queryKeys } from "@/lib/query/keys";
-import { emptyFilterState } from "@/routes/library-params";
 
 import { LibraryTableView } from "./LibraryTableView";
-import { SORT_SUMMARY_ID } from "./SortChips";
 
 // Cell-edit orchestration (`useCellEdit`) fires through these clients on
 // commit; none of these tests exercise a real network call, so the
@@ -97,8 +95,6 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
     items: ROWS,
     sort: [],
     onSortChange: vi.fn(),
-    filters: emptyFilterState(),
-    onFiltersChange: vi.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
     isFetchNextPageError: false,
@@ -142,10 +138,10 @@ describe("LibraryTableView", () => {
     expect(link.getAttribute("href")).toBe(`/b/${ROWS[0].id}`);
   });
 
-  test("mounts the filter bar above the grid", () => {
+  test("hosts no filter surface of its own", () => {
     renderTableView();
-    expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
-    expect(screen.getByLabelText("Quick search")).toBeInTheDocument();
+    expect(screen.queryByTestId("filter-bar")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Quick search")).not.toBeInTheDocument();
   });
 
   test("a row with every nullable field null renders the em-dash placeholder", async () => {
@@ -169,7 +165,7 @@ describe("LibraryTableView", () => {
     Object.defineProperty(grid, "scrollLeft", { value: 1500, configurable: true });
     fireEvent.scroll(grid);
     const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Authors (all editions)" });
+    const header = await screen.findByRole("columnheader", { name: "Authors" });
     await user.click(header);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "author", desc: false }]);
   });
@@ -178,7 +174,7 @@ describe("LibraryTableView", () => {
     const onSortChange = vi.fn();
     renderTableView({ onSortChange });
     const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Title (all editions)" });
+    const header = await screen.findByRole("columnheader", { name: "Title" });
     await user.click(header);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "title", desc: false }]);
   });
@@ -214,7 +210,7 @@ describe("LibraryTableView", () => {
     });
     const grid = await screen.findByRole("grid");
     const user = userEvent.setup();
-    const titleHeader = await screen.findByRole("columnheader", { name: "Title (all editions)" });
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
     await user.click(titleHeader);
 
     Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
@@ -225,7 +221,7 @@ describe("LibraryTableView", () => {
     fireEvent.scroll(grid);
 
     const authorsHeader = await within(grid).findByRole("columnheader", {
-      name: "Authors (all editions)",
+      name: "Authors",
     });
     await user.keyboard("{Control>}");
     await user.click(authorsHeader);
@@ -275,40 +271,47 @@ describe("LibraryTableView", () => {
     expect(addedHeader).toHaveAttribute("aria-sort", "descending");
   });
 
-  test("reordering via the sort chips round-trips through onSortChange", async () => {
-    const onSortChange = vi.fn();
+  test("hosts no sort-chip bar; the rail's sort section owns stack manipulation", async () => {
     renderTableView({
-      onSortChange,
       sort: [
         { field: "title", desc: false },
         { field: "author", desc: false },
       ],
     });
-    const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole("button", { name: "Move Title later in sort priority" }),
-    );
-    expect(onSortChange).toHaveBeenCalledWith([
-      { field: "author", desc: false },
-      { field: "title", desc: false },
-    ]);
-  });
-
-  test("the sort summary is always present in the DOM, for aria-describedby to resolve", async () => {
-    renderTableView();
     await screen.findByRole("grid");
-    expect(document.getElementById(SORT_SUMMARY_ID)).not.toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Move Title later in sort priority" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear sort" })).not.toBeInTheDocument();
   });
 
-  test("a header-driven sort is reflected in the sr-only summary", async () => {
-    renderTableView();
-    const user = userEvent.setup();
-    const header = await screen.findByRole("columnheader", { name: "Title (all editions)" });
-    await user.click(header);
-    await waitFor(() => {
-      expect(document.getElementById(SORT_SUMMARY_ID)).toHaveTextContent(
-        "Sorted by Title ascending",
+  describe("work-scoped header tooltip", () => {
+    test("the info control opens a dismissable tooltip on focus and Esc closes it", async () => {
+      renderTableView();
+      await screen.findByRole("grid");
+      const user = userEvent.setup();
+      const trigger = screen.getAllByRole("button", { name: "(all editions)" })[0];
+      trigger.focus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Edits apply to all editions of the work",
       );
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      });
+    });
+
+    test("activating the info control never toggles the column sort", async () => {
+      const onSortChange = vi.fn();
+      renderTableView({ onSortChange });
+      await screen.findByRole("grid");
+      const user = userEvent.setup();
+      const trigger = screen.getAllByRole("button", { name: "(all editions)" })[0];
+      await user.click(trigger);
+      trigger.focus();
+      await user.keyboard("{Enter}");
+      await user.keyboard(" ");
+      expect(onSortChange).not.toHaveBeenCalled();
     });
   });
 
@@ -338,8 +341,6 @@ describe("LibraryTableView", () => {
               items={ROWS}
               sort={[]}
               onSortChange={onSortChange}
-              filters={emptyFilterState()}
-              onFiltersChange={vi.fn()}
               hasNextPage={false}
               isFetchingNextPage={false}
               isFetchNextPageError={false}
@@ -452,7 +453,7 @@ describe("LibraryTableView", () => {
     expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 
-  test("work-scoped columns carry an 'all editions' suffix in their header, non-scoped columns don't", async () => {
+  test("work-scoped columns carry the tooltip info control; non-scoped columns don't", async () => {
     renderTableView({
       items: [
         rowFixture(1, {
@@ -462,9 +463,8 @@ describe("LibraryTableView", () => {
       ],
     });
     const grid = await screen.findByRole("grid");
-    expect(
-      await screen.findByRole("columnheader", { name: "Title (all editions)" }),
-    ).toBeInTheDocument();
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    expect(within(titleHeader).getByRole("button", { name: "(all editions)" })).toBeInTheDocument();
 
     // Same scroll dance as the "populated series and status" render test:
     // ISBN and Pages sit past the initial 1024px window until scrolled in.
@@ -475,14 +475,10 @@ describe("LibraryTableView", () => {
     Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
     fireEvent.scroll(grid);
 
-    expect(await within(grid).findByRole("columnheader", { name: "ISBN" })).toBeInTheDocument();
-    expect(within(grid).getByRole("columnheader", { name: "Pages" })).toBeInTheDocument();
-    expect(
-      within(grid).queryByRole("columnheader", { name: "ISBN (all editions)" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(grid).queryByRole("columnheader", { name: "Pages (all editions)" }),
-    ).not.toBeInTheDocument();
+    const isbnHeader = await within(grid).findByRole("columnheader", { name: "ISBN" });
+    const pagesHeader = within(grid).getByRole("columnheader", { name: "Pages" });
+    expect(within(isbnHeader).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(pagesHeader).queryByRole("button")).not.toBeInTheDocument();
   });
 
   describe("cell editing", () => {

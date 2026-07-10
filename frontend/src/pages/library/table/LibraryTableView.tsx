@@ -9,8 +9,8 @@
  * operates on the loaded window: the scrollbar, Ctrl+End, and the row count
  * all reflect rows fetched so far, never a pretend 50K extent. Sorting is a
  * capped multi-level stack (see `MAX_SORT_LEVELS`): each level carries its
- * own direction, and both a header click/ctrl-click and the `SortChips` bar
- * write into the same stack via `onSortChange`.
+ * own direction, and a header click/ctrl-click writes the same stack the
+ * filter rail's sort section edits, via `onSortChange`.
  */
 import { Loader2 } from "lucide-react";
 import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
@@ -19,11 +19,9 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 
 import { MAX_SORT_LEVELS, type BookListItem, type SortField, type SortLevelParam } from "@/api";
-import { FilterBar } from "@/components/library/FilterBar";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
-import type { FilterState } from "@/routes/library-params";
 
 import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
@@ -34,22 +32,22 @@ import {
   GridShortcutsTrigger,
   useShortcutsHotkey,
 } from "./GridShortcutsDialog";
-import { SORT_SUMMARY_ID, SortChips } from "./SortChips";
 import { pendingKey, useCellEdit } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
 
 /**
- * Suffix marking a work-scoped column header (title/subtitle/authors): a
+ * Header tooltip for a work-scoped column (title/subtitle/authors): a
  * committed edit fans out to every loaded sibling edition of the same work.
- * The grid contract's `name` is a plain string rendered as the column
- * header's accessible name, with no separate slot for a tooltip attribute
- * (that would need a contract change outside this column's ownership). A
- * plain-language suffix reads the same for a sighted user scanning the
- * header row and a screen reader announcing it, rather than a glyph that
- * would need the tooltip to explain itself.
+ * Carried as a hoverable, dismissable info control beside the header text.
+ * The control's label reads as a suffix on the column's accessible name
+ * ("Title (all editions)"), matching what the header previously spelled out
+ * in visible text.
  */
-const WORK_SCOPED_SUFFIX = " (all editions)";
+const WORK_SCOPED_TOOLTIP = {
+  label: "(all editions)",
+  content: "Edits apply to all editions of the work",
+};
 
 const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   status: null,
@@ -171,14 +169,6 @@ const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = Object.fromEntries(
   ),
 );
 
-/** Chip/summary labels; kept in sync with each column's header name. */
-const SORT_FIELD_LABELS: Record<SortField, string> = {
-  title: "Title",
-  author: "Authors",
-  created_at: "Added",
-  pages: "Pages",
-};
-
 /** Renders the `created_at` RFC 3339 timestamp as a locale date for the
  *  read-only "Added" column and its plain-text export projection. */
 function formatAddedDate(iso: string): string {
@@ -199,7 +189,8 @@ function formatAddedDate(iso: string): string {
 const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
   {
     key: "title",
-    name: `Title${WORK_SCOPED_SUFFIX}`,
+    name: "Title",
+    headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: true,
     accessor: (row) => row.title,
     renderCell: (row) => (
@@ -216,14 +207,16 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
   },
   {
     key: "subtitle",
-    name: `Subtitle${WORK_SCOPED_SUFFIX}`,
+    name: "Subtitle",
+    headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: false,
     accessor: (row) => row.subtitle ?? EMPTY_CELL,
     renderEditCell: renderSubtitleEditCell,
   },
   {
     key: "authors",
-    name: `Authors${WORK_SCOPED_SUFFIX}`,
+    name: "Authors",
+    headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: true,
     accessor: (row) => (row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL),
     renderEditCell: renderAuthorsEditCell,
@@ -338,10 +331,6 @@ type Props = {
   items: readonly BookListItem[];
   sort: readonly SortLevelParam[];
   onSortChange: (levels: readonly SortLevelParam[]) => void;
-  filters: FilterState;
-  onFiltersChange: (next: FilterState) => void;
-  /** Series id to display name, from the loaded rows, for series chip labels. */
-  seriesLabels?: ReadonlyMap<string, string>;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
@@ -355,9 +344,6 @@ export function LibraryTableView({
   items,
   sort,
   onSortChange,
-  filters,
-  onFiltersChange,
-  seriesLabels,
   hasNextPage,
   isFetchingNextPage,
   isFetchNextPageError,
@@ -403,30 +389,24 @@ export function LibraryTableView({
     // while focus sits somewhere inside the table, and bubbles up from the
     // grid's own cells and any open editor without needing a ref.
     <div data-testid="library-table" onKeyDown={onGridKeyDown}>
-      <FilterBar filters={filters} onFiltersChange={onFiltersChange} seriesLabels={seriesLabels} />
-      <div className="mb-2 flex items-center justify-between gap-4">
-        <SortChips levels={sort} labels={SORT_FIELD_LABELS} onChange={onSortChange} />
+      <div className="mb-2 flex items-center justify-end gap-4">
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       </div>
-      {/* SortChips renders its sr-only summary unconditionally (even for an
-          empty stack) as an aria-live region, so a screen reader announces
-          every sort change and reads the current order in document order,
-          including a header-driven single-level sort. aria-describedby here is
-          a best-effort association; the live summary is what carries it. */}
-      <div aria-describedby={SORT_SUMMARY_ID}>
-        <ReactDataGridBinding<BookListItem>
-          rows={items}
-          columns={columns}
-          label="Library books"
-          sort={sortState}
-          onSortChange={handleSortChange}
-          onCellFocus={() => undefined}
-          onCellEdit={onCellEdit}
-          onScroll={handleScroll}
-          rowKey={(row) => row.id}
-          className="h-[calc(100dvh-22rem)] min-h-96"
-        />
-      </div>
+      {/* Sort-stack announcements moved with the sort editor into the
+          FilterRail's live region; the grid carries no sort-summary
+          association of its own. */}
+      <ReactDataGridBinding<BookListItem>
+        rows={items}
+        columns={columns}
+        label="Library books"
+        sort={sortState}
+        onSortChange={handleSortChange}
+        onCellFocus={() => undefined}
+        onCellEdit={onCellEdit}
+        onScroll={handleScroll}
+        rowKey={(row) => row.id}
+        className="h-[calc(100dvh-22rem)] min-h-96"
+      />
       {/* Single owner of every paging state in table mode; the page-level
           Load-more block stays out of table view so a failure or fetch is
           announced exactly once. */}

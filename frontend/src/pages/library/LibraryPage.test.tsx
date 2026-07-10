@@ -141,38 +141,19 @@ describe("LibraryPage", () => {
     expect(document.querySelector(".cinema-hint")).not.toBeNull();
   });
 
-  test("sort control is a button menu writing ?sort=", async () => {
+  test("the masthead hosts no sort menu; the rail's sort section owns sort editing", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      extraCacheParams: [{ sort: "title" }],
+      initialEntries: ["/library?sort=title"],
+      cacheParams: { sort: "title" },
     });
-    const user = userEvent.setup();
-    const sortButton = await screen.findByRole("button", { name: /Sort/ });
-    await user.click(sortButton);
-    const title = await screen.findByRole("menuitemradio", { name: "Title" });
-    title.focus();
-    await user.keyboard("{Enter}");
-    expect(await screen.findByRole("button", { name: /Sort: Title/i })).toBeInTheDocument();
-  });
-
-  test("a table-built stack matching no preset shows the Custom sort state", async () => {
-    renderLibrary({
-      items: [bookFixture()],
-      nextCursor: null,
-      initialEntries: ["/library?sort=author,-created_at"],
-      cacheParams: { sort: "author,-created_at" },
-    });
-    const sortButton = await screen.findByRole("button", { name: "Sort: Custom" });
-    const user = userEvent.setup();
-    await user.click(sortButton);
-    // None of the three presets match a two-level stack, so none is checked.
-    for (const label of ["Recent", "Title", "Author"]) {
-      expect(await screen.findByRole("menuitemradio", { name: label })).toHaveAttribute(
-        "aria-checked",
-        "false",
-      );
-    }
+    await screen.findByRole("heading", { name: "Library" });
+    expect(screen.queryByRole("button", { name: /^Sort:/ })).not.toBeInTheDocument();
+    const rail = await screen.findByRole("complementary", { name: "Filters" });
+    expect(
+      within(rail).getByRole("button", { name: /Change Title sort direction/ }),
+    ).toBeInTheDocument();
   });
 
   test("grid tiles carry a focus treatment equal to the hover treatment", async () => {
@@ -315,7 +296,7 @@ describe("LibraryPage", () => {
     });
     await screen.findByTestId("library-table");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("columnheader", { name: "Title (all editions)" }));
+    await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await waitFor(() => {
       const search = screen.getByTestId("location-search").textContent;
       expect(search).toContain("sort=title");
@@ -340,7 +321,7 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("table view shows only the FilterBar chip row, not the masthead chip row", async () => {
+  test("table view renders the same masthead summary as every other mode", async () => {
     renderLibrary({
       items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
       nextCursor: null,
@@ -348,11 +329,12 @@ describe("LibraryPage", () => {
       cacheParams: { series: "s-1" },
     });
     await screen.findByTestId("library-table");
-    // The masthead chip row is suppressed in table view so its chips do not
-    // double up the FilterBar's. Only the FilterBar chip row remains.
+    // The old table-mode spacer branch is gone: state stays visible in every
+    // mode, read-only, with names resolved from the loaded rows.
+    const summary = screen.getByTestId("filter-summary");
+    expect(within(summary).getByText(/Series: Discworld/)).toBeInTheDocument();
     expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
-    const chips = screen.getByTestId("filter-chips");
-    expect(within(chips).getByText("Series: Discworld")).toBeInTheDocument();
+    expect(screen.queryByTestId("filter-chips")).not.toBeInTheDocument();
   });
 
   test("a typed filter with no matches shows the filtered-empty state", async () => {
@@ -419,132 +401,71 @@ describe("LibraryPage", () => {
     expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
   });
 
-  test("renders an active-filter chip when ?author= param is set", async () => {
-    const authorId = "aaaa1111-0000-0000-0000-000000000000";
+  test("a single ?author= id resolves to its display name in the summary", async () => {
+    const authorId = "aaaa1111-0000-4000-8000-000000000000";
+    // Fresh Response per call: a Response body is single-use, and the rail's
+    // shelves query shares this spy with the author resolve.
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const body = url.includes("/authors")
+        ? { items: [{ id: authorId, value: "Fyodor Dostoevsky" }] }
+        : { items: [], next_cursor: null };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: [`/library?author=${authorId}`],
       cacheParams: { author: [authorId] },
     });
-    await screen.findByTestId("active-filters");
-    expect(screen.getByRole("button", { name: /clear author .* filter/i })).toBeInTheDocument();
+    const summary = await screen.findByTestId("filter-summary");
+    expect(await within(summary).findByText(/Author: Fyodor Dostoevsky/)).toBeInTheDocument();
+    fetchSpy.mockRestore();
   });
 
-  test("renders a chip per ?author= value and clears each independently", async () => {
-    const a1 = "aaaa1111-0000-0000-0000-000000000000";
-    const a2 = "bbbb2222-0000-0000-0000-000000000000";
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
-    client.setQueryData(queryKeys.books.list({ author: [a1, a2] }), {
-      pages: [response],
-      pageParams: [undefined],
-    });
-    client.setQueryData(queryKeys.books.list({ author: [a2] }), {
-      pages: [response],
-      pageParams: [undefined],
-    });
-    function Wrapper(): ReactElement {
-      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
-      const router = createMemoryRouter(routes, {
-        initialEntries: [`/library?author=${a1}&author=${a2}`],
-      });
-      return (
-        <QueryClientProvider client={client}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      );
-    }
-    render(<Wrapper />);
-
-    // The old single `get("author")` rendered one chip for the whole set; now
-    // each value gets its own.
-    await screen.findByTestId("active-filters");
-    const chip1 = screen.getByRole("button", {
-      name: new RegExp(`clear author ${a1} filter`, "i"),
-    });
-    expect(
-      screen.getByRole("button", { name: new RegExp(`clear author ${a2} filter`, "i") }),
-    ).toBeInTheDocument();
-
-    // Clearing one removes only its value; the other author survives.
-    const user = userEvent.setup();
-    await user.click(chip1);
-    expect(
-      screen.queryByRole("button", { name: new RegExp(`clear author ${a1} filter`, "i") }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: new RegExp(`clear author ${a2} filter`, "i") }),
-    ).toBeInTheDocument();
-  });
-
-  test("renders one tag chip per ?tag= repetition", async () => {
+  test("multi-token vocabulary filters summarise as counts, not chips", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
       initialEntries: ["/library?tag=scifi&tag=hugo"],
       cacheParams: { tag: ["scifi", "hugo"] },
     });
-    await screen.findByTestId("active-filters");
-    expect(screen.getByRole("button", { name: /clear tag scifi filter/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /clear tag hugo filter/i })).toBeInTheDocument();
+    const summary = await screen.findByTestId("filter-summary");
+    expect(within(summary).getByText(/Tags \(2\)/)).toBeInTheDocument();
+    // Per-condition one-click removal is deliberately out: the summary is
+    // read-only and the rail owns removal, at the cost of a second click.
+    expect(within(summary).queryByRole("button", { name: /clear/i })).not.toBeInTheDocument();
   });
 
-  test("clicking a filter chip removes the param and the cursor", async () => {
-    const authorId = "aaaa1111-0000-0000-0000-000000000000";
-    // Pre-fill both the active-author slot AND the empty-params slot
-    // so the suspense-infinite-query has a hit after the chip click
-    // changes the cache key.
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const response: BookListResponse = { items: [bookFixture()], next_cursor: null };
-    client.setQueryData(queryKeys.books.list({ author: [authorId] }), {
-      pages: [response],
-      pageParams: [undefined],
-    });
-    client.setQueryData(queryKeys.books.list({}), {
-      pages: [response],
-      pageParams: [undefined],
-    });
-    function Wrapper(): ReactElement {
-      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
-      const router = createMemoryRouter(routes, {
-        initialEntries: [`/library?author=${authorId}&cursor=eyJ4Ijox`],
-      });
-      return (
-        <QueryClientProvider client={client}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      );
-    }
-    render(<Wrapper />);
-
-    const chip = await screen.findByRole("button", { name: /clear author .* filter/i });
+  test("the summary toggle opens the rail sheet below the desktop breakpoint", async () => {
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    const summary = await screen.findByTestId("filter-summary");
+    const toggle = within(summary).getByRole("button", { name: "Filters" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
     const user = userEvent.setup();
-    await user.click(chip);
-    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
+    await user.click(toggle);
+    const sheet = await screen.findByRole("dialog", { name: /Filters/ });
+    expect(within(sheet).getByRole("searchbox", { name: "Quick search" })).toBeInTheDocument();
+    // The open modal sheet aria-hides the rest of the page, so assert on the
+    // captured element rather than re-querying the accessibility tree.
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 
-  test("an active series chip shows the resolved series name, not a raw id", async () => {
+  test("an active series filter shows the resolved series name, not a raw id", async () => {
     renderLibrary({
       items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
       nextCursor: null,
       initialEntries: ["/library?series=s-1"],
       cacheParams: { series: "s-1" },
     });
-    const chips = await screen.findByTestId("active-filters");
-    expect(within(chips).getByRole("button", { name: /Discworld/ })).toBeInTheDocument();
-    expect(within(chips).queryByText(/s-1/)).not.toBeInTheDocument();
-  });
-
-  test("an active author chip shows the full author name, not a truncated id", async () => {
-    renderLibrary({
-      items: [bookFixture()],
-      nextCursor: null,
-      initialEntries: ["/library?author=Fyodor%20Dostoevsky"],
-      cacheParams: { author: ["Fyodor Dostoevsky"] },
-    });
-    const chips = await screen.findByTestId("active-filters");
-    expect(within(chips).getByRole("button", { name: /Fyodor Dostoevsky/ })).toBeInTheDocument();
+    const summary = await screen.findByTestId("filter-summary");
+    expect(within(summary).getByText(/Series: Discworld/)).toBeInTheDocument();
+    expect(within(summary).queryByText(/s-1/)).not.toBeInTheDocument();
   });
 
   test("filtered-empty shows its own copy and a clear-all action, not the true-empty copy", async () => {
@@ -694,12 +615,15 @@ describe("LibraryPage", () => {
     // Filter gone (true-empty takes over), but view (list) and sort (title)
     // survive — assert via the persisted controls, not the list table (which
     // an empty result set does not render).
-    expect(await screen.findByRole("button", { name: /Sort: Title/i })).toBeInTheDocument();
+    const rail = await screen.findByRole("complementary", { name: "Filters" });
+    expect(
+      within(rail).getByRole("button", { name: /Change Title sort direction/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "List", pressed: true })).toBeInTheDocument();
     expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
   });
 
-  test("series chip falls back to a short id when the id is absent from the loaded pages", async () => {
+  test("the summary falls back to a short id when the series is absent from the loaded pages", async () => {
     const longId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
     renderLibrary({
       items: [bookFixture()],
@@ -707,10 +631,10 @@ describe("LibraryPage", () => {
       initialEntries: [`/library?series=${longId}`],
       cacheParams: { series: longId },
     });
-    const chips = await screen.findByTestId("active-filters");
+    const summary = await screen.findByTestId("filter-summary");
     // No matching series in the loaded pages, so shortId (first 8 + ellipsis),
     // never "undefined".
-    expect(within(chips).getByRole("button", { name: /aaaabbbb…/ })).toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: /undefined/ })).not.toBeInTheDocument();
+    expect(within(summary).getByText(/Series: aaaabbbb…/)).toBeInTheDocument();
+    expect(within(summary).queryByText(/undefined/)).not.toBeInTheDocument();
   });
 });
