@@ -392,9 +392,9 @@ export function LibraryTableView({
       <div className="mb-2 flex items-center justify-end gap-4">
         <GridShortcutsTrigger onOpenChange={setShortcutsOpen} />
       </div>
-      {/* Sort-stack announcements moved with the sort editor into the
-          FilterRail's live region; the grid carries no sort-summary
-          association of its own. */}
+      {/* Sort-stack announcements come from LibraryPage's always-mounted
+          live region; the grid carries no sort-summary association of its
+          own. */}
       <ReactDataGridBinding<BookListItem>
         rows={items}
         columns={columns}

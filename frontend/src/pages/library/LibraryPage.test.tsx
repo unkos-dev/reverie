@@ -6,11 +6,31 @@ import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } fro
 import type { ReactElement } from "react";
 
 import type { BookListItem, BookListResponse, ListBooksParams } from "@/api";
+import { RAIL_DESKTOP_MEDIA_QUERY } from "@/components/shell/BrowseLayout";
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 import { LibraryPage } from "./LibraryPage";
+import { RAIL_STORAGE_KEY } from "./rail-storage";
 import { VIEW_COOKIE_NAME } from "./view-cookie";
+
+/** Stubs `matchMedia` so the rail's desktop media query matches; every other
+ *  query stays false. jsdom's own `matchMedia` always reports false, so the
+ *  desktop half of the rail visibility split is unreachable without this. */
+function installDesktopMatchMedia(): void {
+  const mediaQueryList = (query: string): MediaQueryList =>
+    ({
+      matches: query === RAIL_DESKTOP_MEDIA_QUERY,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => true,
+    }) as unknown as MediaQueryList;
+  vi.stubGlobal("matchMedia", mediaQueryList);
+}
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   return {
@@ -454,6 +474,75 @@ describe("LibraryPage", () => {
     // The open modal sheet aria-hides the rest of the page, so assert on the
     // captured element rather than re-querying the accessibility tree.
     expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("at the desktop breakpoint the toggle collapses the rail column and persists the choice", async () => {
+    installDesktopMatchMedia();
+    try {
+      renderLibrary({
+        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        nextCursor: null,
+        initialEntries: ["/library?series=s-1"],
+        cacheParams: { series: "s-1" },
+      });
+      const summary = await screen.findByTestId("filter-summary");
+      const toggle = within(summary).getByRole("button", { name: /Filters/ });
+      expect(await screen.findByRole("complementary", { name: "Filters" })).toBeInTheDocument();
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+      const user = userEvent.setup();
+      await user.click(toggle);
+      expect(screen.queryByRole("complementary", { name: "Filters" })).not.toBeInTheDocument();
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(localStorage.getItem(RAIL_STORAGE_KEY)).toBe("true");
+      // The read-only readout must keep active state visible while the rail
+      // is away; this invariant is the point of the masthead summary.
+      expect(within(summary).getByText(/Series: Discworld/)).toBeInTheDocument();
+
+      await user.click(toggle);
+      expect(await screen.findByRole("complementary", { name: "Filters" })).toBeInTheDocument();
+      expect(localStorage.getItem(RAIL_STORAGE_KEY)).toBe("false");
+    } finally {
+      vi.unstubAllGlobals();
+      localStorage.removeItem(RAIL_STORAGE_KEY);
+    }
+  });
+
+  test("a persisted collapsed preference seeds the rail hidden at the desktop breakpoint", async () => {
+    installDesktopMatchMedia();
+    localStorage.setItem(RAIL_STORAGE_KEY, "true");
+    try {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      const summary = await screen.findByTestId("filter-summary");
+      expect(screen.queryByRole("complementary", { name: "Filters" })).not.toBeInTheDocument();
+      expect(within(summary).getByRole("button", { name: "Filters" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      localStorage.removeItem(RAIL_STORAGE_KEY);
+    }
+  });
+
+  test("the sort live region announces the stack even with the rail collapsed", async () => {
+    installDesktopMatchMedia();
+    localStorage.setItem(RAIL_STORAGE_KEY, "true");
+    try {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?sort=-pages"],
+        cacheParams: { sort: "-pages" },
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      expect(screen.queryByRole("complementary", { name: "Filters" })).not.toBeInTheDocument();
+      const region = screen.getByText("Sorted by Pages descending");
+      expect(region).toHaveAttribute("aria-live", "polite");
+    } finally {
+      vi.unstubAllGlobals();
+      localStorage.removeItem(RAIL_STORAGE_KEY);
+    }
   });
 
   test("an active series filter shows the resolved series name, not a raw id", async () => {

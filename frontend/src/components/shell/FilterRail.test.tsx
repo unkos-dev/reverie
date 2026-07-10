@@ -129,6 +129,20 @@ describe("FilterRail quick search", () => {
     expect(input).toHaveValue("");
   });
 
+  test("a quick-search draft survives a sibling section's debounced commit", async () => {
+    const router = renderRail();
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
+    const input = screen.getByRole("searchbox", { name: "Quick search" });
+    await user.type(input, "du");
+    await debounceSettled();
+    const search = currentSearch(router);
+    expect(search.get("pages_gte")).toBe("300");
+    expect(search.get("q")).toBe("du");
+    expect(input).toHaveValue("du");
+  });
+
   test("the rail hosts no command palette trigger", () => {
     renderRail();
     expect(screen.queryByRole("button", { name: /Find a volume/ })).not.toBeInTheDocument();
@@ -217,6 +231,35 @@ describe("FilterRail typed sections", () => {
     expect(currentSearch(router).get("pages_gte")).toBe("300");
   });
 
+  test("a debounced commit in one section preserves another section's pending draft", async () => {
+    const router = renderRail();
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
+    const title = sectionByTitle("Title");
+    const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
+    await user.type(titleInput, "sea");
+    await debounceSettled();
+    const search = currentSearch(router);
+    expect(search.get("pages_gte")).toBe("300");
+    expect(search.get("title_contains")).toBe("sea");
+    expect(titleInput).toHaveValue("sea");
+  });
+
+  test("an immediate commit elsewhere preserves a pending typed draft", async () => {
+    const router = renderRail();
+    const user = userEvent.setup();
+    const title = sectionByTitle("Title");
+    const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
+    await user.type(titleInput, "sea");
+    await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
+    await debounceSettled();
+    const search = currentSearch(router);
+    expect(search.get("series")).toBe("s-1");
+    expect(search.get("title_contains")).toBe("sea");
+    expect(titleInput).toHaveValue("sea");
+  });
+
   test("section clear during a pending draft does not resurrect the value", async () => {
     const router = renderRail("/library?pages_lte=900");
     const user = userEvent.setup();
@@ -286,9 +329,10 @@ describe("FilterRail sort section", () => {
     expect(search.get("cursor")).toBeNull();
   });
 
-  test("the live region announces the current stack", () => {
+  test("the rail hosts no live region of its own; announcements are page-level", () => {
     renderRail("/library?sort=-pages");
-    expect(screen.getByText("Sorted by Pages descending")).toBeInTheDocument();
+    const rail = screen.getByRole("complementary", { name: "Filters" });
+    expect(rail.querySelector("[aria-live]")).toBeNull();
   });
 
   test("the add-field picker hides fields already in the stack and caps the stack", () => {

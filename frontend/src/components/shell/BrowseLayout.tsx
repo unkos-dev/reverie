@@ -23,6 +23,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
+/**
+ * Media query for the rail-column breakpoint. Must describe the same width
+ * as the `xl:` utilities on the layout below (Tailwind's default `xl` is
+ * 1280px): the owning page routes its toggle between the persisted column
+ * collapse and the transient sheet by this query, so if the two ever
+ * disagree the toggle drives a surface the viewer cannot see.
+ */
+export const RAIL_DESKTOP_MEDIA_QUERY = "(min-width: 1280px)";
+
 interface BrowseLayoutProps {
   /** The filter rail (a `FilterRail`, typically). */
   rail: ReactElement;

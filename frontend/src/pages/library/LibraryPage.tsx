@@ -29,7 +29,8 @@ import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
 import { FilterSummary } from "@/components/library/FilterSummary";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
-import { BrowseLayout } from "@/components/shell/BrowseLayout";
+import { sortStackSummary } from "@/components/library/sort-summary";
+import { BrowseLayout, RAIL_DESKTOP_MEDIA_QUERY } from "@/components/shell/BrowseLayout";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -80,9 +81,10 @@ function LibraryContent(): ReactElement {
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
-  // Rail visibility splits by width: ≥1280px toggles the persisted column
-  // collapse, below that the toggle drives the transient sheet.
-  const isDesktop = useMediaQuery("(min-width: 1280px)");
+  // Rail visibility splits by width: at the rail-column breakpoint the
+  // toggle drives the persisted column collapse, below it the transient
+  // sheet.
+  const isDesktop = useMediaQuery(RAIL_DESKTOP_MEDIA_QUERY);
   const [railCollapsed, setRailCollapsed] = useState(() => readRailCollapsed() ?? false);
   const [sheetOpen, setSheetOpen] = useState(false);
   function toggleRail(): void {
@@ -232,6 +234,13 @@ function LibraryContent(): ReactElement {
             The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
           <div className="px-6 py-10 sm:px-10">
             <LibraryMasthead />
+            {/* Sort announcements live here, not in the rail's sort section:
+                the rail unmounts when collapsed (and the sheet when closed),
+                and an unmounted live region is silent, which would leave
+                header-driven sorts unannounced in exactly those states. */}
+            <p className="sr-only" aria-live="polite">
+              {sortStackSummary(parseSortParam(params.sort ?? ""))}
+            </p>
             <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
               {/* Always-visible read-only readout + rail toggle, every view
                   mode: state stays visible even with the rail collapsed. */}

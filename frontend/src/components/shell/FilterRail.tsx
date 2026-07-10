@@ -14,15 +14,25 @@
  * every write goes through the filter codec (or the sort helper), always
  * dropping `cursor` because a changed filter or sort invalidates the keyset
  * position. Free-text and numeric inputs edit a local draft committed after
- * a debounce; a committed filter change from anywhere else resyncs those
- * drafts, so a pending keystroke can never resurrect a cleared condition.
+ * a debounce. A clear affordance or an external committed change (navigation,
+ * the page's clear-all) resyncs those drafts, so a pending keystroke can
+ * never resurrect a cleared condition; the rail's own edits in other
+ * sections leave them alone, so a sibling's commit never eats in-flight
+ * keystrokes.
  * The masthead summary is the read-only counterpart of this surface; the
  * table view's header click / ctrl-click sort is the one gesture that edits
  * the same URL state from outside the rail.
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useEffect, useId, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useSearchParams } from "react-router";
 
 import {
@@ -31,7 +41,6 @@ import {
   parseSortParam,
   SORT_FIELDS,
   type Shelf,
-  type SortField,
   type SortLevelParam,
 } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -43,6 +52,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
 import { useDebouncedCommit } from "@/lib/hooks/use-debounced-commit";
 import { queryKeys } from "@/lib/query/keys";
@@ -80,14 +90,6 @@ const TITLE_OPS: readonly TextOp[] = ["contains", "eq", "ne"];
 const SUBTITLE_OPS: readonly TextOp[] = ["contains", "empty"];
 const ISBN_OPS: readonly TextOp[] = ["contains", "eq", "empty"];
 
-/** Sort-picker labels, matching the table view's column header names. */
-const SORT_FIELD_LABELS: Record<SortField, string> = {
-  title: "Title",
-  author: "Authors",
-  created_at: "Added",
-  pages: "Pages",
-};
-
 /** A stable, order-independent serialization of every filter *except* `q`.
  *  Quick search watches this: it stays constant while the user types (and
  *  across the debounced `q` write), and changes only on an external filter
@@ -109,6 +111,10 @@ function fullFilterToken(filters: FilterState): string {
   return params.toString();
 }
 
+/** Tokens of the committed state the rail's own latest edit wrote; `null`
+ *  after a clear affordance or before any edit. See `useDraftSlice`. */
+type EditTokens = { full: string; reset: string };
+
 function textSliceToken(value: TextFilter): string {
   return [value.contains, value.eq, value.ne, value.empty]
     .map((part) => (part === undefined ? "" : String(part)))
@@ -123,24 +129,29 @@ function rangeSliceToken(value: RangeFilter): string {
 
 /**
  * Local draft over one committed filter slice, committed after a debounce.
- * `fullToken` is the committed-state serialization: any committed change,
- * from this section's own commit or anywhere else, resyncs the draft to the
- * committed value, cancelling a pending debounce so a stale draft cannot
- * resurrect a condition the user just cleared.
+ * `fullToken` is the committed-state serialization; a change resyncs the
+ * draft to the committed value, cancelling a pending debounce so a stale
+ * draft cannot resurrect a condition the user just cleared. The one
+ * exception: when `lastEdit` shows the change is the rail's own edit in a
+ * different section (this slice untouched), the draft survives, so a
+ * sibling's debounced commit never eats in-flight keystrokes.
  */
 function useDraftSlice<T>(
   committed: T,
   fullToken: string,
   sliceToken: (value: T) => string,
   commit: (next: T) => void,
+  lastEdit: RefObject<EditTokens | null>,
 ): { draft: T; setDraft: (next: T) => void } {
   const [draft, setDraft] = useState(committed);
-  const [synced, setSynced] = useState(fullToken);
+  const [synced, setSynced] = useState({ full: fullToken, slice: sliceToken(committed) });
   // Render-phase state adjustment, the compiler-accepted alternative to a
   // sync effect.
-  if (fullToken !== synced) {
-    setSynced(fullToken);
-    setDraft(committed);
+  if (fullToken !== synced.full) {
+    const nextSlice = sliceToken(committed);
+    const editElsewhere = lastEdit.current?.full === fullToken && nextSlice === synced.slice;
+    setSynced({ full: fullToken, slice: nextSlice });
+    if (!editElsewhere) setDraft(committed);
   }
   useDebouncedCommit(
     sliceToken(draft),
@@ -170,16 +181,51 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
   ];
   const authorNames = useAuthorLabels(authorIds);
 
-  function commitFilters(next: FilterState): void {
-    const updated = new URLSearchParams(searchParams);
+  // Tokens of the state the rail's latest edit wrote, read by the draft
+  // resync in `useDraftSlice` and `QuickSearch` to tell "our own edit
+  // elsewhere in the rail" (keep drafts) from everything else: clears,
+  // navigation, and the page's clear-all (reset drafts).
+  const lastEdit = useRef<EditTokens | null>(null);
+
+  // Live view of the URL params. The render snapshot goes stale when two
+  // debounced commits expire in the same frame: React re-renders on a
+  // scheduler task, which runs after every already-due timer, so the second
+  // commit would otherwise build on pre-first-commit state and silently
+  // drop the first write. Every rail write goes through and updates this
+  // ref; renders re-sync it to the router's truth.
+  const paramsRef = useRef(searchParams);
+  useEffect(() => {
+    paramsRef.current = searchParams;
+  }, [searchParams]);
+
+  function writeFilters(next: FilterState): void {
+    const updated = new URLSearchParams(paramsRef.current);
     serializeFilterParams(next, updated);
     // A filter change invalidates keyset pagination position.
     updated.delete("cursor");
+    paramsRef.current = updated;
     setSearchParams(updated, { replace: true });
   }
 
+  /** Apply a user edit on top of the live committed state. */
+  function commitFilters(patch: (current: FilterState) => FilterState): void {
+    const next = patch(parseFilterParams(paramsRef.current));
+    lastEdit.current = { full: fullFilterToken(next), reset: filterResetToken(next) };
+    writeFilters(next);
+  }
+
+  /** Clear-affordance write: pending drafts everywhere must die with it, or
+   *  a queued debounce could resurrect a condition the user just cleared. */
+  function clearFilters(patch: (current: FilterState) => FilterState): void {
+    const next = patch(parseFilterParams(paramsRef.current));
+    lastEdit.current = null;
+    writeFilters(next);
+  }
+
   function commitSort(levels: readonly SortLevelParam[]): void {
-    setSearchParams(applySortToSearchParams(searchParams, levels), { replace: true });
+    const updated = applySortToSearchParams(paramsRef.current, levels);
+    paramsRef.current = updated;
+    setSearchParams(updated, { replace: true });
   }
 
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
@@ -194,13 +240,18 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
       title={title}
       activeCount={setCount(filters[family])}
       onClear={() => {
-        commitFilters({ ...filters, [family]: { all: [], any: [], none: [] } });
+        clearFilters((current) => ({ ...current, [family]: { all: [], any: [], none: [] } }));
       }}
     >
       <VocabEditor
         family={family}
         draft={filters}
-        setDraft={commitFilters}
+        setDraft={(next) => {
+          // Take only this editor's family from its output: the rest of the
+          // editor's state is a render snapshot and must not overwrite a
+          // commit that landed since.
+          commitFilters((current) => ({ ...current, [family]: next[family] }));
+        }}
         resolveAuthorLabel={authorNames.labelFor}
       />
     </RailSection>
@@ -211,22 +262,26 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
       <QuickSearch
         value={filters.q ?? ""}
         resetToken={filterResetToken(filters)}
+        lastEdit={lastEdit}
         onCommit={(q) => {
-          commitFilters({ ...filters, q });
+          commitFilters((current) => ({ ...current, q }));
         }}
       />
       <SortSection levels={sortLevels} onChange={commitSort} />
       <ShelfSection
         activeShelf={filters.shelf}
         onPick={(shelf) => {
-          commitFilters({ ...filters, shelf });
+          commitFilters((current) => ({ ...current, shelf }));
+        }}
+        onClear={() => {
+          clearFilters((current) => ({ ...current, shelf: undefined }));
         }}
       />
       <RailSection
         title="Series"
         activeCount={filters.series === undefined ? 0 : 1}
         onClear={() => {
-          commitFilters({ ...filters, series: undefined });
+          clearFilters((current) => ({ ...current, series: undefined }));
         }}
       >
         <FacetList
@@ -234,7 +289,7 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
           active={filters.series}
           emptyText="No series in view."
           onPick={(series) => {
-            commitFilters({ ...filters, series });
+            commitFilters((current) => ({ ...current, series }));
           }}
         />
       </RailSection>
@@ -246,13 +301,13 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         title="Status"
         activeCount={filters.status.any.length + filters.status.none.length}
         onClear={() => {
-          commitFilters({ ...filters, status: { any: [], none: [] } });
+          clearFilters((current) => ({ ...current, status: { any: [], none: [] } }));
         }}
       >
         <StatusEditor
           value={filters.status.any}
           onChange={(any) => {
-            commitFilters({ ...filters, status: { ...filters.status, any } });
+            commitFilters((current) => ({ ...current, status: { ...current.status, any } }));
           }}
         />
       </RailSection>
@@ -261,9 +316,13 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         ops={TITLE_OPS}
         committed={filters.title}
         fullToken={fullToken}
+        lastEdit={lastEdit}
         activeCount={textCount(filters.title)}
         onCommit={(title) => {
-          commitFilters({ ...filters, title });
+          commitFilters((current) => ({ ...current, title }));
+        }}
+        onClear={() => {
+          clearFilters((current) => ({ ...current, title: {} }));
         }}
       />
       <TextSection
@@ -271,9 +330,13 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         ops={SUBTITLE_OPS}
         committed={filters.subtitle}
         fullToken={fullToken}
+        lastEdit={lastEdit}
         activeCount={textCount(filters.subtitle)}
         onCommit={(subtitle) => {
-          commitFilters({ ...filters, subtitle });
+          commitFilters((current) => ({ ...current, subtitle }));
+        }}
+        onClear={() => {
+          clearFilters((current) => ({ ...current, subtitle: {} }));
         }}
       />
       <TextSection
@@ -281,9 +344,13 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         ops={ISBN_OPS}
         committed={filters.isbn13}
         fullToken={fullToken}
+        lastEdit={lastEdit}
         activeCount={textCount(filters.isbn13)}
         onCommit={(isbn13) => {
-          commitFilters({ ...filters, isbn13 });
+          commitFilters((current) => ({ ...current, isbn13 }));
+        }}
+        onClear={() => {
+          clearFilters((current) => ({ ...current, isbn13: {} }));
         }}
       />
       <RangeSection
@@ -291,9 +358,13 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         min={0}
         committed={filters.pages}
         fullToken={fullToken}
+        lastEdit={lastEdit}
         activeCount={rangeCount(filters.pages)}
         onCommit={(pages) => {
-          commitFilters({ ...filters, pages });
+          commitFilters((current) => ({ ...current, pages }));
+        }}
+        onClear={() => {
+          clearFilters((current) => ({ ...current, pages: {} }));
         }}
       />
       <RangeSection
@@ -302,9 +373,13 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
         max={5}
         committed={filters.rating}
         fullToken={fullToken}
+        lastEdit={lastEdit}
         activeCount={rangeCount(filters.rating)}
         onCommit={(rating) => {
-          commitFilters({ ...filters, rating });
+          commitFilters((current) => ({ ...current, rating }));
+        }}
+        onClear={() => {
+          clearFilters((current) => ({ ...current, rating: {} }));
         }}
       />
       <RailSection
@@ -313,14 +388,18 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
           (filters.addedAfter === undefined ? 0 : 1) + (filters.addedBefore === undefined ? 0 : 1)
         }
         onClear={() => {
-          commitFilters({ ...filters, addedAfter: undefined, addedBefore: undefined });
+          clearFilters((current) => ({
+            ...current,
+            addedAfter: undefined,
+            addedBefore: undefined,
+          }));
         }}
       >
         <DateRangeEditor
           after={filters.addedAfter}
           before={filters.addedBefore}
           onChange={({ after, before }) => {
-            commitFilters({ ...filters, addedAfter: after, addedBefore: before });
+            commitFilters((current) => ({ ...current, addedAfter: after, addedBefore: before }));
           }}
         />
       </RailSection>
@@ -331,19 +410,22 @@ export function FilterRail({ seriesOptions }: FilterRailProps): ReactElement {
 type QuickSearchProps = {
   value: string;
   resetToken: string;
+  lastEdit: RefObject<EditTokens | null>;
   onCommit: (q: string | undefined) => void;
 };
 
-function QuickSearch({ value, resetToken, onCommit }: QuickSearchProps): ReactElement {
+function QuickSearch({ value, resetToken, lastEdit, onCommit }: QuickSearchProps): ReactElement {
   const [draft, setDraft] = useState(value);
   const [synced, setSynced] = useState({ value, resetToken });
   // Reset the input to reflect `value` when the committed `q` changes from
   // outside (navigation) OR when any other filter changes (a section clear,
   // clear-all). The second case discards an uncommitted draft so a pending
-  // keystroke cannot resurrect after the user clears filters.
+  // keystroke cannot resurrect after the user clears filters; when it is
+  // the rail's own edit in another section, the draft survives instead.
   if (value !== synced.value || resetToken !== synced.resetToken) {
+    const editElsewhere = value === synced.value && lastEdit.current?.reset === resetToken;
     setSynced({ value, resetToken });
-    setDraft(value);
+    if (!editElsewhere) setDraft(value);
   }
   const trimmed = draft.trim();
   const next = trimmed.length >= MIN_Q_LEN ? trimmed : undefined;
@@ -431,22 +513,13 @@ type SortSectionProps = {
 /**
  * Sort-stack editor: add, remove, reorder, and flip levels. The table view's
  * header click / ctrl-click writes the same stack; this section is the sort
- * home for grid and list and the full-stack editor everywhere. The sr-only
- * summary renders unconditionally as a live region so a screen reader hears
- * every stack change, including header-driven ones.
+ * home for grid and list and the full-stack editor everywhere. Stack
+ * announcements are not this section's job: the aria-live sort summary is
+ * mounted by `LibraryPage`, because the rail unmounts when collapsed and a
+ * live region must stay mounted to announce.
  */
 function SortSection({ levels, onChange }: SortSectionProps): ReactElement {
-  const summaryId = useId();
   const remaining = SORT_FIELDS.filter((field) => !levels.some((level) => level.field === field));
-  const summary =
-    levels.length === 0
-      ? "Not sorted"
-      : `Sorted by ${levels
-          .map(
-            (level) =>
-              `${SORT_FIELD_LABELS[level.field]} ${level.desc ? "descending" : "ascending"}`,
-          )
-          .join(", then ")}`;
 
   function toggleDirection(index: number): void {
     onChange(levels.map((level, i) => (i === index ? { ...level, desc: !level.desc } : level)));
@@ -478,9 +551,6 @@ function SortSection({ levels, onChange }: SortSectionProps): ReactElement {
         onChange([]);
       }}
     >
-      <p id={summaryId} className="sr-only" aria-live="polite">
-        {summary}
-      </p>
       <div role="group" aria-label="Sort order" className="flex flex-col gap-1">
         {levels.map((level, index) => {
           const label = SORT_FIELD_LABELS[level.field];
@@ -608,9 +678,11 @@ function FacetList({ options, active, emptyText, onPick }: FacetListProps): Reac
 type ShelfSectionProps = {
   activeShelf: string | undefined;
   onPick: (shelf: string | undefined) => void;
+  /** Clear-affordance path, distinct from `onPick` so it resets drafts. */
+  onClear: () => void;
 };
 
-function ShelfSection({ activeShelf, onPick }: ShelfSectionProps): ReactElement {
+function ShelfSection({ activeShelf, onPick, onClear }: ShelfSectionProps): ReactElement {
   const {
     data: shelves,
     isLoading,
@@ -635,13 +707,7 @@ function ShelfSection({ activeShelf, onPick }: ShelfSectionProps): ReactElement 
       : "No shelves yet.";
 
   return (
-    <RailSection
-      title="Shelf"
-      activeCount={activeShelf === undefined ? 0 : 1}
-      onClear={() => {
-        onPick(undefined);
-      }}
-    >
+    <RailSection title="Shelf" activeCount={activeShelf === undefined ? 0 : 1} onClear={onClear}>
       <FacetList options={options} active={activeShelf} emptyText={emptyText} onPick={onPick} />
     </RailSection>
   );
@@ -652,8 +718,11 @@ type TextSectionProps = {
   ops: readonly TextOp[];
   committed: TextFilter;
   fullToken: string;
+  lastEdit: RefObject<EditTokens | null>;
   activeCount: number;
   onCommit: (next: TextFilter) => void;
+  /** Clear-affordance path, distinct from `onCommit` so it resets drafts. */
+  onClear: () => void;
 };
 
 function TextSection({
@@ -661,18 +730,20 @@ function TextSection({
   ops,
   committed,
   fullToken,
+  lastEdit,
   activeCount,
   onCommit,
+  onClear,
 }: TextSectionProps): ReactElement {
-  const { draft, setDraft } = useDraftSlice(committed, fullToken, textSliceToken, onCommit);
+  const { draft, setDraft } = useDraftSlice(
+    committed,
+    fullToken,
+    textSliceToken,
+    onCommit,
+    lastEdit,
+  );
   return (
-    <RailSection
-      title={title}
-      activeCount={activeCount}
-      onClear={() => {
-        onCommit({});
-      }}
-    >
+    <RailSection title={title} activeCount={activeCount} onClear={onClear}>
       <TextFilterEditor value={draft} ops={ops} onChange={setDraft} />
     </RailSection>
   );
@@ -684,8 +755,11 @@ type RangeSectionProps = {
   max?: number;
   committed: RangeFilter;
   fullToken: string;
+  lastEdit: RefObject<EditTokens | null>;
   activeCount: number;
   onCommit: (next: RangeFilter) => void;
+  /** Clear-affordance path, distinct from `onCommit` so it resets drafts. */
+  onClear: () => void;
 };
 
 function RangeSection({
@@ -694,18 +768,20 @@ function RangeSection({
   max,
   committed,
   fullToken,
+  lastEdit,
   activeCount,
   onCommit,
+  onClear,
 }: RangeSectionProps): ReactElement {
-  const { draft, setDraft } = useDraftSlice(committed, fullToken, rangeSliceToken, onCommit);
+  const { draft, setDraft } = useDraftSlice(
+    committed,
+    fullToken,
+    rangeSliceToken,
+    onCommit,
+    lastEdit,
+  );
   return (
-    <RailSection
-      title={title}
-      activeCount={activeCount}
-      onClear={() => {
-        onCommit({});
-      }}
-    >
+    <RailSection title={title} activeCount={activeCount} onClear={onClear}>
       <RangeFilterEditor value={draft} min={min} max={max} allowEmpty onChange={setDraft} />
     </RailSection>
   );
