@@ -40,20 +40,28 @@ shape, and a self-hosting operator evaluating Reverie can see where it
 is going without reading a roadmap. Planned entries are skipped by
 keyboard navigation and never act as links.
 
-## One search surface
+## Two search jobs, two surfaces
 
-Search lives in one place: the command palette. A search button at the
-top of the filter rail opens it; so do `⌘K` / `Ctrl K` and the `/` key
-from anywhere outside a text field. There is intentionally no second
-inline search box; one surface means search behaves identically
-wherever you invoke it, and the palette can grow into a broader command
-surface later without a migration.
+Reverie separates finding a book from narrowing the books in view.
+
+The **command palette** navigates: pick a book and it takes you there.
+Open it with `⌘K` / `Ctrl K` or the `/` key from anywhere outside a
+text field. The **quick search** box at the top of the filter rail
+filters: type two or more characters and the collection you are
+browsing shrinks to the matches, in whatever view and sort order you
+already had. It never navigates, and clearing it brings everything
+back.
+
+The split keeps each surface honest. A single box would have to guess
+whether you meant "go to this book" or "show me fewer books", and the
+palette stays free to grow into a broader command surface without
+dragging filter semantics along.
 
 ## Three library views
 
 The Library shows the same collection three ways: a cover **grid**, a
-compact **list**, and a spreadsheet-style **table**. The toggle sits
-with the sort control above the books. Grid is for recognising books by
+compact **list**, and a spreadsheet-style **table**. The view toggle
+sits above the books, beside the filter summary. Grid is for recognising books by
 cover; the table is for scanning dense metadata (subtitle, ISBN, pages,
 reading state) across many books without opening each one.
 
@@ -75,20 +83,22 @@ Your view choice travels in the URL (`?view=table`), so a shared link
 opens exactly what you see; Reverie also remembers your last choice
 and uses it the next time you open the Library without one.
 
-## Sorting the library table
+## Sorting the library
 
-Click a column header to sort the table by that column: the first
-click sorts ascending, the second descending, and a third turns the
-sort off. `⌘-click` / `Ctrl-click` a header to add it as another sort
-level instead of replacing the current one, so you can sort by author
-and then, within each author, by newest first. You can stack up to
-three levels at once.
+The filter rail carries a **Sort** section in every view. Add up to
+three levels from its field picker, flip a level's direction, reorder
+levels, remove one, or clear the whole stack; none of it needs a
+modifier key. Grid and list sort from here, and the section always
+shows the full stack, whichever surface built it.
 
-A plain click on any header resets the sort back down to that single
-column. Once more than one level is active, use the sort chips bar
-above the table instead: reorder levels, flip a level's direction,
-remove one, or clear the sort entirely. None of that needs a modifier
-key.
+The table keeps its faster gesture on top. Click a column header to
+sort by that column: the first click sorts ascending, the second
+descending, and a third turns the sort off. `⌘-click` / `Ctrl-click` a
+header adds it as another sort level instead of replacing the current
+one, so you can sort by author and then, within each author, by newest
+first. A plain click on any header resets the sort back down to that
+single column; the rail's Sort section is the recovery surface when a
+stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always
 sort to the end, whichever direction you're sorting in.
@@ -98,33 +108,40 @@ the order you want, author then most recent within each author, for
 example, while paging stays stable: rows don't get skipped or repeated
 as you load more.
 
-## Filtering the library table
+## Filtering the library
 
-The table view carries a filter bar above the grid: a quick search box
-on one side and an **Add filter** builder on the other.
+The filter rail is the single home for every filter, in every view.
+Grid, list, and table express the identical grammar, because one
+surface edits the same URL state for all three; a condition set while
+browsing covers never disappears when you switch to the table, or the
+other way around.
 
-Quick search narrows the table you are already looking at. Type into
-it and the currently sorted rows shrink to the ones whose title or text
-matches, without leaving the view. This is a different job from the
-command palette (`⌘K` / `Ctrl K`). The palette takes you to one book,
-jumping you out to whatever you pick; quick search never navigates. It
-refines the rows in front of you and keeps your sort order intact.
-Reach for the palette to find a book, the search box to whittle down
-the ones already on screen.
+The rail stacks one collapsible section per condition. Shelf and
+series are pick-one facets. Authors, tags, genres, and moods each get
+a typeahead that accepts several values at once, in any-of, all-of, or
+none-of mode, so you can ask for books tagged both X and Y, in any of
+three genres, or in none of a set of moods. Reading status filters by
+state, including **Unread** for books you have not started. Text
+columns (title, subtitle, ISBN) filter by contains, equals, or
+is-empty; page count and rating filter by range; **added** filters by
+a date range.
 
-**Add filter** builds per-column conditions. Text columns (title,
-subtitle, ISBN) filter by contains, equals, or is-empty; page count and
-rating filter by range; **added** filters by a date range; and reading
-status filters to a single state, including **Unread** for books you
-have not started. Authors, tags, genres, and moods each get a typeahead
-that accepts several values at once, in any-of, all-of, or none-of mode,
-so you can ask for books tagged both X and Y, in any of three genres, or
-in none of a set of moods.
+A section with something active opens on mount, shows a count beside
+its name, and carries its own **Clear**. Everything else stays folded,
+so a long rail reads as a table of contents rather than a wall of
+form controls.
 
-Every active filter shows as a chip in the bar. Press the x on a chip to
-drop that one condition, or use **Clear filters** to remove them all at
-once. Filters live in the URL the same way your view and sort do, so a
-filtered table is bookmarkable and shareable, and reloading the page
+Above the books, in every view, a one-line **filter summary** reads
+out what is active ("Author (1) · Pages ≥ 300") next to the
+**Filters** toggle that shows or hides the rail. The summary is
+read-only on purpose: it stays one constant line no matter how many
+conditions you stack, and it keeps state visible even with the rail
+hidden, so the collection can never be silently narrower than it
+looks. Removing one condition costs two clicks (open the rail, clear
+the section), a trade made for a masthead that stays compact.
+
+Filters live in the URL the same way your view and sort do, so a
+filtered library is bookmarkable and shareable, and reloading the page
 brings back exactly the filters you had.
 
 ## Editing from the table
@@ -145,8 +162,9 @@ how you opened it.
 Title, subtitle, and authors describe the work rather than one edition
 of it, so editing any of them from one row updates every edition of
 that work currently loaded in the table, not just the row you touched.
-The column header names all three with an "(all editions)" suffix, so
-you know the reach of an edit before you commit. ISBN-13 and
+Those three column headers carry an info control (hover or focus it,
+dismiss with `Escape`) explaining that reach, so you know what an edit
+touches before you commit. ISBN-13 and
 pages describe one edition and stay put. Status and rating are yours
 alone: nobody else browsing the same library sees them, and they never
 touch the book's version history.
@@ -201,13 +219,17 @@ structurally absent rather than locked. Authorization is enforced
 server-side regardless; the rail's gating is presentation, not
 security.
 
-## Small screens keep every feature
+## Every size keeps every feature
 
-Below 1280px, the filter rail collapses into a **Refine** button that
-opens the same controls in a sheet. Below 1024px, the navigation rail
-becomes a drawer behind a floating menu button in the top-left corner.
-Nothing is desktop-only: every destination and every filter is reachable
-at every size, just behind one more press.
+The masthead's **Filters** toggle controls the rail at every width. At
+1280px and wider the rail sits in its own column and the toggle
+collapses it entirely, handing the space back to the books; Reverie
+remembers the choice, and the filter summary keeps active state
+visible while the rail is away. Below 1280px the same toggle opens the
+rail in a sheet. Below 1024px, the navigation rail becomes a drawer
+behind a floating menu button in the top-left corner. Nothing is
+desktop-only: every destination and every filter is reachable at every
+size, just behind one more press.
 
 ## Accessibility
 
