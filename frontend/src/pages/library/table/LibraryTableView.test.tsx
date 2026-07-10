@@ -301,17 +301,38 @@ describe("LibraryTableView", () => {
       });
     });
 
-    test("activating the info control never toggles the column sort", async () => {
+    test("clicking the info control never toggles the column sort", async () => {
       const onSortChange = vi.fn();
       renderTableView({ onSortChange });
       await screen.findByRole("grid");
       const user = userEvent.setup();
       const trigger = screen.getAllByRole("button", { name: "(all editions)" })[0];
       await user.click(trigger);
-      trigger.focus();
-      await user.keyboard("{Enter}");
-      await user.keyboard(" ");
       expect(onSortChange).not.toHaveBeenCalled();
+    });
+
+    test("keyboard sort works on a tooltip-bearing header", async () => {
+      const onSortChange = vi.fn();
+      renderTableView({ onSortChange });
+      await screen.findByRole("grid");
+      const user = userEvent.setup();
+      // Select a cell in the Title column via its Subtitle neighbour (the
+      // title cell itself is a link and would navigate), then walk up to the
+      // header. Enter must sort: the roving focus must stay on the column
+      // header, not divert to the info control.
+      const subtitleCell = await screen.findByText(ROWS[1].subtitle ?? "");
+      await user.click(subtitleCell);
+      await user.keyboard("{ArrowLeft}{ArrowUp}{ArrowUp}");
+      await user.keyboard("{Enter}");
+      expect(onSortChange).toHaveBeenCalledWith([{ field: "title", desc: false }]);
+    });
+
+    test("tooltip-bearing headers expose the note as the column description", async () => {
+      renderTableView();
+      const header = await screen.findByRole("columnheader", { name: "Title" });
+      const descriptionId = header.getAttribute("aria-describedby") ?? "";
+      const description = document.getElementById(descriptionId);
+      expect(description).toHaveTextContent("Edits apply to all editions of the work");
     });
   });
 

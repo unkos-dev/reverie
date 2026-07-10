@@ -9,13 +9,7 @@
  * but, like every other RDG type, never appears in this module's exports.
  */
 import { Info } from "lucide-react";
-import {
-  useMemo,
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { useId, useMemo, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import {
   DataGrid,
   renderHeaderCell,
@@ -68,31 +62,48 @@ export type ReactDataGridBindingProps<R> = GridBindingProps<R> & {
 
 /**
  * Header cell with a tooltip-bearing info control after the default header
- * content (text, sort arrow, priority badge). RDG's sort handlers live on
- * the columnheader wrapper around this render, handling both click and
- * Space/Enter keydown, so the info control stops propagation of both to
- * keep "inspect the tooltip" from toggling the sort. The control adopts
- * RDG's roving `tabIndex` to preserve the grid's single-tab-stop model,
- * and the icon is presentation-only so the column's accessible name stays
- * the header text alone.
+ * content (text, sort arrow, priority badge). The control stays out of the
+ * grid's roving focus order (`tabIndex={-1}`): RDG redirects header-cell
+ * focus to any `tabindex="0"` child, and a focused control would swallow
+ * the Enter/Space that RDG's columnheader wrapper needs for keyboard
+ * sorting. The tooltip is a pointer affordance; keyboard and screen-reader
+ * users get the same note through `aria-describedby` on the columnheader,
+ * announced with the header on focus. Click still must not sort, so the
+ * control stops click propagation. The icon is presentation-only so the
+ * column's accessible name stays the header text alone.
  */
 function HeaderCellWithTooltip<R>(
   props: RenderHeaderCellProps<R> & { tooltip: { label: string; content: string } },
 ): ReactElement {
   const { tooltip, ...headerProps } = props;
+  const descriptionId = useId();
   return (
-    <span className="flex items-center gap-1">
+    <span
+      className="flex items-center gap-1"
+      // RDG renders the columnheader wrapper itself and offers no ARIA
+      // passthrough, so the description association is attached via the DOM.
+      ref={(node) => {
+        const header = node?.closest('[role="columnheader"]');
+        if (header == null) return;
+        header.setAttribute("aria-describedby", descriptionId);
+        return () => {
+          header.removeAttribute("aria-describedby");
+        };
+      }}
+    >
       {renderHeaderCell(headerProps)}
+      {/* `hidden` keeps the note out of the header's name-from-contents;
+          aria-describedby still resolves hidden reference targets. */}
+      <span id={descriptionId} hidden>
+        {tooltip.content}
+      </span>
       <Tooltip>
         <TooltipTrigger
-          tabIndex={headerProps.tabIndex}
+          tabIndex={-1}
           aria-label={tooltip.label}
           className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2"
           onClick={(event: MouseEvent) => {
             event.stopPropagation();
-          }}
-          onKeyDown={(event: KeyboardEvent) => {
-            if (event.key === "Enter" || event.key === " ") event.stopPropagation();
           }}
         >
           <Info className="size-3.5" aria-hidden="true" />
