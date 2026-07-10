@@ -19,6 +19,13 @@ These are absolute invariants for the Reverie repository.
 - **Linear Integration:** PR bodies MUST include `Closes UNK-XXX` to auto-close the tracking issue. Linear tracks the backlog; do not mint an issue just to name a branch or close work done in this session.
   </git_and_linear_workflow>
 
+<design_authority>
+
+1. **Design comes from artifacts, not agents.** Visual, layout, and interaction design for user-facing surfaces is decided in the design workstream and recorded as design artifacts. Implementation work implements to those artifacts. If no artifact covers the surface being changed, make the minimum mechanical change and flag the gap; do not design ad hoc.
+2. **UI acceptance is the rendered page.** A UI change is done when the browser render matches the design artifact (layout, spacing, states, breakpoints): screenshot and compare. Passing tests alone never closes UI work.
+3. **Interaction-model changes are user decisions.** If the designed interaction model is blocked by a missing backend capability, surface the fork during planning. Never silently downgrade the design to whatever the current API supports.
+   </design_authority>
+
 <documentation_and_planning>
 
 - **Docs are part of done:** Ship generated reference docs and narrative docs in the same PR as the feature.
@@ -30,6 +37,7 @@ These are absolute invariants for the Reverie repository.
   - Density tiebreaker: New comments follow this tiered policy, not the density of surrounding legacy comments. Verbose nearby comments are legacy, not a target to match.
 - **Docstring Syntax:** No em dashes (`—`). No external references (PRs, Linear IDs). Describe current behavior, not history.
 - **Planning Artifacts:** Store design specs in `/plans/`.
+- **State-Writer Census:** Any plan touching shared mutable state (URL params, stores, caches) must enumerate every writer, including debounced and async ones. More than one writer forces an explicit ownership-model decision in the plan before implementation starts.
 - **ADRs:** Write an ADR (in `adr/`) for any new cross-stack pattern, major dependency, or architectural choice. See `adr/AGENTS.md` for authoring rules.
   </documentation_and_planning>
 

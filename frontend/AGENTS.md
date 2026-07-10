@@ -65,6 +65,13 @@ These rules define the React and TypeScript architecture. Do not deviate.
 - **Performance:** Use `React.memo` / `useMemo` / `useCallback` ONLY when a measured need exists. List `key` values must be stable and unique (never use array index).
   </state_and_data>
 
+<state_ownership>
+
+- **One Writer Per Shared State:** Client state with more than one writer gets a single owner; components dispatch to it, never independently read-modify-write the same URL params or store slice.
+- **Library URL State:** All library filter, sort, and view URL writes flow through the page-owned write authority (`useLiveSearchParams`). Calling `setSearchParams` directly for library state from a component is a defect.
+- **Debounced Writes Re-Validate at Fire Time:** A due timer fires before the render that would cancel it (React renders ride scheduler tasks that lose to due timers), so a debounced write into shared state must check it is still valid when it fires, not only when scheduled.
+  </state_ownership>
+
 <styling_architecture>
 
 - **Tailwind v4:** Use utility classes.
