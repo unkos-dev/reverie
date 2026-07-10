@@ -9,7 +9,7 @@
  * - {@link paramsFromSearch} produces the flat {@link ListBooksParams} the
  *   API client sends.
  * - {@link parseFilterParams} produces the grouped {@link FilterState} the
- *   FilterBar renders and edits; {@link serializeFilterParams} writes it back.
+ *   filter rail renders and edits; {@link serializeFilterParams} writes it back.
  *
  * Parsing is tolerant by design: a malformed value (non-integer number,
  * ill-formed date, unknown status token) is dropped rather than surfaced,
@@ -126,7 +126,7 @@ export type StatusFilter = {
 };
 
 /**
- * Grouped, per-column filter model the FilterBar renders. A faithful mirror of
+ * Grouped, per-column filter model the filter rail renders. A faithful mirror of
  * the flat URL params: {@link parseFilterParams} and {@link serializeFilterParams}
  * round-trip it, and {@link filterStateToParams} projects it onto the wire shape.
  */

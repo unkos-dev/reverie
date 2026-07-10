@@ -1,8 +1,7 @@
 /**
- * Author id to display label resolution for chips and the authors editor.
- *
- * Extracted from `FilterBar` so the same id-to-label lookup can be reused
- * anywhere a filter surface needs to hydrate an author uuid into a name.
+ * Author id to display label resolution, shared by every surface that
+ * hydrates an author uuid into a name (the rail's authors section, the
+ * masthead filter summary).
  */
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -20,7 +19,7 @@ export function useAuthorLabels(ids: readonly string[]): { labelFor: (id: string
     staleTime: 60_000,
   });
   // A resolve failure must not read as "author doesn't exist": leave a console
-  // breadcrumb (QueryCache.onError forwards only 401s) and label the chip as
+  // breadcrumb (QueryCache.onError forwards only 401s) and label the author as
   // unresolved rather than unknown, mirroring the next-page handler in
   // LibraryContent.
   useEffect(() => {
