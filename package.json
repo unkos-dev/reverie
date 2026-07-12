@@ -31,7 +31,7 @@
   },
   "overrides": {
     "markdown-it": "14.2.0",
-    "js-yaml": "4.2.0",
+    "js-yaml": "5.2.1",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.1",
     "vitest": "4.1.9",
     "hono": "^4.12.25",
