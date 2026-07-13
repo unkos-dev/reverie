@@ -77,6 +77,11 @@
       "matchManagers": ["cargo"],
       "matchDepNames": ["rand_core_06"],
       "enabled": false
+    },
+    {
+      "description": "vite-plus: one grouped PR for the setup-vp VP_VERSION pin and every npm token (the vite-plus devDependency, the vite alias, @voidzero-dev/*) so the ci.yml drift guard's lockstep holds. Placed last to win over the one-PR-per-dep rule for this dependency set.",
+      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**"],
+      "groupName": "vite-plus"
     }
   ],
   "customManagers": [
