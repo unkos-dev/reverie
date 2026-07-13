@@ -39,14 +39,21 @@ type BookDetailDrawerProps = {
   /** Book to show; `null` renders the drawer closed. */
   bookId: string | null;
   onOpenChange: (open: boolean) => void;
+  /** Focus restoration on close; the container owns the opener element. */
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
-export function BookDetailDrawer({ bookId, onOpenChange }: BookDetailDrawerProps): ReactElement {
+export function BookDetailDrawer({
+  bookId,
+  onOpenChange,
+  onCloseAutoFocus,
+}: BookDetailDrawerProps): ReactElement {
   return (
     <Sheet open={bookId !== null} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
         aria-describedby={undefined}
+        onCloseAutoFocus={onCloseAutoFocus}
         className="w-[390px] max-w-[100vw] overflow-y-auto"
       >
         {bookId === null ? null : <DrawerBody bookId={bookId} />}
@@ -58,7 +65,6 @@ export function BookDetailDrawer({ bookId, onOpenChange }: BookDetailDrawerProps
 function DrawerBody({ bookId }: { bookId: string }): ReactElement {
   const {
     data: book,
-    isPending,
     isError,
     refetch,
   } = useQuery<BookDetail>({
@@ -66,7 +72,9 @@ function DrawerBody({ bookId }: { bookId: string }): ReactElement {
     queryFn: ({ signal }) => getBook(bookId, signal),
   });
 
-  if (isPending) {
+  // Data wins over a failed background refetch: showing cached details
+  // beats a Retry wall when the record is already on hand.
+  if (book === undefined && !isError) {
     return (
       <div className="flex flex-col gap-4 p-6" aria-busy="true">
         <SheetHeader className="p-0">
@@ -85,7 +93,7 @@ function DrawerBody({ bookId }: { bookId: string }): ReactElement {
     );
   }
 
-  if (isError) {
+  if (book === undefined) {
     return (
       <div className="flex flex-col gap-3 p-6">
         <SheetHeader className="p-0">

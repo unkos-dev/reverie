@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "vite-plus/test";
 import { readViewCookie, VIEW_COOKIE_NAME, writeViewCookie } from "./view-cookie";
 import type { LibraryView } from "@/routes/library-params";
 
-const VIEWS: readonly LibraryView[] = ["grid", "list", "table"];
+const VIEWS: readonly LibraryView[] = ["grid", "table"];
 
 afterEach(() => {
   // jsdom's `document.cookie` persists across tests in the same file — clear
@@ -34,6 +34,11 @@ describe("readViewCookie edge cases", () => {
 
   test("returns null when the cookie value is malformed", () => {
     document.cookie = `${VIEW_COOKIE_NAME}=not-a-view; Path=/`;
+    expect(readViewCookie()).toBeNull();
+  });
+
+  test("returns null for a stored cookie holding the retired `list` view", () => {
+    document.cookie = `${VIEW_COOKIE_NAME}=list; Path=/`;
     expect(readViewCookie()).toBeNull();
   });
 });

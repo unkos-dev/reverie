@@ -285,11 +285,26 @@ describe("filter rail — param-write to loader-refetch seam", () => {
 
     expect(await screen.findByRole("link", { name: /Guards! Guards!/ })).toBeInTheDocument();
 
-    // Select the Discworld checkbox in the filter rail.
+    // The rail lives in a right-side drawer now: open it from the toolbar,
+    // then select the Discworld checkbox inside it.
+    const filtersButton = screen.getByRole("button", { name: /^Filters/ });
+    expect(filtersButton).toHaveAttribute("aria-controls", "library-filter-drawer");
+    await user.click(filtersButton);
     await user.click(await screen.findByRole("checkbox", { name: "Discworld" }));
     await waitFor(
       () => {
         expect(new URLSearchParams(router.state.location.search).get("series")).toBe("series-1");
+      },
+      { timeout: 5000 },
+    );
+
+    // Close the drawer before asserting on the grid: the modal Sheet hides
+    // the page behind it from the accessibility tree, so a query against
+    // the grid while it is open would pass vacuously.
+    await user.keyboard("{Escape}");
+    await waitFor(
+      () => {
+        expect(screen.queryByRole("checkbox", { name: "Discworld" })).not.toBeInTheDocument();
       },
       { timeout: 5000 },
     );
@@ -301,10 +316,20 @@ describe("filter rail — param-write to loader-refetch seam", () => {
 
     // Toggle-off: re-clicking the active checkbox clears the param and
     // restores the unfiltered grid (spec §10 active-filter clearing).
-    await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
+    await user.click(screen.getByRole("button", { name: /^Filters/ }));
+    const activeBox = await screen.findByRole("checkbox", { name: "Discworld" });
+    expect(activeBox).toBeChecked();
+    await user.click(activeBox);
     await waitFor(
       () => {
         expect(new URLSearchParams(router.state.location.search).get("series")).toBeNull();
+      },
+      { timeout: 5000 },
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(
+      () => {
+        expect(screen.queryByRole("checkbox", { name: "Discworld" })).not.toBeInTheDocument();
       },
       { timeout: 5000 },
     );

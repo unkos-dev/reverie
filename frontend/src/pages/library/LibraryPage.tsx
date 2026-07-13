@@ -112,6 +112,10 @@ function LibraryContent(): ReactElement {
   // sections share the draft-survival protocol through it (filter-commit.ts).
   const lastEdit = useRef<EditTokens | null>(null);
   const [overlay, setOverlay] = useState<OverlayState>(null);
+  // The overlays open from state, not a Radix Trigger, so Radix has no
+  // trigger to restore focus to on close; the opener is captured here and
+  // restored via onCloseAutoFocus instead (WCAG 2.4.3).
+  const overlayReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [displayPrefs] = useState(readDisplayPreferences);
   const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
@@ -232,6 +236,17 @@ function LibraryContent(): ReactElement {
     searchParams.getAll(key).some((value) => value !== ""),
   ).length;
 
+  function openOverlay(next: Exclude<OverlayState, null>): void {
+    overlayReturnFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOverlay(next);
+  }
+
+  function restoreOverlayFocus(event: Event): void {
+    event.preventDefault();
+    overlayReturnFocus.current?.focus();
+  }
+
   /** Empty states first, then one branch per projection. */
   function renderBooks(): ReactElement {
     if (items.length === 0) {
@@ -262,7 +277,7 @@ function LibraryContent(): ReactElement {
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
             onRowActivate={(book) => {
-              setOverlay({ detail: book.id });
+              openOverlay({ detail: book.id });
             }}
           />
         </Suspense>
@@ -323,7 +338,7 @@ function LibraryContent(): ReactElement {
             filtersOpen={overlay === "filters"}
             activeFilterCount={activeFilterCount}
             onOpenFilters={() => {
-              setOverlay("filters");
+              openOverlay("filters");
             }}
             density={density}
             onDensityChange={setDensityPref}
@@ -414,6 +429,7 @@ function LibraryContent(): ReactElement {
           id="library-filter-drawer"
           side="right"
           aria-describedby={undefined}
+          onCloseAutoFocus={restoreOverlayFocus}
           className="w-[340px] max-w-[100vw] overflow-y-auto p-6"
         >
           <SheetHeader className="mb-2 p-0">
@@ -432,6 +448,7 @@ function LibraryContent(): ReactElement {
         onOpenChange={(open) => {
           if (!open) setOverlay(null);
         }}
+        onCloseAutoFocus={restoreOverlayFocus}
       />
     </>
   );

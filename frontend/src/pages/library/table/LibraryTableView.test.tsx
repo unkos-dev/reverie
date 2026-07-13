@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -10,6 +10,7 @@ import { updateReadingState } from "@/api/reading";
 import type { SortState } from "@/lib/grid/types";
 import { queryKeys } from "@/lib/query/keys";
 
+import { TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
 import { LibraryTableView } from "./LibraryTableView";
 
 // Cell-edit orchestration (`useCellEdit`) fires through these clients on
@@ -100,6 +101,11 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
     isFetchNextPageError: false,
     onLoadMore: vi.fn(),
     listQueryKey: queryKeys.books.list({}),
+    density: "comfortable",
+    hiddenColumns: new Set<string>(),
+    selectedIds: new Set<string>(),
+    onSelectionChange: vi.fn(),
+    onRowActivate: vi.fn(),
     ...overrides,
   };
   const routes: RouteObject[] = [{ path: "/library", element: <TableHarness {...props} /> }];
@@ -243,8 +249,8 @@ describe("LibraryTableView", () => {
     renderTableView({ onSortChange });
     const grid = await screen.findByRole("grid");
     // aria-colcount reflects the full column set regardless of horizontal
-    // virtualization: without the Added column this is 8, not 9.
-    expect(grid).toHaveAttribute("aria-colcount", "9");
+    // virtualization: selection + details + the nine data columns.
+    expect(grid).toHaveAttribute("aria-colcount", "11");
     // Scroll fully right so the trailing Added header mounts, then click it.
     Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
     Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
@@ -367,6 +373,11 @@ describe("LibraryTableView", () => {
               isFetchNextPageError={false}
               onLoadMore={vi.fn()}
               listQueryKey={queryKeys.books.list({})}
+              density="comfortable"
+              hiddenColumns={new Set<string>()}
+              selectedIds={new Set<string>()}
+              onSelectionChange={vi.fn()}
+              onRowActivate={vi.fn()}
             />
           </QueryClientProvider>,
         );
@@ -636,6 +647,30 @@ describe("LibraryTableView", () => {
       expect(updateReadingState).toHaveBeenCalled();
     });
 
+    test("editing still works with every hideable column hidden", async () => {
+      const row = editableRowFixture();
+      renderTableView({
+        items: [row],
+        hiddenColumns: new Set([
+          "subtitle",
+          "authors",
+          "series",
+          "isbn_13",
+          "pages",
+          "status",
+          "rating",
+          "added",
+        ]),
+      });
+      const user = userEvent.setup();
+      const detailsButton = await screen.findByRole("button", {
+        name: `Open details for ${row.title}`,
+      });
+      await user.click(detailsButton);
+      await user.keyboard("{ArrowRight}{Enter}");
+      expect(await screen.findByRole("textbox")).toHaveValue(row.title);
+    });
+
     test("a pending cell blocks its own editor from reopening while the commit is in flight", async () => {
       vi.mocked(updateReadingState).mockImplementation(() => new Promise(() => undefined));
       const row = editableRowFixture();
@@ -657,6 +692,132 @@ describe("LibraryTableView", () => {
       await user.keyboard("{Enter}");
 
       expect(screen.queryByRole("group", { name: "Rating" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("selection", () => {
+    test("renders the loaded-rows select-all label and reports row selection", async () => {
+      const onSelectionChange = vi.fn();
+      renderTableView({ onSelectionChange });
+      const grid = await screen.findByRole("grid");
+      expect(grid).toHaveAttribute("aria-multiselectable", "true");
+      expect(screen.getByRole("checkbox", { name: "Select all loaded books" })).toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
+      expect(onSelectionChange).toHaveBeenCalledWith(new Set([ROWS[0].id]));
+    });
+
+    test("select-all covers every loaded row", async () => {
+      const onSelectionChange = vi.fn();
+      renderTableView({ onSelectionChange });
+      await screen.findByRole("grid");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
+      expect(onSelectionChange).toHaveBeenCalledWith(new Set(ROWS.map((row) => row.id)));
+    });
+
+    test("selected rows carry aria-selected", async () => {
+      renderTableView({ selectedIds: new Set([ROWS[0].id]) });
+      await screen.findByRole("grid");
+      const selectedRows = screen
+        .getAllByRole("row")
+        .filter((row) => row.getAttribute("aria-selected") === "true");
+      expect(selectedRows).toHaveLength(1);
+    });
+  });
+
+  describe("row activation", () => {
+    test("the details button opens the drawer for its row", async () => {
+      const onRowActivate = vi.fn();
+      renderTableView({ onRowActivate });
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
+      );
+      expect(onRowActivate).toHaveBeenCalledTimes(1);
+      expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
+    });
+
+    test("clicking a read-only cell activates the row; an editable cell does not", async () => {
+      const onRowActivate = vi.fn();
+      const row = rowFixture(1, { series: { id: "s1", name: "Discworld", position: 8 } });
+      renderTableView({ items: [row], onRowActivate });
+      const grid = await screen.findByRole("grid");
+      Object.defineProperty(grid, "scrollWidth", { value: 2657, configurable: true });
+      Object.defineProperty(grid, "scrollLeft", { value: 1633, configurable: true });
+      fireEvent.scroll(grid);
+      const user = userEvent.setup();
+      const seriesCell = await within(grid).findByText("Discworld · #8");
+      await user.click(seriesCell);
+      expect(onRowActivate).toHaveBeenCalledWith(row);
+      onRowActivate.mockClear();
+      const authorsCell = within(grid).getByText(row.authors.join(", "));
+      await user.click(authorsCell);
+      expect(onRowActivate).not.toHaveBeenCalled();
+    });
+
+    test("the drawer stays reachable with every hideable column hidden in compact density", async () => {
+      const onRowActivate = vi.fn();
+      renderTableView({
+        onRowActivate,
+        density: "compact",
+        hiddenColumns: new Set([
+          "subtitle",
+          "authors",
+          "series",
+          "isbn_13",
+          "pages",
+          "status",
+          "rating",
+          "added",
+        ]),
+      });
+      const grid = await screen.findByRole("grid");
+      // Selection + details + title only.
+      expect(grid).toHaveAttribute("aria-colcount", "3");
+      expect(screen.queryByRole("columnheader", { name: "Subtitle" })).not.toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
+      );
+      expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
+    });
+  });
+
+  describe("density and responsive columns", () => {
+    test("comfortable density renders the cover mark; compact hides it", async () => {
+      renderTableView({ items: [rowFixture(1)] });
+      await screen.findByRole("grid");
+      expect(screen.getAllByText("BOO").length).toBeGreaterThan(0);
+      cleanup();
+      renderTableView({ items: [rowFixture(1)], density: "compact" });
+      await screen.findByRole("grid");
+      expect(screen.queryByText("BOO")).not.toBeInTheDocument();
+    });
+
+    test("the mobile trim keeps selection, details, title (with author stack), and added", async () => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: query === TABLE_MOBILE_MEDIA_QUERY,
+        media: query,
+        onchange: null,
+        addEventListener: (): void => {},
+        removeEventListener: (): void => {},
+        addListener: (): void => {},
+        removeListener: (): void => {},
+        dispatchEvent: (): boolean => false,
+      }));
+      try {
+        renderTableView({ items: [rowFixture(1)] });
+        const grid = await screen.findByRole("grid");
+        // Selection + details + title + added.
+        expect(grid).toHaveAttribute("aria-colcount", "4");
+        expect(screen.queryByRole("columnheader", { name: "Authors" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("columnheader", { name: "Subtitle" })).not.toBeInTheDocument();
+        // The author line stacks under the title instead.
+        expect(within(grid).getByText("Author 1")).toBeInTheDocument();
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });

@@ -262,6 +262,8 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
     target: EventTarget | null,
   ): R | null {
     if (onRowActivate === undefined) return null;
+    // Header/summary positions carry no row despite the SELECT-mode type.
+    if (args.row == null) return null;
     if (args.column.key === SelectColumn.key) return null;
     if (isInteractiveTarget(target)) return null;
     if (isEditableCell(args.column.key, args.row)) return null;

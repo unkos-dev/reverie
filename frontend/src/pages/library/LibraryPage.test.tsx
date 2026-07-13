@@ -1,74 +1,29 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test, vi } from "vite-plus/test";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
-import type { BookListItem, BookListResponse, ListBooksParams } from "@/api";
-import { RAIL_DESKTOP_MEDIA_QUERY } from "@/components/shell/BrowseLayout";
+import type { BookDetail, BookListItem, BookListResponse, ListBooksParams } from "@/api";
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
+import { DISPLAY_STORAGE_KEY } from "./display-storage";
 import { LibraryPage } from "./LibraryPage";
-import { RAIL_STORAGE_KEY } from "./rail-storage";
 import { VIEW_COOKIE_NAME } from "./view-cookie";
 
-/** Stubs `matchMedia` so the rail's desktop media query matches; every other
- *  query stays false. jsdom's own `matchMedia` always reports false, so the
- *  desktop half of the rail visibility split is unreachable without this. */
-function installDesktopMatchMedia(): void {
-  const mediaQueryList = (query: string): MediaQueryList =>
-    ({
-      matches: query === RAIL_DESKTOP_MEDIA_QUERY,
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => true,
-    }) as unknown as MediaQueryList;
-  vi.stubGlobal("matchMedia", mediaQueryList);
-}
+// The masthead reads the effective theme to pick its hero asset; these tests
+// exercise the page, not theme resolution, so the provider is stubbed.
+vi.mock("@/lib/theme/ThemeProvider", () => ({
+  useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
+}));
 
-/** Like {@link installDesktopMatchMedia}, but the desktop match is mutable
- *  and flipping it fires the registered change listeners, driving
- *  `useMediaQuery` the way a real viewport resize would. */
-function installSwitchableMatchMedia(initialDesktop: boolean): {
-  setDesktop: (next: boolean) => void;
-} {
-  let desktop = initialDesktop;
-  type Listener = (event: MediaQueryListEvent) => void;
-  const listeners = new Set<Listener>();
-  const mediaQueryList = (query: string): MediaQueryList =>
-    ({
-      get matches(): boolean {
-        return query === RAIL_DESKTOP_MEDIA_QUERY && desktop;
-      },
-      media: query,
-      onchange: null,
-      addEventListener: (_event: string, listener: Listener) => {
-        listeners.add(listener);
-      },
-      removeEventListener: (_event: string, listener: Listener) => {
-        listeners.delete(listener);
-      },
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => true,
-    }) as unknown as MediaQueryList;
-  vi.stubGlobal("matchMedia", mediaQueryList);
-  return {
-    setDesktop: (next: boolean) => {
-      desktop = next;
-      act(() => {
-        const event = { matches: next } as MediaQueryListEvent;
-        for (const listener of listeners) listener(event);
-      });
-    },
-  };
-}
+// Any test that toggles the view writes the cookie as a side effect; expire
+// it unconditionally so one test's choice can't leak into the next.
+afterEach(() => {
+  document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+});
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
   return {
@@ -87,6 +42,31 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     reading_state: null,
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
+  };
+}
+
+function detailFixture(base: BookListItem): BookDetail {
+  return {
+    id: base.id,
+    work_id: base.work_id,
+    title: base.title,
+    authors: base.authors,
+    series: base.series,
+    description: null,
+    language: null,
+    isbn_13: base.isbn_13,
+    isbn_10: null,
+    publisher: "Farrar, Straus and Giroux",
+    pub_date: null,
+    cover_url: base.cover_url,
+    tags: [],
+    ingestion_status: "complete",
+    validation_status: "clean",
+    enrichment_status: "complete",
+    metadata_version_summary: { pending: 0, accepted: 0 },
+    metadata_versions: [],
+    created_at: base.created_at,
+    updated_at: base.created_at,
   };
 }
 
@@ -113,6 +93,8 @@ interface RenderOpts {
   extraCacheParams?: ListBooksParams[];
   /** Prefill the `/auth/me` cache so role-gated UI renders without a fetch. */
   me?: AuthMe;
+  /** Prefill book-detail cache slots so the drawer renders without a fetch. */
+  details?: BookDetail[];
 }
 
 function renderLibrary({
@@ -122,11 +104,14 @@ function renderLibrary({
   cacheParams,
   extraCacheParams = [],
   me,
+  details = [],
 }: RenderOpts): {
   client: QueryClient;
 } {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    // staleTime Infinity: prefilled cache slots must not background-refetch
+    // (there is no network in these tests to serve the refetch).
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   const params: ListBooksParams = cacheParams ?? {};
   const response: BookListResponse = { items, next_cursor: nextCursor };
@@ -137,6 +122,9 @@ function renderLibrary({
     });
   }
   if (me !== undefined) client.setQueryData(queryKeys.auth.me(), me);
+  for (const detail of details) {
+    client.setQueryData(queryKeys.books.detail(detail.id), detail);
+  }
 
   // Sibling probe exposing the live search string, since the memory router
   // instance is scoped to this wrapper and not reachable from assertions.
@@ -171,6 +159,11 @@ function renderLibrary({
   return { client };
 }
 
+/** The toolbar search box; its accessible name matches the placeholder. */
+function searchBox(): HTMLElement {
+  return screen.getByRole("searchbox", { name: "Search your library" });
+}
+
 describe("LibraryPage", () => {
   test("renders the heading without a fabricated total", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
@@ -180,11 +173,10 @@ describe("LibraryPage", () => {
     expect(screen.queryByText(/1 book/)).not.toBeInTheDocument();
   });
 
-  test("mounts the ambient atmosphere behind the editorial masthead", async () => {
+  test("the title renders inside the hero band over the atmosphere layers", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
-    // Masthead renders in page context (integration, not the unit test).
-    expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
-    expect(screen.getByText("Your library, catalogued.")).toBeInTheDocument();
+    const heading = await screen.findByRole("heading", { name: "Library" });
+    expect(heading.closest(".lib-hero")).not.toBeNull();
     // Decorative atmosphere layers mount once at the top of the page.
     expect(document.querySelector(".lib-atm")).not.toBeNull();
     expect(document.querySelector(".lib-grain")).not.toBeNull();
@@ -193,13 +185,10 @@ describe("LibraryPage", () => {
   test("cinema-hint is always in the DOM so its CSS fade can play (not gated on state)", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     await screen.findByRole("heading", { name: "Library" });
-    // Not in cinematic mode, but the hint must still render — visibility is
-    // CSS-only (`[data-cinematic="on"] .cinema-hint`), so unmounting it would
-    // kill the fade-out.
     expect(document.querySelector(".cinema-hint")).not.toBeNull();
   });
 
-  test("the masthead hosts no sort menu; the rail's sort section owns sort editing", async () => {
+  test("the toolbar hosts no result totals or sort menu", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
@@ -208,10 +197,8 @@ describe("LibraryPage", () => {
     });
     await screen.findByRole("heading", { name: "Library" });
     expect(screen.queryByRole("button", { name: /^Sort:/ })).not.toBeInTheDocument();
-    const rail = await screen.findByRole("complementary", { name: "Filters" });
-    expect(
-      within(rail).getByRole("button", { name: /Change Title sort direction/ }),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/All records/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Catalogue/)).not.toBeInTheDocument();
   });
 
   test("grid tiles carry a focus treatment equal to the hover treatment", async () => {
@@ -244,7 +231,7 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("filter rail lists distinct series from the loaded pages", async () => {
+  test("the filter drawer lists distinct series from the loaded pages", async () => {
     renderLibrary({
       items: [
         bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } }),
@@ -253,8 +240,10 @@ describe("LibraryPage", () => {
       ],
       nextCursor: null,
     });
-    const rail = await screen.findByRole("complementary", { name: "Filters" });
-    expect(within(rail).getAllByRole("checkbox", { name: "Discworld" })).toHaveLength(1);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Filters/ }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getAllByRole("checkbox", { name: "Discworld" })).toHaveLength(1);
   });
 
   test("renders one card per item in the grid by default", async () => {
@@ -284,24 +273,14 @@ describe("LibraryPage", () => {
     expect(await screen.findByRole("button", { name: /load more/i })).toBeInTheDocument();
   });
 
-  test("renders the list table when ?view=list", async () => {
-    renderLibrary({
-      items: [bookFixture({ title: "Stoner" })],
-      nextCursor: null,
-      initialEntries: ["/library?view=list"],
-    });
-    const list = await screen.findByTestId("library-list");
-    expect(within(list).getByText("Stoner")).toBeInTheDocument();
-  });
-
-  test("view toggle group renders three buttons; Table reflects aria-pressed", async () => {
+  test("view toggle group renders grid and table only; no list mode survives", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     const group = await screen.findByRole("group", { name: "View mode" });
     expect(within(group).getByRole("button", { name: "Grid", pressed: true })).toBeInTheDocument();
-    expect(within(group).getByRole("button", { name: "List", pressed: false })).toBeInTheDocument();
     expect(
       within(group).getByRole("button", { name: "Table", pressed: false }),
     ).toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: "List" })).not.toBeInTheDocument();
   });
 
   test("renders the table view when ?view=table (lazy-loaded)", async () => {
@@ -324,11 +303,11 @@ describe("LibraryPage", () => {
     }
   });
 
-  test("invalid ?view= value falls back to grid", async () => {
+  test("stale ?view=list and unknown values fall back to grid", async () => {
     renderLibrary({
       items: [bookFixture({ title: "Stoner" })],
       nextCursor: null,
-      initialEntries: ["/library?view=xyz"],
+      initialEntries: ["/library?view=list"],
     });
     expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
   });
@@ -338,8 +317,23 @@ describe("LibraryPage", () => {
       renderLibrary({ items: [bookFixture()], nextCursor: null });
       const group = await screen.findByRole("group", { name: "View mode" });
       const user = userEvent.setup();
-      await user.click(within(group).getByRole("button", { name: "List" }));
-      expect(document.cookie).toContain(`${VIEW_COOKIE_NAME}=list`);
+      await user.click(within(group).getByRole("button", { name: "Table" }));
+      expect(document.cookie).toContain(`${VIEW_COOKIE_NAME}=table`);
+    } finally {
+      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    }
+  });
+
+  test("URL ?view= beats the cookie default", async () => {
+    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
+    try {
+      renderLibrary({
+        items: [bookFixture({ title: "Stoner" })],
+        nextCursor: null,
+        initialEntries: ["/library?view=grid"],
+      });
+      expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
+      expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
     } finally {
       document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
     }
@@ -362,7 +356,7 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("a pending rail commit and a header sort preserve each other (rail first)", async () => {
+  test("a pending toolbar search and a header sort preserve each other (search first)", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
@@ -371,7 +365,7 @@ describe("LibraryPage", () => {
     });
     await screen.findByTestId("library-table");
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Quick search"), "war");
+    await user.type(searchBox(), "war");
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await waitFor(() => {
       const search = screen.getByTestId("location-search").textContent;
@@ -380,7 +374,7 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("a header sort and a following rail commit preserve each other (sort first)", async () => {
+  test("a header sort and a following toolbar search preserve each other (sort first)", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
@@ -390,7 +384,7 @@ describe("LibraryPage", () => {
     await screen.findByTestId("library-table");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
-    await user.type(screen.getByLabelText("Quick search"), "war");
+    await user.type(searchBox(), "war");
     await waitFor(() => {
       const search = screen.getByTestId("location-search").textContent;
       expect(search).toContain("q=war");
@@ -398,37 +392,21 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("table quick search writes ?q= and clears any cursor param", async () => {
+  test("the toolbar search writes ?q= and clears any cursor param", async () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?view=table&cursor=stale123"],
+      initialEntries: ["/library?cursor=stale123"],
       extraCacheParams: [{ q: "war" }],
     });
-    await screen.findByTestId("library-table");
+    await screen.findByRole("heading", { name: "Library" });
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Quick search"), "war");
+    await user.type(searchBox(), "war");
     await waitFor(() => {
       const search = screen.getByTestId("location-search").textContent;
       expect(search).toContain("q=war");
       expect(search).not.toContain("cursor=");
     });
-  });
-
-  test("table view renders the same masthead summary as every other mode", async () => {
-    renderLibrary({
-      items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
-      nextCursor: null,
-      initialEntries: ["/library?view=table&series=s-1"],
-      cacheParams: { series: "s-1" },
-    });
-    await screen.findByTestId("library-table");
-    // The old table-mode spacer branch is gone: state stays visible in every
-    // mode, read-only, with names resolved from the loaded rows.
-    const summary = screen.getByTestId("filter-summary");
-    expect(within(summary).getByText(/Series: Discworld/)).toBeInTheDocument();
-    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("filter-chips")).not.toBeInTheDocument();
   });
 
   test("a typed filter with no matches shows the filtered-empty state", async () => {
@@ -459,21 +437,6 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("URL ?view= beats the cookie default", async () => {
-    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
-    try {
-      renderLibrary({
-        items: [bookFixture({ title: "Stoner" })],
-        nextCursor: null,
-        initialEntries: ["/library?view=list"],
-      });
-      expect(await screen.findByTestId("library-list")).toBeInTheDocument();
-      expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
-    } finally {
-      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
-    }
-  });
-
   test("renders the empty state when items is empty", async () => {
     renderLibrary({ items: [], nextCursor: null });
     expect(await screen.findByText("No books yet")).toBeInTheDocument();
@@ -489,168 +452,26 @@ describe("LibraryPage", () => {
     expect(link.getAttribute("href")).toBe("/b/abc-123");
   });
 
-  test("renders no active-filter chip row when no filter params are set", async () => {
-    renderLibrary({ items: [bookFixture()], nextCursor: null });
-    await screen.findByRole("heading", { name: "Library" });
-    expect(screen.queryByTestId("active-filters")).not.toBeInTheDocument();
+  test("true-empty state shows no clear-filters action", async () => {
+    renderLibrary({ items: [], nextCursor: null });
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /clear all filters/i })).not.toBeInTheDocument();
   });
 
-  test("a single ?author= id resolves to its display name in the summary", async () => {
-    const authorId = "aaaa1111-0000-4000-8000-000000000000";
-    // Fresh Response per call: a Response body is single-use, and the rail's
-    // shelves query shares this spy with the author resolve.
-    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation((input) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      const body = url.includes("/authors")
-        ? { items: [{ id: authorId, value: "Fyodor Dostoevsky" }] }
-        : { items: [], next_cursor: null };
-      return Promise.resolve(
-        new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    });
+  test("true-empty offers an ingestion link to admins", async () => {
+    renderLibrary({ items: [], nextCursor: null, me: meFixture({ role: "admin" }) });
+    const link = await screen.findByRole("link", { name: /ingestion/i });
+    expect(link.getAttribute("href")).toBe("/admin/dashboard");
+  });
+
+  test("true-empty hides the ingestion link from non-admin readers", async () => {
     renderLibrary({
-      items: [bookFixture()],
+      items: [],
       nextCursor: null,
-      initialEntries: [`/library?author=${authorId}`],
-      cacheParams: { author: [authorId] },
+      me: meFixture({ role: "child", is_child: true }),
     });
-    const summary = await screen.findByTestId("filter-summary");
-    expect(await within(summary).findByText(/Author: Fyodor Dostoevsky/)).toBeInTheDocument();
-    fetchSpy.mockRestore();
-  });
-
-  test("multi-token vocabulary filters summarise as counts, not chips", async () => {
-    renderLibrary({
-      items: [bookFixture()],
-      nextCursor: null,
-      initialEntries: ["/library?tag=scifi&tag=hugo"],
-      cacheParams: { tag: ["scifi", "hugo"] },
-    });
-    const summary = await screen.findByTestId("filter-summary");
-    expect(within(summary).getByText(/Tags \(2\)/)).toBeInTheDocument();
-    // Per-condition one-click removal is deliberately out: the summary is
-    // read-only and the rail owns removal, at the cost of a second click.
-    expect(within(summary).queryByRole("button", { name: /clear/i })).not.toBeInTheDocument();
-  });
-
-  test("the summary toggle opens the rail sheet below the desktop breakpoint", async () => {
-    renderLibrary({ items: [bookFixture()], nextCursor: null });
-    const summary = await screen.findByTestId("filter-summary");
-    const toggle = within(summary).getByRole("button", { name: "Filters" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const user = userEvent.setup();
-    await user.click(toggle);
-    const sheet = await screen.findByRole("dialog", { name: /Filters/ });
-    expect(within(sheet).getByRole("searchbox", { name: "Quick search" })).toBeInTheDocument();
-    // The open modal sheet aria-hides the rest of the page, so assert on the
-    // captured element rather than re-querying the accessibility tree.
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-  });
-
-  test("at the desktop breakpoint the toggle collapses the rail column and persists the choice", async () => {
-    installDesktopMatchMedia();
-    try {
-      renderLibrary({
-        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
-        nextCursor: null,
-        initialEntries: ["/library?series=s-1"],
-        cacheParams: { series: "s-1" },
-      });
-      const summary = await screen.findByTestId("filter-summary");
-      const toggle = within(summary).getByRole("button", { name: /Filters/ });
-      expect(await screen.findByRole("complementary", { name: "Filters" })).toBeInTheDocument();
-      expect(toggle).toHaveAttribute("aria-expanded", "true");
-
-      const user = userEvent.setup();
-      await user.click(toggle);
-      expect(screen.queryByRole("complementary", { name: "Filters" })).not.toBeInTheDocument();
-      expect(toggle).toHaveAttribute("aria-expanded", "false");
-      expect(localStorage.getItem(RAIL_STORAGE_KEY)).toBe("true");
-      // The read-only readout must keep active state visible while the rail
-      // is away; this invariant is the point of the masthead summary.
-      expect(within(summary).getByText(/Series: Discworld/)).toBeInTheDocument();
-
-      await user.click(toggle);
-      expect(await screen.findByRole("complementary", { name: "Filters" })).toBeInTheDocument();
-      expect(localStorage.getItem(RAIL_STORAGE_KEY)).toBe("false");
-    } finally {
-      vi.unstubAllGlobals();
-      localStorage.removeItem(RAIL_STORAGE_KEY);
-    }
-  });
-
-  test("a persisted collapsed preference seeds the rail hidden at the desktop breakpoint", async () => {
-    installDesktopMatchMedia();
-    localStorage.setItem(RAIL_STORAGE_KEY, "true");
-    try {
-      renderLibrary({ items: [bookFixture()], nextCursor: null });
-      const summary = await screen.findByTestId("filter-summary");
-      expect(screen.queryByRole("complementary", { name: "Filters" })).not.toBeInTheDocument();
-      expect(within(summary).getByRole("button", { name: "Filters" })).toHaveAttribute(
-        "aria-expanded",
-        "false",
-      );
-    } finally {
-      vi.unstubAllGlobals();
-      localStorage.removeItem(RAIL_STORAGE_KEY);
-    }
-  });
-
-  test("crossing up into the desktop breakpoint closes the rail sheet", async () => {
-    const media = installSwitchableMatchMedia(false);
-    try {
-      renderLibrary({ items: [bookFixture()], nextCursor: null });
-      const summary = await screen.findByTestId("filter-summary");
-      await userEvent.setup().click(within(summary).getByRole("button", { name: "Filters" }));
-      expect(await screen.findByRole("dialog", { name: /Filters/ })).toBeInTheDocument();
-      media.setDesktop(true);
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog", { name: /Filters/ })).not.toBeInTheDocument();
-      });
-      // The toggle now reports the desktop column, which is expanded.
-      expect(within(summary).getByRole("button", { name: "Filters" })).toHaveAttribute(
-        "aria-expanded",
-        "true",
-      );
-    } finally {
-      vi.unstubAllGlobals();
-      localStorage.removeItem(RAIL_STORAGE_KEY);
-    }
-  });
-
-  test("the sort live region announces the stack even with the rail collapsed", async () => {
-    installDesktopMatchMedia();
-    localStorage.setItem(RAIL_STORAGE_KEY, "true");
-    try {
-      renderLibrary({
-        items: [bookFixture()],
-        nextCursor: null,
-        initialEntries: ["/library?sort=-pages"],
-        cacheParams: { sort: "-pages" },
-      });
-      await screen.findByRole("heading", { name: "Library" });
-      expect(screen.queryByRole("complementary", { name: "Filters" })).not.toBeInTheDocument();
-      const region = screen.getByText("Sorted by Pages descending");
-      expect(region).toHaveAttribute("aria-live", "polite");
-    } finally {
-      vi.unstubAllGlobals();
-      localStorage.removeItem(RAIL_STORAGE_KEY);
-    }
-  });
-
-  test("an active series filter shows the resolved series name, not a raw id", async () => {
-    renderLibrary({
-      items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
-      nextCursor: null,
-      initialEntries: ["/library?series=s-1"],
-      cacheParams: { series: "s-1" },
-    });
-    const summary = await screen.findByTestId("filter-summary");
-    expect(within(summary).getByText(/Series: Discworld/)).toBeInTheDocument();
-    expect(within(summary).queryByText(/s-1/)).not.toBeInTheDocument();
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /ingestion/i })).not.toBeInTheDocument();
   });
 
   test("filtered-empty shows its own copy and a clear-all action, not the true-empty copy", async () => {
@@ -681,26 +502,16 @@ describe("LibraryPage", () => {
     expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
   });
 
-  test("true-empty state shows no clear-filters action", async () => {
-    renderLibrary({ items: [], nextCursor: null });
-    expect(await screen.findByText("No books yet")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /clear all filters/i })).not.toBeInTheDocument();
-  });
-
-  test("true-empty offers an ingestion link to admins", async () => {
-    renderLibrary({ items: [], nextCursor: null, me: meFixture({ role: "admin" }) });
-    const link = await screen.findByRole("link", { name: /ingestion/i });
-    expect(link.getAttribute("href")).toBe("/admin/dashboard");
-  });
-
-  test("true-empty hides the ingestion link from non-admin readers", async () => {
+  test("the sort live region announces the stack in every state", async () => {
     renderLibrary({
-      items: [],
+      items: [bookFixture()],
       nextCursor: null,
-      me: meFixture({ role: "child", is_child: true }),
+      initialEntries: ["/library?sort=-pages"],
+      cacheParams: { sort: "-pages" },
     });
-    expect(await screen.findByText("No books yet")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /ingestion/i })).not.toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Library" });
+    const region = screen.getByText("Sorted by Pages descending");
+    expect(region).toHaveAttribute("aria-live", "polite");
   });
 
   test("a failed Load more surfaces an inline error and a Retry control", async () => {
@@ -756,9 +567,6 @@ describe("LibraryPage", () => {
       ],
       pageParams: [undefined],
     });
-    // Prefill the shelves cache so the rail's on-mount shelves fetch does not
-    // consume the first (rejected) mock before the Load more click does.
-    client.setQueryData(queryKeys.shelves.list(), []);
     function Wrapper(): ReactElement {
       const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
       const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
@@ -787,7 +595,7 @@ describe("LibraryPage", () => {
     errorSpy.mockRestore();
   });
 
-  test("clear-all discards a pending rail draft; the cleared filter cannot resurrect", async () => {
+  test("clear-all discards a pending toolbar-search draft; the cleared filter cannot resurrect", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
@@ -796,51 +604,328 @@ describe("LibraryPage", () => {
       extraCacheParams: [{}, { q: "du" }, { series: "s-1", q: "du" }],
     });
     const user = userEvent.setup();
-    const rail = await screen.findByRole("complementary", { name: "Filters" });
-    const quickSearch = within(rail).getByRole("searchbox", { name: "Quick search" });
-    await user.type(quickSearch, "du");
+    await screen.findByText("No books match these filters");
+    await user.type(searchBox(), "du");
     await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
     // Past the debounce window: the pending draft must not have committed.
     await new Promise((resolve) => setTimeout(resolve, 400));
     const search = screen.getByTestId("location-search").textContent;
     expect(search).not.toContain("q=");
     expect(search).not.toContain("series=");
-    expect(quickSearch).toHaveValue("");
+    expect(searchBox()).toHaveValue("");
   });
 
   test("clearing all filters preserves the active view and sort params", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?series=s-1&sort=title&view=list"],
+      initialEntries: ["/library?series=s-1&sort=title&view=table"],
       cacheParams: { series: "s-1", sort: "title" },
       extraCacheParams: [{ sort: "title" }],
     });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
-    // Filter gone (true-empty takes over), but view (list) and sort (title)
-    // survive — assert via the persisted controls, not the list table (which
-    // an empty result set does not render).
-    const rail = await screen.findByRole("complementary", { name: "Filters" });
-    expect(
-      within(rail).getByRole("button", { name: /Change Title sort direction/ }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "List", pressed: true })).toBeInTheDocument();
-    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("view=table");
+      expect(search).toContain("sort=title");
+      expect(search).not.toContain("series=");
+    });
+    expect(screen.getByRole("button", { name: "Table", pressed: true })).toBeInTheDocument();
   });
 
-  test("the summary falls back to a short id when the series is absent from the loaded pages", async () => {
-    const longId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
-    renderLibrary({
-      items: [bookFixture()],
-      nextCursor: null,
-      initialEntries: [`/library?series=${longId}`],
-      cacheParams: { series: longId },
+  describe("filter chips", () => {
+    test("renders no chip row when no filter params are set", async () => {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      await screen.findByRole("heading", { name: "Library" });
+      expect(screen.queryByTestId("filter-chips")).not.toBeInTheDocument();
     });
-    const summary = await screen.findByTestId("filter-summary");
-    // No matching series in the loaded pages, so shortId (first 8 + ellipsis),
-    // never "undefined".
-    expect(within(summary).getByText(/Series: aaaabbbb…/)).toBeInTheDocument();
-    expect(within(summary).queryByText(/undefined/)).not.toBeInTheDocument();
+
+    test("an active series filter renders a chip with the resolved name, not a raw id", async () => {
+      renderLibrary({
+        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        nextCursor: null,
+        initialEntries: ["/library?series=s-1"],
+        cacheParams: { series: "s-1" },
+      });
+      const chips = await screen.findByTestId("filter-chips");
+      expect(within(chips).getByText(/Series: Discworld/)).toBeInTheDocument();
+      expect(within(chips).queryByText(/s-1/)).not.toBeInTheDocument();
+    });
+
+    test("a chip's remove control drops exactly that filter param", async () => {
+      renderLibrary({
+        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        nextCursor: null,
+        initialEntries: ["/library?series=s-1&status_any=unread"],
+        cacheParams: { series: "s-1", status_any: ["unread"] },
+        extraCacheParams: [{ status_any: ["unread"] }],
+      });
+      const chips = await screen.findByTestId("filter-chips");
+      const user = userEvent.setup();
+      await user.click(
+        within(chips).getByRole("button", { name: /Remove filter: Series: Discworld/ }),
+      );
+      await waitFor(() => {
+        const search = screen.getByTestId("location-search").textContent;
+        expect(search).not.toContain("series=");
+        expect(search).toContain("status_any=unread");
+      });
+    });
+
+    test("the chip row's clear-all drops every filter param", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?status_any=unread&pages_gte=500"],
+        cacheParams: { status_any: ["unread"], pages_gte: 500 },
+        extraCacheParams: [{}],
+      });
+      const chips = await screen.findByTestId("filter-chips");
+      const user = userEvent.setup();
+      await user.click(within(chips).getByRole("button", { name: "Clear all" }));
+      await waitFor(() => {
+        const search = screen.getByTestId("location-search").textContent;
+        expect(search).not.toContain("status_any");
+        expect(search).not.toContain("pages_gte");
+      });
+    });
+
+    test("multi-token vocabulary filters render one family chip with a count", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?tag=scifi&tag=hugo"],
+        cacheParams: { tag: ["scifi", "hugo"] },
+      });
+      const chips = await screen.findByTestId("filter-chips");
+      expect(within(chips).getByText(/Tags \(2\)/)).toBeInTheDocument();
+    });
+
+    test("a chip falls back to a short id when the series is absent from the loaded pages", async () => {
+      const longId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: [`/library?series=${longId}`],
+        cacheParams: { series: longId },
+      });
+      const chips = await screen.findByTestId("filter-chips");
+      expect(within(chips).getByText(/Series: aaaabbbb…/)).toBeInTheDocument();
+      expect(within(chips).queryByText(/undefined/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("overlays", () => {
+    test("the Filters button opens the filter drawer; Escape closes it and returns focus", async () => {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      const user = userEvent.setup();
+      const trigger = await screen.findByRole("button", { name: /^Filters/ });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      await user.click(trigger);
+      const drawer = await screen.findByRole("dialog");
+      expect(within(drawer).getByText("Refine")).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      // Radix restores focus asynchronously on close.
+      await waitFor(() => {
+        expect(trigger).toHaveFocus();
+      });
+    });
+
+    test("activating a table row opens the book-detail drawer with real record actions", async () => {
+      const book = bookFixture({ title: "Stoner", id: "abc-123" });
+      renderLibrary({
+        items: [book],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        details: [detailFixture(book)],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+      );
+      const drawer = await screen.findByRole("dialog");
+      expect(await within(drawer).findByText("Farrar, Straus and Giroux")).toBeInTheDocument();
+      const fullRecord = within(drawer).getByRole("link", { name: /View full record/ });
+      expect(fullRecord.getAttribute("href")).toBe(`/b/${book.id}`);
+      expect(within(drawer).getByRole("button", { name: /Add to shelf/ })).toBeInTheDocument();
+      // No mock-only actions survive from the prototype.
+      expect(within(drawer).queryByRole("button", { name: /Copy title/ })).not.toBeInTheDocument();
+      expect(within(drawer).queryByRole("button", { name: /Remove/ })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+    });
+
+    test("the overlay slot is exclusive: opening one drawer replaces the other", async () => {
+      const book = bookFixture({ title: "Stoner", id: "abc-123" });
+      renderLibrary({
+        items: [book],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        details: [detailFixture(book)],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+      );
+      await screen.findByRole("dialog");
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const drawers = await screen.findAllByRole("dialog");
+      expect(drawers).toHaveLength(1);
+      expect(within(drawers[0]).getByText("Refine")).toBeInTheDocument();
+    });
+  });
+
+  describe("selection and batch bar", () => {
+    test("selecting rows raises the batch bar with count, clear, and no Remove action", async () => {
+      renderLibrary({
+        items: [bookFixture({ id: "a", title: "Stoner" }), bookFixture({ id: "b" })],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
+      const bar = await screen.findByRole("toolbar", { name: "Batch actions" });
+      expect(within(bar).getByText("1 selected")).toBeInTheDocument();
+      expect(within(bar).getByRole("button", { name: /Add to shelf/ })).toBeInTheDocument();
+      expect(within(bar).queryByRole("button", { name: /Remove/ })).not.toBeInTheDocument();
+      await user.click(within(bar).getByRole("button", { name: /Clear selection/ }));
+      expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
+    });
+
+    test("the batch bar discloses loaded-only coverage when more pages exist", async () => {
+      renderLibrary({
+        items: [bookFixture({ id: "a" })],
+        nextCursor: "eyJ4Ijox",
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
+      const bar = await screen.findByRole("toolbar", { name: "Batch actions" });
+      expect(within(bar).getByText("Selection covers loaded books only")).toBeInTheDocument();
+    });
+
+    test("a query change clears the selection", async () => {
+      renderLibrary({
+        items: [bookFixture({ id: "a" })],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        extraCacheParams: [{ q: "war" }],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
+      await screen.findByRole("toolbar", { name: "Batch actions" });
+      await user.type(searchBox(), "war");
+      await waitFor(() => {
+        expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
+      });
+    });
+
+    test("switching projections clears the selection", async () => {
+      renderLibrary({
+        items: [bookFixture({ id: "a" })],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        extraCacheParams: [{}],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole("checkbox", { name: "Select" })[0]);
+      await screen.findByRole("toolbar", { name: "Batch actions" });
+      const group = screen.getByRole("group", { name: "View mode" });
+      await user.click(within(group).getByRole("button", { name: "Grid" }));
+      await screen.findByTestId("library-grid");
+      await user.click(within(group).getByRole("button", { name: "Table" }));
+      await screen.findByTestId("library-table");
+      expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("display preferences", () => {
+    test("table-mode display controls are absent in grid mode", async () => {
+      renderLibrary({ items: [bookFixture()], nextCursor: null });
+      await screen.findByTestId("library-grid");
+      expect(screen.queryByRole("group", { name: "Table density" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Columns/ })).not.toBeInTheDocument();
+    });
+
+    test("the density toggle switches and persists the preference", async () => {
+      try {
+        renderLibrary({
+          items: [bookFixture()],
+          nextCursor: null,
+          initialEntries: ["/library?view=table"],
+        });
+        await screen.findByTestId("library-table");
+        const group = screen.getByRole("group", { name: "Table density" });
+        expect(
+          within(group).getByRole("button", { name: "Comfortable", pressed: true }),
+        ).toBeInTheDocument();
+        const user = userEvent.setup();
+        await user.click(within(group).getByRole("button", { name: "Compact" }));
+        expect(
+          within(group).getByRole("button", { name: "Compact", pressed: true }),
+        ).toBeInTheDocument();
+        expect(localStorage.getItem(DISPLAY_STORAGE_KEY)).toContain('"compact"');
+      } finally {
+        localStorage.removeItem(DISPLAY_STORAGE_KEY);
+      }
+    });
+
+    test("the Columns popover hides a column, locks Title, and persists the choice", async () => {
+      try {
+        renderLibrary({
+          items: [bookFixture()],
+          nextCursor: null,
+          initialEntries: ["/library?view=table"],
+        });
+        await screen.findByTestId("library-table");
+        expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /Columns/ }));
+        const title = await screen.findByRole("checkbox", { name: "Title" });
+        expect(title).toBeDisabled();
+        await user.click(screen.getByRole("checkbox", { name: "Subtitle" }));
+        await waitFor(() => {
+          expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
+        });
+        expect(localStorage.getItem(DISPLAY_STORAGE_KEY)).toContain("subtitle");
+      } finally {
+        localStorage.removeItem(DISPLAY_STORAGE_KEY);
+      }
+    });
+
+    test("a persisted hidden column seeds the table without it", async () => {
+      localStorage.setItem(
+        DISPLAY_STORAGE_KEY,
+        JSON.stringify({ density: "comfortable", hiddenColumns: ["subtitle"] }),
+      );
+      try {
+        renderLibrary({
+          items: [bookFixture()],
+          nextCursor: null,
+          initialEntries: ["/library?view=table"],
+        });
+        await screen.findByTestId("library-table");
+        expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
+        expect(screen.getByRole("columnheader", { name: /^Title/ })).toBeInTheDocument();
+      } finally {
+        localStorage.removeItem(DISPLAY_STORAGE_KEY);
+      }
+    });
   });
 });
