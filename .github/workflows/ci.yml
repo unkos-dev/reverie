@@ -866,12 +866,15 @@ jobs:
           persist-credentials: false
 
       # Static guard, no toolchain — runs first so drift fails in seconds,
-      # before any install. VP_VERSION (the global vp setup-vp installs) and
-      # package.json's vite-plus devDependency (the local node_modules/.bin/vp
-      # every recipe runs) are hand-set in different files, so Renovate
-      # bumping one without the other is silent drift. Anchor on package.json,
-      # fail loud if the workflow pin lags. Both land in one grouped PR.
-      - name: vp pin matches package.json vite-plus version
+      # before any install. Each workflow carries its own VP_VERSION and
+      # NODE_VERSION (reusable and standalone workflows do not inherit
+      # ci.yml's env), so a partial edit or Renovate update could desync them
+      # and run a different global vp. Assert every workflow's VP_VERSION
+      # equals package.json's vite-plus devDependency (the local
+      # node_modules/.bin/vp every recipe runs), and that all NODE_VERSION
+      # pins agree. The grouped vite-plus Renovate PR moves the vp set
+      # together; this fails loud if any file lags.
+      - name: vp and node pins match across workflows and package.json
         run: |
           pkg="$(jq -r '.devDependencies["vite-plus"]' package.json)"
           case "$pkg" in
@@ -881,11 +884,24 @@ jobs:
               exit 1
               ;;
           esac
-          if [ "$pkg" != "$VP_VERSION" ]; then
-            echo "::error file=.github/workflows/ci.yml::VP_VERSION ($VP_VERSION) != vite-plus in package.json ($pkg) — keep the setup-vp pin in lockstep with the devDependency; they ship in the grouped vite-plus Renovate PR"
-            exit 1
-          fi
-          echo "VP_VERSION ($VP_VERSION) matches package.json vite-plus ($pkg)"
+          rc=0
+          node_ref=""
+          for f in .github/workflows/ci.yml .github/workflows/docs-build.yml .github/workflows/scheduled-audit.yml; do
+            vp="$(yq '.env.VP_VERSION' "$f")"
+            nd="$(yq '.env.NODE_VERSION' "$f")"
+            if [ "$vp" != "$pkg" ]; then
+              echo "::error file=${f}::VP_VERSION ($vp) != vite-plus in package.json ($pkg) — keep every workflow's vp pin in lockstep; they ship in the grouped vite-plus Renovate PR"
+              rc=1
+            fi
+            if [ -z "$node_ref" ]; then
+              node_ref="$nd"
+            elif [ "$nd" != "$node_ref" ]; then
+              echo "::error file=${f}::NODE_VERSION ($nd) != the pin in the earlier workflows ($node_ref) — keep the node pins in lockstep"
+              rc=1
+            fi
+          done
+          if [ "$rc" -ne 0 ]; then exit 1; fi
+          echo "all workflow vp pins ($pkg) match package.json; node pins ($node_ref) consistent"
 
       - uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
         with:
