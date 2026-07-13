@@ -11,7 +11,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, FolderPlus, Loader2 } from "lucide-react";
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -63,6 +63,7 @@ export function BookDetailDrawer({
 }
 
 function DrawerBody({ bookId }: { bookId: string }): ReactElement {
+  const [coverFailed, setCoverFailed] = useState(false);
   const {
     data: book,
     isError,
@@ -133,11 +134,14 @@ function DrawerBody({ bookId }: { bookId: string }): ReactElement {
           </p>
         </SheetHeader>
         <div className="flex gap-4">
-          {book.cover_url !== "" ? (
+          {book.cover_url !== "" && !coverFailed ? (
             <img
               src={book.cover_url}
               alt=""
               decoding="async"
+              onError={() => {
+                setCoverFailed(true);
+              }}
               className="border-border h-24 w-[68px] shrink-0 border object-cover"
             />
           ) : (

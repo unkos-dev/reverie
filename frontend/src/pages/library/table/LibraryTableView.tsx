@@ -285,17 +285,22 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
 /**
  * Cover slot for the title cell: the thumbnail when art exists, otherwise
  * a typographic mark tile (first letters of the title) per the redesign's
- * ledger treatment. Hidden in compact density, where the row is too short
- * to carry it.
+ * ledger treatment. A thumbnail that fails to load falls back to the mark
+ * too, mirroring the grid card's spine fallback. Hidden in compact
+ * density, where the row is too short to carry it.
  */
 function TitleCellMark({ row }: { row: BookListItem }): ReactElement {
-  if (row.cover_url !== "") {
+  const [coverFailed, setCoverFailed] = useState(false);
+  if (row.cover_url !== "" && !coverFailed) {
     return (
       <img
         src={row.cover_url}
         alt=""
         loading="lazy"
         decoding="async"
+        onError={() => {
+          setCoverFailed(true);
+        }}
         className="border-border h-[42px] w-[30px] shrink-0 border object-cover"
       />
     );
