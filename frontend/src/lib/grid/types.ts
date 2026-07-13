@@ -94,6 +94,21 @@ export type FocusReport<R> = { row: R; rowIdx: number; columnKey: string };
 export type CellEditReport<R> = { row: R; previousRow: R; columnKey: string };
 
 /**
+ * Row-selection contract. Keys are the caller's stable row identities (the
+ * same values the binding's row-key extractor returns), so selection
+ * survives paging appends without positional bookkeeping. The binding
+ * renders a leading selection column when this is present and reports the
+ * full next selection on every change; select-all semantics cover the rows
+ * currently loaded, which is why the header checkbox label is caller-owned.
+ */
+export type GridSelection = {
+  selectedKeys: ReadonlySet<string>;
+  onSelectionChange: (selectedKeys: ReadonlySet<string>) => void;
+  /** Accessible name for the header select-all checkbox. */
+  selectAllLabel: string;
+};
+
+/**
  * The prop contract a grid binding satisfies for row type `R`. The binding
  * owns no state of its own beyond what the vendor grid requires internally:
  * it is a controlled view that reports sort and focus changes back to its
@@ -109,6 +124,19 @@ export type GridBindingProps<R> = {
   onCellFocus: (report: FocusReport<R>) => void;
   /** Fired when an editor commits. Omit for a caller with no editable columns. */
   onCellEdit?: (report: CellEditReport<R>) => void;
+  /**
+   * Row activation (open-details) gesture. Fired on click, Enter, or Space
+   * on a cell that is neither interactive content, nor editable, nor the
+   * selection column, so activation never shadows editing or selection.
+   * Omit for a caller with no row-level detail surface.
+   */
+  onRowActivate?: (row: R) => void;
+  /** Row selection; omit for a caller without multi-select. */
+  selection?: GridSelection;
+  /** Row height in pixels; the binding's density default applies when omitted. */
+  rowHeight?: number;
+  /** Header row height in pixels; the binding default applies when omitted. */
+  headerRowHeight?: number;
   /** Passthrough for the binding's native scroll container; drives fetch-on-scroll paging. */
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
   /** Wrapper class carrying the Reverie-token theme bridge. */
