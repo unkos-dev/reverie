@@ -19,7 +19,6 @@ export default defineConfig({
       "backend/.sqlx/",
       "frontend/src/components/ui/",
       "docs/security/codeguard/",
-      "frontend/a11y-results.json",
       "backend/config.schema.json",
       "docs/src/content/docs/reference/configuration.mdx",
       "docs/openapi.json",
