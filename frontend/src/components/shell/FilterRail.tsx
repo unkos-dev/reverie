@@ -1,14 +1,16 @@
 /**
- * Contextual filter rail for browse surfaces: the sole editing surface for
- * the library's filter grammar and sort stack in every view mode.
+ * Contextual filter rail for browse surfaces: the editing surface for the
+ * library's filter grammar and sort stack. Quick search lives in the page
+ * toolbar (`components/library/QuickSearch`) and shares this rail's
+ * draft-survival protocol through the container-owned `lastEdit` ref.
  *
- * Quick search sits at the top, followed by one collapsible section per
- * editable concern: the sort stack, the shelf and series facets, the
- * vocabulary families (authors, tags, genres, moods), reading status, the
- * text-operator columns (title, subtitle, ISBN), the numeric ranges (pages,
- * rating), and the added-date range. A section with active conditions opens
- * on mount, shows a count beside its name, and carries a clear affordance;
- * inactive sections mount collapsed to keep the column scannable.
+ * One collapsible section per editable concern: the sort stack, the shelf
+ * and series facets, the vocabulary families (authors, tags, genres,
+ * moods), reading status, the text-operator columns (title, subtitle,
+ * ISBN), the numeric ranges (pages, rating), and the added-date range. A
+ * section with active conditions opens on mount, shows a count beside its
+ * name, and carries a clear affordance; inactive sections mount collapsed
+ * to keep the column scannable.
  *
  * URL state is canonical: the rail parses the search params it edits and
  * every write goes through the filter codec (or the sort helper) and the
@@ -26,14 +28,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactElement,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useEffect, useState, type ReactElement, type ReactNode, type RefObject } from "react";
 import { useSearchParams } from "react-router";
 
 import {
@@ -45,7 +40,6 @@ import {
   type SortLevelParam,
 } from "@/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -53,6 +47,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  FILTER_DEBOUNCE_MS,
+  fullFilterToken,
+  makeFilterClear,
+  makeFilterCommit,
+  type EditTokens,
+} from "@/components/library/filter-commit";
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
 import { useDebouncedCommit } from "@/lib/hooks/use-debounced-commit";
@@ -61,8 +62,6 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   applySortToSearchParams,
   parseFilterParams,
-  serializeFilterParams,
-  type FilterState,
   type RangeFilter,
   type TextFilter,
 } from "@/routes/library-params";
@@ -83,39 +82,9 @@ export interface SeriesFacetOption {
   name: string;
 }
 
-/** Minimum quick-search length; below it the input clears the `q` filter. */
-const MIN_Q_LEN = 2;
-/** Debounce before a quick-search or typed-section edit becomes a URL change. */
-const FILTER_DEBOUNCE_MS = 250;
-
 const TITLE_OPS: readonly TextOp[] = ["contains", "eq", "ne"];
 const SUBTITLE_OPS: readonly TextOp[] = ["contains", "empty"];
 const ISBN_OPS: readonly TextOp[] = ["contains", "eq", "empty"];
-
-/** A stable, order-independent serialization of every filter *except* `q`.
- *  Quick search watches this: it stays constant while the user types (and
- *  across the debounced `q` write), and changes only on an external filter
- *  edit, which is the signal to discard an uncommitted quick-search draft. */
-function filterResetToken(filters: FilterState): string {
-  const params = new URLSearchParams();
-  serializeFilterParams(filters, params);
-  params.delete("q");
-  params.sort();
-  return params.toString();
-}
-
-/** Order-independent serialization of the whole committed filter state; the
- *  draft-holding sections resync whenever it changes (see `useDraftSlice`). */
-function fullFilterToken(filters: FilterState): string {
-  const params = new URLSearchParams();
-  serializeFilterParams(filters, params);
-  params.sort();
-  return params.toString();
-}
-
-/** Tokens of the committed state the rail's own latest edit wrote; `null`
- *  after a clear affordance or before any edit. See `useDraftSlice`. */
-type EditTokens = { full: string; reset: string };
 
 function textSliceToken(value: TextFilter): string {
   return [value.contains, value.eq, value.ne, value.empty]
@@ -183,6 +152,10 @@ interface FilterRailProps {
    *  drafts check it at fire time so any clearing writer, including the
    *  page's clear-all, invalidates them. */
   clearGen: RefObject<number>;
+  /** The container-owned edit-token ref shared with the toolbar quick
+   *  search; one instance per page or the draft-survival protocol splits
+   *  (see `filter-commit.ts`). */
+  lastEdit: RefObject<EditTokens | null>;
 }
 
 /** The library's filter and sort editing surface; see the module docstring. */
@@ -190,6 +163,7 @@ export function FilterRail({
   seriesOptions,
   applyParams,
   clearGen,
+  lastEdit,
 }: Readonly<FilterRailProps>): ReactElement {
   const [searchParams] = useSearchParams();
   const filters = parseFilterParams(searchParams);
@@ -201,43 +175,8 @@ export function FilterRail({
   ];
   const authorNames = useAuthorLabels(authorIds);
 
-  // Tokens of the state the rail's latest edit wrote, read by the draft
-  // resync in `useDraftSlice` and `QuickSearch` to tell "our own edit
-  // elsewhere in the rail" (keep drafts) from everything else: clears,
-  // navigation, and the page's clear-all (reset drafts).
-  const lastEdit = useRef<EditTokens | null>(null);
-
-  /** Apply a user edit on top of the live committed state; `applyParams`
-   *  hands the mutator the result of any write that landed since this
-   *  render, so same-frame commits build on each other instead of on a
-   *  shared stale snapshot. */
-  function commitFilters(patch: (current: FilterState) => FilterState): void {
-    applyParams((params) => {
-      const next = patch(parseFilterParams(params));
-      lastEdit.current = { full: fullFilterToken(next), reset: filterResetToken(next) };
-      serializeFilterParams(next, params);
-      // A filter change invalidates keyset pagination position.
-      params.delete("cursor");
-      return params;
-    });
-  }
-
-  /** Clear-affordance write: pending drafts everywhere must die with it, or
-   *  a queued debounce could resurrect a condition the user just cleared.
-   *  `clears: true` bumps the shared generation the drafts check at fire
-   *  time. */
-  function clearFilters(patch: (current: FilterState) => FilterState): void {
-    lastEdit.current = null;
-    applyParams(
-      (params) => {
-        const next = patch(parseFilterParams(params));
-        serializeFilterParams(next, params);
-        params.delete("cursor");
-        return params;
-      },
-      { clears: true },
-    );
-  }
+  const commitFilters = makeFilterCommit(applyParams, lastEdit);
+  const clearFilters = makeFilterClear(applyParams, lastEdit);
 
   function commitSort(levels: readonly SortLevelParam[]): void {
     applyParams((params) => applySortToSearchParams(params, levels));
@@ -274,15 +213,6 @@ export function FilterRail({
 
   return (
     <aside aria-label="Filters" className="flex flex-col gap-4 text-sm">
-      <QuickSearch
-        value={filters.q ?? ""}
-        resetToken={filterResetToken(filters)}
-        lastEdit={lastEdit}
-        clearGen={clearGen}
-        onCommit={(q) => {
-          commitFilters((current) => ({ ...current, q }));
-        }}
-      />
       <SortSection levels={sortLevels} onChange={commitSort} />
       <ShelfSection
         activeShelf={filters.shelf}
@@ -425,62 +355,6 @@ export function FilterRail({
         />
       </RailSection>
     </aside>
-  );
-}
-
-type QuickSearchProps = {
-  value: string;
-  resetToken: string;
-  lastEdit: RefObject<EditTokens | null>;
-  clearGen: RefObject<number>;
-  onCommit: (q: string | undefined) => void;
-};
-
-function QuickSearch({
-  value,
-  resetToken,
-  lastEdit,
-  clearGen,
-  onCommit,
-}: Readonly<QuickSearchProps>): ReactElement {
-  const [draft, setDraft] = useState(value);
-  const [synced, setSynced] = useState({ value, resetToken });
-  // Reset the input to reflect `value` when the committed `q` changes from
-  // outside (navigation) OR when any other filter changes (a section clear,
-  // clear-all). The second case discards an uncommitted draft so a pending
-  // keystroke cannot resurrect after the user clears filters; when it is
-  // the rail's own edit in another section, the draft survives instead.
-  if (value !== synced.value || resetToken !== synced.resetToken) {
-    const editElsewhere = value === synced.value && lastEdit.current?.reset === resetToken;
-    setSynced({ value, resetToken });
-    if (!editElsewhere) setDraft(value);
-  }
-  const trimmed = draft.trim();
-  const next = trimmed.length >= MIN_Q_LEN ? trimmed : undefined;
-  const genAtRender = clearGen.current;
-  // Treating an empty box (`next` undefined) as equal to an absent `q`
-  // (`value` "") stops an untouched search from committing spuriously.
-  useDebouncedCommit(
-    next ?? "",
-    value,
-    () => {
-      onCommit(next);
-    },
-    FILTER_DEBOUNCE_MS,
-    () => clearGen.current !== genAtRender,
-  );
-
-  return (
-    <Input
-      type="search"
-      aria-label="Quick search"
-      placeholder="Quick search…"
-      className="h-9"
-      value={draft}
-      onChange={(event) => {
-        setDraft(event.target.value);
-      }}
-    />
   );
 }
 

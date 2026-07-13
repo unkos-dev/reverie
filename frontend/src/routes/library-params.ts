@@ -25,7 +25,7 @@ import {
   type SortLevelParam,
 } from "@/api";
 
-const LIBRARY_VIEWS = ["grid", "list", "table"] as const;
+const LIBRARY_VIEWS = ["grid", "table"] as const;
 /** The library's browse presentation modes. */
 export type LibraryView = (typeof LIBRARY_VIEWS)[number];
 

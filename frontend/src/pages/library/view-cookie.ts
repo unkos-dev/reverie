@@ -1,5 +1,7 @@
 /**
- * Cookie persistence for the library view choice (grid / list / table).
+ * Cookie persistence for the library view choice (grid / table). A stale
+ * cookie holding the retired "list" value fails `isLibraryView` and reads
+ * as no preference.
  *
  * The URL `?view=` param stays the canonical, shareable state; this cookie
  * only supplies the default when the param is absent, so the chosen view
