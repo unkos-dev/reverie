@@ -211,7 +211,7 @@
    every such control paints a SECOND concentric ring (verified by render on the
    library cards). Keeping it `none` preserves the single-indicator contract
    without the bloom. Universal (one rule, no theme branch) per spec §11.2.
-   VERIFY BY RENDER in both themes via agent-browser — do not mark done on the
+   VERIFY BY RENDER in both themes in a browser; do not mark done on the
    computed claim alone. No border-radius is set here on purpose: the outline
    follows the element's own radius, so forcing a radius would square off
    rounded-full controls on focus. */
