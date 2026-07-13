@@ -2,7 +2,7 @@
 //
 // Accessibility-gate allowlist + verdict (pure, side-effect-free).
 //
-// The a11y CI gate (scripts/a11y/axe-scan.mjs) runs axe-core against the
+// The a11y CI gate (scripts/a11y/a11y.spec.ts) runs axe-core against the
 // dev-only design showcase and must fail on any WCAG 2.2 AA violation EXCEPT
 // the one deliberate brand carve-out: Reverie Gold on large CTAs.
 //

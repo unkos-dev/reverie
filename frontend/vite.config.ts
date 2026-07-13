@@ -93,7 +93,10 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      include: ["src/**", "vite-plugins/**", "scripts/a11y/**"],
+      // scripts/a11y/*.mjs = allowlist.mjs, the only logic-bearing gate
+      // surface. The Playwright spec (a11y.spec.ts) runs under Playwright, not
+      // vitest, so it is deliberately outside the coverage set.
+      include: ["src/**", "vite-plugins/**", "scripts/a11y/*.mjs"],
     },
     projects: [
       {
@@ -108,8 +111,8 @@ export default defineConfig({
         // a11y gate logic (scripts/a11y/) is plain ESM tooling, not app code,
         // so it lives outside src/ and runs in a node env like vite-plugins.
         // The pure allowlist/verdict module is the only logic-bearing surface
-        // and is unit-tested here; the runner that drives agent-browser is
-        // exercised end-to-end via `npm run a11y`.
+        // and is unit-tested here; the Playwright spec (a11y.spec.ts) that
+        // drives axe-core is exercised end-to-end via `npm run a11y`.
         extends: true,
         test: {
           name: "a11y",
