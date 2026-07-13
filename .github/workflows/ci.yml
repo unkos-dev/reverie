@@ -1102,11 +1102,12 @@ jobs:
   # showcase, failing on any violation outside the documented allowlist in
   # frontend/scripts/a11y/allowlist.mjs.
   #
-  # Driver is agent-browser, not @axe-core/cli: the cli's bundled
-  # chromedriver is x64-only and unusable on the ARM64 dev workspace, so
-  # the gate would not be locally reproducible. The showcase routes are
-  # dev-only (registered under import.meta.env.DEV), so axe MUST run
-  # against `npm run dev`, never the production build.
+  # Driver is @playwright/test + @axe-core/playwright. The Playwright config
+  # owns the dev-server lifecycle (webServer) and ships a linux-arm64 Chromium
+  # (chrome-headless-shell, falling back to full Chromium on arm64 since 1.57),
+  # so the gate reproduces on the ARM64 dev box as well as x86 CI. The showcase
+  # routes are dev-only (registered under import.meta.env.DEV), so the config
+  # points webServer at `npm run dev`, never the production build.
   a11y:
     name: Accessibility (axe)
     needs: changes
@@ -1128,65 +1129,49 @@ jobs:
           cache: true
 
       # Install from the repo root (the root prepare hook needs npm's cwd
-      # at the root to resolve lefthook). agent-browser itself is a
-      # lockfile-pinned root devDependency, so its integrity rides the
+      # at the root to resolve lefthook). @playwright/test is a
+      # lockfile-pinned frontend devDependency, so its integrity rides the
       # committed lockfile like every other npm dep.
       - name: Install
         working-directory: ${{ github.workspace }}
         run: vp install
 
-      # Key on the resolved agent-browser version so a lockfile bump misses
-      # cleanly and re-downloads.
-      - name: Resolve agent-browser version
-        id: agent-browser
+      # Key the browser cache on the resolved @playwright/test version so a
+      # lockfile bump misses cleanly and re-downloads.
+      - name: Resolve Playwright version
+        id: playwright
         working-directory: ${{ github.workspace }}
-        run: echo "version=$(jq -r '.packages["node_modules/agent-browser"].version' package-lock.json)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(jq -r '.packages["node_modules/@playwright/test"].version' package-lock.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache agent-browser Chromium
+      - name: Cache Playwright browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/ms-playwright
-          key: agent-browser-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-browser.outputs.version }}
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
 
-      # The Chromium binary is fetched by agent-browser's own installer
-      # from a version-derived URL we don't control, so there is no stable
-      # artifact to SHA-pin; integrity is delegated to the lockfile-pinned
-      # npm package. Scope-limited: the browser only drives a read-only axe
-      # scan of our own local dev server. On the local ARM workspace
-      # agent-browser drives Brave via AGENT_BROWSER_EXECUTABLE instead.
-      - name: Install agent-browser Chromium
-        run: npx --no-install agent-browser install --with-deps
+      # Install unconditionally, even on a cache hit: the cache holds only the
+      # browser binaries under ~/.cache/ms-playwright, but `--with-deps`
+      # installs OS-level apt packages that are not cached and must be present
+      # on every run.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
-      # The showcase exists only under `npm run dev`. Start it, wait for
-      # readiness, then run the gate — one step so the backgrounded server
-      # shares the step's lifetime. `npm run a11y` is the last command, so
-      # its exit code is the step's.
+      # webServer in playwright.config.ts starts `npm run dev`, waits on the
+      # scanned route, and tears it down. Do not also start a server here:
+      # Playwright never reuses an existing server in CI, so a second one would
+      # collide on port 5173 (EADDRINUSE).
       - name: Run accessibility gate
-        run: |
-          npm run dev > /tmp/vite-dev.log 2>&1 &
-          DEV_PID=$!
-          trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:5173/design/system > /dev/null; then
-              echo "dev server ready"
-              break
-            fi
-            if [ "$i" -eq 60 ]; then
-              echo "dev server did not become ready in 60s" >&2
-              cat /tmp/vite-dev.log >&2
-              exit 1
-            fi
-            sleep 1
-          done
-          npm run a11y
+        run: npm run a11y
 
-      - name: Upload a11y report
-        if: always()
+      # Traces (retain-on-failure) carry the attached axe-results.json plus DOM
+      # snapshots and console for each failing scan; only present on a red run.
+      - name: Upload Playwright traces
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: a11y-results
-          path: frontend/a11y-results.json
-          if-no-files-found: warn
+          name: a11y-playwright-traces
+          path: frontend/test-results/
+          if-no-files-found: ignore
 
   # Smoke test the staging compose init path: catches role-clause
   # regressions in init-roles.sql and required-env-var regressions in the
