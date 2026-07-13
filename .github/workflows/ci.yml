@@ -22,6 +22,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  # Single source for the global vp version setup-vp installs. The repo-lint
+  # drift guard ties it to package.json's vite-plus devDependency (the local
+  # node_modules/.bin/vp every recipe actually runs); Renovate bumps both in
+  # the grouped vite-plus PR.
+  # renovate: datasource=npm depName=vite-plus
+  VP_VERSION: "0.2.1"
+  # Single node pin for CI, replacing the seven hand-copied node-version
+  # inputs Renovate never tracked. engines.node and the Dockerfile base image
+  # stay separately Renovate-managed.
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: "24.16.0"
+
 jobs:
   # Detect which areas of the repo changed so downstream jobs can skip when
   # their inputs are untouched. Every filter includes ci.yml itself: a
@@ -730,7 +743,8 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: true
 
       # One workspace install; license-checker walks each package's
@@ -851,6 +865,44 @@ jobs:
         with:
           persist-credentials: false
 
+      # Static guard, no toolchain — runs first so drift fails in seconds,
+      # before any install. Each workflow carries its own VP_VERSION and
+      # NODE_VERSION (reusable and standalone workflows do not inherit
+      # ci.yml's env), so a partial edit or Renovate update could desync them
+      # and run a different global vp. Assert every workflow's VP_VERSION
+      # equals package.json's vite-plus devDependency (the local
+      # node_modules/.bin/vp every recipe runs), and that all NODE_VERSION
+      # pins agree. The grouped vite-plus Renovate PR moves the vp set
+      # together; this fails loud if any file lags.
+      - name: vp and node pins match across workflows and package.json
+        run: |
+          pkg="$(jq -r '.devDependencies["vite-plus"]' package.json)"
+          case "$pkg" in
+            [0-9]*.[0-9]*) ;;
+            *)
+              echo "::error file=package.json::could not parse vite-plus devDependency version (got '$pkg'); the dependency shape may have changed — update this guard"
+              exit 1
+              ;;
+          esac
+          rc=0
+          node_ref=""
+          for f in .github/workflows/ci.yml .github/workflows/docs-build.yml .github/workflows/scheduled-audit.yml; do
+            vp="$(yq '.env.VP_VERSION' "$f")"
+            nd="$(yq '.env.NODE_VERSION' "$f")"
+            if [ "$vp" != "$pkg" ]; then
+              echo "::error file=${f}::VP_VERSION ($vp) != vite-plus in package.json ($pkg) — keep every workflow's vp pin in lockstep; they ship in the grouped vite-plus Renovate PR"
+              rc=1
+            fi
+            if [ -z "$node_ref" ]; then
+              node_ref="$nd"
+            elif [ "$nd" != "$node_ref" ]; then
+              echo "::error file=${f}::NODE_VERSION ($nd) != the pin in the earlier workflows ($node_ref) — keep the node pins in lockstep"
+              rc=1
+            fi
+          done
+          if [ "$rc" -ne 0 ]; then exit 1; fi
+          echo "all workflow vp pins ($pkg) match package.json; node pins ($node_ref) consistent"
+
       - uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
         with:
           tool: just@1.53.0,typos@1.46.2
@@ -906,7 +958,8 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: true
 
       - name: Install workspace
@@ -995,7 +1048,8 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: true
 
       # Install from the repo root: the root prepare hook (lefthook
@@ -1069,7 +1123,8 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: true
 
       # Install from the repo root (the root prepare hook needs npm's cwd
@@ -1383,7 +1438,8 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: true
 
       # Root lockfile carries the same pinned commitlint the local

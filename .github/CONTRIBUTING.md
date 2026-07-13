@@ -56,7 +56,7 @@ cd backend && cargo run
 > `cargo run`; the server verifies the schema and refuses to start if it is
 > fresh or behind.
 
-Frontend only (requires Node.js >=24.15.0):
+Frontend only (Node.js at or above the `engines.node` floor in `package.json`):
 
 ```bash
 cd frontend && npm install && npm run dev
@@ -94,6 +94,10 @@ cargo install just   # or: brew install just, your distro package manager, https
 If `actionlint`, `yamllint`, or `just` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
 
 Workflow files are additionally scanned in CI by [zizmor](https://github.com/zizmorcore/zizmor) (the merge-blocking `workflow-security` job) for GitHub Actions security issues: credential persistence, template injection, cache poisoning, and dangerous triggers. It is a CI-only tool, so there is nothing to install locally; documented suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
+
+### CI toolchain pins
+
+CI installs vp and node through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev/setup-vp), reading two workflow env vars: `VP_VERSION` (the global vp) and `NODE_VERSION`. Both carry `# renovate:` annotations, so Renovate raises bump PRs; `VP_VERSION` and the npm `vite-plus` devDependency share the grouped `vite-plus` PR, and the `repo-lint` drift guard fails the build if they diverge. On a `vite-plus` bump, re-check the `dependency-review` `allow-ghsas` list in [`ci.yml`](workflows/ci.yml) against new advisories for the aliased vite package; a vp bump is the deliberate review trigger recorded in [`debt/2026-06-30-vite-plus-alias-dependency-review.md`](../debt/2026-06-30-vite-plus-alias-dependency-review.md).
 
 ## Testing requirements
 

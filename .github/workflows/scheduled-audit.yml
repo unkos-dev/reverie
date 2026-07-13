@@ -20,6 +20,15 @@ concurrency:
   group: scheduled-audit
   cancel-in-progress: true
 
+env:
+  # Own copy: this workflow does not share ci.yml's env. Kept in lockstep
+  # with ci.yml's pins by the vite-plus Renovate group and the repo-lint
+  # drift guard.
+  # renovate: datasource=npm depName=vite-plus
+  VP_VERSION: "0.2.1"
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: "24.16.0"
+
 jobs:
   advisories:
     name: Advisory scan (cargo-deny)
@@ -64,7 +73,8 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: false
 
       # One root lockfile covers all workspaces.

@@ -19,6 +19,15 @@ on:
 permissions:
   contents: read
 
+env:
+  # Own copy: a reusable workflow does not inherit caller env. Kept in
+  # lockstep with ci.yml's pins by the vite-plus Renovate group and the
+  # repo-lint drift guard.
+  # renovate: datasource=npm depName=vite-plus
+  VP_VERSION: "0.2.1"
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: "24.16.0"
+
 jobs:
   build:
     name: Build docs
@@ -34,7 +43,8 @@ jobs:
       # surface (zizmor). The install is small enough to eat.
       - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1.12.0
         with:
-          node-version: 24.16.0
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: false
 
       - name: Install workspace
