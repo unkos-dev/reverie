@@ -122,12 +122,17 @@
 }
 
 /* Photographic hero band. The <img> carries the photo (LCP-friendly);
-   the fade element flows it into the theme canvas on all four edges. */
+   the wash flows it into the theme canvas from the left so the title,
+   set inside the band, sits on quiet ground. Stops are the approved
+   OpenDesign values per theme. */
 .lib-hero {
   position: relative;
-  height: clamp(220px, 30vh, 340px);
+  display: flex;
+  align-items: flex-end;
+  height: clamp(220px, 10vw, 340px);
   overflow: hidden;
   isolation: isolate;
+  border-bottom: 1px solid var(--border);
 }
 
 .lib-hero img {
@@ -137,67 +142,86 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 38%;
-  filter: saturate(0.9) contrast(1.04);
-  transform: scale(1.04);
+  object-position: center 50%;
+  filter: brightness(0.8) saturate(0.96);
 }
 
-.lib-hero-fade {
+[data-theme="light"] .lib-hero img {
+  filter: brightness(0.72) saturate(0.85);
+}
+
+.lib-hero-wash {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background:
-    linear-gradient(
-      180deg,
-      transparent 0%,
-      transparent 65%,
-      color-mix(in oklch, var(--canvas) 55%, transparent) 85%,
-      var(--canvas) 100%
-    ),
-    linear-gradient(
+  background: linear-gradient(
+    90deg,
+    var(--canvas) 0%,
+    color-mix(in oklab, var(--canvas) 72%, transparent) 34%,
+    color-mix(in oklab, var(--canvas) 18%, transparent) 53%,
+    transparent 68%
+  );
+}
+
+[data-theme="light"] .lib-hero-wash {
+  background: linear-gradient(
+    90deg,
+    var(--canvas) 0%,
+    color-mix(in oklab, var(--canvas) 78%, transparent) 25%,
+    color-mix(in oklab, var(--canvas) 30%, transparent) 42%,
+    transparent 55%
+  );
+}
+
+.lib-hero-inner {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 0 clamp(24px, 5vw, 144px) clamp(26px, 2.5vw, 44px);
+}
+
+.lib-hero-title {
+  margin: 0;
+  font-size: clamp(52px, 6.5vw, 128px);
+  line-height: 0.82;
+  letter-spacing: -0.055em;
+  color: var(--accent-text);
+}
+
+@media (width >= 1920px) {
+  .lib-hero img {
+    object-position: center 47%;
+  }
+
+  .lib-hero-wash {
+    background: linear-gradient(
       90deg,
-      color-mix(in oklch, var(--canvas) 22%, transparent) 0%,
-      transparent 28%,
-      transparent 72%,
-      color-mix(in oklch, var(--canvas) 22%, transparent) 100%
+      var(--canvas) 0%,
+      color-mix(in oklab, var(--canvas) 74%, transparent) 32%,
+      color-mix(in oklab, var(--canvas) 18%, transparent) 50%,
+      transparent 66%
     );
+  }
+
+  [data-theme="light"] .lib-hero-wash {
+    background: linear-gradient(
+      90deg,
+      var(--canvas) 0%,
+      color-mix(in oklab, var(--canvas) 80%, transparent) 23%,
+      color-mix(in oklab, var(--canvas) 26%, transparent) 40%,
+      transparent 53%
+    );
+  }
 }
 
-/* Gilt-foil H1 — the once-per-page hero treatment (atmosphere §8). Five
-   warm-metal stops clipped to the text; light theme biases to the darker
-   stops so the foil doesn't wash out on parchment. */
-.lib-h1-gilt {
-  background: linear-gradient(
-    180deg,
-    var(--atm-gilt-0) 0%,
-    var(--atm-gilt-1) 28%,
-    var(--atm-gilt-2) 50%,
-    var(--atm-gilt-3) 72%,
-    var(--atm-gilt-4) 100%
-  );
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
+@media (width <= 899px) {
+  .lib-hero {
+    height: 176px;
+  }
 
-[data-theme="light"] .lib-h1-gilt {
-  background: linear-gradient(
-    180deg,
-    var(--atm-gilt-2) 0%,
-    var(--atm-gilt-3) 50%,
-    var(--atm-gilt-4) 100%
-  );
-  background-clip: text;
-}
-
-/* Forced-colors / high-contrast: clipped transparent text can vanish.
-   Restore a solid system text colour and drop the clip (WCAG 1.4.1). */
-@media (forced-colors: active) {
-  .lib-h1-gilt {
-    background: none;
-    -webkit-text-fill-color: CanvasText;
-    color: CanvasText;
+  .lib-hero-inner {
+    padding: 0 20px 20px;
   }
 }
 
