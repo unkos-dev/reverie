@@ -357,3 +357,134 @@ describe("ReactDataGridBinding edit surface", () => {
     vi.resetModules();
   });
 });
+
+type SelectionHarnessProps = {
+  onRowActivate?: (row: TestRow) => void;
+  onSelectionChange?: (keys: ReadonlySet<string>) => void;
+};
+
+function SelectionHarness({
+  onRowActivate,
+  onSelectionChange,
+}: SelectionHarnessProps): ReactElement {
+  const [sort, setSort] = useState<SortState>([]);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  return (
+    <ReactDataGridBinding<TestRow>
+      rows={ROWS}
+      columns={COLUMNS}
+      rowKey={(row) => row.id}
+      sort={sort}
+      onSortChange={setSort}
+      onCellFocus={() => undefined}
+      onRowActivate={onRowActivate}
+      selection={{
+        selectedKeys: selected,
+        onSelectionChange: (keys) => {
+          setSelected(keys);
+          onSelectionChange?.(keys);
+        },
+        selectAllLabel: "Select all loaded books",
+      }}
+      height={400}
+    />
+  );
+}
+
+describe("ReactDataGridBinding selection and activation", () => {
+  test("renders a selection column with the caller's select-all label", async () => {
+    render(<SelectionHarness />);
+    await screen.findByRole("grid");
+    expect(screen.getByRole("checkbox", { name: "Select all loaded books" })).toBeInTheDocument();
+  });
+
+  test("marks the grid multiselectable and reports row selection changes", async () => {
+    const onSelectionChange = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onSelectionChange={onSelectionChange} />);
+    const grid = await screen.findByRole("grid");
+    expect(grid).toHaveAttribute("aria-multiselectable", "true");
+    const rowChecks = screen.getAllByRole("checkbox", { name: "Select" });
+    await user.click(rowChecks[0]);
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith(new Set(["row-0"]));
+    });
+    const selectedRow = screen
+      .getAllByRole("row")
+      .find((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRow).toBeDefined();
+  });
+
+  test("select-all header checkbox selects every loaded row", async () => {
+    const onSelectionChange = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onSelectionChange={onSelectionChange} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getByRole("checkbox", { name: "Select all loaded books" }));
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith(new Set(ROWS.map((row) => row.id)));
+    });
+  });
+
+  test("clicking a read-only cell activates the row", async () => {
+    const onRowActivate = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onRowActivate={onRowActivate} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getByText("Author 3"));
+    expect(onRowActivate).toHaveBeenCalledTimes(1);
+    expect(onRowActivate).toHaveBeenCalledWith(ROWS[3]);
+  });
+
+  test("clicking an editable cell selects it without activating the row", async () => {
+    const onRowActivate = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onRowActivate={onRowActivate} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getByText("Title 2"));
+    expect(onRowActivate).not.toHaveBeenCalled();
+  });
+
+  test("clicking the selection checkbox does not activate the row", async () => {
+    const onRowActivate = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onRowActivate={onRowActivate} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getAllByRole("checkbox", { name: "Select" })[1]);
+    expect(onRowActivate).not.toHaveBeenCalled();
+  });
+
+  test("Enter on a read-only cell activates the row", async () => {
+    const onRowActivate = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onRowActivate={onRowActivate} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getByText("Author 5"));
+    onRowActivate.mockClear();
+    await user.keyboard("{Enter}");
+    expect(onRowActivate).toHaveBeenCalledWith(ROWS[5]);
+  });
+
+  test("Enter on an editable cell opens the editor, not the drawer", async () => {
+    const onRowActivate = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onRowActivate={onRowActivate} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getByText("Title 4"));
+    await user.keyboard("{Enter}");
+    expect(await screen.findByLabelText("Title editor")).toBeInTheDocument();
+    expect(onRowActivate).not.toHaveBeenCalled();
+  });
+
+  test("an editor-bearing column never activates, even when the row is locked", async () => {
+    // Activation keys on editor presence, not the per-row `editable`
+    // gate: the gate also locks cells transiently during an in-flight
+    // commit, and a pending cell must not become a drawer trigger.
+    const onRowActivate = vi.fn();
+    const user = userEvent.setup();
+    render(<SelectionHarness onRowActivate={onRowActivate} />);
+    await screen.findByRole("grid");
+    await user.click(screen.getByText("Title 6 [locked]"));
+    expect(onRowActivate).not.toHaveBeenCalled();
+  });
+});

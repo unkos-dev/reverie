@@ -12,7 +12,7 @@
  * own direction, and a header click/ctrl-click writes the same stack the
  * filter rail's sort section edits, via `onSortChange`.
  */
-import { Loader2 } from "lucide-react";
+import { Loader2, PanelRight } from "lucide-react";
 import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
 import { Link } from "react-router";
 
@@ -20,8 +20,12 @@ import { Button } from "@/components/ui/button";
 
 import { MAX_SORT_LEVELS, type BookListItem, type SortField, type SortLevelParam } from "@/api";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
+
+import type { Density } from "../display-storage";
+import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
 
 import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
 import { RatingCellEditor } from "./editors/RatingCellEditor";
@@ -35,6 +39,10 @@ import {
 import { pendingKey, useCellEdit } from "./useCellEdit";
 
 const EMPTY_CELL = "—";
+
+/** Row heights per density; the header stays fixed across both. */
+const ROW_HEIGHT_BY_DENSITY: Record<Density, number> = { comfortable: 64, compact: 44 };
+const TABLE_HEADER_HEIGHT = 42;
 
 /**
  * Header tooltip for a work-scoped column (title/subtitle/authors): a
@@ -193,16 +201,8 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
     headerTooltip: WORK_SCOPED_TOOLTIP,
     sortable: true,
     accessor: (row) => row.title,
-    renderCell: (row) => (
-      // min-h-6 keeps the link's hit target at the 24px WCAG 2.2 AA floor;
-      // an inline anchor's line box alone falls under it.
-      <Link
-        to={`/b/${row.id}`}
-        className="text-fg hover:text-accent inline-flex min-h-6 items-center font-medium"
-      >
-        {row.title}
-      </Link>
-    ),
+    // renderCell is layered per render (cover mark, mobile author stack)
+    // in `composeColumns`; the accessor stays the plain-text projection.
     renderEditCell: renderTitleEditCell,
   },
   {
@@ -283,20 +283,120 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
 ];
 
 /**
- * Layers pending-edit state onto {@link BASE_COLUMNS}: an editable column is
- * blocked from re-opening its editor while its own commit is in flight, and
- * renders the in-flight draft (muted, `aria-busy`) instead of the cached
- * value until the server confirms. Memoized on `pendingCells` alone: column
- * identity otherwise never changes, and a fresh array every render would
- * invalidate the binding's own `toRdgColumns` memo on every unrelated
+ * Cover slot for the title cell: the thumbnail when art exists, otherwise
+ * a typographic mark tile (first letters of the title) per the redesign's
+ * ledger treatment. A thumbnail that fails to load falls back to the mark
+ * too, mirroring the grid card's spine fallback. Hidden in compact
+ * density, where the row is too short to carry it.
+ */
+function TitleCellMark({ row }: { row: BookListItem }): ReactElement {
+  const [coverFailed, setCoverFailed] = useState(false);
+  if (row.cover_url !== "" && !coverFailed) {
+    return (
+      <img
+        src={row.cover_url}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => {
+          setCoverFailed(true);
+        }}
+        className="border-border h-[42px] w-[30px] shrink-0 border object-cover"
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="border-accent text-accent-text bg-surface-1 font-display flex h-[42px] w-[30px] shrink-0 items-center justify-center border text-[0.5rem] leading-none tracking-tight"
+    >
+      {row.title.slice(0, 3).toUpperCase()}
+    </span>
+  );
+}
+
+/**
+ * Composes the render-time column set from the base defs: applies the
+ * user's hidden-column preference (desktop) or the fixed mobile trim,
+ * layers the rich title cell (cover mark, link, mobile author stack), and
+ * prepends the details column: the guaranteed drawer path that survives
+ * any visibility or density configuration.
+ */
+function composeColumns(
+  hiddenColumns: ReadonlySet<string>,
+  density: Density,
+  isMobile: boolean,
+  onRowActivate: (book: BookListItem) => void,
+): readonly GridColumn<BookListItem>[] {
+  const visible = BASE_COLUMNS.filter((col) => {
+    if (LOCKED_COLUMN_KEYS.has(col.key)) return true;
+    if (isMobile) return MOBILE_COLUMN_KEYS.has(col.key);
+    return !hiddenColumns.has(col.key);
+  });
+  const withTitleCell = visible.map((col) => {
+    if (col.key !== "title") return col;
+    const renderCell = (row: BookListItem): ReactNode => (
+      <div className="flex min-w-0 items-center gap-3">
+        {density === "comfortable" ? <TitleCellMark row={row} /> : null}
+        <div className="min-w-0">
+          {/* min-h-6 keeps the link's hit target at the 24px WCAG 2.2 AA
+              floor; an inline anchor's line box alone falls under it. */}
+          <Link
+            to={`/b/${row.id}`}
+            className="text-fg hover:text-accent inline-flex min-h-6 max-w-full items-center truncate font-medium"
+          >
+            {row.title}
+          </Link>
+          {isMobile && density === "comfortable" ? (
+            <div className="text-fg-muted truncate text-xs">
+              {row.authors.length > 0 ? row.authors.join(", ") : EMPTY_CELL}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+    return { ...col, renderCell };
+  });
+  const detailsColumn: GridColumn<BookListItem> = {
+    key: "details",
+    name: "",
+    sortable: false,
+    width: 44,
+    accessor: () => "",
+    renderCell: (row) => (
+      <button
+        type="button"
+        aria-label={`Open details for ${row.title}`}
+        onClick={() => {
+          onRowActivate(row);
+        }}
+        className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2"
+      >
+        <PanelRight className="size-4" aria-hidden="true" />
+      </button>
+    ),
+  };
+  return [detailsColumn, ...withTitleCell];
+}
+
+/**
+ * Layers pending-edit state onto the composed columns: an editable column
+ * is blocked from re-opening its editor while its own commit is in flight,
+ * and renders the in-flight draft (muted, `aria-busy`) instead of the
+ * cached value until the server confirms. Memoized so a fresh array does
+ * not invalidate the binding's own `toRdgColumns` memo on every unrelated
  * re-render (scroll, sort) at up to 50K loaded rows.
  */
-function useEditableColumns(
+function useComposedColumns(
   pendingCells: ReadonlyMap<string, string>,
+  hiddenColumns: ReadonlySet<string>,
+  density: Density,
+  isMobile: boolean,
+  onRowActivate: (book: BookListItem) => void,
 ): readonly GridColumn<BookListItem>[] {
   return useMemo(
     () =>
-      BASE_COLUMNS.map((col) => {
+      composeColumns(hiddenColumns, density, isMobile, onRowActivate).map((col) => {
         if (col.renderEditCell === undefined) return col;
         const renderFinal = col.renderCell ?? col.accessor;
         const renderCell = (row: BookListItem): ReactNode => {
@@ -314,7 +414,9 @@ function useEditableColumns(
           renderCell,
         };
       }),
-    [pendingCells],
+    // onRowActivate is a stable prop-drilled callback identity-wise only if
+    // the container memoizes it; include it so a changed handler is honored.
+    [pendingCells, hiddenColumns, density, isMobile, onRowActivate],
   );
 }
 
@@ -338,6 +440,15 @@ type Props = {
   /** Exact key of the page's suspense list query (cursor stripped); cell
    *  edits patch this same cache slot rather than triggering a refetch. */
   listQueryKey: BooksListKey;
+  /** Row density; drives row height and whether the cover mark renders. */
+  density: Density;
+  /** User-hidden column keys; locked columns are exempt (see LOCKED_COLUMN_KEYS). */
+  hiddenColumns: ReadonlySet<string>;
+  /** Selected book ids; selection state is owned by the container. */
+  selectedIds: ReadonlySet<string>;
+  onSelectionChange: (ids: ReadonlySet<string>) => void;
+  /** Opens the book-detail drawer for a row. */
+  onRowActivate: (book: BookListItem) => void;
 };
 
 export function LibraryTableView({
@@ -349,14 +460,20 @@ export function LibraryTableView({
   isFetchNextPageError,
   onLoadMore,
   listQueryKey,
+  density,
+  hiddenColumns,
+  selectedIds,
+  onSelectionChange,
+  onRowActivate,
 }: Props): ReactElement {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useShortcutsHotkey(setShortcutsOpen);
+  const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
   const { pendingCells, onCellEdit, onGridKeyDown } = useCellEdit({
     listKey: listQueryKey,
     columns: BASE_COLUMNS,
   });
-  const columns = useEditableColumns(pendingCells);
+  const columns = useComposedColumns(pendingCells, hiddenColumns, density, isMobile, onRowActivate);
 
   const sortState: SortState = sort.map((level) => ({
     columnKey: COLUMN_BY_FIELD[level.field],
@@ -403,8 +520,18 @@ export function LibraryTableView({
         onSortChange={handleSortChange}
         onCellFocus={() => undefined}
         onCellEdit={onCellEdit}
+        onRowActivate={onRowActivate}
+        selection={{
+          selectedKeys: selectedIds,
+          onSelectionChange,
+          // Select-all covers loaded rows only (keyset paging has no "all
+          // matching the filter" client-side); the label says so.
+          selectAllLabel: "Select all loaded books",
+        }}
         onScroll={handleScroll}
         rowKey={(row) => row.id}
+        rowHeight={ROW_HEIGHT_BY_DENSITY[density]}
+        headerRowHeight={TABLE_HEADER_HEIGHT}
         className="h-[calc(100dvh-22rem)] min-h-96"
       />
       {/* Single owner of every paging state in table mode; the page-level

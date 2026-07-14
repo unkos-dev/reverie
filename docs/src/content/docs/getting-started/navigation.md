@@ -4,11 +4,11 @@ description: "How the app shell is organised: the navigation rail, contextual fi
 ---
 
 Every screen in Reverie wears the same chrome: a navigation rail on the
-left and, on browse surfaces, a contextual filter rail on the right.
-This page describes how to move around and why the shell is shaped the
-way it is.
+left and, on browse surfaces, contextual filters in a drawer on the
+right. This page describes how to move around and why the shell is
+shaped the way it is.
 
-## The dual-rail shell
+## Global rail, contextual drawer
 
 Reverie separates **where you are** from **what you're looking at**:
 
@@ -16,14 +16,18 @@ Reverie separates **where you are** from **what you're looking at**:
   Library, Shelves (with your shelves nested beneath), and, for
   administrators, the admin cluster, so wayfinding never depends on
   the current screen.
-- The **right rail** is contextual. It appears only on browse surfaces
-  (the Library today) and carries filters for the books in view. Detail
-  pages, admin screens, and the reader don't show it.
+- **Filters** are contextual. On browse surfaces (the Library today)
+  the toolbar's **Filters** button opens a drawer from the right edge
+  carrying every filter for the books in view. Detail pages, admin
+  screens, and the reader don't have one.
 
-Two rails beat one because the jobs are different: global navigation
-must be stable and learnable, while filters must change with the
-content. Folding both into a single sidebar forces one of them to
-misbehave.
+Keeping the two apart matters because the jobs are different: global
+navigation must be stable and learnable, while filters must change
+with the content. Folding both into a single sidebar forces one of
+them to misbehave. The filter drawer overlays the books rather than
+claiming a permanent column, so the collection keeps the full width
+while you browse; the chips row under the toolbar (below) keeps active
+filters visible while the drawer is closed.
 
 Your shelves live in the left rail under **Shelves**, capped at seven
 rows with an "All shelves" overflow link; shelves are destinations you
@@ -46,29 +50,38 @@ Reverie separates finding a book from narrowing the books in view.
 
 The **command palette** navigates: pick a book and it takes you there.
 Open it with `⌘K` / `Ctrl K` or the `/` key from anywhere outside a
-text field. The **quick search** box at the top of the filter rail
-filters: type two or more characters and the collection you are
-browsing shrinks to the matches, in whatever view and sort order you
-already had. It never navigates, and clearing it brings everything
-back.
+text field. The **search box** in the Library toolbar filters: type
+two or more characters and the collection you are browsing shrinks to
+the matches, in whatever view and sort order you already had. It never
+navigates, and clearing it brings everything back.
 
 The split keeps each surface honest. A single box would have to guess
 whether you meant "go to this book" or "show me fewer books", and the
 palette stays free to grow into a broader command surface without
 dragging filter semantics along.
 
-## Three library views
+## One query, two views
 
-The Library shows the same collection three ways: a cover **grid**, a
-compact **list**, and a spreadsheet-style **table**. The view toggle
-sits above the books, beside the filter summary. Grid is for recognising books by
-cover; the table is for scanning dense metadata (subtitle, ISBN, pages,
-reading state) across many books without opening each one.
+The Library shows the same collection two ways: a cover **grid** and a
+ledger-style **table**. The view toggle sits in the toolbar. Grid is
+for recognising books by cover; the table is for managing them:
+scanning dense metadata, editing in place, and acting on many books at
+once. Filters, search, and sort belong to the query, not the view, so
+switching views never changes which books you're looking at, only how
+they're drawn.
 
 The table carries a full keyboard model: arrow keys move cell by cell,
 `Home` and `End` jump within a row, `Ctrl Home` and `Ctrl End` jump to
 the first and last loaded row, and `PageUp`/`PageDown` move a viewport
 at a time. Press `?` inside the table for the complete shortcut list.
+
+Two toolbar controls shape the table to your taste. The **density
+toggle** switches between comfortable rows (with a small cover beside
+each title) and compact ones. The **Columns** popover shows or hides
+individual columns; Title stays put because every row needs its
+anchor. Both are personal display preferences: they persist on this
+device and never travel in a shared link, which carries the query
+(filters, search, sort) instead.
 
 Rows stream in as you scroll rather than loading all at once, which is
 why the table says "loaded": with a large library the first screen
@@ -83,13 +96,43 @@ Your view choice travels in the URL (`?view=table`), so a shared link
 opens exactly what you see; Reverie also remembers your last choice
 and uses it the next time you open the Library without one.
 
+## Book details without leaving the list
+
+Each table row starts with a details control; pressing it (or clicking
+any read-only cell, or pressing `Enter` on one) opens the book's
+details in a drawer from the right edge: cover, facts, and real
+actions, **View full record** and **Add to shelf**. `Escape` closes it
+and puts focus back where you were. The drawer exists so a triage pass
+over many books doesn't cost a round trip through the book page for
+each one; the grid keeps its different habit, where a card click goes
+straight to the full record, because browsing covers ends in reading,
+not managing. The filter drawer and the details drawer share the right
+edge and never stack: opening one closes the other.
+
+## Selecting books and acting on them
+
+Table rows carry checkboxes. Select a few (shift-click selects a
+range; `Shift Space` toggles the current row) and a bar rises from the
+bottom with the count and the actions that exist today: **Add to
+shelf** and **Clear selection**. The header checkbox selects the
+**loaded** rows, and says so: with a large library the rows still
+streaming in can't be part of a selection, and a control that silently
+meant "everything matching the filter" would be worse than one that
+names its limit. Changing the query (filters, search, sort) or
+switching views clears the selection, because acting on rows you can
+no longer see is the kind of surprise a management surface exists to
+prevent.
+
 ## Sorting the library
 
-The filter rail carries a **Sort** section in every view. Add up to
+The filter drawer carries a **Sort** section in every view. Add up to
 three levels from its field picker, flip a level's direction, reorder
 levels, remove one, or clear the whole stack; none of it needs a
-modifier key. Grid and list sort from here, and the section always
-shows the full stack, whichever surface built it.
+modifier key. The grid sorts from here, and the section always shows
+the full stack, whichever surface built it. In the table, only the
+active sort shows a direction indicator on its header, so a glance at
+the header row tells you what orders the list without decoding every
+column.
 
 The table keeps its faster gesture on top. Click a column header to
 sort by that column: the first click sorts ascending, the second
@@ -97,8 +140,8 @@ descending, and a third turns the sort off. `⌘-click` / `Ctrl-click` a
 header adds it as another sort level instead of replacing the current
 one, so you can sort by author and then, within each author, by newest
 first. A plain click on any header resets the sort back down to that
-single column; the rail's Sort section is the recovery surface when a
-stray click collapses a stack you built.
+single column; the drawer's Sort section is the recovery surface when
+a stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always
 sort to the end, whichever direction you're sorting in.
@@ -110,13 +153,13 @@ as you load more.
 
 ## Filtering the library
 
-The filter rail is the single home for every filter, in every view.
-Grid, list, and table express the identical grammar, because one
-surface edits the same URL state for all three; a condition set while
-browsing covers never disappears when you switch to the table, or the
-other way around.
+The filter drawer is the single home for every filter, in every view.
+Grid and table express the identical grammar, because one surface
+edits the same URL state for both; a condition set while browsing
+covers never disappears when you switch to the table, or the other
+way around.
 
-The rail stacks one collapsible section per condition. Shelf and
+The drawer stacks one collapsible section per condition. Shelf and
 series are pick-one facets. Authors, tags, genres, and moods each get
 a typeahead that accepts several values at once, in any-of, all-of, or
 none-of mode, so you can ask for books tagged both X and Y, in any of
@@ -128,20 +171,18 @@ a date range.
 
 A section with something active opens on mount, shows a count beside
 its name, and carries its own **Clear**. Everything else stays folded,
-so a long rail reads as a table of contents rather than a wall of
+so a long drawer reads as a table of contents rather than a wall of
 form controls.
 
-Above the books, in every view, a one-line **filter summary** reads
-out what is active ("Author: Le Guin · Pages ≥ 300") next to the
-**Filters** toggle that shows or hides the rail. Exclusions read as
-exclusions: a none-of condition shows as "Author: not Le Guin", and a
-mixed set splits the count ("Tags (2, 1 not)"), so the readout never
-states the opposite of what the filter does. The summary is
-read-only on purpose: it stays one constant line no matter how many
-conditions you stack, and it keeps state visible even with the rail
-hidden, so the collection can never be silently narrower than it
-looks. Removing one condition costs two clicks (open the rail, clear
-the section), a trade made for a masthead that stays compact.
+Under the toolbar, in every view, each active condition renders as a
+**chip** ("Author: Le Guin", "Pages ≥ 300") with its own remove
+control, plus a **Clear all**. Exclusions read as exclusions: a
+none-of condition shows as "Author: not Le Guin", and a mixed set
+splits the count ("Tags (2, 1 not)"), so a chip never states the
+opposite of what the filter does. The chips keep state visible while
+the drawer is closed, so the collection can never be silently narrower
+than it looks, and dropping one condition is one click instead of a
+trip into the drawer.
 
 Filters live in the URL the same way your view and sort do, so a
 filtered library is bookmarkable and shareable, and reloading the page
@@ -210,7 +251,7 @@ and a toast explains what went wrong.
 ## Cinematic mode
 
 On the Library page, press `F` (outside any text field) to dissolve the
-surrounding chrome; the navigation rail, filter rail, and controls fade
+surrounding chrome; the navigation rail, toolbar, and controls fade
 out so the cover art fills the screen. Press `F` again or `Escape` to
 exit. After two seconds of pointer stillness the cursor hides too;
 moving the pointer brings it back.
@@ -227,21 +268,22 @@ security.
 
 ## Every size keeps every feature
 
-The masthead's **Filters** toggle controls the rail at every width. At
-1280px and wider the rail sits in its own column and the toggle
-collapses it entirely, handing the space back to the books; Reverie
-remembers the choice, and the filter summary keeps active state
-visible while the rail is away. Below 1280px the same toggle opens the
-rail in a sheet. Below 1024px, the navigation rail becomes a drawer
-behind a floating menu button in the top-left corner. Nothing is
-desktop-only: every destination and every filter is reachable at every
-size, just behind one more press.
+The toolbar's **Filters** button opens the filter drawer at every
+width; the chips row keeps active state visible while it's closed. On
+narrow screens the table trims itself to what fits: selection, the
+details control, the title (with the author stacked beneath it), and
+the added date; every dropped column's data is one press away in the
+details drawer, and the full column set returns with the room to show
+it. Below 1024px, the navigation rail becomes a drawer behind a
+floating menu button in the top-left corner. Nothing is desktop-only:
+every destination, filter, and action is reachable at every size, just
+behind one more press.
 
 ## Accessibility
 
 The shell targets WCAG 2.2 AA. Concretely: a skip-to-content link is
 the first thing in tab order; the rail, primary nav, admin cluster, and
-filter rail are labelled landmarks; the active destination carries
+filter drawer are labelled landmarks; the active destination carries
 `aria-current="page"`; disabled entries are described, not just dimmed;
 focus rings are consistent (gold) across every interactive element; and
 all motion (including route crossfades) flattens under

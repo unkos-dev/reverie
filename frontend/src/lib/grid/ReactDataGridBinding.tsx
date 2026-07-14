@@ -9,12 +9,25 @@
  * but, like every other RDG type, never appears in this module's exports.
  */
 import { Info } from "lucide-react";
-import { useId, useMemo, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import {
+  useId,
+  useMemo,
+  type ChangeEvent,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   DataGrid,
+  SelectColumn,
   renderHeaderCell,
   renderSortIcon,
+  type CellKeyboardEvent,
+  type CellKeyDownArgs,
+  type CellMouseArgs,
+  type CellMouseEvent,
   type Column,
+  type RenderCheckboxProps,
   type RenderEditCellProps,
   type RenderHeaderCellProps,
   type RenderSortStatusProps,
@@ -25,10 +38,21 @@ import "./grid-theme.css";
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-import type { GridBindingProps } from "./types";
+import type { GridBindingProps, GridColumn } from "./types";
 
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 40;
+
+/**
+ * Elements whose clicks and keys belong to themselves, never to row
+ * activation: links, buttons, form controls, and anything inside them.
+ */
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest("a,button,input,textarea,select,[role='button']") !== null
+  );
+}
 
 /**
  * Overrides RDG's default sort-status renderer to add an accessible label
@@ -161,6 +185,38 @@ function toRdgColumns<R>(columns: GridBindingProps<R>["columns"]): readonly Colu
   });
 }
 
+/**
+ * Checkbox renderer that keeps the vendor's behaviour (indeterminate via
+ * ref, shift-aware change reporting for range select) while letting the
+ * caller name the header select-all control. The header instance is the
+ * only one handed `indeterminate`, which is how it is distinguished here.
+ */
+function makeRenderCheckbox(selectAllLabel: string) {
+  return function renderCheckbox({
+    indeterminate,
+    onChange,
+    ...checkboxProps
+  }: RenderCheckboxProps): ReactNode {
+    const isHeader = indeterminate !== undefined;
+    function handleChange(event: ChangeEvent<HTMLInputElement>): void {
+      const native = event.nativeEvent;
+      const shiftKey = native instanceof globalThis.MouseEvent ? native.shiftKey : false;
+      onChange(event.target.checked, shiftKey);
+    }
+    return (
+      <input
+        type="checkbox"
+        {...checkboxProps}
+        aria-label={isHeader ? selectAllLabel : checkboxProps["aria-label"]}
+        ref={(el) => {
+          if (el !== null) el.indeterminate = indeterminate === true;
+        }}
+        onChange={handleChange}
+      />
+    );
+  };
+}
+
 export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): ReactElement {
   const {
     rows,
@@ -170,13 +226,69 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
     onSortChange,
     onCellFocus,
     onCellEdit,
+    onRowActivate,
+    selection,
     onScroll,
     rowKey,
     className,
     height,
+    rowHeight,
+    headerRowHeight,
   } = props;
 
-  const rdgColumns = useMemo(() => toRdgColumns(columns), [columns]);
+  const hasSelection = selection !== undefined;
+  const rdgColumns = useMemo(() => {
+    const base = toRdgColumns(columns);
+    return hasSelection ? [SelectColumn, ...base] : base;
+  }, [columns, hasSelection]);
+
+  const columnByKey = useMemo(() => {
+    return new Map<string, GridColumn<R>>(columns.map((col) => [col.key, col]));
+  }, [columns]);
+
+  function isEditorColumn(columnKey: string): boolean {
+    return columnByKey.get(columnKey)?.renderEditCell !== undefined;
+  }
+
+  /**
+   * Activation guard shared by click and keyboard paths: the selection
+   * column, interactive content, and editor-bearing columns all keep
+   * their own gestures (activation must never shadow editing or
+   * selection). The guard keys on editor presence, not the per-row
+   * `editable` gate: that gate also locks cells transiently (an
+   * in-flight commit), and a cell must not flip into a drawer trigger
+   * mid-edit-flow.
+   */
+  function activationRow(
+    args: { column: { key: string }; row: R },
+    target: EventTarget | null,
+  ): R | null {
+    if (onRowActivate === undefined) return null;
+    // Header/summary positions carry no row despite the SELECT-mode type.
+    if (args.row == null) return null;
+    if (args.column.key === SelectColumn.key) return null;
+    if (isInteractiveTarget(target)) return null;
+    if (isEditorColumn(args.column.key)) return null;
+    return args.row;
+  }
+
+  function handleCellClick(args: CellMouseArgs<R>, event: CellMouseEvent): void {
+    const row = activationRow(args, event.target);
+    if (row === null) return;
+    onRowActivate?.(row);
+  }
+
+  function handleCellKeyDown(args: CellKeyDownArgs<R>, event: CellKeyboardEvent): void {
+    if (args.mode === "EDIT") return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    // Shift+Space is the vendor's built-in row-selection toggle.
+    if (event.key === " " && event.shiftKey) return;
+    const row = activationRow(args, event.target);
+    if (row === null) return;
+    event.preventGridDefault();
+    event.preventDefault();
+    onRowActivate?.(row);
+  }
 
   const sortColumns: readonly SortColumn[] = sort.map((level) => ({
     columnKey: level.columnKey,
@@ -222,9 +334,24 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
             onCellEdit({ row: nextRows[index], previousRow: rows[index], columnKey: column.key });
           }}
           onScroll={onScroll}
-          rowHeight={ROW_HEIGHT}
-          headerRowHeight={HEADER_HEIGHT}
-          renderers={{ renderSortStatus }}
+          onCellClick={onRowActivate === undefined ? undefined : handleCellClick}
+          onCellKeyDown={onRowActivate === undefined ? undefined : handleCellKeyDown}
+          selectedRows={selection?.selectedKeys}
+          onSelectedRowsChange={
+            selection === undefined
+              ? undefined
+              : (next) => {
+                  selection.onSelectionChange(next);
+                }
+          }
+          rowHeight={rowHeight ?? ROW_HEIGHT}
+          headerRowHeight={headerRowHeight ?? HEADER_HEIGHT}
+          renderers={{
+            renderSortStatus,
+            ...(selection === undefined
+              ? {}
+              : { renderCheckbox: makeRenderCheckbox(selection.selectAllLabel) }),
+          }}
         />
       </div>
     </TooltipProvider>

@@ -286,8 +286,11 @@ describe("applySortToSearchParams", () => {
 describe("viewFromSearch", () => {
   test("returns each valid view", () => {
     expect(viewFromSearch(search("view=grid"))).toBe("grid");
-    expect(viewFromSearch(search("view=list"))).toBe("list");
     expect(viewFromSearch(search("view=table"))).toBe("table");
+  });
+
+  test("returns null for the retired `list` view so stale URLs degrade to the default", () => {
+    expect(viewFromSearch(search("view=list"))).toBeNull();
   });
 
   test("returns null when the param is absent", () => {

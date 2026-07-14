@@ -1,20 +1,31 @@
 /**
  * Production `/library` page.
  *
- * Mirrors the visual contract of the dev hero (`/design/hero/library`)
- * — same tokens, same grid spacing, same typographic hierarchy — but
- * sources data from the real `/api/v1/books` endpoint via react-query's
- * `useSuspenseInfiniteQuery`. The route loader has already seeded
- * page 1 into the cache; this component subscribes and renders.
+ * One route, one query, two projections: filters, search, and sort live
+ * in the URL and apply identically to the cover grid and the table; the
+ * view switcher changes the projection, never the query. The toolbar is
+ * view-neutral (search, view switcher, Filters trigger) with table-only
+ * display controls (density, columns); active filters render as
+ * removable chips under it.
  *
- * Renders the editorial masthead and ambient atmosphere over the browse
- * column — the filter rail (the sole filter and sort editor), the read-only
- * filter summary with the rail toggle, the view-mode toggle, and Load-more
- * pagination over the fetched pages.
+ * Two right-side overlays share one slot: the filter drawer and the
+ * book-detail drawer are mutually exclusive by construction, with the
+ * Sheet primitive supplying the shared scrim, Escape handling, and focus
+ * return. Selection is table-only and clears whenever the query identity
+ * changes: acting on rows the current query no longer shows would be
+ * worse than re-selecting.
  */
 import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
-import { LayoutGrid, List, Loader2, Table2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import { Loader2 } from "lucide-react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 import { Link } from "react-router";
 
 import {
@@ -27,18 +38,22 @@ import {
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
-import { FilterSummary } from "@/components/library/FilterSummary";
+import {
+  filterResetToken,
+  makeFilterClear,
+  makeFilterCommit,
+  type EditTokens,
+} from "@/components/library/filter-commit";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
-import { BrowseLayout, RAIL_DESKTOP_MEDIA_QUERY } from "@/components/shell/BrowseLayout";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
-import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { queryKeys } from "@/lib/query/keys";
 
 import {
@@ -50,18 +65,25 @@ import {
   type LibraryView,
 } from "@/routes/library-params";
 
-import { readRailCollapsed, writeRailCollapsed } from "./rail-storage";
+import { BatchBar } from "./BatchBar";
+import { BookDetailDrawer } from "./BookDetailDrawer";
+import { readDisplayPreferences, writeDisplayPreferences, type Density } from "./display-storage";
+import { FilterChips } from "./FilterChips";
+import { LibraryToolbar } from "./LibraryToolbar";
 import { TableChunkBoundary } from "./TableChunkBoundary";
 import { readViewCookie, writeViewCookie } from "./view-cookie";
 
 /**
- * The table view carries the grid vendor chunk, so it loads lazily: grid and
- * list browsing never pay its bundle cost, and the chunk stays out of the
+ * The table view carries the grid vendor chunk, so it loads lazily: cover
+ * browsing never pays its bundle cost, and the chunk stays out of the
  * route's critical path.
  */
 const LibraryTableView = lazy(() =>
   import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
 );
+
+/** The library's one overlay slot: filters or one book's details, never both. */
+type OverlayState = "filters" | { detail: string } | null;
 
 /**
  * Top-level page component. The `<Suspense>` boundary catches the
@@ -79,38 +101,32 @@ export function LibraryPage(): ReactElement {
 
 function LibraryContent(): ReactElement {
   // Single URL write authority for the route: the rail's commits and the
-  // page's own writers (header sort, clear-all, view toggle) all go through
-  // `applyParams`, so two writes landing in one frame cannot clobber each
-  // other (see the hook's docstring).
+  // page's own writers (header sort, clear-all, view toggle, quick search,
+  // chip removal) all go through `applyParams`, so two writes landing in
+  // one frame cannot clobber each other (see the hook's docstring).
   const { searchParams, applyParams, clearGen } = useLiveSearchParams();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
-  // Rail visibility splits by width: at the rail-column breakpoint the
-  // toggle drives the persisted column collapse, below it the transient
-  // sheet.
-  const isDesktop = useMediaQuery(RAIL_DESKTOP_MEDIA_QUERY);
-  const [railCollapsed, setRailCollapsed] = useState(() => readRailCollapsed() ?? false);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  // Crossing up into the desktop breakpoint retires the sheet: the rail
-  // column takes over and the toggle switches to driving the collapse, so a
-  // sheet left open would be a modal nothing controls any more. Render-phase
-  // state adjustment, the compiler-accepted alternative to a sync effect.
-  const [wasDesktop, setWasDesktop] = useState(isDesktop);
-  if (isDesktop !== wasDesktop) {
-    setWasDesktop(isDesktop);
-    if (isDesktop) setSheetOpen(false);
-  }
-  function toggleRail(): void {
-    if (isDesktop) {
-      setRailCollapsed((collapsed) => {
-        writeRailCollapsed(!collapsed);
-        return !collapsed;
-      });
-      return;
-    }
-    setSheetOpen((open) => !open);
-  }
+  // One edit-token ref per page: the toolbar quick search and the rail's
+  // sections share the draft-survival protocol through it (filter-commit.ts).
+  const lastEdit = useRef<EditTokens | null>(null);
+  const [overlay, setOverlay] = useState<OverlayState>(null);
+  // The overlays open from state, not a Radix Trigger, so Radix has no
+  // trigger to restore focus to on close; the opener is captured here and
+  // restored via onCloseAutoFocus instead (WCAG 2.4.3).
+  const overlayReturnFocus = useRef<HTMLElement | null>(null);
+  // Escape = abandon: bumped when the filter drawer closes via Escape so
+  // pending rail drafts die at fire time; scrim and close-button closes
+  // leave it alone and pending drafts flush on unmount (see FilterRail).
+  const railCancelGen = useRef(0);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [displayPrefs] = useState(readDisplayPreferences);
+  const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
+  const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<string>>(
+    new Set(displayPrefs.hiddenColumns ?? []),
+  );
+
   // URL param is canonical (shareable); the cookie only supplies the default
   // when the param is absent, so a chosen view survives leaving and returning.
   const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
@@ -119,6 +135,24 @@ function LibraryContent(): ReactElement {
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
   const cacheParams = { ...params };
   delete cacheParams.cursor;
+
+  // Selection lifecycle: a changed query identity (filters, search, sort)
+  // or projection switch clears it — the selected rows may no longer be in
+  // the result set, and a batch action on hidden rows is worse than
+  // re-selecting. Paging appends to the same query and keeps it. Render-
+  // phase state adjustment, the compiler-accepted alternative to a sync
+  // effect.
+  const queryToken = (() => {
+    const token = new URLSearchParams(searchParams);
+    token.delete("cursor");
+    token.sort();
+    return token.toString();
+  })();
+  const [syncedQueryToken, setSyncedQueryToken] = useState(queryToken);
+  if (queryToken !== syncedQueryToken) {
+    setSyncedQueryToken(queryToken);
+    if (selectedIds.size > 0) setSelectedIds(new Set());
+  }
 
   const {
     data,
@@ -169,26 +203,66 @@ function LibraryContent(): ReactElement {
   }
 
   function clearAllFilters(): void {
+    lastEdit.current = null;
     applyParams(
       (params) => {
         for (const key of FILTER_PARAM_KEYS) params.delete(key);
         params.delete("cursor");
         return params;
       },
-      // Pending rail drafts must die with the clear, or a due debounce
-      // could re-write a filter the user just removed.
+      // Pending drafts (quick search, rail sections) must die with the
+      // clear, or a due debounce could re-write a filter the user removed.
       { clears: true },
     );
   }
 
-  /** Empty states first, then one branch per view mode. */
+  function setDensityPref(next: Density): void {
+    setDensity(next);
+    writeDisplayPreferences({ density: next });
+  }
+
+  function toggleColumn(key: string, hidden: boolean): void {
+    setHiddenColumns((current) => {
+      const next = new Set(current);
+      if (hidden) next.add(key);
+      else next.delete(key);
+      writeDisplayPreferences({ hiddenColumns: [...next] });
+      return next;
+    });
+  }
+
+  function resetColumns(): void {
+    setHiddenColumns(new Set());
+    writeDisplayPreferences({ hiddenColumns: [] });
+  }
+
+  const activeFilterCount = FILTER_PARAM_KEYS.filter((key) =>
+    searchParams.getAll(key).some((value) => value !== ""),
+  ).length;
+
+  function openOverlay(next: Exclude<OverlayState, null>): void {
+    overlayReturnFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOverlay(next);
+  }
+
+  function restoreOverlayFocus(event: Event): void {
+    // A detached opener (row refetched away while the drawer was open)
+    // must fall through to Radix's default rather than stranding focus
+    // on <body> behind a prevented default.
+    const opener = overlayReturnFocus.current;
+    if (opener === null || !opener.isConnected) return;
+    event.preventDefault();
+    opener.focus();
+  }
+
+  /** Empty states first, then one branch per projection. */
   function renderBooks(): ReactElement {
     if (items.length === 0) {
       if (hasActiveFilters(searchParams)) return <FilteredEmptyState onClear={clearAllFilters} />;
       return <EmptyState />;
     }
     if (viewMode === "grid") return <BookGrid items={items} />;
-    if (viewMode === "list") return <BookList items={items} />;
     return (
       <TableChunkBoundary
         onFallbackToGrid={() => {
@@ -207,6 +281,13 @@ function LibraryContent(): ReactElement {
               void fetchNextPage();
             }}
             listQueryKey={queryKeys.books.list(cacheParams)}
+            density={density}
+            hiddenColumns={hiddenColumns}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            onRowActivate={(book) => {
+              openOverlay({ detail: book.id });
+            }}
           />
         </Suspense>
       </TableChunkBoundary>
@@ -240,143 +321,148 @@ function LibraryContent(): ReactElement {
       >
         Cinematic mode · press F to exit
       </p>
-      {/* Raise the whole browse layout — rail included — above the fixed
-          atmosphere layers. The rail renders outside `children`, so a
-          content-only stacking context leaves it under `.lib-grain` (z-1). */}
+      {/* Raise the browse content above the fixed atmosphere layers. */}
       <div className="relative z-[2]">
-        <BrowseLayout
-          rail={
-            <FilterRail
-              seriesOptions={seriesOptions}
-              applyParams={applyParams}
-              clearGen={clearGen}
+        <div className="px-6 py-10 sm:px-10">
+          <LibraryMasthead />
+          {/* Sort announcements stay mounted here: the filter drawer (which
+              carries the sort section) unmounts when closed, and an
+              unmounted live region is silent, which would leave
+              header-driven sorts unannounced. */}
+          <p className="sr-only" aria-live="polite">
+            {sortStackSummary(parseSortParam(params.sort ?? ""))}
+          </p>
+          <LibraryToolbar
+            view={viewMode}
+            onViewChange={setView}
+            searchValue={filterState.q ?? ""}
+            searchResetToken={filterResetToken(filterState)}
+            lastEdit={lastEdit}
+            clearGen={clearGen}
+            onSearchCommit={(q) => {
+              // Built inside the handler: the writer closes over the ref and
+              // may only touch it outside render (react-compiler contract).
+              makeFilterCommit(applyParams, lastEdit)((current) => ({ ...current, q }));
+            }}
+            filtersOpen={overlay === "filters"}
+            activeFilterCount={activeFilterCount}
+            onOpenFilters={() => {
+              openOverlay("filters");
+            }}
+            density={density}
+            onDensityChange={setDensityPref}
+            hiddenColumns={hiddenColumns}
+            onToggleColumn={toggleColumn}
+            onResetColumns={resetColumns}
+          />
+          <FilterChips
+            filters={filterState}
+            seriesNames={seriesById}
+            onRemove={(patch) => {
+              makeFilterClear(applyParams, lastEdit)(patch);
+            }}
+            onClearAll={clearAllFilters}
+          />
+          <Separator className="mb-8" />
+
+          {renderBooks()}
+
+          {viewMode === "table" ? (
+            <BatchBar
+              selectedIds={selectedIds}
+              hasMorePages={hasNextPage}
+              onClearSelection={() => {
+                setSelectedIds(new Set());
+              }}
+              onCompleted={(succeededIds) => {
+                setSelectedIds((current) => {
+                  const next = new Set(current);
+                  for (const id of succeededIds) next.delete(id);
+                  return next;
+                });
+              }}
             />
-          }
-          railCollapsed={railCollapsed}
-          sheetOpen={sheetOpen}
-          onSheetOpenChange={setSheetOpen}
-        >
-          {/* No max-width cap — the browse room uses the full column so
-            ultrawide gets ~10 columns, not 4 stamps in a void (spec §5).
-            The auto-fill clamp(170px,10vw,240px) bounds tile size. */}
-          <div className="px-6 py-10 sm:px-10">
-            <LibraryMasthead />
-            {/* Sort announcements live here, not in the rail's sort section:
-                the rail unmounts when collapsed (and the sheet when closed),
-                and an unmounted live region is silent, which would leave
-                header-driven sorts unannounced in exactly those states. */}
-            <p className="sr-only" aria-live="polite">
-              {sortStackSummary(parseSortParam(params.sort ?? ""))}
-            </p>
-            <div data-chrome="" className="mb-6 flex flex-wrap items-center justify-between gap-4">
-              {/* Always-visible read-only readout + rail toggle, every view
-                  mode: state stays visible even with the rail collapsed. */}
-              <FilterSummary
-                filters={filterState}
-                seriesNames={seriesById}
-                railExpanded={isDesktop ? !railCollapsed : sheetOpen}
-                onToggleRail={toggleRail}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <div
-                  role="group"
-                  aria-label="View mode"
-                  className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
-                >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={viewMode === "grid"}
-                    onClick={() => {
-                      setView("grid");
-                    }}
-                    className={
-                      viewMode === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
-                    }
-                  >
-                    <LayoutGrid className="size-4" aria-hidden="true" />
-                    <span className="sr-only">Grid</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={viewMode === "list"}
-                    onClick={() => {
-                      setView("list");
-                    }}
-                    className={
-                      viewMode === "list" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
-                    }
-                  >
-                    <List className="size-4" aria-hidden="true" />
-                    <span className="sr-only">List</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={viewMode === "table"}
-                    onClick={() => {
-                      setView("table");
-                    }}
-                    className={
-                      viewMode === "table" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
-                    }
-                  >
-                    <Table2 className="size-4" aria-hidden="true" />
-                    <span className="sr-only">Table</span>
-                  </Button>
-                </div>
-              </div>
+          ) : null}
+
+          {/* Table mode owns its paging UI (loading, error, Load-more,
+              end-of-list) inside LibraryTableView; rendering this block
+              there too would announce the same failure twice and offer two
+              Retry controls. */}
+          {viewMode !== "table" && hasNextPage ? (
+            <div className="mt-10 flex flex-col items-center gap-3">
+              {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
+                  error is hue-less (One-Accent rule — the danger hue is reserved
+                  for unrecoverable errors, and this one is retryable) and carried
+                  by copy + the Retry control. `role="alert"` announces it. */}
+              {isFetchNextPageError ? (
+                <p role="alert" className="text-fg-muted text-sm">
+                  Couldn&apos;t load more books. Check your connection and try again.
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isFetchingNextPage}
+                onClick={() => {
+                  void fetchNextPage();
+                }}
+              >
+                {isFetchingNextPage ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+                    Loading…
+                  </>
+                ) : isFetchNextPageError ? (
+                  "Retry"
+                ) : (
+                  "Load more"
+                )}
+              </Button>
             </div>
-            <Separator className="mb-8" />
-
-            {renderBooks()}
-
-            {/* Table mode owns its paging UI (loading, error, Load-more,
-                end-of-list) inside LibraryTableView; rendering this block
-                there too would announce the same failure twice and offer two
-                Retry controls. */}
-            {viewMode !== "table" && hasNextPage ? (
-              <div className="mt-10 flex flex-col items-center gap-3">
-                {/* A failed `fetchNextPage` keeps the loaded pages on screen; the
-                    error is hue-less (One-Accent rule — the danger hue is reserved
-                    for unrecoverable errors, and this one is retryable) and carried
-                    by copy + the Retry control. `role="alert"` announces it. */}
-                {isFetchNextPageError ? (
-                  <p role="alert" className="text-fg-muted text-sm">
-                    Couldn&apos;t load more books. Check your connection and try again.
-                  </p>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isFetchingNextPage}
-                  onClick={() => {
-                    void fetchNextPage();
-                  }}
-                >
-                  {isFetchingNextPage ? (
-                    <>
-                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-                      Loading…
-                    </>
-                  ) : isFetchNextPageError ? (
-                    "Retry"
-                  ) : (
-                    "Load more"
-                  )}
-                </Button>
-              </div>
-            ) : null}
-            <footer className="border-border text-fg-faint mt-16 border-t pt-6 text-center font-mono text-[0.68rem] uppercase tracking-[0.18em]">
-              Reverie · MMXXVI · Set in Author, Satoshi and JetBrains Mono
-            </footer>
-          </div>
-        </BrowseLayout>
+          ) : null}
+          <footer className="border-border text-fg-faint mt-16 border-t pt-6 text-center font-mono text-[0.68rem] uppercase tracking-[0.18em]">
+            Reverie · MMXXVI · Set in Author, Satoshi and JetBrains Mono
+          </footer>
+        </div>
       </div>
+
+      {/* The two right-side overlays share the slot above; opening either
+          closes the other by construction. */}
+      <Sheet
+        open={overlay === "filters"}
+        onOpenChange={(open) => {
+          setOverlay(open ? "filters" : null);
+        }}
+      >
+        <SheetContent
+          id="library-filter-drawer"
+          side="right"
+          aria-describedby={undefined}
+          onCloseAutoFocus={restoreOverlayFocus}
+          onEscapeKeyDown={() => {
+            railCancelGen.current += 1;
+          }}
+          className="w-[340px] max-w-[100vw] overflow-y-auto p-6"
+        >
+          <SheetHeader className="mb-2 p-0">
+            <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
+          </SheetHeader>
+          <FilterRail
+            seriesOptions={seriesOptions}
+            applyParams={applyParams}
+            clearGen={clearGen}
+            lastEdit={lastEdit}
+            cancelGen={railCancelGen}
+          />
+        </SheetContent>
+      </Sheet>
+      <BookDetailDrawer
+        bookId={typeof overlay === "object" && overlay !== null ? overlay.detail : null}
+        onOpenChange={(open) => {
+          if (!open) setOverlay(null);
+        }}
+        onCloseAutoFocus={restoreOverlayFocus}
+      />
     </>
   );
 }
@@ -404,53 +490,6 @@ function BookGrid({ items }: BookGridProps): ReactElement {
         );
       })}
     </ul>
-  );
-}
-
-interface BookListProps {
-  items: BookListItem[];
-}
-
-function BookList({ items }: BookListProps): ReactElement {
-  return (
-    <table data-testid="library-list" className="border-border w-full border-collapse text-sm">
-      <thead className="text-fg-muted text-left text-xs uppercase tracking-wide">
-        <tr>
-          <th scope="col" className="py-2 pr-4 font-medium">
-            Title
-          </th>
-          <th scope="col" className="py-2 pr-4 font-medium">
-            Author
-          </th>
-          <th scope="col" className="py-2 pr-4 font-medium">
-            Series
-          </th>
-          <th scope="col" className="py-2 pr-4 font-medium">
-            ISBN
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((book) => (
-          <tr key={book.id} className="border-border hover:bg-surface-1 border-t">
-            <td className="py-3 pr-4">
-              <Link to={`/b/${book.id}`} className="hover:text-accent text-fg font-medium">
-                {book.title}
-              </Link>
-            </td>
-            <td className="text-fg-muted py-3 pr-4">{book.authors.join(", ")}</td>
-            <td className="text-fg-muted py-3 pr-4">
-              {book.series
-                ? `${book.series.name}${
-                    book.series.position !== null ? ` · #${String(book.series.position)}` : ""
-                  }`
-                : "—"}
-            </td>
-            <td className="text-fg-muted py-3 pr-4 font-mono text-xs">{book.isbn_13 ?? "—"}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -573,13 +612,17 @@ function LibrarySkeleton(): ReactElement {
   const PLACEHOLDERS = Array.from({ length: 12 }, (_, i) => i);
   return (
     <div className="px-6 py-10 sm:px-10" aria-busy="true">
-      {/* Masthead placeholder — mirror LibraryMasthead's hero band, kicker,
-          and gilt-title heights so the Suspense fallback reserves the same
+      {/* Masthead placeholder — mirror the hero band height (title renders
+          inside the band now) so the Suspense fallback reserves the same
           vertical space the loaded masthead occupies (avoids a CLS jump). */}
-      <div className="mb-10">
-        <Skeleton className="-mx-6 -mt-10 mb-8 h-[clamp(220px,30vh,340px)] sm:-mx-10" />
-        <Skeleton className="mb-3 h-7 w-64" />
-        <Skeleton className="h-[clamp(4rem,9.5vw,9rem)] w-72 max-w-full" />
+      <div className="mb-8">
+        <Skeleton className="-mx-6 -mt-10 h-[clamp(220px,10vw,340px)] sm:-mx-10" />
+      </div>
+      {/* Toolbar placeholder: search field + control cluster. */}
+      <div className="mb-4 flex items-center gap-2">
+        <Skeleton className="h-9 flex-1" />
+        <Skeleton className="h-9 w-24" />
+        <Skeleton className="h-9 w-24" />
       </div>
       <Separator className="mb-8" />
       {/* Same auto-fill expression as the loaded BookGrid — a fixed

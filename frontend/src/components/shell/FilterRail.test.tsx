@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState, type ReactElement } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import type { EditTokens } from "@/components/library/filter-commit";
 import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
 
 import { FilterRail } from "./FilterRail";
@@ -60,7 +61,17 @@ function Providers({ children }: { children: ReactElement }): ReactElement {
 /** Owns the write authority the page normally provides. */
 function RailHost(): ReactElement {
   const { applyParams, clearGen } = useLiveSearchParams();
-  return <FilterRail seriesOptions={SERIES} applyParams={applyParams} clearGen={clearGen} />;
+  const lastEdit = useRef<EditTokens | null>(null);
+  const cancelGen = useRef(0);
+  return (
+    <FilterRail
+      seriesOptions={SERIES}
+      applyParams={applyParams}
+      clearGen={clearGen}
+      lastEdit={lastEdit}
+      cancelGen={cancelGen}
+    />
+  );
 }
 
 function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRouter> {
@@ -105,56 +116,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-});
-
-describe("FilterRail quick search", () => {
-  test("commits a 2+ character query to ?q= after the debounce and drops the cursor", async () => {
-    const router = renderRail("/library?cursor=abc");
-    const user = userEvent.setup();
-    await user.type(screen.getByRole("searchbox", { name: "Quick search" }), "dune");
-    await debounceSettled();
-    const search = currentSearch(router);
-    expect(search.get("q")).toBe("dune");
-    expect(search.get("cursor")).toBeNull();
-  });
-
-  test("a query under the minimum length never writes ?q=", async () => {
-    const router = renderRail();
-    const user = userEvent.setup();
-    await user.type(screen.getByRole("searchbox", { name: "Quick search" }), "d");
-    await debounceSettled();
-    expect(currentSearch(router).get("q")).toBeNull();
-  });
-
-  test("clearing another filter discards an uncommitted quick-search draft", async () => {
-    const router = renderRail("/library?series=s-1");
-    const user = userEvent.setup();
-    const input = screen.getByRole("searchbox", { name: "Quick search" });
-    await user.type(input, "du");
-    await user.click(screen.getByRole("button", { name: "Clear Series filters" }));
-    await debounceSettled();
-    expect(currentSearch(router).get("q")).toBeNull();
-    expect(input).toHaveValue("");
-  });
-
-  test("a quick-search draft survives a sibling section's debounced commit", async () => {
-    const router = renderRail();
-    const user = userEvent.setup();
-    const pages = sectionByTitle("Pages");
-    await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
-    const input = screen.getByRole("searchbox", { name: "Quick search" });
-    await user.type(input, "du");
-    await debounceSettled();
-    const search = currentSearch(router);
-    expect(search.get("pages_gte")).toBe("300");
-    expect(search.get("q")).toBe("du");
-    expect(input).toHaveValue("du");
-  });
-
-  test("the rail hosts no command palette trigger", () => {
-    renderRail();
-    expect(screen.queryByRole("button", { name: /Find a volume/ })).not.toBeInTheDocument();
-  });
 });
 
 describe("FilterRail series facet", () => {
