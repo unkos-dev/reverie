@@ -230,7 +230,9 @@ function AddToShelf({ bookId, bookTitle }: { bookId: string; bookTitle: string }
       addShelfItem(shelfId, bookId),
     onSuccess: (_data, { shelfName }) => {
       toast.success(`Added "${bookTitle}" to ${shelfName}`);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.list() });
+      // Whole family: list counts and any cached shelf detail both go
+      // stale after a membership write.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
     },
     onError: (mutationError, { shelfName }) => {
       console.error("[BookDetailDrawer] add to shelf failed", mutationError);

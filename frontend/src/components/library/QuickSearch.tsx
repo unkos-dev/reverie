@@ -27,7 +27,11 @@ export function QuickSearch({
   clearGen,
   onCommit,
 }: Readonly<QuickSearchProps>): ReactElement {
-  const [draft, setDraft] = useState(value);
+  // The generation is captured when the draft is EDITED, not per render:
+  // a clearing write bumps it after the edit, and the fire-time check must
+  // veto the stale draft even if an unrelated re-render lands between the
+  // bump and the due timer (same rationale as the rail's useDraftSlice).
+  const [draftState, setDraftState] = useState(() => ({ value, gen: clearGen.current }));
   const [synced, setSynced] = useState({ value, resetToken });
   // Reset the input to reflect `value` when the committed `q` changes from
   // outside (navigation) OR when any other filter changes (a section clear,
@@ -37,11 +41,11 @@ export function QuickSearch({
   if (value !== synced.value || resetToken !== synced.resetToken) {
     const editElsewhere = value === synced.value && lastEdit.current?.reset === resetToken;
     setSynced({ value, resetToken });
-    if (!editElsewhere) setDraft(value);
+    if (!editElsewhere) setDraftState({ value, gen: clearGen.current });
   }
+  const draft = draftState.value;
   const trimmed = draft.trim();
   const next = trimmed.length >= MIN_Q_LEN ? trimmed : undefined;
-  const genAtRender = clearGen.current;
   // Treating an empty box (`next` undefined) as equal to an absent `q`
   // (`value` "") stops an untouched search from committing spuriously.
   useDebouncedCommit(
@@ -51,7 +55,7 @@ export function QuickSearch({
       onCommit(next);
     },
     FILTER_DEBOUNCE_MS,
-    () => clearGen.current !== genAtRender,
+    () => clearGen.current !== draftState.gen,
   );
 
   return (
@@ -67,7 +71,7 @@ export function QuickSearch({
         className="h-9 pl-9"
         value={draft}
         onChange={(event) => {
-          setDraft(event.target.value);
+          setDraftState({ value: event.target.value, gen: clearGen.current });
         }}
       />
     </div>

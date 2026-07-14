@@ -84,7 +84,7 @@ export function FilterChips({
             onClick={() => {
               onRemove(segment.remove);
             }}
-            className="hover:text-fg focus-visible:ring-accent flex min-h-4 min-w-4 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2"
+            className="hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2"
           >
             <X className="size-3" aria-hidden="true" />
           </button>

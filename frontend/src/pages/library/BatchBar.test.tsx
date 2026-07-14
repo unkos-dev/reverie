@@ -87,7 +87,8 @@ describe("BatchBar add-to-shelf run", () => {
       expect(onCompleted).toHaveBeenCalledWith(["a", "b", "c"]);
     });
     expect(toast.success).toHaveBeenCalledWith("Added 3 books to Favourites");
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.shelves.list() });
+    // The whole shelves family: cached shelf details go stale too.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.shelves.all });
   });
 
   test("partial failure reports only the succeeded ids and toasts the split", async () => {

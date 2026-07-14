@@ -68,7 +68,9 @@ export function BatchBar({
     }
     setRunning(false);
     if (succeeded.length > 0) {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.list() });
+      // Whole family: the rail's list counts AND any cached shelf detail
+      // (membership list) are both stale after a membership write.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.all });
     }
     if (failed === 0) {
       toast.success(
