@@ -142,6 +142,25 @@ describe("apiFetch — lazy CSRF hydration", () => {
     expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
   });
 
+  test("forwards the caller's abort signal to the lazy hydration request", async () => {
+    // An aborted operation must cancel the pre-flight /auth/me too, not
+    // leave it in flight to write the shared token cache post-abort.
+    const controller = new AbortController();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: SAMPLE_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", {
+      method: "POST",
+      body: "{}",
+      signal: controller.signal,
+    });
+
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
   test("GET with an empty cache never hydrates", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -189,6 +208,32 @@ describe("apiFetch — csrf-missing retry", () => {
     expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
     const retriedHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
     expect(retriedHeaders.get("X-CSRF-Token")).toBe(REFRESHED_TOKEN);
+  });
+
+  test("forwards the caller's abort signal to the retry refresh", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const controller = new AbortController();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        problemResponse({
+          type: "https://reverie.example/probs/csrf-missing",
+          title: "Precondition Required",
+          status: 428,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", {
+      method: "POST",
+      body: "{}",
+      signal: controller.signal,
+    });
+
+    // call[1] is the mid-retry /auth/me refresh.
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
+    expect(fetchSpy.mock.calls[1]?.[1]?.signal).toBe(controller.signal);
   });
 
   test("a non-CSRF 428 throws without a retry", async () => {

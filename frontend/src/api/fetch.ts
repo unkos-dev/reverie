@@ -75,8 +75,10 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   // Lazy first-use hydration: an OIDC session never runs `loginLocal`
   // (the only other hydration site), so a fresh tab reaches its first
   // mutating verb with an empty token cache. Without this, every such
-  // request dies at the middleware with 428 `csrf-missing`.
-  if (mutating && getCsrfToken() === null) await refreshCsrfToken();
+  // request dies at the middleware with 428 `csrf-missing`. The caller's
+  // signal rides along so an abort cancels this pre-flight hydration
+  // instead of leaking a request that writes the shared cache post-abort.
+  if (mutating && getCsrfToken() === null) await refreshCsrfToken(init?.signal ?? undefined);
 
   const response = await sendRequest(input, init, method, mutating);
   if ((response.status === 403 || response.status === 428) && mutating) {
@@ -90,7 +92,8 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
       // stale-null or the session token expired server-side). If the new
       // token is still missing we still let the second attempt run — the
       // middleware will reject again and the caller sees a real ApiError.
-      await refreshCsrfToken();
+      // Signal forwarded so an abort mid-retry cancels the refresh too.
+      await refreshCsrfToken(init?.signal ?? undefined);
       const retried = await sendRequest(input, init, method, mutating);
       return decodeSuccess(retried);
     }
