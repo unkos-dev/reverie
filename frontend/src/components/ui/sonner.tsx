@@ -28,10 +28,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
+          // Reverie semantic tokens, not shadcn's --popover/--popover-foreground:
+          // those bare custom properties never exist in this token tree (the
+          // popover names live only inside @theme inline, which emits no
+          // runtime variables), so sonner resolved them to transparent/black.
+          "--normal-bg": "var(--surface)",
+          "--normal-text": "var(--fg)",
           "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--border-radius": "var(--radius-md)",
         } as React.CSSProperties
       }
       toastOptions={{

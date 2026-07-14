@@ -227,12 +227,14 @@ describe("ThemeProvider setPreference", () => {
     document.cookie = `${THEME_COOKIE_NAME}=light`;
     document.documentElement.dataset.theme = "light";
     mockMe("light");
-    // PATCH rejection
-    fetchMock.mockResolvedValueOnce({
-      ok: false,
-      status: 422,
-      json: () => Promise.resolve({ error: "invalid theme_preference" }),
-    });
+    // PATCH rejection. A real Response: patchTheme now rides apiFetch,
+    // which reads headers and re-parses the body as Problem Details.
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ title: "invalid theme_preference", status: 422 }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
 
     render(
       <ThemeProvider>
