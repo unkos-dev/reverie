@@ -312,6 +312,58 @@ describe("ThemeProvider setPreference", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  test("PATCH 428 csrf-missing (persistent, null re-hydration) → cookie wins, no rollback, no toast", async () => {
+    installMatchMedia(false);
+    document.cookie = `${THEME_COOKIE_NAME}=light`;
+    document.documentElement.dataset.theme = "light";
+    // A session that is authenticated but carries no server-side CSRF
+    // token: apiFetch injects the seeded header, the middleware answers
+    // 428 csrf-missing, the wrapper refreshes once, /auth/me yields no
+    // token (null hydration), the replay omits the header, and the
+    // middleware answers 428 again. That persistent 428 is an auth-state
+    // condition, not a theme-value validation failure, so the cookie
+    // must win with no rollback and no toast.
+    const csrfMissing428 = (): Response =>
+      new Response(
+        JSON.stringify({
+          type: "https://reverie.example/probs/csrf-missing",
+          title: "Precondition Required",
+          status: 428,
+        }),
+        { status: 428, headers: { "Content-Type": "application/problem+json" } },
+      );
+    mockMe("light"); // 1. reconcile /auth/me
+    fetchMock.mockResolvedValueOnce(csrfMissing428()); // 2. PATCH → 428
+    fetchMock.mockResolvedValueOnce(
+      // 3. refreshCsrfToken /auth/me → token absent (null hydration)
+      new Response(JSON.stringify({ csrf_token: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(csrfMissing428()); // 4. replay → 428
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      screen.getByText("set-dark").click();
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+    // Retry path actually ran: the wrapper re-read /auth/me between attempts.
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/auth/me");
+    expect(screen.getByTestId("preference").textContent).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.cookie).toContain(`${THEME_COOKIE_NAME}=dark`);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   test("PATCH 502 (backend down) → cookie wins, no rollback, no toast", async () => {
     installMatchMedia(false);
     document.cookie = `${THEME_COOKIE_NAME}=light`;
