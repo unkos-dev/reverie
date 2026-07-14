@@ -45,7 +45,7 @@ jobs:
       # Same pin as ci.yml's audit job; Renovate keeps both in lockstep.
       # fallback:none fails closed rather than silently switching the
       # install source of a security scanner.
-      - uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
+      - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: cargo-deny@0.19.8
           fallback: none
