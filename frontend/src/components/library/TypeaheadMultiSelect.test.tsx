@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetCsrfTokenForTesting } from "@/api/csrf";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 
 import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
@@ -40,12 +40,11 @@ function Harness({ initial = [] }: { initial?: TypeaheadOption[] }): ReactElemen
 }
 
 beforeEach(() => {
-  __resetCsrfTokenForTesting();
+  // Seed (not reset): apiFetch lazily hydrates an empty cache with a
+  // leading /auth/me fetch that would eat these suites' response mocks;
+  // hydration behaviour itself is pinned in fetch.test.ts.
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   vi.restoreAllMocks();
-});
-
-afterEach(() => {
-  __resetCsrfTokenForTesting();
 });
 
 describe("TypeaheadMultiSelect", () => {

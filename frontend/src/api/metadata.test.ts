@@ -3,9 +3,9 @@
  * thin wrapper around `apiFetch`, so we assert URL + method + body
  * shape rather than re-testing the underlying transport.
  */
-import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetCsrfTokenForTesting } from "./csrf";
+import { __seedCsrfTokenForTesting } from "./csrf";
 import { acceptVersion, rejectVersion, revertField } from "./metadata";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
@@ -14,12 +14,11 @@ function parseJsonBody(body: BodyInit | null | undefined): unknown {
 }
 
 beforeEach(() => {
-  __resetCsrfTokenForTesting();
+  // Seed (not reset): apiFetch lazily hydrates an empty cache with a
+  // leading /auth/me fetch that would eat these suites' response mocks;
+  // hydration behaviour itself is pinned in fetch.test.ts.
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   vi.restoreAllMocks();
-});
-
-afterEach(() => {
-  __resetCsrfTokenForTesting();
 });
 
 describe("acceptVersion", () => {

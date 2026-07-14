@@ -1,3 +1,6 @@
+import { apiFetch } from "@/api/fetch";
+import { ApiError } from "@/api/errors";
+
 import type { ThemePreference } from "./cookie";
 
 /**
@@ -52,9 +55,10 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResult> {
  * Persist the user's theme preference server-side. Fire-and-observe shape:
  * the returned object surfaces only `ok` and `status` so the caller can
  * branch across the three outcomes the provider's `setPreference` flow
- * acts on — `ok: true` (broadcast + return), `ok: false` with status 401
- * or ≥500 (keep the optimistic update, log a warning), `ok: false` with
- * any other 4xx (roll back + toast). Deliberate omission of the response
+ * acts on — `ok: true` (broadcast + return), `ok: false` with status 401,
+ * 403, 428, or ≥500 (keep the optimistic update, log a warning),
+ * `ok: false` with any other 4xx (roll back + toast). Deliberate omission
+ * of the response
  * body — the provider's optimistic update is the source of truth and a
  * re-read would race with the in-flight cookie write.
  *
@@ -69,16 +73,21 @@ export async function patchTheme(
   value: ThemePreference,
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number }> {
-  const opts: RequestInit = {
-    method: "PATCH",
-    credentials: "same-origin",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ theme_preference: value }),
-    ...(signal ? { signal } : {}),
-  };
-  const resp = await fetch("/auth/me/theme", opts);
-  return { ok: resp.ok, status: resp.status };
+  // Routed through apiFetch, never a bare fetch: mutating verbs need the
+  // X-CSRF-Token injection (and mismatch retry) the wrapper owns. The
+  // cookie-session CSRF middleware rejects a tokenless PATCH, which a
+  // device-token QA session never exercises.
+  try {
+    await apiFetch("/auth/me/theme", {
+      method: "PATCH",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ theme_preference: value }),
+      ...(signal ? { signal } : {}),
+    });
+    return { ok: true, status: 200 };
+  } catch (error: unknown) {
+    if (error instanceof ApiError) return { ok: false, status: error.status };
+    // Network failures keep throwing; the provider branches via try/catch.
+    throw error;
+  }
 }

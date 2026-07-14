@@ -59,6 +59,7 @@ describe("apiFetch — credentials + method normalisation", () => {
   });
 
   test("uppercases the method", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
@@ -107,15 +108,148 @@ describe("apiFetch — CSRF header injection", () => {
     expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
   });
 
-  test("POST with no cached token omits header (rather than sending empty)", async () => {
+  test("POST with no cached token hydrates once; still omits the header when none is issued", async () => {
+    // First response serves the lazy /auth/me hydration (no token for an
+    // anonymous session), second the POST itself.
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({}))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
 
     await apiFetch("/api/v1/books", { method: "POST" });
 
-    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
     expect(headers.has("X-CSRF-Token")).toBe(false);
+  });
+});
+
+describe("apiFetch — lazy CSRF hydration", () => {
+  test("first mutating call with an empty cache refreshes the token before the request", async () => {
+    // An OIDC session never runs loginLocal (the only other hydration
+    // site), so the wrapper must hydrate on first mutating use itself.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: SAMPLE_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.get("X-CSRF-Token")).toBe(SAMPLE_TOKEN);
+  });
+
+  test("forwards the caller's abort signal to the lazy hydration request", async () => {
+    // An aborted operation must cancel the pre-flight /auth/me too, not
+    // leave it in flight to write the shared token cache post-abort.
+    const controller = new AbortController();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: SAMPLE_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", {
+      method: "POST",
+      body: "{}",
+      signal: controller.signal,
+    });
+
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/auth/me");
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
+  test("GET with an empty cache never hydrates", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/v1/books");
+  });
+
+  test("a cached token skips hydration", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/v1/books");
+  });
+});
+
+describe("apiFetch — csrf-missing retry", () => {
+  test("428 csrf-missing refreshes once and retries with the new token", async () => {
+    // A stale cached token the server no longer recognises as present
+    // (session rotation cleared it server-side).
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        problemResponse({
+          type: "https://reverie.example/probs/csrf-missing",
+          title: "Precondition Required",
+          status: 428,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", { method: "POST", body: "{}" });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
+    const retriedHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
+    expect(retriedHeaders.get("X-CSRF-Token")).toBe(REFRESHED_TOKEN);
+  });
+
+  test("forwards the caller's abort signal to the retry refresh", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const controller = new AbortController();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        problemResponse({
+          type: "https://reverie.example/probs/csrf-missing",
+          title: "Precondition Required",
+          status: 428,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrf_token: REFRESHED_TOKEN }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiFetch("/api/v1/books", {
+      method: "POST",
+      body: "{}",
+      signal: controller.signal,
+    });
+
+    // call[1] is the mid-retry /auth/me refresh.
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe("/auth/me");
+    expect(fetchSpy.mock.calls[1]?.[1]?.signal).toBe(controller.signal);
+  });
+
+  test("a non-CSRF 428 throws without a retry", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      problemResponse({
+        type: "https://reverie.example/probs/some-other-precondition",
+        title: "Precondition Required",
+        status: 428,
+      }),
+    );
+
+    await expect(apiFetch("/api/v1/books", { method: "POST", body: "{}" })).rejects.toThrow(
+      ApiError,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -247,6 +381,7 @@ describe("apiFetch — csrf-mismatch retry", () => {
 
 describe("apiFetch — body decoding", () => {
   test("204 No Content returns undefined without parsing", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
@@ -254,6 +389,7 @@ describe("apiFetch — body decoding", () => {
   });
 
   test("205 Reset Content returns undefined without parsing", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 205 }));
 
     const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });

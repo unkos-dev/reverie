@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetCsrfTokenForTesting } from "@/api/csrf";
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
 import { emptyFilterState, type FilterState, type SetFilter } from "@/routes/library-params";
 
 import {
@@ -182,12 +182,10 @@ function VocabHarness({ initial }: { initial: SetFilter }): ReactElement {
 
 describe("VocabEditor", () => {
   beforeEach(() => {
-    __resetCsrfTokenForTesting();
+    // Seed (not reset): apiFetch lazily hydrates an empty cache with a
+    // leading /auth/me fetch that would eat these suites' response mocks.
+    __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
     vi.restoreAllMocks();
-  });
-
-  afterEach(() => {
-    __resetCsrfTokenForTesting();
   });
 
   test("mode switch preserves per-mode lists", async () => {

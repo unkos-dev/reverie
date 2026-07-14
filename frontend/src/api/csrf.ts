@@ -1,25 +1,21 @@
 /**
- * Reverie CSRF synchronizer-token reader (Phase 1).
+ * Reverie CSRF synchronizer-token reader.
  *
  * THREAT: `SameSite=Lax` cookies alone don't cover top-level GET CSRF
  * returning sensitive state and don't protect when a cookie is set with
  * `SameSite=None`. The OWASP synchronizer token bound to the user's
  * session is the primary defense; this module owns the client side of
- * that defense. See `adr/2026-05-22-json-api-conventions.md` §"CSRF
- * defense" for the order-of-operations split between Phase 1 (this
- * module + `/auth/me` field + backend token issuance) and Phase 2
- * (`csrf_required` tower middleware + `apiFetch` header injection).
+ * that defense (the `csrf_required` tower middleware owns the server
+ * side; `apiFetch` owns header injection on mutating verbs). See
+ * `adr/2026-05-22-json-api-conventions.md` §"CSRF defense".
  *
- * The token lives in module-level state — single source of truth for
- * every request in the SPA. Hydration is on-demand via
- * `refreshCsrfToken()`; the Phase-2 `apiFetch` wrapper will (a) call
- * `refreshCsrfToken()` once during app boot before any mutating verb
- * is issued, and (b) re-call it once on a `403 csrf-mismatch` response
- * so a rotated token (Phase-2 role-change rotation) recovers without
- * a full page reload.
- *
- * Out of scope for Phase 1: header injection on mutating verbs (that
- * is `apiFetch`'s job, landing in 11a Task 11).
+ * The token lives in module-level state, a single source of truth for
+ * every request in the SPA. Hydration paths: `apiFetch` refreshes the
+ * cache lazily before its first mutating request when the cache is
+ * empty (an OIDC session's only hydration path), and once more after a
+ * `403 csrf-mismatch` or `428 csrf-missing` response so a rotated or
+ * expired token recovers without a full page reload; `loginLocal`
+ * hydrates eagerly after a local password sign-in.
  */
 
 import { z } from "zod";
@@ -35,7 +31,7 @@ let cachedToken: string | null = null;
  */
 const MeBodyShape = z.object({
   // `.min(1)` rejects empty strings; an empty token would otherwise
-  // populate the cache and Phase 2's `apiFetch` would inject a blank
+  // populate the cache and `apiFetch` would inject a blank
   // `X-CSRF-Token` header, which the middleware would treat as a
   // mismatch on every mutating request. Empty must funnel into the
   // same null-cache path as `null`, omitted, and schema-drift cases.
@@ -46,7 +42,7 @@ const MeBodyShape = z.object({
  * Read the cached CSRF token without making a network request.
  *
  * Returns `null` until `refreshCsrfToken()` has hydrated the cache.
- * Callers that need a guaranteed-fresh value (Phase-2 `apiFetch` on
+ * Callers that need a guaranteed-fresh value (`apiFetch` on
  * first mutating verb, or after a `403 csrf-mismatch`) call
  * `refreshCsrfToken()` first and await the result.
  *
@@ -68,7 +64,7 @@ export function getCsrfToken(): string | null {
  *
  * Failure model (matches `ThemeProvider`'s tolerance): a non-OK status
  * or schema mismatch clears the cache to `null` rather than throwing.
- * The caller (Phase-2 `apiFetch`) then refuses to inject the header
+ * The caller (`apiFetch`) then refuses to inject the header
  * and surfaces the upstream auth/network failure on the actual
  * mutating request, not here. Throwing would force every consumer to
  * carry a try/catch around an essentially-best-effort hydration call.
@@ -110,7 +106,7 @@ export async function refreshCsrfToken(signal?: AbortSignal): Promise<string | n
     cachedToken = null;
     return null;
   }
-  // `nullish` ↦ `string | null | undefined`. Phase-1 backend sends the
+  // `nullish` ↦ `string | null | undefined`. The backend sends the
   // string for OIDC-authed sessions and `null` for Basic-auth sessions
   // (OPDS); the field is always present. Defensive treatment of
   // `undefined` keeps the reader robust if the field is ever omitted
@@ -130,4 +126,16 @@ export async function refreshCsrfToken(signal?: AbortSignal): Promise<string | n
  */
 export function __resetCsrfTokenForTesting(): void {
   cachedToken = null;
+}
+
+/**
+ * Test-only escape hatch — seed the cached token directly. The global
+ * test setup uses this so suites exercising mutating API calls start
+ * from the authenticated steady state (token already hydrated) instead
+ * of each triggering `apiFetch`'s lazy first-use hydration; the
+ * hydration behaviour itself is pinned by `fetch.test.ts`, which resets
+ * the cache explicitly.
+ */
+export function __seedCsrfTokenForTesting(token: string): void {
+  cachedToken = token;
 }
