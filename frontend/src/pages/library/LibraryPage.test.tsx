@@ -164,6 +164,17 @@ function searchBox(): HTMLElement {
   return screen.getByRole("searchbox", { name: "Search your library" });
 }
 
+/** A rail section's `<details>` inside the open filter drawer, found by its
+ *  summary title (several sections share inner control labels). */
+function drawerSection(drawer: HTMLElement, title: string): HTMLElement {
+  const details = within(drawer)
+    .getAllByText(title)
+    .map((node) => node.closest("details"))
+    .find((candidate): candidate is HTMLDetailsElement => candidate !== null);
+  if (details === undefined) throw new Error(`no drawer section titled ${title}`);
+  return details;
+}
+
 describe("LibraryPage", () => {
   test("renders the heading without a fabricated total", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
@@ -762,6 +773,73 @@ describe("LibraryPage", () => {
       });
     });
 
+    test("detail drawer failure shows an alert with a working Retry", async () => {
+      // Deliberate failure logs a console breadcrumb; keep the output clean.
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const book = bookFixture({ title: "Stoner", id: "abc-123" });
+      const detail = detailFixture(book);
+      // URL-keyed mock: only the detail endpoint fails (once), so a stray
+      // fetch from an unrelated query cannot eat the scripted rejection.
+      let detailCalls = 0;
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes(`/books/${book.id}`)) {
+          detailCalls += 1;
+          if (detailCalls === 1) return Promise.reject(new Error("network down"));
+          return Promise.resolve(
+            new Response(JSON.stringify(detail), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], next_cursor: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
+      renderLibrary({
+        items: [book],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+      );
+      const drawer = await screen.findByRole("dialog");
+      expect(await within(drawer).findByRole("alert")).toHaveTextContent(/couldn't load/i);
+      await user.click(within(drawer).getByRole("button", { name: "Retry" }));
+      expect(await within(drawer).findByText("Farrar, Straus and Giroux")).toBeInTheDocument();
+      fetchSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    test("detail drawer shows a busy skeleton while the record loads", async () => {
+      const book = bookFixture({ title: "Stoner", id: "abc-123" });
+      // A never-settling fetch pins the loading branch.
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(() => new Promise(() => undefined));
+      renderLibrary({
+        items: [book],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+      );
+      const drawer = await screen.findByRole("dialog");
+      expect(drawer.querySelector('[aria-busy="true"]')).not.toBeNull();
+      fetchSpy.mockRestore();
+    });
+
     test("the overlay slot is exclusive: opening one drawer replaces the other", async () => {
       const book = bookFixture({ title: "Stoner", id: "abc-123" });
       renderLibrary({
@@ -784,6 +862,69 @@ describe("LibraryPage", () => {
       const drawers = await screen.findAllByRole("dialog");
       expect(drawers).toHaveLength(1);
       expect(within(drawers[0]).getByText("Refine")).toBeInTheDocument();
+    });
+  });
+
+  describe("drawer close semantics and cross-surface drafts", () => {
+    test("a toolbar search draft survives a rail commit made from the drawer", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        extraCacheParams: [{ status_any: ["reading"] }],
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      const user = userEvent.setup();
+      // One character: below MIN_Q_LEN, so it stays a pure draft forever.
+      await user.type(searchBox(), "d");
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const drawer = await screen.findByRole("dialog");
+      await user.click(within(drawer).getByRole("checkbox", { name: "Reading" }));
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).toContain("status_any=reading");
+      expect(searchBox()).toHaveValue("d");
+    });
+
+    test("Escape abandons a pending rail draft", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        extraCacheParams: [{ title_contains: "dune" }],
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const drawer = await screen.findByRole("dialog");
+      const titleSection = drawerSection(drawer, "Title");
+      await user.type(within(titleSection).getByRole("textbox", { name: "Filter value" }), "dune");
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      // Past the debounce window: the abandoned draft must never commit.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.getByTestId("location-search").textContent).not.toContain("title_contains");
+    });
+
+    test("a non-Escape close applies a pending rail draft", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        extraCacheParams: [{ title_contains: "sea" }],
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const drawer = await screen.findByRole("dialog");
+      const titleSection = drawerSection(drawer, "Title");
+      await user.type(within(titleSection).getByRole("textbox", { name: "Filter value" }), "sea");
+      await user.click(within(drawer).getByRole("button", { name: "Close" }));
+      await waitFor(() => {
+        expect(screen.getByTestId("location-search").textContent).toContain("title_contains=sea");
+      });
     });
   });
 

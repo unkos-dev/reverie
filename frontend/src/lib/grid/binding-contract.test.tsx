@@ -476,12 +476,15 @@ describe("ReactDataGridBinding selection and activation", () => {
     expect(onRowActivate).not.toHaveBeenCalled();
   });
 
-  test("a disabled-editable cell behaves as read-only for activation", async () => {
+  test("an editor-bearing column never activates, even when the row is locked", async () => {
+    // Activation keys on editor presence, not the per-row `editable`
+    // gate: the gate also locks cells transiently during an in-flight
+    // commit, and a pending cell must not become a drawer trigger.
     const onRowActivate = vi.fn();
     const user = userEvent.setup();
     render(<SelectionHarness onRowActivate={onRowActivate} />);
     await screen.findByRole("grid");
     await user.click(screen.getByText("Title 6 [locked]"));
-    expect(onRowActivate).toHaveBeenCalledWith(ROWS[6]);
+    expect(onRowActivate).not.toHaveBeenCalled();
   });
 });

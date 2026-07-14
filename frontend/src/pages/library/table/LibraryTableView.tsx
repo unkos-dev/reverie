@@ -319,7 +319,7 @@ function TitleCellMark({ row }: { row: BookListItem }): ReactElement {
  * Composes the render-time column set from the base defs: applies the
  * user's hidden-column preference (desktop) or the fixed mobile trim,
  * layers the rich title cell (cover mark, link, mobile author stack), and
- * prepends the details column — the guaranteed drawer path that survives
+ * prepends the details column: the guaranteed drawer path that survives
  * any visibility or density configuration.
  */
 function composeColumns(

@@ -1,8 +1,8 @@
 /**
- * Pure projection of the active library filter state onto the masthead
- * readout: ordered, compact segments covering the full filter grammar.
- * Kept apart from the `FilterSummary` component so the component file
- * exports components only, and the projection tests need no queries.
+ * Pure projection of the active library filter state onto the toolbar's
+ * chips row: ordered, compact segments covering the full filter grammar,
+ * each carrying its own removal patch. Kept apart from the chips
+ * component so the projection tests need no queries.
  */
 import type { FilterState, RangeFilter, TextFilter } from "@/routes/library-params";
 

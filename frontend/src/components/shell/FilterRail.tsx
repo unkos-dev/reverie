@@ -29,6 +29,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useState, type ReactElement, type ReactNode, type RefObject } from "react";
+
 import { useSearchParams } from "react-router";
 
 import {
@@ -115,7 +116,15 @@ function useDraftSlice<T>(
   lastEdit: RefObject<EditTokens | null>,
   clearGen: RefObject<number>,
 ): { draft: T; setDraft: (next: T) => void } {
-  const [draft, setDraft] = useState(committed);
+  // The generation is captured when the draft is EDITED, not per render:
+  // a clearing write (or the drawer's Escape = abandon) bumps it after
+  // the edit, so the fire-time check below vetoes the stale draft even
+  // if a passive re-render (e.g. the drawer's closing pass) happens
+  // between the bump and the timer or unmount flush.
+  const [draftState, setDraftState] = useState(() => ({
+    value: committed,
+    gen: clearGen.current,
+  }));
   const [synced, setSynced] = useState({ full: fullToken, slice: sliceToken(committed) });
   // Render-phase state adjustment, the compiler-accepted alternative to a
   // sync effect.
@@ -123,13 +132,13 @@ function useDraftSlice<T>(
     const nextSlice = sliceToken(committed);
     const editElsewhere = lastEdit.current?.full === fullToken && nextSlice === synced.slice;
     setSynced({ full: fullToken, slice: nextSlice });
-    if (!editElsewhere) setDraft(committed);
+    if (!editElsewhere) setDraftState({ value: committed, gen: clearGen.current });
   }
+  const draft = draftState.value;
   // A clear bumps the generation synchronously, but the render that resyncs
   // the draft (and cancels the timer) rides a router transition, which an
   // already-due timer can beat; the fire-time check keeps a stale draft from
   // re-writing the condition the clear just removed.
-  const genAtRender = clearGen.current;
   useDebouncedCommit(
     sliceToken(draft),
     sliceToken(committed),
@@ -137,9 +146,18 @@ function useDraftSlice<T>(
       commit(draft);
     },
     FILTER_DEBOUNCE_MS,
-    () => clearGen.current !== genAtRender,
+    () => clearGen.current !== draftState.gen,
+    // The rail unmounts when its drawer closes; a pending draft then
+    // commits (the user typed it deliberately) unless a generation bump
+    // (clear-all, or the drawer's Escape = abandon) vetoed it above.
+    true,
   );
-  return { draft, setDraft };
+  return {
+    draft,
+    setDraft: (next: T) => {
+      setDraftState({ value: next, gen: clearGen.current });
+    },
+  };
 }
 
 interface FilterRailProps {
@@ -156,6 +174,10 @@ interface FilterRailProps {
    *  search; one instance per page or the draft-survival protocol splits
    *  (see `filter-commit.ts`). */
   lastEdit: RefObject<EditTokens | null>;
+  /** Drawer-close abandon generation: the host bumps it when the drawer
+   *  closes via Escape, so pending drafts die instead of flushing. Other
+   *  close paths leave it alone and pending drafts commit on unmount. */
+  cancelGen: RefObject<number>;
 }
 
 /** The library's filter and sort editing surface; see the module docstring. */
@@ -164,6 +186,7 @@ export function FilterRail({
   applyParams,
   clearGen,
   lastEdit,
+  cancelGen,
 }: Readonly<FilterRailProps>): ReactElement {
   const [searchParams] = useSearchParams();
   const filters = parseFilterParams(searchParams);
@@ -177,6 +200,17 @@ export function FilterRail({
 
   const commitFilters = makeFilterCommit(applyParams, lastEdit);
   const clearFilters = makeFilterClear(applyParams, lastEdit);
+
+  // One generation ref for the sections' fire-time staleness check,
+  // covering both invalidation sources: clearing writes (clearGen) and
+  // the drawer's Escape = abandon (cancelGen). Both only ever increment,
+  // so the sum changes whenever either does; a getter keeps reads live
+  // without threading a second ref through every section.
+  const [staleGen] = useState(() => ({
+    get current(): number {
+      return clearGen.current + cancelGen.current;
+    },
+  }));
 
   function commitSort(levels: readonly SortLevelParam[]): void {
     applyParams((params) => applySortToSearchParams(params, levels));
@@ -263,7 +297,7 @@ export function FilterRail({
         committed={filters.title}
         fullToken={fullToken}
         lastEdit={lastEdit}
-        clearGen={clearGen}
+        clearGen={staleGen}
         activeCount={textCount(filters.title)}
         onCommit={(title) => {
           commitFilters((current) => ({ ...current, title }));
@@ -278,7 +312,7 @@ export function FilterRail({
         committed={filters.subtitle}
         fullToken={fullToken}
         lastEdit={lastEdit}
-        clearGen={clearGen}
+        clearGen={staleGen}
         activeCount={textCount(filters.subtitle)}
         onCommit={(subtitle) => {
           commitFilters((current) => ({ ...current, subtitle }));
@@ -293,7 +327,7 @@ export function FilterRail({
         committed={filters.isbn13}
         fullToken={fullToken}
         lastEdit={lastEdit}
-        clearGen={clearGen}
+        clearGen={staleGen}
         activeCount={textCount(filters.isbn13)}
         onCommit={(isbn13) => {
           commitFilters((current) => ({ ...current, isbn13 }));
@@ -308,7 +342,7 @@ export function FilterRail({
         committed={filters.pages}
         fullToken={fullToken}
         lastEdit={lastEdit}
-        clearGen={clearGen}
+        clearGen={staleGen}
         activeCount={rangeCount(filters.pages)}
         onCommit={(pages) => {
           commitFilters((current) => ({ ...current, pages }));
@@ -324,7 +358,7 @@ export function FilterRail({
         committed={filters.rating}
         fullToken={fullToken}
         lastEdit={lastEdit}
-        clearGen={clearGen}
+        clearGen={staleGen}
         activeCount={rangeCount(filters.rating)}
         onCommit={(rating) => {
           commitFilters((current) => ({ ...current, rating }));

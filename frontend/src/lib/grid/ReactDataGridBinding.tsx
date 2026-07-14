@@ -246,16 +246,18 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
     return new Map<string, GridColumn<R>>(columns.map((col) => [col.key, col]));
   }, [columns]);
 
-  function isEditableCell(columnKey: string, row: R): boolean {
-    const col = columnByKey.get(columnKey);
-    if (col?.renderEditCell === undefined) return false;
-    return col.editable === undefined ? true : col.editable(row);
+  function isEditorColumn(columnKey: string): boolean {
+    return columnByKey.get(columnKey)?.renderEditCell !== undefined;
   }
 
   /**
    * Activation guard shared by click and keyboard paths: the selection
-   * column, interactive content, and editable cells all keep their own
-   * gestures (Decision: activation must never shadow editing or selection).
+   * column, interactive content, and editor-bearing columns all keep
+   * their own gestures (activation must never shadow editing or
+   * selection). The guard keys on editor presence, not the per-row
+   * `editable` gate: that gate also locks cells transiently (an
+   * in-flight commit), and a cell must not flip into a drawer trigger
+   * mid-edit-flow.
    */
   function activationRow(
     args: { column: { key: string }; row: R },
@@ -266,7 +268,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
     if (args.row == null) return null;
     if (args.column.key === SelectColumn.key) return null;
     if (isInteractiveTarget(target)) return null;
-    if (isEditableCell(args.column.key, args.row)) return null;
+    if (isEditorColumn(args.column.key)) return null;
     return args.row;
   }
 

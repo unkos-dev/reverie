@@ -116,6 +116,10 @@ function LibraryContent(): ReactElement {
   // trigger to restore focus to on close; the opener is captured here and
   // restored via onCloseAutoFocus instead (WCAG 2.4.3).
   const overlayReturnFocus = useRef<HTMLElement | null>(null);
+  // Escape = abandon: bumped when the filter drawer closes via Escape so
+  // pending rail drafts die at fire time; scrim and close-button closes
+  // leave it alone and pending drafts flush on unmount (see FilterRail).
+  const railCancelGen = useRef(0);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [displayPrefs] = useState(readDisplayPreferences);
   const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
@@ -243,8 +247,13 @@ function LibraryContent(): ReactElement {
   }
 
   function restoreOverlayFocus(event: Event): void {
+    // A detached opener (row refetched away while the drawer was open)
+    // must fall through to Radix's default rather than stranding focus
+    // on <body> behind a prevented default.
+    const opener = overlayReturnFocus.current;
+    if (opener === null || !opener.isConnected) return;
     event.preventDefault();
-    overlayReturnFocus.current?.focus();
+    opener.focus();
   }
 
   /** Empty states first, then one branch per projection. */
@@ -430,6 +439,9 @@ function LibraryContent(): ReactElement {
           side="right"
           aria-describedby={undefined}
           onCloseAutoFocus={restoreOverlayFocus}
+          onEscapeKeyDown={() => {
+            railCancelGen.current += 1;
+          }}
           className="w-[340px] max-w-[100vw] overflow-y-auto p-6"
         >
           <SheetHeader className="mb-2 p-0">
@@ -440,6 +452,7 @@ function LibraryContent(): ReactElement {
             applyParams={applyParams}
             clearGen={clearGen}
             lastEdit={lastEdit}
+            cancelGen={railCancelGen}
           />
         </SheetContent>
       </Sheet>

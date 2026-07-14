@@ -62,12 +62,14 @@ function Providers({ children }: { children: ReactElement }): ReactElement {
 function RailHost(): ReactElement {
   const { applyParams, clearGen } = useLiveSearchParams();
   const lastEdit = useRef<EditTokens | null>(null);
+  const cancelGen = useRef(0);
   return (
     <FilterRail
       seriesOptions={SERIES}
       applyParams={applyParams}
       clearGen={clearGen}
       lastEdit={lastEdit}
+      cancelGen={cancelGen}
     />
   );
 }
