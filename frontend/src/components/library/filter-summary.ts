@@ -35,6 +35,21 @@ type SummaryResolvers = {
   seriesName: (id: string) => string;
 };
 
+/** Props whose filter is an object keyed by operator, so a chip can drop
+ *  a single operator without disturbing the rest of the state. */
+type FilterOpProp = "title" | "subtitle" | "isbn13" | "pages" | "rating";
+
+/** Build a removal patch that clears one operator on one object-filter
+ *  prop. Shared by the text and range readouts, which differ only in the
+ *  (runtime-erased) operator key type. */
+const dropOp =
+  (prop: FilterOpProp) =>
+  (op: string) =>
+  (current: FilterState): FilterState => ({
+    ...current,
+    [prop]: { ...current[prop], [op]: undefined },
+  });
+
 function pushText(
   segments: SummarySegment[],
   label: string,
@@ -42,29 +57,26 @@ function pushText(
   filter: TextFilter,
   prop: "title" | "subtitle" | "isbn13",
 ): void {
-  const dropOp = (op: keyof TextFilter) => (current: FilterState) => ({
-    ...current,
-    [prop]: { ...current[prop], [op]: undefined },
-  });
+  const drop = dropOp(prop);
   if (filter.contains !== undefined)
     segments.push({
       key: `${key}_contains`,
       text: `${label} contains "${filter.contains}"`,
-      remove: dropOp("contains"),
+      remove: drop("contains"),
     });
   if (filter.eq !== undefined)
-    segments.push({ key: `${key}_eq`, text: `${label} is "${filter.eq}"`, remove: dropOp("eq") });
+    segments.push({ key: `${key}_eq`, text: `${label} is "${filter.eq}"`, remove: drop("eq") });
   if (filter.ne !== undefined)
     segments.push({
       key: `${key}_ne`,
       text: `${label} is not "${filter.ne}"`,
-      remove: dropOp("ne"),
+      remove: drop("ne"),
     });
   if (filter.empty !== undefined)
     segments.push({
       key: `${key}_empty`,
       text: filter.empty ? `${label} is empty` : `${label} is set`,
-      remove: dropOp("empty"),
+      remove: drop("empty"),
     });
 }
 
@@ -75,27 +87,24 @@ function pushRange(
   filter: RangeFilter,
   prop: "pages" | "rating",
 ): void {
-  const dropOp = (op: keyof RangeFilter) => (current: FilterState) => ({
-    ...current,
-    [prop]: { ...current[prop], [op]: undefined },
-  });
+  const drop = dropOp(prop);
   if (filter.gte !== undefined)
     segments.push({
       key: `${key}_gte`,
       text: `${label} ≥ ${String(filter.gte)}`,
-      remove: dropOp("gte"),
+      remove: drop("gte"),
     });
   if (filter.lte !== undefined)
     segments.push({
       key: `${key}_lte`,
       text: `${label} ≤ ${String(filter.lte)}`,
-      remove: dropOp("lte"),
+      remove: drop("lte"),
     });
   if (filter.empty !== undefined)
     segments.push({
       key: `${key}_empty`,
       text: filter.empty ? `${label} is empty` : `${label} is set`,
-      remove: dropOp("empty"),
+      remove: drop("empty"),
     });
 }
 
@@ -105,16 +114,18 @@ function pushRange(
  * opposite of the active condition, which misleads worse than saying
  * nothing at all.
  */
-function pushSet(
-  segments: SummarySegment[],
-  key: string,
-  singular: string,
-  plural: string,
-  include: readonly string[],
-  exclude: readonly string[],
-  remove: (current: FilterState) => FilterState,
-  resolve?: (token: string) => string,
-): void {
+type SetReadout = {
+  key: string;
+  singular: string;
+  plural: string;
+  include: readonly string[];
+  exclude: readonly string[];
+  remove: (current: FilterState) => FilterState;
+  resolve?: (token: string) => string;
+};
+
+function pushSet(segments: SummarySegment[], spec: SetReadout): void {
+  const { key, singular, plural, include, exclude, remove, resolve } = spec;
   const total = include.length + exclude.length;
   if (total === 0) return;
   if (total === 1) {
@@ -168,53 +179,48 @@ export function buildFilterSummary(
       text: `Series: ${resolvers.seriesName(filters.series)}`,
       remove: (current) => ({ ...current, series: undefined }),
     });
-  pushSet(
-    segments,
-    "authors",
-    "Author",
-    "Authors",
-    [...filters.authors.all, ...filters.authors.any],
-    filters.authors.none,
-    (current) => ({ ...current, authors: emptyVocab }),
-    resolvers.authorLabel,
-  );
-  pushSet(
-    segments,
-    "tags",
-    "Tag",
-    "Tags",
-    [...filters.tags.all, ...filters.tags.any],
-    filters.tags.none,
-    (current) => ({ ...current, tags: emptyVocab }),
-  );
-  pushSet(
-    segments,
-    "genres",
-    "Genre",
-    "Genres",
-    [...filters.genres.all, ...filters.genres.any],
-    filters.genres.none,
-    (current) => ({ ...current, genres: emptyVocab }),
-  );
-  pushSet(
-    segments,
-    "moods",
-    "Mood",
-    "Moods",
-    [...filters.moods.all, ...filters.moods.any],
-    filters.moods.none,
-    (current) => ({ ...current, moods: emptyVocab }),
-  );
-  pushSet(
-    segments,
-    "status",
-    "Status",
-    "Statuses",
-    filters.status.any,
-    filters.status.none,
-    (current) => ({ ...current, status: { any: [], none: [] } }),
-    (token) => STATUS_LABELS[token] ?? token,
-  );
+  pushSet(segments, {
+    key: "authors",
+    singular: "Author",
+    plural: "Authors",
+    include: [...filters.authors.all, ...filters.authors.any],
+    exclude: filters.authors.none,
+    remove: (current) => ({ ...current, authors: emptyVocab }),
+    resolve: resolvers.authorLabel,
+  });
+  pushSet(segments, {
+    key: "tags",
+    singular: "Tag",
+    plural: "Tags",
+    include: [...filters.tags.all, ...filters.tags.any],
+    exclude: filters.tags.none,
+    remove: (current) => ({ ...current, tags: emptyVocab }),
+  });
+  pushSet(segments, {
+    key: "genres",
+    singular: "Genre",
+    plural: "Genres",
+    include: [...filters.genres.all, ...filters.genres.any],
+    exclude: filters.genres.none,
+    remove: (current) => ({ ...current, genres: emptyVocab }),
+  });
+  pushSet(segments, {
+    key: "moods",
+    singular: "Mood",
+    plural: "Moods",
+    include: [...filters.moods.all, ...filters.moods.any],
+    exclude: filters.moods.none,
+    remove: (current) => ({ ...current, moods: emptyVocab }),
+  });
+  pushSet(segments, {
+    key: "status",
+    singular: "Status",
+    plural: "Statuses",
+    include: filters.status.any,
+    exclude: filters.status.none,
+    remove: (current) => ({ ...current, status: { any: [], none: [] } }),
+    resolve: (token) => STATUS_LABELS[token] ?? token,
+  });
   pushText(segments, "Title", "title", filters.title, "title");
   pushText(segments, "Subtitle", "subtitle", filters.subtitle, "subtitle");
   pushText(segments, "ISBN", "isbn", filters.isbn13, "isbn13");
