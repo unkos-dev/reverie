@@ -38,10 +38,7 @@ export function LibraryMasthead({
     <header className="mb-8">
       <div className={cn("lib-hero", heroBleedClassName)}>
         <picture key={variant}>
-          <source
-            srcSet={`/editorial/library-hero-gilt-spines${variant}.webp`}
-            type="image/webp"
-          />
+          <source srcSet={`/editorial/library-hero-gilt-spines${variant}.webp`} type="image/webp" />
           <img
             src={`/editorial/library-hero-gilt-spines${variant}.jpg`}
             alt=""
