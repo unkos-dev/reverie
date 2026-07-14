@@ -7,6 +7,9 @@ import { patchTheme } from "./api";
 vi.mock("@/api/csrf", () => ({
   getCsrfToken: () => "test-csrf-token-value",
   refreshCsrfToken: vi.fn(),
+  // The global test setup seeds the cache through this on every test.
+  __seedCsrfTokenForTesting: vi.fn(),
+  __resetCsrfTokenForTesting: vi.fn(),
 }));
 
 function jsonResponse(status: number, body: unknown): Response {

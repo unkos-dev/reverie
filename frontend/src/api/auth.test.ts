@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import {
   fetchSetupStatus,
@@ -8,7 +8,7 @@ import {
   resetPassword,
   setupAdmin,
 } from "./auth";
-import { __resetCsrfTokenForTesting } from "./csrf";
+import { __seedCsrfTokenForTesting } from "./csrf";
 import { ApiError } from "./errors";
 
 /** Parse the JSON body passed to a mocked `fetch` call. */
@@ -18,12 +18,11 @@ function bodyOf(init: RequestInit | undefined): unknown {
 }
 
 beforeEach(() => {
-  __resetCsrfTokenForTesting();
+  // Seed (not reset): apiFetch lazily hydrates an empty cache with a
+  // leading /auth/me fetch that would eat these suites' response mocks;
+  // hydration behaviour itself is pinned in fetch.test.ts.
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   vi.restoreAllMocks();
-});
-
-afterEach(() => {
-  __resetCsrfTokenForTesting();
 });
 
 describe("logout", () => {

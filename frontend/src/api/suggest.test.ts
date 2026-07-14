@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { __resetCsrfTokenForTesting } from "./csrf";
+import { __seedCsrfTokenForTesting } from "./csrf";
 import { MAX_RESOLVE_IDS, resolveAuthors, suggestVocab } from "./suggest";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -15,12 +15,11 @@ const AUTHOR_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const AUTHOR_B = "bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb";
 
 beforeEach(() => {
-  __resetCsrfTokenForTesting();
+  // Seed (not reset): apiFetch lazily hydrates an empty cache with a
+  // leading /auth/me fetch that would eat these suites' response mocks;
+  // hydration behaviour itself is pinned in fetch.test.ts.
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   vi.restoreAllMocks();
-});
-
-afterEach(() => {
-  __resetCsrfTokenForTesting();
 });
 
 describe("suggestVocab", () => {

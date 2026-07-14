@@ -1,6 +1,17 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vite-plus/test";
+import { afterEach, beforeEach } from "vite-plus/test";
+
+import { __seedCsrfTokenForTesting } from "@/api/csrf";
+
+// Authenticated steady state: the CSRF cache starts hydrated, so suites
+// that exercise mutating API calls pin the request shape without also
+// tripping apiFetch's lazy first-use hydration (a leading /auth/me fetch
+// that would consume their single-response mocks). fetch.test.ts resets
+// the cache itself to pin the hydration behaviour.
+beforeEach(() => {
+  __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
+});
 
 // jsdom has no ResizeObserver; cmdk (via Radix Dialog) requires it.
 // No-op stub is sufficient — tests don't observe resizes themselves.

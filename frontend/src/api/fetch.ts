@@ -29,6 +29,7 @@ import { getCsrfToken, refreshCsrfToken } from "./csrf";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const CSRF_MISMATCH_SLUG = "csrf-mismatch";
+const CSRF_MISSING_SLUG = "csrf-missing";
 
 /**
  * Shape of an RFC 9457 Problem Details body. All fields optional —
@@ -71,13 +72,24 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   const method = (init?.method ?? "GET").toUpperCase();
   const mutating = MUTATING_METHODS.has(method);
 
+  // Lazy first-use hydration: an OIDC session never runs `loginLocal`
+  // (the only other hydration site), so a fresh tab reaches its first
+  // mutating verb with an empty token cache. Without this, every such
+  // request dies at the middleware with 428 `csrf-missing`.
+  if (mutating && getCsrfToken() === null) await refreshCsrfToken();
+
   const response = await sendRequest(input, init, method, mutating);
-  if (response.status === 403 && mutating) {
+  if ((response.status === 403 || response.status === 428) && mutating) {
     const problem = await peekProblem(response);
-    if (problem?.type && problem.type.endsWith(`/${CSRF_MISMATCH_SLUG}`)) {
-      // Refresh once. If the new token is still missing we still let
-      // the second attempt run — the middleware will return another
-      // 403 and the caller will see a real ApiError.
+    const slug = problem?.type;
+    if (
+      slug !== undefined &&
+      (slug.endsWith(`/${CSRF_MISMATCH_SLUG}`) || slug.endsWith(`/${CSRF_MISSING_SLUG}`))
+    ) {
+      // Refresh once (mismatch = rotated token; missing = the cache was
+      // stale-null or the session token expired server-side). If the new
+      // token is still missing we still let the second attempt run — the
+      // middleware will reject again and the caller sees a real ApiError.
       await refreshCsrfToken();
       const retried = await sendRequest(input, init, method, mutating);
       return decodeSuccess(retried);
