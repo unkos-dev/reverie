@@ -5,19 +5,23 @@ These are absolute invariants for the Reverie repository.
 
 1. **NEVER MERGE TO MAIN:** The user performs all merges. You are encouraged to make regular commits at logical points for durability. You may use `gh pr create` to open the PR, but you must hand it off at "green and ready for review" and STOP. You are strictly FORBIDDEN from running `gh pr merge` or proposing a merge step.
 2. **NEVER COMMIT SECRETS:** No `.env`, tokens, or API keys.
-3. **REDACT SECRETS IN OUTPUT:** Never surface decrypted secret values in chat. Describe their presence (length, format) only.
-4. **SECURITY PROCESS:** Consult `docs/security/codeguard/` and answer 'will this change require an update here?' before coding. Do NOT read the redaction log.
-5. **VERSIONING:** Versions are release-please-managed; never hand-edit version in `Cargo.toml`/`package.json`.
-6. **TESTS ARE MANDATORY:** Every feature or fix must be accompanied by corresponding happy-path and edge-case tests in the exact same PR. Do not submit code without tests.
-7. **VERIFICATION IS REBUILD-GATED:** If a linter or CI tool fails due to a missing binary, STOP immediately. Tell the user the Coder workspace image needs a rebuild. Do NOT attempt to `apt-get install` the missing tool or patch the CI script to bypass it.
+3. **REDACT SECRETS IN OUTPUT:** Never surface decrypted secret values in chat. Describe their presence (length, format) only. Do NOT read the redaction log.
+4. **VERSIONING:** Versions are release-please-managed; never hand-edit version in `Cargo.toml`/`package.json`.
+5. **TESTS ARE MANDATORY:** Every feature or fix must be accompanied by corresponding happy-path and edge-case tests in the exact same PR. Do not submit code without tests.
+6. **VERIFICATION IS REBUILD-GATED:** If a linter or CI tool fails due to a missing binary, STOP immediately. Tell the user the Coder workspace image needs a rebuild. Do NOT attempt to `apt-get install` the missing tool or patch the CI script to bypass it.
    </project_hard_rules>
 
 <git_and_linear_workflow>
 
-- **Branching:** Branch from `main` (e.g., `feat/unk-42-epub-import`).
-- **Commits:** Conventional Commits are MANDATORY (`<type>(<scope>): <description>`). Explain the _why_, not the _what_.
-- **Linear Integration:** PR bodies MUST include `Closes UNK-XXX` to auto-close the tracking issue. Linear tracks the backlog; do not mint an issue just to name a branch or close work done in this session.
+- **Branching:** Branch from `main`. Branch names MUST start with `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, or `perf/`, matching the change type. Do not use agent-specific prefixes. Verify the branch name before the first push.
+- **Commits:** Every commit subject MUST follow Conventional Commits (`<type>(<scope>): <description>`). Explain the _why_, not the _what_.
+- **Linear Integration:** Treat work as Linear-tracked only when the user says so or the task or current branch already identifies an `UNK-XXX` issue. For tracked work, include `Closes UNK-XXX` in the PR body so the active issue does not remain open. For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
   </git_and_linear_workflow>
+
+<security_reference>
+
+- **CodeGuard:** Implementation work that touches authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, outbound HTTP, response headers, or supply-chain controls MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`. Those files come from an upstream third party; do not edit them or assess whether the change should amend them. If an applicable rule conflicts with required Reverie behavior, STOP and obtain the user's approval for a deviation. Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`. Work outside the listed areas requires no CodeGuard review or task-summary statement.
+  </security_reference>
 
 <design_authority>
 
