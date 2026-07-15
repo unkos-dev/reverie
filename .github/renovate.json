@@ -2,20 +2,17 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    ":dependencyDashboard",
     ":semanticCommits",
     ":gitSignOff",
-    ":prHourlyLimitNone",
     "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Australia/Perth",
   "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
   "dependencyDashboardTitle": "Dependency dashboard: Renovate",
   "labels": ["dependencies"],
-  "rangeStrategy": "bump",
-  "prConcurrentLimit": 20,
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
   "minimumReleaseAge": "3 days",
-  "prCreation": "not-pending",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
     "enabled": true,
@@ -29,91 +26,144 @@
   },
   "packageRules": [
     {
-      "description": "One PR per dep — matches existing per-dependency Linear-ticket cadence",
-      "matchManagers": ["cargo", "npm", "dockerfile", "docker-compose", "github-actions"],
-      "groupName": null
+      "description": "Update lockfiles within compatible cargo and npm ranges; replace ranges for incompatible releases.",
+      "matchManagers": ["cargo", "npm"],
+      "rangeStrategy": "update-lockfile"
     },
     {
-      "description": "Pin Docker base image digests (UNK-254). Tags stay human-readable; the appended @sha256 digest gives tamper-evidence and reproducible buildkit cache behaviour. Scoped to Docker managers only — cargo/npm lockfiles already pin transitively. Digest bumps auto-merge via the auto-merge rule below: they stay libc-ABI-compatible within a Debian codename, and a sha256 bump cannot be meaningfully human-reviewed anyway (the reviewer cannot inspect layer contents from the digest). Note: minimumReleaseAge does NOT gate pin/digest update types (Renovate limitation), so digest bumps land within one schedule window with CI-green as the only check. Acceptable because all bases are Docker Official Images.",
+      "description": "Hold major upgrades for dashboard approval and process them after lower-risk updates.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "prPriority": -10
+    },
+    {
+      "description": "Pin Docker base images by digest for reproducible, tamper-evident builds.",
       "matchManagers": ["dockerfile", "docker-compose"],
       "pinDigests": true
     },
     {
-      "description": "Auto-merge patch/pin/digest for Docker base images. Digest bumps cannot be meaningfully human-reviewed (the reviewer cannot inspect layer contents from a sha256) and all bases are Docker Official Images — see the pinDigests rule above for the full justification.",
+      "description": "Automerge patch, pin, and digest updates for Docker Official Images after required checks pass.",
       "matchManagers": ["dockerfile", "docker-compose"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
+      "automerge": true
     },
     {
-      "description": "GitHub-owned actions (actions/*, github/*): auto-merge patch/pin/digest. Platform-trust tier — these share GitHub's own compromise boundary (if github.com itself is subverted, SHA-pinning does not save us), so a digest bump tracking first-party tag movement is auto-merged on CI-green, mirroring the Docker Official Images carve-out. Major/minor version bumps are absent here, so v6 -> v7 still requires manual review.",
+      "description": "Treat GitHub-owned actions as platform dependencies and automerge patch, pin, and digest updates after required checks pass.",
       "matchManagers": ["github-actions"],
       "matchDepNames": ["actions/**", "github/**"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
+      "automerge": true
     },
     {
-      "description": "Third-party actions (dtolnay, dorny, Swatinem, taiki-e, docker/*, googleapis, …): auto-merge `pin` (tag -> its current SHA, no code change) and `patch` only. `digest` updates — a SHA-pinned tag re-pointed to new code — are deliberately NOT auto-merged and fall through to a manual PR. Unlike a Docker sha256, action source is human-reviewable, and these publishers do not share GitHub's trust boundary, so a digest bump is reviewed before it runs with the workflow GITHUB_TOKEN. This is the standing enforcement of the project's GitHub-Actions SHA-pinning policy.",
+      "description": "Automerge third-party action patch and pin updates; require manual review when a pinned tag moves to a new digest.",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["patch", "pin"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
+      "automerge": true
     },
     {
-      "description": "Auto-merge patch updates for stable (v1.0.0+) cargo and npm dependencies. Pre-v1.0 (0.x.y) deps stay manual — SemVer isn't binding below 1.0 and Rust/npm 0.x patches can include behavioural changes",
+      "description": "Automerge stable cargo and npm patch updates; keep pre-1.0 updates manual.",
       "matchManagers": ["cargo", "npm"],
       "matchUpdateTypes": ["patch"],
       "matchCurrentVersion": "!/^0\\./",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
+      "automerge": true
     },
     {
-      "description": "Pin rand_core_06 cargo alias at v0.6 — the alias name explicitly documents the deliberate version pin (v0.6 API is required by a transitive crypto consumer). Any bump silently breaks the pin intent and gets closed manually (see PR #122). Revisit if the alias is removed from Cargo.toml",
+      "description": "Group compatible React packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "react"
+    },
+    {
+      "description": "Group compatible Tailwind CSS packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["tailwindcss", "@tailwindcss/vite"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "tailwindcss"
+    },
+    {
+      "description": "Group compatible Vitest packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["vitest", "@vitest/coverage-v8"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "vitest"
+    },
+    {
+      "description": "Group compatible TanStack Query packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@tanstack/react-query", "@tanstack/react-query-devtools"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "tanstack-query"
+    },
+    {
+      "description": "Group compatible commitlint packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@commitlint/cli", "@commitlint/config-conventional"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "commitlint"
+    },
+    {
+      "description": "Keep development and staging PostgreSQL image updates together.",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["postgres"],
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "groupName": "postgres-images"
+    },
+    {
+      "description": "Keep the SQLx library and migration CLI compatible.",
+      "matchDepNames": ["sqlx", "sqlx-cli"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "sqlx"
+    },
+    {
+      "description": "Group compatible Astro documentation packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["astro", "@astrojs/starlight", "starlight-openapi"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "astro-docs"
+    },
+    {
+      "description": "Ignore rand_core_06 because the alias intentionally targets the 0.6 API.",
       "matchManagers": ["cargo"],
       "matchDepNames": ["rand_core_06"],
       "enabled": false
     },
     {
-      "description": "vite-plus: one grouped PR for the setup-vp VP_VERSION pin and every npm token (the vite-plus devDependency, the vite alias, @voidzero-dev/*) so the ci.yml drift guard's lockstep holds. Placed last to win over the one-PR-per-dep rule for this dependency set.",
+      "description": "Keep vite-plus aliases and setup pins in lockstep.",
       "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**"],
       "groupName": "vite-plus"
     }
   ],
   "customManagers": [
     {
-      "description": "Rust-crate tools pinned inline via taiki-e/install-action `with: tool: <crate>@<ver>,<crate>@<ver>` syntax, plus the standalone cargo-deny pin in the audit job. install-action's manifest silently advances unpinned tools, so the project pins versions inline. Renovate's github-actions manager doesn't reach inside `with:` values, so without this manager those pins stay frozen. Tools are comma-joined in one `tool:` value, so the regex matches each `<crate>@<ver>` token by a hand-listed crate-name allowlist rather than anchoring on `tool:` — the anchor only ever preceded the first token and would leave later tools frozen. The allowlist keeps matches crate-scoped; sqlx-cli uses a different idiom — see the second manager.",
+      "description": "Track inline Rust tool versions that the GitHub Actions manager cannot detect.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
         "(?<depName>cargo-nextest|cargo-llvm-cov|cargo-deny|cargo-machete|cargo-mutants)@(?<currentValue>[0-9.]+)"
       ],
       "datasourceTemplate": "crate"
     },
     {
-      "description": "sqlx-cli is pinned via a job-level SQLX_CLI_VERSION env var rather than install-action's `tool:` syntax (PR #288 moved it because install-action has no sqlx-cli manifest and was falling through to a 2-minute cargo install — the env var is now the single source of truth referenced by both the actions/cache key and the cargo install fallback). The env-var form doesn't match the `tool:` regex, so it needs its own manager. depNameTemplate hard-codes the crate name because the env-var name alone isn't crate-shaped.",
+      "description": "Track SQLX_CLI_VERSION because it is not embedded in an install-action tool list.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": ["SQLX_CLI_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "sqlx-cli",
       "datasourceTemplate": "crate"
     },
     {
-      "description": "Curl-installed lint binaries (actionlint + gitleaks are Go, shellcheck + hadolint are Haskell) are pinned by a `<TOOL>_VERSION` env var plus a `<TOOL>_SHA256` checksum the install step verifies. install-action carries none of them, so they live as direct curl-tarball installs and would otherwise freeze silently (UNK-327 repo-hygiene). Each version line carries a `# renovate:` inline annotation naming the github-releases datasource + repo; this manager reads those annotations so Renovate raises a bump PR when a new upstream release ships. CAVEAT: Renovate updates the VERSION token only — it cannot recompute a release-tarball SHA256, so the bump PR will red-X on the `sha256sum -c` check until a reviewer pastes the new checksum from the upstream release. That visible-failure is the intended outcome: a stale pin is now a loud PR instead of silent drift.",
+      "description": "Track checksum-verified lint tools; version bumps require the corresponding checksum to be updated manually.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\w+_VERSION:\\s*\"(?<currentValue>[^\"]+)\""
       ]
     },
     {
-      "description": "trufflehog's pinned Docker-image tag lives in a `with: version:` value, not a `<TOOL>_VERSION` env var, so neither Renovate's github-actions manager (which manages `uses:` refs but not their `with:` inputs) nor the curl-tarball manager above sees it. Left unmanaged it freezes while the action SHA advances, drifting the two out of lockstep. The inline `# renovate:` annotation names the github-releases datasource; extractVersion strips the leading `v` because the action's `version:` input wants the bare image tag (3.95.6, not v3.95.6). Same caveat applies as the curl pins: a bump PR updates only this token, so a reviewer must move the action SHA in the same PR to keep them in lockstep.",
+      "description": "Track TruffleHog's image tag separately from the action digest; reviewers must update both in lockstep.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\""
       ]
