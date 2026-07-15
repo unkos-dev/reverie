@@ -33,7 +33,7 @@ env:
   # inputs Renovate never tracked. engines.node and the Dockerfile base image
   # stay separately Renovate-managed.
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: "24.16.0"
+  NODE_VERSION: "24.18.0"
 
 jobs:
   # Detect which areas of the repo changed so downstream jobs can skip when
