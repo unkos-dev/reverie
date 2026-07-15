@@ -75,8 +75,8 @@
         "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated docs/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
       },
       {
-        "path": "adr/2026-06-05-accessibility-review-process.md",
-        "description": "Accessibility review process and the WCAG 2.2 Level AA target for the frontend. Treat a11y findings on interactive UI (semantics, ARIA, focus, keyboard) as load-bearing, not nice-to-have."
+        "path": "adr/2026-07-13-a11y-gate-on-playwright.md",
+        "description": "Accessibility gate and render-verification on the Playwright stack, plus the WCAG 2.2 Level AA target for the frontend. Treat a11y findings on interactive UI (semantics, ARIA, focus, keyboard) as load-bearing, not nice-to-have."
       },
       {
         "path": "docs/astro.config.mjs",

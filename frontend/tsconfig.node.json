@@ -6,6 +6,9 @@
     "module": "esnext",
     "types": ["node"],
     "skipLibCheck": true,
+    // The a11y spec imports the JSDoc-typed allowlist.mjs; allowJs lets the
+    // type-aware lint read those types directly (single source of truth).
+    "allowJs": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -20,5 +23,10 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "vite-plugins/**/*.ts"]
+  "include": [
+    "vite.config.ts",
+    "playwright.config.ts",
+    "vite-plugins/**/*.ts",
+    "scripts/a11y/*.spec.ts"
+  ]
 }

@@ -20,7 +20,8 @@
 
 <!-- Required for UI-touching PRs. Delete this whole section for backend-only,
 docs-only, or other non-UI changes. Process:
-adr/2026-06-05-accessibility-review-process.md. -->
+adr/superseded/2026-06-05-accessibility-review-process.md (gate mechanism
+superseded by adr/2026-07-13-a11y-gate-on-playwright.md). -->
 
 - [ ] Keyboard navigation reaches every interactive element.
 - [ ] Focus is visible on every interactive element (gold 3 px ring per DESIGN.md).

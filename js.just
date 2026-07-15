@@ -84,34 +84,13 @@ fmt-check:
 [group('js')]
 lint: oxlint stylelint markdownlint
 
-# Boots `npm run dev`, waits for readiness, then scans. CI-shaped: not part of
-# check (needs a server, and port 5173 collides with the always-on dev server).
-#
-# WCAG axe-core scan against the dev-only design showcase.
+# WCAG axe-core scan against the dev-only design showcase. Playwright's
+# webServer owns the dev-server lifecycle (start, wait, teardown), and locally
+# reuses an already-running dev server on port 5173, so no hand-rolled server
+# block is needed here. Not part of `check`: it boots a browser and a server.
 [group('js')]
 [working-directory('frontend')]
 a11y:
-    #!/usr/bin/env bash
-    set -ueo pipefail
-    # mktemp avoids a predictable /tmp path (no symlink-overwrite surface); setsid +
-    # process-group kill tears down the vite child too (not just the npm wrapper), so
-    # a re-run does not collide on port 5173 with a leaked server.
-    log="$(mktemp)"
-    setsid npm run dev > "$log" 2>&1 &
-    DEV_PID=$!
-    trap 'kill -- -"$DEV_PID" 2>/dev/null || true; rm -f "$log"' EXIT
-    for i in $(seq 1 60); do
-        if curl -sf http://localhost:5173/design/system > /dev/null; then
-            echo "dev server ready"
-            break
-        fi
-        if [ "$i" -eq 60 ]; then
-            echo "dev server did not become ready in 60s" >&2
-            cat "$log" >&2
-            exit 1
-        fi
-        sleep 1
-    done
     npm run a11y
 
 # Frontend unit tests.
