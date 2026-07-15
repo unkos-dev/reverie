@@ -911,8 +911,8 @@ jobs:
         uses: ./.github/actions/install-pinned-tool
         with:
           # renovate: datasource=github-releases depName=koalaman/shellcheck extractVersion=^v(?<version>.+)$
-          version: "0.9.0"
-          sha256: "700324c6dd0ebea0117591c6cc9d7350d9c7c5c287acbad7630fa17b1d4d9e2f"
+          version: "0.11.0"
+          sha256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
           url: "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz"
           binary: shellcheck
           archive-member: shellcheck-v{version}/shellcheck
