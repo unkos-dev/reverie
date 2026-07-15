@@ -49,7 +49,7 @@ stylelint *files:
 # markdownlint over tracked Markdown at the repo root.
 [group('js')]
 [positional-arguments]
-markdownlint *files:
+markdownlint *files: markdownlint-selftest
     #!/usr/bin/env bash
     set -ueo pipefail
     if [ "$#" -gt 0 ]; then
@@ -57,6 +57,11 @@ markdownlint *files:
     else
         git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r npx --no-install markdownlint-cli2
     fi
+
+# Exercise YAML loading through the installed Markdownlint CLI before linting the tree.
+[group('js')]
+markdownlint-selftest:
+    scripts/markdownlint-selftest.sh
 
 # Advisory (CI runs it continue-on-error), so deliberately not in `lint`/`check`.
 #
