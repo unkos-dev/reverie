@@ -10,7 +10,7 @@
 # `:main` images with `GLIBC_2.38 not found` against a bookworm runner. Both
 # stages share the same codename so the dynamic linker can resolve every
 # symbol the release binary requests.
-FROM rust:1-slim-trixie@sha256:14c4fe50ea427dc42381a1a09a9a839c1d2346a2e508cd491bf02c659dbc0ed7 AS chef
+FROM rust:1-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS chef
 RUN cargo install cargo-chef@0.1.77 --locked
 WORKDIR /build
 
