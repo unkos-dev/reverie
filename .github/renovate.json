@@ -88,7 +88,9 @@
     {
       "description": "Rust-crate tools pinned inline via taiki-e/install-action `with: tool: <crate>@<ver>,<crate>@<ver>` syntax, plus the standalone cargo-deny pin in the audit job. install-action's manifest silently advances unpinned tools, so the project pins versions inline. Renovate's github-actions manager doesn't reach inside `with:` values, so without this manager those pins stay frozen. Tools are comma-joined in one `tool:` value, so the regex matches each `<crate>@<ver>` token by a hand-listed crate-name allowlist rather than anchoring on `tool:` — the anchor only ever preceded the first token and would leave later tools frozen. The allowlist keeps matches crate-scoped; sqlx-cli uses a different idiom — see the second manager.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
       "matchStrings": [
         "(?<depName>cargo-nextest|cargo-llvm-cov|cargo-deny|cargo-machete|cargo-mutants)@(?<currentValue>[0-9.]+)"
       ],
@@ -97,7 +99,9 @@
     {
       "description": "sqlx-cli is pinned via a job-level SQLX_CLI_VERSION env var rather than install-action's `tool:` syntax (PR #288 moved it because install-action has no sqlx-cli manifest and was falling through to a 2-minute cargo install — the env var is now the single source of truth referenced by both the actions/cache key and the cargo install fallback). The env-var form doesn't match the `tool:` regex, so it needs its own manager. depNameTemplate hard-codes the crate name because the env-var name alone isn't crate-shaped.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
       "matchStrings": ["SQLX_CLI_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""],
       "depNameTemplate": "sqlx-cli",
       "datasourceTemplate": "crate"
@@ -105,7 +109,9 @@
     {
       "description": "Curl-installed lint binaries (actionlint + gitleaks are Go, shellcheck + hadolint are Haskell) are pinned by a `<TOOL>_VERSION` env var plus a `<TOOL>_SHA256` checksum the install step verifies. install-action carries none of them, so they live as direct curl-tarball installs and would otherwise freeze silently (UNK-327 repo-hygiene). Each version line carries a `# renovate:` inline annotation naming the github-releases datasource + repo; this manager reads those annotations so Renovate raises a bump PR when a new upstream release ships. CAVEAT: Renovate updates the VERSION token only — it cannot recompute a release-tarball SHA256, so the bump PR will red-X on the `sha256sum -c` check until a reviewer pastes the new checksum from the upstream release. That visible-failure is the intended outcome: a stale pin is now a loud PR instead of silent drift.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\w+_VERSION:\\s*\"(?<currentValue>[^\"]+)\""
       ]
@@ -113,7 +119,9 @@
     {
       "description": "trufflehog's pinned Docker-image tag lives in a `with: version:` value, not a `<TOOL>_VERSION` env var, so neither Renovate's github-actions manager (which manages `uses:` refs but not their `with:` inputs) nor the curl-tarball manager above sees it. Left unmanaged it freezes while the action SHA advances, drifting the two out of lockstep. The inline `# renovate:` annotation names the github-releases datasource; extractVersion strips the leading `v` because the action's `version:` input wants the bare image tag (3.95.6, not v3.95.6). Same caveat applies as the curl pins: a bump PR updates only this token, so a reviewer must move the action SHA in the same PR to keep them in lockstep.",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\""
       ]
