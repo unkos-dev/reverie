@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ALLOWLIST, filterAllowed, urlMatches, verdict } from "../allowlist.mjs";
+import { ALLOWLIST, filterAllowed, parseTargets, urlMatches, verdict } from "../allowlist.mjs";
 
 // Real axe output captured against /design/system (full WCAG 2.2 AA tag set).
 // Ground truth for the allowlist: 1 color-contrast violation, 4 nodes —
@@ -138,6 +138,47 @@ describe("a11y verdict — liveness gate", () => {
     const result = verdict({ violations: REAL_VIOLATIONS, scanOk: true });
     expect(result.remaining).toHaveLength(1);
     expect(result.remaining[0].nodes[0].html).toContain('data-slot="badge"');
+  });
+});
+
+describe("a11y parseTargets — env contract + fail-closed target parsing", () => {
+  it("defaults to the design showcase when the var is unset", () => {
+    expect(parseTargets(undefined)).toEqual(["/design/system"]);
+  });
+
+  it("splits comma-separated paths, trims whitespace, drops empties", () => {
+    expect(parseTargets("/design/system, /design/hero ,")).toEqual([
+      "/design/system",
+      "/design/hero",
+    ]);
+  });
+
+  it("throws when the var is set but empty (would register zero tests)", () => {
+    expect(() => parseTargets("")).toThrow(/zero targets/);
+  });
+
+  it("throws when the var is all whitespace/commas (would register zero tests)", () => {
+    expect(() => parseTargets("  , ,  ")).toThrow(/zero targets/);
+  });
+
+  it("throws on an absolute http URL (escapes the configured baseURL)", () => {
+    expect(() => parseTargets("http://example.com/design/system")).toThrow(/root-relative/);
+  });
+
+  it("throws on an absolute https URL", () => {
+    expect(() => parseTargets("https://evil.test/")).toThrow(/root-relative/);
+  });
+
+  it("throws on a protocol-relative target (//host escapes the origin)", () => {
+    expect(() => parseTargets("//evil.test/design")).toThrow(/root-relative/);
+  });
+
+  it("throws on a non-root path missing the leading slash", () => {
+    expect(() => parseTargets("design/system")).toThrow(/root-relative/);
+  });
+
+  it("rejects the whole list when any one target is off-origin", () => {
+    expect(() => parseTargets("/design/system,http://evil.test")).toThrow(/root-relative/);
   });
 });
 
