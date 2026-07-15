@@ -616,7 +616,7 @@ jobs:
           # Pinned so a new upstream release cannot add findings and break
           # the gate on an unrelated PR; matches the version the baseline
           # was triaged against.
-          version: "1.25.2"
+          version: "1.27.0"
 
   # IaC misconfiguration scan over the Dockerfile and compose files: the
   # security class hadolint's instruction lint doesn't cover — root-user
