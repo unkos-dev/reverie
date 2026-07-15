@@ -38,14 +38,14 @@ function bookDetail(id: string): Record<string, unknown> {
   };
 }
 
-import type { LoaderFunctionArgs } from "react-router";
+import { RouterContextProvider, type LoaderFunctionArgs } from "react-router";
 
 function args(id: string | undefined): LoaderFunctionArgs {
   const url = "http://localhost/b/x";
   return {
     request: new Request(url),
     params: id === undefined ? {} : { id },
-    context: undefined,
+    context: new RouterContextProvider(),
     url: new URL(url),
     pattern: "/b/:id",
   };

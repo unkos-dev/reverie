@@ -13,13 +13,13 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
-import type { LoaderFunctionArgs } from "react-router";
+import { RouterContextProvider, type LoaderFunctionArgs } from "react-router";
 
 function loaderArgs(url: string): LoaderFunctionArgs {
   return {
     request: new Request(url),
     params: {},
-    context: undefined,
+    context: new RouterContextProvider(),
     url: new URL(url),
     pattern: "/library",
   };

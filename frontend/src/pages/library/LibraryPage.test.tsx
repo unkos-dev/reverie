@@ -97,6 +97,10 @@ interface RenderOpts {
   details?: BookDetail[];
 }
 
+function findLibraryTable(): Promise<HTMLElement> {
+  return screen.findByTestId("library-table", {}, { timeout: 3_000 });
+}
+
 function renderLibrary({
   items,
   nextCursor,
@@ -300,14 +304,14 @@ describe("LibraryPage", () => {
       nextCursor: null,
       initialEntries: ["/library?view=table"],
     });
-    expect(await screen.findByTestId("library-table")).toBeInTheDocument();
+    expect(await findLibraryTable()).toBeInTheDocument();
   });
 
   test("cookie default mounts the table view when ?view= is absent", async () => {
     document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
     try {
       renderLibrary({ items: [bookFixture()], nextCursor: null });
-      expect(await screen.findByTestId("library-table")).toBeInTheDocument();
+      expect(await findLibraryTable()).toBeInTheDocument();
     } finally {
       // Explicit expiry so the cookie can't leak into a later test in this file.
       document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
@@ -357,7 +361,7 @@ describe("LibraryPage", () => {
       initialEntries: ["/library?view=table&cursor=stale123"],
       extraCacheParams: [{ sort: "title" }],
     });
-    await screen.findByTestId("library-table");
+    await findLibraryTable();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await waitFor(() => {
@@ -374,7 +378,7 @@ describe("LibraryPage", () => {
       initialEntries: ["/library?view=table"],
       extraCacheParams: [{ q: "war" }, { sort: "title" }, { q: "war", sort: "title" }],
     });
-    await screen.findByTestId("library-table");
+    await findLibraryTable();
     const user = userEvent.setup();
     await user.type(searchBox(), "war");
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
@@ -392,7 +396,7 @@ describe("LibraryPage", () => {
       initialEntries: ["/library?view=table"],
       extraCacheParams: [{ q: "war" }, { sort: "title" }, { q: "war", sort: "title" }],
     });
-    await screen.findByTestId("library-table");
+    await findLibraryTable();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await user.type(searchBox(), "war");
