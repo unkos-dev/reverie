@@ -4,7 +4,8 @@ Reverie applies these security rules to implementation work in the areas they
 cover. The project imports them verbatim from an external source under CC BY
 4.0. Agents must follow the applicable rules when work touches user input,
 authentication, authorization, sessions, secrets, file I/O, XML parsing,
-outbound HTTP, response headers, or supply-chain controls.
+serialization, logging, client-side web security, outbound HTTP, response
+headers, or supply-chain controls.
 
 These files complement (do not replace) the existing security tooling in this
 repo: the `security-reviewer` agent, the `security-review` skill, the

@@ -14,13 +14,13 @@ These are absolute invariants for the Reverie repository.
 <git_and_linear_workflow>
 
 - **Branching:** Branch from `main`. Branch names MUST start with `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, or `perf/`, matching the change type. Do not use agent-specific prefixes. Verify the branch name before the first push.
-- **Commits:** Every commit subject MUST follow Conventional Commits (`<type>(<scope>): <description>`). Explain the _why_, not the _what_.
+- **Commits and PR titles:** Every commit subject and pull request title MUST follow Conventional Commits (`<type>(<scope>): <description>`). Pull request titles become squash-merge subjects. Explain the _why_, not the _what_.
 - **Linear Integration:** Treat work as Linear-tracked only when the user says so or the task or current branch already identifies an `UNK-XXX` issue. For tracked work, include `Closes UNK-XXX` in the PR body so the active issue does not remain open. For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
   </git_and_linear_workflow>
 
 <security_reference>
 
-- **CodeGuard:** Implementation work that touches authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, outbound HTTP, response headers, or supply-chain controls MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`. Those files come from an upstream third party; do not edit them or assess whether the change should amend them. If an applicable rule conflicts with required Reverie behavior, STOP and obtain the user's approval for a deviation. Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`. Work outside the listed areas requires no CodeGuard review or task-summary statement.
+- **CodeGuard:** Implementation work that touches authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, or supply-chain controls MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`. Those files come from an upstream third party; do not edit them or assess whether the change should amend them. If an applicable rule conflicts with required Reverie behavior, STOP and obtain the user's approval for a deviation. Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`. Work outside the listed areas requires no CodeGuard review or task-summary statement.
   </security_reference>
 
 <design_authority>
