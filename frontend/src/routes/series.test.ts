@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "react-router";
+import { RouterContextProvider, type LoaderFunctionArgs } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { queryClient } from "@/lib/query/client";
@@ -28,7 +28,7 @@ function args(id: string | undefined): LoaderFunctionArgs {
   return {
     request: new Request(url),
     params: id === undefined ? {} : { id },
-    context: undefined,
+    context: new RouterContextProvider(),
     url: new URL(url),
     pattern: "/series/:id",
   };
