@@ -7,7 +7,6 @@
     "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Australia/Perth",
-  "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
   "dependencyDashboardTitle": "Dependency dashboard: Renovate",
   "labels": ["dependencies"],
   "prHourlyLimit": 4,
