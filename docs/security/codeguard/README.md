@@ -1,9 +1,11 @@
 # Reverie Security Reference
 
-Canonical security rules for reverie-adjacent agent work. Imported verbatim from
-an external source under CC BY 4.0 — consult the relevant file before completing
-work that touches user input, authentication, authorization, sessions, secrets,
-file I/O, XML parsing, outbound HTTP, or response headers.
+Reverie applies these security rules to implementation work in the areas they
+cover. The project imports them verbatim from an external source under CC BY
+4.0. Agents must follow the applicable rules when work touches user input,
+authentication, authorization, sessions, secrets, file I/O, XML parsing,
+serialization, logging, client-side web security, outbound HTTP, response
+headers, or supply-chain controls.
 
 These files complement (do not replace) the existing security tooling in this
 repo: the `security-reviewer` agent, the `security-review` skill, the
@@ -17,10 +19,10 @@ tools critique written code; these rules guide the initial draft.
 - **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — attribution in each file's top-comment provenance header
 - **Imported:** 2026-04-24
 
-Reverie reproduces these files unmodified below the provenance header. No edits.
-If a rule conflicts with reverie's stated position (see reverie's `CLAUDE.md`
-Hard Rules), reverie's rule wins — document the deviation in this README's
-"Deviations" section rather than editing the imported file.
+Files named `codeguard-*.md` belong to the upstream source. Do not edit them.
+Refresh them through the documented import process only when the user requests
+an upstream refresh. This README belongs to Reverie and records approved
+project-specific deviations.
 
 ## File manifest
 
@@ -49,10 +51,14 @@ Hard Rules), reverie's rule wins — document the deviation in this README's
 
 ## How agents use this
 
-When Hard Rule 6 (security scrutiny) fires on a change, open the file matching
-the category you're touching. Apply the relevant rules. Answer "will this stand
-up to a security review?" in the task summary with a reference to the specific
-rule sections consulted.
+Open the imported file that covers the code you are changing and follow every
+applicable rule. Do not assess whether implementation work should amend an
+imported rule file.
+
+If a rule conflicts with required Reverie behavior, stop and ask the user to
+approve a deviation. After approval, record the deviation in this README with
+its rationale and compensating controls. Do not proceed on an unapproved
+deviation. CodeGuard requires no routine task-summary statement.
 
 For categories not covered here (e.g., mobile, k8s, C-language safety), use the
 external canon pathway: WebFetch from the upstream repo at the pinned commit.
@@ -126,7 +132,7 @@ during a natural reading session.
 
 **Compensating controls:** Sessions regenerate on authentication; logout
 invalidates the server-side session immediately. Admin-equivalent operations
-(if introduced) must set a stricter session context per Hard Rule 6.
+(if introduced) must use a stricter session context.
 
 ### 4. EPUB ingestion processes ZIP archives
 
