@@ -65,7 +65,7 @@ jobs:
       # Internal links are deterministic and under our control, so a broken
       # one fails the build; --offline means this gating pass cannot flake.
       - name: Check internal links (gating)
-        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: "--offline --no-progress --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
           fail: true
@@ -78,7 +78,7 @@ jobs:
         if: inputs.check-external-links
         id: external-links
         continue-on-error: true
-        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: "--no-progress --scheme http --scheme https --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
           fail: true
