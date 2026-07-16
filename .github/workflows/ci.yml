@@ -800,7 +800,7 @@ jobs:
         uses: ./.github/actions/install-pinned-tool
         with:
           # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.+)$
-          version: "1.23.0"
+          version: "1.25.0"
           sha256: "1f06548af379ab6080698a609612890ffad2d92dc2172f1e97d38d48096d5ef8"
           url: "https://github.com/opengrep/opengrep/releases/download/v{version}/opengrep_manylinux_x86"
           binary: opengrep
