@@ -81,13 +81,6 @@
       "groupName": "tailwindcss"
     },
     {
-      "description": "Group compatible Vitest packages.",
-      "matchManagers": ["npm"],
-      "matchPackageNames": ["vitest", "@vitest/coverage-v8"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "vitest"
-    },
-    {
       "description": "Group compatible TanStack Query packages.",
       "matchManagers": ["npm"],
       "matchPackageNames": ["@tanstack/react-query", "@tanstack/react-query-devtools"],
@@ -128,8 +121,8 @@
       "enabled": false
     },
     {
-      "description": "Keep vite-plus aliases and setup pins in lockstep.",
-      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**"],
+      "description": "Keep vite-plus and vitest in lockstep: vite-plus bundles the @vitest/* family with an exact vitest peer dependency, so a standalone vitest or vite-plus bump fails lockfile resolution.",
+      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "vitest", "@vitest/**"],
       "groupName": "vite-plus"
     }
   ],
