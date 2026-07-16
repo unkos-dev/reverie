@@ -517,7 +517,7 @@ jobs:
           persist-credentials: false
       - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
-          tool: cargo-deny@0.19.8
+          tool: cargo-deny@0.20.2
           # Fail closed: the default falls back to
           # cargo-binstall/cargo-install when no prebuilt is available,
           # silently changing the install source of a security scanner.
