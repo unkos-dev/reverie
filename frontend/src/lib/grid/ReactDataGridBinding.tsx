@@ -260,12 +260,13 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
    * mid-edit-flow.
    */
   function activationRow(
-    args: { column: { key: string }; row: R },
+    args: { column: { key: string } | undefined; row: R | undefined },
     target: EventTarget | null,
   ): R | null {
     if (onRowActivate === undefined) return null;
-    // Header/summary positions carry no row despite the SELECT-mode type.
-    if (args.row == null) return null;
+    // Header, summary, and between-cell ACTIVE positions report no row or
+    // column; activation applies only to a real body cell.
+    if (args.row == null || args.column === undefined) return null;
     if (args.column.key === SelectColumn.key) return null;
     if (isInteractiveTarget(target)) return null;
     if (isEditorColumn(args.column.key)) return null;
@@ -321,9 +322,10 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
           rowKeyGetter={rowKey}
           sortColumns={sortColumns}
           onSortColumnsChange={handleSortColumnsChange}
-          onSelectedCellChange={({ row, rowIdx, column }) => {
-            // Header-row selection reports no row object; only cell focus does.
-            if (row === undefined) return;
+          onActivePositionChange={({ row, rowIdx, column }) => {
+            // Header and summary rows, and row-level (non-cell) positions,
+            // report no row or column; cell focus needs both.
+            if (row === undefined || column === undefined) return;
             onCellFocus({ row, rowIdx, columnKey: column.key });
           }}
           onRowsChange={(nextRows, { indexes, column }) => {
