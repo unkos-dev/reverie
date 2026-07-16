@@ -169,12 +169,12 @@ jobs:
           persist-credentials: false
 
       - name: TruffleHog full-history scan
-        uses: trufflesecurity/trufflehog@30d5bb91af1a771378349dbbb0c82129392acf70 # v3.95.6
+        uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55 # v3.95.9
         with:
           # Pin the image (default is :latest); Renovate keeps it in
           # lockstep with the action SHA via the annotation below.
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
-          version: "3.95.6"
+          version: "3.95.9"
           # verified-only: example/test Postgres DSNs error verification and
           # would red the cron daily as noise; a real live leak still
           # verifies. No base:/head: so the schedule run scans full history.
