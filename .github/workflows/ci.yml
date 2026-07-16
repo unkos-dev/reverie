@@ -640,8 +640,8 @@ jobs:
         uses: ./.github/actions/install-pinned-tool
         with:
           # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
-          version: "0.71.2"
-          sha256: "0510e71e2fd39bf863856d499c8dc19feb4e7336546394c502a8f5cc7ab27460"
+          version: "0.72.0"
+          sha256: "bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea"
           url: "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_Linux-64bit.tar.gz"
           binary: trivy
           archive-member: trivy
