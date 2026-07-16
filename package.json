@@ -30,7 +30,7 @@
     "vite-plus": "0.2.1"
   },
   "overrides": {
-    "markdown-it": "14.2.0",
+    "markdown-it": "14.3.0",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.1",
     "vitest": "4.1.9",
     "hono": "^4.12.25",
