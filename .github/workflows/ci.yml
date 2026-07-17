@@ -165,7 +165,8 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:18
+        # Same digest compose.dev.yml pins, for dev/CI postgres parity.
+        image: postgres:18@sha256:c2d42a104eb6b37b286a2d9c5cf83f349de4d6516d513d00a2bd9610e2c2e5e4
         env:
           POSTGRES_USER: reverie
           POSTGRES_PASSWORD: reverie
