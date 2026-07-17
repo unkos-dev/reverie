@@ -55,6 +55,16 @@ vale-scope-test:
 greptile-config:
     scripts/validate-greptile-config.sh
 
+# Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.
+[group('infra')]
+compose-dev-invariants:
+    scripts/compose-dev-invariants.sh
+
+# Overridden DB credentials never echo into recipe logs (dry-run assertion).
+[group('infra')]
+recipe-secret-echo-test:
+    scripts/recipe-secret-echo-test.sh
+
 # lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation is
 # cheap and offline, so it joins the lint aggregate.
 [group('infra')]
@@ -84,7 +94,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest greptile-config lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

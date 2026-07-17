@@ -151,5 +151,4 @@ no translation pass.
 - [Recovery-PIN single-active invariant is app-enforced, not DB-enforced](2026-06-27-single-active-recovery-pin.md): adopted from PR #511 review; rotate() supersedes in-tx but the schema lacks a partial unique index; lifts when the schema gains that index with race handling and a concurrency test
 - [no-plan-refs.sh misses subdirectories and capitalized labels](2026-06-26-no-plan-refs-gate-coverage-gaps.md): adopted from PR #511 review; the gate's scope glob doesn't recurse and its pattern is lowercase-only; lifts when it recurses + matches capitalized forms with a test
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md): adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
-- [Dev postgres host port 5433](2026-05-05-dev-postgres-port-5433.md): adopted because Coder workspace's shared-postgres on 5432; lifts on the postgres port revert task
 - [chrono in OIDC test mock](2026-05-05-chrono-in-oidc-mock.md): adopted because openidconnect v4 forces chrono types in test setup; lifts on dep-unblock or wrapper

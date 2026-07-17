@@ -563,8 +563,8 @@ mod tests {
 
     // Extractor integration: the full CurrentUser resolution path through a
     // real router + real database, not just resolve_jwt/resolve_jwt_scopes in
-    // isolation. These are #[sqlx::test] (DB-backed) and ride CI; see
-    // CLAUDE.local.md for why they don't run in this workspace.
+    // isolation. These are #[sqlx::test] (DB-backed) and need the local dev
+    // Postgres (`just db-up`).
 
     use axum::http::StatusCode;
     use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};

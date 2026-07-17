@@ -165,7 +165,8 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:18
+        # Same digest compose.dev.yml pins, for dev/CI postgres parity.
+        image: postgres:18@sha256:32ca0af8e77bfb8c6610c488e4691f83f972a3e9e64d3b02facf3ab111ad5500
         env:
           POSTGRES_USER: reverie
           POSTGRES_PASSWORD: reverie
@@ -338,7 +339,7 @@ jobs:
       # dtolnay/rust-toolchain reads the toolchain from the git ref name,
       # so a SHA pin requires naming the channel explicitly via
       # `toolchain:`.
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable
           # llvm-tools-preview ships the llvm-profdata/llvm-cov binaries
@@ -488,7 +489,7 @@ jobs:
 
       # The pinned SHA is the action's `stable` tag; the `toolchain:` input
       # overrides which channel is actually installed.
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
 
@@ -994,6 +995,15 @@ jobs:
       # it never touches greptile.json.
       - name: Validate greptile.json
         run: just infra::greptile-config
+
+      # Dev-DB compose invariants (loopback bind, digest pin, parent volume
+      # mount) and the recipe secret-echo guard: overridden DB credentials
+      # must never print into echoed recipe lines.
+      - name: Compose dev invariants
+        run: just infra::compose-dev-invariants
+
+      - name: Recipe secret-echo guard
+        run: just infra::recipe-secret-echo-test
 
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate

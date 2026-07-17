@@ -48,7 +48,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
 <local_environment>
 
-- **Database Reachability:** Local dev DB runs on port 5433. You must use `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev` to run migrations. See `./README.md` for full connection tables and role details.
+- **Database Reachability:** Local dev DB runs on `localhost:5432` (loopback-only) via `docker/compose.dev.yml`; start it with `just db-up`. You must use `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev cargo run -- migrate` (or `just db-migrate`) to run migrations. See `./README.md` for full connection tables and role details.
   </local_environment>
 
 <testing_standards>

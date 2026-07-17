@@ -1,7 +1,15 @@
 # Rust plane: backend format/lint/test/build. All recipes run from backend/.
 # Backend tools are system-PATH (image-baked toolchain), so bare invocation is
-# correct here (unlike the node-local JS plane). Recipes marked CI/DB need the
-# dev Postgres and cannot run in the local workspace (no local DB); they ride CI.
+# correct here (unlike the node-local JS plane). Recipes marked DB need the
+# local dev Postgres up (`just db-up`).
+#
+# DB recipes inject the schema-owner DSN inline via shell parameter expansion,
+# never a just variable: just echoes recipe lines after {{var}} interpolation,
+# so a just-variable DSN would print a credential-bearing override into
+# terminal/CI logs, while `${REVERIE_DEV_DB_URL:-…}` stays unexpanded in the
+# echo. The owner DSN is injected explicitly (mirroring the CI job env)
+# because sqlx::test needs a superuser connection to mint per-test databases,
+# and a developer `.env` carries the reverie_app runtime DSN instead.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set working-directory := 'backend'
@@ -33,24 +41,25 @@ doc-lint:
 drift:
     SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref
 
-# Needs Postgres; not runnable in the local workspace (no local DB) and rides CI.
-#
-# CI/DB: full test suite under coverage instrumentation.
+# DB: full test suite, fast local loop (no coverage; see `cov`).
 [group('rust')]
 test:
-    cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked
 
-# CI/DB: doctests across the workspace. Needs Postgres; rides CI.
+# DB: full test suite under coverage instrumentation.
+[group('rust')]
+cov:
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+
+# DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    cargo test --doc --workspace
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
 
-# Needs Postgres; rides CI.
-#
-# CI/DB: sqlx query-cache freshness against the live schema.
+# DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
-    cargo sqlx prepare --check -- --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare --check -- --tests
 
 # Compile the workspace.
 [group('rust')]
@@ -61,7 +70,8 @@ build:
 [group('rust')]
 lint: clippy doc-lint
 
-# DB-backed recipes (test/doctests/sqlx-check) are excluded; they ride CI.
+# DB-backed recipes (test/doctests/sqlx-check) are excluded from the offline
+# gate; run them with the dev DB up (`just db-up`).
 #
 # Locally-runnable backend gate: format check, clippy, doc-lint, drift.
 [group('rust')]
