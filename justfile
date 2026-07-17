@@ -37,13 +37,39 @@ lint: js::lint rust::lint infra::lint
 [group('aggregate')]
 fmt: js::fmt rust::fmt
 
-# Backend tests are DB-backed (no local DB), so they ride CI via rust::test and
-# rust::doctests rather than this aggregate.
+# Backend tests are DB-backed: bring the dev DB up first (`just db-up`).
+# Doctests stay out of the aggregate (slow; CI runs them).
 #
 # Run every locally-runnable unit test.
 [group('aggregate')]
-test: js::test
+test: js::test rust::test
 
 # Build every shippable artifact.
 [group('aggregate')]
 build: js::build rust::build docs::build
+
+# Roles seed from docker/init-roles.sql on first init only.
+#
+# Start (or create) the local dev Postgres.
+[group('db')]
+db-up:
+    docker compose -f docker/compose.dev.yml up -d --wait
+
+# Stop the local dev Postgres; the data volume survives.
+[group('db')]
+db-down:
+    docker compose -f docker/compose.dev.yml down
+
+# Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.
+[group('db')]
+db-reset:
+    docker compose -f docker/compose.dev.yml down -v
+    docker compose -f docker/compose.dev.yml up -d --wait
+
+# The DSN uses shell parameter expansion (not a just variable) so an
+# overridden credential never echoes into logs.
+#
+# Apply pending migrations with the dedicated migrator identity.
+[group('db')]
+db-migrate:
+    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev}" cargo run -- migrate

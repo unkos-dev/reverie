@@ -4,9 +4,11 @@ This directory contains the Rust Axum backend.
 
 ## Development Database
 
-Database tests run in CI. The CI pipeline provisions a Postgres 18 container, seeds roles using `docker/init-roles.sql`, and provides a connection string. Run database tests locally only when your shell can reach a provisioning-capable Postgres cluster. If you see `failed to connect to setup test database: PoolTimedOut`, your test runner cannot reach the cluster. Fix the network route or push your code and let CI run the tests.
+The development database is a local Docker Postgres cluster defined in `docker/compose.dev.yml`. Start it with `just db-up` (or `docker compose -f docker/compose.dev.yml up -d --wait` from the repository root). The cluster binds to `127.0.0.1:5432` only, keeping the trivially-credentialed dev cluster off the LAN. Roles seed from `docker/init-roles.sql` on first init. The cluster is a fresh install: roles and schema build from zero, with no data imports from any prior environment.
 
-Run `docker compose -f docker/compose.dev.yml up -d` from the repository root to start a local development cluster on port 5433. This cluster requires a local Docker daemon. The published port binds on the daemon host. If you use a remote Docker daemon, `localhost:5433` will fail.
+The local loop: `just db-up`, then `just db-migrate` to apply migrations, then `just rust::test` / `just rust::doctests` / `just rust::sqlx-check`. Those recipes inject the schema-owner DSN (`postgres://reverie:reverie@localhost:5432/reverie_dev`); bare `cargo` invocations must set `DATABASE_URL` to it themselves.
+
+The `#[sqlx::test]` macro creates a fresh database per test, which requires a superuser connection; the compose bootstrap role `reverie` qualifies. Running tests with the `reverie_app` DSN from `.env` fails per-test with a permission error. A `failed to connect to setup test database: PoolTimedOut` error means the dev cluster is not running; start it with `just db-up`. CI runs the same commands against its own Postgres service container.
 
 ### Roles
 
@@ -14,17 +16,17 @@ The `docker/init-roles.sql` script creates these roles when the cluster starts:
 
 | Role                | Connection                                                                  | Purpose                                                   |
 | ------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `reverie`           | `postgres://reverie:reverie@localhost:5433/reverie_dev`                     | Bootstraps the cluster. Do not use for application logic. |
-| `reverie_migrator`  | `postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev`   | Runs migrations. Owns schema objects.                     |
-| `reverie_app`       | `postgres://reverie_app:reverie_app@localhost:5433/reverie_dev`             | Serves web traffic. Obeys RLS policies.                   |
-| `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5433/reverie_dev` | Runs background pipelines. Obeys RLS policies.            |
-| `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5433/reverie_dev`   | Queries data for debugging. SELECT only.                  |
+| `reverie`           | `postgres://reverie:reverie@localhost:5432/reverie_dev`                     | Bootstraps the cluster. Do not use for application logic. |
+| `reverie_migrator`  | `postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev`   | Runs migrations. Owns schema objects.                     |
+| `reverie_app`       | `postgres://reverie_app:reverie_app@localhost:5432/reverie_dev`             | Serves web traffic. Obeys RLS policies.                   |
+| `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5432/reverie_dev` | Runs background pipelines. Obeys RLS policies.            |
+| `reverie_readonly`  | `postgres://reverie_readonly:reverie_readonly@localhost:5432/reverie_dev`   | Queries data for debugging. SELECT only.                  |
 
 The `tower_sessions` schema bypasses RLS. The session id resolves user identity. Role grants control access. The `reverie_app` role receives DML access, `reverie_readonly` receives SELECT, and `reverie_ingestion` receives no access.
 
 ### Migrations
 
-The `reverie_migrator` role executes migrations out of band. Set `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5433/reverie_dev` and run `cargo run -- migrate`. The application process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the built-in sqlx migrator for tests.
+The `reverie_migrator` role executes migrations out of band. Set `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev` and run `cargo run -- migrate`. The application process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the built-in sqlx migrator for tests.
 
 Operator-facing `MigrationError` modes:
 
@@ -47,11 +49,11 @@ Operator-facing `MigrationError` modes:
 The Postgres 18 upgrade changed the volume mount from `pgdata:/var/lib/postgresql/data` to `pgdata:/var/lib/postgresql`. You must drop existing development volumes:
 
 ```bash
-docker compose -f docker/compose.dev.yml down
-docker volume rm reverie_pgdata
-docker compose -f docker/compose.dev.yml up -d
-cargo run -- migrate
+just db-reset
+just db-migrate
 ```
+
+`just db-reset` runs `docker compose -f docker/compose.dev.yml down -v`, which removes the project volume by reference regardless of its generated name, then recreates the cluster.
 
 ## Security Headers
 

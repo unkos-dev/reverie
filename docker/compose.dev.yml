@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: reverie
       POSTGRES_DB: reverie_dev
     ports:
-      - "5433:5432"
+      # Loopback-only: Docker-published ports bypass host firewalls (nat
+      # precedes INPUT), and this dev cluster uses trivial role-name passwords.
+      - "127.0.0.1:5432:5432"
     volumes:
       # postgres:18+ stores data in a major-version subdirectory
       # (`/var/lib/postgresql/<major>/<cluster>/`) for `pg_upgrade --link`

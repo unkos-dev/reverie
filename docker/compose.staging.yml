@@ -1,7 +1,7 @@
 # Staging compose — OCI/LXC deploy target.
 #
 # This file is *not* used for local dev. Local devs run only postgres via the
-# `docker/compose.dev.yml` (port 5433 exposed for `cargo run`); staging
+# `docker/compose.dev.yml` (port 5432 exposed for `cargo run`); staging
 # bundles postgres + the published Reverie image into one network with no
 # host port exposure on postgres (LXC-internal only).
 #

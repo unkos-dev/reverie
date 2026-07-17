@@ -995,6 +995,15 @@ jobs:
       - name: Validate greptile.json
         run: just infra::greptile-config
 
+      # Dev-DB compose invariants (loopback bind, digest pin, parent volume
+      # mount) and the recipe secret-echo guard: overridden DB credentials
+      # must never print into echoed recipe lines.
+      - name: Compose dev invariants
+        run: just infra::compose-dev-invariants
+
+      - name: Recipe secret-echo guard
+        run: just infra::recipe-secret-echo-test
+
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate
 
