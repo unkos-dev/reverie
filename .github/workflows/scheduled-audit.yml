@@ -25,7 +25,7 @@ env:
   # with ci.yml's pins by the vite-plus Renovate group and the repo-lint
   # drift guard.
   # renovate: datasource=npm depName=vite-plus
-  VP_VERSION: "0.2.4"
+  VP_VERSION: "0.2.5"
   # renovate: datasource=node-version depName=node
   NODE_VERSION: "24.18.0"
 
