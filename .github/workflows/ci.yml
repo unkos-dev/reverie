@@ -919,7 +919,10 @@ jobs:
       - name: Plan-reference gate self-test
         run: just infra::no-plan-refs-selftest
 
-      - name: Repository tool pins match CI
+      - name: Tool-pin gate self-test
+        run: just infra::tool-pin-drift-selftest
+
+      - name: No workflow re-pins a mise-managed tool
         run: just infra::tool-pin-drift
 
       - name: ADR frontmatter and index coverage

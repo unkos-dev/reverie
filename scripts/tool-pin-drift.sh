@@ -7,16 +7,22 @@ set -euo pipefail
 
 fail=0
 while IFS= read -r tool; do
-  rc=0
-  matches=$(grep -nE "\b${tool}[@=]=?[0-9]" .github/workflows/*.yml) || rc=$?
-  if [ "$rc" -gt 1 ]; then
-    exit "$rc"
-  fi
-  if [ -n "$matches" ]; then
-    printf '%s\n' "$matches" >&2
-    echo "${tool} is version-pinned in a workflow; mise.toml is the single source of truth" >&2
-    fail=1
-  fi
+  # Inline pins (`just@1.56.0`, `yamllint==1.38.0`) and Renovate annotations
+  # (`depName=rhysd/actionlint` with the version on a following line). An
+  # annotation naming a mise-managed tool always fronts a duplicated pin, so
+  # it is rejected even though the version sits on another line.
+  for pattern in "\b${tool}[@=]=?[0-9]" "depName=(\S+/)?${tool}(\s|$)"; do
+    rc=0
+    matches=$(grep -nE "$pattern" .github/workflows/*.yml) || rc=$?
+    if [ "$rc" -gt 1 ]; then
+      exit "$rc"
+    fi
+    if [ -n "$matches" ]; then
+      printf '%s\n' "$matches" >&2
+      echo "${tool} is version-pinned in a workflow; mise.toml is the single source of truth" >&2
+      fail=1
+    fi
+  done
 done < <(awk -F' *= *' '/^\[tools\]/ { in_tools = 1; next } /^\[/ { in_tools = 0 } in_tools && NF > 1 { print $1 }' mise.toml)
 
 if [ "$fail" -eq 0 ]; then
