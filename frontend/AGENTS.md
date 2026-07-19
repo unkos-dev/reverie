@@ -7,7 +7,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 1. **No Any:** `any` is forbidden. Use `unknown` and narrow with type guards.
 2. **No Inline Styles or Hex:** Do not use inline style objects (except dynamic calcs) or arbitrary hex values. Use Tailwind utility classes and the established theme variables.
-3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run `npx shadcn@latest add <component>`.
+3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run `npx --no-install shadcn add <component>` from `frontend/` so the CLI resolves from the lockfile-backed local dependency and reads the workspace `components.json`.
 4. **No console.log:** Do not leave `console.log` statements in production code.
    </cardinal_rules>
 
@@ -19,23 +19,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 - **Component Boundaries:** Keep data fetching in React Query hooks or owning components and API calls in `src/api/`. Split rendering from orchestration when it improves reuse, testing, or clarity; small cohesive components may own both local coordination and presentation.
 - **Functional Only:** No class components.
-- **Strict Effects:** `useEffect` must have a complete dependency array. Never suppress the linter. Never pass an async function directly; use the `AbortController` pattern:
-
-  ```tsx
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = async () => {
-      try {
-        const data = await fetchData({ signal: controller.signal });
-        setData(data);
-      } catch (error) {
-        if (!controller.signal.aborted) setError(error);
-      }
-    };
-    load();
-    return () => controller.abort();
-  }, []);
-  ```
+- **Strict Effects:** `useEffect` must have a complete dependency array and return a cleanup function. Never suppress the linter or pass an async function directly. Server-state fetching belongs in React Query, not an Effect. A rare async Effect for non-server-state synchronization must cancel obsolete work from its cleanup (`AbortController` when the API supports it, a staleness flag otherwise), suppress only the expected cancellation error, and let every other failure propagate.
 
 - **Parallel Async:** Run independent async work concurrently when ordering, rate, and resource constraints permit. Use `Promise.all()` to fail fast or `Promise.allSettled()` when one failure should not abort the others.
 - **Cohesive Effects:** Keep each `useEffect` focused on one lifecycle concern. Closely coupled setup and cleanup may share an effect; unrelated work should not be combined merely to reduce line count.
