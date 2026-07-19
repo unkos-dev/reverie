@@ -8,10 +8,31 @@
  * forced to ink #0e0d0a because the generator returns #fff, which is
  * unreadable on the pale dark-theme gold-9 #c9a961 (white = 2.25:1).
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { z } from "zod";
+
 import { generateRadixColors } from "./generate-radix-colors.ts";
+
+// The header's Deps line derives from package.json, so a color-dep bump
+// changes the emitted artifact and trips the drift gate until regeneration.
+// Ranged color-math deps make regeneration non-reproducible, so the schema
+// requires exact x.y.z pins.
+const exactPin = z
+  .string()
+  .regex(/^\d+\.\d+\.\d+$/, "color-math deps must be exactly pinned (x.y.z)");
+const pkg = z
+  .object({
+    devDependencies: z.object({
+      "@radix-ui/colors": exactPin,
+      "colorjs.io": exactPin,
+      "bezier-easing": exactPin,
+    }),
+  })
+  .parse(JSON.parse(readFileSync(join(import.meta.dirname, "../../package.json"), "utf8")));
+
+export const COLOR_DEP_VERSIONS = pkg.devDependencies;
 
 const ANCHORS = {
   bgDark: "#0E0D0A",
@@ -66,7 +87,7 @@ const HEADER = `/*
  * GENERATED ARTIFACT — do not hand-edit. Regenerate: npm run primitives:gen.
  *
  * Source fn:  scripts/radix-gen/generate-radix-colors.ts (radix-ui/website @ 88a9f14)
- * Deps:       @radix-ui/colors@3.0.0  colorjs.io@0.6.1  bezier-easing@3.0.0
+ * Deps:       @radix-ui/colors@${COLOR_DEP_VERSIONS["@radix-ui/colors"]}  colorjs.io@${COLOR_DEP_VERSIONS["colorjs.io"]}  bezier-easing@${COLOR_DEP_VERSIONS["bezier-easing"]}
  * Anchors:    bg-dark #0E0D0A · bg-light(parchment) #E8DCC2
  *             accent(gold) #C9A961 · danger #B91C1C · neutral-seed #8A8170
  * OVERRIDE:   --gold-contrast forced to ink #0e0d0a (generator returned #fff,
