@@ -24,11 +24,11 @@
 set -euo pipefail
 
 # Parenthetical phase tags `(S2)`; singular or plural `decision N` /
-# `invariant N` numbering; capitalised `Phase N` rollout labels. Lowercase
-# `phase N` is left alone so a
-# genuine runtime-phase description does not trip the guard.
+# `invariant N` numbering; capitalised or all-caps `Phase N` rollout labels.
+# Lowercase `phase N` is left alone so a genuine runtime-phase description
+# does not trip the guard.
 pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b'
-phase_pattern='\bPhase [0-9]+\b'
+phase_pattern='\b(Phase|PHASE) [0-9]+\b'
 
 # Decide whether a path is gated by this guard. `case` globs treat '*' as
 # matching across '/', so a single '*' spans nested directories.

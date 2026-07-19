@@ -8,7 +8,12 @@ while IFS= read -r file; do
     adr/AGENTS.md | adr/CLAUDE.md | adr/README.md | adr/TEMPLATE.md) continue ;;
   esac
 
-  frontmatter="$(awk 'NR == 1 && $0 != "---" { exit 2 } NR > 1 && $0 == "---" { exit } NR > 1 { print }' "$file")" || {
+  frontmatter="$(awk '
+    NR == 1 && $0 != "---" { exit 2 }
+    NR > 1 && $0 == "---" { closed = 1; exit }
+    NR > 1 { print }
+    END { if (!closed) exit 2 }
+  ' "$file")" || {
     echo "FAIL ${file}: invalid frontmatter boundary" >&2
     fail=1
     continue
@@ -29,9 +34,39 @@ while IFS= read -r file; do
     fail=1
   fi
 
+  status="$(sed -n 's/^status:[[:space:]]*//p' <<<"$frontmatter" | head -n 1 | tr -d '"')"
+  case "$file" in
+    adr/superseded/*)
+      if [ "$status" != "superseded" ]; then
+        echo "FAIL ${file}: records under superseded/ must carry status superseded" >&2
+        fail=1
+      fi
+      if ! grep -Eq '^superseded-by: \[".+"\]$' <<<"$frontmatter"; then
+        echo "FAIL ${file}: superseded records must link superseded-by" >&2
+        fail=1
+      fi
+      ;;
+    *)
+      if [ "$status" = "superseded" ]; then
+        echo "FAIL ${file}: status superseded requires the superseded/ directory" >&2
+        fail=1
+      fi
+      ;;
+  esac
+
+  # Active entries render as "(<status>, <date>)"; superseded entries render as
+  # "(superseded by [replacement](...), <date>)".
+  expected_marker="(${status},"
+  if [ "$status" = "superseded" ]; then
+    expected_marker="(superseded"
+  fi
   index_path="${file#adr/}"
-  if ! grep -Fq "(${index_path})" adr/README.md; then
+  index_line="$(grep -F "(${index_path})" adr/README.md || true)"
+  if [ -z "$index_line" ]; then
     echo "FAIL ${file}: missing from adr/README.md" >&2
+    fail=1
+  elif ! grep -Fq "$expected_marker" <<<"$index_line"; then
+    echo "FAIL ${file}: adr/README.md entry does not carry status ${status}" >&2
     fail=1
   fi
 done < <(git ls-files 'adr/*.md' 'adr/superseded/*.md')

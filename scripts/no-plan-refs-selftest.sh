@@ -23,6 +23,7 @@ expect() {
 
 expect "ordinary source passes" 0 backend/src/lib.rs '// Validates the request.'
 expect "lowercase runtime phase passes" 0 frontend/src/view.ts '// The loading phase ends here.'
+expect "uppercase phase label rejected" 1 backend/src/lib.rs '// PHASE 2 cleanup.'
 expect "nested phase tag rejected" 1 backend/src/nested/mod.rs '// (S2) Validate input.'
 expect "capitalized decision rejected" 1 frontend/src/nested/view.ts '// Decision 3 owns this.'
 expect "lowercase invariant rejected" 1 backend/src/lib.rs '// invariant 4'

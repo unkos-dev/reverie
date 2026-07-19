@@ -5,8 +5,7 @@ supersedes: []
 decision-makers: "John Unkovich"
 consulted: []
 informed: "Reverie contributors"
-superseded-by:
-  - "../2026-05-12-platform-matrix-via-native-runners.md"
+superseded-by: ["../2026-05-12-platform-matrix-via-native-runners.md"]
 ---
 
 # Decouple staging Docker image publication from semver release tags

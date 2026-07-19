@@ -1038,7 +1038,7 @@ jobs:
       # and is NUL-delimited so a filename containing a newline cannot
       # split and bypass the guard. `shell: bash` because mapfile + process
       # substitution are bash-only.
-      - name: Reject issue-tracker refs in changed source
+      - name: Reject issue-tracker and plan refs in changed source
         if: steps.source-changed.outputs.source == 'true'
         shell: bash
         env:
