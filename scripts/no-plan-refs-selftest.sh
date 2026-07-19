@@ -30,7 +30,17 @@ expect "lowercase invariant rejected" 1 backend/src/lib.rs '// invariant 4'
 expect "plural decisions rejected" 1 frontend/src/view.ts '// decisions 2 and 3'
 expect "plural invariants rejected" 1 frontend/src/view.ts '// Invariants 1-3'
 expect "UI primitive remains exempt" 0 frontend/src/components/ui/button.tsx '// Phase 2 style token.'
-expect "missing path ignored" 0 backend/src/missing.rs ''
+expect "lowercase phase tag rejected" 1 frontend/src/view.ts '// (s2) tidy the cache.'
+expect "empty file passes" 0 backend/src/missing.rs ''
 expect "filename with spaces handled" 1 'backend/src/file name.rs' '// Decision 8'
+
+got=0
+(cd "$tmp" && "$checker" backend/src/never-created.rs) >/dev/null 2>&1 || got=$?
+if [ "$got" -eq 0 ]; then
+  echo "ok   missing file skipped"
+else
+  echo "FAIL missing file skipped: expected exit 0, got ${got}"
+  fail=1
+fi
 
 exit "$fail"

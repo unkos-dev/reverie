@@ -23,10 +23,10 @@
 # Usage: no-plan-refs.sh <file>...
 set -euo pipefail
 
-# Parenthetical phase tags `(S2)`; singular or plural `decision N` /
-# `invariant N` numbering; capitalised or all-caps `Phase N` rollout labels.
-# Lowercase `phase N` is left alone so a genuine runtime-phase description
-# does not trip the guard.
+# Parenthetical phase tags `(S2)` in any letter case; singular or plural
+# `decision N` / `invariant N` numbering; capitalised or all-caps `Phase N`
+# rollout labels. Lowercase `phase N` is left alone so a genuine runtime-phase
+# description does not trip the guard.
 pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b'
 phase_pattern='\b(Phase|PHASE) [0-9]+\b'
 
@@ -72,7 +72,9 @@ phase_matches=$(grep -nE "$phase_pattern" -- "${files[@]}") || phase_rc=$?
 if [ "$phase_rc" -gt 1 ]; then
   exit "$phase_rc"
 fi
-matches="${matches}${matches:+$'\n'}${phase_matches}"
+if [ -n "$phase_matches" ]; then
+  matches="${matches}${matches:+$'\n'}${phase_matches}"
+fi
 
 if [ -n "$matches" ]; then
   {
