@@ -2,11 +2,11 @@
 #
 # Reject plan-artifact references in source-code comments and docstrings.
 # Phase tags like `(S2)`, plan-internal numbering like `(decision 10)` /
-# `(invariant 2)`, and `Phase 1` / `Phase 2` rollout labels point into a
-# planning document a future reader does not have. A docstring describes the
-# codebase's current behavior, so such a label is a dangling pointer: the fix
-# is to keep the substantive prose and strip the label, or rewrite it in
-# codebase terms.
+# `(invariant 2)`, `Phase 1` / `Phase 2` rollout labels, and `plans/...` paths
+# point into a planning document a future reader does not have (the /plans
+# tree is gitignored). A docstring describes the codebase's current behavior,
+# so such a label is a dangling pointer: the fix is to keep the substantive
+# prose and strip the label, or rewrite it in codebase terms.
 #
 # Scope: source under backend/src + frontend/src only. Excluded — these terms
 # are legitimate there:
@@ -24,10 +24,11 @@
 set -euo pipefail
 
 # Parenthetical phase tags `(S2)` in any letter case; singular or plural
-# `decision N` / `invariant N` numbering; capitalised or all-caps `Phase N`
-# rollout labels. Lowercase `phase N` is left alone so a genuine runtime-phase
-# description does not trip the guard.
-pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b'
+# `decision N` / `invariant N` numbering; `plans/` path references into the
+# gitignored planning tree. Capitalised or all-caps `Phase N` rollout labels
+# are matched separately; lowercase `phase N` is left alone so a genuine
+# runtime-phase description does not trip the guard.
+pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b|\bplans/'
 phase_pattern='\b(Phase|PHASE) [0-9]+\b'
 
 # Decide whether a path is gated by this guard. `case` globs treat '*' as
@@ -84,7 +85,9 @@ if [ -n "$matches" ]; then
     echo ""
     echo "Docstrings describe the codebase, not a planning document. Keep the"
     echo "substantive prose and strip the label: '(decision 10)' -> delete it;"
-    echo "'Phase 2 enforces X' -> 'the validating middleware enforces X'."
+    echo "'Phase 2 enforces X' -> 'the validating middleware enforces X';"
+    echo "'Spec: plans/<doc>.md' -> delete it (the /plans tree is gitignored,"
+    echo "so the path is unreachable for readers of shipped source)."
     echo "(Plans, ADRs, docs, and commit messages may cite plan steps.)"
   } >&2
   exit 1
