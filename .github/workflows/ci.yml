@@ -906,7 +906,7 @@ jobs:
 
       - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
-          tool: just@1.53.0,typos@1.46.2
+          tool: just@1.56.0,typos@1.48.0
 
       - name: Install shellcheck
         uses: ./.github/actions/install-pinned-tool
@@ -939,8 +939,8 @@ jobs:
           archive-member: vale
 
       # yamllint is pip-only; its version matches mise.toml.
-      - name: Install yamllint 1.33.0
-        run: pipx install yamllint==1.33.0
+      - name: Install yamllint
+        run: pipx install yamllint==1.38.0
 
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
@@ -1084,7 +1084,7 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
-          tool: just@1.53.0
+          tool: just@1.56.0
 
       - name: Lint
         run: just js::oxlint

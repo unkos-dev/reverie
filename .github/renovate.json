@@ -124,6 +124,23 @@
       "description": "Keep vite-plus and vitest in lockstep: vite-plus bundles the @vitest/* family with an exact vitest peer dependency, so a standalone vitest or vite-plus bump fails lockfile resolution.",
       "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "vitest", "@vitest/**"],
       "groupName": "vite-plus"
+    },
+    {
+      "description": "scripts/tool-pin-drift.sh requires each lint tool's mise.toml pin and ci.yml installer pin to move in the same PR; group the mise-manager depName with the workflow annotation depName so neither side can land alone. These four are checksum-verified installs, so the grouped PR still needs its sha256 updated manually before merge.",
+      "matchDepNames": ["actionlint", "rhysd/actionlint"],
+      "groupName": "actionlint"
+    },
+    {
+      "matchDepNames": ["hadolint", "hadolint/hadolint"],
+      "groupName": "hadolint"
+    },
+    {
+      "matchDepNames": ["shellcheck", "koalaman/shellcheck"],
+      "groupName": "shellcheck"
+    },
+    {
+      "matchDepNames": ["vale", "errata-ai/vale"],
+      "groupName": "vale"
     }
   ],
   "customManagers": [
@@ -159,6 +176,33 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "description": "Track just inside taiki-e/install-action tool lists. depName deliberately matches the mise manager's so both pins share one branch and satisfy scripts/tool-pin-drift.sh.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["\\btool: [^\\n]*\\bjust@(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "just",
+      "packageNameTemplate": "casey/just",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "description": "Track typos inside taiki-e/install-action tool lists. depName deliberately matches the mise manager's so both pins share one branch and satisfy scripts/tool-pin-drift.sh.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["\\btool: [^\\n]*\\btypos@(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "typos",
+      "packageNameTemplate": "crate-ci/typos",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "description": "Track the pipx yamllint install. depName deliberately matches the mise manager's so both pins share one branch and satisfy scripts/tool-pin-drift.sh.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["\\byamllint==(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "yamllint",
+      "datasourceTemplate": "pypi"
     }
   ]
 }
