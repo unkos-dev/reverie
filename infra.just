@@ -50,10 +50,15 @@ dco-selftest:
 no-plan-refs-selftest:
     scripts/no-plan-refs-selftest.sh
 
-# Assert repository-local lint tool pins match their CI installers.
+# Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.
 [group('infra')]
 tool-pin-drift:
     scripts/tool-pin-drift.sh
+
+# Exercise the tool-pin guard against planted pins before trusting it.
+[group('infra')]
+tool-pin-drift-selftest:
+    scripts/tool-pin-drift-selftest.sh
 
 # Validate canonical ADR frontmatter and lifecycle index coverage.
 [group('infra')]
@@ -109,7 +114,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

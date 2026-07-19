@@ -577,15 +577,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install actionlint
-        uses: ./.github/actions/install-pinned-tool
+      - name: Install actionlint (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
-          version: "1.7.12"
-          sha256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
-          url: "https://github.com/rhysd/actionlint/releases/download/v{version}/actionlint_{version}_linux_amd64.tar.gz"
-          binary: actionlint
-          archive-member: actionlint
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: actionlint
 
       - name: Lint workflow files
         run: actionlint -color
@@ -640,7 +637,7 @@ jobs:
       - name: Install trivy
         uses: ./.github/actions/install-pinned-tool
         with:
-          # renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
+          # renovate: datasource=github-release-attachments depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$
           version: "0.72.0"
           sha256: "bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea"
           url: "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_Linux-64bit.tar.gz"
@@ -800,7 +797,7 @@ jobs:
       - name: Install opengrep
         uses: ./.github/actions/install-pinned-tool
         with:
-          # renovate: datasource=github-releases depName=opengrep/opengrep extractVersion=^v(?<version>.+)$
+          # renovate: datasource=github-release-attachments depName=opengrep/opengrep extractVersion=^v(?<version>.+)$
           version: "1.25.0"
           sha256: "9ac4aebb47ba3f7b0d8fc641ac8749cb6c2f253f616131a67d9631e00d4bea33"
           url: "https://github.com/opengrep/opengrep/releases/download/v{version}/opengrep_manylinux_x86"
@@ -904,43 +901,14 @@ jobs:
           if [ "$rc" -ne 0 ]; then exit 1; fi
           echo "all workflow vp pins ($pkg) match package.json; node pins ($node_ref) consistent"
 
-      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
+      # Single-source tool provisioning: mise installs the exact pins from
+      # mise.toml, so this job runs the same binaries as the local hooks and
+      # there is no per-workflow version copy to drift.
+      - name: Install pinned tools (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          tool: just@1.56.0,typos@1.48.0
-
-      - name: Install shellcheck
-        uses: ./.github/actions/install-pinned-tool
-        with:
-          # renovate: datasource=github-releases depName=koalaman/shellcheck extractVersion=^v(?<version>.+)$
-          version: "0.11.0"
-          sha256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
-          url: "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz"
-          binary: shellcheck
-          archive-member: shellcheck-v{version}/shellcheck
-          strip-components: "1"
-
-      - name: Install hadolint
-        uses: ./.github/actions/install-pinned-tool
-        with:
-          # renovate: datasource=github-releases depName=hadolint/hadolint extractVersion=^v(?<version>.+)$
-          version: "2.14.0"
-          sha256: "6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47"
-          url: "https://github.com/hadolint/hadolint/releases/download/v{version}/hadolint-Linux-x86_64"
-          binary: hadolint
-
-      - name: Install Vale
-        uses: ./.github/actions/install-pinned-tool
-        with:
-          # renovate: datasource=github-releases depName=errata-ai/vale extractVersion=^v(?<version>.+)$
-          version: "3.15.1"
-          sha256: "c024d9c157874fb043d4f24a055d60050d1bb18755251f590593eed5bace1857"
-          url: "https://github.com/errata-ai/vale/releases/download/v{version}/vale_{version}_Linux_64-bit.tar.gz"
-          binary: vale
-          archive-member: vale
-
-      # yamllint is pip-only; its version matches mise.toml.
-      - name: Install yamllint
-        run: pipx install yamllint==1.38.0
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
 
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
@@ -951,7 +919,10 @@ jobs:
       - name: Plan-reference gate self-test
         run: just infra::no-plan-refs-selftest
 
-      - name: Repository tool pins match CI
+      - name: Tool-pin gate self-test
+        run: just infra::tool-pin-drift-selftest
+
+      - name: No workflow re-pins a mise-managed tool
         run: just infra::tool-pin-drift
 
       - name: ADR frontmatter and index coverage
@@ -1081,10 +1052,12 @@ jobs:
       # just walks up to the repo-root justfile from this frontend/ working
       # directory; each js:: recipe re-enters frontend/ via its own
       # [working-directory].
-      - name: Install just
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
+      - name: Install just (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          tool: just@1.56.0
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: just
 
       - name: Lint
         run: just js::oxlint
@@ -1382,15 +1355,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install gitleaks
-        uses: ./.github/actions/install-pinned-tool
+      - name: Install gitleaks (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          # renovate: datasource=github-releases depName=gitleaks/gitleaks extractVersion=^v(?<version>.+)$
-          version: "8.30.1"
-          sha256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-          url: "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_linux_x64.tar.gz"
-          binary: gitleaks
-          archive-member: gitleaks
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: gitleaks
 
       # On a pull_request, scan every commit the branch introduces — a
       # secret added and later removed within the branch is gone from the
