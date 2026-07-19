@@ -85,5 +85,5 @@ These rules define the React and TypeScript architecture. Do not deviate.
 <testing_standards>
 
 - **Behavioral Testing:** Use Vitest + React Testing Library. Test behavior, not implementation details.
-- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the dev-only design showcase; reproduce locally with `npm run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in `scripts/a11y/allowlist.mjs`; new scannable routes are added to the `A11Y_TARGETS` list.
+- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the dev-only design showcase; reproduce locally with `npm run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in `scripts/a11y/allowlist.mjs`; new scannable routes join the default target list in the same file's `parseTargets` (the `A11Y_TARGETS` env var is a per-run override that CI does not set).
   </testing_standards>
