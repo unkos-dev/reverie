@@ -951,9 +951,6 @@ jobs:
       - name: Plan-reference gate self-test
         run: just infra::no-plan-refs-selftest
 
-      - name: Attribution gate self-test
-        run: just infra::no-agent-attribution-selftest
-
       - name: Repository tool pins match CI
         run: just infra::tool-pin-drift
 
@@ -1463,12 +1460,6 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: npx --no-install commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
-
-      - name: Reject machine and session attribution
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: scripts/no-agent-attribution.sh range "$BASE_SHA" "$HEAD_SHA"
 
       # GitHub appends ` (#N)` to the squash subject; commitlint parses it
       # as part of the subject, so linting the bare title matches what

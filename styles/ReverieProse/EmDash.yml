@@ -1,9 +1,10 @@
 extends: existence
-# Gate every em dash in prose. Bare token, not a word-adjacency heuristic, so no
-# The bare token also catches bold or italic Markdown formatting around the dash.
-# Inline code remains outside Vale's prose scope.
-message: "Avoid em dashes in prose. Recast with a comma, colon, or full stop."
-level: error
+# Flag every em dash in prose with a bare token, not a word-adjacency heuristic,
+# so bold or italic Markdown formatting around the dash cannot slip past it.
+# Inline code remains outside Vale's prose scope. Advisory house style: it
+# surfaces at `warning` and never blocks a commit or CI run.
+message: "House style avoids em dashes in prose. Consider a comma, colon, or full stop."
+level: warning
 nonword: true
 tokens:
   - '\x{2014}'

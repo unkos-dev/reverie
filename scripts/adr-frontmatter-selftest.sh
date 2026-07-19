@@ -20,8 +20,8 @@ while IFS= read -r file; do
       fail=1
     fi
   done
-  if ! grep -Eq '^consulted: \[\]$' <<<"$frontmatter"; then
-    echo "FAIL ${file}: empty consulted value must be []" >&2
+  if ! grep -Eq '^consulted: (\[\]|\[".+"\]|".+")$' <<<"$frontmatter"; then
+    echo "FAIL ${file}: consulted must be [] or a non-empty quoted value" >&2
     fail=1
   fi
   if ! grep -Fqx 'decision-makers: "John Unkovich"' <<<"$frontmatter"; then

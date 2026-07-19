@@ -111,6 +111,14 @@ expect_silent "We dug deep into the schema before the migration."
 expect_fires EmDash "This decision **${emdash}** owns the contract."
 # A table-cell em dash fires too: table cells are not exempt (markers recast).
 expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
+# EmDash is advisory, like Spelling: it surfaces at `warning`, so a finding must
+# not exit non-zero and block the commit or CI gate on its own.
+if printf '%s\n' "The spine loads ${emdash} then renders." | vale --output=line --ext=.md >/dev/null 2>&1; then
+  echo "ok   EmDash warning is advisory (exit 0)"
+else
+  echo "FAIL EmDash must warn without failing the gate" >&2
+  fail=1
+fi
 
 # Path-scoped behaviour can't be exercised over stdin (no file path), so build a
 # throwaway mini-repo from the real .vale.ini + styles, with one Wh-opener line

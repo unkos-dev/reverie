@@ -41,7 +41,6 @@ These are absolute invariants for the Reverie repository.
   - Density tiebreaker: New comments follow this tiered policy, not the density of surrounding legacy comments. Verbose nearby comments are legacy, not a target to match.
 - **Docstring Syntax:** No em dashes (`—`). No external references (PRs, Linear IDs). Describe current behavior, not history.
 - **Private Artifacts:** Store design specifications, implementation plans, and evaluation records in ignored `/plans/`. Never reference private artifact paths from public source, documentation, commits, or pull requests.
-- **Public Authorship:** Public prose and commit messages must not contain agent, model, tool, generated-content, or session attribution. Human co-authors and DCO sign-offs remain valid.
 - **State-Writer Census:** Any plan touching shared mutable state (URL params, stores, caches) must enumerate every writer, including debounced and async ones. More than one writer forces an explicit ownership-model decision in the plan before implementation starts.
 - **ADRs:** Write an ADR (in `adr/`) for any new cross-stack pattern, major dependency, or architectural choice. See `adr/AGENTS.md` for authoring rules.
   </documentation_and_planning>

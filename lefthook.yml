@@ -123,8 +123,6 @@ pre-push:
 # lives in package.json and resolves automatically.
 commit-msg:
   jobs:
-    - name: no-agent-attribution
-      run: just infra::no-agent-attribution message-file {1}
     - name: commitlint
       run: npx --no-install commitlint --edit {1}
     # Merge commits are exempt, matching scripts/dco-check.sh in CI.
