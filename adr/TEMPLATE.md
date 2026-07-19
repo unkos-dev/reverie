@@ -7,7 +7,7 @@ supersedes: []
 #   superseded-by: ["../YYYY-MM-DD-new.md"]
 # then move this file into adr/superseded/.
 decision-makers: "{everyone who owns the decision}"
-consulted: "{everyone whose expertise was sought}"
+consulted: [] # Replace with a named list when outside expertise was sought.
 informed: "{everyone kept up-to-date}"
 ---
 
@@ -60,5 +60,5 @@ clippy lint X" or "No raw SQL outside `src/db/`." Remove if none.}
 
 ## More Information
 
-{Cross-links to related ADRs, revisit triggers, follow-up notes. Implementation
-work is tracked in prp-plan output (`.claude/PRPs/plans/`), not here.}
+{Cross-links to related ADRs, revisit triggers, and follow-up notes. Implementation
+work is tracked in private `/plans/` artifacts, not here.}

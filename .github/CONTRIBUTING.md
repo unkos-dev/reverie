@@ -64,36 +64,21 @@ cd frontend && npm install && npm run dev
 
 Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/AGENTS.md](../backend/AGENTS.md) and [frontend/AGENTS.md](../frontend/AGENTS.md).
 
-Agent conventions live in [`AGENTS.md`](../AGENTS.md) files (the [agents.md](https://agents.md) standard), so any coding agent picks them up. The `CLAUDE.md` files are one-line import shims that point Claude Code at the same content.
+Contributor automation conventions live in [`AGENTS.md`](../AGENTS.md) files (the [agents.md](https://agents.md) standard). Compatibility shims may import those files, but they do not define separate policy.
 
 ### Pre-commit prerequisites
 
 Git hooks are managed by lefthook and installed through the `prepare` npm script, so a fresh clone wires them on `npm ci`.
 
-The lefthook pre-commit hook runs [`actionlint`](https://github.com/rhysd/actionlint) on changed GitHub Actions workflow files. Install it once before your first commit; CI pins the enforced version in [`ci.yml`](workflows/ci.yml), and the command below installs that pin:
+Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
-```bash
-# Linux + macOS. Download the release tarball directly: Homebrew's formula is
-# not version-pinned, so it can drift from the lint chain enforced in CI.
-curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_$(uname -s | tr 'A-Z' 'a-z')_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz" \
-  | tar -xz -C "$HOME/.local/bin" actionlint
+```sh
+mise install
 ```
 
-The hook also runs [`yamllint`](https://www.yamllint.com/) on changed `*.{yml,yaml}` files (version pinned in CI). It is pip-installable:
+[`mise.toml`](../mise.toml) pins actionlint, hadolint, just, shellcheck, typos, Vale, and yamllint to the versions enforced in CI. Node, npm, and vite-plus remain lockfile-managed project dependencies. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
 
-```bash
-pipx install yamllint==1.33.0
-```
-
-The hook runs the frontend linters [`oxlint`](https://oxc.rs) and [`stylelint`](https://stylelint.io) through [`just`](https://just.systems), the repository's task runner, so the [`js.just`](../js.just) recipes stay the single source of truth for how each linter runs. Install `just` once (it is not version-pinned):
-
-```bash
-cargo install just   # or: brew install just, your distro package manager, https://just.systems
-```
-
-If `actionlint`, `yamllint`, or `just` is not on `PATH`, the pre-commit hook fails with a clear `command not found`. CI re-runs the same checks, so a bypass (`--no-verify` or missing-binary skip) is still caught before merge.
-
-Workflow files are additionally scanned in CI by [zizmor](https://github.com/zizmorcore/zizmor) (the merge-blocking `workflow-security` job) for GitHub Actions security issues: credential persistence, template injection, cache poisoning, and dangerous triggers. It is a CI-only tool, so there is nothing to install locally; documented suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
+Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit, cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of contributor setup. Documented zizmor suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 
 ### CI toolchain pins
 
@@ -120,7 +105,7 @@ For frontend changes, the `a11y` CI job runs axe-core against the design showcas
 1. Create a feature branch from `main` using the appropriate prefix
 2. Write tests for your changes (see above)
 3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test`, `npm run lint`, `npm test`, `npm run build` as applicable)
-4. Open the PR and fill in the template's **Summary**, **Why** (if motivation isn't obvious from the diff), and **Test plan**
+4. Open the PR and fill in **Summary** and **Test plan**. Keep **Why**, **Accessibility**, and issue closure sections only when relevant; delete unused sections instead of writing placeholders or `N/A`.
 5. Labels auto-apply based on paths touched; no manual labelling needed
 6. Wait for maintainer review and approval
 

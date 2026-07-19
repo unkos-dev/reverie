@@ -8,7 +8,7 @@
 
 ## Why
 
-<!-- Optional: motivation, links to Linear issues, or context that's not obvious from the diff. -->
+<!-- Optional: keep only when motivation or context is not obvious from the diff. Delete the heading and this comment when irrelevant. -->
 
 ## Test plan
 
@@ -31,10 +31,8 @@ superseded by adr/2026-07-13-a11y-gate-on-playwright.md). -->
 - [ ] Any new colour is already a design token (no arbitrary hex).
 - [ ] Reverie Alarm appears only in one of its two carve-out contexts.
 
-<!-- Closes the tracking issue on merge. Replace the number; remove the line
-only if this PR genuinely has no tracking issue. -->
-
-Closes UNK-XXX
+<!-- Optional tracking issue: add `Closes UNK-NNN` when this work is tracked.
+Delete this comment when it is not. Never submit placeholder or N/A content. -->
 
 <!--
 Reminders (see CONTRIBUTING.md for the full conventions):

@@ -77,10 +77,10 @@ pre-commit:
           # omits Markdown by design (its scope is backend/src + frontend/src).
           - name: no-issue-refs
             glob: "{backend/src/**/*.rs,frontend/src/**/*.{ts,tsx,js,jsx,css},**/*.{md,mdx}}"
-            run: scripts/no-issue-refs.sh {staged_files}
+            run: just infra::no-issue-refs {staged_files}
           - name: no-plan-refs
             glob: "{backend/src/**/*.rs,frontend/src/**/*.{ts,tsx,js,jsx,css}}"
-            run: scripts/no-plan-refs.sh {staged_files}
+            run: just infra::no-plan-refs {staged_files}
           - name: vale
             glob: "**/*.{md,mdx}"
             run: scripts/vale-lint.sh {staged_files}
@@ -123,6 +123,8 @@ pre-push:
 # lives in package.json and resolves automatically.
 commit-msg:
   jobs:
+    - name: no-agent-attribution
+      run: just infra::no-agent-attribution message-file {1}
     - name: commitlint
       run: npx --no-install commitlint --edit {1}
     # Merge commits are exempt, matching scripts/dco-check.sh in CI.

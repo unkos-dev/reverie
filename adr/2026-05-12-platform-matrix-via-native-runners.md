@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-12
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 supersedes:
   - "superseded/2026-05-12-decouple-staging-image-from-semver-releases.md"

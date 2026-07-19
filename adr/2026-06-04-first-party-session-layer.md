@@ -3,7 +3,7 @@ status: accepted
 date: 2026-06-04
 supersedes: ["superseded/2026-05-08-tower-sessions-sqlx-store.md"]
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

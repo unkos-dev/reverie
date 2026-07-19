@@ -3,9 +3,9 @@ status: superseded
 date: 2026-05-26
 supersedes: []
 superseded-by: ["../2026-06-02-hybrid-migration-entrypoints-and-role.md"]
-decision-makers: junkovich
+decision-makers: "John Unkovich"
 consulted: []
-informed: []
+informed: "Reverie contributors"
 ---
 
 # Auto-migrate database on startup with all-or-nothing batch transactions

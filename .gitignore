@@ -27,8 +27,7 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-# Private agent workspace — symlink into the operator's dotfiles repo
-# (plans, reports, settings, runtime locks). Not project-shared.
+# Private harness state. Not project-shared.
 .claude
 
 # Docs build output
@@ -37,6 +36,7 @@ docs/.astro/
 # Test coverage
 coverage/
 *.lcov
+# Private design, planning, and evaluation artifacts.
 /plans/
 
 # Dev library seed target (populated by scripts/seed-library.sh when

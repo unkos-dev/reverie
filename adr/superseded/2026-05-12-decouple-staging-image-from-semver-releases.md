@@ -2,7 +2,9 @@
 status: superseded
 date: 2026-05-12
 supersedes: []
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: []
+informed: "Reverie contributors"
 superseded-by:
   - "../2026-05-12-platform-matrix-via-native-runners.md"
 ---

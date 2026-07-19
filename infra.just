@@ -45,6 +45,26 @@ vale-selftest:
 dco-selftest:
     scripts/dco-selftest.sh
 
+# Self-test the private-plan reference guard.
+[group('infra')]
+no-plan-refs-selftest:
+    scripts/no-plan-refs-selftest.sh
+
+# Self-test commit-message attribution rejection in file and range modes.
+[group('infra')]
+no-agent-attribution-selftest:
+    scripts/no-agent-attribution-selftest.sh
+
+# Assert repository-local lint tool pins match their CI installers.
+[group('infra')]
+tool-pin-drift:
+    scripts/tool-pin-drift.sh
+
+# Validate canonical ADR frontmatter and lifecycle index coverage.
+[group('infra')]
+adr-frontmatter-selftest:
+    scripts/adr-frontmatter-selftest.sh
+
 # Test the vale-lint.sh scope policy (include/exclude classification).
 [group('infra')]
 vale-scope-test:
@@ -89,12 +109,18 @@ no-issue-refs *files:
 no-plan-refs *files:
     scripts/no-plan-refs.sh "$@"
 
+# Reject machine/session attribution in a commit message file or commit range.
+[group('infra')]
+[positional-arguments]
+no-agent-attribution *args:
+    scripts/no-agent-attribution.sh "$@"
+
 # The two ref guards take a file list and are driven per-commit by hooks, so they
 # are excluded here.
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-agent-attribution-selftest tool-pin-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

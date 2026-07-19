@@ -6,11 +6,11 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 - Directory: `adr`
 - Naming: `YYYY-MM-DD-short-kebab-slug.md` (date-prefixed, no numeric prefixes)
-- Shape: canonical [MADR 4.0](https://adr.github.io/madr/). Copy [TEMPLATE.md](TEMPLATE.md), not the `adr` skill's bundled template (it bolts on an Implementation Plan section this repo does not want).
-- Sections (in order): Context and Problem Statement → Decision Drivers (opt) → Considered Options → Decision Outcome (Consequences, Confirmation) → Pros and Cons of the Options (opt) → More Information (opt)
+- Shape: canonical [MADR 4.0](https://adr.github.io/madr/). Copy [TEMPLATE.md](TEMPLATE.md).
+- Sections (in order): Context and Problem Statement, Decision Drivers (optional), Considered Options, Decision Outcome (Consequences and Confirmation), Pros and Cons of the Options (optional), More Information (optional)
 - Status values: `proposed`, `accepted`, `rejected`, `deprecated`, `superseded`
 - Supersession (header fields, not status prose): the replacement ADR carries `supersedes: ["superseded/<old>.md"]`; the replaced ADR carries `status: superseded` + `superseded-by: ["../<new>.md"]` and is moved into `adr/superseded/`. Paths are relative to the file.
-- **Not an implementation plan.** ADRs record the decision + rationale. Build steps, file lists, verification checklists → `prp-plan` output (`.claude/PRPs/plans/`). See [AGENTS.md](AGENTS.md).
+- **Not an implementation plan.** ADRs record the decision and rationale. Build steps, file lists, and verification checklists belong in private `/plans/` artifacts. See [AGENTS.md](AGENTS.md).
 
 ## Workflow
 

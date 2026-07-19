@@ -5,7 +5,7 @@ _(Operator/DB detail: see `./README.md`)_
 <cardinal_rules>
 These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
-1. **No Blind Clones:** Do not sprinkle `.clone()` to satisfy the borrow checker. Understand the root cause of ownership issues; borrow (`&T`) by default.
+1. **Intentional Clones:** Borrow (`&T`) by default. Clone when ownership or isolation requires it, and avoid cloning merely to silence an unexplained borrow-checker error.
 2. **No unwrap():** `unwrap()` and `expect()` are banned in production code. Propagate with `?` or handle explicitly. Tests are exempt.
 3. **No Silent Failures:** Do not discard errors. `let _ = <Result>`, converting to `.ok()` without checking, and `.unwrap_or_default()` on critical operations are banned. Log the error or propagate it.
 4. **No N+1 Queries:** Use set-based queries. Do not issue per-row follow-up database queries in a loop.
@@ -15,9 +15,9 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
 - **Parse, Don't Validate:** Convert unstructured data to typed structs at the system boundary. Make invalid states unrepresentable using enums and the Newtype pattern (e.g., `struct UserId(u64)`).
 - **Error Boundaries:** Use `thiserror` for library boundaries and `anyhow` for application logic. When propagating errors with `?`, attach context using `.context("...")` or `.with_context(|| ...)`. Axum handlers must map errors to generic client responses by implementing `IntoResponse` on your custom `AppError` type. NEVER expose internal database errors, paths, or stack traces to the API client.
-- **Enums over Bools:** Use enums for distinct states with different behavior, never boolean flags.
+- **Enums over Ambiguous Bools:** Use enums when states have distinct behaviour or a boolean would obscure meaning. A boolean is acceptable for an inherently binary predicate.
 - **Iterators:** Prefer declarative iterator chains (`.filter().map()`) over mutable `for` loops for data transformations.
-- **Parallel Async:** Never await independent async tasks sequentially. Run them concurrently with `tokio::join!` (awaits all), or `try_join!` when a failure should short-circuit the rest.
+- **Parallel Async:** Run independent async tasks concurrently when doing so improves behaviour without violating ordering, rate, resource, or transaction constraints. Use `tokio::join!` to await all or `try_join!` when a failure should short-circuit the rest.
 - **Unsafe Code:** `unsafe` requires a `// SAFETY:` comment per block explaining the invariant. It is forbidden unless strictly necessary and explicitly allowed via `#[allow(unsafe_code)]`.
 - **Secrets Management:** Never hardcode credentials, tokens, or API keys. Always use environment variables.
   </rust_and_architecture>
@@ -63,5 +63,5 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 - **Formatting & Linting:** You must respect `cargo fmt` and `cargo clippy`. Do not fight the formatter. Fix warnings, do not suppress them with `#[allow(...)]` unless heavily justified.
 - **Time Crate:** Use the `time` crate. The `chrono` crate is strictly forbidden in first-party code.
 - **Logging:** Use `tracing` with structured fields. Never use `println!`.
-- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts — run `REGEN=1 cargo test --test gen_openapi --test gen_config_ref --test gen_config_schema` and commit them in the same PR; drift tests gate CI.
+- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts. Run `REGEN=1 cargo test --test gen_openapi --test gen_config_ref --test gen_config_schema` and commit them in the same PR; drift tests gate CI.
   </tool_standards>
