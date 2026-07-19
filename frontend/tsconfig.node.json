@@ -27,6 +27,7 @@
     "vite.config.ts",
     "playwright.config.ts",
     "vite-plugins/**/*.ts",
-    "scripts/a11y/*.spec.ts"
+    "scripts/a11y/*.spec.ts",
+    "scripts/radix-gen/**/*.ts"
   ]
 }

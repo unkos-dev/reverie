@@ -76,7 +76,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 - **Tailwind v4:** Use utility classes.
 - **Theme Tree:**
-  - `primitives.generated.css`: Generated from the brand anchors by the owner-run `radix-gen` tool; the anchors and the one sanctioned contrast override are recorded in the file header. NEVER HAND-EDIT. When a change requires new primitives, stop and flag for owner regeneration.
+  - `primitives.generated.css`: Generated from the brand anchors in `scripts/radix-gen/emit-primitives.ts`; regenerate with `npm run primitives:gen`. NEVER HAND-EDIT: a drift test pins the committed artifact to the emitter's output, so anchor or override changes happen in the emitter and ship with the regenerated file.
   - `index.css`: Semantic roles and shadcn aliases. Hex values are banned here by stylelint.
   - `atmosphere.css`: Sealed art-directed tier.
 - **Class Merging:** Use `clsx` or `cn` for conditional classes.
