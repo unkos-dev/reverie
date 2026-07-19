@@ -108,6 +108,17 @@ export default defineConfig({
         },
       },
       {
+        // Drift gate for the generated color primitives: the committed
+        // artifact must equal the emitter's output, so the two only ever
+        // change together (including dependency bumps that shift color math).
+        extends: true,
+        test: {
+          name: "radix-gen",
+          environment: "node",
+          include: ["scripts/radix-gen/**/__tests__/**/*.test.ts"],
+        },
+      },
+      {
         // a11y gate logic (scripts/a11y/) is plain ESM tooling, not app code,
         // so it lives outside src/ and runs in a node env like vite-plugins.
         // The pure allowlist/verdict module is the only logic-bearing surface

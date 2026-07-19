@@ -265,6 +265,20 @@ export default defineConfig({
         plugins: ["typescript"],
       },
       {
+        // Vendored Radix color engine (see its file header): upstream is
+        // written against looser colorjs.io typings, so the type-aware rules
+        // and the @ts-nocheck escape are exempted for this one file. The
+        // drift test pins its emitted artifact, which is the real gate.
+        files: ["frontend/scripts/radix-gen/generate-radix-colors.ts"],
+        rules: {
+          "typescript/ban-ts-comment": "off",
+          "typescript/no-unnecessary-condition": "off",
+          "typescript/restrict-plus-operands": "off",
+          "typescript/restrict-template-expressions": "off",
+        },
+        plugins: ["typescript"],
+      },
+      {
         files: [
           "frontend/src/api/**",
           "frontend/src/lib/theme/api.ts",
