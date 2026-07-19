@@ -15,6 +15,7 @@
     "test:watch": "vp test",
     "test:coverage": "vp test run --coverage",
     "stylelint": "stylelint 'src/**/*.css' --max-warnings 0",
+    "primitives:gen": "node scripts/radix-gen/emit-primitives.ts",
     "detect": "impeccable detect src",
     "a11y": "playwright test"
   },
@@ -38,6 +39,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
+    "@radix-ui/colors": "3.0.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query-devtools": "^5.100.14",
     "@testing-library/jest-dom": "^6.9.1",
@@ -46,10 +50,10 @@
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
-    "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "^1.61.1",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.8",
+    "bezier-easing": "3.0.1",
+    "colorjs.io": "0.6.1",
     "impeccable": "^3.1.0",
     "jsdom": "^29.1.1",
     "shadcn": "^4.9.0",

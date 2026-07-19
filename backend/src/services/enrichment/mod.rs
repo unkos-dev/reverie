@@ -1,5 +1,5 @@
 //! Metadata enrichment pipeline — three-layer architecture (journal, policy,
-//! canonical pointers).  See plans/BLUEPRINT.md Step 7.
+//! canonical pointers).
 //!
 //! Each submodule owns a single concern: `HTTP` transport and `SSRF` guards
 //! (`http`), cache read/write (`cache`), source fan-out and canonical

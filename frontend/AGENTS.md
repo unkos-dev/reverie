@@ -76,7 +76,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 - **Tailwind v4:** Use utility classes.
 - **Theme Tree:**
-  - `primitives.generated.css`: Generated from brand anchors. NEVER HAND-EDIT.
+  - `primitives.generated.css`: Generated from the brand anchors in `scripts/radix-gen/emit-primitives.ts`; regenerate with `npm run primitives:gen`. NEVER HAND-EDIT: a drift test pins the committed artifact to the emitter's output, so anchor or override changes happen in the emitter and ship with the regenerated file.
   - `index.css`: Semantic roles and shadcn aliases. Hex values are banned here by stylelint.
   - `atmosphere.css`: Sealed art-directed tier.
 - **Class Merging:** Use `clsx` or `cn` for conditional classes.
@@ -85,4 +85,5 @@ These rules define the React and TypeScript architecture. Do not deviate.
 <testing_standards>
 
 - **Behavioral Testing:** Use Vitest + React Testing Library. Test behavior, not implementation details.
+- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the dev-only design showcase; reproduce locally with `npm run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in `scripts/a11y/allowlist.mjs`; new scannable routes join the default target list in the same file's `parseTargets` (the `A11Y_TARGETS` env var is a per-run override that CI does not set).
   </testing_standards>

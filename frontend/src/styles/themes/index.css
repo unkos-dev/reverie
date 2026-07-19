@@ -1,6 +1,5 @@
 /**
- * Reverie canonical theme tree (three-tier — spec
- * plans/2026-06-18-editorial-design-system-tokens-design.md).
+ * Reverie canonical theme tree (three tiers).
  *
  *   Tier 1  primitives.generated.css  — generated Radix ramps (do not hand-edit)
  *   Tier 2  this file                 — semantic roles + shadcn aliases + @theme inline
@@ -20,8 +19,7 @@
  */
 @import "tailwindcss";
 /* Tier 1 — generated Radix primitives (do not hand-edit; regenerate via radix-gen).
-   Provides --sand/--gold/--danger ramps + alpha + P3 + contrast + --bg.
-   Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
+   Provides --sand/--gold/--danger ramps + alpha + P3 + contrast + --bg. */
 @import "./primitives.generated.css";
 /* Tier 3 — art-directed atmosphere (--atm-* + --cover-*). Chrome must not
    consume these (governance §7). Spec §4/§8. */
@@ -146,7 +144,7 @@
 [data-theme="light"] {
   /* Tier 2 semantic roles → Tier 1 primitives. Theme-constant mapping; the
      primitive swap (primitives.generated.css [data-theme="dark"]) does the
-     light/dark work. Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4. */
+     light/dark work. */
   --canvas: var(--bg); /* parchment page (spec §4b) */
   --canvas-2: var(--sand-2);
   --surface: var(--sand-3);
