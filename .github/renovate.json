@@ -31,6 +31,12 @@
       "rangeStrategy": "update-lockfile"
     },
     {
+      "description": "Do not manage the npm overrides block as first-class dependencies. Its entries are deliberate transitive security floors, and because the packages are transitive-only, a per-entry lockfile bump runs npm install <pkg>@<version>, which npm rejects with EOVERRIDE. That failure blocked the hono lockfile branch and the npm side of lock file maintenance. Pinned transitive versions still refresh within range through normal lockfile updates.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["overrides"],
+      "enabled": false
+    },
+    {
       "description": "Hold major upgrades for dashboard approval and process them after lower-risk updates.",
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
