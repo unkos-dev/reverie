@@ -17,7 +17,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 <react_and_components>
 
-- **Container / Presentational Split:** Container components own data fetching (React Query), state, and side effects. Presentational components receive props and render UI. Never mix service calls into presentational components.
+- **Component Boundaries:** Keep data fetching in React Query hooks or owning components and API calls in `src/api/`. Split rendering from orchestration when it improves reuse, testing, or clarity; small cohesive components may own both local coordination and presentation.
 - **Functional Only:** No class components.
 - **Strict Effects:** `useEffect` must have a complete dependency array. Never suppress the linter. Never pass an async function directly; use the `AbortController` pattern:
 
@@ -37,8 +37,8 @@ These rules define the React and TypeScript architecture. Do not deviate.
   }, []);
   ```
 
-- **Parallel Async:** Run independent async concurrently — `Promise.all()` to fail fast, `Promise.allSettled()` when one failure shouldn't abort the others.
-- **Single-Purpose Effects:** Every `useEffect` must handle one specific concern. Never combine unrelated logic (e.g., data fetching and event listeners) into a single effect just to save lines of code.
+- **Parallel Async:** Run independent async work concurrently when ordering, rate, and resource constraints permit. Use `Promise.all()` to fail fast or `Promise.allSettled()` when one failure should not abort the others.
+- **Cohesive Effects:** Keep each `useEffect` focused on one lifecycle concern. Closely coupled setup and cleanup may share an effect; unrelated work should not be combined merely to reduce line count.
 - **Suspense & Error Boundaries:** Every `<Suspense>` boundary MUST have an `<ErrorBoundary>` above it. The pair handles both states.
 - **Forms (Uncontrolled Default):** Prefer uncontrolled inputs using `FormData` when the form has a clear submit step. Only use controlled inputs (`useState`) when the value drives other UI or requires real-time validation.
 - **No Complex JSX:** Extract complex inline JSX expressions to variables or helper functions for readability.
@@ -62,7 +62,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
   1. Used by one component -> `useState` inside it.
   2. Used by parent + children -> First, attempt Component Composition (passing UI as `children` or `slots`). If that fails, lift state to the nearest common ancestor.
   3. Distant branches -> Context, but for **low-frequency reads only** (theme, auth). Do not use Context for high-frequency updates, as it triggers massive re-renders.
-- **Performance:** Use `React.memo` / `useMemo` / `useCallback` ONLY when a measured need exists. List `key` values must be stable and unique (never use array index).
+- **Performance:** Use `React.memo`, `useMemo`, or `useCallback` when profiling, reference stability, or an API contract justifies it; remove cargo-cult memoization. List `key` values must be stable and unique (never use array index).
   </state_and_data>
 
 <state_ownership>

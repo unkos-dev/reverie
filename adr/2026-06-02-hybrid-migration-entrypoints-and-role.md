@@ -3,7 +3,7 @@ status: "accepted"
 date: 2026-06-02
 supersedes: ["superseded/2026-05-26-auto-migration-on-startup.md"]
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

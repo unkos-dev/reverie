@@ -3,7 +3,7 @@ status: "accepted"
 date: 2026-07-07
 supersedes: []
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

@@ -3,7 +3,7 @@ status: "accepted"
 date: 2026-07-13
 supersedes: ["superseded/2026-06-05-accessibility-review-process.md"]
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

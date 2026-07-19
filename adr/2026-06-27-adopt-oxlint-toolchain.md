@@ -7,7 +7,7 @@ supersedes:
     "superseded/2026-05-22-frontend-docstring-tooling.md",
   ]
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

@@ -23,10 +23,12 @@
 # Usage: no-plan-refs.sh <file>...
 set -euo pipefail
 
-# Parenthetical phase tags `(S2)`; `decision N` / `invariant N` numbering;
-# capitalised `Phase N` rollout labels. Lowercase `phase N` is left alone so a
-# genuine runtime-phase description does not trip the guard.
-pattern='\(S[0-9]+\)|\b(decision|invariant) [0-9]+\b|\bPhase [0-9]+\b'
+# Parenthetical phase tags `(S2)` in any letter case; singular or plural
+# `decision N` / `invariant N` numbering; capitalised or all-caps `Phase N`
+# rollout labels. Lowercase `phase N` is left alone so a genuine runtime-phase
+# description does not trip the guard.
+pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b'
+phase_pattern='\b(Phase|PHASE) [0-9]+\b'
 
 # Decide whether a path is gated by this guard. `case` globs treat '*' as
 # matching across '/', so a single '*' spans nested directories.
@@ -60,9 +62,18 @@ fi
 # grep exit 1 = no matches (clean); exit >1 = a real error (e.g. an unreadable
 # file) that must not read as "clean".
 rc=0
-matches=$(grep -nE "$pattern" -- "${files[@]}") || rc=$?
+matches=$(grep -niE "$pattern" -- "${files[@]}") || rc=$?
 if [ "$rc" -gt 1 ]; then
   exit "$rc"
+fi
+
+phase_rc=0
+phase_matches=$(grep -nE "$phase_pattern" -- "${files[@]}") || phase_rc=$?
+if [ "$phase_rc" -gt 1 ]; then
+  exit "$phase_rc"
+fi
+if [ -n "$phase_matches" ]; then
+  matches="${matches}${matches:+$'\n'}${phase_matches}"
 fi
 
 if [ -n "$matches" ]; then

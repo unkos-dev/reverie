@@ -102,17 +102,23 @@ expect_silent "The \`a ${emdash} b\` operator is code, not prose."
 # Near miss: "deep" without "dive" must not trip BusinessJargon.
 expect_silent "We dug deep into the schema before the migration."
 
-# Em-dash contract: a bare token gates every em dash in prose, so no Markdown
-# formatting around the dash (bold, italic, code) can slip the gate. Two
-# structural exemptions, not pattern heuristics: the frontmatter `consulted`
-# field (exercised on real files in the mini-repo below, so the file parser and
-# field scope match scripts/vale-lint.sh), and inline code spans (line 70).
+# Em-dash contract: a bare token gates every em dash in prose, so Markdown
+# formatting around the dash cannot slip the gate. Inline code is outside
+# Vale's prose scope.
 # Markers are recast at source, not pattern-exempted, so a table-cell em dash
 # fires like any other prose.
 # Formatting around the dash is no bypass: an emphasised em dash still fires.
 expect_fires EmDash "This decision **${emdash}** owns the contract."
 # A table-cell em dash fires too: table cells are not exempt (markers recast).
 expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
+# EmDash is advisory, like Spelling: it surfaces at `warning`, so a finding must
+# not exit non-zero and block the commit or CI gate on its own.
+if printf '%s\n' "The spine loads ${emdash} then renders." | vale --output=line --ext=.md >/dev/null 2>&1; then
+  echo "ok   EmDash warning is advisory (exit 0)"
+else
+  echo "FAIL EmDash must warn without failing the gate" >&2
+  fail=1
+fi
 
 # Path-scoped behaviour can't be exercised over stdin (no file path), so build a
 # throwaway mini-repo from the real .vale.ini + styles, with one Wh-opener line
@@ -148,18 +154,16 @@ else
   fail=1
 fi
 
-# Frontmatter scope on real files (same parser and field scope as vale-lint.sh,
-# not just stdin): the MADR `consulted` placeholder is field-scoped silent; a
-# prose `description` is not exempt and fires. Deleting `~text.frontmatter.consulted`
-# from .vale.ini makes the first assertion fail.
+# Frontmatter scope on real files uses the same parser as vale-lint.sh. Both the
+# ADR consulted field and a prose description must reject the token.
 printf -- '---\nconsulted: "%s"\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-consulted.md"
 printf -- '---\ndescription: Shell organised %s the rail.\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-desc.md"
 
 got=$(checks_for docs/src/fm-consulted.md)
-if [ -z "$got" ]; then
-  echo "ok   consulted frontmatter field-scoped silent (real file)"
+if [ "$got" = "ReverieProse.EmDash" ]; then
+  echo "ok   consulted frontmatter fires EmDash (real file)"
 else
-  echo "FAIL consulted should be silent, fired [$got]" >&2
+  echo "FAIL consulted should fire EmDash, got [${got:-<none>}]" >&2
   fail=1
 fi
 

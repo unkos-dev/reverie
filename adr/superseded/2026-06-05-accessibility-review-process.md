@@ -4,7 +4,7 @@ date: 2026-06-05
 supersedes: []
 superseded-by: ["../2026-07-13-a11y-gate-on-playwright.md"]
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

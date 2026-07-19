@@ -4,7 +4,7 @@ date: 2026-05-22
 supersedes: []
 superseded-by: ["../2026-06-27-adopt-oxlint-toolchain.md"]
 decision-makers: "John Unkovich"
-consulted: "—"
+consulted: []
 informed: "Reverie contributors"
 ---
 

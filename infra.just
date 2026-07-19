@@ -45,6 +45,21 @@ vale-selftest:
 dco-selftest:
     scripts/dco-selftest.sh
 
+# Self-test the private-plan reference guard.
+[group('infra')]
+no-plan-refs-selftest:
+    scripts/no-plan-refs-selftest.sh
+
+# Assert repository-local lint tool pins match their CI installers.
+[group('infra')]
+tool-pin-drift:
+    scripts/tool-pin-drift.sh
+
+# Validate canonical ADR frontmatter and lifecycle index coverage.
+[group('infra')]
+adr-frontmatter-selftest:
+    scripts/adr-frontmatter-selftest.sh
+
 # Test the vale-lint.sh scope policy (include/exclude classification).
 [group('infra')]
 vale-scope-test:
@@ -94,7 +109,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

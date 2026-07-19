@@ -1,8 +1,11 @@
 ---
 status: superseded
 date: 2026-05-08
+supersedes: []
 superseded-by: ["../2026-06-04-first-party-session-layer.md"]
-decision-makers: john
+decision-makers: "John Unkovich"
+consulted: []
+informed: "Reverie contributors"
 ---
 
 # Adopt `tower-sessions-sqlx-store` for Postgres-backed sessions

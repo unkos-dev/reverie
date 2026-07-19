@@ -854,7 +854,7 @@ jobs:
   # YAML, Markdown, prose, and formatting. The lefthook pre-commit hook
   # runs these locally, but pre-commit is bypassable (--no-verify) and
   # never runs on fork PRs — this job is the authoritative surface. Tool
-  # versions are pinned to the workspace image so local and CI evaluate
+  # versions are pinned in mise.toml and CI so local and remote checks evaluate
   # against the same binaries; the lint invocations live in the just
   # recipes so CI and local share one definition.
   repo-lint:
@@ -938,7 +938,7 @@ jobs:
           binary: vale
           archive-member: vale
 
-      # yamllint is pip-only; pinned to the workspace-image version.
+      # yamllint is pip-only; its version matches mise.toml.
       - name: Install yamllint 1.33.0
         run: pipx install yamllint==1.33.0
 
@@ -947,6 +947,15 @@ jobs:
 
       - name: DCO gate self-test
         run: just infra::dco-selftest
+
+      - name: Plan-reference gate self-test
+        run: just infra::no-plan-refs-selftest
+
+      - name: Repository tool pins match CI
+        run: just infra::tool-pin-drift
+
+      - name: ADR frontmatter and index coverage
+        run: just infra::adr-frontmatter-selftest
 
       - name: Dockerfile lint (hadolint)
         run: just infra::hadolint
@@ -1029,7 +1038,7 @@ jobs:
       # and is NUL-delimited so a filename containing a newline cannot
       # split and bypass the guard. `shell: bash` because mapfile + process
       # substitution are bash-only.
-      - name: Reject issue-tracker refs in changed source
+      - name: Reject issue-tracker and plan refs in changed source
         if: steps.source-changed.outputs.source == 'true'
         shell: bash
         env:
@@ -1039,6 +1048,7 @@ jobs:
           mapfile -d '' -t files < <(printf '%s' "$SOURCE_FILES" | jq -j '.[] + "\u0000"')
           if [ "${#files[@]}" -gt 0 ]; then
             just infra::no-issue-refs "${files[@]}"
+            just infra::no-plan-refs "${files[@]}"
           fi
 
   frontend:
