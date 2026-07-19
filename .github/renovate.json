@@ -6,6 +6,7 @@
     ":gitSignOff",
     "helpers:pinGitHubActionDigests"
   ],
+  "configMigration": true,
   "timezone": "Australia/Perth",
   "dependencyDashboardTitle": "Dependency dashboard: Renovate",
   "labels": ["dependencies"],
@@ -126,21 +127,10 @@
       "groupName": "vite-plus"
     },
     {
-      "description": "scripts/tool-pin-drift.sh requires each lint tool's mise.toml pin and ci.yml installer pin to move in the same PR; group the mise-manager depName with the workflow annotation depName so neither side can land alone. These four are checksum-verified installs, so the grouped PR still needs its sha256 updated manually before merge.",
-      "matchDepNames": ["actionlint", "rhysd/actionlint"],
-      "groupName": "actionlint"
-    },
-    {
-      "matchDepNames": ["hadolint", "hadolint/hadolint"],
-      "groupName": "hadolint"
-    },
-    {
-      "matchDepNames": ["shellcheck", "koalaman/shellcheck"],
-      "groupName": "shellcheck"
-    },
-    {
-      "matchDepNames": ["vale", "errata-ai/vale"],
-      "groupName": "vale"
+      "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until npm run primitives:gen is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group.",
+      "matchDepNames": ["@radix-ui/colors", "colorjs.io", "bezier-easing"],
+      "groupName": "radix-gen",
+      "dependencyDashboardApproval": true
     }
   ],
   "customManagers": [
@@ -170,39 +160,12 @@
       ]
     },
     {
-      "description": "Track TruffleHog's image tag separately from the action digest; reviewers must update both in lockstep.",
+      "description": "Track annotated version pins in workflows (TruffleHog's image tag, mise itself, and the remaining install-pinned-tool binaries). When a sha256 line follows the version, the github-release-attachments datasource rewrites it alongside the bump, keeping the checksum control without the manual repin step.",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\""
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\"(?:\\s+sha256:\\s*\"(?<currentDigest>[a-f0-9]{64})\")?"
       ]
-    },
-    {
-      "description": "Track just inside taiki-e/install-action tool lists. depName deliberately matches the mise manager's so both pins share one branch and satisfy scripts/tool-pin-drift.sh.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
-      "matchStrings": ["\\btool: [^\\n]*\\bjust@(?<currentValue>[0-9.]+)"],
-      "depNameTemplate": "just",
-      "packageNameTemplate": "casey/just",
-      "datasourceTemplate": "github-releases"
-    },
-    {
-      "description": "Track typos inside taiki-e/install-action tool lists. depName deliberately matches the mise manager's so both pins share one branch and satisfy scripts/tool-pin-drift.sh.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
-      "matchStrings": ["\\btool: [^\\n]*\\btypos@(?<currentValue>[0-9.]+)"],
-      "depNameTemplate": "typos",
-      "packageNameTemplate": "crate-ci/typos",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.+)$"
-    },
-    {
-      "description": "Track the pipx yamllint install. depName deliberately matches the mise manager's so both pins share one branch and satisfy scripts/tool-pin-drift.sh.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
-      "matchStrings": ["\\byamllint==(?<currentValue>[0-9.]+)"],
-      "depNameTemplate": "yamllint",
-      "datasourceTemplate": "pypi"
     }
   ]
 }

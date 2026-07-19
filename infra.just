@@ -50,7 +50,7 @@ dco-selftest:
 no-plan-refs-selftest:
     scripts/no-plan-refs-selftest.sh
 
-# Assert repository-local lint tool pins match their CI installers.
+# Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.
 [group('infra')]
 tool-pin-drift:
     scripts/tool-pin-drift.sh
