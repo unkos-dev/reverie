@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { ARTIFACT_PATH, buildPrimitivesCss } from "../emit-primitives.ts";
+import { ARTIFACT_PATH, buildPrimitivesCss, COLOR_DEP_VERSIONS } from "../emit-primitives.ts";
 
 describe("primitives.generated.css drift gate", () => {
   it("matches the committed artifact byte for byte", () => {
@@ -22,5 +22,13 @@ describe("primitives.generated.css drift gate", () => {
   it("keeps the generator's danger contrast unoverridden", () => {
     const css = buildPrimitivesCss();
     expect(css.match(/--danger-contrast: #fff;/g)).toHaveLength(2);
+  });
+
+  it("records the exactly pinned color-dep versions in the header", () => {
+    const css = buildPrimitivesCss();
+    for (const [name, version] of Object.entries(COLOR_DEP_VERSIONS)) {
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(css).toContain(`${name}@${version}`);
+    }
   });
 });
