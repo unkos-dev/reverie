@@ -72,6 +72,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'docs/package.json'
+              - 'version.txt'
               - '.github/workflows/docker-publish.yml'
       - id: set
         env:
@@ -329,18 +330,23 @@ jobs:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           set -euo pipefail
+          # Scratch file lives OUTSIDE the digests working directory: the
+          # manifest-create step below globs this directory as the digest
+          # list, and a stray file would be expanded into an invalid
+          # `@sha256:` reference that fails every publish.
+          sbom="${RUNNER_TEMP}/sbom-check.json"
           rc=0
           for digest in *; do
             ref="${IMAGE_REF}@sha256:${digest}"
             docker buildx imagetools inspect "$ref" \
-              --format '{{ json .SBOM }}' > sbom-check.json
+              --format '{{ json .SBOM }}' > "$sbom"
             # A digest published without an SBOM attestation inspects to
             # JSON `null`; that is a failure, not an empty result.
-            jq -e '. != null' sbom-check.json > /dev/null \
+            jq -e '. != null' "$sbom" > /dev/null \
               || { echo "::error::${ref} carries no SBOM attestation"; rc=1; continue; }
             count() {
               jq -r --arg p "$1" \
-                '[.. | strings | select(startswith($p))] | length' sbom-check.json
+                '[.. | strings | select(startswith($p))] | length' "$sbom"
             }
             crates=$(count "pkg:cargo/")
             npm=$(count "pkg:npm/")
