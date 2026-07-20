@@ -10,7 +10,10 @@ name: reverie${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
 services:
   postgres:
     image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
-    container_name: reverie-postgres
+    # Suffixed like the project so an alternate-env stack does not clash on
+    # the global container namespace; the published host port is then the
+    # only resource shared between env stacks.
+    container_name: reverie-postgres${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
     restart: unless-stopped
     environment:
       POSTGRES_USER: reverie

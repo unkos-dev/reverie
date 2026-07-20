@@ -34,6 +34,11 @@ assert_job_drift_fails backend-checks
 # An unpinned project name must fail: the default couples stack identity to
 # the compose file's directory name.
 compose_fixture="$fixture/docker/compose.dev.yml"
+yq -i '.name = "docker"' "$compose_fixture"
+if "$guard" >/dev/null 2>&1; then
+  echo "FAIL: compose invariant guard accepted a wrong project name" >&2
+  exit 1
+fi
 yq -i 'del(.name)' "$compose_fixture"
 if "$guard" >/dev/null 2>&1; then
   echo "FAIL: compose invariant guard accepted a missing project name" >&2
