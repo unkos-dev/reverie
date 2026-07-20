@@ -5,9 +5,14 @@
 # Background: .github/CONTRIBUTING.md documents the active AI reviewers
 # and the data-handling terms that apply when opening a PR.
 #
-# Profile is `chill`. CodeRabbit runs alongside the repo's own lint/CI
-# surface and multi-agent review, so its remit is net-new signal, not
-# volume.
+# Remit: CodeRabbit is scoped to the operational plane (shell scripts,
+# just recipes, CI workflows, git hooks, container files), where its
+# review record shows unique catches the rest of the stack misses:
+# portability, signal handling, and set -u/-e edge cases. The positive
+# path_filters below act as an allowlist, so a PR touching none of
+# these paths is skipped entirely; that is both the noise control and
+# what keeps usage under the per-developer review rate limit. Product
+# code review is owned by Greptile plus the native lint/CI surface.
 
 language: en-AU
 tone_instructions: ""
@@ -33,54 +38,51 @@ reviews:
   suggested_reviewers: false
   suggested_labels: false
   enable_prompt_for_ai_agents: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
   auto_review:
     enabled: true
     drafts: false
     auto_incremental_review: false
   path_filters:
-    - "!**/package-lock.json"
-    - "!**/Cargo.lock"
+    - "scripts/**"
+    - "justfile"
+    - "*.just"
+    - ".github/**"
+    - "lefthook.yml"
+    - "Dockerfile"
+    - "docker/**"
+    - "**/*.sh"
   path_instructions:
-    - path: "backend/**/*.rs"
+    - path: "**/*.sh"
       instructions: |
-        Errors flow through `thiserror`-derived `AppError`; never return
-        raw `anyhow::Error` from public APIs. SQL queries use sqlx
-        compile-time macros (`query!` / `query_as!` / `query_scalar!`); a
-        new runtime-form `sqlx::query(...)` outside the documented
-        carve-outs in `.github/sqlx-runtime-allowlist.txt` is a regression
-        — flag it. (The `chrono` ban is now a native CI grep guard.)
-    - path: "frontend/src/**/*.{ts,tsx}"
-      instructions: |
-        No raw hex colour literals — every brand colour comes from the
-        canonical token system (--color-canvas, --color-fg, --color-accent,
-        etc.). `Lockup.tsx` is the documented exemption (philosophy §11C
-        invariant). No TypeScript `enum` — use `as const` objects + union
-        types. No `as` type assertions. No `!` non-null assertions.
-        `useEffect` always returns a cleanup function; async work uses
-        `AbortController`, never `async () => …` directly.
-    - path: "frontend/src/**/*.tsx"
-      instructions: |
-        No inline JSX `style={{...}}` object literals — use Tailwind
-        classes or design tokens. `Lockup.tsx` and `src/components/ui/**`
-        (shadcn-generated) are the documented exemptions.
-    - path: "frontend/src/components/ui/**"
-      instructions: |
-        shadcn/ui primitives are CLI-generated (`npx shadcn@latest add`).
-        Do not flag style or convention divergences in this directory
-        unless they affect runtime correctness.
+        Scripts target bash on Linux and macOS dev machines. Flag
+        GNU-only flags on tools that differ on BSD/macOS (stat, sed,
+        date, xargs), variables that can be unbound under `set -u`,
+        exit-code capture patterns that break under `set -e`, and
+        signal or process-group handling races. Every guard script has
+        a matching *-selftest.sh; a behaviour change without a selftest
+        update is incomplete.
     - path: "**/*"
       instructions: |
         Reverie is open-source and self-hosted. Threat model is a multi-
         user exposed instance, not a private homelab. Treat security
-        findings on user input, auth, sessions, secrets, file I/O, XML
-        parsing, outbound HTTP, and response headers as load-bearing —
-        not nice-to-have. Never surface decrypted secret values; describe
-        presence and shape only (source, length, format) — never the
-        value itself. TDD is mandatory. A code change without a
-        corresponding test (happy path, negative, edge case where
-        non-obvious) should be flagged as incomplete. Conventional
-        Commits are mandatory. Branch names follow GitHub Flow with
-        prefixes feat/, fix/, refactor/, docs/, chore/, test/, perf/.
+        findings on user input, secrets, file I/O, and outbound HTTP as
+        load-bearing, not nice-to-have. Never surface decrypted secret
+        values; describe presence and shape only (source, length,
+        format), never the value itself. TDD is mandatory. A code
+        change without a corresponding test (happy path, negative, edge
+        case where non-obvious) should be flagged as incomplete.
+        Conventional Commits are mandatory. Branch names follow GitHub
+        Flow with prefixes feat/, fix/, refactor/, docs/, chore/,
+        test/, perf/.
   abort_on_close: true
   finishing_touches:
     docstrings:
@@ -91,14 +93,11 @@ reviews:
       enabled: false
   tools:
     # CI duplicates — explicitly disabled. CI is the authoritative lint
-    # surface: the `lint`, `Workflow lint`, and `Repo lint` jobs in
-    # ci.yml run on every pull_request — cargo clippy --deny warnings,
-    # oxlint, oxfmt, stylelint, markdownlint-cli2,
-    # actionlint, shellcheck, hadolint, and yamllint — each scoped to
+    # surface (clippy, oxlint, oxfmt, stylelint, markdownlint-cli2,
+    # actionlint, shellcheck, hadolint, yamllint), each scoped to
     # git-tracked files with the repo's own pinned config. CodeRabbit's
-    # bundled wrappers either duplicate the same diagnostics or run
-    # against a different (default / weaker) ruleset, both of which
-    # produce noise without signal.
+    # bundled wrappers either duplicate the same diagnostics or run a
+    # different (default / weaker) ruleset.
     markdownlint:
       enabled: false
     biome:
@@ -119,32 +118,19 @@ reviews:
       enabled: false
     hadolint:
       enabled: false
-    # Structural pattern matching — net-new signal. `essential_rules`
-    # turns on CodeRabbit's built-in anti-pattern set. The remaining
-    # judgement-based convention rules (the `as`/`!` and raw-hex bans from
-    # path_instructions above) are the high-value follow-up: authored under
-    # rule_dirs, they enforce those bans deterministically instead of
-    # relying on the model's judgement, which the `chill` profile makes
-    # less reliable. (The `chrono` and runtime-`sqlx::query` bans are now
-    # native CI guards.)
+    # Structural pattern matching over the in-scope paths.
     ast-grep:
       essential_rules: true
-      rule_dirs:
-        - ".coderabbit/ast-grep-rules"
-    # Secret scanning. Reverie has no secrets in tree, but Renovate and
-    # contributor PRs touch generated configs where leakage is plausible.
+    # Secret scanning on the operational plane, where CI env plumbing
+    # and generated configs make leakage plausible.
     gitleaks:
       enabled: true
     trufflehog:
       enabled: true
     presidio:
       enabled: true
-    # SAST + IaC/image scanning — now native, blocking CI gates, so
-    # disabled here to avoid a second advisory (diff-only, non-gating)
-    # opinion. UNK-378 reproduced each as a ci.yml job: opengrep SAST over
-    # backend/src + frontend/src (#472), trivy image-CVE + IaC-misconfig
-    # scan (#469), and checkov OpenAPI/IaC policy (#470). CR's versions
-    # never gated merge, so dropping them is zero enforcement loss.
+    # SAST + IaC/image scanning — native, blocking CI gates own these
+    # (opengrep, trivy, checkov), so CR's advisory duplicates stay off.
     semgrep:
       enabled: false
     opengrep:
@@ -153,17 +139,15 @@ reviews:
       enabled: false
     checkov:
       enabled: false
-    # Multi-ecosystem SCA (lockfile vuln scan) — kept. Complements, rather
-    # than duplicates, the native cargo-audit cron + npm advisory cron
-    # (#471) + dependency-review with a cross-ecosystem advisory pass.
+    # Lockfiles sit outside the path allowlist, so SCA cannot fire;
+    # native Snyk, dependency-review, and the audit crons own that
+    # surface.
     osvScanner:
-      enabled: true
-    # Markdown grammar and style. The markdown documentation surface
-    # (README, CONTRIBUTING, ADRs, docs/, debt/) is load-bearing for the
-    # open-source self-hosting audience, so grammar/style signal is worth
-    # keeping despite the occasional false positive.
+      enabled: false
+    # Markdown and docs sit outside the path allowlist (.github/** MD
+    # excepted), and grammar review is not worth a review-limit slot.
     languagetool:
-      enabled: true
+      enabled: false
 chat:
   auto_reply: true
   art: false
@@ -176,5 +160,5 @@ knowledge_base:
   jira:
     project_keys: []
   linear:
-    usage: enabled
-    team_keys: [UNK]
+    usage: disabled
+    team_keys: []
