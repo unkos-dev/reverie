@@ -39,8 +39,12 @@ filter_bins = "widget"
 [tools."github:owner/bin-tool"]
 version = "4.5.6"
 bin = "gadget"
+
+[tools."cargo:cargo-test-tool"]
+version = "1.0.0"
 EOF
 expect "github backend filter_bins pin rejected" 1 'tool: widget@1.2.3'
 expect "github backend bin pin rejected" 1 'tool: gadget@4.5.6'
+expect "cargo backend pin rejected" 1 'tool: cargo-test-tool@1.0.0'
 
 exit "$fail"

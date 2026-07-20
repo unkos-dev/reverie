@@ -14,6 +14,7 @@ managed_tools=$(
       key = $0
       sub(/^\[tools\."/, "", key)
       sub(/"\]$/, "", key)
+      sub(/^[^:]*:/, "", key)
       count = split(key, parts, "/")
       print parts[count]
       next
