@@ -3,8 +3,8 @@
 #
 # Asserts the loopback-only port bind (Docker-published ports bypass host
 # firewalls, and the dev cluster uses trivial passwords), the digest-pinned
-# postgres image, dev/CI image parity (the CI backend job's service
-# container must run the exact image compose runs, or "tests passed in CI"
+# postgres image, dev/CI image parity (both CI backend jobs' service
+# containers must run the exact image compose runs, or "tests passed in CI"
 # stops implying "tests pass locally"), and the postgres:18 parent volume
 # mount (/var/lib/postgresql, not the legacy .../data child, which errors
 # at first init on 18+).
@@ -37,11 +37,13 @@ postgres:18@sha256:*)
   ;;
 esac
 
-ci_image="$(yq '.jobs.backend.services.postgres.image' "$ci_workflow")"
-if [ "$ci_image" != "$image" ]; then
-  echo "FAIL: dev/CI postgres image parity broken: ${compose} runs '${image}' but ${ci_workflow} backend job runs '${ci_image}'; bump both together" >&2
-  fail=1
-fi
+for job in backend backend-checks; do
+  ci_image="$(yq ".jobs.${job}.services.postgres.image" "$ci_workflow")"
+  if [ "$ci_image" != "$image" ]; then
+    echo "FAIL: dev/CI postgres image parity broken: ${compose} runs '${image}' but ${ci_workflow} ${job} job runs '${ci_image}'; bump all three together" >&2
+    fail=1
+  fi
+done
 
 volume="$(yq '.services.postgres.volumes[0]' "$compose")"
 if [ "$volume" != "pgdata:/var/lib/postgresql" ]; then

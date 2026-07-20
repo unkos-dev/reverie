@@ -34,6 +34,9 @@ env:
   # stay separately Renovate-managed.
   # renovate: datasource=node-version depName=node
   NODE_VERSION: "24.18.0"
+  # Single source of truth for the migration CLI used by both backend jobs.
+  # The backend-checks guard keeps this in lockstep with the sqlx crate.
+  SQLX_CLI_VERSION: "0.9.0"
 
 jobs:
   # Detect which areas of the repo changed so downstream jobs can skip when
@@ -71,8 +74,6 @@ jobs:
             backend:
               - 'backend/**'
               - 'docker/init-roles.sql'
-              - 'docker/compose.dev.yml'
-              - 'Dockerfile'
               - '.github/workflows/ci.yml'
             audit:
               - 'backend/Cargo.toml'
@@ -87,7 +88,6 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'vite.config.ts'
-              - 'Dockerfile'
               - '.github/workflows/ci.yml'
             staging:
               - 'docker/compose.staging.yml'
@@ -182,10 +182,6 @@ jobs:
       # databases; role pools for reverie_app / reverie_ingestion are built
       # per-test in code.
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
-      # Single source of truth for the sqlx-cli pin — referenced by the
-      # cache key and the install step, and guarded against the sqlx crate
-      # version below.
-      SQLX_CLI_VERSION: "0.9.0"
       # CI-only build-speed tweaks; local dev is untouched. Incremental
       # metadata tracking is wasted in a single-shot build.
       # line-tables-only keeps file:line panic backtraces while cutting
@@ -452,7 +448,6 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
-      SQLX_CLI_VERSION: "0.9.0"
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
@@ -470,7 +465,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: backend -> target/llvm-cov-target
-          shared-key: llvm-cov-0.8.7
+          shared-key: llvm-cov
 
       - name: Create database roles
         run: psql -v ON_ERROR_STOP=1 postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
