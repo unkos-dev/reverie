@@ -80,6 +80,8 @@ mise install
 
 Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit, cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of contributor setup. Documented zizmor suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 
+[Snyk](https://snyk.io) also scans every PR as an advisory (non-blocking) layer: Snyk Code runs static analysis over the Rust and TypeScript sources, and Snyk Open Source scans the npm lockfile for vulnerable or license-incompatible dependencies. Findings surface on the repository's code-scanning dashboard and as PR annotations; they never fail the check. Analysis runs on Snyk's managed SaaS (see their [privacy and data handling terms](https://snyk.io/policies/privacy/)); the code it receives is already public. Like the scanners above, Snyk is CI-only and not part of contributor setup.
+
 ### CI toolchain pins
 
 CI installs vp and node through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev/setup-vp), reading two workflow env vars: `VP_VERSION` (the global vp) and `NODE_VERSION`. Both carry `# renovate:` annotations, so Renovate raises bump PRs; `VP_VERSION` and the npm `vite-plus` devDependency share the grouped `vite-plus` PR, and the `repo-lint` drift guard fails the build if they diverge. On a `vite-plus` bump, re-check the `dependency-review` `allow-ghsas` list in [`ci.yml`](workflows/ci.yml) against new advisories for the aliased vite package; a vp bump is the deliberate review trigger recorded in [`debt/2026-06-30-vite-plus-alias-dependency-review.md`](../debt/2026-06-30-vite-plus-alias-dependency-review.md).
