@@ -82,29 +82,30 @@ check: fmt-check clippy doc-lint drift
 # Run the backend API server in the foreground (Ctrl-C stops it).
 [group('rust')]
 dev:
-    DATABASE_URL="${REVERIE_DEV_APP_DB_URL:-postgres://reverie_app:reverie_app@localhost:5432/reverie_dev}" \
-    REVERIE_PUBLIC_URL="${REVERIE_PUBLIC_URL:-http://localhost:5173}" \
-    cargo run
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source ../scripts/backend-dev-env.sh
+    exec cargo run
 
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
 # the ownership and race checks (see scripts/dev-server.sh); this sets the
-# backend knobs: port 3000 (REVERIE_PORT overrides both the server and the
-# probe together, and the leader pattern anchors on the cargo or server
-# binary itself, with the script's same-directory check excluding other
-# checkouts' cargo processes), the RLS-enforced reverie_app runtime DSN (dev-default
-# password; REVERIE_DEV_APP_DB_URL overrides, expanded in-shell so an override
-# never echoes), a leader pattern matching cargo and the built binary, start
+# backend knobs: the resolved port for both the server and the readiness probe,
+# a leader pattern anchored on the cargo or server binary itself (the script's
+# same-directory check then excludes other checkouts' cargo processes), start
 # ticks sized for a cold `cargo run` compile rather than bare process startup,
 # and advice strings that name the rust recipes.
-# REVERIE_PUBLIC_URL is required whenever OPDS is enabled (the default); the
-# dev default is the Vite origin, which proxies /opds to this server.
+#
+# The dev configuration the server needs comes from scripts/backend-dev-env.sh,
+# which defers to `.env` instead of overriding it. A shebang body keeps the
+# dev-default DSN out of just's per-line echo, which shebang recipes do not get.
 _dev-lifecycle action:
-    DATABASE_URL="${REVERIE_DEV_APP_DB_URL:-postgres://reverie_app:reverie_app@localhost:5432/reverie_dev}" \
-    REVERIE_PUBLIC_URL="${REVERIE_PUBLIC_URL:-http://localhost:5173}" \
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source ../scripts/backend-dev-env.sh
     DEV_SERVER_DIR=. \
-    DEV_SERVER_PORT="${REVERIE_PORT:-3000}" \
+    DEV_SERVER_PORT="$REVERIE_PORT" \
     DEV_SERVER_CMD="cargo run" \
-    DEV_SERVER_LEADER_PATTERN="(^|/)(cargo|reverie-api)$" \
+    DEV_SERVER_LEADER_PATTERN='(^|/)(cargo|reverie-api)$' \
     DEV_SERVER_START_TICKS=600 \
     DEV_SERVER_STOP_HINT="just rust::dev-stop" \
     DEV_SERVER_FG_HINT="just rust::dev" \

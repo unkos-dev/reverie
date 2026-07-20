@@ -147,31 +147,53 @@ assert "startup timeout leaves no server" no_hang_server
 # A reused pgid whose leader looks like a dev server but runs somewhere else
 # (another checkout, an unrelated build) must be treated as stale, never
 # signalled: cmdline pattern alone is not ownership.
+#
+# Waiting on the pidfile alone would be racy in the wrong direction: it appears
+# one statement before `cd /`, and until the exec the leader is still the bash
+# whose own cmdline carries the word "node" from the -c string while its cwd is
+# still the server directory. That window presents as genuinely owned, so wait
+# for the state this case is actually about.
 (setsid bash -c "echo \"\$\$\" > ${tmp}/.dev-server.pid; cd /; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
-for _ in $(seq 1 20); do
-  [ -s "${tmp}/.dev-server.pid" ] && break
+for _ in $(seq 1 40); do
+  [ -s "${tmp}/.dev-server.pid" ] &&
+    [ "$(readlink "/proc/$(cat "${tmp}/.dev-server.pid")/cwd" 2>/dev/null)" = "/" ] && break
   sleep 0.1
 done
 cp "${tmp}/.dev-server.pid" "${tmp}/elsewhere.cleanup-pgid"
+assert "elsewhere fixture reached its foreign working directory" \
+  test "$(readlink "/proc/$(cat "${tmp}/elsewhere.cleanup-pgid")/cwd" 2>/dev/null)" = "/"
 expect "stop refuses a pattern-matching group rooted elsewhere" 0 "removed stale pidfile" stop
 assert "group rooted elsewhere survives stop" kill -0 -- "-$(cat "${tmp}/elsewhere.cleanup-pgid")"
 kill -KILL -- "-$(cat "${tmp}/elsewhere.cleanup-pgid")" 2>/dev/null || true
 
+# Presents as a genuinely owned but non-serving server: cd first, because the
+# owned-alive check requires the leader to be rooted in the server directory.
+# shellcheck disable=SC2329  # invoked below, after each hint expectation
+start_owned_hang() {
+  (setsid bash -c "cd ${tmp}; echo \"\$\$\" > .dev-server.pid; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
+  for _ in $(seq 1 40); do
+    [ -s "${tmp}/.dev-server.pid" ] && break
+    sleep 0.1
+  done
+  cp "${tmp}/.dev-server.pid" "${tmp}/$1.cleanup-pgid"
+}
+
 # Advice strings are caller-parameterized so one script serves both planes'
-# recipes; with no override the advice names the js recipes.
+# recipes. Both the defaults and an override are asserted: a typo in either
+# `:-` default would otherwise ship silently, pointing frontend users at a
+# recipe that does not exist.
+expect "stop no-op advice defaults to the js foreground recipe" 0 "just js::dev" stop
+start_owned_hang js-hint
+expect "not-serving status advice defaults to the js stop recipe" 1 "just js::dev-stop" status
+kill -KILL -- "-$(cat "${tmp}/js-hint.cleanup-pgid")" 2>/dev/null || true
+rm -f "${tmp}/.dev-server.pid"
+
 export DEV_SERVER_STOP_HINT="just rust::dev-stop"
 export DEV_SERVER_FG_HINT="just rust::dev"
 expect "stop no-op advice uses the caller's foreground hint" 0 "just rust::dev" stop
-# cd first: the owned-alive check requires the leader to be rooted in the
-# server directory, and this case must present as a genuinely owned server.
-(setsid bash -c "cd ${tmp}; echo \"\$\$\" > .dev-server.pid; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
-for _ in $(seq 1 20); do
-  [ -s "${tmp}/.dev-server.pid" ] && break
-  sleep 0.1
-done
-cp "${tmp}/.dev-server.pid" "${tmp}/hint-hang.cleanup-pgid"
+start_owned_hang rust-hint
 expect "not-serving status advice uses the caller's stop hint" 1 "just rust::dev-stop" status
-kill -KILL -- "-$(cat "${tmp}/hint-hang.cleanup-pgid")" 2>/dev/null || true
+kill -KILL -- "-$(cat "${tmp}/rust-hint.cleanup-pgid")" 2>/dev/null || true
 rm -f "${tmp}/.dev-server.pid"
 
 exit "$fail"

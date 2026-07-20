@@ -50,6 +50,7 @@ across every plane.
 | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | `just infra::actionlint`                         | Lint GitHub Actions workflow files.                                                |
 | `just infra::adr-frontmatter-selftest`           | Validate canonical ADR frontmatter and lifecycle index coverage.                   |
+| `just infra::backend-dev-env-selftest`           | Assert the backend dev recipes defer to `.env` instead of overriding it.           |
 | `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint. |
 | `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
 | `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                |
