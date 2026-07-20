@@ -53,23 +53,25 @@ reviews:
     auto_incremental_review: false
   path_filters:
     - "scripts/**"
-    - "justfile"
-    - "*.just"
+    - "**/justfile"
+    - "**/*.just"
     - ".github/**"
     - "lefthook.yml"
-    - "Dockerfile"
+    - "**/Dockerfile*"
     - "docker/**"
     - "**/*.sh"
   path_instructions:
-    - path: "**/*.sh"
+    - path: "{**/*.sh,**/justfile,**/*.just,.github/workflows/**}"
       instructions: |
-        Scripts target bash on Linux and macOS dev machines. Flag
-        GNU-only flags on tools that differ on BSD/macOS (stat, sed,
-        date, xargs), variables that can be unbound under `set -u`,
-        exit-code capture patterns that break under `set -e`, and
-        signal or process-group handling races. Every guard script has
-        a matching *-selftest.sh; a behaviour change without a selftest
-        update is incomplete.
+        Shell is the review target here, including where it is embedded:
+        just recipe bodies and workflow `run:` blocks are bash and get
+        the same scrutiny as *.sh files. Flag GNU-only flags on tools
+        that differ on BSD/macOS (stat, sed, date, xargs), variables
+        that can be unbound under `set -u`, exit-code capture patterns
+        that break under `set -e`, and signal or process-group handling
+        races. Every guard script in scripts/ has a matching
+        *-selftest.sh; a behaviour change without a selftest update is
+        incomplete.
     - path: "**/*"
       instructions: |
         Reverie is open-source and self-hosted. Threat model is a multi-
