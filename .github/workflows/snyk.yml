@@ -199,8 +199,35 @@ jobs:
       # runs independently of this workflow and may not have published
       # this commit's image yet, and a main push that changes no image
       # input never builds one at all. Scanning whatever main currently
-      # ships is the honest reading and never races to a missing tag.
+      # ships is the honest reading and never races a per-commit tag.
       #
+      # The tag can still be absent outright: before the first
+      # image-producing push, after the package is deleted, or after a
+      # rename. Snyk cannot distinguish that from a broken scan and exits
+      # above 1, so probe first and record the outcome. Skipping is
+      # reported as a warning annotation and in the step summary rather
+      # than passing quietly, because "no image to scan" must stay
+      # distinguishable from "image scanned clean" when this lane is
+      # promoted from advisory to a gate.
+      #
+      # Lowercasing is required for forks: image references must be
+      # lowercase, and github.repository preserves account casing.
+      - name: Resolve image reference
+        id: image
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:main
+        run: |
+          set -euo pipefail
+          ref="${IMAGE_REF,,}"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "$ref" > /dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::${ref} does not exist; skipping the container scan and baseline."
+            echo "Snyk container scan skipped: \`${ref}\` not published." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # --platform is required because main publishes linux/arm64 only, so
       # the manifest list carries no entry matching this amd64 runner.
       # Scanning is layer analysis, not execution, so the arch mismatch is
@@ -209,9 +236,10 @@ jobs:
       #
       # Same advisory exit-code split as the jobs above.
       - name: Snyk Container scan
+        if: steps.image.outputs.present == 'true'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          IMAGE_REF: ghcr.io/${{ github.repository }}:main
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
         run: |
           set -euo pipefail
           rc=0
@@ -223,6 +251,7 @@ jobs:
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
       - name: Upload to code-scanning
+        if: steps.image.outputs.present == 'true'
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
         with:
           sarif_file: snyk-container.sarif
@@ -238,9 +267,10 @@ jobs:
       # this command. --target-reference still applies and keeps the
       # snapshot labelled by branch, matching the npm baseline.
       - name: Snyk container baseline snapshot
+        if: steps.image.outputs.present == 'true'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          IMAGE_REF: ghcr.io/${{ github.repository }}:main
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
         run: |
           snyk container monitor "$IMAGE_REF" \
             --org=reverie \
