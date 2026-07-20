@@ -39,9 +39,13 @@ the purge commit names the resolving PR (see [Lifecycle → Resolve](#resolve)).
   unbuilt infra, blocked deps) are tech debt, not idiomatic
   patterns.** Trace each candidate workaround to its justification
   before defending it; if the justification has lifted, it's debt.
-- **Reference the corresponding Linear ticket as the lift trigger.**
-  Debt entries describe the invariant; the Linear ticket carries the
-  scheduled work.
+- **Never reference an issue tracker.** `scripts/no-issue-refs.sh`
+  gates every Markdown file, `debt/` included, and rejects tracker
+  references outright. Entries are read by outside contributors and
+  self-hosters who cannot open a private tracker, so state the lift
+  condition in codebase terms. A PR number is acceptable where the
+  provenance matters; the tracker carries the scheduled work and stays
+  out of the tree.
 
 ## Frontmatter
 
@@ -52,7 +56,7 @@ Every entry has YAML frontmatter:
 severity: low|medium|high
 surfaces: [developer, server-operator, end-user, security, ci]
 adopted: 2026-05-05 # when accepted (or recognised, if pre-existing)
-adopted-because: <ticket / PR / inline rationale>
+adopted-because: <PR / inline rationale>
 lift-when-class: dep-unblocks | internal-refactor | external-standard | feature-flag | release-tag | infra-gap-closes
 lift-when: <specific measurable condition>
 ---
@@ -84,7 +88,7 @@ purge commit, not in frontmatter.
   - `infra-gap-closes`: waiting on adjacent infrastructure (homelab,
     deployment surface) being in place
 - **`lift-when`**: specific, measurable condition. Free text.
-  Examples: "the target issue merged to main", "openidconnect v5 stable
+  Examples: "the recovery-pin index ships on main", "openidconnect v5 stable
   release ships with chrono decoupled", "v0.2 release tag cut".
 
 ## Lifecycle
@@ -133,7 +137,8 @@ The frontmatter spec exists in this shape because a future consumer
 grouped by `severity`, `surfaces`, and `lift-when-class`. Write
 entries assuming an outside-the-team reader (a self-hoster considering
 deployment, an OSS contributor evaluating the project) will eventually
-see them. No private references; Linear ticket IDs are fine.
+see them. No private references and no tracker IDs, per the hard rule
+above.
 
 The roadmap consumer is the second consumer. The agent (and any
 contributor) is the first. Because every live entry is by definition
@@ -144,6 +149,7 @@ no translation pass.
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Snyk sees no Rust dependencies](2026-07-20-snyk-rust-dependency-blind-spot.md): adopted 2026-07-20; Snyk supports Cargo only via `snyk sbom test`, which creates no monitored target and emits no SARIF, so the advisory baseline covers npm, sources, and the image but not crates; cargo-deny scans Cargo.lock directly in the meantime; lifts when `snyk test`/`snyk monitor` support Cargo natively
 - [Root .npmrc forces legacy-peer-deps for the vite-plus alias](2026-07-20-npm-legacy-peer-deps-vite-alias.md): adopted 2026-07-20; vp's `vite` alias fails plugin peer ranges so a clean npm resolution and Renovate lock file maintenance error with ERESOLVE; the root `.npmrc` sets legacy-peer-deps=true; lifts when vp ships a vite surface that satisfies the `vite@^5||^6||^7||^8` peers
 - [Lint type-semantics and the hoisted typescript trail the 7.0 compiler](2026-07-19-typescript-7-vite-plus-pairing-lag.md): adopted with the typescript ~7.0.0 bump; vite-plus exact-pins oxlint-tsgolint =0.24.0 (pre-GA typescript-go snapshot) and its ^5||^6 typescript peer keeps a hoisted 6.0.3 beside the frontend's 7.0.2; lifts when a vite-plus release ships tsgolint >=0.25.0 and the docs i18next chain accepts a typescript ^7 peer so the tree resolves a single 7.x
 - [cssMinify forced to esbuild while lightningcss corrupts light-dark()](2026-07-05-cssminify-esbuild-lightdark.md): adopted from PR review; rolldown-vite's default minifier miscompiles light-dark() and every grid color token uses it; lifts when the pinned vite-plus ships the lightningcss fix and the default minifier passes the built-CSS check

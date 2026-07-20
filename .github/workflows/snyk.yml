@@ -9,8 +9,16 @@ name: Snyk advisory scan
 # gates are weakened in the meantime.
 #
 # Coverage split: Snyk Code (SAST) analyzes the Rust and TypeScript
-# sources; Snyk Open Source reads the npm lockfile only, so cargo-deny
-# remains the sole Rust dependency scanner.
+# sources; Snyk Open Source reads the npm lockfile only; Snyk Container
+# reads the published runtime image, covering the Debian base layer that
+# neither source-side scanner sees.
+#
+# Rust dependencies are absent by product limitation, not by choice:
+# Snyk supports Cargo through `snyk sbom test` alone, which creates no
+# monitored target and so yields neither a dashboard entry nor a
+# baseline. cargo-deny scans Cargo.lock directly and is the higher
+# fidelity tool for that job regardless; see debt/ for the lift
+# condition.
 on:
   pull_request:
   push:
@@ -135,8 +143,160 @@ jobs:
       # Without it every monitored project collapses into one unlabelled
       # group, so a future branch-scoped monitor would silently overwrite
       # the main baseline instead of sitting beside it.
+      #
+      # --remote-repo-url pins the snapshot to this repository's target so
+      # CLI runs land on the same dashboard entry rather than minting a
+      # parallel listing; drift and remediation history stay on one target.
+      # Derived from the run context so a fork or rename cannot leave a
+      # stale hardcoded URL behind.
       - name: Snyk baseline snapshot
         if: github.event_name == 'push'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk monitor --org=reverie --all-projects --dev --target-reference=main
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          snyk monitor --org=reverie --all-projects --dev \
+            --target-reference=main \
+            --remote-repo-url="$REPO_URL"
+
+  container:
+    name: Snyk Container (image CVEs)
+    # Scans the published runtime image, which only exists for main, so
+    # this lane has no PR form: a PR's image is not built until merge and
+    # scanning main's image from a PR would report the wrong artifact.
+    # The PR-time image gate is trivy's, in docker-publish.yml.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Pull the image from GHCR.
+      packages: read
+      # Upload the SARIF result into the code-scanning dashboard.
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      # Keep this pin in lockstep with the jobs above.
+      - name: Install snyk
+        uses: ./.github/actions/install-pinned-tool
+        with:
+          # renovate: datasource=github-release-attachments depName=snyk/cli extractVersion=^v(?<version>.+)$
+          version: "1.1306.0"
+          sha256: "aad6d43f936e4357b3bda299c02d446c80602106484c36615bb4b654ef7de740"
+          url: "https://github.com/snyk/cli/releases/download/v{version}/snyk-linux"
+          binary: snyk
+
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The floating :main tag rather than :sha-<7>: docker-publish.yml
+      # runs independently of this workflow and may not have published
+      # this commit's image yet, and a main push that changes no image
+      # input never builds one at all. Scanning whatever main currently
+      # ships is the honest reading and never races a per-commit tag.
+      #
+      # The tag can still be absent outright: before the first
+      # image-producing push, after the package is deleted, or after a
+      # rename. Snyk cannot distinguish that from a broken scan and exits
+      # above 1, so probe first and record the outcome.
+      #
+      # The probe fails closed. A registry error is not an absent tag:
+      # network faults, expired credentials and GHCR outages all make
+      # `inspect` exit non-zero, and treating those as "nothing to scan"
+      # would let a real image slip past both the scan and the baseline
+      # while the workflow reported success. Only an explicit
+      # manifest-unknown response counts as absent; every other failure
+      # exits non-zero and reddens the job. Transient faults get three
+      # attempts before that verdict.
+      #
+      # Skipping is reported as a warning annotation and in the step
+      # summary rather than passing quietly, because "no image to scan"
+      # must stay distinguishable from "image scanned clean" once this
+      # lane is promoted from advisory to a gate.
+      #
+      # Lowercasing is required for forks: image references must be
+      # lowercase, and github.repository preserves account casing.
+      - name: Resolve image reference
+        id: image
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}:main
+        run: |
+          set -euo pipefail
+          ref="${IMAGE_REF,,}"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
+          for attempt in 1 2 3; do
+            if err=$(docker buildx imagetools inspect "$ref" 2>&1 >/dev/null); then
+              echo "present=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Registry vocabulary for "this tag does not exist". Anything
+            # else is an infrastructure fault, not an answer.
+            if grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' <<<"$err"; then
+              echo "present=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::${ref} is not published; skipping the container scan and baseline."
+              echo "Snyk container scan skipped: \`${ref}\` is not published." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::notice::attempt ${attempt} to inspect ${ref} failed; retrying."
+            sleep $((attempt * 5))
+          done
+
+          echo "::error::Could not determine whether ${ref} exists. Last error: ${err}"
+          exit 1
+
+      # --platform is required because main publishes linux/arm64 only, so
+      # the manifest list carries no entry matching this amd64 runner.
+      # Scanning is layer analysis, not execution, so the arch mismatch is
+      # immaterial. --file lets Snyk attribute findings to base-image
+      # lines and suggest base-image upgrades.
+      #
+      # Same advisory exit-code split as the jobs above.
+      - name: Snyk Container scan
+        if: steps.image.outputs.present == 'true'
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          rc=0
+          snyk container test "$IMAGE_REF" \
+            --org=reverie \
+            --platform=linux/arm64 \
+            --file=Dockerfile \
+            --sarif-file-output=snyk-container.sarif || rc=$?
+          if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+
+      - name: Upload to code-scanning
+        if: steps.image.outputs.present == 'true'
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        with:
+          sarif_file: snyk-container.sarif
+          category: snyk-container
+
+      # The image's counterpart to the npm baseline snapshot above:
+      # `test` reports today's findings, `monitor` is what accrues the
+      # base-layer drift and remediation history the advisory period
+      # exists to gather.
+      #
+      # No --remote-repo-url here: container targets are keyed by image
+      # reference, not repository, so the flag has no documented effect on
+      # this command. --target-reference still applies and keeps the
+      # snapshot labelled by branch, matching the npm baseline.
+      - name: Snyk container baseline snapshot
+        if: steps.image.outputs.present == 'true'
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          snyk container monitor "$IMAGE_REF" \
+            --org=reverie \
+            --platform=linux/arm64 \
+            --file=Dockerfile \
+            --target-reference=main
