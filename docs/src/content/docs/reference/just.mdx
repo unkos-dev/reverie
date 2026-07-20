@@ -3,11 +3,11 @@ title: just recipes
 description: Every task-runner recipe in the Reverie repository, generated from the justfiles.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside } from "@astrojs/starlight/components";
 
 <Aside type="caution" title="Generated file">
-  This page is generated from the justfiles by `just infra::just-reference`.
-  Edit the recipe doc comments, not this page.
+  This page is generated from the justfiles by `just infra::just-reference`. Edit the recipe doc
+  comments, not this page.
 </Aside>
 
 `just` is the task runner for every plane of the repository. Run `just` with no
@@ -64,7 +64,7 @@ across every plane.
 | `just infra::shellcheck`                      | Shellcheck every tracked shell script.                                             |
 | `just infra::tool-pin-drift`                  | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.    |
 | `just infra::tool-pin-drift-selftest`         | Exercise the tool-pin guard against planted pins before trusting it.               |
-| `just infra::typos`                           | Spell check the tree (honours .gitignore and _typos.toml excludes).                |
+| `just infra::typos`                           | Spell check the tree (honours .gitignore and \_typos.toml excludes).               |
 | `just infra::vale-scope-test`                 | Test the vale-lint.sh scope policy (include/exclude classification).               |
 | `just infra::vale-selftest`                   | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).        |
 | `just infra::yamllint`                        | yamllint every tracked YAML file.                                                  |

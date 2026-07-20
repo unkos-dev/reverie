@@ -13,7 +13,10 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-readonly PAGE="docs/src/content/docs/reference/just.md"
+# .mdx, not .md: the page uses Starlight's <Aside> component, and the
+# standard Markdown loader would render the import line as visible text
+# and drop the component. The neighbouring configuration.mdx does the same.
+readonly PAGE="docs/src/content/docs/reference/just.mdx"
 
 render() {
   # Modules carry their own recipes; the root module's are listed first so the
@@ -37,7 +40,7 @@ render() {
         else
           ($rs | sort_by(.name)[]
             | "| `just " + $prefix + .name + params(.) + "` | "
-              + ((.doc // "") | gsub("\\|"; "\\|"))
+              + ((.doc // "") | gsub("\\|"; "\\|") | gsub("\n"; " "))
 
               + " |")
         end;

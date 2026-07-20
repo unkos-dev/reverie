@@ -62,7 +62,7 @@ These are absolute invariants for the Reverie repository.
 <task_runner>
 
 `just` is the task runner for every plane. Run `just --list`, or read
-`docs/src/content/docs/reference/just.md` for the full generated reference,
+`docs/src/content/docs/reference/just.mdx` for the full generated reference,
 before hand-rolling a command: the lint, format, test, and build definitions
 CI uses live in the justfiles, so invoking a tool directly can apply different
 flags than the gate that will judge the change.

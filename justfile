@@ -58,26 +58,46 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # watchers. They must also sit on real storage, because a worktree on a tmpfs
 # loses unpushed commits at reboot; this recipe refuses to create one there.
 #
+# The branch arrives through "$@" rather than a {{ }} substitution: just
+# expands substitutions into the script text before bash parses it, and
+# double quotes do not stop command substitution, so a branch name
+# containing $() would execute. Git permits such names.
+#
 # Create a git worktree for BRANCH at $WORKTREE_ROOT/reverie/<slug>.
 [group('git')]
+[positional-arguments]
 worktree branch:
     #!/usr/bin/env bash
     set -ueo pipefail
-    slug="$(printf '%s' "{{ branch }}" | tr '/' '-')"
-    dest="{{ worktree_root }}/reverie/${slug}"
-    mkdir -p "$(dirname "$dest")"
-    fstype="$(stat -f -c %T "$(dirname "$dest")")"
-    case "$fstype" in
-        tmpfs | ramfs)
-            echo "refusing to create a worktree on ${fstype}: ${dest}" >&2
-            echo "unpushed commits there do not survive a reboot; set WORKTREE_ROOT to a disk-backed path" >&2
-            exit 1
-            ;;
-    esac
-    if git show-ref --verify --quiet "refs/heads/{{ branch }}"; then
-        git worktree add "$dest" "{{ branch }}"
+    branch="$1"
+    slug="$(printf '%s' "$branch" | tr '/' '-')"
+    dest={{ quote(worktree_root) }}"/reverie/${slug}"
+    parent="$(dirname "$dest")"
+    mkdir -p "$parent"
+    # `stat -f -c` is GNU-only; BSD stat (macOS) rejects it. Report the gap
+    # rather than defaulting to a value that would silently pass the guard,
+    # so a skipped check never looks like a passed one.
+    if fstype="$(stat -f -c %T "$parent" 2>/dev/null)"; then
+        case "$fstype" in
+            tmpfs | ramfs)
+                echo "refusing to create a worktree on ${fstype}: ${dest}" >&2
+                echo "unpushed commits there do not survive a reboot; set WORKTREE_ROOT to a disk-backed path" >&2
+                exit 1
+                ;;
+        esac
     else
-        git worktree add -b "{{ branch }}" "$dest"
+        echo "warning: cannot read the filesystem type of ${parent} (non-GNU stat); the tmpfs guard did not run" >&2
+    fi
+    # Prefer an existing local branch, then a remote-tracking one. Without
+    # the second case a branch that exists only on the remote would be
+    # recreated from the current HEAD, putting the worktree on unrelated
+    # history under a familiar name.
+    if git show-ref --verify --quiet "refs/heads/${branch}"; then
+        git worktree add "$dest" "$branch"
+    elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+        git worktree add --track -b "$branch" "$dest" "origin/${branch}"
+    else
+        git worktree add -b "$branch" "$dest"
     fi
     # mise keys trust to path, so a fresh worktree is untrusted and the first
     # command run there blocks on an interactive prompt, which a non-interactive
@@ -86,7 +106,14 @@ worktree branch:
     # grants a config more trust than the operator has given it.
     if command -v mise > /dev/null; then
         if mise trust --show 2>/dev/null | grep -q ': trusted'; then
-            mise trust "$dest" > /dev/null && echo "mise: inherited trust for $dest"
+            # Not `&&`: a failing left operand of && is exempt from set -e,
+            # so the recipe would report success while leaving the worktree
+            # untrusted, reintroducing the prompt this exists to prevent.
+            if ! mise trust "$dest" > /dev/null; then
+                echo "mise: failed to inherit trust for $dest" >&2
+                exit 1
+            fi
+            echo "mise: inherited trust for $dest"
         else
             echo "mise: this checkout is untrusted, so $dest is too; run 'mise trust' there after reviewing mise.toml" >&2
         fi
@@ -94,17 +121,20 @@ worktree branch:
     echo "worktree ready: $dest"
 
 # Remove a worktree by branch name, then prune the administrative state that
-# a plain `rm -rf` would strand in .git/worktrees.
+# a plain `rm -rf` would strand in .git/worktrees. Same "$@" handling as
+# `worktree` above, for the same injection reason.
 #
 # Remove the worktree for BRANCH.
 [group('git')]
+[positional-arguments]
 worktree-rm branch:
     #!/usr/bin/env bash
     set -ueo pipefail
-    slug="$(printf '%s' "{{ branch }}" | tr '/' '-')"
-    git worktree remove "{{ worktree_root }}/reverie/${slug}"
+    branch="$1"
+    slug="$(printf '%s' "$branch" | tr '/' '-')"
+    git worktree remove {{ quote(worktree_root) }}"/reverie/${slug}"
     git worktree prune
-    echo "removed worktree for {{ branch }}"
+    echo "removed worktree for ${branch}"
 
 # Roles seed from docker/init-roles.sql on first init only.
 #
