@@ -75,6 +75,11 @@ tool-pin-drift-selftest:
 adr-frontmatter-selftest:
     scripts/adr-frontmatter-selftest.sh
 
+# Self-test the SARIF severity sanitizer both Snyk upload jobs run.
+[group('infra')]
+sanitize-sarif-severities-selftest:
+    scripts/sanitize-sarif-severities-selftest.sh
+
 # Test the vale-lint.sh scope policy (include/exclude classification).
 [group('infra')]
 vale-scope-test:
@@ -136,7 +141,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

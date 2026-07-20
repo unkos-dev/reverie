@@ -121,14 +121,11 @@ jobs:
 
       # Snyk stamps license-issue rules with a security-severity of
       # "undefined" (license findings carry no CVSS), which the
-      # code-scanning SARIF processor rejects as non-numeric. Drop only
-      # the invalid property; every finding is preserved.
+      # code-scanning SARIF processor rejects as non-numeric. The shared
+      # sanitizer drops only the invalid property; every finding is
+      # preserved.
       - name: Sanitize SARIF severities
-        run: |
-          jq 'walk(if type == "object" and has("security-severity")
-                and ((.["security-severity"] | try tonumber catch null) == null)
-              then del(.["security-severity"]) else . end)' \
-            snyk-oss.sarif > snyk-oss-clean.sarif
+        run: scripts/sanitize-sarif-severities.sh snyk-oss.sarif snyk-oss-clean.sarif
 
       - name: Upload to code-scanning
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
@@ -273,11 +270,19 @@ jobs:
             --sarif-file-output=snyk-container.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
+      # Container rules for advisories without an assigned CVSS score carry
+      # a security-severity of null, which the code-scanning SARIF processor
+      # rejects as non-numeric; same failure class, and same shared
+      # sanitizer, as the "undefined" license rules in the npm job above.
+      - name: Sanitize SARIF severities
+        if: steps.image.outputs.present == 'true'
+        run: scripts/sanitize-sarif-severities.sh snyk-container.sarif snyk-container-clean.sarif
+
       - name: Upload to code-scanning
         if: steps.image.outputs.present == 'true'
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
         with:
-          sarif_file: snyk-container.sarif
+          sarif_file: snyk-container-clean.sarif
           category: snyk-container
 
       # The image's counterpart to the npm baseline snapshot above:
