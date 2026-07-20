@@ -1,0 +1,106 @@
+---
+title: just recipes
+description: Every task-runner recipe in the Reverie repository, generated from the justfiles.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Generated file">
+  This page is generated from the justfiles by `just infra::just-reference`.
+  Edit the recipe doc comments, not this page.
+</Aside>
+
+`just` is the task runner for every plane of the repository. Run `just` with no
+arguments for the same list at a terminal, or `just --list` to include groups.
+
+Recipes are namespaced by module: `just rust::check` runs the backend gate,
+`just js::check` the frontend one. The unprefixed aggregates at the top fan out
+across every plane.
+
+| Recipe                      | Purpose                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `just build`                | Build every shippable artifact.                                                    |
+| `just check`                | Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded). |
+| `just db-down`              | Stop the local dev Postgres; the data volume survives.                             |
+| `just db-migrate`           | Apply pending migrations with the dedicated migrator identity.                     |
+| `just db-reset`             | Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.      |
+| `just db-up`                | Start (or create) the local dev Postgres.                                          |
+| `just fmt`                  | Format the whole tree in place. WRITES; never depended on by check/lint.           |
+| `just lint`                 | Lint the js, rust, and infra surfaces.                                             |
+| `just test`                 | Run every locally-runnable unit test.                                              |
+| `just worktree <branch>`    | Create a git worktree for BRANCH at $WORKTREE_ROOT/reverie/<slug>.                 |
+| `just worktree-rm <branch>` | Remove the worktree for BRANCH.                                                    |
+
+## docs
+
+| Recipe               | Purpose                                                                         |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `just docs::build`   | Build the Starlight site (= astro build).                                       |
+| `just docs::check`   | Locally-runnable docs gate: build only. Run `just docs::links` on demand after. |
+| `just docs::install` | Install the whole workspace (frontend + docs) from the root lockfile.           |
+| `just docs::links`   | Internal-link check over the built site.                                        |
+
+## infra
+
+| Recipe                                        | Purpose                                                                            |
+| --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `just infra::actionlint`                      | Lint GitHub Actions workflow files.                                                |
+| `just infra::adr-frontmatter-selftest`        | Validate canonical ADR frontmatter and lifecycle index coverage.                   |
+| `just infra::check`                           | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint. |
+| `just infra::compose-dev-invariants`          | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
+| `just infra::compose-dev-invariants-selftest` | Self-test both CI postgres pins against isolated workflow fixtures.                |
+| `just infra::dco-selftest`                    | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).               |
+| `just infra::greptile-config`                 | Validate greptile.json parses and every pinned context path resolves.              |
+| `just infra::hadolint`                        | Hadolint every tracked Dockerfile.                                                 |
+| `just infra::just-reference`                  | Regenerate the just recipe reference from the justfiles. WRITES.                   |
+| `just infra::just-reference-drift`            | Assert the committed just reference still matches the justfiles.                   |
+| `just infra::lefthook-validate`               | cheap and offline, so it joins the lint aggregate.                                 |
+| `just infra::lint`                            | Whole repo-lint surface (mirrors the CI repo-lint job).                            |
+| `just infra::no-issue-refs <files>`           | Reject issue-tracker references in a passed file list.                             |
+| `just infra::no-plan-refs <files>`            | Reject plan-artifact references in a passed file list.                             |
+| `just infra::no-plan-refs-selftest`           | Self-test the private-plan reference guard.                                        |
+| `just infra::prose`                           | Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).           |
+| `just infra::recipe-secret-echo-test`         | Overridden DB credentials never echo into recipe logs (dry-run assertion).         |
+| `just infra::shellcheck`                      | Shellcheck every tracked shell script.                                             |
+| `just infra::tool-pin-drift`                  | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.    |
+| `just infra::tool-pin-drift-selftest`         | Exercise the tool-pin guard against planted pins before trusting it.               |
+| `just infra::typos`                           | Spell check the tree (honours .gitignore and _typos.toml excludes).                |
+| `just infra::vale-scope-test`                 | Test the vale-lint.sh scope policy (include/exclude classification).               |
+| `just infra::vale-selftest`                   | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).        |
+| `just infra::yamllint`                        | yamllint every tracked YAML file.                                                  |
+
+## js
+
+| Recipe                           | Purpose                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------- |
+| `just js::a11y`                  | block is needed here. Not part of `check`: it boots a browser and a server.           |
+| `just js::build`                 | Frontend production build (vp build; typecheck rides js::oxlint via tsgo).            |
+| `just js::check`                 | Locally-runnable verify set: lint + format check (a11y and coverage excluded).        |
+| `just js::detect`                | impeccable design anti-pattern detector.                                              |
+| `just js::fmt`                   | Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.            |
+| `just js::fmt-check`             | Verify whole-tree formatting without writing (the authoritative CI gate form).        |
+| `just js::font-integrity`        | CI frontend gate; cheap and offline, so locally runnable on its own).                 |
+| `just js::lint`                  | Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.                 |
+| `just js::markdownlint <files>`  | markdownlint over tracked Markdown at the repo root.                                  |
+| `just js::markdownlint-selftest` | Exercise YAML loading through the installed Markdownlint CLI before linting the tree. |
+| `just js::oxlint <files>`        | on the PR diff.                                                                       |
+| `just js::stylelint <files>`     | stylelint over frontend CSS (--max-warnings 0, matching CI).                          |
+| `just js::test`                  | Frontend unit tests.                                                                  |
+| `just js::test-coverage`         | Frontend unit tests with coverage (the CI form).                                      |
+
+## rust
+
+| Recipe                  | Purpose                                                                  |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `just rust::build`      | Compile the workspace.                                                   |
+| `just rust::check`      | Locally-runnable backend gate: format check, clippy, doc-lint, drift.    |
+| `just rust::clippy`     | Clippy across the whole workspace, all targets, warnings denied.         |
+| `just rust::cov`        | DB: full test suite under coverage instrumentation.                      |
+| `just rust::doc-lint`   | Reject broken intra-doc links in the public docstrings.                  |
+| `just rust::doctests`   | DB: doctests across the workspace.                                       |
+| `just rust::drift`      | Generated-artifact drift guard (OpenAPI spec + config reference).        |
+| `just rust::fmt`        | Format the workspace in place. WRITES; never a dependency of check/lint. |
+| `just rust::fmt-check`  | Verify workspace formatting without writing (the pre-push gate form).    |
+| `just rust::lint`       | Backend lint surface: clippy + doc-lint.                                 |
+| `just rust::sqlx-check` | DB: sqlx query-cache freshness against the live schema.                  |
+| `just rust::test`       | DB: full test suite, fast local loop (no coverage; see `cov`).           |

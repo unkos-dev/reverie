@@ -48,6 +48,64 @@ test: js::test rust::test
 [group('aggregate')]
 build: js::build rust::build docs::build
 
+# Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
+# default is a sibling of the repo so it inherits the same filesystem and
+# backup rules without ever nesting inside the checkout.
+worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_directory()) / "worktrees")
+
+# Worktrees live outside the checkout: nested ones put every other branch
+# inside the Docker build context, cargo workspace discovery, and file
+# watchers. They must also sit on real storage, because a worktree on a tmpfs
+# loses unpushed commits at reboot; this recipe refuses to create one there.
+#
+# Create a git worktree for BRANCH at $WORKTREE_ROOT/reverie/<slug>.
+[group('git')]
+worktree branch:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    slug="$(printf '%s' "{{ branch }}" | tr '/' '-')"
+    dest="{{ worktree_root }}/reverie/${slug}"
+    mkdir -p "$(dirname "$dest")"
+    fstype="$(stat -f -c %T "$(dirname "$dest")")"
+    case "$fstype" in
+        tmpfs | ramfs)
+            echo "refusing to create a worktree on ${fstype}: ${dest}" >&2
+            echo "unpushed commits there do not survive a reboot; set WORKTREE_ROOT to a disk-backed path" >&2
+            exit 1
+            ;;
+    esac
+    if git show-ref --verify --quiet "refs/heads/{{ branch }}"; then
+        git worktree add "$dest" "{{ branch }}"
+    else
+        git worktree add -b "{{ branch }}" "$dest"
+    fi
+    # mise keys trust to path, so a fresh worktree is untrusted and the first
+    # command run there blocks on an interactive prompt, which a non-interactive
+    # session cannot answer. Inherit the decision rather than make it: trust the
+    # worktree only when this checkout is already trusted, so the recipe never
+    # grants a config more trust than the operator has given it.
+    if command -v mise > /dev/null; then
+        if mise trust --show 2>/dev/null | grep -q ': trusted'; then
+            mise trust "$dest" > /dev/null && echo "mise: inherited trust for $dest"
+        else
+            echo "mise: this checkout is untrusted, so $dest is too; run 'mise trust' there after reviewing mise.toml" >&2
+        fi
+    fi
+    echo "worktree ready: $dest"
+
+# Remove a worktree by branch name, then prune the administrative state that
+# a plain `rm -rf` would strand in .git/worktrees.
+#
+# Remove the worktree for BRANCH.
+[group('git')]
+worktree-rm branch:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    slug="$(printf '%s' "{{ branch }}" | tr '/' '-')"
+    git worktree remove "{{ worktree_root }}/reverie/${slug}"
+    git worktree prune
+    echo "removed worktree for {{ branch }}"
+
 # Roles seed from docker/init-roles.sql on first init only.
 #
 # Start (or create) the local dev Postgres.

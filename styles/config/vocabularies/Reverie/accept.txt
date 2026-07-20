@@ -135,6 +135,7 @@ Docker
 Dockerfile
 docstring
 docstrings
+doctests
 dotfiles
 dropdown
 DTDs
@@ -157,8 +158,10 @@ filesystem
 fn
 fns
 footgun
+formatter
 FOUC
 frontend
+frontmatter
 fsync
 gha
 Gitea
@@ -168,6 +171,7 @@ glyphs
 Grafana
 Greptile
 gzipped
+Hadolint
 handoff
 hardcoded
 hardlink
@@ -201,6 +205,7 @@ JSDoc
 jsdom
 jsonb
 junkovich
+justfiles
 JWTs
 Kavita
 keydown
@@ -221,6 +226,7 @@ loopback
 Lua
 maintainer
 maintainership
+markdownlint
 math
 maxcountryman
 MDN
@@ -231,6 +237,7 @@ mitigations
 Monorepo
 Muzz
 namespace
+namespaced
 natively
 nav
 nginx
@@ -304,6 +311,7 @@ rollout
 rollup
 roundtrip
 ruleset
+runnable
 rustdoc
 Satoshi
 SBOM
@@ -321,6 +329,8 @@ serialization
 serialized
 shadcn
 sharded
+Shellcheck
+shippable
 Sidekiq
 signup
 Sigstore
@@ -366,7 +376,9 @@ tradeoff
 tradeoffs
 Traefik
 TruffleHog
+tsgo
 tsgolint
+typecheck
 UAs
 ubuntu
 unapplied
@@ -376,6 +388,7 @@ uninitialized
 Unkovich
 unlayered
 unmerged
+unprefixed
 unresolvable
 unscanned
 unscoped
@@ -400,6 +413,7 @@ viewport
 Vite
 Vitest
 VoidZero
+vp
 WAFs
 wayfinding
 webhooks
@@ -408,4 +422,7 @@ wontfix
 wordmark
 workflow_dispatch
 workstream
+worktree
+worktrees
 writeback
+yamllint
