@@ -43,8 +43,11 @@ docker compose -f docker/compose.dev.yml up
 > Upgrading a dev checkout from before the postgres:18 mount-layout fix? Drop
 > the old volume first:
 > `docker compose -f docker/compose.dev.yml down && docker volume rm reverie_pgdata`
-> (Compose prefixes volume names with the checkout directory name; if yours
-> differs, `docker volume ls | grep pgdata` finds the actual name.)
+> (The compose project name is pinned, so the volume is `reverie_pgdata`
+> regardless of the checkout directory. A stack created before the pin is
+> labelled with a directory-derived project instead: find its volume with
+> `docker volume ls | grep pgdata` and take that stack down with
+> `docker compose -p <project> -f docker/compose.dev.yml down`.)
 
 Backend only (requires the Rust toolchain; the minimum supported version is declared as `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) and enforced in CI):
 
