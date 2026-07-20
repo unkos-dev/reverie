@@ -130,8 +130,13 @@ jobs:
 
       # Refresh the Snyk-side dependency snapshot the advisory baseline
       # is judged against; PRs only test, main also monitors.
+      #
+      # --target-reference names the branch the snapshot belongs to.
+      # Without it every monitored project collapses into one unlabelled
+      # group, so a future branch-scoped monitor would silently overwrite
+      # the main baseline instead of sitting beside it.
       - name: Snyk baseline snapshot
         if: github.event_name == 'push'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk monitor --org=reverie --all-projects --dev
+        run: snyk monitor --org=reverie --all-projects --dev --target-reference=main
