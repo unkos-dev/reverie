@@ -102,8 +102,8 @@
       "groupName": "commitlint"
     },
     {
-      "description": "Keep development and staging PostgreSQL image updates together.",
-      "matchManagers": ["docker-compose"],
+      "description": "Keep every PostgreSQL image pin in one PR. scripts/compose-dev-invariants.sh requires docker/compose.dev.yml and the ci.yml backend service to pin the identical postgres digest, so a split across the docker-compose and github-actions managers fails the dev/CI parity gate on both branches. Grouping the CI workflow service with the compose images moves them together.",
+      "matchManagers": ["docker-compose", "github-actions"],
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
       "groupName": "postgres-images"
