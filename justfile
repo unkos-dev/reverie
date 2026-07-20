@@ -19,6 +19,13 @@ mod docs
 _default:
     @just --list
 
+# `just --list` collapses each module to a one-line `js ...` entry, which
+# hides the per-plane recipes; this expands them.
+#
+# List every recipe, including the ones inside modules.
+help:
+    @just --list --list-submodules
+
 # Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded).
 [group('aggregate')]
 check: js::check rust::check infra::check docs::check
