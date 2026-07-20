@@ -72,6 +72,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'docs/package.json'
+              - 'version.txt'
               - '.github/workflows/docker-publish.yml'
       - id: set
         env:
@@ -303,6 +304,64 @@ jobs:
               echo "::endgroup::"
             done
           done
+
+      # Gate SBOM completeness here, beside the CVE scan and for the same
+      # reason its comment gives: the per-arch images exist in GHCR only as
+      # untagged digests at this point, so a failure stops the manifest
+      # list from ever being created. Running this after `imagetools
+      # create` would leave the rejected image pullable under its public
+      # tag even though signing had stopped.
+      #
+      # Per digest rather than over the assembled list: a manifest list's
+      # SBOM is a platform-keyed map, and counting across it would let a
+      # complete arm64 document mask an amd64 one that had lost its
+      # metadata. Each platform has to stand on its own.
+      #
+      # Neither ecosystem reaches the SBOM on its own. Crates appear only
+      # because the binary is built with `cargo auditable`, and frontend
+      # packages only because the build ships a CycloneDX document into
+      # the image for syft to ingest. Both are quiet, load-bearing
+      # mechanisms that a plausible-looking refactor could remove without
+      # breaking the build, so assert each independently and name the
+      # mechanism in the failure.
+      - name: Verify SBOM covers application dependencies (gating)
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          # Scratch file lives OUTSIDE the digests working directory: the
+          # manifest-create step below globs this directory as the digest
+          # list, and a stray file would be expanded into an invalid
+          # `@sha256:` reference that fails every publish.
+          sbom="${RUNNER_TEMP}/sbom-check.json"
+          rc=0
+          for digest in *; do
+            ref="${IMAGE_REF}@sha256:${digest}"
+            docker buildx imagetools inspect "$ref" \
+              --format '{{ json .SBOM }}' > "$sbom"
+            # A digest published without an SBOM attestation inspects to
+            # JSON `null`; that is a failure, not an empty result.
+            jq -e '. != null' "$sbom" > /dev/null \
+              || { echo "::error::${ref} carries no SBOM attestation"; rc=1; continue; }
+            count() {
+              jq -r --arg p "$1" \
+                '[.. | strings | select(startswith($p))] | length' "$sbom"
+            }
+            crates=$(count "pkg:cargo/")
+            npm=$(count "pkg:npm/")
+            debs=$(count "pkg:deb/")
+            echo "sha256:${digest} -> ${crates} cargo, ${npm} npm, ${debs} deb"
+            if [ "$crates" -eq 0 ]; then
+              echo "::error::${ref} lists no cargo components. The release binary is probably no longer built with \`cargo auditable\`, so every crate is absent from its SBOM."
+              rc=1
+            fi
+            if [ "$npm" -eq 0 ]; then
+              echo "::error::${ref} lists no npm components. The frontend CycloneDX document is probably no longer present at /usr/share/reverie/sbom/ for syft to ingest, so every bundled frontend dependency is absent from its SBOM."
+              rc=1
+            fi
+          done
+          exit "$rc"
 
       # Provenance/SBOM attestations on the per-arch images are preserved
       # on the resulting manifest list.
