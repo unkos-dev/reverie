@@ -176,9 +176,6 @@ Open a superseding ADR if any of the following happen:
   <https://eslint.org/docs/latest/use/configure/migration-guide>
 - Related: [`adr/2026-05-03-strict-lint-policy.md`](2026-05-03-strict-lint-policy.md):
   frontend lint stack baseline this ADR amends
-- Related: [`adr/2026-05-04-greptile-trial.md`](2026-05-04-greptile-trial.md):
-  trial review tally records the eslint v10 PRs that
-  triggered this decision
 - Related PRs:
   - #135 (closed): `@eslint/js` v10 bump, ERESOLVE
   - #136 (closed): `eslint` v10 bump, ERESOLVE, force-pushed 12×
