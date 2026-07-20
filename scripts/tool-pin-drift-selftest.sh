@@ -30,4 +30,13 @@ expect "bare-name annotation rejected" 1 '# renovate: datasource=github-releases
 expect "unrelated annotation passes" 0 '# renovate: datasource=github-releases depName=aquasecurity/trivy extractVersion=^v(?<version>.+)$'
 expect "prose tool name without version passes" 0 '# actionlint and CodeQL cover different classes'
 
+cat >>"${tmp}/mise.toml" <<'EOF'
+
+[tools."github:nextest-rs/nextest"]
+version = "0.9.140"
+version_prefix = "cargo-nextest-"
+filter_bins = "cargo-nextest"
+EOF
+expect "github backend binary pin rejected" 1 'tool: cargo-nextest@0.9.140'
+
 exit "$fail"
