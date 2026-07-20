@@ -5,6 +5,34 @@
 # pins a mise-managed tool by version.
 set -euo pipefail
 
+managed_tools=$(
+  awk -F' *= *' '
+    /^\[tools\]$/ { in_tools = 1; in_tool_block = 0; next }
+    /^\[tools\."[^"]+"\]$/ {
+      in_tools = 0
+      in_tool_block = 1
+      key = $0
+      sub(/^\[tools\."/, "", key)
+      sub(/"\]$/, "", key)
+      sub(/^[^:]*:/, "", key)
+      count = split(key, parts, "/")
+      print parts[count]
+      next
+    }
+    /^\[/ { in_tools = 0; in_tool_block = 0 }
+    in_tools && NF > 1 {
+      key = $1
+      gsub(/[[:space:]"]/, "", key)
+      print key
+    }
+    in_tool_block && $1 ~ /^(bin|filter_bins)$/ {
+      value = $2
+      gsub(/[[:space:]"]/, "", value)
+      print value
+    }
+  ' mise.toml | sort -u
+)
+
 fail=0
 while IFS= read -r tool; do
   # Inline pins (`just@1.56.0`, `yamllint==1.38.0`) and Renovate annotations
@@ -23,7 +51,7 @@ while IFS= read -r tool; do
       fail=1
     fi
   done
-done < <(awk -F' *= *' '/^\[tools\]/ { in_tools = 1; next } /^\[/ { in_tools = 0 } in_tools && NF > 1 { print $1 }' mise.toml)
+done <<<"$managed_tools"
 
 if [ "$fail" -eq 0 ]; then
   echo "no workflow re-pins a mise-managed tool"

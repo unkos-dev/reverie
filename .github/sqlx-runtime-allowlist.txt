@@ -73,11 +73,11 @@ sqlx::query(explain_pages_sql)
 sqlx::query("ANALYZE works, manifestations")
 sqlx::query(explain_subtitle_sql)
 
-# (3) subtitle trigram-index EXPLAIN test — SET LOCAL enable_seqscan = off makes
-# the guard deterministic (the trigram index vs Seq Scan cost is borderline at
-# scale and flips on ANALYZE's sample); the GUC penalizes seq scans without
-# forbidding them, so a missing index still fails the guard. Transaction-scoped.
+# (3) subtitle trigram-index EXPLAIN test: transaction-scoped planner GUCs
+# penalize seq scans and limit-driven nested loops so the probe proves the
+# trigram index can serve the joined filter. A missing index still fails.
 sqlx::query("SET LOCAL enable_seqscan = off")
+sqlx::query("SET LOCAL enable_nestloop = off")
 
 # (2) seed_library_50k test (routes/library/tests.rs): a static,
 # multi-statement operator script (BEGIN/DO guard/bulk INSERT/ANALYZE/

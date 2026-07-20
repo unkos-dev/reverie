@@ -141,15 +141,6 @@
   ],
   "customManagers": [
     {
-      "description": "Track inline Rust tool versions that the GitHub Actions manager cannot detect.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
-      "matchStrings": [
-        "(?<depName>cargo-nextest|cargo-llvm-cov|cargo-deny|cargo-machete|cargo-mutants)@(?<currentValue>[0-9.]+)"
-      ],
-      "datasourceTemplate": "crate"
-    },
-    {
       "description": "Track SQLX_CLI_VERSION because it is not embedded in an install-action tool list.",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],

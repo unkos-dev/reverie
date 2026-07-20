@@ -2696,14 +2696,15 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
         WHERE TRUE AND w.subtitle ILIKE $1 \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
-    // Discourage seq scans for this probe inside a throwaway transaction. The
-    // planner's cost tipping point between the trigram index and a Seq Scan is
-    // borderline at this scale and can flip on ANALYZE's sample, so a bare
-    // EXPLAIN is flaky. `enable_seqscan = off` penalizes (does not forbid) seq
-    // scans, so the index must be the access path when it exists and can serve
-    // the filter; a missing or unusable index still forces a Seq Scan and fails
-    // the guard. SET LOCAL is transaction-scoped, so it cannot leak to a pooled
-    // connection reused by another test.
+    // Discourage seq scans and nested loops for this probe inside a throwaway
+    // transaction. The planner can otherwise satisfy the LIMIT by walking the
+    // recent-keyset index, probing works_pkey, and applying subtitle as a
+    // per-row Filter. That plan depends on a correlation estimate and does not
+    // prove the trigram index can serve the joined query. The GUCs penalize
+    // rather than forbid those paths, so a missing or unusable index still
+    // forces a non-trigram plan and fails the guard. SET LOCAL is
+    // transaction-scoped, so it cannot leak to a pooled connection reused by
+    // another test.
     let mut tx = ingestion_pool.begin().await.expect("begin explain txn");
     // CARVE-OUT (runtime-sqlx allowlist): SET LOCAL is a transaction-scoped GUC
     // mutation the compile-time macros cannot validate.
@@ -2711,6 +2712,12 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
         .execute(&mut *tx)
         .await
         .expect("disable seqscan for the probe");
+    // CARVE-OUT (runtime-sqlx allowlist): SET LOCAL is a transaction-scoped GUC
+    // mutation the compile-time macros cannot validate.
+    sqlx::query("SET LOCAL enable_nestloop = off")
+        .execute(&mut *tx)
+        .await
+        .expect("disable nested loops for the probe");
     // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection over
     // the dynamic filter SQL the compile-time macros cannot prepare.
     let row = sqlx::query(explain_subtitle_sql)

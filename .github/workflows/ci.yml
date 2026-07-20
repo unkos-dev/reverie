@@ -74,11 +74,13 @@ jobs:
             backend:
               - 'backend/**'
               - 'docker/init-roles.sql'
+              - 'mise.toml'
               - '.github/workflows/ci.yml'
             audit:
               - 'backend/Cargo.toml'
               - 'backend/Cargo.lock'
               - 'backend/deny.toml'
+              - 'mise.toml'
               - '.github/workflows/ci.yml'
             frontend:
               # Root workspace inputs drive the frontend too: the hoisted
@@ -383,10 +385,12 @@ jobs:
         # published crate, so `--locked` errors with no lockfile to honour.
         run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
 
-      # Prebuilt unused-dependency scanner.
-      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
+      - name: Install cargo-machete (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          tool: cargo-machete@0.9.2
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: github:bnjbvr/cargo-machete
 
       # Every unused crate is dead advisory/license/audit surface. Static
       # manifest-vs-source scan; justified carve-outs live in Cargo.toml's
@@ -490,9 +494,12 @@ jobs:
       - name: Apply migrations
         run: sqlx migrate run
 
-      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
+      - name: Install coverage tools (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          tool: cargo-nextest@0.9,cargo-llvm-cov@0.8.7
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
 
       # Cargo fingerprints safely invalidate changed objects in this
       # coverage-only target. Remove raw execution data before retaining the
@@ -579,13 +586,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
-      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
+      - name: Install cargo-deny (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          tool: cargo-deny@0.20.2
-          # Fail closed: the default falls back to
-          # cargo-binstall/cargo-install when no prebuilt is available,
-          # silently changing the install source of a security scanner.
-          fallback: none
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: github:EmbarkStudios/cargo-deny
       # advisories reads the RustSec database; check also enforces the
       # license, ban, and source policy in backend/deny.toml. Advisory
       # suppressions and their justifications live in deny.toml.
@@ -972,6 +978,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.7"
+          install_args: just shellcheck hadolint typos vale yamllint
 
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
