@@ -131,3 +131,34 @@ font-integrity:
 # Locally-runnable verify set: lint + format check (a11y and coverage excluded).
 [group('js')]
 check: lint fmt-check
+
+# Run the Vite dev server in the foreground (Ctrl-C stops it).
+[group('js')]
+[working-directory('frontend')]
+dev:
+    npm run dev
+
+# The background lifecycle lives in scripts/dev-server.sh so the ownership
+# checks are shared across start/stop/status, shellcheck covers the logic,
+# and infra::dev-server-selftest can exercise the same code paths against a
+# fake server. The script owns frontend/ as its working directory.
+#
+# Start the Vite dev server in the background; logs to frontend/.dev-server.log.
+[group('js')]
+dev-start:
+    scripts/dev-server.sh start
+
+# Stop the background Vite dev server started by dev-start.
+[group('js')]
+dev-stop:
+    scripts/dev-server.sh stop
+
+# Distinguishes a dev-start-owned server from any other listener on the port
+# (a foreground 'just js::dev', or Playwright's a11y webServer reusing 5173)
+# so stop advice matches how the server was started. Exits nonzero when down,
+# so the recipe works as a scriptable probe.
+#
+# Report whether the Vite dev server is up.
+[group('js')]
+dev-status:
+    scripts/dev-server.sh status
