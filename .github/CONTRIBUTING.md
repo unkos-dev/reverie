@@ -49,6 +49,15 @@ docker compose -f docker/compose.dev.yml up
 > `docker volume ls | grep pgdata` and take that stack down with
 > `docker compose -p <project> -f docker/compose.dev.yml down`.)
 
+Set `REVERIE_COMPOSE_ENV` to run a second, deliberately separate stack with
+its own volume and database (`REVERIE_COMPOSE_ENV=stage` gives project
+`reverie_stage` and volume `reverie_stage_pgdata`). Export it in your shell or
+put it in `docker/.env`, which is the dotenv file Compose loads for this
+project; the repository root `.env` is read by the backend, not by Compose, so
+setting it there has no effect. Environment stacks still share the published
+`127.0.0.1:5432`, so only one can run at a time and the port bind conflict is
+the guard.
+
 Backend only (requires the Rust toolchain; the minimum supported version is declared as `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) and enforced in CI):
 
 ```bash
