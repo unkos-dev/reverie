@@ -31,4 +31,13 @@ assert_job_drift_fails() {
 assert_job_drift_fails backend
 assert_job_drift_fails backend-checks
 
-echo "OK: compose dev invariant guard rejects drift in both backend postgres pins"
+# An unpinned project name must fail: the default couples stack identity to
+# the compose file's directory name.
+compose_fixture="$fixture/docker/compose.dev.yml"
+yq -i 'del(.name)' "$compose_fixture"
+if "$guard" >/dev/null 2>&1; then
+  echo "FAIL: compose invariant guard accepted a missing project name" >&2
+  exit 1
+fi
+
+echo "OK: compose dev invariant guard rejects drift in both backend postgres pins and an unpinned project name"

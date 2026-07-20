@@ -1,3 +1,12 @@
+# Pinned project name: without it compose derives the project from this
+# file's directory (`docker`), so the stack's identity hangs on a directory
+# name, and any later rename or COMPOSE_PROJECT_NAME pin collides with the
+# pinned container_name and provisions a fresh empty pgdata volume that
+# reads as data loss. Pinning also keeps every checkout and worktree on the
+# same stack. REVERIE_COMPOSE_ENV suffixes the project (reverie_dev,
+# reverie_stage) for a deliberately separate stack with its own volume.
+name: reverie${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
+
 services:
   postgres:
     image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
