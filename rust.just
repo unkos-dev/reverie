@@ -76,3 +76,51 @@ lint: clippy doc-lint
 # Locally-runnable backend gate: format check, clippy, doc-lint, drift.
 [group('rust')]
 check: fmt-check clippy doc-lint drift
+
+# DB: needs the local dev Postgres up (`just db-up`).
+#
+# Run the backend API server in the foreground (Ctrl-C stops it).
+[group('rust')]
+dev:
+    DATABASE_URL="${REVERIE_DEV_APP_DB_URL:-postgres://reverie_app:reverie_app@localhost:5432/reverie_dev}" \
+    REVERIE_PUBLIC_URL="${REVERIE_PUBLIC_URL:-http://localhost:5173}" \
+    cargo run
+
+# Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
+# the ownership and race checks (see scripts/dev-server.sh); this sets the
+# backend knobs: port 3000 (REVERIE_PORT overrides both the server and the
+# probe together), the RLS-enforced reverie_app runtime DSN (dev-default
+# password; REVERIE_DEV_APP_DB_URL overrides, expanded in-shell so an override
+# never echoes), a leader pattern matching cargo and the built binary, start
+# ticks sized for a cold `cargo run` compile rather than bare process startup,
+# and advice strings that name the rust recipes.
+# REVERIE_PUBLIC_URL is required whenever OPDS is enabled (the default); the
+# dev default is the Vite origin, which proxies /opds to this server.
+_dev-lifecycle action:
+    DATABASE_URL="${REVERIE_DEV_APP_DB_URL:-postgres://reverie_app:reverie_app@localhost:5432/reverie_dev}" \
+    REVERIE_PUBLIC_URL="${REVERIE_PUBLIC_URL:-http://localhost:5173}" \
+    DEV_SERVER_DIR=. \
+    DEV_SERVER_PORT="${REVERIE_PORT:-3000}" \
+    DEV_SERVER_CMD="cargo run" \
+    DEV_SERVER_LEADER_PATTERN="cargo|reverie" \
+    DEV_SERVER_START_TICKS=600 \
+    DEV_SERVER_STOP_HINT="just rust::dev-stop" \
+    DEV_SERVER_FG_HINT="just rust::dev" \
+    ../scripts/dev-server.sh '{{ action }}'
+
+# DB: needs the local dev Postgres up (`just db-up`); without it the server
+# exits during startup and the failure is reported from the log.
+#
+# Start the backend API server in the background; logs to backend/.dev-server.log.
+[group('rust')]
+dev-start: (_dev-lifecycle "start")
+
+# Stop the background backend API server started by dev-start.
+[group('rust')]
+dev-stop: (_dev-lifecycle "stop")
+
+# Exits nonzero when down, so the recipe works as a scriptable probe.
+#
+# Report whether the backend API server is up.
+[group('rust')]
+dev-status: (_dev-lifecycle "status")

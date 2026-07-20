@@ -27,6 +27,10 @@ stop_ticks="${DEV_SERVER_STOP_TICKS:-20}"
 # the wrong server.
 cmd="${DEV_SERVER_CMD:-npm run dev -- --strictPort}"
 leader_pattern="${DEV_SERVER_LEADER_PATTERN:-node|npm|vite}"
+# Advice strings name the caller's recipes, so the rust plane's recipes can
+# point at rust::dev-stop instead of the js defaults.
+stop_hint="${DEV_SERVER_STOP_HINT:-just js::dev-stop}"
+fg_hint="${DEV_SERVER_FG_HINT:-just js::dev}"
 
 cd "${DEV_SERVER_DIR:-$(git rev-parse --show-toplevel)/frontend}" || exit 1
 
@@ -92,7 +96,7 @@ do_start() {
       echo "dev server already running (pid $(cat "$pidfile"), ${url})"
       exit 0
     fi
-    echo "dev server process group $(cat "$pidfile") is alive but not serving on port ${port}; run 'just js::dev-stop' first" >&2
+    echo "dev server process group $(cat "$pidfile") is alive but not serving on port ${port}; run '${stop_hint}' first" >&2
     exit 1
   fi
   rm -f "$pidfile"
@@ -130,7 +134,7 @@ do_start() {
 do_stop() {
   take_lock
   if [ ! -f "$pidfile" ]; then
-    echo "no dev server started by dev-start (no ${pidfile}); a foreground 'just js::dev' stops with Ctrl-C"
+    echo "no dev server started by dev-start (no ${pidfile}); a foreground '${fg_hint}' stops with Ctrl-C"
     exit 0
   fi
   local pid
@@ -153,11 +157,11 @@ do_status() {
       echo "dev server running via dev-start (pid $(cat "$pidfile"), ${url}, log ${log_path})"
       exit 0
     fi
-    echo "dev server process group $(cat "$pidfile") is alive but port ${port} is not serving; run 'just js::dev-stop'"
+    echo "dev server process group $(cat "$pidfile") is alive but port ${port} is not serving; run '${stop_hint}'"
     exit 1
   fi
   if probe_port; then
-    echo "port ${port} is serving, but not via dev-start (foreground 'just js::dev' or another process)"
+    echo "port ${port} is serving, but not via dev-start (foreground '${fg_hint}' or another process)"
     exit 0
   fi
   if [ -f "$pidfile" ]; then

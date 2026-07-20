@@ -138,4 +138,19 @@ expect "startup timeout fails" 1 "was killed" start
 assert "startup timeout leaves no pidfile" test ! -e "${tmp}/.dev-server.pid"
 assert "startup timeout leaves no server" no_hang_server
 
+# Advice strings are caller-parameterized so one script serves both planes'
+# recipes; with no override the advice names the js recipes.
+export DEV_SERVER_STOP_HINT="just rust::dev-stop"
+export DEV_SERVER_FG_HINT="just rust::dev"
+expect "stop no-op advice uses the caller's foreground hint" 0 "just rust::dev" stop
+(setsid bash -c "echo \"\$\$\" > ${tmp}/.dev-server.pid; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
+for _ in $(seq 1 20); do
+  [ -s "${tmp}/.dev-server.pid" ] && break
+  sleep 0.1
+done
+cp "${tmp}/.dev-server.pid" "${tmp}/hint-hang.cleanup-pgid"
+expect "not-serving status advice uses the caller's stop hint" 1 "just rust::dev-stop" status
+kill -KILL -- "-$(cat "${tmp}/hint-hang.cleanup-pgid")" 2>/dev/null || true
+rm -f "${tmp}/.dev-server.pid"
+
 exit "$fail"

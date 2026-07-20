@@ -168,3 +168,34 @@ db-reset:
 [group('db')]
 db-migrate:
     cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev}" cargo run -- migrate
+
+# Idempotent by construction: db-up is a no-op when the container is already
+# healthy, db-migrate is a no-op once the schema is current, and each
+# dev-start exits 0 when it already owns a serving process, so re-running
+# while the stack is up is safe. Dependencies run in order: db-up's --wait
+# means migrations never race a database that is still coming up, and the
+# backend starts only against a migrated schema.
+#
+# Start the whole dev stack in the background: dev Postgres, migrations, backend API, Vite.
+[group('dev')]
+dev-up: db-up db-migrate rust::dev-start js::dev-start
+
+# The database stays up because it is cheap, stateful, and shared with the
+# test suite; stop it explicitly with db-down.
+#
+# Stop the background dev servers (frontend, then backend).
+[group('dev')]
+dev-down: js::dev-stop rust::dev-stop
+
+# Not dependency-driven: a dependency chain stops at the first failing status,
+# and a probe must report both planes even when the first one is down.
+#
+# Report both dev servers' status; exits nonzero when either is down.
+[group('dev')]
+dev-status:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    rc=0
+    just rust::dev-status || rc=1
+    just js::dev-status || rc=1
+    exit "$rc"
