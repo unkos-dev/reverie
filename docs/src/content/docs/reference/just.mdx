@@ -50,6 +50,7 @@ across every plane.
 | `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
 | `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                |
 | `just infra::dco-selftest`                       | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).               |
+| `just infra::dev-server-selftest`                | Exercise the dev-server lifecycle script against a fake server on a scratch port.  |
 | `just infra::greptile-config`                    | Validate greptile.json parses and every pinned context path resolves.              |
 | `just infra::hadolint`                           | Hadolint every tracked Dockerfile.                                                 |
 | `just infra::just-reference`                     | Regenerate the just recipe reference from the justfiles. WRITES.                   |
@@ -78,6 +79,10 @@ across every plane.
 | `just js::build`                 | Frontend production build (vp build; typecheck rides js::oxlint via tsgo).            |
 | `just js::check`                 | Locally-runnable verify set: lint + format check (a11y and coverage excluded).        |
 | `just js::detect`                | Run the impeccable design anti-pattern detector over the frontend.                    |
+| `just js::dev`                   | Run the Vite dev server in the foreground (Ctrl-C stops it).                          |
+| `just js::dev-start`             | Start the Vite dev server in the background; logs to frontend/.dev-server.log.        |
+| `just js::dev-status`            | Report whether the Vite dev server is up.                                             |
+| `just js::dev-stop`              | Stop the background Vite dev server started by dev-start.                             |
 | `just js::fmt`                   | Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.            |
 | `just js::fmt-check`             | Verify whole-tree formatting without writing (the authoritative CI gate form).        |
 | `just js::font-integrity`        | Verify the committed Fontshare woff2 files against their pinned checksums.            |

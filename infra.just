@@ -105,6 +105,11 @@ compose-dev-invariants-selftest:
 recipe-secret-echo-test:
     scripts/recipe-secret-echo-test.sh
 
+# Exercise the dev-server lifecycle script against a fake server on a scratch port.
+[group('infra')]
+dev-server-selftest:
+    scripts/dev-server-selftest.sh
+
 # lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation
 # is cheap and offline, so it joins the lint aggregate.
 #
@@ -136,7 +141,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
