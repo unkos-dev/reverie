@@ -19,13 +19,19 @@ on:
 permissions:
   contents: read
 
+# Superseded PR pushes cancel as usual, but main runs complete: a rapid
+# follow-up merge must not cancel the prior commit's SARIF upload and
+# baseline snapshot, which are the artifacts this workflow exists for.
 concurrency:
   group: snyk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   code:
     name: Snyk Code (SAST)
+    # Fork PRs run without secrets, so the scan can only fail on auth;
+    # skip rather than hand every external contribution two red checks.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -68,6 +74,8 @@ jobs:
 
   deps:
     name: Snyk Open Source (npm SCA)
+    # Same fork guard as the code job above.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -103,10 +111,21 @@ jobs:
             --sarif-file-output=snyk-oss.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
+      # Snyk stamps license-issue rules with a security-severity of
+      # "undefined" (license findings carry no CVSS), which the
+      # code-scanning SARIF processor rejects as non-numeric. Drop only
+      # the invalid property; every finding is preserved.
+      - name: Sanitize SARIF severities
+        run: |
+          jq 'walk(if type == "object" and has("security-severity")
+                and ((.["security-severity"] | try tonumber catch null) == null)
+              then del(.["security-severity"]) else . end)' \
+            snyk-oss.sarif > snyk-oss-clean.sarif
+
       - name: Upload to code-scanning
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
         with:
-          sarif_file: snyk-oss.sarif
+          sarif_file: snyk-oss-clean.sarif
           category: snyk-open-source
 
       # Refresh the Snyk-side dependency snapshot the advisory baseline
