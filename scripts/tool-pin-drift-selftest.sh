@@ -32,11 +32,15 @@ expect "prose tool name without version passes" 0 '# actionlint and CodeQL cover
 
 cat >>"${tmp}/mise.toml" <<'EOF'
 
-[tools."github:nextest-rs/nextest"]
-version = "0.9.140"
-version_prefix = "cargo-nextest-"
-filter_bins = "cargo-nextest"
+[tools."github:owner/filter-tool"]
+version = "1.2.3"
+filter_bins = "widget"
+
+[tools."github:owner/bin-tool"]
+version = "4.5.6"
+bin = "gadget"
 EOF
-expect "github backend binary pin rejected" 1 'tool: cargo-nextest@0.9.140'
+expect "github backend filter_bins pin rejected" 1 'tool: widget@1.2.3'
+expect "github backend bin pin rejected" 1 'tool: gadget@4.5.6'
 
 exit "$fail"

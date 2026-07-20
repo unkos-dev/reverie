@@ -74,11 +74,13 @@ jobs:
             backend:
               - 'backend/**'
               - 'docker/init-roles.sql'
+              - 'mise.toml'
               - '.github/workflows/ci.yml'
             audit:
               - 'backend/Cargo.toml'
               - 'backend/Cargo.lock'
               - 'backend/deny.toml'
+              - 'mise.toml'
               - '.github/workflows/ci.yml'
             frontend:
               # Root workspace inputs drive the frontend too: the hoisted

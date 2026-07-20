@@ -73,10 +73,11 @@ Git hooks are managed by lefthook and installed through the `prepare` npm script
 Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
 ```sh
-mise install
+mise install actionlint gitleaks hadolint just shellcheck typos vale yamllint \
+  github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
 ```
 
-[`mise.toml`](../mise.toml) pins actionlint, hadolint, just, shellcheck, typos, Vale, and yamllint to the versions enforced in CI. Node, npm, and vite-plus remain lockfile-managed project dependencies. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
+[`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local recipes do not use them. Node, npm, and vite-plus remain lockfile-managed project dependencies. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
 
 Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit, cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of contributor setup. Documented zizmor suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 

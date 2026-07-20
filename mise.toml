@@ -8,8 +8,8 @@ typos = "1.48.0"
 vale = "3.15.1"
 yamllint = "1.38.0"
 
-# Prebuilt Rust CI tools. The GitHub backend verifies release checksums,
-# attestations, and SLSA provenance when upstream publishes them.
+# Prebuilt Rust tools used by local recipes. The GitHub backend enables
+# checksum and provenance verification when upstream publishes them.
 [tools."github:nextest-rs/nextest"]
 version = "0.9.140"
 version_prefix = "cargo-nextest-"
@@ -17,16 +17,21 @@ filter_bins = "cargo-nextest"
 
 [tools."github:taiki-e/cargo-llvm-cov"]
 version = "0.8.7"
+version_prefix = "v"
 filter_bins = "cargo-llvm-cov"
 
+# CI-only Rust tools. GitHub release tools use published checksums and
+# provenance when available. cargo-mutants builds from the crates.io source
+# archive with the crate checksum and its published Cargo.lock.
 [tools."github:bnjbvr/cargo-machete"]
 version = "0.9.2"
+version_prefix = "v"
 filter_bins = "cargo-machete"
 
 [tools."github:EmbarkStudios/cargo-deny"]
 version = "0.20.2"
 filter_bins = "cargo-deny"
 
-[tools."github:sourcefrog/cargo-mutants"]
+[tools."cargo:cargo-mutants"]
 version = "27.1.0"
-filter_bins = "cargo-mutants"
+locked = true
