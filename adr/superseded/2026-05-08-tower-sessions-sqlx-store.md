@@ -183,9 +183,8 @@ the contract:
 - the coordinated upgrade task: coordinated
   `tower-sessions` 0.14 → 0.15 bump, blocked on
   `axum-login@0.18.0` peer-pin
-- [`adr/2026-05-04-greptile-trial.md`](../2026-05-04-greptile-trial.md),
-  Greptile's "No new direct dependencies without an ADR" rule
-  flagged the original PR #180 missing this ADR
+- an AI-reviewer "No new direct dependencies without an ADR"
+  finding flagged the original PR #180 missing this ADR
 - `backend/Cargo.toml:39-44`: inline pin rationale, cross-
   references this ADR
 - `backend/migrations/20260526000000_initial_schema.up.sql`:

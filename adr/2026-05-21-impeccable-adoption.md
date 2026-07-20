@@ -340,10 +340,6 @@ unscheduled "we should do that sometime" backlog item.
 - Related: the backend pre-push hook task (surfaced during
   the same audit, separate scope)
 - Related ADRs: `2026-05-03-strict-lint-policy.md` (sibling
-  enforcement layer); `2026-05-04-greptile-trial.md` and
-  `2026-05-07-coderabbit-parallel-trial.md` (bot-tool adoption
-  pattern, trial-gate convention, not applicable here since
-  `impeccable` is a free static dev tool, not a paid hosted
-  service)
+  enforcement layer)
 - Upstream: <https://github.com/pbakaus/impeccable> (Apache-2.0,
   forked from Anthropic's `frontend-design` skill)

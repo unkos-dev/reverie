@@ -2,8 +2,8 @@
 #
 # CodeRabbit configuration for unkos-dev/reverie.
 #
-# Background: adr/2026-05-07-coderabbit-parallel-trial.md records the
-# evaluation that led to adopting CodeRabbit as a standing review bot.
+# Background: .github/CONTRIBUTING.md documents the active AI reviewers
+# and the data-handling terms that apply when opening a PR.
 #
 # Profile is `chill`. CodeRabbit runs alongside the repo's own lint/CI
 # surface and multi-agent review, so its remit is net-new signal, not
