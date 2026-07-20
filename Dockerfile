@@ -76,6 +76,30 @@ RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-sc
 COPY frontend/ frontend/
 RUN npm run build --workspace frontend
 
+# Stage 2b: frontend-sbom — dependency record for the bundled frontend.
+# The frontend ships as a bundle, so its dependencies are not packages in
+# the runtime image and no image scanner can recover them. Emitting the
+# list from the tree that produced the bundle keeps the record from
+# drifting. --omit=dev because this describes what ships, not what built
+# it.
+#
+# Separate stage because `npm sbom` validates the whole workspace tree and
+# aborts with ESBOMPROBLEMS on any absent member, while the build above
+# deliberately installs only the frontend workspace. The full install
+# lives here so the builder stage keeps its narrow install and the
+# runtime image never sees either.
+#
+# npm sbom also refuses when a workspace member lacks a version, and the
+# private root has none (EINVALIDPURLTYPE). Borrow the release version
+# for generation alone: this manifest is a build artefact that is never
+# published, so release-please stays the tree's only version authority.
+FROM frontend-builder AS frontend-sbom
+COPY version.txt ./
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts \
+    && npm pkg set version="$(cat version.txt)" \
+    && npm sbom --sbom-format cyclonedx --omit=dev --workspace frontend \
+       > /build/frontend.cdx.json
+
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
 FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS runtime
@@ -89,6 +113,14 @@ RUN useradd -r -s /bin/false reverie
 
 COPY --from=backend-builder /build/target/release/reverie-api /usr/local/bin/reverie-api
 COPY --from=frontend-builder /build/frontend/dist /srv/frontend
+# Load-bearing, not merely informational: syft ingests SBOM documents it
+# finds in the filesystem, so placing this here folds the bundled frontend
+# dependencies into the image's own SBOM attestation, which no filesystem
+# scan could otherwise recover. The attestation then covers all three
+# ecosystems in one document and needs no second release asset. Syft
+# records the provenance as "acquired package info from SBOM: <path>".
+# It also lets an operator read the list straight off the running image.
+COPY --from=frontend-sbom /build/frontend.cdx.json /usr/share/reverie/sbom/frontend.cdx.json
 # UNK-106: the backend serves /assets/* and falls back to index.html for SPA
 # routes when this env var is set. Validation at startup panics the process
 # if the dir or its csp-hashes.json sidecar is missing.

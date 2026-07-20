@@ -330,10 +330,14 @@ jobs:
       # the CVE scan runs before signing: attesting to a document that
       # omits the application's own dependencies is attestation theatre.
       #
-      # The crates reach the SBOM only because the release binary is
-      # built with `cargo auditable`; drop that and this assertion is the
-      # thing that notices, rather than a self-hoster discovering months
-      # later that the published SBOM described the base image alone.
+      # Neither ecosystem reaches the SBOM on its own. Crates appear only
+      # because the binary is built with `cargo auditable`, and frontend
+      # packages only because the build ships a CycloneDX document into
+      # the image for syft to ingest. Both are quiet, load-bearing
+      # mechanisms that a plausible-looking refactor could remove without
+      # breaking the build, so assert each independently and name the
+      # mechanism in the failure.
+      #
       # Shape-agnostic on purpose: buildkit emits `.SPDX` for a single
       # platform and a platform-keyed map for a manifest list.
       - name: Verify SBOM covers application dependencies
@@ -344,12 +348,24 @@ jobs:
           set -euo pipefail
           docker buildx imagetools inspect "${IMAGE_REF}:${VERSION}" \
             --format '{{ json .SBOM }}' > sbom-check.json
-          crates=$(jq -r '[.. | strings | select(startswith("pkg:cargo/"))] | length' sbom-check.json)
-          echo "SBOM reports ${crates} cargo components"
+          count() {
+            jq -r --arg p "$1" \
+              '[.. | strings | select(startswith($p))] | length' sbom-check.json
+          }
+          crates=$(count "pkg:cargo/")
+          npm=$(count "pkg:npm/")
+          debs=$(count "pkg:deb/")
+          echo "SBOM components: ${crates} cargo, ${npm} npm, ${debs} deb"
+          rc=0
           if [ "$crates" -eq 0 ]; then
-            echo "::error::SBOM lists no cargo components. The release binary is probably no longer built with \`cargo auditable\`, leaving every crate absent from the published SBOM."
-            exit 1
+            echo "::error::SBOM lists no cargo components. The release binary is probably no longer built with \`cargo auditable\`, so every crate is absent from the published SBOM."
+            rc=1
           fi
+          if [ "$npm" -eq 0 ]; then
+            echo "::error::SBOM lists no npm components. The frontend CycloneDX document is probably no longer present at /usr/share/reverie/sbom/ for syft to ingest, so every bundled frontend dependency is absent from the published SBOM."
+            rc=1
+          fi
+          exit "$rc"
 
       # Keyless Sigstore signing of every published image: cosign exchanges
       # this job's OIDC token for a short-lived Fulcio certificate and
