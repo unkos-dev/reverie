@@ -1,7 +1,22 @@
+# Pinned project name: without it compose derives the project from this
+# file's directory (`docker`), so the stack's identity, and with it the
+# pgdata volume's name, hangs on a directory name and diverges on rename.
+# Pinning makes the volume deterministically `reverie_pgdata` for every
+# checkout and worktree. REVERIE_COMPOSE_ENV suffixes the project
+# (reverie_dev, reverie_stage) for a deliberately separate stack with its
+# own volume; export it or set it in `docker/.env`, which is the dotenv
+# file compose loads for this project, not the repository root `.env`.
+# Compose precedence still puts `-p` and an exported COMPOSE_PROJECT_NAME
+# above this field, and either override provisions a separate empty volume.
+name: reverie${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
+
 services:
   postgres:
     image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
-    container_name: reverie-postgres
+    # Suffixed like the project so an alternate-env stack does not clash on
+    # the global container namespace; the published host port is then the
+    # only resource shared between env stacks.
+    container_name: reverie-postgres${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
     restart: unless-stopped
     environment:
       POSTGRES_USER: reverie

@@ -43,8 +43,20 @@ docker compose -f docker/compose.dev.yml up
 > Upgrading a dev checkout from before the postgres:18 mount-layout fix? Drop
 > the old volume first:
 > `docker compose -f docker/compose.dev.yml down && docker volume rm reverie_pgdata`
-> (Compose prefixes volume names with the checkout directory name; if yours
-> differs, `docker volume ls | grep pgdata` finds the actual name.)
+> (The compose project name is pinned, so the volume is `reverie_pgdata`
+> regardless of the checkout directory. A stack created before the pin is
+> labelled with a directory-derived project instead: find its volume with
+> `docker volume ls | grep pgdata` and take that stack down with
+> `docker compose -p <project> -f docker/compose.dev.yml down`.)
+
+Set `REVERIE_COMPOSE_ENV` to run a second, deliberately separate stack with
+its own volume and database (`REVERIE_COMPOSE_ENV=stage` gives project
+`reverie_stage` and volume `reverie_stage_pgdata`). Export it in your shell or
+put it in `docker/.env`, which is the dotenv file Compose loads for this
+project; the repository root `.env` is read by the backend, not by Compose, so
+setting it there has no effect. Environment stacks still share the published
+`127.0.0.1:5432`, so only one can run at a time and the port bind conflict is
+the guard.
 
 Backend only (requires the Rust toolchain; the minimum supported version is declared as `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) and enforced in CI):
 
