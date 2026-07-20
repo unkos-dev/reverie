@@ -50,6 +50,16 @@ dco-selftest:
 no-plan-refs-selftest:
     scripts/no-plan-refs-selftest.sh
 
+# Regenerate the just recipe reference from the justfiles. WRITES.
+[group('infra')]
+just-reference:
+    scripts/gen-just-reference.sh
+
+# Assert the committed just reference still matches the justfiles.
+[group('infra')]
+just-reference-drift:
+    scripts/gen-just-reference.sh --check
+
 # Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.
 [group('infra')]
 tool-pin-drift:
@@ -90,8 +100,10 @@ compose-dev-invariants-selftest:
 recipe-secret-echo-test:
     scripts/recipe-secret-echo-test.sh
 
-# lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation is
-# cheap and offline, so it joins the lint aggregate.
+# lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation
+# is cheap and offline, so it joins the lint aggregate.
+#
+# Validate the lefthook.yml hook configuration.
 [group('infra')]
 lefthook-validate:
     npx --no-install lefthook validate
@@ -119,7 +131,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
