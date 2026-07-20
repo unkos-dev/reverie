@@ -1,0 +1,118 @@
+name: Snyk advisory scan
+
+# Snyk runs alongside the incumbent scanners (cargo-deny, npm audit,
+# trivy, checkov, zizmor, CodeQL, dependency-review) in advisory mode:
+# findings upload to the code-scanning dashboard and annotate PRs, but a
+# finding never fails the check. The overlap is deliberate. A triaged
+# Snyk baseline has to accrue before any decision on promoting Snyk to a
+# gate or retiring the scanners it duplicates, and none of the incumbent
+# gates are weakened in the meantime.
+#
+# Coverage split: Snyk Code (SAST) analyzes the Rust and TypeScript
+# sources; Snyk Open Source reads the npm lockfile only, so cargo-deny
+# remains the sole Rust dependency scanner.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snyk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code:
+    name: Snyk Code (SAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Upload the SARIF result into the code-scanning dashboard.
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      # Keep this pin in lockstep with the deps job below.
+      - name: Install snyk
+        uses: ./.github/actions/install-pinned-tool
+        with:
+          # renovate: datasource=github-release-attachments depName=snyk/cli extractVersion=^v(?<version>.+)$
+          version: "1.1306.0"
+          sha256: "aad6d43f936e4357b3bda299c02d446c80602106484c36615bb4b654ef7de740"
+          url: "https://github.com/snyk/cli/releases/download/v{version}/snyk-linux"
+          binary: snyk
+
+      # Exit 1 means findings and is tolerated while the job is advisory
+      # (the SARIF still lands in the dashboard). Anything above 1 is a
+      # scan failure (auth, engine error, no supported files) and fails
+      # loud rather than reporting a silently empty scan.
+      - name: Snyk Code scan
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          rc=0
+          snyk code test --org=reverie --sarif-file-output=snyk-code.sarif || rc=$?
+          if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code
+
+  deps:
+    name: Snyk Open Source (npm SCA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Upload the SARIF result into the code-scanning dashboard.
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      # Keep this pin in lockstep with the code job above.
+      - name: Install snyk
+        uses: ./.github/actions/install-pinned-tool
+        with:
+          # renovate: datasource=github-release-attachments depName=snyk/cli extractVersion=^v(?<version>.+)$
+          version: "1.1306.0"
+          sha256: "aad6d43f936e4357b3bda299c02d446c80602106484c36615bb4b654ef7de740"
+          url: "https://github.com/snyk/cli/releases/download/v{version}/snyk-linux"
+          binary: snyk
+
+      # Resolved from the committed lockfile alone, no install needed.
+      # --dev includes devDependencies for the same reason the npm-audit
+      # cron does: a compromised dev tool runs with repo write access.
+      # Same advisory exit-code split as the code job.
+      - name: Snyk Open Source scan
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set -euo pipefail
+          rc=0
+          snyk test --org=reverie --all-projects --dev \
+            --sarif-file-output=snyk-oss.sarif || rc=$?
+          if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        with:
+          sarif_file: snyk-oss.sarif
+          category: snyk-open-source
+
+      # Refresh the Snyk-side dependency snapshot the advisory baseline
+      # is judged against; PRs only test, main also monitors.
+      - name: Snyk baseline snapshot
+        if: github.event_name == 'push'
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: snyk monitor --org=reverie --all-projects --dev
