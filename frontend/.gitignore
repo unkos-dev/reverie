@@ -26,6 +26,9 @@ dist-ssr
 # Impeccable critique snapshots (local scratch archive)
 .impeccable/
 
+# Background dev-server pidfile (just js::dev-start); its log is under *.log
+.dev-server.pid
+
 # Playwright a11y-gate output (traces + attached results, regenerated per run)
 test-results/
 playwright-report/

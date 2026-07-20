@@ -131,3 +131,115 @@ font-integrity:
 # Locally-runnable verify set: lint + format check (a11y and coverage excluded).
 [group('js')]
 check: lint fmt-check
+
+# Vite's default port. strictPort is unset in vite.config.ts, so a server
+# started while the port is busy would silently shift to the next free one;
+# dev-start refuses that case instead so status/stop always describe the
+# server actually reachable here.
+dev_port := "5173"
+
+# Run the Vite dev server in the foreground (Ctrl-C stops it).
+[group('js')]
+[working-directory('frontend')]
+dev:
+    npm run dev
+
+# The server runs in its own session (setsid) so the pidfile names a process
+# group covering the whole npm/node tree; dev-stop signals the group, because
+# killing only the npm wrapper would orphan the actual Vite process. The
+# leader writes its own pid before exec'ing npm, so the pidfile is correct
+# whether or not setsid had to fork.
+#
+# Start the Vite dev server in the background; logs to frontend/.dev-server.log.
+[group('js')]
+[working-directory('frontend')]
+dev-start:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    pidfile=.dev-server.pid
+    log=.dev-server.log
+    if [ -s "$pidfile" ] && kill -0 -- "-$(cat "$pidfile")" 2>/dev/null; then
+        echo "dev server already running (pid $(cat "$pidfile"), http://localhost:{{ dev_port }}/)"
+        exit 0
+    fi
+    rm -f "$pidfile"
+    # Port probe via the bash /dev/tcp builtin: no lsof/ss dependency.
+    if (exec 3<> /dev/tcp/127.0.0.1/{{ dev_port }}) 2>/dev/null; then
+        echo "port {{ dev_port }} is already serving but was not started by dev-start; stop that process first" >&2
+        exit 1
+    fi
+    setsid bash -c 'echo "$$" > .dev-server.pid; exec npm run dev' > "$log" 2>&1 < /dev/null &
+    for _ in $(seq 1 60); do
+        if [ -s "$pidfile" ] && ! kill -0 -- "-$(cat "$pidfile")" 2>/dev/null; then
+            echo "dev server exited during startup; last log lines:" >&2
+            tail -n 20 "$log" >&2
+            rm -f "$pidfile"
+            exit 1
+        fi
+        if (exec 3<> /dev/tcp/127.0.0.1/{{ dev_port }}) 2>/dev/null; then
+            echo "dev server running (pid $(cat "$pidfile"), http://localhost:{{ dev_port }}/, log frontend/$log)"
+            exit 0
+        fi
+        sleep 0.5
+    done
+    echo "dev server did not start listening on port {{ dev_port }} within 30s; see frontend/$log" >&2
+    exit 1
+
+# Stop the background Vite dev server started by dev-start.
+[group('js')]
+[working-directory('frontend')]
+dev-stop:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    pidfile=.dev-server.pid
+    if [ ! -f "$pidfile" ]; then
+        echo "no dev server started by dev-start (no $pidfile); a foreground 'just js::dev' stops with Ctrl-C"
+        exit 0
+    fi
+    pid="$(cat "$pidfile")"
+    if ! kill -0 -- "-$pid" 2>/dev/null; then
+        rm -f "$pidfile"
+        echo "removed stale pidfile (process group $pid is gone)"
+        exit 0
+    fi
+    kill -TERM -- "-$pid"
+    for _ in $(seq 1 20); do
+        if ! kill -0 -- "-$pid" 2>/dev/null; then
+            rm -f "$pidfile"
+            echo "dev server stopped (pid $pid)"
+            exit 0
+        fi
+        sleep 0.5
+    done
+    # Escalate only after TERM had 10s: Vite normally exits promptly, so a
+    # survivor here is wedged, and leaving it would strand the port.
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    rm -f "$pidfile"
+    echo "dev server killed after TERM timeout (pid $pid)"
+
+# Distinguishes a dev-start-owned server from any other listener on the port
+# (a foreground 'just js::dev', or Playwright's a11y webServer reusing 5173)
+# so stop advice matches how the server was started. Exits nonzero when down,
+# so the recipe works as a scriptable probe.
+#
+# Report whether the Vite dev server is up.
+[group('js')]
+[working-directory('frontend')]
+dev-status:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    pidfile=.dev-server.pid
+    if [ -s "$pidfile" ] && kill -0 -- "-$(cat "$pidfile")" 2>/dev/null; then
+        echo "dev server running via dev-start (pid $(cat "$pidfile"), http://localhost:{{ dev_port }}/, log frontend/.dev-server.log)"
+        exit 0
+    fi
+    if (exec 3<> /dev/tcp/127.0.0.1/{{ dev_port }}) 2>/dev/null; then
+        echo "port {{ dev_port }} is serving, but not via dev-start (foreground 'just js::dev' or another process)"
+        exit 0
+    fi
+    if [ -f "$pidfile" ]; then
+        echo "dev server is down (stale pidfile from pid $(cat "$pidfile"); dev-start will clean it up)"
+    else
+        echo "dev server is down"
+    fi
+    exit 1
