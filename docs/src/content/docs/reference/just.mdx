@@ -50,6 +50,7 @@ across every plane.
 | `just infra::compose-dev-invariants`          | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
 | `just infra::compose-dev-invariants-selftest` | Self-test both CI postgres pins against isolated workflow fixtures.                |
 | `just infra::dco-selftest`                    | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).               |
+| `just infra::dev-server-selftest`             | Exercise the dev-server lifecycle script against a fake server on a scratch port.  |
 | `just infra::greptile-config`                 | Validate greptile.json parses and every pinned context path resolves.              |
 | `just infra::hadolint`                        | Hadolint every tracked Dockerfile.                                                 |
 | `just infra::just-reference`                  | Regenerate the just recipe reference from the justfiles. WRITES.                   |
