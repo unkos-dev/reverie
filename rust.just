@@ -89,7 +89,9 @@ dev:
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
 # the ownership and race checks (see scripts/dev-server.sh); this sets the
 # backend knobs: port 3000 (REVERIE_PORT overrides both the server and the
-# probe together), the RLS-enforced reverie_app runtime DSN (dev-default
+# probe together, and the leader pattern anchors on the cargo or server
+# binary itself, with the script's same-directory check excluding other
+# checkouts' cargo processes), the RLS-enforced reverie_app runtime DSN (dev-default
 # password; REVERIE_DEV_APP_DB_URL overrides, expanded in-shell so an override
 # never echoes), a leader pattern matching cargo and the built binary, start
 # ticks sized for a cold `cargo run` compile rather than bare process startup,
@@ -102,7 +104,7 @@ _dev-lifecycle action:
     DEV_SERVER_DIR=. \
     DEV_SERVER_PORT="${REVERIE_PORT:-3000}" \
     DEV_SERVER_CMD="cargo run" \
-    DEV_SERVER_LEADER_PATTERN="cargo|reverie" \
+    DEV_SERVER_LEADER_PATTERN="(^|/)(cargo|reverie-api)$" \
     DEV_SERVER_START_TICKS=600 \
     DEV_SERVER_STOP_HINT="just rust::dev-stop" \
     DEV_SERVER_FG_HINT="just rust::dev" \

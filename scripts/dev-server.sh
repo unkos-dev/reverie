@@ -59,7 +59,12 @@ owned_alive() {
   [ -s "$pidfile" ] || return 1
   pid="$(cat "$pidfile")"
   kill -0 -- "-$pid" 2>/dev/null || return 1
-  grep -qazE "$leader_pattern" "/proc/${pid}/cmdline" 2>/dev/null
+  grep -qazE "$leader_pattern" "/proc/${pid}/cmdline" 2>/dev/null || return 1
+  # A pattern match alone is not ownership: a reused pgid can land on any
+  # process that resembles a dev server (any cargo invocation, any node
+  # tree). The leader must also be rooted in this server directory before
+  # the group is treated as ours.
+  [ "$(readlink "/proc/${pid}/cwd" 2>/dev/null)" = "$(pwd -P)" ]
 }
 
 take_lock() {

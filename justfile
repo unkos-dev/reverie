@@ -181,11 +181,19 @@ db-migrate:
 dev-up: db-up db-migrate rust::dev-start js::dev-start
 
 # The database stays up because it is cheap, stateful, and shared with the
-# test suite; stop it explicitly with db-down.
+# test suite; stop it explicitly with db-down. Not dependency-driven: a
+# failing frontend stop must not strand the backend, so both stops always
+# run and the recipe fails if either failed.
 #
 # Stop the background dev servers (frontend, then backend).
 [group('dev')]
-dev-down: js::dev-stop rust::dev-stop
+dev-down:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    rc=0
+    just js::dev-stop || rc=1
+    just rust::dev-stop || rc=1
+    exit "$rc"
 
 # Not dependency-driven: a dependency chain stops at the first failing status,
 # and a probe must report both planes even when the first one is down.

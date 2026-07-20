@@ -136,14 +136,35 @@ export DEV_SERVER_CMD="node fake-hang.mjs"
 export DEV_SERVER_START_TICKS=2
 expect "startup timeout fails" 1 "was killed" start
 assert "startup timeout leaves no pidfile" test ! -e "${tmp}/.dev-server.pid"
+# Settle before asserting: pgrep can catch the KILLed group before the
+# kernel reaps it, which is not a survival.
+for _ in $(seq 1 20); do
+  no_hang_server && break
+  sleep 0.1
+done
 assert "startup timeout leaves no server" no_hang_server
+
+# A reused pgid whose leader looks like a dev server but runs somewhere else
+# (another checkout, an unrelated build) must be treated as stale, never
+# signalled: cmdline pattern alone is not ownership.
+(setsid bash -c "echo \"\$\$\" > ${tmp}/.dev-server.pid; cd /; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
+for _ in $(seq 1 20); do
+  [ -s "${tmp}/.dev-server.pid" ] && break
+  sleep 0.1
+done
+cp "${tmp}/.dev-server.pid" "${tmp}/elsewhere.cleanup-pgid"
+expect "stop refuses a pattern-matching group rooted elsewhere" 0 "removed stale pidfile" stop
+assert "group rooted elsewhere survives stop" kill -0 -- "-$(cat "${tmp}/elsewhere.cleanup-pgid")"
+kill -KILL -- "-$(cat "${tmp}/elsewhere.cleanup-pgid")" 2>/dev/null || true
 
 # Advice strings are caller-parameterized so one script serves both planes'
 # recipes; with no override the advice names the js recipes.
 export DEV_SERVER_STOP_HINT="just rust::dev-stop"
 export DEV_SERVER_FG_HINT="just rust::dev"
 expect "stop no-op advice uses the caller's foreground hint" 0 "just rust::dev" stop
-(setsid bash -c "echo \"\$\$\" > ${tmp}/.dev-server.pid; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
+# cd first: the owned-alive check requires the leader to be rooted in the
+# server directory, and this case must present as a genuinely owned server.
+(setsid bash -c "cd ${tmp}; echo \"\$\$\" > .dev-server.pid; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
 for _ in $(seq 1 20); do
   [ -s "${tmp}/.dev-server.pid" ] && break
   sleep 0.1
