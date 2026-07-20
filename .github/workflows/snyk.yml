@@ -204,11 +204,21 @@ jobs:
       # The tag can still be absent outright: before the first
       # image-producing push, after the package is deleted, or after a
       # rename. Snyk cannot distinguish that from a broken scan and exits
-      # above 1, so probe first and record the outcome. Skipping is
-      # reported as a warning annotation and in the step summary rather
-      # than passing quietly, because "no image to scan" must stay
-      # distinguishable from "image scanned clean" when this lane is
-      # promoted from advisory to a gate.
+      # above 1, so probe first and record the outcome.
+      #
+      # The probe fails closed. A registry error is not an absent tag:
+      # network faults, expired credentials and GHCR outages all make
+      # `inspect` exit non-zero, and treating those as "nothing to scan"
+      # would let a real image slip past both the scan and the baseline
+      # while the workflow reported success. Only an explicit
+      # manifest-unknown response counts as absent; every other failure
+      # exits non-zero and reddens the job. Transient faults get three
+      # attempts before that verdict.
+      #
+      # Skipping is reported as a warning annotation and in the step
+      # summary rather than passing quietly, because "no image to scan"
+      # must stay distinguishable from "image scanned clean" once this
+      # lane is promoted from advisory to a gate.
       #
       # Lowercasing is required for forks: image references must be
       # lowercase, and github.repository preserves account casing.
@@ -220,13 +230,26 @@ jobs:
           set -euo pipefail
           ref="${IMAGE_REF,,}"
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
-          if docker buildx imagetools inspect "$ref" > /dev/null 2>&1; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::${ref} does not exist; skipping the container scan and baseline."
-            echo "Snyk container scan skipped: \`${ref}\` not published." >> "$GITHUB_STEP_SUMMARY"
-          fi
+
+          for attempt in 1 2 3; do
+            if err=$(docker buildx imagetools inspect "$ref" 2>&1 >/dev/null); then
+              echo "present=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Registry vocabulary for "this tag does not exist". Anything
+            # else is an infrastructure fault, not an answer.
+            if grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' <<<"$err"; then
+              echo "present=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::${ref} is not published; skipping the container scan and baseline."
+              echo "Snyk container scan skipped: \`${ref}\` is not published." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::notice::attempt ${attempt} to inspect ${ref} failed; retrying."
+            sleep $((attempt * 5))
+          done
+
+          echo "::error::Could not determine whether ${ref} exists. Last error: ${err}"
+          exit 1
 
       # --platform is required because main publishes linux/arm64 only, so
       # the manifest list carries no entry matching this amd64 runner.
