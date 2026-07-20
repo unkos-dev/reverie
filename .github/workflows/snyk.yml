@@ -9,10 +9,16 @@ name: Snyk advisory scan
 # gates are weakened in the meantime.
 #
 # Coverage split: Snyk Code (SAST) analyzes the Rust and TypeScript
-# sources; Snyk Open Source reads the npm lockfile only, so cargo-deny
-# remains the sole Rust dependency scanner; Snyk Container reads the
-# published runtime image, covering the Debian base layer that neither
-# source-side scanner sees.
+# sources; Snyk Open Source reads the npm lockfile only; Snyk Container
+# reads the published runtime image, covering the Debian base layer that
+# neither source-side scanner sees.
+#
+# Rust dependencies are absent by product limitation, not by choice:
+# Snyk supports Cargo through `snyk sbom test` alone, which creates no
+# monitored target and so yields neither a dashboard entry nor a
+# baseline. cargo-deny scans Cargo.lock directly and is the higher
+# fidelity tool for that job regardless; see debt/ for the lift
+# condition.
 on:
   pull_request:
   push:
@@ -221,3 +227,23 @@ jobs:
         with:
           sarif_file: snyk-container.sarif
           category: snyk-container
+
+      # The image's counterpart to the npm baseline snapshot above:
+      # `test` reports today's findings, `monitor` is what accrues the
+      # base-layer drift and remediation history the advisory period
+      # exists to gather.
+      #
+      # No --remote-repo-url here: container targets are keyed by image
+      # reference, not repository, so the flag has no documented effect on
+      # this command. --target-reference still applies and keeps the
+      # snapshot labelled by branch, matching the npm baseline.
+      - name: Snyk container baseline snapshot
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          IMAGE_REF: ghcr.io/${{ github.repository }}:main
+        run: |
+          snyk container monitor "$IMAGE_REF" \
+            --org=reverie \
+            --platform=linux/arm64 \
+            --file=Dockerfile \
+            --target-reference=main

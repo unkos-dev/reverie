@@ -37,6 +37,7 @@ Akamai
 allowlist
 allowlisted
 allowlisting
+analyzes
 ansible
 Anthropic
 APIs
@@ -305,6 +306,8 @@ roundtrip
 ruleset
 rustdoc
 Satoshi
+SBOM
+SBOMs
 scalable
 sccache
 schemaless
@@ -323,6 +326,7 @@ signup
 Sigstore
 snake_case
 Snapshotting
+Snyk
 SonarCloud
 SonarQube
 sortable
@@ -373,6 +377,7 @@ Unkovich
 unlayered
 unmerged
 unresolvable
+unscanned
 unscoped
 untick
 untyped
@@ -402,4 +407,5 @@ wiremock
 wontfix
 wordmark
 workflow_dispatch
+workstream
 writeback
