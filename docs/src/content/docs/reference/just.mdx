@@ -42,32 +42,33 @@ across every plane.
 
 ## infra
 
-| Recipe                                        | Purpose                                                                            |
-| --------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `just infra::actionlint`                      | Lint GitHub Actions workflow files.                                                |
-| `just infra::adr-frontmatter-selftest`        | Validate canonical ADR frontmatter and lifecycle index coverage.                   |
-| `just infra::check`                           | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint. |
-| `just infra::compose-dev-invariants`          | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
-| `just infra::compose-dev-invariants-selftest` | Self-test both CI postgres pins against isolated workflow fixtures.                |
-| `just infra::dco-selftest`                    | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).               |
-| `just infra::greptile-config`                 | Validate greptile.json parses and every pinned context path resolves.              |
-| `just infra::hadolint`                        | Hadolint every tracked Dockerfile.                                                 |
-| `just infra::just-reference`                  | Regenerate the just recipe reference from the justfiles. WRITES.                   |
-| `just infra::just-reference-drift`            | Assert the committed just reference still matches the justfiles.                   |
-| `just infra::lefthook-validate`               | Validate the lefthook.yml hook configuration.                                      |
-| `just infra::lint`                            | Whole repo-lint surface (mirrors the CI repo-lint job).                            |
-| `just infra::no-issue-refs <files>`           | Reject issue-tracker references in a passed file list.                             |
-| `just infra::no-plan-refs <files>`            | Reject plan-artifact references in a passed file list.                             |
-| `just infra::no-plan-refs-selftest`           | Self-test the private-plan reference guard.                                        |
-| `just infra::prose`                           | Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).           |
-| `just infra::recipe-secret-echo-test`         | Overridden DB credentials never echo into recipe logs (dry-run assertion).         |
-| `just infra::shellcheck`                      | Shellcheck every tracked shell script.                                             |
-| `just infra::tool-pin-drift`                  | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.    |
-| `just infra::tool-pin-drift-selftest`         | Exercise the tool-pin guard against planted pins before trusting it.               |
-| `just infra::typos`                           | Spell check the tree (honours .gitignore and \_typos.toml excludes).               |
-| `just infra::vale-scope-test`                 | Test the vale-lint.sh scope policy (include/exclude classification).               |
-| `just infra::vale-selftest`                   | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).        |
-| `just infra::yamllint`                        | yamllint every tracked YAML file.                                                  |
+| Recipe                                           | Purpose                                                                            |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `just infra::actionlint`                         | Lint GitHub Actions workflow files.                                                |
+| `just infra::adr-frontmatter-selftest`           | Validate canonical ADR frontmatter and lifecycle index coverage.                   |
+| `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint. |
+| `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
+| `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                |
+| `just infra::dco-selftest`                       | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).               |
+| `just infra::greptile-config`                    | Validate greptile.json parses and every pinned context path resolves.              |
+| `just infra::hadolint`                           | Hadolint every tracked Dockerfile.                                                 |
+| `just infra::just-reference`                     | Regenerate the just recipe reference from the justfiles. WRITES.                   |
+| `just infra::just-reference-drift`               | Assert the committed just reference still matches the justfiles.                   |
+| `just infra::lefthook-validate`                  | Validate the lefthook.yml hook configuration.                                      |
+| `just infra::lint`                               | Whole repo-lint surface (mirrors the CI repo-lint job).                            |
+| `just infra::no-issue-refs <files>`              | Reject issue-tracker references in a passed file list.                             |
+| `just infra::no-plan-refs <files>`               | Reject plan-artifact references in a passed file list.                             |
+| `just infra::no-plan-refs-selftest`              | Self-test the private-plan reference guard.                                        |
+| `just infra::prose`                              | Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).           |
+| `just infra::recipe-secret-echo-test`            | Overridden DB credentials never echo into recipe logs (dry-run assertion).         |
+| `just infra::sanitize-sarif-severities-selftest` | Self-test the SARIF severity sanitizer both Snyk upload jobs run.                  |
+| `just infra::shellcheck`                         | Shellcheck every tracked shell script.                                             |
+| `just infra::tool-pin-drift`                     | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.    |
+| `just infra::tool-pin-drift-selftest`            | Exercise the tool-pin guard against planted pins before trusting it.               |
+| `just infra::typos`                              | Spell check the tree (honours .gitignore and \_typos.toml excludes).               |
+| `just infra::vale-scope-test`                    | Test the vale-lint.sh scope policy (include/exclude classification).               |
+| `just infra::vale-selftest`                      | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).        |
+| `just infra::yamllint`                           | yamllint every tracked YAML file.                                                  |
 
 ## js
 
