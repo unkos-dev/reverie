@@ -63,7 +63,7 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # double quotes do not stop command substitution, so a branch name
 # containing $() would execute. Git permits such names.
 #
-# Create a git worktree for BRANCH at $WORKTREE_ROOT/reverie/<slug>.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.
 [group('git')]
 [positional-arguments]
 worktree branch:

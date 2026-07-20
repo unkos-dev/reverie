@@ -100,8 +100,10 @@ compose-dev-invariants-selftest:
 recipe-secret-echo-test:
     scripts/recipe-secret-echo-test.sh
 
-# lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation is
-# cheap and offline, so it joins the lint aggregate.
+# lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation
+# is cheap and offline, so it joins the lint aggregate.
+#
+# Validate the lefthook.yml hook configuration.
 [group('infra')]
 lefthook-validate:
     npx --no-install lefthook validate

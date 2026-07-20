@@ -12,6 +12,8 @@ set shell := ["bash", "-ueo", "pipefail", "-c"]
 # config. A bare `vp lint frontend` lints the whole package. Under GitHub
 # Actions, --format=github emits workflow annotations so findings land inline
 # on the PR diff.
+#
+# oxlint over the frontend, or a passed file list (--max-warnings 0, matching CI).
 [group('js')]
 [positional-arguments]
 oxlint *files:
@@ -65,7 +67,7 @@ markdownlint-selftest:
 
 # Advisory (CI runs it continue-on-error), so deliberately not in `lint`/`check`.
 #
-# impeccable design anti-pattern detector.
+# Run the impeccable design anti-pattern detector over the frontend.
 [group('js')]
 [working-directory('frontend')]
 detect:
@@ -93,6 +95,8 @@ lint: oxlint stylelint markdownlint
 # webServer owns the dev-server lifecycle (start, wait, teardown), and locally
 # reuses an already-running dev server on port 5173, so no hand-rolled server
 # block is needed here. Not part of `check`: it boots a browser and a server.
+#
+# WCAG axe-core scan of the design showcase; boots a browser and a dev server.
 [group('js')]
 [working-directory('frontend')]
 a11y:
@@ -116,8 +120,9 @@ test-coverage:
 build:
     npm run build
 
-# Verify the committed Fontshare woff2 files match their pinned checksums (the
-# CI frontend gate; cheap and offline, so locally runnable on its own).
+# The CI frontend gate form; cheap and offline, so locally runnable on its own.
+#
+# Verify the committed Fontshare woff2 files against their pinned checksums.
 [group('js')]
 [working-directory('frontend/public/fonts/fontshare/files')]
 font-integrity:

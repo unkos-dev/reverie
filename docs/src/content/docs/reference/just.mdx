@@ -28,7 +28,7 @@ across every plane.
 | `just fmt`                  | Format the whole tree in place. WRITES; never depended on by check/lint.           |
 | `just lint`                 | Lint the js, rust, and infra surfaces.                                             |
 | `just test`                 | Run every locally-runnable unit test.                                              |
-| `just worktree <branch>`    | Create a git worktree for BRANCH at $WORKTREE_ROOT/reverie/<slug>.                 |
+| `just worktree <branch>`    | Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.               |
 | `just worktree-rm <branch>` | Remove the worktree for BRANCH.                                                    |
 
 ## docs
@@ -54,7 +54,7 @@ across every plane.
 | `just infra::hadolint`                        | Hadolint every tracked Dockerfile.                                                 |
 | `just infra::just-reference`                  | Regenerate the just recipe reference from the justfiles. WRITES.                   |
 | `just infra::just-reference-drift`            | Assert the committed just reference still matches the justfiles.                   |
-| `just infra::lefthook-validate`               | cheap and offline, so it joins the lint aggregate.                                 |
+| `just infra::lefthook-validate`               | Validate the lefthook.yml hook configuration.                                      |
 | `just infra::lint`                            | Whole repo-lint surface (mirrors the CI repo-lint job).                            |
 | `just infra::no-issue-refs <files>`           | Reject issue-tracker references in a passed file list.                             |
 | `just infra::no-plan-refs <files>`            | Reject plan-artifact references in a passed file list.                             |
@@ -73,17 +73,17 @@ across every plane.
 
 | Recipe                           | Purpose                                                                               |
 | -------------------------------- | ------------------------------------------------------------------------------------- |
-| `just js::a11y`                  | block is needed here. Not part of `check`: it boots a browser and a server.           |
+| `just js::a11y`                  | WCAG axe-core scan of the design showcase; boots a browser and a dev server.          |
 | `just js::build`                 | Frontend production build (vp build; typecheck rides js::oxlint via tsgo).            |
 | `just js::check`                 | Locally-runnable verify set: lint + format check (a11y and coverage excluded).        |
-| `just js::detect`                | impeccable design anti-pattern detector.                                              |
+| `just js::detect`                | Run the impeccable design anti-pattern detector over the frontend.                    |
 | `just js::fmt`                   | Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.            |
 | `just js::fmt-check`             | Verify whole-tree formatting without writing (the authoritative CI gate form).        |
-| `just js::font-integrity`        | CI frontend gate; cheap and offline, so locally runnable on its own).                 |
+| `just js::font-integrity`        | Verify the committed Fontshare woff2 files against their pinned checksums.            |
 | `just js::lint`                  | Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.                 |
 | `just js::markdownlint <files>`  | markdownlint over tracked Markdown at the repo root.                                  |
 | `just js::markdownlint-selftest` | Exercise YAML loading through the installed Markdownlint CLI before linting the tree. |
-| `just js::oxlint <files>`        | on the PR diff.                                                                       |
+| `just js::oxlint <files>`        | oxlint over the frontend, or a passed file list (--max-warnings 0, matching CI).      |
 | `just js::stylelint <files>`     | stylelint over frontend CSS (--max-warnings 0, matching CI).                          |
 | `just js::test`                  | Frontend unit tests.                                                                  |
 | `just js::test-coverage`         | Frontend unit tests with coverage (the CI form).                                      |
