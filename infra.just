@@ -80,6 +80,11 @@ greptile-config:
 compose-dev-invariants:
     scripts/compose-dev-invariants.sh
 
+# Self-test both CI postgres pins against isolated workflow fixtures.
+[group('infra')]
+compose-dev-invariants-selftest:
+    scripts/compose-dev-invariants-selftest.sh
+
 # Overridden DB credentials never echo into recipe logs (dry-run assertion).
 [group('infra')]
 recipe-secret-echo-test:
@@ -114,7 +119,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
