@@ -976,6 +976,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.7"
+          install_args: just shellcheck hadolint typos vale yamllint
 
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
