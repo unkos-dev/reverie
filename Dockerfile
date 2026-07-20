@@ -11,7 +11,12 @@
 # stages share the same codename so the dynamic linker can resolve every
 # symbol the release binary requests.
 FROM rust:1-slim-trixie@sha256:34fb2f168c432d421a09883c663b275b33cbb30f6b18642fbd09a684c6546d0e AS chef
-RUN cargo install cargo-chef@0.1.77 --locked
+# cargo-auditable embeds the resolved dependency list into the release
+# binary. Without it the published SBOM is silent about every crate,
+# because the runtime image holds a compiled binary rather than
+# installed packages; syft and trivy both recover the embedded list.
+RUN cargo install cargo-chef@0.1.77 --locked \
+    && cargo install cargo-auditable@0.7.5 --locked
 WORKDIR /build
 
 # Stage 1b: planner — emits recipe.json describing the dependency tree.
@@ -33,7 +38,10 @@ RUN cargo chef cook --release --recipe-path recipe.json
 FROM cooker AS backend-builder
 COPY backend/ .
 ENV SQLX_OFFLINE=true
-RUN cargo build --release
+# `auditable build` is the plain build plus a dependency manifest linked
+# into the binary; only the final link needs it, so the cooked dep layer
+# above is unaffected and stays cache-valid.
+RUN cargo auditable build --release
 
 # Stage 2: Build frontend with buildkit npm cache mount.
 # The mount avoids re-fetching tarballs when the npm-ci layer cache is invalidated
