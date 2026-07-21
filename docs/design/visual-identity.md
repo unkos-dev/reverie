@@ -1,7 +1,4 @@
----
-title: Visual Identity
-description: Tokens, type scale, motion, theme architecture, and the theme cookie lifecycle.
----
+# Visual Identity
 
 This page is the canonical reference for Reverie's visual surface. The
 [brand identity](https://github.com/unkos-dev/reverie-branding/blob/main/identity.md)
@@ -11,8 +8,10 @@ detail (cookie lifecycle, FOUC mechanics, cross-stack contracts).
 
 ## Brand identity reference
 
-- Mark: **Slot**: a single rectangular slot, the negative space of a
-  bookshelf. See `identity.md` §1.
+- Mark: **Slot**: a solid block with a thin negative-space slot cut
+  below centre, read as an inscription carved into stone: the act of
+  cataloguing made into a shape. It is not a bookmark, a page, or a
+  piece of library furniture. See `identity.md` §1.
 - Lockup: Slot + wordmark in horizontal lockup. The Lockup component at
   `frontend/src/components/Lockup.tsx` is the canonical render; see
   `identity.md` §6 for proportions.
@@ -37,7 +36,7 @@ same file maps each one to a `--color-*` name so Tailwind emits the
 matching utility (`bg-canvas`, `text-fg`, `border-border-strong`). Write
 utilities in components; read the semantic name when tracing a value.
 The three-tier contract itself is documented in
-[Color Tokens](/reverie/design/color-tokens/).
+[Color Tokens](./color-tokens.md).
 
 Every value below is a step in a generated Radix ramp. The primitive
 column is the traceable source; the hex is what that step currently
@@ -87,8 +86,8 @@ the single bounded exception, recorded in
 `adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`. Per WCAG
 1.4.1 it never carries meaning alone: it always pairs with an icon,
 weight, or text label. See
-[Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue)
-and [Color Tokens](/reverie/design/color-tokens/).
+[Philosophy § State without hue](./philosophy.md#state-without-hue)
+and [Color Tokens](./color-tokens.md).
 
 ### Using gold on Light without breaking contrast
 
@@ -122,15 +121,15 @@ violation, not axe noise, and reviewers should reject it.
 
 ## Typography
 
-| Role               | Family                  | Weight  |
-| ------------------ | ----------------------- | ------- |
-| Wordmark / Lockup  | Satoshi Variable        | 700     |
-| Display headings   | Author Variable         | 500–600 |
-| Section headings   | Author Variable         | 500     |
-| Tagline            | Author Variable Italic  | 400     |
-| Body               | Satoshi Variable        | 400     |
-| Italic accent      | Satoshi Variable Italic | 400     |
-| Mono (conditional) | JetBrains Mono          | 400     |
+| Role               | Family                 | Weight |
+| ------------------ | ---------------------- | ------ |
+| Wordmark / Lockup  | Satoshi Variable       | 700    |
+| Display headings   | Author Variable        | 500    |
+| Section headings   | Author Variable        | 500    |
+| Tagline            | Author Variable        | 400    |
+| Body               | Satoshi Variable       | 400    |
+| Italic accent      | Author Variable Italic | 400    |
+| Mono (conditional) | JetBrains Mono         | 400    |
 
 Variable woff2 are self-hosted at
 `frontend/public/fonts/fontshare/files/`. See
@@ -164,7 +163,7 @@ ambient pulses.
 State communicates through typography weight, surface opacity, motion,
 and the gold accent, with `--danger` as the single bounded hue exception.
 The canonical state-to-expression mapping lives in
-[Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue)
+[Philosophy § State without hue](./philosophy.md#state-without-hue)
 and is not repeated here, because two copies of the same table is how
 this page drifted from the code once already.
 

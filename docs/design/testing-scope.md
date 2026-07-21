@@ -1,7 +1,4 @@
----
-title: Testing Scope for the Design System
-description: How the design-system work is tested, and what is deliberately exempt.
----
+# Testing Scope for the Design System
 
 The Step 10 design system is tested at two distinct bars.
 
@@ -16,9 +13,9 @@ The Step 10 design system is tested at two distinct bars.
   - The `axum_extra` `CookieJar` tuple-response contract that the backend
     design-system sliver (theme PATCH, OIDC callback cookie seed) depends
     on: `backend/tests/cookie_jar_sanity.rs`.
-  - Vitest harness validation: `frontend/src/__tests__/smoke.test.ts`
-    confirms the jsdom test project is wired up; replaced with an
-    `App`-renders assertion in D3.
+  - Vitest harness validation: `frontend/src/App.test.tsx` asserts the
+    application renders under the jsdom test project (the earlier
+    `smoke.test.ts` placeholder it replaced is gone).
 - **D3–D5 acceptance bar (added before the relevant feature lands):**
   - Theme provider: initial resolution from cookie/DB/`prefers-color-scheme`,
     persistence, and API sync.
@@ -30,9 +27,9 @@ The Step 10 design system is tested at two distinct bars.
 
 Visual and composition work is verified by:
 
-- `@axe-core/cli` against the explore tree at `/design/explore` today, and
-  against `/design/system` once the canonical theme codification ships in
-  D3.
+- Playwright with `@axe-core/playwright` against `/design/system`
+  (`npm run a11y`; targets default in
+  `frontend/scripts/a11y/allowlist.mjs`).
 - Manual Dark/Light toggle.
 - The `/crosscheck` dual-model review gate at D5.
 

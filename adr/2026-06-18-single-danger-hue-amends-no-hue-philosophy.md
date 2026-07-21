@@ -112,8 +112,8 @@ paired with a non-color signal) is enforced in review.
 ## More Information
 
 The no-hue-states policy this amends is documented in the design philosophy
-reference (`docs/src/content/docs/design/philosophy.md`, "State without hue") and
-the color token reference (`docs/src/content/docs/design/color-tokens.md`). The
+reference (`docs/design/philosophy.md`, "State without hue") and
+the color token reference (`docs/design/color-tokens.md`). The
 `--danger` scale is one of the generated families established by the token
 architecture decision (`2026-06-18-radix-three-tier-dual-theme-tokens.md`). The
 brand identity reference (`reverie-branding/identity.md`) carries the Reverie
