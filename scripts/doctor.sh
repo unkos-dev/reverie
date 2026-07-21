@@ -126,7 +126,12 @@ esac
 if [ -d node_modules ]; then
   pass "root node_modules present"
 else
-  warn "root node_modules present" "npx --no-install vp install"
+  # npx --no-install cannot bootstrap an empty tree: with no node_modules at
+  # all there is no local vp binary for it to fall back to, so it refuses to
+  # fetch one and errors out. npm install is the one command that works from
+  # nothing; it also gets vp into node_modules/.bin for the staleness checks
+  # below to use afterward.
+  warn "root node_modules present" "npm install"
 fi
 
 if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
