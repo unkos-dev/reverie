@@ -23,13 +23,6 @@
   font-display: swap;
 }
 @font-face {
-  font-family: "Author Variable";
-  src: url("/reverie/fonts/Author-VariableItalic.woff2") format("woff2");
-  font-weight: 200 700;
-  font-style: italic;
-  font-display: swap;
-}
-@font-face {
   font-family: "Satoshi Variable";
   src: url("/reverie/fonts/Satoshi-Variable.woff2") format("woff2");
   font-weight: 300 900;
