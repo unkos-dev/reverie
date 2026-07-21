@@ -4,19 +4,24 @@
 //
 // The a11y CI gate (scripts/a11y/a11y.spec.ts) runs axe-core against the
 // dev-only design showcase and must fail on any WCAG 2.2 AA violation EXCEPT
-// the one deliberate brand carve-out: Reverie Gold on large CTAs.
+// the axe false positive listed below.
 //
-// Discriminator is element ROLE read from `node.html`, NOT background colour.
-// The lg-button carve-out matches on role because background colour is not a
-// reliable discriminator: the default Badge variant once rendered the same gold
-// background `#8e6f38` as the permitted lg buttons (de-gilded in UNK-345), and
-// future surfaces could collide again. Matching also uses `node.html` rather
-// than `node.target` because the button loading state's target is the
-// `.animate-[loading-pulse…]` class with no `data-size`, while its html carries
-// `data-slot="button" data-size="lg"`. See frontend/DESIGN.md §2 "Light-Gold
-// Restriction Rule": gold on light surfaces is permitted only on focus rings,
-// large CTAs, and recovery actions — "axe-core contrast violations on small-text
-// gold are the right signal: the surface is misusing the accent."
+// A carve-out belongs here only when axe MEASURES the surface wrongly. A real
+// contrast shortfall is a design defect and must be fixed in the surface, not
+// suppressed here. Entries match on `node.html` rather than `node.target`
+// because a target can be an incidental class: the button loading state's
+// target is `.animate-[loading-pulse…]` with no `data-size`, while its html
+// still carries the identifying `data-slot` / `data-size` attributes.
+//
+// A large-CTA carve-out for Reverie Gold used to live here, from when
+// `--fg-on-accent` resolved to Cream and the primary button rendered
+// cream-on-gold at ~3.44:1. `--fg-on-accent` now resolves to `gold-contrast`
+// (Ink), so the lg primary button measures ink-on-gold at 5.11:1 on Light and
+// 8.64:1 on Dark — both clear 4.5:1 at its 14px/500 type, and the gate is green
+// without the exception. The brand restriction it referenced still stands (see
+// frontend/DESIGN.md §2 "Light-Gold Restriction Rule": gold on light surfaces
+// is permitted only on focus rings, large CTAs, and recovery actions); the
+// accent simply no longer needs an accessibility exception to satisfy it.
 
 /**
  * Documented, accepted WCAG carve-outs. Each entry matches a node iff the
@@ -25,15 +30,6 @@
  * every entry is an accessibility exception a reviewer must be able to justify.
  */
 export const ALLOWLIST = [
-  {
-    ruleId: "color-contrast",
-    // Large CTA = the primary button affordance. data-size="lg" excludes the
-    // small default badge, which shares the same gold bg but is not a CTA.
-    htmlIncludesAll: ['data-slot="button"', 'data-size="lg"'],
-    rationale:
-      "DESIGN.md §2 Light-Gold Restriction: Reverie Gold is permitted on large CTAs (primary buttons). Cream-on-gold ~3.44:1 is the accepted brand carve-out for this surface only.",
-    issue: null,
-  },
   {
     ruleId: "color-contrast",
     // Typographic-spine text (CoverArtwork). The `text-cover-*` classes only

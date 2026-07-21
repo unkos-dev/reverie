@@ -18,62 +18,112 @@ detail (cookie lifecycle, FOUC mechanics, cross-stack contracts).
   `identity.md` §6 for proportions.
 - Tagline: **"Your library, catalogued."**
 - Colours: Reverie Gold `#C9A961`, Ink `#0E0D0A`, Cream `#E8E0D0`,
-  Parchment `#E8DCC2`. See the canonical token table below.
+  Parchment `#E8DCC2`. These four are the brand _anchors_: the generated
+  Radix ramps are derived from them, so most runtime token values are
+  ramp steps rather than the anchors themselves. See the token table
+  below.
 - Typography: Author Variable (display), Satoshi Variable (body),
   JetBrains Mono Regular (mono, loaded conditionally).
 
 ## Tokens
 
-The canonical palette generates Tailwind utilities via `@theme inline`
-in `frontend/src/styles/themes/index.css`. Token names are namespace
-`--color-*` so `bg-canvas`, `text-fg`, `border-border-strong`, etc. all
-resolve to brand variables.
+Tokens exist at two names. The Tier 2 semantic role (`--canvas`, `--fg`,
+`--accent`) is what carries the runtime value in
+`frontend/src/styles/themes/index.css`; an `@theme inline` block in the
+same file maps each one to a `--color-*` name so Tailwind emits the
+matching utility (`bg-canvas`, `text-fg`, `border-border-strong`). Write
+utilities in components; read the semantic name when tracing a value.
+The three-tier contract itself is documented in
+[Color Tokens](/reverie/design/color-tokens/).
 
-| Token                   | Light                   | Dark                    | Purpose                                                             |
-| ----------------------- | ----------------------- | ----------------------- | ------------------------------------------------------------------- |
-| `--color-canvas`        | `#E8DCC2` (Parchment)   | `#14120E`               | Page canvas                                                         |
-| `--color-canvas-2`      | `#DFD2B4`               | `#1A1812`               | Slightly recessed canvas                                            |
-| `--color-surface`       | `#F0E6CF`               | `#221F18`               | Card / panel surface                                                |
-| `--color-surface-2`     | `#E5D8BC`               | `#2A261D`               | Hover / elevated surface                                            |
-| `--color-border`        | `#C7B894`               | `#2E2A22`               | Default border                                                      |
-| `--color-border-strong` | `#B0A07C`               | `#3A3528`               | Hover / focus border                                                |
-| `--color-fg`            | `#0E0D0A` (Ink)         | `#E8E0D0` (Cream)       | Primary text                                                        |
-| `--color-fg-muted`      | `#5A5244`               | `#A8A090`               | Secondary text                                                      |
-| `--color-fg-faint`      | `#8A8170`               | `#6E6858`               | Tertiary text                                                       |
-| `--color-accent`        | `#8E6F38`               | `#C9A961` (Gold)        | Accent / focus / CTA: primary affordances only, never hover         |
-| `--color-accent-soft`   | `#DCC890`               | `#4A3C24`               | Selected backgrounds (pair with `text-fg`, not `text-fg-on-accent`) |
-| `--color-accent-strong` | `#6E5424`               | `#D4B070`               | Pressed accent                                                      |
-| `--color-fg-on-accent`  | `#E8DCC2`               | `#0E0D0A`               | Text on saturated `bg-accent` only; fails AA on `bg-accent-soft`    |
-| `--color-hover`         | `#E5D8BC` (= surface-2) | `#2A261D` (= surface-2) | shadcn-primitive hover/focus lift; decoupled from gold              |
+Every value below is a step in a generated Radix ramp. The primitive
+column is the traceable source; the hex is what that step currently
+resolves to in `frontend/src/styles/themes/primitives.generated.css`.
+Regenerating the ramps changes the hex, so treat the primitive as
+canonical and the hex as informative.
 
-**No state-color tokens.** `--color-success`, `--color-warning`,
-`--color-danger`, `--color-info`, and `--color-neutral` are deliberately
-absent; see [Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue).
+| Token              | Primitive         | Light       | Dark        | Purpose                                                |
+| ------------------ | ----------------- | ----------- | ----------- | ------------------------------------------------------ |
+| `--canvas`         | `--bg`            | `#E8DCC2`   | `#0E0D0A`   | Page canvas                                            |
+| `--canvas-2`       | `sand-2`          | `#D3D1CF`   | `#191815`   | Slightly recessed canvas                               |
+| `--surface`        | `sand-3`          | `#C8C6C2`   | `#24221E`   | Card / panel surface                                   |
+| `--surface-2`      | `sand-4`          | `#BFBCB6`   | `#2B2924`   | Hover / elevated surface                               |
+| `--surface-3`      | `sand-5`          | `#B6B2AB`   | `#34302A`   | Active / selected surface                              |
+| `--border`         | `sand-6`          | `#ADA89F`   | `#3E3A32`   | Decorative separator (1.4.11-exempt)                   |
+| `--border-strong`  | `sand-7`          | `#A29C90`   | `#4C473D`   | Hover / focus border                                   |
+| `--border-control` | `sand-12`         | `#251F14`   | `#F0EEE9`   | Sole boundary of interactive controls                  |
+| `--fg`             | `sand-12`         | `#251F14`   | `#F0EEE9`   | Primary text                                           |
+| `--fg-muted`       | `sand-11`         | `#3D362A`   | `#BAB2A3`   | Secondary text                                         |
+| `--fg-faint`       | `sand-a10`        | `#120A00AA` | `#FFEFCF7B` | Tertiary, sub-AA: decorative and placeholder only      |
+| `--accent`         | `gold-9`          | `#A77C00`   | `#C9A961`   | Primary affordance fill and pressed state, never hover |
+| `--accent-soft`    | `gold-3`          | `#D6C8A8`   | `#262217`   | Selected background; pair with `text-fg`               |
+| `--accent-strong`  | `gold-10`         | `#967100`   | `#BE9E56`   | Pressed accent                                         |
+| `--accent-text`    | `gold-11`         | `#5A3E00`   | `#D9B970`   | Text-grade gold and the focus ring                     |
+| `--fg-on-accent`   | `gold-contrast`   | `#0E0D0A`   | `#0E0D0A`   | Text on the saturated `bg-accent` fill only            |
+| `--danger`         | `danger-9`        | `#B91C1C`   | `#B91C1C`   | Destructive and unrecoverable error; never decorative  |
+| `--danger-text`    | `danger-11`       | `#900000`   | `#FF9082`   | Text-grade danger                                      |
+| `--danger-soft`    | `danger-3`        | `#D4C2BF`   | `#410A08`   | Danger background wash                                 |
+| `--fg-on-danger`   | `danger-contrast` | `#FFFFFF`   | `#FFFFFF`   | Text on the `bg-danger` fill (6.47:1)                  |
 
-The Light-theme accent (`#8E6F38`) is the brand's `#C9A961` darkened to
-satisfy WCAG 2.2 1.4.11 (UI component 3:1) and 1.4.3 large-text
-contrast against `#E8DCC2`. It does **not** pass 1.4.3 normal-text
-4.5:1; restrict to focus rings, large CTAs, and recovery actions.
-axe-core surfaces this as a violation on any Light surface where
-`bg-accent` carries normal body text; the design-system axe gate
-tolerates this documented violation on the `lg`-size primary button
-surface in the `/design/system` gallery, but introducing
-`bg-accent` on _new_ normal-size Light surfaces is a brand violation,
-not an axe-noise issue.
+Two tokens sit outside that table. `--overlay` is the modal, sheet, and
+popover scrim, a named exception to the primitive contract: it is
+`rgb(14 13 10 / 88%)` on both themes, because a Parchment-tinted scrim
+would defeat the modal.
 
-`--color-hover` decouples shadcn primitives' hover/focus treatment from
-the gold register: dropdown items and select items light up at
-`--color-hover` (= `--color-surface-2`) on focus instead of saturating
-gold, so brand `--color-accent` stays the unambiguous signature for
+`--color-hover` has no Tier 2 runtime name; it is defined in the
+`@theme inline` block as an alias of `--surface-2`. It decouples shadcn
+primitives' hover and focus treatment from the gold register: dropdown
+and select items light up at `--color-hover` on focus instead of
+saturating gold, so `--accent` stays the unambiguous signature for
 primary actions, focus rings, and recovery actions.
+
+**Danger is the one state hue.** `--success`, `--warning`, `--info`, and
+`--neutral` are deliberately absent, and adding one requires a
+brand-aligned decision rather than a convenience commit. `--danger` is
+the single bounded exception, recorded in
+`adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`. Per WCAG
+1.4.1 it never carries meaning alone: it always pairs with an icon,
+weight, or text label. See
+[Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue)
+and [Color Tokens](/reverie/design/color-tokens/).
+
+### Using gold on Light without breaking contrast
+
+On Parchment the Light accent (`gold-9`, `#A77C00`) measures 2.80:1,
+which is below the WCAG 2.2 1.4.11 3:1 floor as a line and below 1.4.3
+as text of any size. Darkening it far enough to clear 3:1 stops it
+reading as gold, so the contrast is carried by _how the accent is used_
+rather than by the value:
+
+- As a **fill**, `bg-accent` pairs with `--fg-on-accent` (Ink) at 5.11:1,
+  which clears 1.4.3 for normal text. The fill does the work, not the
+  gold edge.
+- As **text or a line**, use `--accent-text` (`gold-11`), which clears
+  7.27:1 on Parchment and 10.29:1 on Ink.
+- The **focus ring** uses `--accent-text` for exactly this reason and
+  needs no halo.
+- On `--accent-soft`, pair `text-fg`, not `text-fg-on-accent`: Dark's
+  `--accent-soft` is a near-black gold tint, so Ink text on it is
+  unreadable.
+
+axe-core flags 1.4.11 and 1.4.3 violations on any Light surface using a
+`gold-9` edge or `gold-9` text outside those mitigated cases. Used as
+above, the accent needs no accessibility exception: the design-system
+gate carries no contrast carve-out for gold. The one entry left in
+`frontend/scripts/a11y/allowlist.mjs` is unrelated to the accent: it
+covers cover-spine text whose paired background axe cannot attribute
+through the spine's absolutely-positioned stack, a measurement false
+positive rather than a tolerated shortfall. Introducing gold as a line,
+an icon stroke, or normal-size text on _new_ Light surfaces is a brand
+violation, not axe noise, and reviewers should reject it.
 
 ## Typography
 
 | Role               | Family                  | Weight  |
 | ------------------ | ----------------------- | ------- |
 | Wordmark / Lockup  | Satoshi Variable        | 700     |
-| Display headings   | Author Variable         | 600–700 |
-| Section headings   | Author Variable         | 500–600 |
+| Display headings   | Author Variable         | 500–600 |
+| Section headings   | Author Variable         | 500     |
 | Tagline            | Author Variable Italic  | 400     |
 | Body               | Satoshi Variable        | 400     |
 | Italic accent      | Satoshi Variable Italic | 400     |
@@ -106,24 +156,14 @@ loading-state expression: no `--color-loading` token; the loading
 region pulses opacity instead. Reduced-motion preferences disable
 ambient pulses.
 
-## State expression (no hue)
+## State expression
 
 State communicates through typography weight, surface opacity, motion,
-and the gold accent, never a state-coded hue. The canonical mapping:
-
-| State                | Expression                                                                                                                                |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Default / idle       | `text-fg`, `bg-surface` (or unchanged)                                                                                                    |
-| Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong`                                                                                             |
-| Hover (in-list item) | `bg-hover` (= `bg-surface-2`)                                                                                                             |
-| Active / pressed     | `bg-accent` or `bg-accent-strong`                                                                                                         |
-| Selected             | `bg-accent-soft` background + `text-fg`                                                                                                   |
-| Disabled             | `opacity-50` + `text-fg-muted` (`text-fg-faint` is decorative-only; opacity-50 × fg-faint drops below AA)                                 |
-| Loading              | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                            |
-| Error                | `text-fg font-semibold` + gold recovery action                                                                                            |
-| Success (explicit)   | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                          |
-| Link                 | underline + `text-accent` on hover; no permanent colour difference                                                                        |
-| Focus (keyboard)     | single 2px `gold-11` outline + 2px offset, no halo; global `:focus-visible` rule (`--focus-ring: var(--accent-text)`, `box-shadow: none`) |
+and the gold accent, with `--danger` as the single bounded hue exception.
+The canonical state-to-expression mapping lives in
+[Philosophy § State without hue](/reverie/design/philosophy/#state-without-hue)
+and is not repeated here, because two copies of the same table is how
+this page drifted from the code once already.
 
 Charts and code blocks are scoped exceptions; when they ship, the
 deviation is documented here and constrained to the surface that

@@ -4,10 +4,16 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { ALLOWLIST, filterAllowed, parseTargets, urlMatches, verdict } from "../allowlist.mjs";
 
-// Real axe output captured against /design/system (full WCAG 2.2 AA tag set).
-// Ground truth for the allowlist: 1 color-contrast violation, 4 nodes —
-// 3 lg buttons (permitted "large CTA" gold per DESIGN.md §2) + 1 default
-// badge (NOT a permitted gold surface → must remain a failure).
+// Real axe output captured against /design/system (full WCAG 2.2 AA tag set):
+// 1 color-contrast violation over 4 nodes — 3 lg buttons + 1 default badge.
+//
+// The capture predates `--fg-on-accent` resolving to `gold-contrast` (Ink).
+// Those surfaces render ink-on-gold today and no longer violate at all, so the
+// live showcase produces no color-contrast violation and the gate is green with
+// no button carve-out. The fixture is retained deliberately: it is a realistic
+// multi-node axe payload, and it pins the discriminator's behaviour on gold
+// surfaces so a future regression that reintroduces low-contrast gold is caught
+// as a failure rather than silently exempted.
 const fixture = JSON.parse(
   readFileSync(fileURLToPath(new URL("../fixtures/violations.json", import.meta.url)), "utf8"),
 );
@@ -21,28 +27,26 @@ const buttonNodes = REAL_VIOLATIONS[0].nodes.filter((n) => n.html.includes('data
 const badgeNode = REAL_VIOLATIONS[0].nodes.find((n) => n.html.includes('data-slot="badge"'));
 
 describe("a11y allowlist — discriminator", () => {
-  it("allowlists every lg button (matched on html role, not bgColor/target)", () => {
+  it("does NOT exempt lg buttons: low-contrast gold is a defect, not a carve-out", () => {
     const remaining = filterAllowed([violation("color-contrast", buttonNodes)]);
-    // All three button nodes are permitted → the whole violation drops.
-    expect(remaining).toHaveLength(0);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].nodes).toHaveLength(buttonNodes.length);
   });
 
-  it("does NOT allowlist the default badge — it shares the buttons' #8e6f38 bg", () => {
+  it("does NOT allowlist the default badge", () => {
     const remaining = filterAllowed([violation("color-contrast", [badgeNode])]);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].nodes).toHaveLength(1);
     expect(remaining[0].nodes[0].html).toContain('data-slot="badge"');
   });
 
-  it("keeps the badge node and drops the button nodes from the real mixed violation", () => {
+  it("keeps every node of the real mixed violation", () => {
     const remaining = filterAllowed(REAL_VIOLATIONS);
     expect(remaining).toHaveLength(1);
-    expect(remaining[0].nodes).toHaveLength(1);
-    expect(remaining[0].nodes[0].html).toContain('data-slot="badge"');
+    expect(remaining[0].nodes).toHaveLength(REAL_VIOLATIONS[0].nodes.length);
   });
 
-  it("anti-bgColor regression: a non-button node on gold is NOT allowlisted", () => {
-    // Same gold bg as the buttons, but not a large-CTA element → must remain.
+  it("anti-bgColor regression: no node is exempted for sitting on gold", () => {
     const goldNonButton = node('<span data-slot="badge" data-variant="default" class="x">');
     const remaining = filterAllowed([violation("color-contrast", [goldNonButton])]);
     expect(remaining).toHaveLength(1);
@@ -102,9 +106,7 @@ describe("a11y allowlist — cover-spine carve-out", () => {
     expect(remaining).toHaveLength(1);
   });
 
-  it("keeps the spine carve-out independent of the lg-button carve-out", () => {
-    // A mixed violation: one spine node + one non-exempt badge node —
-    // only the badge survives.
+  it("drops only the spine node from a mixed violation", () => {
     const spineText = node('<div class="text-cover-parchment">');
     const remaining = filterAllowed([violation("color-contrast", [spineText, badgeNode])]);
     expect(remaining).toHaveLength(1);
@@ -128,16 +130,23 @@ describe("a11y verdict — liveness gate", () => {
     expect(verdict({ violations: REAL_VIOLATIONS, scanOk: true }).pass).toBe(false);
   });
 
-  it("passes when only allowlisted button nodes are present", () => {
+  it("fails when only button nodes are present — they carry no exemption", () => {
     expect(
       verdict({ violations: [violation("color-contrast", buttonNodes)], scanOk: true }).pass,
+    ).toBe(false);
+  });
+
+  it("passes when only allowlisted spine nodes are present", () => {
+    const spineText = node('<div class="text-cover-cream">');
+    expect(
+      verdict({ violations: [violation("color-contrast", [spineText])], scanOk: true }).pass,
     ).toBe(true);
   });
 
   it("returns the remaining (non-allowlisted) violations", () => {
     const result = verdict({ violations: REAL_VIOLATIONS, scanOk: true });
     expect(result.remaining).toHaveLength(1);
-    expect(result.remaining[0].nodes[0].html).toContain('data-slot="badge"');
+    expect(result.remaining[0].nodes).toHaveLength(REAL_VIOLATIONS[0].nodes.length);
   });
 });
 
