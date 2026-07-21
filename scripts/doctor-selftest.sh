@@ -36,8 +36,9 @@ mkdir -p "${fixture}/node_modules"
 echo '{}' >"${fixture}/package-lock.json"
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
 
-# Non-empty sqlx offline cache with one entry that actually parses as JSON.
-echo '{}' >"${fixture}/backend/.sqlx/query-fixture.json"
+# Non-empty sqlx offline cache with one entry shaped like a real sqlx
+# query-*.json (query + hash keys), not just any parseable JSON.
+echo '{"query": "SELECT 1", "hash": "deadbeef"}' >"${fixture}/backend/.sqlx/query-fixture.json"
 
 # Stub PATH: real coreutils/git/jq passed through by absolute-path symlink,
 # the remaining required binaries stubbed as no-op executables (doctor.sh
@@ -204,7 +205,7 @@ expect_contains "mise query failure is reported, not silently passed" "FAIL mise
 unset DOCTOR_STUB_MISE_ERROR
 
 # --- pg_isready succeeding is not enough: a broken/missing reverie_app
-# role must independently fail the run. ---
+# role must independently fail the run when no override signal explains it. ---
 export DOCTOR_STUB_APP_LOGIN=0
 expect_exit "broken app-role login fails the run" 1 "${stub_bin}"
 expect_contains "app-role login failure is reported" "FAIL reverie_app role authenticates"
@@ -212,14 +213,41 @@ export DOCTOR_STUB_APP_LOGIN=1
 expect_exit "healthy app-role login passes" 0 "${stub_bin}"
 expect_contains "app-role login success is reported" "PASS reverie_app role authenticates"
 
+# --- a login failure with an override signal present (REVERIE_APP_PASSWORD
+# set, the env var docker/init-roles.sql reads for a non-default password)
+# degrades to WARN instead of FAIL: the default-credential probe cannot
+# tell a broken role from an intentionally customized one. ---
+export DOCTOR_STUB_APP_LOGIN=0
+export REVERIE_APP_PASSWORD=custom-secret
+expect_exit "custom REVERIE_APP_PASSWORD degrades login failure to warn" 0 "${stub_bin}"
+expect_contains "custom-password warn is reported" "WARN reverie_app role authenticates"
+expect_not_contains "custom-password path has no FAIL lines" "FAIL "
+unset REVERIE_APP_PASSWORD
+
+# --- the same degrade-to-WARN applies for the other documented override
+# signal: a docker/.env file, the dotenv file this compose project loads. ---
+mkdir -p "${fixture}/docker"
+: >"${fixture}/docker/.env"
+expect_exit "docker/.env presence degrades login failure to warn" 0 "${stub_bin}"
+expect_contains "docker/.env warn is reported" "WARN reverie_app role authenticates"
+rm -rf "${fixture}/docker"
+export DOCTOR_STUB_APP_LOGIN=1
+
 # --- sqlx cache: a zero-byte leftover file must not satisfy "non-empty
-# directory"; only an entry that actually parses as JSON does. ---
+# directory", and a parseable-but-unrelated JSON file must not satisfy
+# "looks like a query cache entry"; only a query+hash-shaped entry does. ---
 rm -f "${fixture}/backend/.sqlx/query-fixture.json"
 : >"${fixture}/backend/.sqlx/query-truncated.json"
 expect_exit "zero-byte-only sqlx cache fails the run" 1 "${stub_bin}"
 expect_contains "zero-byte sqlx cache failure is reported" "FAIL sqlx offline cache"
-echo '{}' >"${fixture}/backend/.sqlx/query-fixture.json"
 rm -f "${fixture}/backend/.sqlx/query-truncated.json"
+
+echo '{"unrelated": true}' >"${fixture}/backend/.sqlx/query-wrongshape.json"
+expect_exit "parseable but wrong-shape JSON fails the run" 1 "${stub_bin}"
+expect_contains "wrong-shape sqlx cache failure is reported" "FAIL sqlx offline cache"
+rm -f "${fixture}/backend/.sqlx/query-wrongshape.json"
+
+echo '{"query": "SELECT 1", "hash": "deadbeef"}' >"${fixture}/backend/.sqlx/query-fixture.json"
 expect_exit "a valid sqlx cache entry passes" 0 "${stub_bin}"
 expect_contains "valid sqlx cache is reported" "PASS sqlx offline cache"
 

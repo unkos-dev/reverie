@@ -92,7 +92,18 @@ case "${state_status}" in
     if docker exec -e PGPASSWORD=reverie_app "${container}" psql -h localhost -U reverie_app -d reverie_dev -Atc 'SELECT 1' >/dev/null 2>&1; then
       pass "reverie_app role authenticates (psql SELECT 1)"
     else
-      fail "reverie_app role authenticates (psql SELECT 1)" "just db-reset (re-seeds docker/init-roles.sql)"
+      # This probe only knows the dev default password; docker/init-roles.sql
+      # reads REVERIE_APP_PASSWORD to seed a non-default one (the same
+      # mechanism docker/compose.staging.yml requires), and docker/.env is
+      # this compose project's own dotenv file for such overrides. Their
+      # presence means a login failure may just be an unprobed custom
+      # credential, not a broken role, so degrade to WARN rather than
+      # sending an operator into a needless (and data-erasing) `db-reset`.
+      if [ -n "${REVERIE_APP_PASSWORD:-}" ] || [ -f docker/.env ]; then
+        warn "reverie_app role authenticates (psql SELECT 1)" "custom dev credentials in effect; verify the reverie_app password manually"
+      else
+        fail "reverie_app role authenticates (psql SELECT 1)" "just db-reset (re-seeds docker/init-roles.sql)"
+      fi
     fi
     ;;
   "")
@@ -129,15 +140,14 @@ else
 fi
 
 # 7. sqlx offline cache present, with at least one entry that actually
-# parses as JSON. A bare non-empty-directory check would pass on a stale
-# zero-byte or truncated leftover file, while cargo build still fails
-# closed on the compile-time query macros whenever DATABASE_URL is unset.
+# looks like a query cache record. Any parseable JSON (`jq empty`) would
+# accept an unrelated or gutted file, so require the two keys every real
+# sqlx query-*.json carries (verified against a committed entry): "query",
+# the cached SQL text, and "hash", the cache key sqlx looks entries up by.
 sqlx_cache_ok=0
 if [ -d backend/.sqlx ]; then
   for f in backend/.sqlx/query-*.json; do
-    # -s (non-empty) first: `jq empty` treats zero-byte input as vacuously
-    # valid (exit 0, no output), so it alone would accept a truncated file.
-    if [ -s "${f}" ] && jq empty "${f}" >/dev/null 2>&1; then
+    if [ -s "${f}" ] && jq -e 'has("query") and has("hash")' "${f}" >/dev/null 2>&1; then
       sqlx_cache_ok=1
       break
     fi
