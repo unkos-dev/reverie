@@ -126,17 +126,17 @@ esac
 if [ -d node_modules ]; then
   pass "root node_modules present"
 else
-  warn "root node_modules present" "vp install"
+  warn "root node_modules present" "npx --no-install vp install"
 fi
 
 if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
   if [ package-lock.json -nt node_modules/.package-lock.json ]; then
-    warn "node_modules matches package-lock.json" "vp install"
+    warn "node_modules matches package-lock.json" "npx --no-install vp install"
   else
     pass "node_modules matches package-lock.json"
   fi
 else
-  warn "node_modules matches package-lock.json" "vp install"
+  warn "node_modules matches package-lock.json" "npx --no-install vp install"
 fi
 
 # 7. sqlx offline cache present, with at least one entry that actually
