@@ -18,10 +18,13 @@ detail (cookie lifecycle, FOUC mechanics, cross-stack contracts).
   `identity.md` §6 for proportions.
 - Tagline: **"Your library, catalogued."**
 - Colours: Reverie Gold `#C9A961`, Ink `#0E0D0A`, Cream `#E8E0D0`,
-  Parchment `#E8DCC2`. These four are the brand _anchors_: the generated
-  Radix ramps are derived from them, so most runtime token values are
-  ramp steps rather than the anchors themselves. See the token table
-  below.
+  Parchment `#E8DCC2`. Gold, Ink, and Parchment are generator anchors
+  (`ANCHORS` in `frontend/scripts/radix-gen/emit-primitives.ts`, alongside
+  the danger and neutral seeds), so most runtime token values are derived
+  ramp steps rather than the anchors themselves. Cream is not an anchor
+  and is not a ramp step: it survives as a hand-placed constant in the
+  Lockup and as `--cover-cream` in the atmosphere tier. The nearest ramp
+  value, Dark's `--fg`, is `#F0EEE9`. See the token table below.
 - Typography: Author Variable (display), Satoshi Variable (body),
   JetBrains Mono Regular (mono, loaded conditionally).
 
