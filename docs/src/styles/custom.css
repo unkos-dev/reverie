@@ -1,0 +1,98 @@
+/**
+ * Reverie brand skin for the documentation site.
+ *
+ * Scope is deliberately partial: per the docs identity budget, content pages
+ * inherit palette and mark only; the splash page carries the full identity.
+ * The hex values below are not free-hand colour: every ramp value traces to a
+ * step in frontend/src/styles/themes/primitives.generated.css (sand and gold
+ * Radix ramps). The docs plane has no token pipeline, so the steps are copied
+ * rather than imported; regenerating the ramps means refreshing these values.
+ * Cream #E8E0D0 and Ink #0E0D0A are brand constants (identity.md), matching
+ * the hand-placed constants in frontend/src/components/Lockup.tsx.
+ */
+
+/* Brand faces, self-hosted (copies of frontend/public/fonts/fontshare).
+ * Paths are absolute under the deployed base ("/reverie" in astro.config.mjs).
+ * Author appears on the splash only; Satoshi also carries the header wordmark
+ * site-wide, so it loads on every page by design. */
+@font-face {
+  font-family: "Author Variable";
+  src: url("/reverie/fonts/Author-Variable.woff2") format("woff2");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Author Variable";
+  src: url("/reverie/fonts/Author-VariableItalic.woff2") format("woff2");
+  font-weight: 200 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Satoshi Variable";
+  src: url("/reverie/fonts/Satoshi-Variable.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Starlight palette, dark: the Ink theme. Gold-9 pairs with text-invert
+ * (= --sl-color-black = Ink) wherever Starlight uses a solid accent fill,
+ * which keeps the documented fill-plus-Ink contrast pairing. */
+:root {
+  --sl-color-accent-low: #262217; /* gold-3 */
+  --sl-color-accent: #c9a961; /* gold-9 */
+  --sl-color-accent-high: #d9b970; /* gold-11 */
+  --sl-color-white: #f0eee9; /* sand-12 */
+  --sl-color-gray-1: #dedad1; /* between sand-11 and sand-12; hand-interpolated */
+  --sl-color-gray-2: #bab2a3; /* sand-11 */
+  --sl-color-gray-3: #827a69; /* sand-10 */
+  --sl-color-gray-4: #4c473d; /* sand-7 */
+  --sl-color-gray-5: #34302a; /* sand-5 */
+  --sl-color-gray-6: #24221e; /* sand-3 */
+  --sl-color-black: #0e0d0a; /* Ink */
+
+  --rv-wordmark: #e8e0d0; /* Cream, the Lockup wordmark tint on dark */
+}
+
+/* Starlight palette, light: the Parchment theme. The accent is gold-11, the
+ * text-grade gold: gold-9 measures 2.80:1 on Parchment and is banned as text
+ * or line colour on light surfaces (see the visual identity reference). */
+:root[data-theme="light"] {
+  --sl-color-accent-low: #d6c8a8; /* gold-3 */
+  --sl-color-accent: #5a3e00; /* gold-11 */
+  --sl-color-accent-high: #403827; /* gold-12 */
+  --sl-color-white: #251f14; /* sand-12 */
+  --sl-color-gray-1: #2f2820; /* between sand-11 and sand-12; hand-interpolated */
+  --sl-color-gray-2: #3d362a; /* sand-11 */
+  --sl-color-gray-3: #635a49; /* sand-9 */
+  --sl-color-gray-4: #8f8778; /* sand-8 */
+  --sl-color-gray-5: #b6b2ab; /* sand-5 */
+  --sl-color-gray-6: #d3d1cf; /* sand-2 */
+  --sl-color-gray-7: #ddd5c2; /* Parchment raised a half-step; hand-interpolated */
+  --sl-color-black: #e8dcc2; /* Parchment, the light canvas anchor */
+
+  --rv-wordmark: #0e0d0a; /* Ink wordmark on light, matching the Lockup */
+}
+
+/* Header lockup: Slot glyph (logo image) + Satoshi wordmark, proportions per
+ * identity.md section 6 (0.32em tracking, matching leading pad). */
+.site-title {
+  font-family: "Satoshi Variable", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  color: var(--rv-wordmark);
+  gap: 0.6875rem;
+}
+.site-title img {
+  height: 1.3125rem;
+  width: auto;
+}
+
+::selection {
+  background: #c9a961;
+  color: #0e0d0a;
+}

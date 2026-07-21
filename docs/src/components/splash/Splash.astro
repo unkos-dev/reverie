@@ -1,0 +1,545 @@
+---
+/**
+ * The splash page body: the one surface that carries Reverie's full identity
+ * (Ink canvas, gold accent, Author display type, Satoshi body). It stays Ink
+ * in both Starlight themes by design, like a cover that does not recolour
+ * with the room; the page-scoped palette override lives in index.mdx.
+ *
+ * Copy and structure follow docs/PRODUCT.md: persuade first, state the
+ * pre-alpha constraints plainly, and let the public engineering stand in for
+ * the social proof Reverie does not have.
+ */
+import Shelf from "./Shelf.astro";
+
+const repo = "https://github.com/unkos-dev/reverie";
+---
+
+<div class="splash not-content">
+  <section class="hero" aria-label="Introduction">
+    <div class="hero-copy">
+      <p class="tagline">Your library, catalogued.</p>
+      <h2 class="headline">
+        A library you are proud to browse, on hardware you own.
+      </h2>
+      <p class="lede">
+        Reverie is a self-hosted ebook library manager that treats a personal
+        collection as a permanent record, not a folder of files. It is being
+        made slowly and carefully, in the open.
+      </p>
+      <div class="actions">
+        <a class="cta" href={repo}>
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 .5l2.35 4.76 5.25.76-3.8 3.7.9 5.23L8 12.48l-4.7 2.47.9-5.23-3.8-3.7 5.25-.76L8 .5z"
+            ></path>
+          </svg>
+          Star on GitHub
+        </a>
+        <a class="cta-quiet" href="/reverie/api/">
+          Browse the API reference<span aria-hidden="true"> &rarr;</span>
+        </a>
+      </div>
+    </div>
+    <Shelf />
+  </section>
+
+  <section class="status" aria-label="Project status">
+    <h2 class="section-head">Pre-alpha, and honest about it.</h2>
+    <dl class="record">
+      <div class="row">
+        <dt>Status</dt>
+        <span class="leader" aria-hidden="true"></span>
+        <dd>pre-alpha</dd>
+      </div>
+      <div class="row">
+        <dt>Platform</dt>
+        <span class="leader" aria-hidden="true"></span>
+        <dd>arm64 only</dd>
+      </div>
+      <div class="row">
+        <dt>Development</dt>
+        <span class="leader" aria-hidden="true"></span>
+        <dd>in the open</dd>
+      </div>
+    </dl>
+    <p>
+      Reverie is not ready to hold the only copy of anything you love, and it
+      will not pretend otherwise. If it cannot run on your hardware today, the
+      honest recommendation is to watch the repository and arrive when it is
+      ready.
+    </p>
+    <p class="aside">
+      Already running it? <a href="/reverie/getting-started/introduction/"
+        >Start with the introduction</a
+      >.
+    </p>
+  </section>
+
+  <section class="thesis" aria-label="What Reverie is">
+    <h2 class="section-display">
+      A permanent record, not a folder of files.
+    </h2>
+    <div class="thesis-body">
+      <p>
+        Most tools in this category index files and stop there. Reverie is
+        built on a different premise: a personal library is one of the few
+        collections a person keeps for decades, and software that holds it
+        should behave accordingly.
+      </p>
+      <p>
+        That premise shows up as engineering. Cataloguing is deliberate rather
+        than best-effort guesswork, browsing is designed to be a pleasure
+        rather than a file listing, and all of it runs on hardware you own.
+      </p>
+    </div>
+  </section>
+
+  <section class="proof" aria-label="Engineering in the open">
+    <div class="proof-head">
+      <h2 class="section-head">The proof is the engineering.</h2>
+      <p>
+        Too young for testimonials, so none appear here. What exists instead
+        is public, and it is the better credential.
+      </p>
+    </div>
+    <ul class="ledger" role="list">
+      <li>
+        <a href="/reverie/api/">
+          <span class="name">API reference</span>
+          <span class="desc"
+            >Generated from the code on every build, never written by hand. A
+            complete picture of the surface.</span
+          >
+          <span class="mark" aria-hidden="true">&rarr;</span>
+        </a>
+      </li>
+      <li>
+        <a href="/reverie/design/philosophy/">
+          <span class="name">Design record</span>
+          <span class="desc"
+            >The palette, the tokens, and the reasoning behind them, written
+            down before they were needed.</span
+          >
+          <span class="mark" aria-hidden="true">&rarr;</span>
+        </a>
+      </li>
+      <li>
+        <a href={`${repo}/tree/main/adr`}>
+          <span class="name">Architecture decisions</span>
+          <span class="desc"
+            >Every load-bearing choice recorded with its context and its
+            consequences.</span
+          >
+          <span class="mark" aria-hidden="true">&rarr;</span>
+        </a>
+      </li>
+      <li>
+        <a href={repo}>
+          <span class="name">The repository</span>
+          <span class="desc">All of it, in the open, gates and tests included.</span>
+          <span class="mark" aria-hidden="true">&rarr;</span>
+        </a>
+      </li>
+    </ul>
+  </section>
+
+  <section class="close" aria-label="Follow Reverie">
+    <p class="close-line">Follow the making of it.</p>
+    <a class="cta" href={repo}>
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M8 .5l2.35 4.76 5.25.76-3.8 3.7.9 5.23L8 12.48l-4.7 2.47.9-5.23-3.8-3.7 5.25-.76L8 .5z"
+        ></path>
+      </svg>
+      Star on GitHub
+    </a>
+  </section>
+</div>
+
+<style>
+  .splash {
+    /* Local mirrors of the brand motion and colour tokens; the docs plane has
+     * no token pipeline, so the splash carries its own copies. */
+    --ink: #0e0d0a;
+    --ink-2: #191815;
+    --gold: #c9a961;
+    --gold-pressed: #be9e56;
+    --gold-text: #d9b970;
+    --cream: #e8e0d0;
+    --fg: #f0eee9;
+    --fg-muted: #bab2a3;
+    --hairline: #3e3a32;
+    --hairline-strong: #4c473d;
+    --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --ease-emphasised: cubic-bezier(0.16, 0.78, 0.3, 1);
+    --font-display: "Author Variable", georgia, serif;
+    --font-body: "Satoshi Variable", system-ui, sans-serif;
+
+    background: var(--ink);
+    color: var(--fg);
+    font-family: var(--font-body);
+  }
+
+  /* ---- Hero -------------------------------------------------------- */
+
+  .hero {
+    min-height: calc(100svh - var(--sl-nav-height, 4rem));
+    display: grid;
+    grid-template-rows: 1fr auto;
+  }
+
+  .hero-copy {
+    width: min(100% - 3rem, 68rem);
+    margin-inline: auto;
+    align-self: center;
+    padding-block: clamp(2.5rem, 6vh, 4rem) clamp(1.5rem, 4vh, 3rem);
+  }
+
+  .tagline {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 430;
+    font-size: clamp(1.125rem, 0.5vw + 1rem, 1.375rem);
+    color: var(--gold-text);
+    margin: 0 0 clamp(1rem, 2.5vh, 1.75rem);
+    animation: rv-rise 0.6s var(--ease-emphasised) backwards;
+  }
+
+  .headline {
+    font-family: var(--font-display);
+    font-weight: 560;
+    font-size: clamp(2.5rem, 4vw + 1rem, 4.5rem);
+    line-height: 1.04;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    max-width: 16ch;
+    margin: 0;
+    color: var(--fg);
+    animation: rv-rise 0.6s var(--ease-emphasised) 0.08s backwards;
+  }
+
+  .lede {
+    font-size: clamp(1.125rem, 0.35vw + 1rem, 1.3125rem);
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+    color: var(--fg-muted);
+    max-width: 56ch;
+    margin: clamp(1.25rem, 3vh, 1.75rem) 0 0;
+    animation: rv-rise 0.6s var(--ease-emphasised) 0.16s backwards;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 2.25rem;
+    margin-top: clamp(1.75rem, 4vh, 2.5rem);
+    animation: rv-rise 0.6s var(--ease-emphasised) 0.24s backwards;
+  }
+
+  .hero :global(.shelf) {
+    animation: rv-fade 1s var(--ease-standard) 0.3s backwards;
+  }
+
+  /* ---- Shared type + controls -------------------------------------- */
+
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    background: var(--gold);
+    color: var(--ink);
+    font-weight: 620;
+    font-size: 1rem;
+    letter-spacing: 0.01em;
+    padding: 0.875rem 1.75rem;
+    border-radius: 2px;
+    text-decoration: none;
+    transition:
+      transform 180ms var(--ease-standard),
+      box-shadow 180ms var(--ease-standard),
+      background-color 180ms var(--ease-standard);
+  }
+  .cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 28px rgb(201 169 97 / 0.28);
+  }
+  .cta:active {
+    background: var(--gold-pressed);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .cta-quiet {
+    color: var(--gold-text);
+    font-weight: 520;
+    font-size: 1rem;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-block: 0.25rem;
+    transition: border-color 180ms var(--ease-standard);
+  }
+  .cta-quiet:hover {
+    border-bottom-color: var(--gold-text);
+  }
+
+  .splash a:focus-visible,
+  .splash .cta:focus-visible {
+    outline: 2px solid var(--gold-text);
+    outline-offset: 2px;
+  }
+
+  .section-head {
+    font-family: var(--font-display);
+    font-weight: 540;
+    font-size: clamp(1.75rem, 1.6vw + 1rem, 2.5rem);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    color: var(--fg);
+    margin: 0;
+  }
+
+  .section-display {
+    font-family: var(--font-display);
+    font-weight: 550;
+    font-size: clamp(2.125rem, 2.6vw + 1rem, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.012em;
+    text-wrap: balance;
+    color: var(--fg);
+    margin: 0;
+  }
+
+  .splash p {
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+  }
+
+  .splash section p {
+    color: var(--fg-muted);
+  }
+
+  .splash p a {
+    color: var(--gold-text);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  /* ---- Status ------------------------------------------------------- */
+
+  .status {
+    width: min(100% - 3rem, 44rem);
+    margin-inline: auto;
+    padding-block: clamp(6rem, 14vh, 10rem) clamp(5rem, 10vh, 7rem);
+  }
+
+  .record {
+    margin: clamp(2.5rem, 5vh, 3.5rem) 0;
+    display: grid;
+    gap: 1.125rem;
+  }
+
+  .record .row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.875rem;
+    margin: 0;
+  }
+
+  .record dt {
+    font-weight: 520;
+    font-size: 1.0625rem;
+    color: var(--fg);
+  }
+
+  .record .leader {
+    flex: 1;
+    border-bottom: 1px dotted var(--hairline-strong);
+    transform: translateY(-0.28em);
+  }
+
+  .record dd {
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 460;
+    font-size: 1.1875rem;
+    color: var(--gold-text);
+  }
+
+  .status p {
+    font-size: 1.0625rem;
+    max-width: 58ch;
+    margin: 0 0 1.25rem;
+  }
+
+  .status .aside {
+    font-size: 0.9375rem;
+    margin-bottom: 0;
+  }
+
+  /* ---- Thesis ------------------------------------------------------- */
+
+  .thesis {
+    width: min(100% - 3rem, 68rem);
+    margin-inline: auto;
+    padding-block: clamp(5rem, 11vh, 8rem);
+    border-top: 1px solid var(--hairline);
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: clamp(2.5rem, 5vw, 6rem);
+    align-items: start;
+  }
+
+  .thesis-body p {
+    font-size: 1.0625rem;
+    max-width: 58ch;
+    margin: 0 0 1.375rem;
+  }
+  .thesis-body p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* ---- Proof ledger -------------------------------------------------- */
+
+  .proof {
+    width: min(100% - 3rem, 68rem);
+    margin-inline: auto;
+    padding-block: clamp(5rem, 11vh, 8rem);
+    border-top: 1px solid var(--hairline);
+  }
+
+  .proof-head {
+    max-width: 58ch;
+    margin-bottom: clamp(2.75rem, 6vh, 4rem);
+  }
+  .proof-head p {
+    font-size: 1.0625rem;
+    margin: 1.25rem 0 0;
+  }
+
+  .ledger {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .ledger a {
+    display: grid;
+    grid-template-columns: minmax(11rem, 16rem) 1fr auto;
+    gap: 1rem 2rem;
+    align-items: baseline;
+    padding: 1.625rem 0.75rem;
+    border-top: 1px solid var(--hairline);
+    text-decoration: none;
+    transition: background-color 240ms var(--ease-standard);
+  }
+  .ledger li:last-child a {
+    border-bottom: 1px solid var(--hairline);
+  }
+  .ledger a:hover {
+    background: var(--ink-2);
+  }
+
+  .ledger .name {
+    font-family: var(--font-display);
+    font-weight: 540;
+    font-size: 1.375rem;
+    color: var(--fg);
+  }
+
+  .ledger .desc {
+    color: var(--fg-muted);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  .ledger .mark {
+    color: var(--gold-text);
+    font-size: 1.25rem;
+    transition: transform 240ms var(--ease-emphasised);
+  }
+  .ledger a:hover .mark {
+    transform: translateX(0.375rem);
+  }
+
+  /* ---- Close ---------------------------------------------------------- */
+
+  .close {
+    width: min(100% - 3rem, 44rem);
+    margin-inline: auto;
+    padding-block: clamp(5rem, 12vh, 8rem) clamp(6rem, 14vh, 10rem);
+    text-align: center;
+  }
+
+  .close-line {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 450;
+    font-size: clamp(1.5rem, 1.4vw + 1rem, 2.125rem);
+    color: var(--fg);
+    margin: 0 0 2rem;
+  }
+
+  /* ---- Motion + responsive -------------------------------------------- */
+
+  @keyframes rv-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes rv-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tagline,
+    .headline,
+    .lede,
+    .actions,
+    .hero :global(.shelf) {
+      animation: none;
+    }
+    .cta,
+    .cta-quiet,
+    .ledger a,
+    .ledger .mark {
+      transition: none;
+    }
+  }
+
+  @media (max-width: 56rem) {
+    .thesis {
+      grid-template-columns: 1fr;
+    }
+    .ledger a {
+      grid-template-columns: 1fr auto;
+    }
+    .ledger .name {
+      grid-row: 1;
+      grid-column: 1;
+    }
+    .ledger .mark {
+      grid-row: 1;
+      grid-column: 2;
+    }
+    .ledger .desc {
+      grid-row: 2;
+      grid-column: 1 / -1;
+    }
+  }
+</style>

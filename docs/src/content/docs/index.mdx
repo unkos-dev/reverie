@@ -1,16 +1,77 @@
 ---
 title: Reverie
-description: A high-performance, self-hosted ebook library manager.
+description: A self-hosted ebook library manager that treats your collection as a permanent record. Pre-alpha, arm64 only, built in the open.
 template: splash
-hero:
-  title: Reverie
-  tagline: A high-performance, self-hosted ebook library manager.
-  actions:
-    - text: Get Started
-      link: /reverie/getting-started/introduction/
-      icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/unkos-dev/reverie
-      icon: external
-      variant: minimal
+editUrl: false
+pagefind: false
+head:
+  - tag: link
+    attrs:
+      rel: preload
+      href: /reverie/fonts/Author-Variable.woff2
+      as: font
+      type: font/woff2
+      crossorigin: true
+  - tag: link
+    attrs:
+      rel: preload
+      href: /reverie/fonts/Author-VariableItalic.woff2
+      as: font
+      type: font/woff2
+      crossorigin: true
+  - tag: link
+    attrs:
+      rel: preload
+      href: /reverie/fonts/Satoshi-Variable.woff2
+      as: font
+      type: font/woff2
+      crossorigin: true
+  - tag: style
+    content: |
+      /* Splash-only overrides. The splash stays Ink in both themes, like a
+       * cover that does not recolour with the room, so the light palette is
+       * remapped to the dark ramp on this page alone. The doubled attribute
+       * selector outranks the site palette in custom.css regardless of
+       * stylesheet order. */
+      :root[data-theme="light"][data-theme="light"] {
+        --sl-color-accent-low: #262217;
+        --sl-color-accent: #c9a961;
+        --sl-color-accent-high: #d9b970;
+        --sl-color-white: #f0eee9;
+        --sl-color-gray-1: #dedad1;
+        --sl-color-gray-2: #bab2a3;
+        --sl-color-gray-3: #827a69;
+        --sl-color-gray-4: #4c473d;
+        --sl-color-gray-5: #34302a;
+        --sl-color-gray-6: #24221e;
+        --sl-color-gray-7: #191815;
+        --sl-color-black: #0e0d0a;
+        --rv-wordmark: #e8e0d0;
+      }
+      /* The splash owns its own composition: release Starlight's content
+       * column and panel padding, and keep the auto-generated page title
+       * for assistive tech only (the hero headline carries the visual h). */
+      main .content-panel {
+        padding: 0;
+        border: 0;
+      }
+      main .sl-container {
+        max-width: none;
+        margin-inline: 0;
+      }
+      main h1 {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
 ---
+
+import Splash from "../../components/splash/Splash.astro";
+
+<Splash />

@@ -9,6 +9,8 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Reverie",
+      logo: { src: "./src/assets/slot.svg", alt: "" },
+      customCss: ["./src/styles/custom.css"],
       plugins: [
         starlightOpenAPI([
           {
