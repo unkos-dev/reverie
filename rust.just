@@ -36,10 +36,10 @@ doc-lint:
 
 # Offline (no database), so it runs locally; this is the backend pre-push gate.
 #
-# Generated-artifact drift guard (OpenAPI spec + config reference).
+# Generated-artifact drift guard (OpenAPI spec + config reference + config schema).
 [group('rust')]
 drift:
-    SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref
+    SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
 
 # DB: full test suite, fast local loop (no coverage; see `cov`).
 [group('rust')]
@@ -65,6 +65,31 @@ sqlx-check:
 [group('rust')]
 build:
     cargo build --workspace --locked
+
+# Offline (no database, no toolchain needed). Mirrors ci.yml's backend-checks
+# static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
+# chrono imports, and em dashes in the generated config schema, each checked
+# against its .github/*-allowlist.txt (or, for the em-dash guard, none).
+#
+# Backend static allowlist and prose guards.
+[group('rust')]
+guards:
+    ../scripts/backend-guards.sh
+
+# Offline (no database). Mirrors the CI "unused dependencies" job.
+#
+# Fail on unused workspace dependencies.
+[group('rust')]
+machete:
+    cargo machete
+
+# Reads the RustSec advisory database over the network, so it is offline-excluded
+# from `check`. Mirrors the CI "cargo-deny" job (config: backend/deny.toml).
+#
+# Check advisories, license, bans, and source policy.
+[group('rust')]
+deny:
+    cargo deny check
 
 # Backend lint surface: clippy + doc-lint.
 [group('rust')]
