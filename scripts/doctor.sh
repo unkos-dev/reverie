@@ -17,8 +17,10 @@ warn() { printf 'WARN %s -- fix: %s\n' "$1" "$2"; warn_count=$((warn_count + 1))
 fail() { printf 'FAIL %s -- fix: %s\n' "$1" "$2"; fail_count=$((fail_count + 1)); }
 info() { printf 'INFO %s\n' "$1"; }
 
-# 1. Required binaries resolve on PATH.
-for bin in git just docker cargo rustc node npm npx mise; do
+# 1. Required binaries resolve on PATH. jq is included because check 2 and
+# check 7 below both shell out to it; without this, a missing jq shows up
+# only as a confusing "(missing: unknown)" deep in another check's output.
+for bin in git just docker cargo rustc node npm npx mise jq; do
   if command -v "$bin" >/dev/null 2>&1; then
     pass "binary '${bin}' resolves on PATH"
   else
@@ -59,9 +61,14 @@ else
   fail "docker daemon reachable" "start the Docker daemon/Docker Desktop"
 fi
 
-# 4 & 5. Dev Postgres container health and connection acceptance. The
-# unsuffixed name is the default stack; REVERIE_COMPOSE_ENV stacks use a
-# different container this check deliberately does not follow.
+# 4 & 5. Dev Postgres container health, connection acceptance, and runtime
+# role login. pg_isready only proves the server accepts a connection as a
+# protocol matter; it says nothing about whether the reverie_app runtime
+# role itself can authenticate, so a missing or broken role (per
+# docker/init-roles.sql, credentials from backend/README.md) would
+# otherwise still read as healthy right up until the backend fails to
+# start. SELECT 1 as reverie_app is read-only and mirrors the backend's own
+# runtime identity.
 container="reverie-postgres"
 if [ "${docker_up}" -eq 1 ]; then
   state_status="$(docker inspect --format '{{.State.Status}}' "${container}" 2>/dev/null || true)"
@@ -82,30 +89,34 @@ case "${state_status}" in
     else
       fail "dev Postgres accepts connections (pg_isready)" "just db-down && just db-up"
     fi
+    if docker exec -e PGPASSWORD=reverie_app "${container}" psql -h localhost -U reverie_app -d reverie_dev -Atc 'SELECT 1' >/dev/null 2>&1; then
+      pass "reverie_app role authenticates (psql SELECT 1)"
+    else
+      fail "reverie_app role authenticates (psql SELECT 1)" "just db-reset (re-seeds docker/init-roles.sql)"
+    fi
     ;;
   "")
     warn "dev Postgres container (${container}) exists" "just db-up"
     warn "dev Postgres accepts connections (pg_isready)" "just db-up"
+    warn "reverie_app role authenticates (psql SELECT 1)" "just db-up"
     ;;
   *)
     warn "dev Postgres container (${container}) is ${state_status}, not running" "just db-up"
     warn "dev Postgres accepts connections (pg_isready)" "just db-up"
+    warn "reverie_app role authenticates (psql SELECT 1)" "just db-up"
     ;;
 esac
 
-# 6. node_modules present for each npm workspace, and not stale against the
-# committed lockfile. A single root package-lock.json covers all workspaces.
-check_node_modules() {
-  local label="$1" dir="$2"
-  if [ -d "${dir}/node_modules" ]; then
-    pass "${label} node_modules present"
-  else
-    warn "${label} node_modules present" "vp install"
-  fi
-}
-check_node_modules "root" "."
-check_node_modules "frontend/" "frontend"
-check_node_modules "docs/" "docs"
+# 6. node_modules present at the workspace root, and not stale against the
+# committed lockfile. npm workspaces hoist frontend and docs dependencies
+# into the one root node_modules (adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md),
+# so a healthy checkout has no frontend/node_modules or docs/node_modules of
+# its own to check.
+if [ -d node_modules ]; then
+  pass "root node_modules present"
+else
+  warn "root node_modules present" "vp install"
+fi
 
 if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
   if [ package-lock.json -nt node_modules/.package-lock.json ]; then
@@ -117,9 +128,22 @@ else
   warn "node_modules matches package-lock.json" "vp install"
 fi
 
-# 7. sqlx offline cache present. Without it, cargo build fails closed on the
-# compile-time query macros whenever DATABASE_URL is unset.
-if [ -d backend/.sqlx ] && [ -n "$(ls -A backend/.sqlx 2>/dev/null)" ]; then
+# 7. sqlx offline cache present, with at least one entry that actually
+# parses as JSON. A bare non-empty-directory check would pass on a stale
+# zero-byte or truncated leftover file, while cargo build still fails
+# closed on the compile-time query macros whenever DATABASE_URL is unset.
+sqlx_cache_ok=0
+if [ -d backend/.sqlx ]; then
+  for f in backend/.sqlx/query-*.json; do
+    # -s (non-empty) first: `jq empty` treats zero-byte input as vacuously
+    # valid (exit 0, no output), so it alone would accept a truncated file.
+    if [ -s "${f}" ] && jq empty "${f}" >/dev/null 2>&1; then
+      sqlx_cache_ok=1
+      break
+    fi
+  done
+fi
+if [ "${sqlx_cache_ok}" -eq 1 ]; then
   pass "sqlx offline cache (backend/.sqlx) present"
 else
   fail "sqlx offline cache (backend/.sqlx) present" "cd backend && DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests"

@@ -11,7 +11,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
 fixture="${tmp}/fixture"
-mkdir -p "${fixture}/scripts" "${fixture}/backend/.sqlx" "${fixture}/frontend" "${fixture}/docs"
+mkdir -p "${fixture}/scripts" "${fixture}/backend/.sqlx"
 cp "${doctor}" "${fixture}/scripts/doctor.sh"
 chmod +x "${fixture}/scripts/doctor.sh"
 
@@ -26,20 +26,25 @@ git -C "${fixture}" add README.md
 git -C "${fixture}" commit -q -m "chore: fixture root"
 git -C "${fixture}" update-ref refs/remotes/origin/main HEAD
 
-# node_modules + a lockfile whose mtime does not outrun the install marker.
-mkdir -p "${fixture}/node_modules" "${fixture}/frontend/node_modules" "${fixture}/docs/node_modules"
-echo '{}' >"${fixture}/node_modules/.package-lock.json"
+# A root node_modules (the ADR-mandated hoist point) with a lockfile that
+# does not outrun the install marker. Writing the lockfile before the
+# marker (rather than backdating it with a GNU-only `touch -d`) is
+# portable: on any real filesystem the second write's mtime is never
+# earlier than the first's, and a same-second tie still reads as "not
+# stale" since the check only fires on strictly-newer.
+mkdir -p "${fixture}/node_modules"
 echo '{}' >"${fixture}/package-lock.json"
-touch -d '-1 hour' "${fixture}/package-lock.json"
+echo '{}' >"${fixture}/node_modules/.package-lock.json"
 
-# Non-empty sqlx offline cache.
+# Non-empty sqlx offline cache with one entry that actually parses as JSON.
 echo '{}' >"${fixture}/backend/.sqlx/query-fixture.json"
 
 # Stub PATH: real coreutils/git/jq passed through by absolute-path symlink,
-# the nine required binaries stubbed as no-op executables (doctor.sh only
-# checks their resolvability, never runs them), and docker/mise stubbed with
-# controllable behavior via environment variables so every branch of the
-# container-health and mise-pin checks is reachable without a real daemon.
+# the remaining required binaries stubbed as no-op executables (doctor.sh
+# only checks their resolvability, never runs them), and docker/mise
+# stubbed with controllable behavior via environment variables so every
+# branch of the container-health, app-login, and mise-pin checks is
+# reachable without a real daemon.
 link_real() { # <dir> <name>
   local dir="$1" name="$2"
   ln -s "$(command -v "${name}")" "${dir}/${name}"
@@ -62,12 +67,15 @@ done
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
-# Fixture stub: only supports the one invocation doctor.sh makes.
-# DOCTOR_STUB_MISE_ERROR simulates the query itself failing (a renamed flag,
-# a crashed mise, ...), independent of DOCTOR_STUB_MISE_MISSING, so the
-# fail-closed path is reachable without needing a real broken mise.
+# Fixture stub: asserts the exact invocation doctor.sh makes (ls --current
+# --missing -J) and exits 2 on anything else, so a future argument
+# regression in doctor.sh fails this selftest instead of the stub silently
+# accepting whatever it was called with. DOCTOR_STUB_MISE_ERROR simulates
+# the query itself failing (a renamed flag, a crashed mise, ...),
+# independent of DOCTOR_STUB_MISE_MISSING, so the fail-closed path is
+# reachable without needing a real broken mise.
 set -euo pipefail
-if [ "$1" = "ls" ]; then
+if [ "$#" -eq 4 ] && [ "$1" = "ls" ] && [ "$2" = "--current" ] && [ "$3" = "--missing" ] && [ "$4" = "-J" ]; then
   if [ -n "${DOCTOR_STUB_MISE_ERROR:-}" ]; then
     exit 2
   fi
@@ -79,16 +87,16 @@ if [ "$1" = "ls" ]; then
   fi
   exit 0
 fi
-exit 1
+exit 2
 MISE_STUB
 chmod +x "${stub_bin}/mise"
 
 cat >"${stub_bin}/docker" <<'DOCKER_STUB'
 #!/usr/bin/env bash
-# Fixture stub: only supports the three invocations doctor.sh makes
-# (info, inspect --format ..., exec ... pg_isready ...), all controlled by
-# DOCTOR_STUB_* environment variables so every branch is independently
-# reachable without a real daemon or container.
+# Fixture stub: only supports the four invocations doctor.sh makes (info,
+# inspect --format ..., exec ... pg_isready ..., exec ... psql ...), all
+# controlled by DOCTOR_STUB_* environment variables so every branch is
+# independently reachable without a real daemon or container.
 set -euo pipefail
 case "$1" in
   info)
@@ -105,7 +113,11 @@ case "$1" in
     esac
     ;;
   exec)
-    [ "${DOCTOR_STUB_PG_READY:-1}" = "1" ]
+    case "$*" in
+      *psql*) [ "${DOCTOR_STUB_APP_LOGIN:-1}" = "1" ] ;;
+      *pg_isready*) [ "${DOCTOR_STUB_PG_READY:-1}" = "1" ] ;;
+      *) exit 1 ;;
+    esac
     ;;
   *)
     exit 1
@@ -190,6 +202,26 @@ export DOCTOR_STUB_MISE_ERROR=1
 expect_exit "mise query failure fails closed" 1 "${stub_bin}"
 expect_contains "mise query failure is reported, not silently passed" "FAIL mise-pinned tools are installed (mise query failed)"
 unset DOCTOR_STUB_MISE_ERROR
+
+# --- pg_isready succeeding is not enough: a broken/missing reverie_app
+# role must independently fail the run. ---
+export DOCTOR_STUB_APP_LOGIN=0
+expect_exit "broken app-role login fails the run" 1 "${stub_bin}"
+expect_contains "app-role login failure is reported" "FAIL reverie_app role authenticates"
+export DOCTOR_STUB_APP_LOGIN=1
+expect_exit "healthy app-role login passes" 0 "${stub_bin}"
+expect_contains "app-role login success is reported" "PASS reverie_app role authenticates"
+
+# --- sqlx cache: a zero-byte leftover file must not satisfy "non-empty
+# directory"; only an entry that actually parses as JSON does. ---
+rm -f "${fixture}/backend/.sqlx/query-fixture.json"
+: >"${fixture}/backend/.sqlx/query-truncated.json"
+expect_exit "zero-byte-only sqlx cache fails the run" 1 "${stub_bin}"
+expect_contains "zero-byte sqlx cache failure is reported" "FAIL sqlx offline cache"
+echo '{}' >"${fixture}/backend/.sqlx/query-fixture.json"
+rm -f "${fixture}/backend/.sqlx/query-truncated.json"
+expect_exit "a valid sqlx cache entry passes" 0 "${stub_bin}"
+expect_contains "valid sqlx cache is reported" "PASS sqlx offline cache"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"
