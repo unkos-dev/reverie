@@ -1,0 +1,322 @@
+---
+/**
+ * The splash page body. It stays Ink in both Starlight themes by design,
+ * like a cover that does not recolour with the room; the page-scoped
+ * palette override lives in index.mdx.
+ *
+ * The hero follows identity.md: lockup first (glyph 0.95 cap-height,
+ * gap 0.5 cap-height, Satoshi 700 at 0.32em tracking), the canonical
+ * tagline as the subhead in Author 400 (never italic), then plain
+ * description. Copy states facts only; the register is professional and
+ * restrained, so no claim lands here that a reader could not verify in
+ * the repository.
+ */
+const repo = "https://github.com/unkos-dev/reverie";
+---
+
+<div class="splash not-content">
+  <section class="hero" aria-label="Introduction">
+    <span class="lockup" role="img" aria-label="Reverie">
+      <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <path
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M4 4h24v24H4V4zm4 13h16v2H8v-2z"
+          fill="#C9A961"></path>
+      </svg>
+      <span class="wordmark" aria-hidden="true">Reverie</span>
+    </span>
+    <p class="tagline">Your library, catalogued.</p>
+    <p class="lede">
+      Reverie is a self-hosted ebook library manager built on Rust and
+      Postgres.
+    </p>
+    <div class="actions">
+      <a class="cta" href={repo}>GitHub</a>
+      <a class="cta-quiet" href="/reverie/getting-started/introduction/">
+        Get started<span aria-hidden="true"> &rarr;</span>
+      </a>
+      <a class="cta-quiet" href="/reverie/api/">
+        API reference<span aria-hidden="true"> &rarr;</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="status" aria-label="Status">
+    <h2>Status</h2>
+    <dl class="record">
+      <div class="row">
+        <dt>Maturity</dt>
+        <dd>pre-alpha</dd>
+      </div>
+      <div class="row">
+        <dt>Releases</dt>
+        <dd>none tagged</dd>
+      </div>
+    </dl>
+    <p class="aside">
+      Already running it? <a href="/reverie/getting-started/introduction/"
+        >Start with the introduction</a
+      >.
+    </p>
+  </section>
+
+  <section class="about" aria-label="What it does">
+    <h2>What it does</h2>
+    <p>
+      A Postgres-backed catalogue with a web interface: a filterable library
+      view, search, shelves and series, and per-book records with covers and
+      metadata. The HTTP API is documented in the generated OpenAPI
+      reference.
+    </p>
+  </section>
+</div>
+
+<style>
+  .splash {
+    /* Local mirrors of the brand colour and motion tokens; the docs plane
+     * has no token pipeline, so the splash carries its own copies. */
+    --ink: #0e0d0a;
+    --gold: #c9a961;
+    --gold-pressed: #be9e56;
+    --gold-text: #d9b970;
+    --cream: #e8e0d0;
+    --fg: #f0eee9;
+    --fg-muted: #bab2a3;
+    --hairline: #3e3a32;
+    --hairline-strong: #4c473d;
+    --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --ease-emphasised: cubic-bezier(0.16, 0.78, 0.3, 1);
+    --font-display: "Author Variable", georgia, serif;
+    --font-body: "Satoshi Variable", system-ui, sans-serif;
+    --column: 42rem;
+
+    background: var(--ink);
+    color: var(--fg);
+    font-family: var(--font-body);
+    padding-bottom: clamp(6rem, 12vh, 9rem);
+  }
+
+  .splash section {
+    width: min(100% - 3rem, var(--column));
+    margin-inline: auto;
+  }
+
+  /* ---- Hero -------------------------------------------------------- */
+
+  .hero {
+    padding-block: clamp(5rem, 14vh, 9rem) clamp(4rem, 10vh, 6rem);
+  }
+
+  /* Lockup proportions per identity.md section 6: glyph 0.95 cap-height,
+   * gap 0.5 cap-height, wordmark left-padded 0.32em to balance tracking. */
+  .lockup {
+    --cap: clamp(1.75rem, 3.5vw, 2.5rem);
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--cap) * 0.5);
+    animation: rv-rise 0.6s var(--ease-emphasised) backwards;
+  }
+
+  .lockup svg {
+    width: calc(var(--cap) * 0.95 * 1.3333);
+    height: calc(var(--cap) * 0.95 * 1.3333);
+  }
+
+  .wordmark {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: var(--cap);
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    padding-left: 0.32em;
+    color: var(--cream);
+  }
+
+  .tagline {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: clamp(1.375rem, 1.2vw + 1rem, 1.75rem);
+    letter-spacing: -0.012em;
+    color: var(--fg);
+    margin: clamp(1.75rem, 4vh, 2.5rem) 0 0;
+    animation: rv-rise 0.6s var(--ease-emphasised) 0.08s backwards;
+  }
+
+  .lede {
+    font-size: 1.125rem;
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+    color: var(--fg-muted);
+    max-width: 44ch;
+    margin: 1rem 0 0;
+    animation: rv-rise 0.6s var(--ease-emphasised) 0.16s backwards;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 2rem;
+    margin-top: clamp(2rem, 5vh, 2.75rem);
+    animation: rv-rise 0.6s var(--ease-emphasised) 0.24s backwards;
+  }
+
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    background: var(--gold);
+    color: var(--ink);
+    font-weight: 620;
+    font-size: 1rem;
+    letter-spacing: 0.01em;
+    padding: 0.75rem 1.625rem;
+    border-radius: 2px;
+    text-decoration: none;
+    transition:
+      transform 180ms var(--ease-standard),
+      box-shadow 180ms var(--ease-standard),
+      background-color 180ms var(--ease-standard);
+  }
+  .cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 28px rgb(201 169 97 / 0.28);
+  }
+  .cta:active {
+    background: var(--gold-pressed);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .cta-quiet {
+    color: var(--gold-text);
+    font-weight: 520;
+    font-size: 1rem;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-block: 0.25rem;
+    transition: border-color 180ms var(--ease-standard);
+  }
+  .cta-quiet:hover {
+    border-bottom-color: var(--gold-text);
+  }
+
+  .splash a:focus-visible {
+    outline: 2px solid var(--gold-text);
+    outline-offset: 2px;
+  }
+
+  /* ---- Sections ------------------------------------------------------ */
+
+  .status,
+  .about {
+    border-top: 1px solid var(--hairline);
+    padding-top: clamp(3rem, 7vh, 4.5rem);
+  }
+
+  .status {
+    margin-top: clamp(1rem, 4vh, 3rem);
+  }
+
+  .about {
+    margin-top: clamp(3rem, 7vh, 4.5rem);
+  }
+
+  .splash h2 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: clamp(1.5rem, 1.2vw + 1rem, 1.875rem);
+    letter-spacing: -0.012em;
+    line-height: 1.15;
+    color: var(--fg);
+    margin: 0 0 1.5rem;
+  }
+
+  .splash section p {
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+    color: var(--fg-muted);
+    max-width: 58ch;
+    margin: 0;
+  }
+
+  .splash p a {
+    color: var(--gold-text);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .record {
+    display: grid;
+    gap: 1rem;
+    max-width: 34rem;
+    margin: 0 0 1.75rem;
+  }
+
+  .record .row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.875rem;
+    margin: 0;
+  }
+
+  /* The dotted leader is a generated flex item ordered between the term
+   * and the value, so the definition list holds only dt/dd children. */
+  .record .row::before {
+    content: "";
+    order: 2;
+    flex: 1;
+    border-bottom: 1px dotted var(--hairline-strong);
+    transform: translateY(-0.28em);
+  }
+
+  .record dt {
+    order: 1;
+    font-weight: 500;
+    font-size: 1.0625rem;
+    color: var(--fg);
+  }
+
+  .record dd {
+    order: 3;
+  }
+
+  .record dd {
+    margin: 0;
+    font-weight: 520;
+    font-size: 1.0625rem;
+    color: var(--gold-text);
+  }
+
+  .aside {
+    font-size: 0.9375rem;
+  }
+
+  /* ---- Motion --------------------------------------------------------- */
+
+  @keyframes rv-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lockup,
+    .tagline,
+    .lede,
+    .actions {
+      animation: none;
+    }
+    .cta,
+    .cta-quiet {
+      transition: none;
+    }
+  }
+</style>
