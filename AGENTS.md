@@ -90,6 +90,8 @@ Two aggregates anchor the local loop and should be the default reflex:
   runnable, including the DB-backed backend test suite, the sqlx cache
   check, the backend static guards, cargo-machete, cargo-deny, the frontend
   build, and the a11y scan. It brings the dev database up itself. Run it
-  before any push; a green preflight means the CI gate will be green.
+  before any push; a green preflight covers every locally runnable CI
+  check, leaving only the CI-only lanes (MSRV, coverage, the docker image
+  build, and the workflow, IaC, SAST, and secret scans) to the remote run.
   `just check` remains the fast offline subset for mid-task iteration.
   </task_runner>
