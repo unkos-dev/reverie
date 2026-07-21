@@ -141,7 +141,12 @@ if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
     pass "node_modules matches package-lock.json"
   fi
 else
-  warn "node_modules matches package-lock.json" "npx --no-install vp install"
+  # The install marker (node_modules/.package-lock.json) is missing even
+  # though node_modules exists: an incomplete or interrupted install, where
+  # node_modules/.bin/vp may itself be missing. npx --no-install has
+  # nothing to fall back to there, so advise the same npm install bootstrap
+  # as the absent-tree branch above rather than a command that may not run.
+  warn "node_modules matches package-lock.json" "npm install"
 fi
 
 # 7. sqlx offline cache present, with at least one entry that actually
