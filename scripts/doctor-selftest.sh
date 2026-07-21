@@ -63,8 +63,14 @@ done
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
 # Fixture stub: only supports the one invocation doctor.sh makes.
+# DOCTOR_STUB_MISE_ERROR simulates the query itself failing (a renamed flag,
+# a crashed mise, ...), independent of DOCTOR_STUB_MISE_MISSING, so the
+# fail-closed path is reachable without needing a real broken mise.
 set -euo pipefail
 if [ "$1" = "ls" ]; then
+  if [ -n "${DOCTOR_STUB_MISE_ERROR:-}" ]; then
+    exit 2
+  fi
   if [ -z "${DOCTOR_STUB_MISE_MISSING:-}" ]; then
     echo '{}'
   else
@@ -170,6 +176,20 @@ expect_not_contains "warn-only run has no FAIL lines" "FAIL "
 # restore for later assertions
 export DOCTOR_STUB_CONTAINER_STATUS=running
 export DOCTOR_STUB_CONTAINER_HEALTH=healthy
+
+# --- a real missing mise pin is reported by name and fails the run ---
+export DOCTOR_STUB_MISE_MISSING="cargo-nextest"
+expect_exit "missing mise pin fails the run" 1 "${stub_bin}"
+expect_contains "missing mise pin is named in the output" "cargo-nextest"
+export DOCTOR_STUB_MISE_MISSING=""
+
+# --- the mise query itself erroring must fail closed, not read as "zero
+# missing": this is the regression test for the check silently forging a
+# PASS if a future mise renames --missing or -J. ---
+export DOCTOR_STUB_MISE_ERROR=1
+expect_exit "mise query failure fails closed" 1 "${stub_bin}"
+expect_contains "mise query failure is reported, not silently passed" "FAIL mise-pinned tools are installed (mise query failed)"
+unset DOCTOR_STUB_MISE_ERROR
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"

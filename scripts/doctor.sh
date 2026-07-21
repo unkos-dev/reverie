@@ -29,10 +29,18 @@ done
 # 2. mise pins installed for this directory's toolset. `ls --current` scopes
 # to the config active here (root mise.toml), and `--missing` reports only
 # tools that are pinned but not yet installed.
+#
+# Fail closed: a query that itself errors, or that returns output jq cannot
+# parse, must never read as "zero missing". Capturing the mise exit status
+# separately from stdout is what makes a future flag rename or output-shape
+# change surface as a FAIL instead of silently forging a PASS forever.
 if command -v mise >/dev/null 2>&1; then
-  missing_json="$(mise ls --current --missing -J 2>/dev/null || echo '{}')"
-  missing_count="$(printf '%s' "${missing_json}" | jq 'length' 2>/dev/null || echo unknown)"
-  if [ "${missing_count}" = "0" ]; then
+  mise_rc=0
+  missing_json="$(mise ls --current --missing -J 2>/dev/null)" || mise_rc=$?
+  missing_count="$(printf '%s' "${missing_json}" | jq 'length' 2>/dev/null)" || missing_count=""
+  if [ "${mise_rc}" -ne 0 ] || [ -z "${missing_count}" ]; then
+    fail "mise-pinned tools are installed (mise query failed)" "run 'mise ls --current --missing -J' manually and investigate"
+  elif [ "${missing_count}" = "0" ]; then
     pass "mise-pinned tools are installed"
   else
     missing_names="$(printf '%s' "${missing_json}" | jq -r 'keys | join(", ")' 2>/dev/null || echo unknown)"
