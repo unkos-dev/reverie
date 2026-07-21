@@ -47,12 +47,10 @@ const repo = "https://github.com/unkos-dev/reverie";
     <dl class="record">
       <div class="row">
         <dt>Maturity</dt>
-        <span class="leader" aria-hidden="true"></span>
         <dd>pre-alpha</dd>
       </div>
       <div class="row">
         <dt>Releases</dt>
-        <span class="leader" aria-hidden="true"></span>
         <dd>none tagged</dd>
       </div>
     </dl>
@@ -264,16 +262,25 @@ const repo = "https://github.com/unkos-dev/reverie";
     margin: 0;
   }
 
+  /* The dotted leader is a generated flex item ordered between the term
+   * and the value, so the definition list holds only dt/dd children. */
+  .record .row::before {
+    content: "";
+    order: 2;
+    flex: 1;
+    border-bottom: 1px dotted var(--hairline-strong);
+    transform: translateY(-0.28em);
+  }
+
   .record dt {
+    order: 1;
     font-weight: 500;
     font-size: 1.0625rem;
     color: var(--fg);
   }
 
-  .record .leader {
-    flex: 1;
-    border-bottom: 1px dotted var(--hairline-strong);
-    transform: translateY(-0.28em);
+  .record dd {
+    order: 3;
   }
 
   .record dd {
