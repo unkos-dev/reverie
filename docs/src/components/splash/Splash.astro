@@ -42,18 +42,6 @@ const repo = "https://github.com/unkos-dev/reverie";
     </div>
   </section>
 
-  <div class="band" aria-hidden="true">
-    <picture>
-      <source srcset="/reverie/editorial/library-hero-gilt-spines.webp" type="image/webp" />
-      <img
-        src="/reverie/editorial/library-hero-gilt-spines.jpg"
-        alt=""
-        loading="lazy"
-        decoding="async"
-      />
-    </picture>
-  </div>
-
   <section class="status" aria-label="Status">
     <h2>Status</h2>
     <dl class="record">
@@ -221,38 +209,20 @@ const repo = "https://github.com/unkos-dev/reverie";
     outline-offset: 2px;
   }
 
-  /* ---- Editorial band ----------------------------------------------- */
-
-  .band {
-    height: clamp(200px, 24vw, 320px);
-    overflow: hidden;
-    position: relative;
-  }
-
-  .band img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center 42%;
-    filter: brightness(0.8) saturate(0.96);
-  }
-
-  .band::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-      linear-gradient(180deg, var(--ink) 0%, transparent 22%, transparent 80%, var(--ink) 100%);
-  }
-
   /* ---- Sections ------------------------------------------------------ */
 
+  .status,
+  .about {
+    border-top: 1px solid var(--hairline);
+    padding-top: clamp(3rem, 7vh, 4.5rem);
+  }
+
   .status {
-    padding-top: clamp(4rem, 10vh, 6.5rem);
+    margin-top: clamp(1rem, 4vh, 3rem);
   }
 
   .about {
-    padding-top: clamp(3.5rem, 8vh, 5rem);
+    margin-top: clamp(3rem, 7vh, 4.5rem);
   }
 
   .splash h2 {
