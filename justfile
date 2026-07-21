@@ -55,6 +55,19 @@ test: js::test rust::test
 [group('aggregate')]
 build: js::build rust::build docs::build
 
+# CI-parity local gate: everything the GitHub CI gate runs that is runnable on
+# a workstation. db-up brings the dev database up by construction (idempotent,
+# --wait), so every DB-backed recipe below it in this dependency list always
+# runs against a ready database; just runs dependencies serially in listed
+# order, so the cheap offline gates (check) fail fast before the slower
+# DB-backed and network-backed ones run. Still CI-only, and not run here: the
+# MSRV toolchain check, coverage lanes, the docker image build, workflow/IaC/SAST/
+# secret scans, npm-license, and dependency-review.
+#
+# Run everything CI runs that is locally runnable, DB-backed tests included.
+[group('aggregate')]
+preflight: db-up check test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y
+
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
 # default is a sibling of the repo so it inherits the same filesystem and
 # backup rules without ever nesting inside the checkout.
