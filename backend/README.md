@@ -8,6 +8,8 @@ The development database is a local Docker Postgres cluster defined in `docker/c
 
 The local loop: `just db-up`, then `just db-migrate` to apply migrations, then `just rust::test` / `just rust::doctests` / `just rust::sqlx-check`. Those recipes inject the schema-owner DSN (`postgres://reverie:reverie@localhost:5432/reverie_dev`); bare `cargo` invocations must set `DATABASE_URL` to it themselves.
 
+To run the server itself: `just rust::dev` in the foreground, or `just rust::dev-start` / `dev-stop` / `dev-status` for a background process logging to `backend/.dev-server.log`. `just dev-up` from the repository root does the whole sequence above and brings Vite up as well. Unlike the test recipes, these run as the RLS-enforced `reverie_app` role, the identity the deployed server uses. They fill in `DATABASE_URL` and the OPDS-required `REVERIE_PUBLIC_URL` only when neither the environment nor `.env` supplies one, so a `.env` copied from `.env.example` stays authoritative.
+
 The `#[sqlx::test]` macro creates a fresh database per test, which requires a superuser connection; the compose bootstrap role `reverie` qualifies. Running tests with the `reverie_app` DSN from `.env` fails per-test with a permission error. A `failed to connect to setup test database: PoolTimedOut` error means the dev cluster is not running; start it with `just db-up`. CI runs the same commands against its own Postgres service container.
 
 ### Roles

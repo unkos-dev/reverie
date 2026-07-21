@@ -68,6 +68,24 @@ cd backend && cargo run
 > `cargo run`; the server verifies the schema and refuses to start if it is
 > fresh or behind.
 
+Native toolchains, whole stack in the background:
+
+```bash
+just dev-up      # dev Postgres, migrations, backend API, Vite
+just dev-status  # both planes; nonzero when either is down
+just dev-down    # stops both servers, leaves Postgres up
+```
+
+`dev-up` is safe to re-run: it is idempotent by construction rather than by
+checking what is already running. Each server logs to `.dev-server.log` in its
+own plane directory. The database deliberately survives `dev-down`, because it
+is stateful and shared with the test suite; stop it with `just db-down`.
+
+The backend recipes supply the dev configuration the server needs when nothing
+else does: the RLS-enforced `reverie_app` DSN and the `REVERIE_PUBLIC_URL` that
+OPDS requires. They defer to the repository root `.env` (copy `.env.example` to
+start one), so a value you set there is the one the server uses.
+
 Frontend only (Node.js at or above the `engines.node` floor in `package.json`):
 
 ```bash

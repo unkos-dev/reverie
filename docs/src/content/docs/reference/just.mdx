@@ -17,20 +17,23 @@ Recipes are namespaced by module: `just rust::check` runs the backend gate,
 `just js::check` the frontend one. The unprefixed aggregates at the top fan out
 across every plane.
 
-| Recipe                      | Purpose                                                                            |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| `just build`                | Build every shippable artifact.                                                    |
-| `just check`                | Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded). |
-| `just db-down`              | Stop the local dev Postgres; the data volume survives.                             |
-| `just db-migrate`           | Apply pending migrations with the dedicated migrator identity.                     |
-| `just db-reset`             | Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.      |
-| `just db-up`                | Start (or create) the local dev Postgres.                                          |
-| `just fmt`                  | Format the whole tree in place. WRITES; never depended on by check/lint.           |
-| `just help`                 | List every recipe, including the ones inside modules.                              |
-| `just lint`                 | Lint the js, rust, and infra surfaces.                                             |
-| `just test`                 | Run every locally-runnable unit test.                                              |
-| `just worktree <branch>`    | Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.               |
-| `just worktree-rm <branch>` | Remove the worktree for BRANCH.                                                    |
+| Recipe                      | Purpose                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| `just build`                | Build every shippable artifact.                                                           |
+| `just check`                | Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded).        |
+| `just db-down`              | Stop the local dev Postgres; the data volume survives.                                    |
+| `just db-migrate`           | Apply pending migrations with the dedicated migrator identity.                            |
+| `just db-reset`             | Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.             |
+| `just db-up`                | Start (or create) the local dev Postgres.                                                 |
+| `just dev-down`             | Stop the background dev servers (frontend, then backend).                                 |
+| `just dev-status`           | Report both dev servers' status; exits nonzero when either is down.                       |
+| `just dev-up`               | Start the whole dev stack in the background: dev Postgres, migrations, backend API, Vite. |
+| `just fmt`                  | Format the whole tree in place. WRITES; never depended on by check/lint.                  |
+| `just help`                 | List every recipe, including the ones inside modules.                                     |
+| `just lint`                 | Lint the js, rust, and infra surfaces.                                                    |
+| `just test`                 | Run every locally-runnable unit test.                                                     |
+| `just worktree <branch>`    | Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.                      |
+| `just worktree-rm <branch>` | Remove the worktree for BRANCH.                                                           |
 
 ## docs
 
@@ -47,6 +50,7 @@ across every plane.
 | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | `just infra::actionlint`                         | Lint GitHub Actions workflow files.                                                |
 | `just infra::adr-frontmatter-selftest`           | Validate canonical ADR frontmatter and lifecycle index coverage.                   |
+| `just infra::backend-dev-env-selftest`           | Assert the backend dev recipes defer to `.env` instead of overriding it.           |
 | `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint. |
 | `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.         |
 | `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                |
@@ -97,17 +101,21 @@ across every plane.
 
 ## rust
 
-| Recipe                  | Purpose                                                                  |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `just rust::build`      | Compile the workspace.                                                   |
-| `just rust::check`      | Locally-runnable backend gate: format check, clippy, doc-lint, drift.    |
-| `just rust::clippy`     | Clippy across the whole workspace, all targets, warnings denied.         |
-| `just rust::cov`        | DB: full test suite under coverage instrumentation.                      |
-| `just rust::doc-lint`   | Reject broken intra-doc links in the public docstrings.                  |
-| `just rust::doctests`   | DB: doctests across the workspace.                                       |
-| `just rust::drift`      | Generated-artifact drift guard (OpenAPI spec + config reference).        |
-| `just rust::fmt`        | Format the workspace in place. WRITES; never a dependency of check/lint. |
-| `just rust::fmt-check`  | Verify workspace formatting without writing (the pre-push gate form).    |
-| `just rust::lint`       | Backend lint surface: clippy + doc-lint.                                 |
-| `just rust::sqlx-check` | DB: sqlx query-cache freshness against the live schema.                  |
-| `just rust::test`       | DB: full test suite, fast local loop (no coverage; see `cov`).           |
+| Recipe                  | Purpose                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `just rust::build`      | Compile the workspace.                                                           |
+| `just rust::check`      | Locally-runnable backend gate: format check, clippy, doc-lint, drift.            |
+| `just rust::clippy`     | Clippy across the whole workspace, all targets, warnings denied.                 |
+| `just rust::cov`        | DB: full test suite under coverage instrumentation.                              |
+| `just rust::dev`        | Run the backend API server in the foreground (Ctrl-C stops it).                  |
+| `just rust::dev-start`  | Start the backend API server in the background; logs to backend/.dev-server.log. |
+| `just rust::dev-status` | Report whether the backend API server is up.                                     |
+| `just rust::dev-stop`   | Stop the background backend API server started by dev-start.                     |
+| `just rust::doc-lint`   | Reject broken intra-doc links in the public docstrings.                          |
+| `just rust::doctests`   | DB: doctests across the workspace.                                               |
+| `just rust::drift`      | Generated-artifact drift guard (OpenAPI spec + config reference).                |
+| `just rust::fmt`        | Format the workspace in place. WRITES; never a dependency of check/lint.         |
+| `just rust::fmt-check`  | Verify workspace formatting without writing (the pre-push gate form).            |
+| `just rust::lint`       | Backend lint surface: clippy + doc-lint.                                         |
+| `just rust::sqlx-check` | DB: sqlx query-cache freshness against the live schema.                          |
+| `just rust::test`       | DB: full test suite, fast local loop (no coverage; see `cov`).                   |

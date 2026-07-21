@@ -76,3 +76,54 @@ lint: clippy doc-lint
 # Locally-runnable backend gate: format check, clippy, doc-lint, drift.
 [group('rust')]
 check: fmt-check clippy doc-lint drift
+
+# DB: needs the local dev Postgres up (`just db-up`).
+#
+# Run the backend API server in the foreground (Ctrl-C stops it).
+[group('rust')]
+dev:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source ../scripts/backend-dev-env.sh
+    exec cargo run
+
+# Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
+# the ownership and race checks (see scripts/dev-server.sh); this sets the
+# backend knobs: the resolved port for both the server and the readiness probe,
+# a leader pattern anchored on the cargo or server binary itself (the script's
+# same-directory check then excludes other checkouts' cargo processes), start
+# ticks sized for a cold `cargo run` compile rather than bare process startup,
+# and advice strings that name the rust recipes.
+#
+# The dev configuration the server needs comes from scripts/backend-dev-env.sh,
+# which defers to `.env` instead of overriding it. A shebang body keeps the
+# dev-default DSN out of just's per-line echo, which shebang recipes do not get.
+_dev-lifecycle action:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source ../scripts/backend-dev-env.sh
+    DEV_SERVER_DIR=. \
+    DEV_SERVER_PORT="$REVERIE_PORT" \
+    DEV_SERVER_CMD="cargo run" \
+    DEV_SERVER_LEADER_PATTERN='(^|/)(cargo|reverie-api)$' \
+    DEV_SERVER_START_TICKS=600 \
+    DEV_SERVER_STOP_HINT="just rust::dev-stop" \
+    DEV_SERVER_FG_HINT="just rust::dev" \
+    ../scripts/dev-server.sh '{{ action }}'
+
+# DB: needs the local dev Postgres up (`just db-up`); without it the server
+# exits during startup and the failure is reported from the log.
+#
+# Start the backend API server in the background; logs to backend/.dev-server.log.
+[group('rust')]
+dev-start: (_dev-lifecycle "start")
+
+# Stop the background backend API server started by dev-start.
+[group('rust')]
+dev-stop: (_dev-lifecycle "stop")
+
+# Exits nonzero when down, so the recipe works as a scriptable probe.
+#
+# Report whether the backend API server is up.
+[group('rust')]
+dev-status: (_dev-lifecycle "status")
