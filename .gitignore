@@ -27,8 +27,15 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-# Private harness state. Not project-shared.
+# Private harness state. Not project-shared. Each entry is one agent harness's
+# install location for the same personal tooling; the repository depends on
+# none of them. The lone reference to an agent skill, frontend's advisory
+# `detect` hook, calls a globally installed binary, not a vendored copy here.
 .claude
+.agents
+.codex
+.github/hooks
+.github/skills
 
 # Docs build output
 docs/.astro/
