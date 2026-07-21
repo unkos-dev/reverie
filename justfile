@@ -222,3 +222,13 @@ dev-status:
     just rust::dev-status || rc=1
     just js::dev-status || rc=1
     exit "$rc"
+
+# Read-only; no writes, no network beyond the local docker daemon. Answers
+# "is this machine ready to develop Reverie?" in seconds so a degraded
+# environment (missing tool pin, stale dev DB, absent node_modules) surfaces
+# immediately instead of as a confusing downstream failure.
+#
+# Check the local dev environment: tools, mise pins, docker, dev DB, deps.
+[group('dev')]
+doctor:
+    scripts/doctor.sh

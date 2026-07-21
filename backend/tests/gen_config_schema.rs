@@ -14,7 +14,14 @@
 use std::path::PathBuf;
 
 fn artifact_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.schema.json")
+    // Runtime lookup, not env!(): with a shared cargo target dir a cached
+    // binary can carry a compile-time path from another (possibly deleted)
+    // checkout. Cargo sets the variable for every `cargo test` run.
+    PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|| panic!("cargo sets CARGO_MANIFEST_DIR")),
+    )
+    .join("config.schema.json")
 }
 
 #[test]
@@ -36,6 +43,8 @@ fn config_schema_matches_committed_artifact() {
     assert!(
         committed == rendered,
         "config.schema.json is stale: regenerate with \
-         `REGEN=1 cargo test --test gen_config_schema` and commit the result"
+         `REGEN=1 cargo test --test gen_config_schema` and commit the result; \
+         if regeneration does not converge, the test binary itself is stale (shared target dir): \
+         force a rebuild with `cargo clean -p reverie-api`"
     );
 }
