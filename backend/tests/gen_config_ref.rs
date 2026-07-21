@@ -9,8 +9,14 @@
 use std::path::PathBuf;
 
 fn artifact_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../docs/src/content/docs/reference/configuration.mdx")
+    // Runtime lookup, not env!(): with a shared cargo target dir a cached
+    // binary can carry a compile-time path from another (possibly deleted)
+    // checkout. Cargo sets the variable for every `cargo test` run.
+    PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|| panic!("cargo sets CARGO_MANIFEST_DIR")),
+    )
+    .join("../docs/src/content/docs/reference/configuration.mdx")
 }
 
 fn row<'a>(md: &'a str, var: &str) -> &'a str {
