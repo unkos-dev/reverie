@@ -222,123 +222,24 @@ jobs:
           fi
           echo "sqlx-cli pin ($SQLX_CLI_VERSION) matches sqlx crate ($crate)"
 
-      # Grep-guard against new runtime `sqlx::query[*](...)` invocations —
-      # queries must use the compile-time macros. The allowlist documents
-      # justified carve-outs (DDL, dynamic SQL, set_config GUC, enum-drift
-      # probes). Exit-code handling is load-bearing in all three guards
-      # below: grep exit 1 means "clean", exit >1 is a real error that must
-      # not read as clean, and an empty/missing allowlist fails here
-      # (set -e) instead of failing open downstream.
-      - name: Guard against new runtime sqlx::query invocations
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          allow=$(grep -vE '^\s*(#|$)' .github/sqlx-runtime-allowlist.txt)
-          rc=0
-          matches=$(grep -rnE 'sqlx::(query[a-z_]*|raw_sql)\(' backend/src/) || rc=$?
-          if [ "$rc" -gt 1 ]; then
-              exit "$rc"
-          fi
-          violations=''
-          if [ -n "$matches" ]; then
-              rc=0
-              violations=$(grep -v -F -f <(printf '%s\n' "$allow") <<<"$matches") || rc=$?
-              if [ "$rc" -gt 1 ]; then
-                  exit "$rc"
-              fi
-          fi
-          if [ -n "$violations" ]; then
-              echo "Disallowed runtime sqlx::query invocations detected." >&2
-              echo "Use compile-time macros (query!, query_as!, query_scalar!)" >&2
-              echo "or add a justified entry to .github/sqlx-runtime-allowlist.txt." >&2
-              echo "" >&2
-              echo "$violations" >&2
-              exit 1
-          fi
+      # just walks up to the repo-root justfile from this backend/ working
+      # directory; rust::guards re-enters the repo root itself.
+      - name: Install just (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: just
 
-      # Grep-guard: every shipped endpoint must register via OpenApiRouter
-      # + routes!(...) backed by #[utoipa::path] so the generated spec
-      # stays complete; raw `.route(` registrations bypass it. Allowlist
-      # documents the exempt sites (test-only routers, justified
-      # carve-outs).
-      - name: Guard against undocumented raw .route( registrations
+      # Single-sourced in scripts/backend-guards.sh (see the justfile header:
+      # CI command definitions live once, not duplicated inline here): runtime
+      # sqlx::query/raw_sql invocations, raw axum .route( registrations,
+      # chrono imports, and em dashes in the generated config schema, each
+      # checked against its .github/*-allowlist.txt (or, for the em-dash
+      # guard, none).
+      - name: Backend static guards
         working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          allow=$(grep -vE '^\s*(#|$)' .github/axum-route-allowlist.txt)
-          rc=0
-          matches=$(grep -rnE '\.route\(' backend/src/) || rc=$?
-          if [ "$rc" -gt 1 ]; then
-              exit "$rc"
-          fi
-          violations=''
-          if [ -n "$matches" ]; then
-              rc=0
-              violations=$(grep -v -F -f <(printf '%s\n' "$allow") <<<"$matches") || rc=$?
-              if [ "$rc" -gt 1 ]; then
-                  exit "$rc"
-              fi
-          fi
-          if [ -n "$violations" ]; then
-              echo "Raw .route( registrations detected outside the allowlist." >&2
-              echo "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," >&2
-              echo "or add a justified entry to .github/axum-route-allowlist.txt." >&2
-              echo "" >&2
-              echo "$violations" >&2
-              exit 1
-          fi
-
-      # Grep-guard: the backend standardises on the `time` crate
-      # (backend/AGENTS.md); chrono exists in Cargo.toml solely for
-      # openidconnect's test-support signature. Allowlist covers that
-      # carve-out.
-      - name: Guard against chrono usage in runtime code
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          allow=$(grep -vE '^\s*(#|$)' .github/chrono-allowlist.txt)
-          rc=0
-          matches=$(grep -rnE 'use chrono|extern crate chrono' backend/src/) || rc=$?
-          if [ "$rc" -gt 1 ]; then
-              exit "$rc"
-          fi
-          violations=''
-          if [ -n "$matches" ]; then
-              rc=0
-              violations=$(grep -v -F -f <(printf '%s\n' "$allow") <<<"$matches") || rc=$?
-              if [ "$rc" -gt 1 ]; then
-                  exit "$rc"
-              fi
-          fi
-          if [ -n "$violations" ]; then
-              echo "chrono imports detected outside the allowlist." >&2
-              echo "Reverie uses the time crate (backend/AGENTS.md); chrono is" >&2
-              echo "reserved for the documented openidconnect test-support carve-out." >&2
-              echo "Justify any new entry in .github/chrono-allowlist.txt." >&2
-              echo "" >&2
-              echo "$violations" >&2
-              exit 1
-          fi
-
-      # The schema descriptions are config-struct doc-comments (schemars
-      # folds them in); the Vale gate covers Markdown but not this
-      # generated JSON. Match raw U+2014 UTF-8 bytes (LC_ALL=C +
-      # fixed-string) so the check never depends on grep's PCRE or locale
-      # support — a PCRE-mode grep rejecting `\x{2014}` would exit non-zero
-      # and pass the gate open.
-      - name: Guard against em dashes in the config schema
-        run: |
-          set -euo pipefail
-          rc=0
-          matches=$(LC_ALL=C grep -nF $'\xe2\x80\x94' config.schema.json) || rc=$?
-          if [ "$rc" -gt 1 ]; then
-            exit "$rc"
-          fi
-          if [ -n "$matches" ]; then
-            printf '%s\n' "$matches"
-            echo "::error::config.schema.json contains an em dash (lines above); recast the source doc-comment in backend/src/config and regenerate." >&2
-            exit 1
-          fi
+        run: just rust::guards
 
       # dtolnay/rust-toolchain reads the toolchain from the git ref name,
       # so a SHA pin requires naming the channel explicitly via

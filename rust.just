@@ -66,6 +66,16 @@ sqlx-check:
 build:
     cargo build --workspace --locked
 
+# Offline (no database, no toolchain needed). Mirrors ci.yml's backend-checks
+# static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
+# chrono imports, and em dashes in the generated config schema, each checked
+# against its .github/*-allowlist.txt (or, for the em-dash guard, none).
+#
+# Backend static allowlist and prose guards.
+[group('rust')]
+guards:
+    ../scripts/backend-guards.sh
+
 # Offline (no database). Mirrors the CI "unused dependencies" job.
 #
 # Fail on unused workspace dependencies.
