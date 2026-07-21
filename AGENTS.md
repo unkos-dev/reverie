@@ -77,4 +77,21 @@ Use `just worktree <branch>` to create a worktree. It places the checkout
 outside the repository, where it cannot enter the Docker build context or
 cargo's workspace discovery, and refuses to create one on a temporary
 filesystem where unpushed commits would not survive a reboot.
-</task_runner>
+
+Two aggregates anchor the local loop and should be the default reflex:
+
+- `just doctor` answers "is this machine ready to develop Reverie?" in
+  seconds: required binaries, mise pins, docker daemon, dev Postgres health
+  and runtime-role login, node_modules freshness, the sqlx offline cache,
+  git sync state, and disk space. Every warning and failure names the exact
+  fixing command. Run it first whenever the environment might have changed
+  or a failure looks environmental rather than caused by the change.
+- `just preflight` runs everything the CI gate runs that is locally
+  runnable, including the DB-backed backend test suite, the sqlx cache
+  check, the backend static guards, cargo-machete, cargo-deny, the frontend
+  build, and the a11y scan. It brings the dev database up itself. Run it
+  before any push; a green preflight covers every locally runnable CI
+  check, leaving only the CI-only lanes (MSRV, coverage, the docker image
+  build, and the workflow, IaC, SAST, and secret scans) to the remote run.
+  `just check` remains the fast offline subset for mid-task iteration.
+  </task_runner>
