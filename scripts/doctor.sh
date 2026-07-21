@@ -136,7 +136,16 @@ fi
 
 if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
   if [ package-lock.json -nt node_modules/.package-lock.json ]; then
-    warn "node_modules matches package-lock.json" "npx --no-install vp install"
+    # Advice is keyed on whether node_modules/.bin/vp actually exists, not
+    # inferred from marker files: an install that predates vite-plus
+    # entering the lockfile can leave the marker present and the lockfile
+    # newer with no vp binary ever having been installed, and npx
+    # --no-install has nothing to fall back to in that case either.
+    if [ -x node_modules/.bin/vp ]; then
+      warn "node_modules matches package-lock.json" "npx --no-install vp install"
+    else
+      warn "node_modules matches package-lock.json" "npm install"
+    fi
   else
     pass "node_modules matches package-lock.json"
   fi
