@@ -41,7 +41,9 @@ fn openapi_spec_matches_committed_artifact() {
     });
     assert_eq!(
         committed, rendered,
-        "openapi.json is stale — regenerate with `REGEN=1 cargo test --test gen_openapi`"
+        "openapi.json is stale — regenerate with `REGEN=1 cargo test --test gen_openapi`; \
+         if regeneration does not converge, the test binary itself is stale (shared target dir): \
+         force a rebuild with `cargo clean -p reverie-api`"
     );
 }
 

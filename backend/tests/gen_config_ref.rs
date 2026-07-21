@@ -47,7 +47,9 @@ fn config_reference_matches_committed_artifact() {
     });
     assert_eq!(
         committed, rendered,
-        "config reference is stale — regenerate with `REGEN=1 cargo test --test gen_config_ref`"
+        "config reference is stale — regenerate with `REGEN=1 cargo test --test gen_config_ref`; \
+         if regeneration does not converge, the test binary itself is stale (shared target dir): \
+         force a rebuild with `cargo clean -p reverie-api`"
     );
 }
 

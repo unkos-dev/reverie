@@ -43,6 +43,8 @@ fn config_schema_matches_committed_artifact() {
     assert!(
         committed == rendered,
         "config.schema.json is stale: regenerate with \
-         `REGEN=1 cargo test --test gen_config_schema` and commit the result"
+         `REGEN=1 cargo test --test gen_config_schema` and commit the result; \
+         if regeneration does not converge, the test binary itself is stale (shared target dir): \
+         force a rebuild with `cargo clean -p reverie-api`"
     );
 }
