@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Self-test scripts/doctor.sh against an isolated fixture repo and a stubbed
+# PATH, so the assertions never touch the real checkout's toolchain, docker
+# daemon, or dev database state.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+doctor="${repo_root}/scripts/doctor.sh"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+
+fixture="${tmp}/fixture"
+mkdir -p "${fixture}/scripts" "${fixture}/backend/.sqlx" "${fixture}/frontend" "${fixture}/docs"
+cp "${doctor}" "${fixture}/scripts/doctor.sh"
+chmod +x "${fixture}/scripts/doctor.sh"
+
+# A minimal, real git repo so git-derived checks (branch, ahead/behind,
+# origin/main staleness) exercise real git plumbing rather than a stub.
+git -C "${fixture}" init -q -b main
+git -C "${fixture}" config user.name "Doctor Selftest"
+git -C "${fixture}" config user.email "selftest@example.invalid"
+git -C "${fixture}" config commit.gpgsign false
+echo x >"${fixture}/README.md"
+git -C "${fixture}" add README.md
+git -C "${fixture}" commit -q -m "chore: fixture root"
+git -C "${fixture}" update-ref refs/remotes/origin/main HEAD
+
+# node_modules + a lockfile whose mtime does not outrun the install marker.
+mkdir -p "${fixture}/node_modules" "${fixture}/frontend/node_modules" "${fixture}/docs/node_modules"
+echo '{}' >"${fixture}/node_modules/.package-lock.json"
+echo '{}' >"${fixture}/package-lock.json"
+touch -d '-1 hour' "${fixture}/package-lock.json"
+
+# Non-empty sqlx offline cache.
+echo '{}' >"${fixture}/backend/.sqlx/query-fixture.json"
+
+# Stub PATH: real coreutils/git/jq passed through by absolute-path symlink,
+# the nine required binaries stubbed as no-op executables (doctor.sh only
+# checks their resolvability, never runs them), and docker/mise stubbed with
+# controllable behavior via environment variables so every branch of the
+# container-health and mise-pin checks is reachable without a real daemon.
+link_real() { # <dir> <name>
+  local dir="$1" name="$2"
+  ln -s "$(command -v "${name}")" "${dir}/${name}"
+}
+
+noop_stub() { # <dir> <name>
+  local dir="$1" name="$2"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${dir}/${name}"
+  chmod +x "${dir}/${name}"
+}
+
+stub_bin="${tmp}/bin"
+mkdir -p "${stub_bin}"
+for real in env bash git jq ls df date dirname cat tail tr; do
+  link_real "${stub_bin}" "${real}"
+done
+for tool in just cargo rustc node npm npx; do
+  noop_stub "${stub_bin}" "${tool}"
+done
+
+cat >"${stub_bin}/mise" <<'MISE_STUB'
+#!/usr/bin/env bash
+# Fixture stub: only supports the one invocation doctor.sh makes.
+set -euo pipefail
+if [ "$1" = "ls" ]; then
+  if [ -z "${DOCTOR_STUB_MISE_MISSING:-}" ]; then
+    echo '{}'
+  else
+    jq -n --arg names "${DOCTOR_STUB_MISE_MISSING}" \
+      '$names | split(" ") | map({(.): true}) | add'
+  fi
+  exit 0
+fi
+exit 1
+MISE_STUB
+chmod +x "${stub_bin}/mise"
+
+cat >"${stub_bin}/docker" <<'DOCKER_STUB'
+#!/usr/bin/env bash
+# Fixture stub: only supports the three invocations doctor.sh makes
+# (info, inspect --format ..., exec ... pg_isready ...), all controlled by
+# DOCTOR_STUB_* environment variables so every branch is independently
+# reachable without a real daemon or container.
+set -euo pipefail
+case "$1" in
+  info)
+    [ "${DOCTOR_STUB_DOCKER_UP:-1}" = "1" ]
+    ;;
+  inspect)
+    fmt="$3"
+    if [ -z "${DOCTOR_STUB_CONTAINER_STATUS:-}" ]; then
+      exit 1
+    fi
+    case "${fmt}" in
+      *Health*) printf '%s' "${DOCTOR_STUB_CONTAINER_HEALTH:-none}" ;;
+      *) printf '%s' "${DOCTOR_STUB_CONTAINER_STATUS}" ;;
+    esac
+    ;;
+  exec)
+    [ "${DOCTOR_STUB_PG_READY:-1}" = "1" ]
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+DOCKER_STUB
+chmod +x "${stub_bin}/docker"
+
+fail=0
+
+run_doctor() { # runs the fixture doctor.sh with the given PATH, capturing output+exit code
+  local test_path="$1"
+  output=""
+  rc=0
+  output="$(PATH="${test_path}" "${fixture}/scripts/doctor.sh" 2>&1)" || rc=$?
+}
+
+expect_exit() { # <name> <want-exit> <path>
+  local name="$1" want="$2" test_path="$3"
+  run_doctor "${test_path}"
+  if [ "${rc}" -ne "${want}" ]; then
+    echo "FAIL ${name}: expected exit ${want}, got ${rc}"
+    echo "${output}"
+    fail=1
+  else
+    echo "ok   ${name}"
+  fi
+}
+
+expect_contains() { # <name> <needle>
+  local name="$1" needle="$2"
+  if printf '%s' "${output}" | grep -qF "${needle}"; then
+    echo "ok   ${name}"
+  else
+    echo "FAIL ${name}: expected output to contain '${needle}'"
+    echo "${output}"
+    fail=1
+  fi
+}
+
+expect_not_contains() { # <name> <needle>
+  local name="$1" needle="$2"
+  if printf '%s' "${output}" | grep -qF "${needle}"; then
+    echo "FAIL ${name}: expected output to NOT contain '${needle}'"
+    echo "${output}"
+    fail=1
+  else
+    echo "ok   ${name}"
+  fi
+}
+
+# --- fully-stubbed happy path: every check passes, exit 0 ---
+export DOCTOR_STUB_DOCKER_UP=1
+export DOCTOR_STUB_CONTAINER_STATUS=running
+export DOCTOR_STUB_CONTAINER_HEALTH=healthy
+export DOCTOR_STUB_PG_READY=1
+export DOCTOR_STUB_MISE_MISSING=""
+expect_exit "happy path exits zero" 0 "${stub_bin}"
+expect_not_contains "happy path has no FAIL lines" "FAIL "
+expect_not_contains "happy path has no WARN lines" "WARN "
+
+# --- WARN-only run: dev DB absent, mise pin missing -> still exit 0 ---
+export DOCTOR_STUB_CONTAINER_STATUS=""
+export DOCTOR_STUB_CONTAINER_HEALTH=""
+expect_exit "warn-only run exits zero" 0 "${stub_bin}"
+expect_contains "warn-only run reports the absent dev DB" "WARN dev Postgres container"
+expect_not_contains "warn-only run has no FAIL lines" "FAIL "
+# restore for later assertions
+export DOCTOR_STUB_CONTAINER_STATUS=running
+export DOCTOR_STUB_CONTAINER_HEALTH=healthy
+
+# --- missing-binary detection: PATH with one required binary removed ---
+stub_bin_missing="${tmp}/bin-missing"
+mkdir -p "${stub_bin_missing}"
+for f in "${stub_bin}"/*; do
+  name="$(basename "${f}")"
+  [ "${name}" = "cargo" ] && continue
+  cp -P "${f}" "${stub_bin_missing}/${name}"
+done
+expect_exit "missing binary fails closed" 1 "${stub_bin_missing}"
+expect_contains "missing binary is named in the output" "FAIL binary 'cargo' resolves on PATH"
+
+exit "${fail}"

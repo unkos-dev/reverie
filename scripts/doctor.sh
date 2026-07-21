@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Fast, read-only environment self-check: "is this machine ready to develop
+# Reverie?" Prints one PASS/WARN/FAIL line per check plus a summary, and
+# exits nonzero iff any check FAILed. No writes, no network calls beyond the
+# already-running local docker daemon this repo's dev stack owns.
+set -ueo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+cd "$repo_root"
+
+pass_count=0
+warn_count=0
+fail_count=0
+
+pass() { printf 'PASS %s\n' "$1"; pass_count=$((pass_count + 1)); }
+warn() { printf 'WARN %s -- fix: %s\n' "$1" "$2"; warn_count=$((warn_count + 1)); }
+fail() { printf 'FAIL %s -- fix: %s\n' "$1" "$2"; fail_count=$((fail_count + 1)); }
+info() { printf 'INFO %s\n' "$1"; }
+
+# 1. Required binaries resolve on PATH.
+for bin in git just docker cargo rustc node npm npx mise; do
+  if command -v "$bin" >/dev/null 2>&1; then
+    pass "binary '${bin}' resolves on PATH"
+  else
+    fail "binary '${bin}' resolves on PATH" "install ${bin}, then run 'mise install'"
+  fi
+done
+
+# 2. mise pins installed for this directory's toolset. `ls --current` scopes
+# to the config active here (root mise.toml), and `--missing` reports only
+# tools that are pinned but not yet installed.
+if command -v mise >/dev/null 2>&1; then
+  missing_json="$(mise ls --current --missing -J 2>/dev/null || echo '{}')"
+  missing_count="$(printf '%s' "${missing_json}" | jq 'length' 2>/dev/null || echo unknown)"
+  if [ "${missing_count}" = "0" ]; then
+    pass "mise-pinned tools are installed"
+  else
+    missing_names="$(printf '%s' "${missing_json}" | jq -r 'keys | join(", ")' 2>/dev/null || echo unknown)"
+    fail "mise-pinned tools are installed (missing: ${missing_names})" "mise install"
+  fi
+else
+  fail "mise-pinned tools are installed" "install mise, then run 'mise install'"
+fi
+
+# 3. Docker daemon reachable.
+docker_up=0
+if command -v docker >/dev/null 2>&1 && docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; then
+  docker_up=1
+  pass "docker daemon reachable"
+else
+  fail "docker daemon reachable" "start the Docker daemon/Docker Desktop"
+fi
+
+# 4 & 5. Dev Postgres container health and connection acceptance. The
+# unsuffixed name is the default stack; REVERIE_COMPOSE_ENV stacks use a
+# different container this check deliberately does not follow.
+container="reverie-postgres"
+if [ "${docker_up}" -eq 1 ]; then
+  state_status="$(docker inspect --format '{{.State.Status}}' "${container}" 2>/dev/null || true)"
+else
+  state_status=""
+fi
+
+case "${state_status}" in
+  running)
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${container}" 2>/dev/null || echo none)"
+    if [ "${health}" = "healthy" ]; then
+      pass "dev Postgres container (${container}) is running and healthy"
+    else
+      fail "dev Postgres container (${container}) health is '${health}'" "docker logs ${container} (or 'just db-down && just db-up')"
+    fi
+    if docker exec "${container}" pg_isready -U reverie -d reverie_dev >/dev/null 2>&1; then
+      pass "dev Postgres accepts connections (pg_isready)"
+    else
+      fail "dev Postgres accepts connections (pg_isready)" "just db-down && just db-up"
+    fi
+    ;;
+  "")
+    warn "dev Postgres container (${container}) exists" "just db-up"
+    warn "dev Postgres accepts connections (pg_isready)" "just db-up"
+    ;;
+  *)
+    warn "dev Postgres container (${container}) is ${state_status}, not running" "just db-up"
+    warn "dev Postgres accepts connections (pg_isready)" "just db-up"
+    ;;
+esac
+
+# 6. node_modules present for each npm workspace, and not stale against the
+# committed lockfile. A single root package-lock.json covers all workspaces.
+check_node_modules() {
+  local label="$1" dir="$2"
+  if [ -d "${dir}/node_modules" ]; then
+    pass "${label} node_modules present"
+  else
+    warn "${label} node_modules present" "vp install"
+  fi
+}
+check_node_modules "root" "."
+check_node_modules "frontend/" "frontend"
+check_node_modules "docs/" "docs"
+
+if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
+  if [ package-lock.json -nt node_modules/.package-lock.json ]; then
+    warn "node_modules matches package-lock.json" "vp install"
+  else
+    pass "node_modules matches package-lock.json"
+  fi
+else
+  warn "node_modules matches package-lock.json" "vp install"
+fi
+
+# 7. sqlx offline cache present. Without it, cargo build fails closed on the
+# compile-time query macros whenever DATABASE_URL is unset.
+if [ -d backend/.sqlx ] && [ -n "$(ls -A backend/.sqlx 2>/dev/null)" ]; then
+  pass "sqlx offline cache (backend/.sqlx) present"
+else
+  fail "sqlx offline cache (backend/.sqlx) present" "cd backend && DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests"
+fi
+
+# 8. Git state: branch, ahead/behind vs origin/main from local refs only
+# (no fetch), and staleness of the local origin/main ref.
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+if git rev-parse --verify -q refs/remotes/origin/main >/dev/null; then
+  read -r behind ahead <<<"$(git rev-list --left-right --count origin/main...HEAD 2>/dev/null || echo '? ?')"
+  pass "git: on branch '${branch}', ${ahead} ahead / ${behind} behind origin/main"
+
+  main_epoch="$(git log -1 --format=%ct refs/remotes/origin/main)"
+  now_epoch="$(date +%s)"
+  age_days=$(((now_epoch - main_epoch) / 86400))
+  if [ "${age_days}" -gt 7 ]; then
+    warn "local origin/main ref is ${age_days} days old" "git fetch origin"
+  else
+    pass "local origin/main ref is ${age_days} days old"
+  fi
+else
+  warn "local origin/main ref exists" "git fetch origin"
+fi
+
+# 9. Informational: list git worktrees.
+info "git worktrees:"
+git worktree list | while IFS= read -r line; do
+  info "  ${line}"
+done
+
+# 10. Disk space on the filesystem holding the repo.
+five_gib=$((5 * 1024 * 1024 * 1024))
+if avail_bytes="$(df -B1 --output=avail "${repo_root}" 2>/dev/null | tail -n 1 | tr -d ' ')" && [ -n "${avail_bytes}" ]; then
+  avail_gib=$((avail_bytes / 1024 / 1024 / 1024))
+  if [ "${avail_bytes}" -ge "${five_gib}" ]; then
+    pass "disk space: ${avail_gib} GiB free"
+  else
+    warn "disk space: only ${avail_gib} GiB free" "free up space on the filesystem holding ${repo_root}"
+  fi
+else
+  warn "disk space check" "cannot determine free space (non-GNU df); check manually"
+fi
+
+echo "----"
+echo "doctor: ${pass_count} pass, ${warn_count} warn, ${fail_count} fail"
+if [ "${fail_count}" -gt 0 ]; then
+  exit 1
+fi
+exit 0

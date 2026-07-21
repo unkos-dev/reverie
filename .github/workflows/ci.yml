@@ -1062,6 +1062,9 @@ jobs:
       - name: Recipe secret-echo guard
         run: just infra::recipe-secret-echo-test
 
+      - name: Doctor environment check self-test
+        run: just infra::doctor-selftest
+
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate
 
