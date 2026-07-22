@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -161,7 +161,7 @@ describe("cspHashPlugin", () => {
     expect(() => getHandler(plugin)(VALID_HTML)).not.toThrow();
   });
 
-  it("end-to-end: `npx vite build` produces sidecar whose hash matches the injected inline script body", () => {
+  it("end-to-end: a real build via the workspace vp CLI produces a sidecar whose hash matches the injected inline script body", () => {
     // Build a temp project that imports the plugin from the parent tree.
     const thisDir = resolve(__dirname);
     const pluginPath = resolve(thisDir, "..", "csp-hash.ts");
@@ -182,6 +182,14 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
 `;
     writeFileSync(join(root, "vite.config.ts"), viteConfig, "utf8");
 
+    // vp treats its build root as a workspace package and rejects a
+    // directory with no package.json of its own, so the fixture needs one.
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "csp-hash-e2e-fixture", private: true, type: "module" }),
+      "utf8",
+    );
+
     // Re-use the workspace-root node_modules (npm workspaces hoists vite and
     // its deps there, not into frontend/) by symlinking instead of a full
     // `npm install` here. Direct fs call rather than `ln -s` via shell so
@@ -189,7 +197,34 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
     const parentNodeModules = resolve(thisDir, "..", "..", "..", "node_modules");
     symlinkSync(parentNodeModules, join(root, "node_modules"));
 
-    execSync("npx vite build", { cwd: root, stdio: "pipe" });
+    // Resolve the workspace's own `vp` binary rather than letting `npx`
+    // search for a `vite` CLI: the workspace aliases "vite" to
+    // vite-plus-core, which ships no `vite` bin, so `npx vite build` used to
+    // fall back to fetching the real vite package from the registry at test
+    // time. `vp` is what the workspace actually builds with (frontend's
+    // `build` script runs `vp build`), so invoking its absolute path here
+    // both matches production/CI build behavior and needs nothing beyond
+    // what the lockfile already installed.
+    const vpBin = resolve(parentNodeModules, ".bin", "vp");
+    if (!existsSync(vpBin)) {
+      throw new Error(
+        `workspace vp binary not found at ${vpBin}; the vite-plus toolchain dependency may have moved or been removed`,
+      );
+    }
+
+    execFileSync(vpBin, ["build"], {
+      cwd: root,
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        // Regression guard: if a future change reintroduces a
+        // package-manager fallback (npx or similar), forcing npm offline
+        // against an unreachable registry makes any such fetch fail loudly
+        // instead of silently succeeding against the network again.
+        npm_config_offline: "true",
+        npm_config_registry: "http://csp-hash-e2e-hermetic-guard.invalid/",
+      },
+    });
 
     const sidecar = JSON.parse(
       readFileSync(join(root, "dist", "csp-hashes.json"), "utf8"),
@@ -207,5 +242,11 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
     const expected = `sha256-${createHash("sha256").update(inlineBody).digest("base64")}`;
 
     expect(hashes[0]).toBe(expected);
-  }, 30_000);
+    // This case runs a real build through the workspace's own `vp` binary
+    // resolved from node_modules/.bin, so it needs no network access and no
+    // package-manager resolution step. Measured locally at 300-350ms across
+    // repeated runs; this budget keeps generous headroom for a slower or
+    // colder CI runner without chasing a network-fetch ceiling that no
+    // longer applies.
+  }, 15_000);
 });
