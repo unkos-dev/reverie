@@ -81,6 +81,39 @@ build: js::build rust::build docs::build
 [group('aggregate')]
 preflight: rust::guards db-up check test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y infra::zizmor
 
+# The same gate as `preflight`, minus the lanes CI itself would skip. A
+# frontend-only branch pays for the frontend lanes and the unconditional
+# repo-lint mirror, not a database, a Rust rebuild, and a dependency audit.
+#
+# The skip decisions come from .github/path-filters.yml, the same file CI's
+# `changes` job feeds to dorny/paths-filter, so widening a filter for CI
+# widens this gate with it. Changes to the verification machinery itself
+# (justfiles, scripts/, tool pins, that filter file) escalate to the full lane
+# set, because a scoped run cannot reason about a change to its own rules.
+#
+# This is the mid-branch reflex; `just preflight` stays the unconditional
+# answer and is what to run when in doubt. Args pass through to
+# scripts/preflight-scope.sh (`--base <ref>` to compare against something
+# other than origin/main).
+#
+# Run only the preflight lanes this branch's changed paths require.
+[group('aggregate')]
+[positional-arguments]
+preflight-scoped *args:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    # Command substitution, not `mapfile < <(...)`: a process substitution's
+    # exit status is unobservable, so a scoper that died would read as an
+    # empty lane list and this recipe would report a green "nothing to do".
+    scope="$(scripts/preflight-scope.sh --explain "$@")"
+    if [ -z "$scope" ]; then
+        echo "preflight-scoped: no lane required for the changed paths"
+        exit 0
+    fi
+    mapfile -t lanes <<< "$scope"
+    echo "preflight-scoped: ${lanes[*]}"
+    just "${lanes[@]}"
+
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
 # default is a sibling of the repo so it inherits the same filesystem and
 # backup rules without ever nesting inside the checkout.

@@ -70,88 +70,10 @@ jobs:
           # diff.
           base: ${{ github.event.merge_group.base_sha || github.base_ref }}
           ref: ${{ github.event.merge_group.head_sha || github.ref }}
-          filters: |
-            backend:
-              - 'backend/**'
-              - 'docker/init-roles.sql'
-              - 'mise.toml'
-              - '.github/workflows/ci.yml'
-            audit:
-              - 'backend/Cargo.toml'
-              - 'backend/Cargo.lock'
-              - 'backend/deny.toml'
-              - 'mise.toml'
-              - '.github/workflows/ci.yml'
-            frontend:
-              # Root workspace inputs drive the frontend too: the hoisted
-              # lockfile + shared overrides, and the root vite.config.ts
-              # that owns the frontend lint config.
-              - 'frontend/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'vite.config.ts'
-              - '.github/workflows/ci.yml'
-            staging:
-              - 'docker/compose.staging.yml'
-              - 'docker/init-roles.sql'
-              - 'docker/staging.env.bootstrap.example'
-              - 'docker/staging.env.runtime.example'
-              - '.github/workflows/ci.yml'
-            workflows:
-              # A suppression edit in zizmor.yml must re-run the scan even
-              # with no workflow change (likewise .trivyignore and
-              # .checkov.yaml in their filters below).
-              - '.github/workflows/**'
-              - '.github/actions/**'
-              - '.github/zizmor.yml'
-            iac:
-              - 'Dockerfile'
-              - 'docker-compose.yml'
-              - 'docker/**'
-              - '.trivyignore'
-              - '.github/workflows/ci.yml'
-            docker:
-              # PR-time image build gate: the image definition plus every
-              # manifest that shapes the build context's structure. Code-only
-              # changes are deliberately excluded — compile breakage is the
-              # backend/frontend jobs' remit; the failure class this gates
-              # (e.g. a lockfile hoist breaking a COPY) is manifest-level.
-              - 'Dockerfile'
-              - '.dockerignore'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'frontend/package.json'
-              - 'docs/package.json'
-              - 'backend/Cargo.toml'
-              - 'backend/Cargo.lock'
-              - '.github/workflows/ci.yml'
-            openapi:
-              - 'docs/openapi.json'
-              - '.checkov.yaml'
-              - '.github/workflows/ci.yml'
-            npm:
-              # Licenses only change when the dependency tree changes, so
-              # PR-time gating is complete here — no cron needed (unlike
-              # advisories, which drift over time; see scheduled-audit.yml).
-              - 'package.json'
-              - 'package-lock.json'
-              - 'frontend/package.json'
-              - 'docs/package.json'
-              - '.github/workflows/ci.yml'
-            docs:
-              # Generated reference artifacts live under docs/, so a backend
-              # regen trips this filter without a separate backend trigger;
-              # a stale-but-unregenerated artifact is caught by the backend
-              # job's drift tests instead. docs is an npm workspace, so the
-              # root manifest/lockfile affect its build. docs-build.yml is
-              # the shared build definition; docs.yml is the deploy lane
-              # that must still pass the PR-time gate here.
-              - 'docs/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/docs.yml'
-              - '.github/workflows/docs-build.yml'
+          # Filter definitions live in .github/path-filters.yml so the local
+          # preflight scoper (scripts/preflight-scope.sh) reads the same source
+          # and cannot drift from CI's skip decisions.
+          filters: .github/path-filters.yml
 
   backend-checks:
     name: Backend checks
