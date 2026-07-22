@@ -101,6 +101,7 @@ struct JobSnapshot {
     format: ManifestationFormat,
     cover_path: Option<String>,
     title: Option<String>,
+    subtitle: Option<String>,
     description: Option<String>,
     language: Option<String>,
     publisher: Option<String>,
@@ -184,6 +185,7 @@ pub async fn run_once(
     // Build writeback target from Step 7's per-field canonical columns.
     let target = Target {
         title: snap.title.as_deref(),
+        subtitle: snap.subtitle.as_deref(),
         description: snap.description.as_deref(),
         language: snap.language.as_deref(),
         publisher: snap.publisher.as_deref(),
@@ -511,7 +513,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
                   m.format AS "format: ManifestationFormat",
                   m.cover_path,
                   m.publisher, m.pub_date, m.isbn_10, m.isbn_13,
-                  w.title, w.description, w.language
+                  w.title, w.subtitle, w.description, w.language
              FROM writeback_jobs wj
              JOIN manifestations m ON m.id = wj.manifestation_id
              JOIN works w          ON w.id = m.work_id
@@ -541,6 +543,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
         format: row.format,
         cover_path: row.cover_path,
         title: Some(row.title),
+        subtitle: row.subtitle,
         description: row.description,
         language: row.language,
         publisher: row.publisher,
@@ -1567,6 +1570,7 @@ mod tests {
             format: ManifestationFormat::Epub,
             cover_path: None,
             title: title.map(std::string::ToString::to_string),
+            subtitle: None,
             description: None,
             language: None,
             publisher: None,

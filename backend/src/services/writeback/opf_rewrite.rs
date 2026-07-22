@@ -13,6 +13,7 @@
 use quick_xml::Reader;
 use quick_xml::Writer;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use std::collections::HashMap;
 use std::io::Cursor;
 
 use super::error::WritebackError;
@@ -25,8 +26,15 @@ use super::error::WritebackError;
 ///   delete existing `OPF` fields.
 #[derive(Debug, Default, Clone)]
 pub struct Target<'a> {
-    /// `dc:title` text.
+    /// `dc:title` text.  Applied to the main title element only: a `dc:title`
+    /// carrying a `title-type` refine other than `main` is never rewritten
+    /// from this field.
     pub title: Option<&'a str>,
+    /// Text for a `dc:title` refined `title-type="subtitle"`.  `None` leaves a
+    /// declared subtitle untouched.  A subtitle is only ever written into an
+    /// element the `OPF` already declares; the rewriter does not synthesize a
+    /// subtitle element (and its refine) for a file that has none.
+    pub subtitle: Option<&'a str>,
     /// `dc:description` text (blurb / synopsis).
     pub description: Option<&'a str>,
     /// `dc:language` BCP 47 tag (e.g. `"en"`, `"fr"`).
@@ -111,7 +119,8 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
 
                 if in_metadata_depth.is_some() {
                     // Targeted DC elements: replace text.
-                    if let Some(new_text) = target_text_for_dc(&local, target) {
+                    if let Some(new_text) = target_text_for_dc(&local, e, target, &meta.title_types)
+                    {
                         // Skip everything until the matching End tag.
                         write_replaced_element(&mut writer, e, new_text)?;
                         i = skip_to_matching_end(&events, i) + 1;
@@ -154,7 +163,8 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                 let local = local_name(&name_bytes).to_vec();
 
                 if in_metadata_depth.is_some() {
-                    if let Some(new_text) = target_text_for_dc(&local, target) {
+                    if let Some(new_text) = target_text_for_dc(&local, e, target, &meta.title_types)
+                    {
                         // Rare: <dc:title/> as empty element — expand to paired.
                         write_replaced_element_from_empty(&mut writer, e, new_text)?;
                         i += 1;
@@ -245,13 +255,17 @@ struct ScanResult {
     epub_version: String,
     had_belongs_to_collection: bool,
     had_calibre_series: bool,
+    /// Declared `title-type` per refined element `id` (the `refines`
+    /// attribute with its leading `#` stripped), lowercased.
+    title_types: HashMap<Vec<u8>, String>,
 }
 
 fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
     let mut epub_version = "3.0".to_string();
     let mut had_belongs = false;
     let mut had_calibre = false;
-    for ev in events {
+    let mut title_types: HashMap<Vec<u8>, String> = HashMap::new();
+    for (i, ev) in events.iter().enumerate() {
         match ev {
             Event::Start(e) => {
                 let local = local_name(e.name().as_ref()).to_vec();
@@ -263,11 +277,30 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
                 if local == b"meta" && has_attr(e, b"property", b"belongs-to-collection") {
                     had_belongs = true;
                 }
+                // `<meta refines="#t2" property="title-type">subtitle</meta>`:
+                // the value is the element's text body.
+                if local == b"meta"
+                    && has_attr(e, b"property", b"title-type")
+                    && let Some(refines) = attr_value(e, b"refines")
+                    && let Some(value) =
+                        attr_value_as_string(e, b"content").or_else(|| element_text(events, i))
+                {
+                    title_types.insert(strip_fragment(&refines), normalize_title_type(&value));
+                }
             }
             Event::Empty(e) => {
                 let local = local_name(e.name().as_ref()).to_vec();
                 if local == b"meta" && has_attr(e, b"name", b"calibre:series") {
                     had_calibre = true;
+                }
+                // Self-closing refine: the value lives in `content`, and
+                // quick-xml never fires a Text event for it.
+                if local == b"meta"
+                    && has_attr(e, b"property", b"title-type")
+                    && let Some(refines) = attr_value(e, b"refines")
+                    && let Some(value) = attr_value_as_string(e, b"content")
+                {
+                    title_types.insert(strip_fragment(&refines), normalize_title_type(&value));
                 }
             }
             _ => {}
@@ -277,7 +310,37 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
         epub_version,
         had_belongs_to_collection: had_belongs,
         had_calibre_series: had_calibre,
+        title_types,
     }
+}
+
+/// Text body of the element starting at `start_idx`, empty text discarded.
+///
+/// A CDATA section is character data (XML 1.0 section 2.7), so it carries the
+/// element's value just as a text node does; quick-xml merely reports it as a
+/// separate event.  Missing that form here would leave the refine unrecorded
+/// and route the refined `dc:title` back through the main-title rewrite.
+fn element_text(events: &[Event<'static>], start_idx: usize) -> Option<String> {
+    let end = skip_to_matching_end(events, start_idx);
+    events[start_idx + 1..end.min(events.len())]
+        .iter()
+        .find_map(|ev| match ev {
+            Event::Text(t) => t.decode().ok().map(|s| s.trim().to_string()),
+            Event::CData(c) => std::str::from_utf8(c.as_ref())
+                .ok()
+                .map(|s| s.trim().to_string()),
+            _ => None,
+        })
+        .filter(|s| !s.is_empty())
+}
+
+/// `refines="#t2"` addresses the element whose `id` is `t2`.
+fn strip_fragment(refines: &[u8]) -> Vec<u8> {
+    refines.strip_prefix(b"#").unwrap_or(refines).to_vec()
+}
+
+fn normalize_title_type(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
 }
 
 // ── Event-writing helpers ─────────────────────────────────────────────────
@@ -393,15 +456,42 @@ fn write_calibre_series_index(
 
 // ── Lookup helpers ────────────────────────────────────────────────────────
 
-fn target_text_for_dc<'t>(local: &[u8], target: &'t Target<'_>) -> Option<&'t str> {
+/// Resolve the replacement text for a Dublin Core element, or `None` to leave
+/// it byte-for-byte alone.
+///
+/// `dc:title` is resolved against the element's `title-type` refine: an
+/// unrefined (or `main`-refined) title takes `target.title`, a `subtitle`
+/// refine takes `target.subtitle`, and any other declared type (`short`,
+/// `collection`, `edition`, `extended`) is left alone because the canonical
+/// layer does not model it and writing the main title over it would destroy
+/// the declared value.
+fn target_text_for_dc<'t>(
+    local: &[u8],
+    el: &BytesStart<'_>,
+    target: &'t Target<'_>,
+    title_types: &HashMap<Vec<u8>, String>,
+) -> Option<&'t str> {
     match local {
-        b"title" => target.title,
+        b"title" => match title_type_of(el, title_types) {
+            Some("subtitle") => target.subtitle,
+            Some(other) if other != "main" => None,
+            _ => target.title,
+        },
         b"description" => target.description,
         b"language" => target.language,
         b"publisher" => target.publisher,
         b"date" => target.pub_date,
         _ => None,
     }
+}
+
+/// The `title-type` refine declared for `el`, looked up by the element's `id`.
+fn title_type_of<'m>(
+    el: &BytesStart<'_>,
+    title_types: &'m HashMap<Vec<u8>, String>,
+) -> Option<&'m str> {
+    let id = attr_value(el, b"id")?;
+    title_types.get(&id).map(String::as_str)
 }
 
 fn has_attr(start: &BytesStart<'_>, name: &[u8], value: &[u8]) -> bool {
@@ -555,6 +645,211 @@ mod tests {
         let out = transform_str(&input, &target);
         assert!(out.contains("<dc:title>New Title</dc:title>"), "got: {out}");
         assert!(!out.contains("Old Title"), "old title leaked: {out}");
+    }
+
+    /// EPUB3 main title + declared subtitle, both carrying `title-type`
+    /// refines, in the order Standard Ebooks and Calibre emit them.
+    fn sample_epub3_with_subtitle() -> String {
+        sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t2">Old Subtitle</dc:title>
+    <meta refines="#t1" property="title-type">main</meta>
+    <meta refines="#t2" property="title-type">subtitle</meta>"##,
+        )
+    }
+
+    /// `sample_epub3` with its single unrefined `dc:title` replaced by
+    /// `titles`, so title-shaped cases control the whole title block.
+    fn sample_epub3_titles(titles: &str) -> String {
+        sample_epub3("").replace("<dc:title>Old Title</dc:title>", titles)
+    }
+
+    #[test]
+    fn transform_rewrites_subtitle_from_canonical_subtitle() {
+        let input = sample_epub3_with_subtitle();
+        let target = Target {
+            title: Some("New Title"),
+            subtitle: Some("New Subtitle"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
+            "main title not rewritten: {out}"
+        );
+        assert!(
+            out.contains(r#"<dc:title id="t2">New Subtitle</dc:title>"#),
+            "subtitle not rewritten from the canonical subtitle: {out}"
+        );
+        assert!(!out.contains("Old Title"), "old title leaked: {out}");
+        assert!(!out.contains("Old Subtitle"), "old subtitle leaked: {out}");
+    }
+
+    #[test]
+    fn transform_preserves_subtitle_when_canonical_subtitle_absent() {
+        // The regression this file exists for: a title-only writeback used to
+        // stomp the declared subtitle with the main title.
+        let input = sample_epub3_with_subtitle();
+        let target = Target {
+            title: Some("New Title"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t2">Old Subtitle</dc:title>"#),
+            "declared subtitle was destroyed: {out}"
+        );
+        assert!(
+            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
+            "main title not rewritten: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_round_trips_subtitle_through_extraction() {
+        // extract → writeback → re-extract must leave the subtitle intact.
+        // A second writeback pass models the repeated PATCH case, where the
+        // stomp used to poison the canonical layer with subtitle == title.
+        let input = sample_epub3_with_subtitle();
+        let target = Target {
+            title: Some("New Title"),
+            subtitle: Some("Old Subtitle"),
+            ..Default::default()
+        };
+        let once = transform_str(&input, &target);
+        let twice = transform_str(&once, &target);
+        let data = extract_opf(twice.as_bytes());
+        assert_eq!(data.title.as_deref(), Some("New Title"));
+        assert_eq!(data.subtitle.as_deref(), Some("Old Subtitle"));
+    }
+
+    /// Run the real ingestion-side OPF parser over rewritten bytes, so the
+    /// round-trip assertion is against extraction rather than a restatement
+    /// of the rewriter's own rules.
+    fn extract_opf(opf_bytes: &[u8]) -> crate::services::epub::opf_layer::OpfData {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("OEBPS/content.opf", opts).unwrap();
+        w.write_all(opf_bytes).unwrap();
+        let handle = crate::services::epub::zip_layer::ZipHandle {
+            bytes: w.finish().unwrap().into_inner(),
+            entries: vec!["OEBPS/content.opf".to_string()],
+        };
+        let mut issues = Vec::new();
+        crate::services::epub::opf_layer::validate(&handle, Some("OEBPS/content.opf"), &mut issues)
+            .unwrap()
+    }
+
+    #[test]
+    fn transform_preserves_self_closing_subtitle_refine() {
+        // `<meta refines=".." property="title-type" content="subtitle"/>`
+        // carries its value in an attribute; quick-xml fires Empty, not Start.
+        let input = sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t2">Old Subtitle</dc:title>
+    <meta refines="#t2" property="title-type" content="subtitle"/>"##,
+        );
+        let target = Target {
+            title: Some("New Title"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t2">Old Subtitle</dc:title>"#),
+            "self-closing subtitle refine was not honored: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_preserves_cdata_subtitle_refine() {
+        // A CDATA section is character data, so it carries the refine value
+        // exactly as a text node does; quick-xml just reports Event::CData.
+        // Missing it would route the subtitle back through the main-title
+        // rewrite, which is the data loss this file exists to prevent.
+        let input = sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t2">Old Subtitle</dc:title>
+    <meta refines="#t2" property="title-type"><![CDATA[subtitle]]></meta>"##,
+        );
+        let target = Target {
+            title: Some("New Title"),
+            subtitle: Some("New Subtitle"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t2">New Subtitle</dc:title>"#),
+            "CDATA subtitle refine was not honored: {out}"
+        );
+        assert!(
+            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
+            "main title not rewritten: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_preserves_cdata_subtitle_without_canonical_subtitle() {
+        // Same shape with no canonical subtitle to write: the declared
+        // subtitle must survive untouched rather than take the main title.
+        let input = sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t2">Old Subtitle</dc:title>
+    <meta refines="#t2" property="title-type"><![CDATA[ subtitle ]]></meta>"##,
+        );
+        let target = Target {
+            title: Some("New Title"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t2">Old Subtitle</dc:title>"#),
+            "declared subtitle was destroyed: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_leaves_non_main_title_types_alone() {
+        // `short` is not modelled canonically; rewriting it from the main
+        // title would destroy the declared value the same way the subtitle
+        // stomp did.
+        let input = sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t3">Old Short</dc:title>
+    <meta refines="#t3" property="title-type">short</meta>"##,
+        );
+        let target = Target {
+            title: Some("New Title"),
+            subtitle: Some("New Subtitle"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t3">Old Short</dc:title>"#),
+            "short title was rewritten: {out}"
+        );
+        assert!(
+            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
+            "main title not rewritten: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_does_not_synthesize_a_subtitle_element() {
+        // No declared subtitle means no element to write into; the rewriter
+        // must not invent one (or a refine addressing a nonexistent id).
+        let input = sample_epub3("");
+        let target = Target {
+            title: Some("New Title"),
+            subtitle: Some("New Subtitle"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            !out.contains("New Subtitle") && !out.contains("title-type"),
+            "subtitle element synthesized: {out}"
+        );
     }
 
     #[test]
