@@ -1,0 +1,106 @@
+# Change-detection filters shared by CI and the local preflight scoper.
+#
+# CI's `changes` job feeds this file to dorny/paths-filter; downstream jobs
+# skip when their filter reports no match. `scripts/preflight-scope.sh` reads
+# the same definitions to decide which local verification lanes a working tree
+# actually needs, so a filter widened for CI widens the local gate with it and
+# the two can never silently diverge.
+#
+# Every filter includes ci.yml and this file itself: an edit to either one
+# changes what the gate covers, so every gated job has to re-run rather than
+# trust a skip decision the edit may have just invalidated.
+#
+# Patterns are restricted to literal paths and trailing `/**` recursive
+# suffixes, because the local scoper matches them without a glob engine and
+# refuses to run against anything it cannot translate faithfully.
+backend:
+  - "backend/**"
+  - "docker/init-roles.sql"
+  - "mise.toml"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+audit:
+  - "backend/Cargo.toml"
+  - "backend/Cargo.lock"
+  - "backend/deny.toml"
+  - "mise.toml"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+frontend:
+  # Root workspace inputs drive the frontend too: the hoisted
+  # lockfile + shared overrides, and the root vite.config.ts
+  # that owns the frontend lint config.
+  - "frontend/**"
+  - "package.json"
+  - "package-lock.json"
+  - "vite.config.ts"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+staging:
+  - "docker/compose.staging.yml"
+  - "docker/init-roles.sql"
+  - "docker/staging.env.bootstrap.example"
+  - "docker/staging.env.runtime.example"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+workflows:
+  # A suppression edit in zizmor.yml must re-run the scan even
+  # with no workflow change (likewise .trivyignore and
+  # .checkov.yaml in their filters below).
+  - ".github/workflows/**"
+  - ".github/actions/**"
+  - ".github/zizmor.yml"
+  - ".github/path-filters.yml"
+iac:
+  - "Dockerfile"
+  - "docker-compose.yml"
+  - "docker/**"
+  - ".trivyignore"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+docker:
+  # PR-time image build gate: the image definition plus every
+  # manifest that shapes the build context's structure. Code-only
+  # changes are deliberately excluded: compile breakage is the
+  # backend/frontend jobs' remit, and the failure class this gates
+  # (e.g. a lockfile hoist breaking a COPY) is manifest-level.
+  - "Dockerfile"
+  - ".dockerignore"
+  - "package.json"
+  - "package-lock.json"
+  - "frontend/package.json"
+  - "docs/package.json"
+  - "backend/Cargo.toml"
+  - "backend/Cargo.lock"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+openapi:
+  - "docs/openapi.json"
+  - ".checkov.yaml"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+npm:
+  # Licenses only change when the dependency tree changes, so
+  # PR-time gating is complete here, with no cron needed (unlike
+  # advisories, which drift over time; see scheduled-audit.yml).
+  - "package.json"
+  - "package-lock.json"
+  - "frontend/package.json"
+  - "docs/package.json"
+  - ".github/workflows/ci.yml"
+  - ".github/path-filters.yml"
+docs:
+  # Generated reference artifacts live under docs/, so a backend
+  # regen trips this filter without a separate backend trigger;
+  # a stale-but-unregenerated artifact is caught by the backend
+  # job's drift tests instead. docs is an npm workspace, so the
+  # root manifest/lockfile affect its build. docs-build.yml is
+  # the shared build definition; docs.yml is the deploy lane
+  # that must still pass the PR-time gate here.
+  - "docs/**"
+  - "package.json"
+  - "package-lock.json"
+  - ".github/workflows/ci.yml"
+  - ".github/workflows/docs.yml"
+  - ".github/workflows/docs-build.yml"
+  - ".github/path-filters.yml"

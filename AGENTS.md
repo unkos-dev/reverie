@@ -106,4 +106,13 @@ Two aggregates anchor the local loop and should be the default reflex:
   and the IaC, SAST, and secret scans) to the remote run. `just check`
   remains the fast offline subset for mid-task iteration; it includes
   zizmor's offline-only audits but not the token-gated ones.
+- `just preflight-scoped` runs the same gate minus the lanes CI itself would
+  skip, deciding from `.github/path-filters.yml` (the file CI's `changes` job
+  feeds to dorny/paths-filter, so the two cannot drift). A docs-only or
+  frontend-only branch skips the database, the Rust rebuild, and the
+  dependency audit. Changes to the verification machinery itself (the
+  justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full
+  lane set, and the whole-tree repo-lint mirror always runs. Prefer it
+  mid-branch; `just preflight` is still the unconditional answer and the one
+  to run when the change is broad or you are unsure.
   </task_runner>

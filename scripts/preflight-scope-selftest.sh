@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# Self-test for scripts/preflight-scope.sh. The scoper decides what NOT to
+# run, so a silent bug in it looks exactly like a fast, green preflight: the
+# expensive failure mode is a lane wrongly omitted, which no other test can
+# catch. Every case here pins an exact lane list rather than asserting a
+# substring, so a lane quietly dropped from a mapping fails loudly.
+set -ueo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+cd "$repo_root"
+
+scope='scripts/preflight-scope.sh'
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+failures=0
+
+# Assert the lane list produced for a newline-separated set of changed paths.
+expect_lanes() {
+  local name="$1" paths="$2" want="$3" got rc=0
+  got="$(printf '%s' "$paths" | "$scope" --files-from - 2> /dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'FAIL %s: exited %d, expected success\n' "$name" "$rc"
+    failures=$((failures + 1))
+    return
+  fi
+  if [ "$got" != "$want" ]; then
+    printf 'FAIL %s\n  want: %s\n  got:  %s\n' "$name" "$(echo "$want" | tr '\n' ' ')" "$(echo "$got" | tr '\n' ' ')"
+    failures=$((failures + 1))
+    return
+  fi
+  printf 'ok   %s\n' "$name"
+}
+
+# Assert a nonzero exit whose diagnostics mention a given substring, so a
+# rejection cannot pass the test by failing for an unrelated reason.
+expect_failure() {
+  local name="$1" want_substr="$2"
+  shift 2
+  local out rc=0
+  out="$("$@" 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf 'FAIL %s: exited 0, expected failure\n' "$name"
+    failures=$((failures + 1))
+    return
+  fi
+  case "$out" in
+    *"$want_substr"*) printf 'ok   %s\n' "$name" ;;
+    *)
+      printf 'FAIL %s: failed as expected but without %q\n  output: %s\n' "$name" "$want_substr" "$out"
+      failures=$((failures + 1))
+      ;;
+  esac
+}
+
+FULL='rust::guards
+infra::check
+db-up
+rust::check
+rust::test
+rust::doctests
+rust::sqlx-check
+rust::machete
+rust::deny
+js::check
+js::test
+js::build
+js::font-integrity
+js::a11y
+docs::check
+infra::zizmor'
+
+BACKEND='rust::guards
+infra::check
+db-up
+rust::check
+rust::test
+rust::doctests
+rust::sqlx-check
+rust::machete'
+
+FRONTEND='infra::check
+js::check
+js::test
+js::build
+js::font-integrity
+js::a11y'
+
+# --- happy paths: one filter each -------------------------------------------
+
+expect_lanes 'backend source selects the rust lanes' \
+  'backend/src/lib.rs' "$BACKEND"
+
+expect_lanes 'a nested backend path still matches backend/**' \
+  'backend/src/domain/deep/nested/mod.rs' "$BACKEND"
+
+expect_lanes 'frontend source selects the js lanes' \
+  'frontend/src/App.tsx' "$FRONTEND"
+
+expect_lanes 'docs content selects the docs lane' \
+  'docs/src/content/docs/index.mdx' 'infra::check
+docs::check'
+
+expect_lanes 'a workflow edit selects the zizmor audit' \
+  '.github/workflows/docs.yml' 'infra::check
+docs::check
+infra::zizmor'
+
+# A literal pattern must match only that exact path, never a sibling that
+# shares its prefix; `vite.config.ts` is listed literally under frontend.
+expect_lanes 'a literal pattern matches the exact path' \
+  'vite.config.ts' "$FRONTEND"
+
+expect_lanes 'a literal pattern does not match a prefix sibling' \
+  'vite.config.ts.bak' 'infra::check'
+
+# The committed filter file is double-quoted because the repo formatter
+# rewrites single quotes; a hand-written single-quoted pattern must still
+# parse, since a silently dropped pattern removes a lane from the gate.
+printf '%s\n' 'frontend:' "  - 'hand/written.ts'" > "$tmpdir/quotes.yml"
+got_quotes="$(printf 'hand/written.ts' | "$scope" --filters "$tmpdir/quotes.yml" --files-from -)"
+if [ "$got_quotes" = "$FRONTEND" ]; then
+  printf 'ok   %s\n' 'single-quoted patterns parse alongside double-quoted ones'
+else
+  printf 'FAIL %s\n  got: %s\n' 'single-quoted patterns parse alongside double-quoted ones' "$got_quotes"
+  failures=$((failures + 1))
+fi
+
+# --- always-run lane ---------------------------------------------------------
+
+# The repo-lint mirror is unconditional because CI's repo-lint job is: it
+# lints the whole tree, so an unfiltered file can still break it.
+expect_lanes 'an unfiltered file still runs the repo-lint mirror' \
+  'README.md' 'infra::check'
+
+expect_lanes 'no changed paths select nothing at all' '' ''
+
+# A blank entry must be discarded, not treated as a path: the empty string is
+# a prefix of every `**` pattern, so keeping it would select every lane.
+expect_lanes 'a blank entry is discarded rather than matched' \
+  'README.md
+' 'infra::check'
+
+# --- multi-filter union ------------------------------------------------------
+
+expect_lanes 'a cargo manifest edit unions backend and audit' \
+  'backend/Cargo.toml' 'rust::guards
+infra::check
+db-up
+rust::check
+rust::test
+rust::doctests
+rust::sqlx-check
+rust::machete
+rust::deny'
+
+expect_lanes 'unrelated planes union rather than override' \
+  'backend/src/lib.rs
+frontend/src/App.tsx' 'rust::guards
+infra::check
+db-up
+rust::check
+rust::test
+rust::doctests
+rust::sqlx-check
+rust::machete
+js::check
+js::test
+js::build
+js::font-integrity
+js::a11y'
+
+# --- escalation --------------------------------------------------------------
+
+for path in justfile rust.just mise.toml lefthook.yml scripts/doctor.sh .github/path-filters.yml; do
+  expect_lanes "editing ${path} escalates to the full gate" "$path" "$FULL"
+done
+
+# An escalating path anywhere in the set wins, not just as the first entry.
+expect_lanes 'escalation wins even alongside a narrow change' \
+  'README.md
+scripts/doctor.sh' "$FULL"
+
+# --- CI-only filters ---------------------------------------------------------
+
+# The Dockerfile matches iac and docker, both of which are locally unrunnable.
+# The change must still be reported, and must not silently select nothing.
+out="$(printf 'Dockerfile' | "$scope" --files-from - 2>&1)"
+case "$out" in
+  *'CI-only gates this change triggers'*) printf 'ok   %s\n' 'a CI-only match is reported, not swallowed' ;;
+  *)
+    printf 'FAIL %s\n  output: %s\n' 'a CI-only match is reported, not swallowed' "$out"
+    failures=$((failures + 1))
+    ;;
+esac
+
+# --- fail-closed behaviour ---------------------------------------------------
+
+# A base ref that does not resolve must abort. Skipping every lane because
+# the comparison could not be made is the one outcome this tool must never
+# produce.
+expect_failure 'an unresolvable base ref aborts' 'cannot resolve base ref' \
+  "$scope" --base 'refs/heads/definitely-not-a-real-ref'
+
+printf '%s\n' 'unmapped:' "  - 'nowhere.txt'" > "$tmpdir/unmapped.yml"
+expect_failure 'a filter with no lane mapping aborts' 'no local lane mapping' \
+  "$scope" --filters "$tmpdir/unmapped.yml" --files-from /dev/null
+
+# picomatch's `*` stops at a path separator and bash's does not, so a pattern
+# this matcher cannot translate exactly has to be refused rather than
+# approximated in either direction.
+printf '%s\n' 'backend:' "  - 'docs/*.md'" > "$tmpdir/glob.yml"
+expect_failure 'an untranslatable glob aborts' 'unsupported glob' \
+  "$scope" --filters "$tmpdir/glob.yml" --files-from /dev/null
+
+printf '%s\n' 'backend:' '  patterns: {a: b}' > "$tmpdir/shape.yml"
+expect_failure 'an unrecognised YAML shape aborts' 'unparsable line' \
+  "$scope" --filters "$tmpdir/shape.yml" --files-from /dev/null
+
+expect_failure 'a missing filters file aborts' 'missing' \
+  "$scope" --filters "$tmpdir/does-not-exist.yml" --files-from /dev/null
+
+# --- the shared-source invariant --------------------------------------------
+
+# The whole design rests on CI reading the same file. An inlined `filters:`
+# block in ci.yml would let the two gates drift apart with nothing failing.
+if grep -q '^ *filters: \.github/path-filters\.yml$' .github/workflows/ci.yml; then
+  printf 'ok   %s\n' 'ci.yml sources its filters from the shared file'
+else
+  printf 'FAIL %s\n' 'ci.yml no longer sources .github/path-filters.yml; the local scoper can now drift from CI'
+  failures=$((failures + 1))
+fi
+
+if [ "$failures" -ne 0 ]; then
+  printf '\n%d check(s) failed\n' "$failures" >&2
+  exit 1
+fi
+printf '\nall checks passed\n'
