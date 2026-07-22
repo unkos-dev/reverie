@@ -84,11 +84,44 @@ pub async fn insert(
     .await
 }
 
+/// Outcome of [`rotate`]: whether this call's freshly generated PIN became the
+/// single active row, or a concurrent issuance won the slot first.
+///
+/// The distinction is load-bearing for the caller: it hashed and generated a
+/// clear PIN before calling, and it publishes that clear PIN to the operator
+/// recovery channel only when this call actually persisted it. Publishing a PIN
+/// that was not stored would leave a recovery code that no database hash
+/// verifies, denying the account recovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotateOutcome {
+    /// This call persisted its PIN as the sole active row (carrying its id). The
+    /// caller SHOULD publish the clear PIN it generated: it is the live one.
+    Issued(Uuid),
+    /// A concurrent issuance holds the active slot and this call's PIN was NOT
+    /// persisted. The caller MUST NOT publish its clear PIN; the winning
+    /// request's PIN is the live one. This is a benign race, not an error.
+    RaceLost,
+}
+
+/// Outcome of a single [`rotate_once`] attempt against the single-active
+/// partial unique index.
+enum InsertOutcome {
+    /// The freshly hashed PIN was persisted as the user's sole active row.
+    Inserted(Uuid),
+    /// A concurrent issuance committed the active row between this attempt's
+    /// supersede `DELETE` and its `INSERT`, so the `INSERT` hit the
+    /// `idx_password_reset_pins_active_unique` index. Nothing was persisted (the
+    /// attempt's transaction rolled back); [`rotate_with_retry`] decides whether
+    /// to retry or concede the race.
+    LostActiveSlot,
+}
+
 /// Atomically supersede a user's prior active PINs and persist a fresh one,
-/// returning the new row id. The [`supersede_active`] delete and the [`insert`]
-/// share one transaction, so a failure between them cannot leave the user with
-/// no active PIN (codeguard #2: at most one active PIN per user). Hash the PIN
-/// before calling so the CPU-bound work stays outside the transaction.
+/// reporting whether this call won the single active slot. The
+/// [`supersede_active`] delete and the [`insert`] share one transaction, so a
+/// failure between them cannot leave the user with no active PIN (codeguard #2:
+/// at most one active PIN per user). Hash the PIN before calling so the
+/// CPU-bound work stays outside the transaction.
 ///
 /// THREAT (concurrent issuance under READ COMMITTED): the single-active
 /// invariant is enforced by the `idx_password_reset_pins_active_unique` partial
@@ -98,10 +131,13 @@ pub async fn insert(
 /// leave two live PINs. The losing issuer's `INSERT` instead fails with a
 /// unique violation once the winner commits. That is a benign race, never a
 /// client-visible failure: this function retries the whole rotate once (the
-/// retry's `DELETE` now sees and supersedes the winner's committed row), and if
-/// a further concurrent issuer still holds the slot it returns that active
-/// row's id as the same generic success. The caller must never surface a 500
-/// for this path.
+/// retry's `DELETE` now sees and supersedes the winner's committed row).
+///
+/// THREAT (publishing an unpersisted PIN): if a further concurrent issuer still
+/// holds the slot after the retry, this call's PIN was never stored. It returns
+/// [`RotateOutcome::RaceLost`] rather than another row's id, so the caller does
+/// not publish a clear PIN that no stored hash would verify. The caller returns
+/// the same generic success and never a 500 for this path.
 ///
 /// # Errors
 ///
@@ -114,43 +150,64 @@ pub async fn rotate(
     user_id: Uuid,
     pin_hash: &str,
     expires_at: OffsetDateTime,
-) -> Result<Uuid, sqlx::Error> {
-    match rotate_once(pool, user_id, pin_hash, expires_at).await {
-        Ok(id) => Ok(id),
-        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-            tracing::debug!("recovery-pin rotate lost the single-active race; retrying once");
-            match rotate_once(pool, user_id, pin_hash, expires_at).await {
-                Ok(id) => Ok(id),
-                // A third concurrent issuer still holds the active slot. The
-                // winner already persisted a usable PIN, so return its id as the
-                // same generic success rather than a 500.
-                Err(sqlx::Error::Database(retry_err)) if retry_err.is_unique_violation() => {
-                    match find_active_by_user(pool, user_id).await? {
-                        Some(active) => Ok(active.id),
-                        None => Err(sqlx::Error::Database(retry_err)),
-                    }
-                }
-                Err(e) => Err(e),
-            }
-        }
-        Err(e) => Err(e),
+) -> Result<RotateOutcome, sqlx::Error> {
+    // The single attempt is passed as a closure so the bounded-retry policy that
+    // classifies the race outcome can be exercised deterministically, without a
+    // live triple-race that no external test can schedule reliably (see
+    // rotate_with_retry's unit tests).
+    rotate_with_retry(|| rotate_once(pool, user_id, pin_hash, expires_at)).await
+}
+
+/// rotate's bounded single-active-race retry policy over one attempt.
+///
+/// A lost race is benign: retry the whole supersede-then-insert exactly once so
+/// the retry's `DELETE` supersedes the winner's now-committed row. If a further
+/// concurrent issuer still holds the slot after the retry, this call's PIN was
+/// never persisted, so return [`RotateOutcome::RaceLost`]. The caller then
+/// withholds its unstorable clear PIN rather than reporting another issuer's row
+/// as this call's success.
+async fn rotate_with_retry<A, F>(mut attempt: A) -> Result<RotateOutcome, sqlx::Error>
+where
+    A: FnMut() -> F,
+    F: std::future::Future<Output = Result<InsertOutcome, sqlx::Error>>,
+{
+    if let InsertOutcome::Inserted(id) = attempt().await? {
+        return Ok(RotateOutcome::Issued(id));
+    }
+    tracing::debug!("recovery-pin rotate lost the single-active race; retrying once");
+    match attempt().await? {
+        InsertOutcome::Inserted(id) => Ok(RotateOutcome::Issued(id)),
+        InsertOutcome::LostActiveSlot => Ok(RotateOutcome::RaceLost),
     }
 }
 
-/// One transactional supersede-then-insert attempt for [`rotate`]. A unique
-/// violation surfaced here signals a lost single-active race for the caller to
-/// resolve.
+/// One transactional supersede-then-insert attempt for [`rotate`].
+///
+/// THREAT (concurrent issuance under READ COMMITTED): the supersede `DELETE`
+/// cannot see a concurrent issuer's uncommitted `INSERT`, so once that issuer
+/// commits, this attempt's `INSERT` hits the single-active unique index. That is
+/// a benign race: the transaction rolls back (dropped uncommitted) and the
+/// attempt reports [`InsertOutcome::LostActiveSlot`] instead of surfacing a
+/// client-visible error. Any other database error propagates and rolls back,
+/// preserving the prior active PIN.
 async fn rotate_once(
     pool: &PgPool,
     user_id: Uuid,
     pin_hash: &str,
     expires_at: OffsetDateTime,
-) -> Result<Uuid, sqlx::Error> {
+) -> Result<InsertOutcome, sqlx::Error> {
     let mut tx = pool.begin().await?;
     supersede_active(&mut *tx, user_id).await?;
-    let id = insert(&mut *tx, user_id, pin_hash, expires_at).await?;
-    tx.commit().await?;
-    Ok(id)
+    match insert(&mut *tx, user_id, pin_hash, expires_at).await {
+        Ok(id) => {
+            tx.commit().await?;
+            Ok(InsertOutcome::Inserted(id))
+        }
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
+            Ok(InsertOutcome::LostActiveSlot)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Fetch the single active (unconsumed, unexpired) PIN for a user, newest first
@@ -210,6 +267,22 @@ mod tests {
             .fetch_one(pool)
             .await
             .expect("insert user")
+    }
+
+    async fn wait_for_blocked_backend(pool: &PgPool) {
+        for _ in 0..200 {
+            let blocked = sqlx::query_scalar!(
+                r#"SELECT count(*) AS "count!" FROM pg_locks WHERE NOT granted"#
+            )
+            .fetch_one(pool)
+            .await
+            .expect("query pg_locks");
+            if blocked > 0 {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        panic!("rotate did not block on the single-active slot within the timeout");
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -291,9 +364,13 @@ mod tests {
             .await
             .expect("seed first pin");
 
-        let second = rotate(&pool, user_id, "$argon2id$second", expires)
+        let second = match rotate(&pool, user_id, "$argon2id$second", expires)
             .await
-            .expect("rotate");
+            .expect("rotate")
+        {
+            RotateOutcome::Issued(id) => id,
+            RotateOutcome::RaceLost => panic!("uncontended rotate must issue"),
+        };
 
         let active = find_active_by_user(&pool, user_id)
             .await
@@ -354,8 +431,17 @@ mod tests {
         let (a, b) = tokio::join!(a, b);
         let a = a.expect("rotate task a joined");
         let b = b.expect("rotate task b joined");
-        assert!(a.is_ok(), "concurrent rotate a must not error: {a:?}");
-        assert!(b.is_ok(), "concurrent rotate b must not error: {b:?}");
+        // A two-way race resolves to two Issued outcomes: the loser's INSERT
+        // fails once, then its retry supersedes the winner and succeeds. Neither
+        // call errors, so neither caller ever sees a 500.
+        assert!(
+            matches!(a, Ok(RotateOutcome::Issued(_))),
+            "concurrent rotate a must issue, got {a:?}"
+        );
+        assert!(
+            matches!(b, Ok(RotateOutcome::Issued(_))),
+            "concurrent rotate b must issue, got {b:?}"
+        );
 
         let active_count = sqlx::query_scalar!(
             r#"SELECT count(*) AS "count!" FROM password_reset_pins
@@ -369,13 +455,198 @@ mod tests {
             active_count, 1,
             "exactly one active recovery PIN must remain after concurrent rotate"
         );
+        // The sole survivor must be a genuinely persisted PIN, not a stale or
+        // phantom row: its hash is one of the two the concurrent calls stored,
+        // so whatever a caller publishes for it verifies against the DB.
+        let active = find_active_by_user(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("the single surviving PIN is active");
         assert!(
-            find_active_by_user(&pool, user_id)
-                .await
-                .expect("find")
-                .is_some(),
-            "the single surviving PIN is active"
+            ["$argon2id$a", "$argon2id$b"].contains(&active.pin_hash.as_str()),
+            "surviving PIN hash must be one an issuer persisted, got {:?}",
+            active.pin_hash
         );
+    }
+
+    #[tokio::test]
+    async fn rotate_with_retry_issues_on_the_first_attempt() {
+        let id = Uuid::new_v4();
+        let mut attempts = 0u32;
+        let outcome = rotate_with_retry(|| {
+            attempts += 1;
+            async move { Ok::<_, sqlx::Error>(InsertOutcome::Inserted(id)) }
+        })
+        .await
+        .expect("uncontended attempt succeeds");
+        assert_eq!(attempts, 1, "an uncontended rotate makes no second attempt");
+        assert_eq!(outcome, RotateOutcome::Issued(id));
+    }
+
+    #[tokio::test]
+    async fn rotate_with_retry_issues_after_one_lost_race() {
+        let id = Uuid::new_v4();
+        let mut attempts = 0u32;
+        let outcome = rotate_with_retry(|| {
+            let n = attempts;
+            attempts += 1;
+            async move {
+                Ok::<_, sqlx::Error>(if n == 0 {
+                    InsertOutcome::LostActiveSlot
+                } else {
+                    InsertOutcome::Inserted(id)
+                })
+            }
+        })
+        .await
+        .expect("the retry succeeds");
+        assert_eq!(attempts, 2, "one lost race triggers exactly one retry");
+        assert_eq!(outcome, RotateOutcome::Issued(id));
+    }
+
+    #[tokio::test]
+    async fn rotate_with_retry_concedes_race_when_slot_stays_taken() {
+        let mut attempts = 0u32;
+        let outcome = rotate_with_retry(|| {
+            attempts += 1;
+            async move { Ok::<_, sqlx::Error>(InsertOutcome::LostActiveSlot) }
+        })
+        .await
+        .expect("a conceded race is not an error");
+        assert_eq!(attempts, 2, "rotate retries exactly once before conceding");
+        assert_eq!(
+            outcome,
+            RotateOutcome::RaceLost,
+            "a still-taken slot after the retry must report the lost race, not another row"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rotate_retries_after_a_real_unique_violation(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+
+        // Hold an uncommitted active row for the user so rotate's INSERT parks on
+        // the single-active slot deterministically instead of racing on the
+        // thread scheduler. The supersede DELETE cannot see this uncommitted row,
+        // so the INSERT is what blocks.
+        let mut blocker = pool.begin().await.expect("begin blocker tx");
+        insert(&mut *blocker, user_id, "$argon2id$blocker", expires)
+            .await
+            .expect("blocker insert");
+
+        let pool_rotate = pool.clone();
+        let rotate_task = tokio::spawn(async move {
+            rotate(&pool_rotate, user_id, "$argon2id$winner", expires).await
+        });
+
+        // Once rotate's INSERT is parked on the blocker's slot, committing the
+        // blocker forces the first attempt's INSERT to fail with the unique
+        // violation; the retry's DELETE then supersedes the committed row and
+        // succeeds. This drives the real 23505 retry path with no timing luck.
+        wait_for_blocked_backend(&pool).await;
+        blocker.commit().await.expect("commit blocker");
+
+        let outcome = rotate_task
+            .await
+            .expect("join rotate task")
+            .expect("rotate succeeds after retrying");
+        assert!(
+            matches!(outcome, RotateOutcome::Issued(_)),
+            "the retry must issue this call's PIN, got {outcome:?}"
+        );
+
+        let active = find_active_by_user(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("one active row remains");
+        assert_eq!(
+            active.pin_hash, "$argon2id$winner",
+            "the retry's PIN is the sole active row, having superseded the blocker"
+        );
+        let active_count = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM password_reset_pins
+               WHERE user_id = $1 AND consumed_at IS NULL"#,
+            user_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count active pins");
+        assert_eq!(active_count, 1, "exactly one active row after the retry");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn migration_reconciles_duplicate_active_rows_before_indexing(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+
+        // A database that ran the pre-index code could carry two unconsumed PINs
+        // for one user. The unique index does not exist in that state, so drop
+        // it to recreate the dirty data the migration must reconcile before it
+        // can build the index.
+        sqlx::query("DROP INDEX idx_password_reset_pins_active_unique")
+            .execute(&pool)
+            .await
+            .expect("drop the single-active index to seed the pre-index state");
+
+        let mut newest = Uuid::nil();
+        for (offset, hash) in [
+            (10, "$argon2id$old"),
+            (5, "$argon2id$mid"),
+            (1, "$argon2id$new"),
+        ] {
+            let created = OffsetDateTime::now_utc() - Duration::minutes(offset);
+            newest = sqlx::query_scalar!(
+                "INSERT INTO password_reset_pins (user_id, pin_hash, expires_at, created_at) \
+                 VALUES ($1, $2, $3, $4) RETURNING id",
+                user_id,
+                hash,
+                expires,
+                created,
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("seed a duplicate unconsumed pin");
+        }
+
+        // The migration's reconciliation: keep the newest unconsumed row per
+        // user, delete the older duplicates.
+        sqlx::query!(
+            "DELETE FROM password_reset_pins p \
+             USING ( \
+                 SELECT id, row_number() OVER ( \
+                     PARTITION BY user_id ORDER BY created_at DESC, id DESC) AS rn \
+                 FROM password_reset_pins WHERE consumed_at IS NULL) ranked \
+             WHERE p.id = ranked.id AND ranked.rn > 1",
+        )
+        .execute(&pool)
+        .await
+        .expect("reconcile duplicate active rows");
+
+        // Recreating the index must now succeed, proving the migration applies
+        // cleanly against reconciled data.
+        sqlx::query("CREATE UNIQUE INDEX idx_password_reset_pins_active_unique ON password_reset_pins (user_id) WHERE consumed_at IS NULL")
+            .execute(&pool)
+            .await
+            .expect("recreate the index after reconciliation");
+
+        let active = find_active_by_user(&pool, user_id)
+            .await
+            .expect("find")
+            .expect("one active row remains");
+        assert_eq!(
+            active.id, newest,
+            "reconciliation keeps the newest unconsumed row"
+        );
+        let remaining = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM password_reset_pins
+               WHERE user_id = $1 AND consumed_at IS NULL"#,
+            user_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count unconsumed rows");
+        assert_eq!(remaining, 1, "exactly one unconsumed row survives");
     }
 
     #[sqlx::test(migrations = "./migrations")]

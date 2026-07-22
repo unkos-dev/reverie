@@ -867,9 +867,21 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
         time::OffsetDateTime::now_utc() + time::Duration::seconds(config.recovery_pin_ttl_secs);
     // Atomically supersede prior PINs and persist the new one; a failure cannot
     // leave the user with no active PIN. Hashing stays outside the transaction.
-    models::password_reset_pin::rotate(&pool, user.id, &pin_hash, expires_at)
+    let outcome = models::password_reset_pin::rotate(&pool, user.id, &pin_hash, expires_at)
         .await
         .context("rotate the recovery PIN")?;
+    // Publish the clear PIN only when this invocation persisted it. If a
+    // concurrent forgot-password request won the active slot, this PIN was not
+    // stored, so writing it would hand the operator a code no stored hash
+    // verifies. Report that instead of publishing a dead PIN.
+    match outcome {
+        models::password_reset_pin::RotateOutcome::Issued(_) => {}
+        models::password_reset_pin::RotateOutcome::RaceLost => {
+            anyhow::bail!(
+                "a concurrent recovery-PIN issuance won the active slot; re-run to issue a fresh PIN"
+            );
+        }
+    }
     auth::recovery::write_pin_file(
         std::path::Path::new(&config.recovery_pin_dir),
         user.id,

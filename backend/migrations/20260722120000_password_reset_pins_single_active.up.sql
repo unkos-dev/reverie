@@ -16,6 +16,28 @@
 -- user_id index is retained: it still backs the FK-cascade enumeration and the
 -- active-PIN lookup's inequality predicates that this partial index does not
 -- fully cover.
+
+-- Reconcile any pre-existing duplicate active rows before creating the index.
+-- The pre-index racy issuance path is exactly what could leave two unconsumed
+-- PINs for one user, and CREATE UNIQUE INDEX would fail against that data on a
+-- database that ran the old code. Keep the newest unconsumed row per user and
+-- delete the older duplicates, matching the "newest wins" order rotate and
+-- find_active_by_user already use. On a database with no duplicates this
+-- touches no rows. The DELETE and the CREATE run in the migration's single
+-- transaction, so the table is reconciled and constrained atomically.
+DELETE FROM public.password_reset_pins p
+USING (
+    SELECT id,
+           row_number() OVER (
+               PARTITION BY user_id
+               ORDER BY created_at DESC, id DESC
+           ) AS rn
+    FROM public.password_reset_pins
+    WHERE consumed_at IS NULL
+) ranked
+WHERE p.id = ranked.id
+  AND ranked.rn > 1;
+
 CREATE UNIQUE INDEX idx_password_reset_pins_active_unique
     ON public.password_reset_pins USING btree (user_id)
     WHERE (consumed_at IS NULL);

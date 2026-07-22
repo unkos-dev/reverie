@@ -703,22 +703,31 @@ async fn forgot_password(
 
         // Atomically supersede prior PINs and persist the new one, so a failure
         // cannot leave the user with no active PIN.
-        crate::models::password_reset_pin::rotate(&state.pool, user.id, &pin_hash, expires_at)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+        let outcome =
+            crate::models::password_reset_pin::rotate(&state.pool, user.id, &pin_hash, expires_at)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
 
-        // DB committed; the file comes last so a write failure leaves only an
-        // unusable row that expiry sweeps.
-        let email = user.email.as_deref().unwrap_or(&body.email);
-        if let Err(e) = crate::auth::recovery::write_pin_file(
-            std::path::Path::new(&state.config.recovery_pin_dir),
-            user.id,
-            email,
-            &pin,
-            expires_at,
-        ) {
-            // Never surface to the client; the row expires harmlessly.
-            tracing::error!(error = %e, "failed to write recovery PIN file");
+        // THREAT (publishing an unpersisted PIN): write the clear PIN to the
+        // operator file only when this request actually persisted it. On a lost
+        // concurrent race a winning issuance holds the active row and carries
+        // the live PIN; writing our unstored PIN would overwrite the operator
+        // file with a value no stored hash verifies, denying recovery. Either
+        // way the response is the same generic 200 (no enumeration, no 500).
+        if let crate::models::password_reset_pin::RotateOutcome::Issued(_) = outcome {
+            // DB committed; the file comes last so a write failure leaves only an
+            // unusable row that expiry sweeps.
+            let email = user.email.as_deref().unwrap_or(&body.email);
+            if let Err(e) = crate::auth::recovery::write_pin_file(
+                std::path::Path::new(&state.config.recovery_pin_dir),
+                user.id,
+                email,
+                &pin,
+                expires_at,
+            ) {
+                // Never surface to the client; the row expires harmlessly.
+                tracing::error!(error = %e, "failed to write recovery PIN file");
+            }
         }
     } else {
         // Unknown email: spend comparable Argon2 work so response timing does not
