@@ -98,9 +98,12 @@ Two aggregates anchor the local loop and should be the default reflex:
 - `just preflight` runs everything the CI gate runs that is locally
   runnable, including the DB-backed backend test suite, the sqlx cache
   check, the backend static guards, cargo-machete, cargo-deny, the frontend
-  build, and the a11y scan. It brings the dev database up itself. Run it
-  before any push; a green preflight covers every locally runnable CI
-  check, leaving only the CI-only lanes (MSRV, coverage, the docker image
-  build, and the workflow, IaC, SAST, and secret scans) to the remote run.
-  `just check` remains the fast offline subset for mid-task iteration.
+  build, the a11y scan, and the zizmor workflow-security audit (online
+  audits included when a GitHub token is in the environment, offline-
+  degraded otherwise). It brings the dev database up itself. Run it before
+  any push; a green preflight covers every locally runnable CI check,
+  leaving only the CI-only lanes (MSRV, coverage, the docker image build,
+  and the IaC, SAST, and secret scans) to the remote run. `just check`
+  remains the fast offline subset for mid-task iteration; it includes
+  zizmor's offline-only audits but not the token-gated ones.
   </task_runner>

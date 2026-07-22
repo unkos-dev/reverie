@@ -30,6 +30,36 @@ yamllint:
 actionlint:
     actionlint -color
 
+# `.` matches the zizmor-action default input and .github/zizmor.yml is
+# auto-discovered from the repo root, so no --config flag is needed. Exit
+# code and default persona (regular) already match the CI job's gate
+# semantics: any finding is nonzero. Without a GH_TOKEN/GITHUB_TOKEN/
+# ZIZMOR_GITHUB_TOKEN in the environment zizmor degrades to offline mode on
+# its own (a WARN, not a failure) and skips five audits that need the GitHub
+# API: impostor-commit, known-vulnerable-actions, ref-confusion,
+# ref-version-mismatch, stale-action-refs. CI's run carries the ephemeral
+# job token, so it always has that coverage; export one of those variables
+# locally for full parity.
+#
+# Audit workflow files for GitHub Actions supply-chain and security issues (matches the CI zizmor gate).
+[group('infra')]
+zizmor:
+    zizmor .
+
+# --offline is the strict form of the two network-disabling flags (it also
+# forbids fetching a remote `user/repo` input, not just skipping audits), so
+# it is the one that gives an unconditional offline guarantee regardless of
+# an ambient token in the calling shell. That guarantee is why this variant
+# exists separately from `just infra::zizmor` instead of just leaving the
+# token unset: `check` must never depend on network state to stay green.
+# Coverage gap versus the full run: the same five token-gated audits listed
+# on `just infra::zizmor` never run here, token or not.
+#
+# Offline-only workflow security audit; skips network-dependent audits (see just infra::zizmor for full CI parity).
+[group('infra')]
+zizmor-offline:
+    zizmor --offline .
+
 # Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).
 [group('infra')]
 prose:
