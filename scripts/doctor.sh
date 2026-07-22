@@ -231,12 +231,21 @@ fi
 # threatens disk space. A store that has never been populated (kache has
 # never run here) is not a problem to report on, so an absent directory
 # degrades silently rather than warning or failing.
+#
+# `du -sk` (1024-byte blocks) rather than GNU-only `du -sb` (bytes, via
+# `--apparent-size`): `-b` has no BSD/macOS equivalent, so it either fails
+# or reports wildly different units on a non-GNU userland. `-sk` is
+# supported by both and, as a real-disk-usage measurement rather than an
+# apparent-size one, is the more honest number for a disk-space check.
 kache_store="${XDG_CACHE_HOME:-${HOME}/.cache}/kache"
-twenty_gib=$((20 * 1024 * 1024 * 1024))
+twenty_gib_kib=$((20 * 1024 * 1024))
 if [ -d "${kache_store}" ]; then
-  if store_bytes="$(du -sb "${kache_store}" 2>/dev/null | cut -f1)" && [ -n "${store_bytes}" ]; then
-    store_gib=$((store_bytes / 1024 / 1024 / 1024))
-    if [ "${store_bytes}" -ge "${twenty_gib}" ]; then
+  if store_kib="$(du -sk "${kache_store}" 2>/dev/null | cut -f1)" && [ -n "${store_kib}" ]; then
+    # Round to the nearest GiB rather than truncating: truncation alone
+    # would display a 20.9 GiB store as "20 GiB", reading as though the
+    # warning fired under its own stated threshold.
+    store_gib=$(( (store_kib + 524288) / 1048576 ))
+    if [ "${store_kib}" -ge "${twenty_gib_kib}" ]; then
       warn "kache store size: ${store_gib} GiB" "kache gc --max-age 30d"
     else
       pass "kache store size: ${store_gib} GiB"
