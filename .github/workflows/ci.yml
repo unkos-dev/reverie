@@ -96,11 +96,31 @@ jobs:
           POSTGRES_DB: reverie_dev
         ports:
           - 5432:5432
+        # PGDATA on tmpfs. The suite runs 609 #[sqlx::test] functions, each
+        # creating and dropping its own database, so the job spends most of
+        # its time waiting on durable writes to data that is discarded when
+        # the container stops. Measured locally: 82.2s -> 31.5s for the test
+        # phase, with CPU going from 191% to 465% (the suite was blocked, not
+        # computing). Peak usage is 128MiB after the full suite, so 1GiB is
+        # ~8x headroom; tmpfs allocates lazily, so the remainder costs nothing.
+        #
+        # The mount path must track the image's PGDATA, which for postgres:18
+        # is /var/lib/postgresql/18/docker, NOT the /var/lib/postgresql/data
+        # that older images (and every tmpfs snippet written for them) use.
+        # Mounting the wrong path succeeds silently and speeds up nothing.
+        #
+        # uid/gid 999 is the image's postgres user: a tmpfs mount defaults to
+        # root ownership, and initdb refuses to run in a directory it does not
+        # own. Durability settings are deliberately left alone; measurement
+        # showed fsync/full_page_writes/synchronous_commit=off worth 0.1s on
+        # top of the mount, which is noise, and they would need a `command`
+        # override that service containers do not support.
         options: >-
           --health-cmd "pg_isready -U reverie -d reverie_dev"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql/18/docker:rw,size=1g,uid=999,gid=999,mode=0700
     env:
       # sqlx::test connects as the schema owner to create per-test
       # databases; role pools for reverie_app / reverie_ingestion are built
@@ -268,11 +288,31 @@ jobs:
           POSTGRES_DB: reverie_dev
         ports:
           - 5432:5432
+        # PGDATA on tmpfs. The suite runs 609 #[sqlx::test] functions, each
+        # creating and dropping its own database, so the job spends most of
+        # its time waiting on durable writes to data that is discarded when
+        # the container stops. Measured locally: 82.2s -> 31.5s for the test
+        # phase, with CPU going from 191% to 465% (the suite was blocked, not
+        # computing). Peak usage is 128MiB after the full suite, so 1GiB is
+        # ~8x headroom; tmpfs allocates lazily, so the remainder costs nothing.
+        #
+        # The mount path must track the image's PGDATA, which for postgres:18
+        # is /var/lib/postgresql/18/docker, NOT the /var/lib/postgresql/data
+        # that older images (and every tmpfs snippet written for them) use.
+        # Mounting the wrong path succeeds silently and speeds up nothing.
+        #
+        # uid/gid 999 is the image's postgres user: a tmpfs mount defaults to
+        # root ownership, and initdb refuses to run in a directory it does not
+        # own. Durability settings are deliberately left alone; measurement
+        # showed fsync/full_page_writes/synchronous_commit=off worth 0.1s on
+        # top of the mount, which is noise, and they would need a `command`
+        # override that service containers do not support.
         options: >-
           --health-cmd "pg_isready -U reverie -d reverie_dev"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql/18/docker:rw,size=1g,uid=999,gid=999,mode=0700
     env:
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
