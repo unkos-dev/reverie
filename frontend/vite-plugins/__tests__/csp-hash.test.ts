@@ -207,5 +207,13 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
     const expected = `sha256-${createHash("sha256").update(inlineBody).digest("base64")}`;
 
     expect(hashes[0]).toBe(expected);
-  }, 30_000);
+    // This case shells out to a real `npx vite build`, so its cost tracks the
+    // build toolchain rather than the assertion above: the workspace aliases
+    // "vite" to vite-plus-core, which ships no `vite` bin, so npx falls back
+    // to installing the real vite package, and that fetch's cost varies with
+    // npm registry latency and npx cache warmth. Measured locally at
+    // 1.2-4.0s (warm npx cache) but 46.5s on a CI runner, which timed out
+    // against the prior 30s budget; this budget keeps headroom for a slower
+    // or colder runner rather than chasing the observed ceiling.
+  }, 120_000);
 });
