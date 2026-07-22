@@ -609,6 +609,140 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     );
 }
 
+// ── Missing / unreadable cover file status mapping ───────────────────────
+
+async fn insert_manifestation_with_path(
+    ingestion_pool: &PgPool,
+    file_path: &str,
+    title: &str,
+) -> Uuid {
+    let work_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+        title,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert work");
+
+    sqlx::query_scalar!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, $4, \
+                 'complete'::ingestion_status, 'clean'::validation_status) \
+         RETURNING id",
+        work_id,
+        file_path,
+        "missinghash0000missinghash0000ab",
+        1000_i64,
+    )
+    .fetch_one(ingestion_pool)
+    .await
+    .expect("insert manifestation")
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn cover_missing_file_returns_404_problem_json(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let library_root = std::fs::canonicalize(tmp.path()).unwrap();
+
+    // The manifestation is RLS-visible, but its EPUB is absent on disk, so the
+    // cover cannot be generated or served.
+    let missing = library_root.join("gone.epub");
+    let missing_path = missing.to_string_lossy().into_owned();
+    let m = insert_manifestation_with_path(&ingestion_pool, &missing_path, "Ghost").await;
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+
+    for suffix in ["cover/thumb", "cover"] {
+        let response = server
+            .get(&format!("/api/v1/books/{m}/{suffix}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::NOT_FOUND,
+            "missing {suffix} file should map to 404, not 500"
+        );
+
+        let ct = response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .expect("content-type present")
+            .to_str()
+            .unwrap();
+        assert!(
+            ct.contains("application/problem+json"),
+            "404 uses the problem+json error shape, got {ct}"
+        );
+
+        let json: serde_json::Value = serde_json::from_slice(response.as_bytes()).unwrap();
+        assert_eq!(json["status"].as_u64(), Some(404));
+
+        // The negative response is per-credential cacheable so a grid of
+        // missing covers is not re-hit on every navigation.
+        let cache_ctrl = response
+            .headers()
+            .get(axum::http::header::CACHE_CONTROL)
+            .expect("404 carries Cache-Control")
+            .to_str()
+            .unwrap();
+        assert!(
+            cache_ctrl.contains("private"),
+            "missing-cover 404 is privately cacheable, got {cache_ctrl}"
+        );
+        assert!(
+            response
+                .headers()
+                .get(axum::http::header::VARY)
+                .is_some_and(|v| v.to_str().is_ok_and(|s| s.contains("Cookie"))),
+            "missing-cover 404 partitions its cache by credential"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn cover_unreadable_file_returns_500(pool: PgPool) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let library_root = std::fs::canonicalize(tmp.path()).unwrap();
+
+    let (_w, m, _, abs_path) =
+        insert_epub_manifestation(&ingestion_pool, &library_root, "locked", "Locked").await;
+
+    std::fs::set_permissions(&abs_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    // A root test runner bypasses permission bits, leaving the file readable;
+    // that environment cannot exercise the permission-denied path, so skip the
+    // assertion rather than fail spuriously.
+    if std::fs::read(&abs_path).is_ok() {
+        std::fs::set_permissions(&abs_path, std::fs::Permissions::from_mode(0o644)).ok();
+        return;
+    }
+
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+
+    let response = server
+        .get(&format!("/api/v1/books/{m}/cover/thumb"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    // A permission error is a genuine server-side failure, distinct from a
+    // missing file: it must stay a 500, not be masked as a 404.
+    assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    // Restore permissions so TempDir cleanup can remove the file.
+    std::fs::set_permissions(&abs_path, std::fs::Permissions::from_mode(0o644)).ok();
+}
+
 // ── SVG covers rasterize to PNG and serve ────────────────────────────────
 
 async fn insert_manifestation_bytes(
