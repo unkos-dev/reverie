@@ -563,6 +563,14 @@ jobs:
   # over-broad permissions. Relevant because label.yml uses
   # pull_request_target and docker-publish.yml is a privileged GHCR
   # deployer.
+  #
+  # Runs via `just infra::zizmor`, the same recipe a contributor runs
+  # locally, from the zizmor pinned in mise.toml: a single-source pin
+  # instead of a mise-side version and a separate action-side version input
+  # that could drift apart. Gate mode: the recipe runs plain `zizmor .` with
+  # no SARIF upload, so any finding is a nonzero exit and a hard build
+  # failure rather than a non-blocking Security-tab entry (which would need
+  # security-events:write instead).
   workflow-security:
     name: Workflow security (zizmor)
     needs: changes
@@ -571,20 +579,34 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      # zizmor's own env-var handling (GH_TOKEN, GITHUB_TOKEN, or
+      # ZIZMOR_GITHUB_TOKEN). Wiring the ephemeral job token keeps the five
+      # token-gated audits running here (impostor-commit,
+      # known-vulnerable-actions, ref-confusion, ref-version-mismatch,
+      # stale-action-refs); without it zizmor degrades to offline mode with
+      # a warning instead of failing. contents: read is enough scope, since
+      # these audits query public data on the actions referenced from
+      # workflows, not privileged data on this repo.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
+
+      # Single-source tool provisioning: mise installs the exact pins from
+      # mise.toml, so this job runs the same zizmor binary as
+      # `just infra::zizmor` locally and there is no per-workflow version
+      # copy to drift.
+      - name: Install pinned tools (mise)
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          # Gate mode: fail on any finding rather than upload SARIF (which
-          # would need security-events:write and file a non-blocking
-          # Security-tab entry instead of a hard red).
-          advanced-security: false
-          # Pinned so a new upstream release cannot add findings and break
-          # the gate on an unrelated PR; matches the version the baseline
-          # was triaged against.
-          version: "1.27.0"
+          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+          version: "2026.7.7"
+          install_args: just zizmor
+
+      - name: Workflow security audit (zizmor)
+        run: just infra::zizmor
 
   # IaC misconfiguration scan over the Dockerfile and compose files: the
   # security class hadolint's instruction lint doesn't cover — root-user
