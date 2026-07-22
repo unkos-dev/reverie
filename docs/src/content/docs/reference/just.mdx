@@ -17,25 +17,25 @@ Recipes are namespaced by module: `just rust::check` runs the backend gate,
 `just js::check` the frontend one. The unprefixed aggregates at the top fan out
 across every plane.
 
-| Recipe                      | Purpose                                                                                   |
-| --------------------------- | ----------------------------------------------------------------------------------------- |
-| `just build`                | Build every shippable artifact.                                                           |
-| `just check`                | Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded).        |
-| `just db-down`              | Stop the local dev Postgres; the data volume survives.                                    |
-| `just db-migrate`           | Apply pending migrations with the dedicated migrator identity.                            |
-| `just db-reset`             | Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.             |
-| `just db-up`                | Start (or create) the local dev Postgres.                                                 |
-| `just dev-down`             | Stop the background dev servers (frontend, then backend).                                 |
-| `just dev-status`           | Report both dev servers' status; exits nonzero when either is down.                       |
-| `just dev-up`               | Start the whole dev stack in the background: dev Postgres, migrations, backend API, Vite. |
-| `just doctor`               | Check the local dev environment: tools, mise pins, docker, dev DB, deps.                  |
-| `just fmt`                  | Format the whole tree in place. WRITES; never depended on by check/lint.                  |
-| `just help`                 | List every recipe, including the ones inside modules.                                     |
-| `just lint`                 | Lint the js, rust, and infra surfaces.                                                    |
-| `just preflight`            | Run everything CI runs that is locally runnable, DB-backed tests included.                |
-| `just test`                 | Run every locally-runnable unit test.                                                     |
-| `just worktree <branch>`    | Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.                      |
-| `just worktree-rm <branch>` | Remove the worktree for BRANCH.                                                           |
+| Recipe                      | Purpose                                                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `just build`                | Build every shippable artifact.                                                                                                                                                |
+| `just check`                | Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded).                                                                                             |
+| `just db-down`              | Stop the local dev Postgres; the data volume survives.                                                                                                                         |
+| `just db-migrate`           | Apply pending migrations with the dedicated migrator identity.                                                                                                                 |
+| `just db-reset`             | Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.                                                                                                  |
+| `just db-up`                | Start (or create) the local dev Postgres.                                                                                                                                      |
+| `just dev-down`             | Stop the background dev servers (frontend, then backend).                                                                                                                      |
+| `just dev-status`           | Report both dev servers' status; exits nonzero when either is down.                                                                                                            |
+| `just dev-up`               | Start the whole dev stack in the background: dev Postgres, migrations, backend API, Vite.                                                                                      |
+| `just doctor`               | Check the local dev environment: tools, mise pins, docker, dev DB, deps.                                                                                                       |
+| `just fmt`                  | Format the whole tree in place. WRITES; never depended on by check/lint.                                                                                                       |
+| `just help`                 | List every recipe, including the ones inside modules.                                                                                                                          |
+| `just lint`                 | Lint the js, rust, and infra surfaces.                                                                                                                                         |
+| `just preflight`            | Run everything CI runs that is locally runnable, DB-backed tests included.                                                                                                     |
+| `just test`                 | Run every locally-runnable unit test.                                                                                                                                          |
+| `just worktree <branch>`    | Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it. |
+| `just worktree-rm <branch>` | Remove the worktree for BRANCH.                                                                                                                                                |
 
 ## docs
 
@@ -78,6 +78,7 @@ across every plane.
 | `just infra::typos`                              | Spell check the tree (honours .gitignore and \_typos.toml excludes).                |
 | `just infra::vale-scope-test`                    | Test the vale-lint.sh scope policy (include/exclude classification).                |
 | `just infra::vale-selftest`                      | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).         |
+| `just infra::worktree-cargo-target-selftest`     | Self-test the worktree recipe's isolated cargo target-dir config.                   |
 | `just infra::yamllint`                           | yamllint every tracked YAML file.                                                   |
 
 ## js

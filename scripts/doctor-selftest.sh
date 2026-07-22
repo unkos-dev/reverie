@@ -69,7 +69,7 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat tail tr; do
+for real in env bash git jq ls df date dirname cat tail tr grep; do
   link_real "${stub_bin}" "${real}"
 done
 for tool in just cargo rustc node npm npx; do
@@ -324,5 +324,56 @@ for f in "${stub_bin}"/*; do
 done
 expect_exit "missing binary fails closed" 1 "${stub_bin_missing}"
 expect_contains "missing binary is named in the output" "FAIL binary 'cargo' resolves on PATH"
+
+# --- CARGO_TARGET_DIR / CARGO_BUILD_TARGET_DIR override check: only
+# reachable once the fixture has the worktree-local pin doctor.sh looks
+# for. Cargo honors both as environment overrides for [build] target-dir
+# (CARGO_BUILD_TARGET_DIR via cargo's generic CARGO_<SECTION>_<KEY>
+# mapping), confirmed empirically with CARGO_TARGET_DIR winning when both
+# are set, so both are exercised individually and together below. ---
+
+# (a) no .cargo/config.toml at all (an ordinary, non-worktree checkout): the
+# check must not fire either way, since there is no isolation to defeat.
+export DOCTOR_STUB_MISE_MISSING=""
+expect_exit "no cargo pin: happy path still exits zero" 0 "${stub_bin}"
+expect_not_contains "no cargo pin: check does not fire" "cargo target dir"
+
+# (b) the worktree-local pin is present and neither variable is set: passes.
+mkdir -p "${fixture}/.cargo"
+printf '%s\n' '[build]' 'target-dir = "target"' >"${fixture}/.cargo/config.toml"
+expect_exit "worktree pin with no override passes" 0 "${stub_bin}"
+expect_contains "worktree pin with no override is reported" "PASS CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR do not override the worktree-local cargo target dir"
+
+# (c) the worktree-local pin is present and CARGO_TARGET_DIR is exported:
+# this is the regression test for the original review finding -- an
+# environment override silently defeating the isolation must be surfaced,
+# not silent.
+export CARGO_TARGET_DIR="/some/shared/target"
+expect_exit "worktree pin with a CARGO_TARGET_DIR override warns, not fails" 0 "${stub_bin}"
+expect_contains "override warning names the offending variable" "WARN CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir"
+expect_contains "override warning names the fix" "unset CARGO_TARGET_DIR, or set it to"
+unset CARGO_TARGET_DIR
+
+# (d) the worktree-local pin is present and only CARGO_BUILD_TARGET_DIR is
+# exported: this is the regression test for the second override variable --
+# cargo's generic CARGO_<SECTION>_<KEY> mapping also defeats the isolation
+# and must be surfaced under its own name, not silently treated as healthy.
+export CARGO_BUILD_TARGET_DIR="/some/shared/target"
+expect_exit "worktree pin with a CARGO_BUILD_TARGET_DIR override warns, not fails" 0 "${stub_bin}"
+expect_contains "CARGO_BUILD_TARGET_DIR override warning names the offending variable" "WARN CARGO_BUILD_TARGET_DIR overrides this worktree's isolated cargo target dir"
+expect_contains "CARGO_BUILD_TARGET_DIR override warning names the fix" "unset CARGO_BUILD_TARGET_DIR, or set it to"
+unset CARGO_BUILD_TARGET_DIR
+
+# (e) both variables are exported: the warning must name the one cargo
+# actually honors (CARGO_TARGET_DIR, per the measured precedence) rather
+# than either an arbitrary choice or both interchangeably.
+export CARGO_TARGET_DIR="/some/shared/target"
+export CARGO_BUILD_TARGET_DIR="/some/other/shared/target"
+expect_exit "worktree pin with both overrides set warns, not fails" 0 "${stub_bin}"
+expect_contains "both-set warning names CARGO_TARGET_DIR as active" "WARN CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir (CARGO_BUILD_TARGET_DIR is also set but is shadowed by CARGO_TARGET_DIR)"
+expect_contains "both-set warning's fix covers both variables" "unset both CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR, or set both to"
+unset CARGO_TARGET_DIR
+unset CARGO_BUILD_TARGET_DIR
+rm -rf "${fixture}/.cargo"
 
 exit "${fail}"
