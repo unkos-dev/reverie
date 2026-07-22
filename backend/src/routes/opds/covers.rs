@@ -6,8 +6,8 @@
 
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::Response;
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use utoipa_axum::router::OpenApiRouter;
@@ -46,6 +46,39 @@ const COVER_VARY: &str = "Authorization, Cookie";
 /// `adr/2026-06-14-cover-cache-headers-and-thumbnail-encoding.md`.
 fn cover_cache_control() -> String {
     format!("private, max-age={COVER_MAX_AGE_SECS}")
+}
+
+/// `max-age` for the negative (missing-file) cover response. Deliberately far
+/// shorter than [`COVER_MAX_AGE_SECS`]: a missing cover file is an
+/// operator-remediable state (a re-scan or a remounted library restores the
+/// same URL, and a `404` carries no `ETag` to revalidate against), so the
+/// negative response is cached only long enough to collapse the repeated
+/// misses of one library-grid load rather than pinning a broken image for a
+/// day.
+const COVER_MISS_MAX_AGE_SECS: u32 = 60;
+
+/// `Cache-Control` for the missing-file `404`. `private` matches the success
+/// path so no shared proxy stores an RLS-scoped negative response.
+fn cover_miss_cache_control() -> String {
+    format!("private, max-age={COVER_MISS_MAX_AGE_SECS}")
+}
+
+/// Build the cacheable `404` for a cover whose backing file is absent on disk.
+/// Reuses the canonical [`AppError::NotFound`] problem+json body so the error
+/// shape and RFC 9457 `instance` capture match every other `404`, then adds the
+/// same `private` scoping and [`COVER_VARY`] partitioning as the success path
+/// (at a short negative TTL) so a grid of missing covers is not re-fetched from
+/// disk on every navigation.
+fn cover_miss_not_found() -> Response {
+    let mut response = AppError::NotFound.into_response();
+    let headers = response.headers_mut();
+    // Best-effort cache hints: a header-format failure must never escalate the
+    // 404 into a 500, so parse fallibly and skip the header on error.
+    if let Ok(value) = HeaderValue::from_str(&cover_miss_cache_control()) {
+        headers.insert(header::CACHE_CONTROL, value);
+    }
+    headers.insert(header::VARY, HeaderValue::from_static(COVER_VARY));
+    response
 }
 
 /// Build the OPDS-mount cover router (`/opds/books/:id/cover{,/thumb}`)
@@ -217,6 +250,17 @@ async fn serve_cover(
     let artifact = match get_or_create(state, manifestation_id, user_id, size).await {
         Ok(a) => a,
         Err(CoverError::NoCover) => return Err(AppError::NotFound),
+        // A cover file that has vanished from disk (the source EPUB moved, an
+        // evicted cache entry, an unmounted library) is a 404, not a 500: the
+        // manifestation was already RLS-gated inside `get_or_create`, so this
+        // discloses nothing the caller's own list row did not, and RFC 9110
+        // §15.5.5 is the correct status. It also replaces the per-request
+        // `Internal` ERROR, which floods the log once per thumbnail when a whole
+        // shelf of files is missing on a grid load, with a single WARN.
+        Err(CoverError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::warn!(%manifestation_id, ?size, error = %e, "cover file missing on disk; serving 404");
+            return Ok(cover_miss_not_found());
+        }
         Err(e) => return Err(AppError::Internal(anyhow::anyhow!(e))),
     };
 
@@ -244,9 +288,17 @@ async fn serve_cover(
         _ => "application/octet-stream",
     };
 
-    let file = File::open(&artifact.path)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    let file = match File::open(&artifact.path).await {
+        Ok(f) => f,
+        // The cached artifact was present when `get_or_create` resolved it but
+        // was removed before this open (a cache-eviction race). Same reasoning
+        // as the miss-path branch above: a missing file is a 404, not a 500.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::warn!(%manifestation_id, ?size, "cover file missing on disk; serving 404");
+            return Ok(cover_miss_not_found());
+        }
+        Err(e) => return Err(AppError::Internal(e.into())),
+    };
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
