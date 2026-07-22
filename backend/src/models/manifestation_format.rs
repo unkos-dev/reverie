@@ -146,14 +146,14 @@ mod tests {
         );
     }
 
-    /// Loud-failure regression for UNK-107. Simulates the failure mode where
+    /// Loud-failure regression. Simulates the failure mode where
     /// the DB `manifestation_format` enum gains a value that has no Rust
     /// counterpart (e.g. an operator runs an out-of-band `ALTER TYPE`, or a
     /// future migration lands ahead of the matching Rust change). `sqlx::Type`
     /// must surface this as a decode error, not silently coerce.
     #[sqlx::test(migrations = "./migrations")]
     async fn decode_fails_for_unknown_db_variant(pool: sqlx::PgPool) {
-        // CARVE-OUT (UNK-167): runtime sqlx::query is intentional. The ALTER
+        // CARVE-OUT: runtime sqlx::query is intentional. The ALTER
         // TYPE is DDL (macros can't validate it), and the SELECT references a
         // variant ('djvu') deliberately not in the prepare-time schema — the
         // entire point of the test is to exercise the unknown-variant decode

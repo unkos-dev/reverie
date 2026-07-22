@@ -1,5 +1,5 @@
 //! Webhook terminal-event dispatch: stable event ids + Postgres-backed
-//! dedupe (UNK-98).
+//! dedupe.
 //!
 //! Step 12 owns the real delivery transport.  Until that lands, delivery is
 //! a `tracing` emit so operators can observe writeback completion in logs;
@@ -98,7 +98,7 @@ pub enum Dispatch {
 
 /// Dedupe-then-deliver a terminal writeback event.
 ///
-/// Per UNK-98: if the event id was seen within [`DEDUPE_TTL_SECS`] the
+/// If the event id was seen within [`DEDUPE_TTL_SECS`] the
 /// event is dropped; otherwise it is delivered, then marked seen.  Repeated
 /// per-attempt `failed` events for the same job within the TTL window
 /// dedupe by design — downstream consumers get one notification per

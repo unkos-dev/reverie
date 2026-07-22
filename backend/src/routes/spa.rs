@@ -1,4 +1,4 @@
-//! SPA asset-serving router (UNK-106).
+//! SPA asset-serving router.
 //!
 //! Mounts `ServeDir` under `/assets/*` when a frontend dist directory is
 //! configured. Returns `None` in API-only dev (when Vite serves the frontend).

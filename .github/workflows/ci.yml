@@ -890,6 +890,9 @@ jobs:
       - name: Plan-reference gate self-test
         run: just infra::no-plan-refs-selftest
 
+      - name: Issue-reference gate self-test
+        run: just infra::no-issue-refs-selftest
+
       - name: Tool-pin gate self-test
         run: just infra::tool-pin-drift-selftest
 
@@ -970,9 +973,11 @@ jobs:
         run: just infra::lefthook-validate
 
       # Reject issue-tracker references in public-facing source and docs —
-      # they describe a private tracker, not the codebase. Changed-files
-      # only, so pre-existing references in untouched files don't fail the
-      # build (a pre-release sweep clears those).
+      # they describe a private tracker, not the codebase. The issue-ref
+      # guard itself scans the whole tree on every invocation; this filter
+      # only decides whether a PR touches gated-scope file types at all, so
+      # PRs outside that scope skip the step entirely. The plan-ref guard
+      # that runs alongside it stays changed-files only.
       - name: Detect changed source and docs
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: source-changed

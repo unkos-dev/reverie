@@ -30,7 +30,8 @@ use crate::models::theme_preference::ThemePreference;
 ///   - frontend/src/fouc/fouc.js (inline FOUC script body, CSP-hashed at build)
 ///   - frontend/src/lib/theme/cookie.ts
 ///
-/// All three MUST agree. Tracked as instance 1 under UNK-105.
+/// All three MUST agree; this is the backend instance of that cross-stack
+/// constant.
 pub const THEME_COOKIE_NAME: &str = "reverie_theme";
 
 /// Add or replace the `reverie_theme` cookie in `jar` with the given preference.
@@ -67,7 +68,7 @@ mod tests {
         let jar = set_theme_cookie(CookieJar::new(), ThemePreference::Dark);
 
         // String-compare the literal so a rename of THEME_COOKIE_NAME trips
-        // the test and surfaces UNK-105 cross-stack drift before it lands.
+        // the test and surfaces cross-stack drift before it lands.
         let cookie = jar
             .get("reverie_theme")
             .expect("cookie present in returned jar");
