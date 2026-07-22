@@ -1,7 +1,7 @@
 //! `ThemePreference` — closed value set shared across DB, JSON, and cookie.
 //!
 //! The set is mirrored in `frontend/src/lib/theme/cookie.ts` as a TypeScript
-//! union literal. Cross-stack drift is tracked under UNK-105.
+//! union literal.
 //!
 //! Wire formats:
 //! - Postgres: `theme_preference` ENUM type (see migration
@@ -10,8 +10,8 @@
 
 /// Per-user theme selection mirrored across DB, JSON, and the FOUC theme cookie.
 ///
-/// Wire-format drift across these three surfaces is tracked under UNK-105;
-/// the variant strings declared here are authoritative.
+/// The variant strings declared here are authoritative across all three
+/// surfaces; wire-format drift between them is a defect.
 #[derive(
     Debug,
     Clone,
@@ -54,9 +54,9 @@ mod tests {
 
     #[test]
     fn as_str_matches_serde_lowercase() {
-        // Wire-format invariant. UNK-105 cross-stack drift guard: the
-        // frontend `ThemePreference = "system" | "light" | "dark"` union
-        // depends on these exact literals.
+        // Wire-format invariant: the frontend
+        // `ThemePreference = "system" | "light" | "dark"` union depends on
+        // these exact literals.
         assert_eq!(ThemePreference::System.as_str(), "system");
         assert_eq!(ThemePreference::Light.as_str(), "light");
         assert_eq!(ThemePreference::Dark.as_str(), "dark");

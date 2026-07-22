@@ -5,7 +5,7 @@
 //! last row of the previous page — the next SELECT uses it as an
 //! inclusive-exclusive upper bound via `WHERE (created_at, id) < ($1, $2)`.
 //!
-//! [`NameCursor`] (UNK-374) encodes `(sort_name, id)` for the authors /
+//! [`NameCursor`] encodes `(sort_name, id)` for the authors /
 //! series navigation feeds, which sort `ORDER BY sort_name ASC, id ASC` —
 //! lower bound via `WHERE (sort_name, id) > ($1, $2)`. It carries an `n|`
 //! tag byte so the two cursor families cannot be replayed against each
@@ -103,7 +103,7 @@ impl Cursor {
 }
 
 /// `(sort_name, id)` tuple identifying the boundary row of a
-/// name-sorted navigation feed page (authors / series, UNK-374).
+/// name-sorted navigation feed page (authors / series).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameCursor {
     /// Boundary row's `sort_name`.

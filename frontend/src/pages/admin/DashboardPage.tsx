@@ -195,7 +195,7 @@ function StatsView({ stats }: { stats: DashboardStats }): ReactElement {
             ))}
             <p className="pt-2 text-xs text-fg-muted">
               {formatNumber(stats.clean_non_epub_count)} of the clean files are non-EPUB formats not
-              structurally validated (UNK-313).
+              structurally validated.
             </p>
           </CardContent>
         </Card>

@@ -5,12 +5,12 @@
  *
  * Cross-stack constant: a drift between any of the three call sites breaks
  * either the FOUC (wrong attribute applied before React boots) or the
- * cross-tab broadcast invariant. UNK-105 tracks the trio.
+ * cross-tab broadcast invariant.
  */
 // Cookie name for the FOUC theme preference. Duplicated in:
 //   - backend/src/auth/theme_cookie.rs (THEME_COOKIE_NAME const)
 //   - frontend/src/fouc/fouc.js (inline FOUC script body, CSP-hashed at build)
-// All three MUST agree. Tracked as instance 1 under UNK-105.
+// All three MUST agree.
 export const THEME_COOKIE_NAME = "reverie_theme";
 
 // ONE YEAR in seconds. MUST equal `Duration::days(365).whole_seconds()` on the

@@ -1,5 +1,5 @@
 /**
- * Left rail — the app's global navigation (spec §3, UNK-385).
+ * Left rail — the app's global navigation (spec §3).
  *
  * Sticky full-height `canvas-2` column: brand lockup, primary nav
  * (live + disabled-placeholder entries), the user's shelves nested
