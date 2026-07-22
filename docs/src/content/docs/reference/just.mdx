@@ -65,7 +65,7 @@ across every plane.
 | `just infra::just-reference-drift`               | Assert the committed just reference still matches the justfiles.                    |
 | `just infra::lefthook-validate`                  | Validate the lefthook.yml hook configuration.                                       |
 | `just infra::lint`                               | Whole repo-lint surface (mirrors the CI repo-lint job).                             |
-| `just infra::no-issue-refs <files>`              | Reject issue-tracker references in a passed file list.                              |
+| `just infra::no-issue-refs <files>`              | Reject issue-tracker references anywhere in the gated tree.                         |
 | `just infra::no-plan-refs <files>`               | Reject plan-artifact references in a passed file list.                              |
 | `just infra::no-plan-refs-selftest`              | Self-test the private-plan reference guard.                                         |
 | `just infra::prose`                              | Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).            |

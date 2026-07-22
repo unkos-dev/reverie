@@ -128,10 +128,11 @@ doctor-selftest:
 lefthook-validate:
     npx --no-install lefthook validate
 
-# Args go through "$@" (shell-quoted) so a path with a space or a crafted name
-# cannot split or inject.
+# Whole-tree: scripts/no-issue-refs.sh ignores any arguments and always
+# checks every tracked in-scope file, so the *files parameter only controls
+# whether a caller bothers invoking the recipe at all.
 #
-# Reject issue-tracker references in a passed file list.
+# Reject issue-tracker references anywhere in the gated tree.
 [group('infra')]
 [positional-arguments]
 no-issue-refs *files:
