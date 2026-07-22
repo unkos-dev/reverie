@@ -69,7 +69,7 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat tail tr; do
+for real in env bash git jq ls df date dirname cat tail tr grep; do
   link_real "${stub_bin}" "${real}"
 done
 for tool in just cargo rustc node npm npx; do
@@ -324,5 +324,30 @@ for f in "${stub_bin}"/*; do
 done
 expect_exit "missing binary fails closed" 1 "${stub_bin_missing}"
 expect_contains "missing binary is named in the output" "FAIL binary 'cargo' resolves on PATH"
+
+# --- CARGO_TARGET_DIR override check: only reachable once the fixture has
+# the worktree-local pin doctor.sh looks for. ---
+
+# (a) no .cargo/config.toml at all (an ordinary, non-worktree checkout): the
+# check must not fire either way, since there is no isolation to defeat.
+export DOCTOR_STUB_MISE_MISSING=""
+expect_exit "no cargo pin: happy path still exits zero" 0 "${stub_bin}"
+expect_not_contains "no cargo pin: check does not fire" "cargo target dir"
+
+# (b) the worktree-local pin is present and CARGO_TARGET_DIR is unset: passes.
+mkdir -p "${fixture}/.cargo"
+printf '%s\n' '[build]' 'target-dir = "target"' >"${fixture}/.cargo/config.toml"
+expect_exit "worktree pin with no override passes" 0 "${stub_bin}"
+expect_contains "worktree pin with no override is reported" "PASS CARGO_TARGET_DIR does not override the worktree-local cargo target dir"
+
+# (c) the worktree-local pin is present and CARGO_TARGET_DIR is exported:
+# this is the regression test for the review finding -- an environment
+# override silently defeating the isolation must be surfaced, not silent.
+export CARGO_TARGET_DIR="/some/shared/target"
+expect_exit "worktree pin with an override warns, not fails" 0 "${stub_bin}"
+expect_contains "override warning names the offending variable" "WARN CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir"
+expect_contains "override warning names the fix" "unset CARGO_TARGET_DIR, or set it to"
+unset CARGO_TARGET_DIR
+rm -rf "${fixture}/.cargo"
 
 exit "${fail}"

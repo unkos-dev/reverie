@@ -197,13 +197,29 @@ else
   warn "local origin/main ref exists" "git fetch origin"
 fi
 
-# 9. Informational: list git worktrees.
+# 9. CARGO_TARGET_DIR override of a worktree-local cargo target dir.
+# `just worktree` writes .cargo/config.toml pinning `[build] target-dir` to
+# this checkout's own target/ so concurrent worktree builds never thrash a
+# shared target directory. Cargo resolves CARGO_TARGET_DIR before it ever
+# reads that config key, so an exported override (shell profile, inherited
+# CI env) silently defeats the isolation while the worktree still looks
+# isolated. Only checked when the pin is actually present -- the main
+# checkout was never given one, so there is no isolation to defeat there.
+if [ -f .cargo/config.toml ] && grep -q 'target-dir' .cargo/config.toml; then
+  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    warn "CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir" "unset CARGO_TARGET_DIR, or set it to ${repo_root}/target"
+  else
+    pass "CARGO_TARGET_DIR does not override the worktree-local cargo target dir"
+  fi
+fi
+
+# 10. Informational: list git worktrees.
 info "git worktrees:"
 git worktree list | while IFS= read -r line; do
   info "  ${line}"
 done
 
-# 10. Disk space on the filesystem holding the repo.
+# 11. Disk space on the filesystem holding the repo.
 five_gib=$((5 * 1024 * 1024 * 1024))
 if avail_bytes="$(df -B1 --output=avail "${repo_root}" 2>/dev/null | tail -n 1 | tr -d ' ')" && [ -n "${avail_bytes}" ]; then
   avail_gib=$((avail_bytes / 1024 / 1024 / 1024))

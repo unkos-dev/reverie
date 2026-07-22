@@ -87,9 +87,11 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 #
 # The worktree also gets its own `.cargo/config.toml` pinning `target-dir` to
 # its local `target/`, so concurrent worktree builds never share (and thrash)
-# a machine-level target-dir override.
+# a machine-level target-dir override. Cargo gives an exported
+# CARGO_TARGET_DIR precedence over that config key, so this recipe warns
+# rather than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir; warns if CARGO_TARGET_DIR would override it.
 [group('git')]
 [positional-arguments]
 worktree branch:
@@ -136,6 +138,17 @@ worktree branch:
     # with no separate cleanup step.
     mkdir -p "$dest/.cargo"
     printf '%s\n' '[build]' 'target-dir = "target"' > "$dest/.cargo/config.toml"
+    # A config file cannot outrank the environment: cargo resolves
+    # CARGO_TARGET_DIR before it ever reads [build] target-dir, so an
+    # exported override (a developer's shell profile, an inherited CI env)
+    # silently defeats the isolation just written above while this recipe
+    # still reports success. Detect and warn rather than unsetting the
+    # variable ourselves — surprising the caller's environment is worse than
+    # naming the fix.
+    if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+        echo "warning: CARGO_TARGET_DIR is set (${CARGO_TARGET_DIR}) and overrides the isolated target-dir just written to $dest/.cargo/config.toml" >&2
+        echo "fix: unset CARGO_TARGET_DIR, or set it to $dest/target for work in this worktree" >&2
+    fi
     # mise keys trust to path, so a fresh worktree is untrusted and the first
     # command run there blocks on an interactive prompt, which a non-interactive
     # session cannot answer. Inherit the decision rather than make it: trust the

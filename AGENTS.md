@@ -78,17 +78,20 @@ outside the repository, where it cannot enter the Docker build context or
 cargo's workspace discovery, and refuses to create one on a temporary
 filesystem where unpushed commits would not survive a reboot. It also writes
 a worktree-local cargo target dir, so concurrent worktree builds cannot
-thrash a shared target cache; worktrees created by other means should set
-`CARGO_TARGET_DIR` to the worktree's own `target/` for any build.
+thrash a shared target cache. `CARGO_TARGET_DIR` in the environment
+overrides that per-worktree config (cargo gives the variable precedence over
+`[build] target-dir`), so anyone who sets it, for this worktree or one
+created by other means, should point it at that worktree's own `target/`.
 
 Two aggregates anchor the local loop and should be the default reflex:
 
 - `just doctor` answers "is this machine ready to develop Reverie?" in
   seconds: required binaries, mise pins, docker daemon, dev Postgres health
   and runtime-role login, node_modules freshness, the sqlx offline cache,
-  git sync state, and disk space. Every warning and failure names the exact
-  fixing command. Run it first whenever the environment might have changed
-  or a failure looks environmental rather than caused by the change.
+  a CARGO_TARGET_DIR override of a worktree's isolated target dir, git sync
+  state, and disk space. Every warning and failure names the exact fixing
+  command. Run it first whenever the environment might have changed or a
+  failure looks environmental rather than caused by the change.
 - `just preflight` runs everything the CI gate runs that is locally
   runnable, including the DB-backed backend test suite, the sqlx cache
   check, the backend static guards, cargo-machete, cargo-deny, the frontend
