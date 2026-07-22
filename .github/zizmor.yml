@@ -19,7 +19,7 @@ rules:
       # Renovate's job. The audit fires per-instance only once a major tag has
       # actually moved PAST the pinned SHA (so the `# vN` comment no longer
       # resolves to that SHA) — not on the mere presence of a major-version
-      # comment. These four files are the ones currently drifted; other
+      # comment. The entries below are the files flagged so far; other
       # workflows use the same SHA+`# vN` convention but were clean at triage
       # because their tags had not yet moved. zizmor ignores are per-file (no
       # glob), so add a file here if a future run flags it.
@@ -28,6 +28,7 @@ rules:
       - docker-publish.yml
       - scheduled-audit.yml
       - scorecard.yml
+      - snyk.yml
   cache-poisoning:
     ignore:
       # docs.yml's build job uses actions/setup-node, and the same workflow
