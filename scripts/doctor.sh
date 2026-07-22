@@ -197,13 +197,37 @@ else
   warn "local origin/main ref exists" "git fetch origin"
 fi
 
-# 9. Informational: list git worktrees.
+# 9. CARGO_TARGET_DIR / CARGO_BUILD_TARGET_DIR override of a worktree-local
+# cargo target dir. `just worktree` writes .cargo/config.toml pinning
+# `[build] target-dir` to this checkout's own target/ so concurrent worktree
+# builds never thrash a shared target directory. Cargo resolves both
+# CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR (its generic
+# CARGO_<SECTION>_<KEY> mapping for [build] target-dir) before it ever reads
+# that config key, so either one, exported by a shell profile or inherited
+# CI env, silently defeats the isolation while the worktree still looks
+# isolated. Verified empirically: with both set, CARGO_TARGET_DIR is the one
+# cargo actually honors, so that is the variable named when both are
+# present. Only checked when the pin is actually present -- the main
+# checkout was never given one, so there is no isolation to defeat there.
+if [ -f .cargo/config.toml ] && grep -q 'target-dir' .cargo/config.toml; then
+  if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -n "${CARGO_BUILD_TARGET_DIR:-}" ]; then
+    warn "CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir (CARGO_BUILD_TARGET_DIR is also set but is shadowed by CARGO_TARGET_DIR)" "unset both CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR, or set both to ${repo_root}/target"
+  elif [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    warn "CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir" "unset CARGO_TARGET_DIR, or set it to ${repo_root}/target"
+  elif [ -n "${CARGO_BUILD_TARGET_DIR:-}" ]; then
+    warn "CARGO_BUILD_TARGET_DIR overrides this worktree's isolated cargo target dir" "unset CARGO_BUILD_TARGET_DIR, or set it to ${repo_root}/target"
+  else
+    pass "CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR do not override the worktree-local cargo target dir"
+  fi
+fi
+
+# 10. Informational: list git worktrees.
 info "git worktrees:"
 git worktree list | while IFS= read -r line; do
   info "  ${line}"
 done
 
-# 10. Disk space on the filesystem holding the repo.
+# 11. Disk space on the filesystem holding the repo.
 five_gib=$((5 * 1024 * 1024 * 1024))
 if avail_bytes="$(df -B1 --output=avail "${repo_root}" 2>/dev/null | tail -n 1 | tr -d ' ')" && [ -n "${avail_bytes}" ]; then
   avail_gib=$((avail_bytes / 1024 / 1024 / 1024))
@@ -216,7 +240,7 @@ else
   warn "disk space check" "cannot determine free space (non-GNU df); check manually"
 fi
 
-# 11. kache build-cache binary resolves on PATH. It is configured as the
+# 12. kache build-cache binary resolves on PATH. It is configured as the
 # cargo rustc-wrapper outside this repo; absence only means local builds
 # fall back to uncached compiles, not a broken toolchain, so this warns
 # rather than fails.
@@ -226,7 +250,7 @@ else
   warn "binary 'kache' resolves on PATH" "mise install"
 fi
 
-# 12. kache content-addressed store size. The store has no automatic
+# 13. kache content-addressed store size. The store has no automatic
 # eviction, so left alone it grows without bound; warn well before it
 # threatens disk space. A store that has never been populated (kache has
 # never run here, or the resolved directory does not exist on this
