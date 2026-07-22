@@ -26,9 +26,17 @@ _default:
 help:
     @just --list --list-submodules
 
+# infra::zizmor-offline rides along here rather than inside infra::check
+# because it audits a different CI job (workflow-security) than the one
+# infra::lint mirrors (repo-lint); it stays additive so that doc comment
+# keeps describing exactly one job. It only ever runs zizmor's offline
+# audits, so it cannot regress this recipe's offline guarantee; run
+# `just preflight` (or `just infra::zizmor`) for the network-backed audits
+# it skips.
+#
 # Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded).
 [group('aggregate')]
-check: js::check rust::check infra::check docs::check
+check: js::check rust::check infra::check docs::check infra::zizmor-offline
 
 # Docs content is linted whole-tree by infra::prose and js::markdownlint, so the
 # docs plane carries no lint recipe of its own.
@@ -62,13 +70,16 @@ build: js::build rust::build docs::build
 # --wait), so every DB-backed recipe below it in this dependency list always
 # runs against a ready database; just runs dependencies serially in listed
 # order, so the cheap offline gates (rust::guards, check) fail fast before the
-# slower DB-backed and network-backed ones run. Still CI-only, and not run
-# here: the MSRV toolchain check, coverage lanes, the docker image build,
-# workflow/IaC/SAST/secret scans, npm-license, and dependency-review.
+# slower DB-backed and network-backed ones run. infra::zizmor runs the full
+# audit (online audits included when a GH_TOKEN/GITHUB_TOKEN/
+# ZIZMOR_GITHUB_TOKEN is exported, offline-degraded otherwise, matching CI's
+# own token-driven coverage). Still CI-only, and not run here: the MSRV
+# toolchain check, coverage lanes, the docker image build, IaC/SAST/secret
+# scans, npm-license, and dependency-review.
 #
 # Run everything CI runs that is locally runnable, DB-backed tests included.
 [group('aggregate')]
-preflight: rust::guards db-up check test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y
+preflight: rust::guards db-up check test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y infra::zizmor
 
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
 # default is a sibling of the repo so it inherits the same filesystem and
