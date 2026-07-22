@@ -197,19 +197,27 @@ else
   warn "local origin/main ref exists" "git fetch origin"
 fi
 
-# 9. CARGO_TARGET_DIR override of a worktree-local cargo target dir.
-# `just worktree` writes .cargo/config.toml pinning `[build] target-dir` to
-# this checkout's own target/ so concurrent worktree builds never thrash a
-# shared target directory. Cargo resolves CARGO_TARGET_DIR before it ever
-# reads that config key, so an exported override (shell profile, inherited
-# CI env) silently defeats the isolation while the worktree still looks
-# isolated. Only checked when the pin is actually present -- the main
+# 9. CARGO_TARGET_DIR / CARGO_BUILD_TARGET_DIR override of a worktree-local
+# cargo target dir. `just worktree` writes .cargo/config.toml pinning
+# `[build] target-dir` to this checkout's own target/ so concurrent worktree
+# builds never thrash a shared target directory. Cargo resolves both
+# CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR (its generic
+# CARGO_<SECTION>_<KEY> mapping for [build] target-dir) before it ever reads
+# that config key, so either one, exported by a shell profile or inherited
+# CI env, silently defeats the isolation while the worktree still looks
+# isolated. Verified empirically: with both set, CARGO_TARGET_DIR is the one
+# cargo actually honors, so that is the variable named when both are
+# present. Only checked when the pin is actually present -- the main
 # checkout was never given one, so there is no isolation to defeat there.
 if [ -f .cargo/config.toml ] && grep -q 'target-dir' .cargo/config.toml; then
-  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+  if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -n "${CARGO_BUILD_TARGET_DIR:-}" ]; then
+    warn "CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir (CARGO_BUILD_TARGET_DIR is also set but is shadowed by CARGO_TARGET_DIR)" "unset both CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR, or set both to ${repo_root}/target"
+  elif [ -n "${CARGO_TARGET_DIR:-}" ]; then
     warn "CARGO_TARGET_DIR overrides this worktree's isolated cargo target dir" "unset CARGO_TARGET_DIR, or set it to ${repo_root}/target"
+  elif [ -n "${CARGO_BUILD_TARGET_DIR:-}" ]; then
+    warn "CARGO_BUILD_TARGET_DIR overrides this worktree's isolated cargo target dir" "unset CARGO_BUILD_TARGET_DIR, or set it to ${repo_root}/target"
   else
-    pass "CARGO_TARGET_DIR does not override the worktree-local cargo target dir"
+    pass "CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR do not override the worktree-local cargo target dir"
   fi
 fi
 

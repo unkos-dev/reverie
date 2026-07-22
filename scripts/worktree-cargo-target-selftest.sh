@@ -19,18 +19,38 @@ scratch_root="$(mktemp -d "$(dirname "${repo_root}")/.worktree-cargo-target-self
 pids="$$"
 branch_ok="test/worktree-cargo-target-selftest-ok-${pids}"
 branch_dirty="test/worktree-cargo-target-selftest-dirty-${pids}"
+branch_env_target="test/worktree-cargo-target-selftest-envtarget-${pids}"
+branch_env_build="test/worktree-cargo-target-selftest-envbuild-${pids}"
+branch_env_both="test/worktree-cargo-target-selftest-envboth-${pids}"
+branch_env_sanitize="test/worktree-cargo-target-selftest-envsanitize-${pids}"
 slug_ok="${branch_ok//\//-}"
 slug_dirty="${branch_dirty//\//-}"
+slug_env_target="${branch_env_target//\//-}"
+slug_env_build="${branch_env_build//\//-}"
+slug_env_both="${branch_env_both//\//-}"
+slug_env_sanitize="${branch_env_sanitize//\//-}"
 dest_ok="${scratch_root}/reverie/${slug_ok}"
 dest_dirty="${scratch_root}/reverie/${slug_dirty}"
+dest_env_target="${scratch_root}/reverie/${slug_env_target}"
+dest_env_build="${scratch_root}/reverie/${slug_env_build}"
+dest_env_both="${scratch_root}/reverie/${slug_env_both}"
+dest_env_sanitize="${scratch_root}/reverie/${slug_env_sanitize}"
 
 # shellcheck disable=SC2329  # invoked via the EXIT trap
 cleanup() {
   git -C "${repo_root}" worktree remove --force "${dest_ok}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_dirty}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_env_target}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_env_build}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_env_both}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_env_sanitize}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree prune >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_ok}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_dirty}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_env_target}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_env_build}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_env_both}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_env_sanitize}" >/dev/null 2>&1 || true
   rm -rf "${scratch_root}"
 }
 trap cleanup EXIT
@@ -123,5 +143,69 @@ else
       "removal succeeded even with an untracked, non-ignored file present"
   fi
 fi
+
+# --- environment-override warnings: cargo honors both CARGO_TARGET_DIR and
+# CARGO_BUILD_TARGET_DIR (its generic CARGO_<SECTION>_<KEY> mapping) as
+# overrides for [build] target-dir, confirmed empirically with
+# CARGO_TARGET_DIR winning when both are set. The recipe must name whichever
+# variable cargo actually honors, and must never echo the variable's value:
+# an unsanitized value could contain newlines or terminal control sequences
+# and forge or obscure other log lines. ---
+
+env_target_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="/some/shared/target" just worktree "${branch_env_target}" 2>&1)" || true
+if printf '%s\n' "${env_target_out}" | grep -qF 'warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir'; then
+  ok "CARGO_TARGET_DIR override warns"
+else
+  bad "CARGO_TARGET_DIR override warns" "${env_target_out}"
+fi
+if printf '%s\n' "${env_target_out}" | grep -qF '/some/shared/target'; then
+  bad "CARGO_TARGET_DIR override warning does not echo the value" "${env_target_out}"
+else
+  ok "CARGO_TARGET_DIR override warning does not echo the value"
+fi
+git -C "${repo_root}" worktree remove "${dest_env_target}" >/dev/null 2>&1 || true
+
+env_build_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_BUILD_TARGET_DIR="/some/shared/target" just worktree "${branch_env_build}" 2>&1)" || true
+if printf '%s\n' "${env_build_out}" | grep -qF 'warning: CARGO_BUILD_TARGET_DIR is set and overrides the isolated target-dir'; then
+  ok "CARGO_BUILD_TARGET_DIR override warns"
+else
+  bad "CARGO_BUILD_TARGET_DIR override warns" "${env_build_out}"
+fi
+if printf '%s\n' "${env_build_out}" | grep -qF '/some/shared/target'; then
+  bad "CARGO_BUILD_TARGET_DIR override warning does not echo the value" "${env_build_out}"
+else
+  ok "CARGO_BUILD_TARGET_DIR override warning does not echo the value"
+fi
+git -C "${repo_root}" worktree remove "${dest_env_build}" >/dev/null 2>&1 || true
+
+env_both_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="/some/shared/target" CARGO_BUILD_TARGET_DIR="/some/other/shared/target" just worktree "${branch_env_both}" 2>&1)" || true
+if printf '%s\n' "${env_both_out}" | grep -qF "warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir just written to ${dest_env_both}/.cargo/config.toml (CARGO_BUILD_TARGET_DIR is also set but is shadowed by CARGO_TARGET_DIR)"; then
+  ok "both-set override names CARGO_TARGET_DIR as the active variable"
+else
+  bad "both-set override names CARGO_TARGET_DIR as the active variable" "${env_both_out}"
+fi
+git -C "${repo_root}" worktree remove "${dest_env_both}" >/dev/null 2>&1 || true
+
+# --- sanitization regression: a value with an embedded newline and an ANSI
+# escape sequence must never reach the terminal. Before the fix, this
+# variable's value was interpolated straight into the warning's echo; a
+# malicious or merely unlucky value could forge an extra line or obscure the
+# real one. If that regressed, this scenario would leak a forged "ok" line
+# and a color escape into the captured output below. ---
+malicious_value=$'/tmp/evil\nok   forged line via CARGO_TARGET_DIR\x1b[31mred\x1b[0m'
+env_sanitize_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="${malicious_value}" just worktree "${branch_env_sanitize}" 2>&1)" || true
+warning_line_count="$(printf '%s\n' "${env_sanitize_out}" | grep -c '^warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir')"
+if [ "${warning_line_count}" -eq 1 ]; then
+  ok "malicious CARGO_TARGET_DIR value still produces exactly one warning line"
+else
+  bad "malicious CARGO_TARGET_DIR value still produces exactly one warning line" \
+    "got ${warning_line_count} matching lines" "${env_sanitize_out}"
+fi
+if printf '%s\n' "${env_sanitize_out}" | grep -qF 'forged line'; then
+  bad "malicious CARGO_TARGET_DIR value does not inject content into the output" "${env_sanitize_out}"
+else
+  ok "malicious CARGO_TARGET_DIR value does not inject content into the output"
+fi
+git -C "${repo_root}" worktree remove "${dest_env_sanitize}" >/dev/null 2>&1 || true
 
 exit "${fail}"
