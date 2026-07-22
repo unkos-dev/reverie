@@ -210,10 +210,33 @@ else
   merge_base="$(git merge-base "$base_ref" HEAD)" \
     || die "no merge base between '${base_ref}' and HEAD" \
       "fetch the base branch, or pass --base <ref>"
-  mapfile -t changed < <(
-    git diff --name-only "$merge_base"
-    git ls-files --others --exclude-standard
-  )
+  # --no-renames is load-bearing, not a style choice. With rename detection on,
+  # `git diff --name-only` reports a rename as the destination path alone, so
+  # moving backend/foo.rs to docs/foo.mdx would select the docs lane and drop
+  # every Rust lane the vacated path required. Treating a rename as a delete
+  # plus an add names both sides, so no lane a move implicates can be missed.
+  #
+  # This is parity, not caution: the pinned paths-filter passes --no-renames
+  # to every git query it makes, and on pull_request events, where it reads
+  # the GitHub API instead, it expands a renamed entry into both its filename
+  # and its previous_filename.
+  #
+  # -z because a path with a space, a quote, or a newline is quoted (and
+  # therefore mangled) in git's default line-oriented output. Collected through
+  # a file rather than a variable because bash cannot hold the NUL delimiter.
+  paths_file="$(mktemp)"
+  # shellcheck disable=SC2064  # expand paths_file now: the trap must survive it going out of scope.
+  trap "rm -f '${paths_file}'" EXIT
+  # A process substitution's exit status is unobservable, so a git failure
+  # inside one would surface as a short path list and a confidently narrowed
+  # gate. Run each command as its own checkable statement instead.
+  git diff --name-only --no-renames -z "$merge_base" > "$paths_file" \
+    || die "git diff against ${merge_base} failed" \
+      "resolve the repository error above, or pass --files-from"
+  git ls-files --others --exclude-standard -z >> "$paths_file" \
+    || die "git ls-files failed while listing untracked paths" \
+      "resolve the repository error above, or pass --files-from"
+  mapfile -d '' -t changed < "$paths_file"
   note "base: ${base_ref} (merge-base ${merge_base})"
 fi
 

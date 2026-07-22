@@ -220,6 +220,79 @@ expect_failure 'an unrecognised YAML shape aborts' 'unparsable line' \
 expect_failure 'a missing filters file aborts' 'missing' \
   "$scope" --filters "$tmpdir/does-not-exist.yml" --files-from /dev/null
 
+# --- changed-path collection -------------------------------------------------
+
+# Everything above feeds paths in through --files-from, which exercises the
+# mapping but not the git query that produces those paths in real use. These
+# two cases need a repository, so they build a throwaway one and run a copy of
+# the scoper from inside it: the script derives its own root from $0, so a
+# copy under <fixture>/scripts/ treats the fixture as the repo.
+fixture="$tmpdir/fixture"
+mkdir -p "$fixture/scripts" "$fixture/.github" "$fixture/backend" "$fixture/docs"
+cp "$scope" "$fixture/scripts/preflight-scope.sh"
+cp .github/path-filters.yml "$fixture/.github/path-filters.yml"
+git -C "$fixture" init -q -b main
+git -C "$fixture" config user.email selftest@example.invalid
+git -C "$fixture" config user.name 'Preflight Selftest'
+echo 'fn main() {}' > "$fixture/backend/moved.rs"
+git -C "$fixture" add -A
+git -C "$fixture" commit -qm 'base'
+git -C "$fixture" checkout -q -b topic
+git -C "$fixture" mv backend/moved.rs docs/moved.mdx
+git -C "$fixture" commit -qm 'move across filter scopes'
+
+# git's rename detection reports only the destination of a move, which would
+# select the docs lane and silently drop every Rust lane the vacated backend
+# path required. Both sides of the move have to be named.
+rename_got="$(cd "$fixture" && ./scripts/preflight-scope.sh --base main 2> /dev/null)"
+rename_want="$BACKEND
+docs::check"
+if [ "$rename_got" = "$rename_want" ]; then
+  printf 'ok   %s\n' 'a rename across filter scopes keeps the source lane'
+else
+  printf 'FAIL %s\n  want: %s\n  got:  %s\n' 'a rename across filter scopes keeps the source lane' \
+    "$(echo "$rename_want" | tr '\n' ' ')" "$(echo "$rename_got" | tr '\n' ' ')"
+  failures=$((failures + 1))
+fi
+
+# A git failure during path discovery must abort. Swallowed, it looks like a
+# short changed-path list, which is exactly the confidently-narrowed gate this
+# tool must never produce. The stub fails only the discovery subcommands, so
+# base-ref resolution still succeeds and the run reaches the failure under test.
+real_git="$(command -v git)"
+
+# One stub dir per subcommand, each failing only its own, so the other
+# discovery call still succeeds and every failure is attributed exactly.
+for subcommand in diff ls-files; do
+  stub_dir="$tmpdir/stub-$subcommand"
+  mkdir -p "$stub_dir"
+  cat > "$stub_dir/git" <<STUB
+#!/usr/bin/env bash
+# The real git is called by absolute path: this directory is first on PATH,
+# so a bare 'git' here would recurse into the stub forever.
+if [ "\$1" = '${subcommand}' ]; then
+  echo 'stubbed git failure' >&2
+  exit 1
+fi
+exec '${real_git}' "\$@"
+STUB
+  chmod +x "$stub_dir/git"
+
+  stub_rc=0
+  stub_out="$(cd "$fixture" && PATH="$stub_dir:$PATH" ./scripts/preflight-scope.sh --base main 2>&1)" || stub_rc=$?
+  case "$stub_out" in
+    *"git ${subcommand}"*) mentions_it=1 ;;
+    *) mentions_it=0 ;;
+  esac
+  if [ "$stub_rc" -ne 0 ] && [ "$mentions_it" -eq 1 ]; then
+    printf 'ok   %s\n' "a failing git ${subcommand} aborts instead of narrowing the gate"
+  else
+    printf 'FAIL %s\n  rc: %s\n  output: %s\n' \
+      "a failing git ${subcommand} aborts instead of narrowing the gate" "$stub_rc" "$stub_out"
+    failures=$((failures + 1))
+  fi
+done
+
 # --- the shared-source invariant --------------------------------------------
 
 # The whole design rests on CI reading the same file. An inlined `filters:`
