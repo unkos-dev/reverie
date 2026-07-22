@@ -1,13 +1,10 @@
----
-title: Reverie Design Philosophy
-description: The conceptual register, posture, and decision rules behind Reverie's visual identity.
----
+# Reverie Design Philosophy
 
 Reverie is a self-hosted ebook library for people who want their library to
 look like a library. Its design register is **boutique cinematic**: warm
 canvases, type-led hierarchy, and a single decisive accent (Reverie Gold).
 This document captures the conceptual rules; concrete tokens, type scale,
-and motion are codified in [Visual Identity](/reverie/design/visual-identity/) and
+and motion are codified in [Visual Identity](./visual-identity.md) and
 the canonical theme tree at `frontend/src/styles/themes/`.
 
 ## Brand identity is the source of truth
@@ -40,33 +37,33 @@ State communicates through **typography weight, surface opacity, motion,
 and the gold accent** (never a state-coded hue, with a single bounded
 exception, **danger** (below)). This is a load-bearing brand invariant:
 
-| State                             | Expression                                                                                                                                                                                                                 |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Default / idle                    | `text-fg`, `bg-surface` (or unchanged)                                                                                                                                                                                     |
-| Hover (surface lift)              | `translate-y-[-1px]` + `border-border-strong`                                                                                                                                                                              |
-| Hover (in-list item)              | `bg-hover` (= `bg-surface-2`); brand gold is reserved for primary affordances and is never a hover treatment                                                                                                               |
-| Active / pressed                  | `bg-accent` or `bg-accent-strong`                                                                                                                                                                                          |
-| Selected                          | `bg-accent-soft` background + `text-fg`                                                                                                                                                                                    |
-| Disabled                          | `opacity-50` + `text-fg-muted`                                                                                                                                                                                             |
-| Loading                           | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                                                                                                             |
-| Error (recoverable)               | `text-fg font-semibold` + gold recovery action                                                                                                                                                                             |
-| Destructive / unrecoverable error | `--danger` fill, border, or icon (white text on the fill), always paired with an icon, weight, or label. The one state hue (below)                                                                                         |
-| Success (explicit)                | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                                                                                                           |
-| Link                              | underline + `text-accent` on hover; no permanent colour difference                                                                                                                                                         |
-| Focus (keyboard)                  | universal `:focus-visible`, single 2px `gold-11` outline + 2px offset, no halo; `gold-11` (`--accent-text`) carries the ≥ 3:1 non-text boundary unaided on both themes (see [Color Tokens](/reverie/design/color-tokens/)) |
+| State                             | Expression                                                                                                                                                                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default / idle                    | `text-fg`, `bg-surface` (or unchanged)                                                                                                                                                                         |
+| Hover (surface lift)              | `translate-y-[-1px]` + `border-border-strong`                                                                                                                                                                  |
+| Hover (in-list item)              | `bg-hover` (= `bg-surface-2`); brand gold is reserved for primary affordances and is never a hover treatment                                                                                                   |
+| Active / pressed                  | `bg-accent` or `bg-accent-strong`                                                                                                                                                                              |
+| Selected                          | `bg-accent-soft` background + `text-fg`                                                                                                                                                                        |
+| Disabled                          | `opacity-50` + `text-fg-muted`                                                                                                                                                                                 |
+| Loading                           | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region                                                                                                                                                                 |
+| Error (recoverable)               | `text-fg font-semibold` + gold recovery action                                                                                                                                                                 |
+| Destructive / unrecoverable error | `--danger` fill, border, or icon (white text on the fill), always paired with an icon, weight, or label. The one state hue (below)                                                                             |
+| Success (explicit)                | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s                                                                                                                               |
+| Link                              | underline + `text-accent` on hover; no permanent colour difference                                                                                                                                             |
+| Focus (keyboard)                  | universal `:focus-visible`, single 2px `gold-11` outline + 2px offset, no halo; `gold-11` (`--accent-text`) carries the ≥ 3:1 non-text boundary unaided on both themes (see [Color Tokens](./color-tokens.md)) |
 
 `--color-danger` is the **one** sanctioned state hue: reserved for
 destructive and unrecoverable-error semantics, never decorative, and always
 paired with an icon, weight, or text label (WCAG 1.4.1). The rationale is
 recorded in the single-danger-hue decision
 (`adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`); see also
-[Color Tokens](/reverie/design/color-tokens/). The canonical token set still
+[Color Tokens](./color-tokens.md). The canonical token set still
 deliberately excludes `--color-success`, `--color-warning`, `--color-info`,
 and `--color-neutral`. Adding any further hue-coded state token requires a
 separate brand-aligned decision; do not "harmlessly add" them on the
 assumption they'll be useful later. Charts and code blocks are scoped
 exceptions; when they ship, the deviation is documented in
-[Visual Identity](/reverie/design/visual-identity/) and constrained to the
+[Visual Identity](./visual-identity.md) and constrained to the
 surface that requires it.
 
 `--color-fg-faint` is **decorative-only**: breadcrumb separators,
@@ -91,7 +88,7 @@ accent is used_: solid fills (large CTAs, primary actions) carry **ink
 text** at ≈ 5:1, which clears 1.4.3; the fill, not the gold edge, does the
 work. Focus rings sidestep the deviation entirely by using `gold-11`
 (`--accent-text`), the text-grade gold that clears the ≥ 3:1 boundary on its
-own; no halo required (see [Color Tokens](/reverie/design/color-tokens/)).
+own; no halo required (see [Color Tokens](./color-tokens.md)).
 
 axe-core surfaces 1.4.11 / 1.4.3 violations on any Light surface that uses
 the `gold-9` edge or `gold-9` text outside those mitigated cases. The
@@ -119,7 +116,7 @@ device state, not session state. The FOUC pre-paint script reads the
 cookie synchronously, sets `<html data-theme>` before React hydrates,
 and the canonical theme tree's `[data-theme="dark"]` / `light`
 selectors swap palette runtime variables. See
-[Visual Identity § Theme Architecture](/reverie/design/visual-identity/#theme-architecture)
+[Visual Identity § Theme Architecture](./visual-identity.md#theme-architecture)
 for the cross-stack contract.
 
 ## What we don't build

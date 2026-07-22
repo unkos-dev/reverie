@@ -41,8 +41,10 @@ These constraints are fixed:
 - No telemetry. Reverie sends nothing about you, your library, or your
   deployment anywhere.
 - The whole application deploys as one container plus PostgreSQL. EPUB
-  processing is pure Rust with no Java dependency, images are published for
-  amd64 and arm64, and the idle memory target is under 200 MB.
+  processing is pure Rust with no Java dependency, tagged releases publish
+  multi-arch images for amd64 and arm64 (the pre-release staging image
+  tracks main and is arm64 only), and the idle memory target is under
+  200 MB.
 - Authentication is OIDC with PKCE. OPDS clients and reader apps use hashed
   device tokens.
 

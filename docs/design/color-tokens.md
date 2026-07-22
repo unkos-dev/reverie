@@ -1,7 +1,4 @@
----
-title: Color Token System
-description: "The three-tier editorial color contract: generated Radix primitives, reverie semantic roles, and the sealed atmosphere layer."
----
+# Color Token System
 
 Reverie's color system is a **three-tier contract**: raw color exists in exactly
 one generated layer, UI chrome reads only named semantic roles, and
