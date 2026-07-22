@@ -9,10 +9,37 @@
 //! partial unique index enforces that invariant against concurrent issuance
 //! (see the `rotate` function). The struct deliberately does not derive
 //! `Serialize` so the hash cannot leak through an API by accident.
+//!
+//! [`crate::models::password_reset_pin::IssuanceLock`] additionally serializes whole issuances for one user across
+//! processes, so the rotation and the publication of the clear PIN that follows
+//! it stay one indivisible step; see [`crate::auth::recovery::issue_pin`].
 
-use sqlx::PgPool;
+use sqlx::pool::PoolConnection;
+use sqlx::{Acquire, Connection as _, PgConnection, PgPool, Postgres};
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+/// First key of the per-user issuance advisory lock. Advisory locks share one
+/// database-wide key space, so the two-key form namespaces the recovery-PIN
+/// locks away from any other per-user lock (`device_token` hashes the same user
+/// id into the single-key space) that would otherwise collide.
+const ISSUANCE_LOCK_NAMESPACE: i32 = 0x5245_4356;
+
+/// Attempts and pause between them when acquiring the per-user issuance lock.
+/// The section it guards is two small statements plus one local file write, so
+/// this budget is generous for a queue of one and still bounded well inside a
+/// request: an issuance that cannot get in hands the slot to the holder rather
+/// than waiting behind it.
+const ISSUANCE_LOCK_ATTEMPTS: u32 = 20;
+const ISSUANCE_LOCK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
+
+/// Bound on how long a rotate statement may wait for a conflicting row or index
+/// lock. Transaction-local, so it never leaks into the pooled session.
+const ROTATE_LOCK_TIMEOUT: &str = "5s";
+
+/// Retries [`rotate`] spends on the single-active race before conceding it. One
+/// is enough: the retry's supersede `DELETE` sees the winner's committed row.
+const ROTATE_RETRIES: u32 = 1;
 
 /// An active (unconsumed, unexpired) password-reset PIN, as needed to verify a
 /// reset attempt. Holds a SECRET (`pin_hash`); not serialisable, never logged.
@@ -105,15 +132,107 @@ pub enum RotateOutcome {
 
 /// Outcome of a single [`rotate_once`] attempt against the single-active
 /// partial unique index.
+#[derive(Clone, Copy)]
 enum InsertOutcome {
     /// The freshly hashed PIN was persisted as the user's sole active row.
     Inserted(Uuid),
     /// A concurrent issuance committed the active row between this attempt's
     /// supersede `DELETE` and its `INSERT`, so the `INSERT` hit the
     /// `idx_password_reset_pins_active_unique` index. Nothing was persisted (the
-    /// attempt's transaction rolled back); [`rotate_with_retry`] decides whether
+    /// attempt's transaction rolled back); [`next_step`] decides whether
     /// to retry or concede the race.
     LostActiveSlot,
+}
+
+/// Exclusive hold on one user's recovery-PIN issuance, backed by a
+/// session-level Postgres advisory lock and carrying the connection that holds
+/// it so the guarded work runs without a second pool checkout.
+///
+/// THREAT (a superseded issuer publishing last): the database row and the
+/// operator PIN file are two stores that must agree. Committing the row proves
+/// only that this issuance held the active slot at commit time, not that it
+/// still holds it when the file is written, and the HTTP handler and the
+/// `reset-password` CLI are separate processes, so no in-process mutex can
+/// order them. Holding this lock across both steps makes the winner of the lock
+/// the last writer of the file, so the published PIN is always the one the sole
+/// active row hashes.
+///
+/// The lock is session-scoped rather than transaction-scoped on purpose: a
+/// `pg_advisory_xact_lock` is released at `COMMIT`, which is before the file is
+/// written, and would leave exactly the gap it is meant to close. Postgres
+/// releases a session lock when the session ends, so a process that dies mid
+/// section cannot lock an account out of recovery; [`IssuanceLock::release`]
+/// closes the connection instead of returning it to the pool if the explicit
+/// unlock does not confirm.
+pub struct IssuanceLock {
+    conn: PoolConnection<Postgres>,
+    user_key: String,
+}
+
+impl IssuanceLock {
+    /// Try to take the issuance lock for `user_id`, retrying briefly while
+    /// another issuance holds it. `Ok(None)` means the lock stayed taken for the
+    /// whole budget: another issuance is publishing its own PIN, and this caller
+    /// MUST NOT rotate or publish, because it would be racing that holder.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`sqlx::Error`] if a connection cannot be checked out or the lock
+    /// query fails.
+    pub async fn try_acquire(pool: &PgPool, user_id: Uuid) -> Result<Option<Self>, sqlx::Error> {
+        let user_key = user_id.to_string();
+        let mut conn = pool.acquire().await?;
+        for attempt in 0..ISSUANCE_LOCK_ATTEMPTS {
+            let acquired = sqlx::query_scalar!(
+                r#"SELECT pg_try_advisory_lock($1, hashtext($2)::int) AS "acquired!""#,
+                ISSUANCE_LOCK_NAMESPACE,
+                user_key,
+            )
+            .fetch_one(&mut *conn)
+            .await?;
+            if acquired {
+                return Ok(Some(Self { conn, user_key }));
+            }
+            if attempt + 1 < ISSUANCE_LOCK_ATTEMPTS {
+                tokio::time::sleep(ISSUANCE_LOCK_RETRY_INTERVAL).await;
+            }
+        }
+        tracing::debug!("recovery-pin issuance lock stayed held for the whole wait budget");
+        Ok(None)
+    }
+
+    /// The locked connection, for running the guarded work without checking out
+    /// a second connection (the `reset-password` CLI runs a pool of one).
+    pub fn connection(&mut self) -> &mut PgConnection {
+        &mut self.conn
+    }
+
+    /// Release the lock. Prefers the explicit unlock so the connection goes back
+    /// to the pool reusable; if that does not confirm, the connection is closed
+    /// instead, because Postgres drops session advisory locks with the session
+    /// and a still-locked connection in the pool would deny that user recovery
+    /// for the lifetime of the process.
+    pub async fn release(mut self) {
+        match sqlx::query_scalar!(
+            r#"SELECT pg_advisory_unlock($1, hashtext($2)::int) AS "released!""#,
+            ISSUANCE_LOCK_NAMESPACE,
+            self.user_key,
+        )
+        .fetch_one(&mut *self.conn)
+        .await
+        {
+            Ok(true) => return,
+            Ok(false) => {
+                tracing::error!("recovery-pin issuance lock was not held at release");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to release the recovery-pin issuance lock");
+            }
+        }
+        if let Err(e) = self.conn.detach().close().await {
+            tracing::warn!(error = %e, "failed to close the recovery-pin issuance connection");
+        }
+    }
 }
 
 /// Atomically supersede a user's prior active PINs and persist a fresh one,
@@ -139,6 +258,11 @@ enum InsertOutcome {
 /// not publish a clear PIN that no stored hash would verify. The caller returns
 /// the same generic success and never a 500 for this path.
 ///
+/// Callers reach this through [`crate::auth::recovery::issue_pin`], which holds
+/// the user's [`IssuanceLock`] across both the rotation and the publication of
+/// the clear PIN. Under that lock the index race is a backstop rather than the
+/// primary defence, and it still resolves issuers that predate the lock.
+///
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] if the transaction cannot begin, either statement
@@ -146,38 +270,48 @@ enum InsertOutcome {
 /// commit fails. On any failure the transaction rolls back, so the prior active
 /// PIN is preserved.
 pub async fn rotate(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     user_id: Uuid,
     pin_hash: &str,
     expires_at: OffsetDateTime,
 ) -> Result<RotateOutcome, sqlx::Error> {
-    // The single attempt is passed as a closure so the bounded-retry policy that
-    // classifies the race outcome can be exercised deterministically, without a
-    // live triple-race that no external test can schedule reliably (see
-    // rotate_with_retry's unit tests).
-    rotate_with_retry(|| rotate_once(pool, user_id, pin_hash, expires_at)).await
+    let mut retries_left = ROTATE_RETRIES;
+    loop {
+        let outcome = rotate_once(&mut *conn, user_id, pin_hash, expires_at).await?;
+        match next_step(outcome, retries_left) {
+            NextStep::Done(outcome) => return Ok(outcome),
+            NextStep::Retry => {
+                tracing::debug!("recovery-pin rotate lost the single-active race; retrying once");
+                retries_left -= 1;
+            }
+        }
+    }
 }
 
-/// rotate's bounded single-active-race retry policy over one attempt.
+/// What [`rotate`] does after one attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NextStep {
+    /// Stop with this outcome.
+    Done(RotateOutcome),
+    /// Run the whole supersede-then-insert again.
+    Retry,
+}
+
+/// rotate's bounded single-active-race retry policy, as a pure decision so it is
+/// exercised deterministically rather than through a live multi-way race no test
+/// can schedule reliably.
 ///
-/// A lost race is benign: retry the whole supersede-then-insert exactly once so
-/// the retry's `DELETE` supersedes the winner's now-committed row. If a further
-/// concurrent issuer still holds the slot after the retry, this call's PIN was
-/// never persisted, so return [`RotateOutcome::RaceLost`]. The caller then
-/// withholds its unstorable clear PIN rather than reporting another issuer's row
-/// as this call's success.
-async fn rotate_with_retry<A, F>(mut attempt: A) -> Result<RotateOutcome, sqlx::Error>
-where
-    A: FnMut() -> F,
-    F: std::future::Future<Output = Result<InsertOutcome, sqlx::Error>>,
-{
-    if let InsertOutcome::Inserted(id) = attempt().await? {
-        return Ok(RotateOutcome::Issued(id));
-    }
-    tracing::debug!("recovery-pin rotate lost the single-active race; retrying once");
-    match attempt().await? {
-        InsertOutcome::Inserted(id) => Ok(RotateOutcome::Issued(id)),
-        InsertOutcome::LostActiveSlot => Ok(RotateOutcome::RaceLost),
+/// A lost race is benign: retry the whole supersede-then-insert so the retry's
+/// `DELETE` supersedes the winner's now-committed row. If a further concurrent
+/// issuer still holds the slot once the retries are spent, this call's PIN was
+/// never persisted, so the outcome is [`RotateOutcome::RaceLost`]. The caller
+/// then withholds its unstorable clear PIN rather than reporting another
+/// issuer's row as this call's success.
+const fn next_step(outcome: InsertOutcome, retries_left: u32) -> NextStep {
+    match outcome {
+        InsertOutcome::Inserted(id) => NextStep::Done(RotateOutcome::Issued(id)),
+        InsertOutcome::LostActiveSlot if retries_left > 0 => NextStep::Retry,
+        InsertOutcome::LostActiveSlot => NextStep::Done(RotateOutcome::RaceLost),
     }
 }
 
@@ -191,12 +325,22 @@ where
 /// client-visible error. Any other database error propagates and rolls back,
 /// preserving the prior active PIN.
 async fn rotate_once(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     user_id: Uuid,
     pin_hash: &str,
     expires_at: OffsetDateTime,
 ) -> Result<InsertOutcome, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = Acquire::begin(&mut *conn).await?;
+    // Bound the wait on a conflicting row or index lock so a rotation cannot pin
+    // a connection, and the issuance lock it runs under, behind an unrelated
+    // transaction indefinitely. Transaction-local, so the pooled session keeps
+    // the server default.
+    sqlx::query_scalar!(
+        r#"SELECT set_config('lock_timeout', $1, true) AS "applied!""#,
+        ROTATE_LOCK_TIMEOUT,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     supersede_active(&mut *tx, user_id).await?;
     match insert(&mut *tx, user_id, pin_hash, expires_at).await {
         Ok(id) => {
@@ -364,7 +508,8 @@ mod tests {
             .await
             .expect("seed first pin");
 
-        let second = match rotate(&pool, user_id, "$argon2id$second", expires)
+        let mut conn = pool.acquire().await.expect("acquire");
+        let second = match rotate(&mut conn, user_id, "$argon2id$second", expires)
             .await
             .expect("rotate")
         {
@@ -425,8 +570,14 @@ mod tests {
 
         let pool_a = pool.clone();
         let pool_b = pool.clone();
-        let a = tokio::spawn(async move { rotate(&pool_a, user_id, "$argon2id$a", expires).await });
-        let b = tokio::spawn(async move { rotate(&pool_b, user_id, "$argon2id$b", expires).await });
+        let a = tokio::spawn(async move {
+            let mut conn = pool_a.acquire().await.expect("acquire a");
+            rotate(&mut conn, user_id, "$argon2id$a", expires).await
+        });
+        let b = tokio::spawn(async move {
+            let mut conn = pool_b.acquire().await.expect("acquire b");
+            rotate(&mut conn, user_id, "$argon2id$b", expires).await
+        });
 
         let (a, b) = tokio::join!(a, b);
         let a = a.expect("rotate task a joined");
@@ -469,55 +620,31 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn rotate_with_retry_issues_on_the_first_attempt() {
+    #[test]
+    fn an_inserted_attempt_stops_immediately() {
         let id = Uuid::new_v4();
-        let mut attempts = 0u32;
-        let outcome = rotate_with_retry(|| {
-            attempts += 1;
-            async move { Ok::<_, sqlx::Error>(InsertOutcome::Inserted(id)) }
-        })
-        .await
-        .expect("uncontended attempt succeeds");
-        assert_eq!(attempts, 1, "an uncontended rotate makes no second attempt");
-        assert_eq!(outcome, RotateOutcome::Issued(id));
-    }
-
-    #[tokio::test]
-    async fn rotate_with_retry_issues_after_one_lost_race() {
-        let id = Uuid::new_v4();
-        let mut attempts = 0u32;
-        let outcome = rotate_with_retry(|| {
-            let n = attempts;
-            attempts += 1;
-            async move {
-                Ok::<_, sqlx::Error>(if n == 0 {
-                    InsertOutcome::LostActiveSlot
-                } else {
-                    InsertOutcome::Inserted(id)
-                })
-            }
-        })
-        .await
-        .expect("the retry succeeds");
-        assert_eq!(attempts, 2, "one lost race triggers exactly one retry");
-        assert_eq!(outcome, RotateOutcome::Issued(id));
-    }
-
-    #[tokio::test]
-    async fn rotate_with_retry_concedes_race_when_slot_stays_taken() {
-        let mut attempts = 0u32;
-        let outcome = rotate_with_retry(|| {
-            attempts += 1;
-            async move { Ok::<_, sqlx::Error>(InsertOutcome::LostActiveSlot) }
-        })
-        .await
-        .expect("a conceded race is not an error");
-        assert_eq!(attempts, 2, "rotate retries exactly once before conceding");
         assert_eq!(
-            outcome,
-            RotateOutcome::RaceLost,
-            "a still-taken slot after the retry must report the lost race, not another row"
+            next_step(InsertOutcome::Inserted(id), ROTATE_RETRIES),
+            NextStep::Done(RotateOutcome::Issued(id)),
+            "an uncontended attempt needs no retry"
+        );
+    }
+
+    #[test]
+    fn a_lost_slot_retries_while_retries_remain() {
+        assert_eq!(
+            next_step(InsertOutcome::LostActiveSlot, ROTATE_RETRIES),
+            NextStep::Retry,
+            "a lost race is retried, not surfaced"
+        );
+    }
+
+    #[test]
+    fn a_lost_slot_concedes_once_retries_are_spent() {
+        assert_eq!(
+            next_step(InsertOutcome::LostActiveSlot, 0),
+            NextStep::Done(RotateOutcome::RaceLost),
+            "a still-taken slot must report the lost race, not another row"
         );
     }
 
@@ -537,7 +664,8 @@ mod tests {
 
         let pool_rotate = pool.clone();
         let rotate_task = tokio::spawn(async move {
-            rotate(&pool_rotate, user_id, "$argon2id$winner", expires).await
+            let mut conn = pool_rotate.acquire().await.expect("acquire");
+            rotate(&mut conn, user_id, "$argon2id$winner", expires).await
         });
 
         // Once rotate's INSERT is parked on the blocker's slot, committing the
@@ -692,7 +820,8 @@ mod tests {
             time::Date::from_calendar_date(0, time::Month::January, 1).expect("year-0 date"),
             time::Time::MIDNIGHT,
         );
-        let err = rotate(&pool, user_id, "$argon2id$replacement", out_of_range)
+        let mut conn = pool.acquire().await.expect("acquire");
+        let err = rotate(&mut conn, user_id, "$argon2id$replacement", out_of_range)
             .await
             .expect_err("insert must violate the expires_at CHECK constraint");
         assert!(

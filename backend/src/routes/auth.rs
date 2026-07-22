@@ -655,9 +655,11 @@ struct ForgotPasswordRequest {
 /// reveals whether the email exists. When it does, a fresh CSPRNG PIN is
 /// generated, prior active PINs for the user are superseded (at most one active
 /// PIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written
-/// to a per-user operator-readable file (mode 0600). A failed file write leaves an
-/// unconsumed-but-unusable row that simply expires; it is never a cleartext PIN
-/// with no consuming row. On an unknown email, equivalent Argon2 work is spent so
+/// to a per-user operator-readable file (mode 0600). Both writes happen under one
+/// per-user issuance lock, so the published file always describes the single
+/// active row even when another process issues concurrently. A failed file write
+/// leaves an unconsumed-but-unusable row that simply expires; it is never a
+/// cleartext PIN with no consuming row. On an unknown email, equivalent Argon2 work is spent so
 /// timing does not leak existence (a small DB/file residual is
 /// accepted).
 ///
@@ -701,33 +703,34 @@ async fn forgot_password(
         let expires_at = time::OffsetDateTime::now_utc()
             + time::Duration::seconds(state.config.recovery_pin_ttl_secs);
 
-        // Atomically supersede prior PINs and persist the new one, so a failure
-        // cannot leave the user with no active PIN.
-        let outcome =
-            crate::models::password_reset_pin::rotate(&state.pool, user.id, &pin_hash, expires_at)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-
-        // THREAT (publishing an unpersisted PIN): write the clear PIN to the
-        // operator file only when this request actually persisted it. On a lost
-        // concurrent race a winning issuance holds the active row and carries
-        // the live PIN; writing our unstored PIN would overwrite the operator
-        // file with a value no stored hash verifies, denying recovery. Either
-        // way the response is the same generic 200 (no enumeration, no 500).
-        if let crate::models::password_reset_pin::RotateOutcome::Issued(_) = outcome {
-            // DB committed; the file comes last so a write failure leaves only an
-            // unusable row that expiry sweeps.
-            let email = user.email.as_deref().unwrap_or(&body.email);
-            if let Err(e) = crate::auth::recovery::write_pin_file(
-                std::path::Path::new(&state.config.recovery_pin_dir),
-                user.id,
-                email,
-                &pin,
-                expires_at,
-            ) {
-                // Never surface to the client; the row expires harmlessly.
+        // THREAT (publishing an unpersisted PIN): supersede, persist, and write
+        // the operator file as one serialized step, so this request publishes a
+        // PIN only if it also owns the active row when the file is written. A
+        // request that stands down for a concurrent issuance publishes nothing:
+        // the winner's PIN is the live one, and overwriting the file with an
+        // unowned PIN would deny recovery. Either way the response is the same
+        // generic 200 (no enumeration, no 500).
+        let email = user.email.as_deref().unwrap_or(&body.email);
+        let issuance = crate::auth::recovery::PinIssuance {
+            user_id: user.id,
+            email: email.to_owned(),
+            pin,
+            pin_hash,
+            expires_at,
+        };
+        match crate::auth::recovery::issue_pin(
+            &state.pool,
+            std::path::Path::new(&state.config.recovery_pin_dir),
+            issuance,
+        )
+        .await
+        {
+            Ok(_) => {}
+            // Never surface to the client; the row expires harmlessly.
+            Err(e @ crate::auth::recovery::IssuePinError::Publish(_)) => {
                 tracing::error!(error = %e, "failed to write recovery PIN file");
             }
+            Err(e) => return Err(AppError::Internal(e.into())),
         }
     } else {
         // Unknown email: spend comparable Argon2 work so response timing does not

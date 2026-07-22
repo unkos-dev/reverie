@@ -208,6 +208,11 @@ just knowledge of an email address.
   PIN per user (a new request supersedes the prior one)
 - DB-row-before-file on issue and consume-before-file-removal on reset, so a
   crash never leaves a usable cleartext PIN without a live row
+- Issuance is serialized per account by a Postgres advisory lock held across
+  both the rotation and the file write, so the published file always describes
+  the single active row even when the API and the `reset-password` CLI issue
+  concurrently; the file itself is staged and renamed into place, so a reader
+  never sees a partial PIN
 - Per-source rate limiting on both recovery endpoints
 - Generic responses on both endpoints and equivalent cryptographic work on the
   unknown-account path, so neither response nor timing enumerates accounts

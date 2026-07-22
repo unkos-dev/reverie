@@ -865,31 +865,32 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to hash the recovery PIN: {e}"))?;
     let expires_at =
         time::OffsetDateTime::now_utc() + time::Duration::seconds(config.recovery_pin_ttl_secs);
-    // Atomically supersede prior PINs and persist the new one; a failure cannot
-    // leave the user with no active PIN. Hashing stays outside the transaction.
-    let outcome = models::password_reset_pin::rotate(&pool, user.id, &pin_hash, expires_at)
-        .await
-        .context("rotate the recovery PIN")?;
-    // Publish the clear PIN only when this invocation persisted it. If a
-    // concurrent forgot-password request won the active slot, this PIN was not
-    // stored, so writing it would hand the operator a code no stored hash
-    // verifies. Report that instead of publishing a dead PIN.
-    match outcome {
-        models::password_reset_pin::RotateOutcome::Issued(_) => {}
-        models::password_reset_pin::RotateOutcome::RaceLost => {
-            anyhow::bail!(
-                "a concurrent recovery-PIN issuance won the active slot; re-run to issue a fresh PIN"
-            );
-        }
-    }
-    auth::recovery::write_pin_file(
-        std::path::Path::new(&config.recovery_pin_dir),
-        user.id,
-        email,
-        &pin,
+    // Supersede prior PINs, persist the new one, and publish it as one
+    // serialized step, so a concurrent forgot-password request in the server
+    // process cannot leave the operator file and the stored hash describing
+    // different PINs. Hashing stays outside that section.
+    let issuance = auth::recovery::PinIssuance {
+        user_id: user.id,
+        email: email.to_owned(),
+        pin,
+        pin_hash,
         expires_at,
+    };
+    let outcome = auth::recovery::issue_pin(
+        &pool,
+        std::path::Path::new(&config.recovery_pin_dir),
+        issuance,
     )
-    .context("write the recovery PIN file")?;
+    .await
+    .context("issue the recovery PIN")?;
+    // A withheld PIN was neither stored nor published: a concurrent issuance
+    // owns the account's recovery slot and its PIN is the live one. Report that
+    // instead of implying an operator can relay a code that does not exist.
+    if outcome == auth::recovery::PinIssueOutcome::Withheld {
+        anyhow::bail!(
+            "a concurrent recovery-PIN issuance owns the active slot; re-run to issue a fresh PIN"
+        );
+    }
     tracing::info!(
         email = %email,
         path = %config.recovery_pin_dir,
