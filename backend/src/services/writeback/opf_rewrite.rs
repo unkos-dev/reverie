@@ -315,12 +315,20 @@ fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
 }
 
 /// Text body of the element starting at `start_idx`, empty text discarded.
+///
+/// A CDATA section is character data (XML 1.0 section 2.7), so it carries the
+/// element's value just as a text node does; quick-xml merely reports it as a
+/// separate event.  Missing that form here would leave the refine unrecorded
+/// and route the refined `dc:title` back through the main-title rewrite.
 fn element_text(events: &[Event<'static>], start_idx: usize) -> Option<String> {
     let end = skip_to_matching_end(events, start_idx);
     events[start_idx + 1..end.min(events.len())]
         .iter()
         .find_map(|ev| match ev {
             Event::Text(t) => t.decode().ok().map(|s| s.trim().to_string()),
+            Event::CData(c) => std::str::from_utf8(c.as_ref())
+                .ok()
+                .map(|s| s.trim().to_string()),
             _ => None,
         })
         .filter(|s| !s.is_empty())
@@ -751,6 +759,53 @@ mod tests {
         assert!(
             out.contains(r#"<dc:title id="t2">Old Subtitle</dc:title>"#),
             "self-closing subtitle refine was not honored: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_preserves_cdata_subtitle_refine() {
+        // A CDATA section is character data, so it carries the refine value
+        // exactly as a text node does; quick-xml just reports Event::CData.
+        // Missing it would route the subtitle back through the main-title
+        // rewrite, which is the data loss this file exists to prevent.
+        let input = sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t2">Old Subtitle</dc:title>
+    <meta refines="#t2" property="title-type"><![CDATA[subtitle]]></meta>"##,
+        );
+        let target = Target {
+            title: Some("New Title"),
+            subtitle: Some("New Subtitle"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t2">New Subtitle</dc:title>"#),
+            "CDATA subtitle refine was not honored: {out}"
+        );
+        assert!(
+            out.contains(r#"<dc:title id="t1">New Title</dc:title>"#),
+            "main title not rewritten: {out}"
+        );
+    }
+
+    #[test]
+    fn transform_preserves_cdata_subtitle_without_canonical_subtitle() {
+        // Same shape with no canonical subtitle to write: the declared
+        // subtitle must survive untouched rather than take the main title.
+        let input = sample_epub3_titles(
+            r##"<dc:title id="t1">Old Title</dc:title>
+    <dc:title id="t2">Old Subtitle</dc:title>
+    <meta refines="#t2" property="title-type"><![CDATA[ subtitle ]]></meta>"##,
+        );
+        let target = Target {
+            title: Some("New Title"),
+            ..Default::default()
+        };
+        let out = transform_str(&input, &target);
+        assert!(
+            out.contains(r#"<dc:title id="t2">Old Subtitle</dc:title>"#),
+            "declared subtitle was destroyed: {out}"
         );
     }
 
