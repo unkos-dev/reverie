@@ -5,7 +5,9 @@
 //! The clear PIN is never stored here; only its Argon2id hash, an expiry, and a
 //! consumed marker. A row is single-use (`consumed_at`) and short-lived
 //! (`expires_at`). At most one row stays active per user: a new request
-//! supersedes prior unconsumed rows. The struct deliberately does not derive
+//! supersedes prior unconsumed rows, and the `idx_password_reset_pins_active_unique`
+//! partial unique index enforces that invariant against concurrent issuance
+//! (see the `rotate` function). The struct deliberately does not derive
 //! `Serialize` so the hash cannot leak through an API by accident.
 
 use sqlx::PgPool;
@@ -88,12 +90,57 @@ pub async fn insert(
 /// no active PIN (codeguard #2: at most one active PIN per user). Hash the PIN
 /// before calling so the CPU-bound work stays outside the transaction.
 ///
+/// THREAT (concurrent issuance under READ COMMITTED): the single-active
+/// invariant is enforced by the `idx_password_reset_pins_active_unique` partial
+/// unique index, not by this transaction alone. Two concurrent forgot-password
+/// requests for one account can each run the supersede `DELETE` without seeing
+/// the other's uncommitted `INSERT`; without the index both would commit and
+/// leave two live PINs. The losing issuer's `INSERT` instead fails with a
+/// unique violation once the winner commits. That is a benign race, never a
+/// client-visible failure: this function retries the whole rotate once (the
+/// retry's `DELETE` now sees and supersedes the winner's committed row), and if
+/// a further concurrent issuer still holds the slot it returns that active
+/// row's id as the same generic success. The caller must never surface a 500
+/// for this path.
+///
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] if the transaction cannot begin, either statement
-/// fails, or the commit fails. On any failure the transaction rolls back, so the
-/// prior active PIN is preserved.
+/// fails for a reason other than the single-active unique violation, or the
+/// commit fails. On any failure the transaction rolls back, so the prior active
+/// PIN is preserved.
 pub async fn rotate(
+    pool: &PgPool,
+    user_id: Uuid,
+    pin_hash: &str,
+    expires_at: OffsetDateTime,
+) -> Result<Uuid, sqlx::Error> {
+    match rotate_once(pool, user_id, pin_hash, expires_at).await {
+        Ok(id) => Ok(id),
+        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+            tracing::debug!("recovery-pin rotate lost the single-active race; retrying once");
+            match rotate_once(pool, user_id, pin_hash, expires_at).await {
+                Ok(id) => Ok(id),
+                // A third concurrent issuer still holds the active slot. The
+                // winner already persisted a usable PIN, so return its id as the
+                // same generic success rather than a 500.
+                Err(sqlx::Error::Database(retry_err)) if retry_err.is_unique_violation() => {
+                    match find_active_by_user(pool, user_id).await? {
+                        Some(active) => Ok(active.id),
+                        None => Err(sqlx::Error::Database(retry_err)),
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// One transactional supersede-then-insert attempt for [`rotate`]. A unique
+/// violation surfaced here signals a lost single-active race for the caller to
+/// resolve.
+async fn rotate_once(
     pool: &PgPool,
     user_id: Uuid,
     pin_hash: &str,
@@ -254,6 +301,81 @@ mod tests {
             .expect("one active remains");
         assert_eq!(active.id, second, "rotate leaves the new PIN active");
         assert_ne!(active.id, first, "the prior PIN is superseded");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn partial_unique_index_rejects_a_second_active_pin(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        insert(&pool, user_id, "$argon2id$first", expires)
+            .await
+            .expect("first active pin");
+
+        let err = insert(&pool, user_id, "$argon2id$second", expires)
+            .await
+            .expect_err("a second active pin must violate the partial unique index");
+        assert!(
+            matches!(&err, sqlx::Error::Database(db) if db.is_unique_violation()),
+            "expected a unique violation from the single-active index, got {err:?}"
+        );
+
+        // A consumed row vacates the active slot (the index is partial on
+        // consumed_at IS NULL), so a fresh active PIN is admissible again.
+        sqlx::query!(
+            "UPDATE password_reset_pins SET consumed_at = now() \
+             WHERE user_id = $1 AND consumed_at IS NULL",
+            user_id,
+        )
+        .execute(&pool)
+        .await
+        .expect("consume the active pin");
+        insert(&pool, user_id, "$argon2id$third", expires)
+            .await
+            .expect("a new active pin is admissible once the prior is consumed");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn concurrent_rotate_leaves_exactly_one_active(pool: PgPool) {
+        let user_id = insert_user(&pool).await;
+        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+
+        // Seed a prior active PIN so both concurrent rotates run the supersede
+        // DELETE and then race on the INSERT, the READ COMMITTED interleaving
+        // the partial unique index must resolve into a single winner.
+        insert(&pool, user_id, "$argon2id$seed", expires)
+            .await
+            .expect("seed prior pin");
+
+        let pool_a = pool.clone();
+        let pool_b = pool.clone();
+        let a = tokio::spawn(async move { rotate(&pool_a, user_id, "$argon2id$a", expires).await });
+        let b = tokio::spawn(async move { rotate(&pool_b, user_id, "$argon2id$b", expires).await });
+
+        let (a, b) = tokio::join!(a, b);
+        let a = a.expect("rotate task a joined");
+        let b = b.expect("rotate task b joined");
+        assert!(a.is_ok(), "concurrent rotate a must not error: {a:?}");
+        assert!(b.is_ok(), "concurrent rotate b must not error: {b:?}");
+
+        let active_count = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM password_reset_pins
+               WHERE user_id = $1 AND consumed_at IS NULL AND expires_at > now()"#,
+            user_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count active pins");
+        assert_eq!(
+            active_count, 1,
+            "exactly one active recovery PIN must remain after concurrent rotate"
+        );
+        assert!(
+            find_active_by_user(&pool, user_id)
+                .await
+                .expect("find")
+                .is_some(),
+            "the single surviving PIN is active"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
