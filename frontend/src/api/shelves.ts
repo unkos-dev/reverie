@@ -41,7 +41,7 @@ const ShelfItemSchema = z.object({
 export type ShelfItem = z.infer<typeof ShelfItemSchema>;
 
 /**
- * Wire page of `GET /api/v1/shelves` (UNK-374): the backend keyset-
+ * Wire page of `GET /api/v1/shelves`: the backend keyset-
  * paginates every list, so the client walks `next_cursor` internally
  * and callers keep receiving the fully assembled array.
  */

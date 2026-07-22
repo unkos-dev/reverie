@@ -8,7 +8,7 @@
 //! - Renaming a Rust variant compile-errors at every consuming site
 //!   (e.g. `matches!(self.role, Role::Admin)` in
 //!   `auth::middleware::CurrentUser::require_admin`), eliminating the
-//!   silent-lockout hazard described in UNK-108.
+//!   silent-lockout hazard the typed enum eliminates.
 //! - A DB-side variant with no Rust counterpart fails decode loudly via
 //!   `sqlx::Type` rather than coercing into an unmatched string.
 //!
@@ -22,7 +22,7 @@
 /// Drives `auth::middleware::CurrentUser::require_admin` and
 /// `auth::middleware::CurrentUser::require_not_child`; renaming a variant
 /// compile-errors at every consumer, eliminating the silent-lockout
-/// hazard documented in UNK-108.
+/// hazard.
 #[derive(
     Debug,
     Clone,
@@ -65,9 +65,8 @@ mod tests {
 
     #[test]
     fn as_str_matches_serde_lowercase() {
-        // Wire-format invariant. UNK-105 cross-stack drift guard: any
-        // future frontend mirror of this enum depends on these exact
-        // literals.
+        // Wire-format invariant: any future frontend mirror of this enum
+        // depends on these exact literals.
         assert_eq!(Role::Admin.as_str(), "admin");
         assert_eq!(Role::Adult.as_str(), "adult");
         assert_eq!(Role::Child.as_str(), "child");

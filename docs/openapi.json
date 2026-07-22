@@ -7932,7 +7932,7 @@
       },
       "Role": {
         "type": "string",
-        "description": "Authorization role assigned to a [`crate::models::user::User`].\n\nDrives `auth::middleware::CurrentUser::require_admin` and\n`auth::middleware::CurrentUser::require_not_child`; renaming a variant\ncompile-errors at every consumer, eliminating the silent-lockout\nhazard documented in UNK-108.",
+        "description": "Authorization role assigned to a [`crate::models::user::User`].\n\nDrives `auth::middleware::CurrentUser::require_admin` and\n`auth::middleware::CurrentUser::require_not_child`; renaming a variant\ncompile-errors at every consumer, eliminating the silent-lockout\nhazard.",
         "enum": [
           "admin",
           "adult",
@@ -8659,7 +8659,7 @@
       },
       "ThemePreference": {
         "type": "string",
-        "description": "Per-user theme selection mirrored across DB, JSON, and the FOUC theme cookie.\n\nWire-format drift across these three surfaces is tracked under UNK-105;\nthe variant strings declared here are authoritative.",
+        "description": "Per-user theme selection mirrored across DB, JSON, and the FOUC theme cookie.\n\nThe variant strings declared here are authoritative across all three\nsurfaces; wire-format drift between them is a defect.",
         "enum": [
           "system",
           "light",

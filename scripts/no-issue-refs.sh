@@ -13,14 +13,18 @@
 #   - vendored UI primitives (frontend/src/components/ui),
 #   - the archival .claude tree.
 # Gitignored files (caches, build output, /plans, node_modules) are never
-# reached: callers only ever pass tracked / staged / changed files, so there
-# is nothing to exclude for performance.
+# reached: the file set comes from `git ls-files`, which only ever lists
+# tracked paths.
 #
-# Callers (lefthook staged files; CI changed files) pass a broad candidate
-# list; this script applies the in-scope policy. Commit messages and PR bodies
-# may cite issues; this guard is files only.
+# Whole-tree: every tracked in-scope file is checked on every run, not just a
+# caller-supplied candidate list, so a reference left over anywhere in scope
+# fails the build even if it did not land in the current diff. Callers
+# (lefthook staged files; CI changed files) may still pass a file list to
+# decide whether to invoke this script at all; any arguments given to the
+# script itself are accepted but ignored. Commit messages and PR bodies may
+# cite issues; this guard is files only.
 #
-# Usage: no-issue-refs.sh <file>...
+# Usage: no-issue-refs.sh [ignored-args...]
 set -euo pipefail
 
 pattern='UNK-[0-9]+'
@@ -42,17 +46,16 @@ is_gated() {
   return 1
 }
 
-# lefthook and CI (paths-filter) both pass repo-relative paths. Normalise
-# anyway so the is_gated() include/exclude patterns match even if a path
-# arrives absolute, then keep only in-scope paths that still exist (a
-# changed-file list can name deletions).
+# `git ls-files` lists every tracked path repo-relative to the current
+# directory, so callers must run this from the repo root (both lefthook and
+# the `just` recipe do). NUL-delimited so a path containing a newline cannot
+# split and slip past the filter.
 files=()
-for path in "$@"; do
-  rel="${path#"$PWD/"}"
-  if [ -f "$rel" ] && is_gated "$rel"; then
-    files+=("$rel")
+while IFS= read -r -d '' path; do
+  if [ -f "$path" ] && is_gated "$path"; then
+    files+=("$path")
   fi
-done
+done < <(git ls-files -z)
 
 if [ "${#files[@]}" -eq 0 ]; then
   exit 0

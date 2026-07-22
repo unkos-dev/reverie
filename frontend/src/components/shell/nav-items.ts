@@ -1,7 +1,7 @@
 /**
  * Navigation model for the app shell's left rail.
  *
- * Single source of truth for primary-nav entries (spec §3, UNK-385):
+ * Single source of truth for primary-nav entries (spec §3):
  * live destinations render as links, disabled entries render the
  * product's future shape (spec S3 — visible, non-interactive, tooltip
  * "Planned — not in this release"), and admin-only entries render only

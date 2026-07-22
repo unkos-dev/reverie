@@ -762,7 +762,7 @@ async fn child_can_view_own_shelves(pool: PgPool) {
     );
 }
 
-// ── UNK-374: keyset pagination on the shelves list + items page ─────────
+// ── Keyset pagination on the shelves list + items page ─────────
 
 #[sqlx::test(migrations = "./migrations")]
 async fn list_shelves_pagination_walks_across_system_boundary(pool: PgPool) {

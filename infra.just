@@ -50,6 +50,11 @@ dco-selftest:
 no-plan-refs-selftest:
     scripts/no-plan-refs-selftest.sh
 
+# Self-test the issue-tracker reference guard's whole-tree enforcement.
+[group('infra')]
+no-issue-refs-selftest:
+    scripts/no-issue-refs-selftest.sh
+
 # Regenerate the just recipe reference from the justfiles. WRITES.
 [group('infra')]
 just-reference:
@@ -128,10 +133,11 @@ doctor-selftest:
 lefthook-validate:
     npx --no-install lefthook validate
 
-# Args go through "$@" (shell-quoted) so a path with a space or a crafted name
-# cannot split or inject.
+# Whole-tree: scripts/no-issue-refs.sh ignores any arguments and always
+# checks every tracked in-scope file, so the *files parameter only controls
+# whether a caller bothers invoking the recipe at all.
 #
-# Reject issue-tracker references in a passed file list.
+# Reject issue-tracker references anywhere in the gated tree.
 [group('infra')]
 [positional-arguments]
 no-issue-refs *files:
@@ -151,7 +157,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

@@ -1,7 +1,7 @@
 //! `EnrichmentStatus` — closed value set for the Postgres `enrichment_status`
 //! ENUM applied to `manifestations.enrichment_status`.
 //!
-//! Defensive type-safety (UNK-173, extends UNK-107): pre-migration,
+//! Defensive type-safety: pre-migration,
 //! reads decoded as `String` and matched against literals with a
 //! `_ => {}` catch-all that silently dropped unknown variants.
 //! `sqlx::Type` decode of an unknown DB variant now returns an error

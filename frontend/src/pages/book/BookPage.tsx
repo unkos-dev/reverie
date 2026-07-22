@@ -77,7 +77,7 @@ function BookContent({ id }: BookContentProps): ReactElement {
             {book.series !== null && seriesLabel !== null ? (
               <p className="mb-2">
                 {/* Series detail must be click-reachable from here —
-                    it has no other inbound surface (UNK-385 §4). */}
+                    it has no other inbound surface (spec §4). */}
                 <Link
                   to={`/series/${book.series.id}`}
                   viewTransition
