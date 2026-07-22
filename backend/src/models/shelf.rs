@@ -61,4 +61,4 @@ pub struct ShelfItem {
 
 // `GET /api/v1/shelves/{id}`'s envelope (`ShelfDetailResponse`) lives in
 // `routes::shelves` — pagination is a wire concern, so the paged response
-// shape stays route-local like the books `BookListResponse` (UNK-374).
+// shape stays route-local like the books `BookListResponse`.
