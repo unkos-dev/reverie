@@ -216,6 +216,36 @@ else
   warn "disk space check" "cannot determine free space (non-GNU df); check manually"
 fi
 
+# 11. kache build-cache binary resolves on PATH. It is configured as the
+# cargo rustc-wrapper outside this repo; absence only means local builds
+# fall back to uncached compiles, not a broken toolchain, so this warns
+# rather than fails.
+if command -v kache >/dev/null 2>&1; then
+  pass "binary 'kache' resolves on PATH"
+else
+  warn "binary 'kache' resolves on PATH" "mise install"
+fi
+
+# 12. kache content-addressed store size. The store has no automatic
+# eviction, so left alone it grows without bound; warn well before it
+# threatens disk space. A store that has never been populated (kache has
+# never run here) is not a problem to report on, so an absent directory
+# degrades silently rather than warning or failing.
+kache_store="${XDG_CACHE_HOME:-${HOME}/.cache}/kache"
+twenty_gib=$((20 * 1024 * 1024 * 1024))
+if [ -d "${kache_store}" ]; then
+  if store_bytes="$(du -sb "${kache_store}" 2>/dev/null | cut -f1)" && [ -n "${store_bytes}" ]; then
+    store_gib=$((store_bytes / 1024 / 1024 / 1024))
+    if [ "${store_bytes}" -ge "${twenty_gib}" ]; then
+      warn "kache store size: ${store_gib} GiB" "kache gc --max-age 30d"
+    else
+      pass "kache store size: ${store_gib} GiB"
+    fi
+  else
+    warn "kache store size" "cannot determine store size (du failed); check manually"
+  fi
+fi
+
 echo "----"
 echo "doctor: ${pass_count} pass, ${warn_count} warn, ${fail_count} fail"
 if [ "${fail_count}" -gt 0 ]; then

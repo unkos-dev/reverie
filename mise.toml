@@ -35,3 +35,10 @@ filter_bins = "cargo-deny"
 [tools."cargo:cargo-mutants"]
 version = "27.1.0"
 locked = true
+
+# Content-addressed build cache used as the cargo rustc-wrapper for local
+# builds. Pinning it here keeps `mise install` provisioning the same
+# version the wrapper is configured against.
+[tools."github:kunobi-ninja/kache"]
+version = "0.11.0"
+filter_bins = "kache"

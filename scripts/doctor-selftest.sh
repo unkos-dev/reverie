@@ -69,12 +69,18 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat tail tr; do
+for real in env bash git jq ls df date dirname cat tail tr du cut; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node npm npx; do
+for tool in just cargo rustc node npm npx kache; do
   noop_stub "${stub_bin}" "${tool}"
 done
+
+# kache store fixture root. Pointed at via XDG_CACHE_HOME (the check's
+# override seam) rather than HOME, so it never touches the real dev
+# environment's build cache.
+xdg_cache="${tmp}/xdg-cache"
+export XDG_CACHE_HOME="${xdg_cache}"
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
@@ -313,6 +319,42 @@ install_vp_stub
 # any assertions that follow.
 echo '{}' >"${fixture}/package-lock.json"
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
+
+# --- kache binary check: absent from PATH warns (not fails) and names the
+# fix; present passes. ---
+stub_bin_no_kache="${tmp}/bin-no-kache"
+mkdir -p "${stub_bin_no_kache}"
+for f in "${stub_bin}"/*; do
+  name="$(basename "${f}")"
+  [ "${name}" = "kache" ] && continue
+  cp -P "${f}" "${stub_bin_no_kache}/${name}"
+done
+expect_exit "absent kache binary warns, does not fail" 0 "${stub_bin_no_kache}"
+expect_contains "absent kache binary advises mise install" "WARN binary 'kache' resolves on PATH -- fix: mise install"
+expect_not_contains "absent kache binary produces no FAIL lines" "FAIL "
+
+expect_exit "present kache binary passes" 0 "${stub_bin}"
+expect_contains "present kache binary is reported" "PASS binary 'kache' resolves on PATH"
+
+# --- kache store size: a store that has never been populated here degrades
+# silently (no PASS, WARN, or FAIL line at all) rather than treating
+# "kache hasn't run yet" as a problem worth reporting. ---
+expect_exit "absent kache store degrades silently" 0 "${stub_bin}"
+expect_not_contains "absent kache store has no output line" "kache store size"
+
+# --- a populated store under the threshold passes, reporting its size. ---
+mkdir -p "${xdg_cache}/kache"
+echo x >"${xdg_cache}/kache/marker"
+expect_exit "small kache store passes" 0 "${stub_bin}"
+expect_contains "small kache store size is reported" "PASS kache store size:"
+
+# --- a store at or above the 20 GiB threshold warns, naming the exact gc
+# command the store's own config comment documents. A sparse file gets the
+# apparent size `du -sb` reports without consuming real disk space. ---
+truncate -s 21G "${xdg_cache}/kache/bigfile.bin"
+expect_exit "oversized kache store warns" 0 "${stub_bin}"
+expect_contains "oversized kache store advises kache gc" "WARN kache store size: 21 GiB -- fix: kache gc --max-age 30d"
+rm -rf "${xdg_cache}/kache"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"
