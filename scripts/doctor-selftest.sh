@@ -69,18 +69,44 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat tail tr du cut; do
+for real in env bash git jq ls df date dirname cat tail tr cut uname; do
   link_real "${stub_bin}" "${real}"
 done
 for tool in just cargo rustc node npm npx kache; do
   noop_stub "${stub_bin}" "${tool}"
 done
 
-# kache store fixture root. Pointed at via XDG_CACHE_HOME (the check's
-# override seam) rather than HOME, so it never touches the real dev
-# environment's build cache.
+# Scratch HOME so the kache platform-default and XDG_CACHE_HOME-fallback
+# resolution below never reads or sizes the real machine's build cache.
+scratch_home="${tmp}/home"
+mkdir -p "${scratch_home}"
+export HOME="${scratch_home}"
+
+# kache store fixture roots: KACHE_CACHE_DIR is the documented override seam
+# (set per-assertion below), and XDG_CACHE_HOME is the undocumented
+# fallback the check probes only when the platform default under the
+# scratch HOME above is absent. Both stay under this tmp tree so they never
+# touch the real dev environment's build cache.
 xdg_cache="${tmp}/xdg-cache"
 export XDG_CACHE_HOME="${xdg_cache}"
+
+# du stub: real du (kept on PATH as du.real) by default, so the passing and
+# absent-store paths still measure real fixture directories, but reports a
+# fixed KiB figure when DOCTOR_STUB_DU_KIB is set. That lets the selftest
+# reach the kache store's over-threshold warning branch, which an earlier
+# claim held was uncoverable without writing tens of gigabytes of real
+# data.
+ln -s "$(command -v du)" "${stub_bin}/du.real"
+cat >"${stub_bin}/du" <<'DU_STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${DOCTOR_STUB_DU_KIB:-}" ]; then
+  printf '%s\t%s\n' "${DOCTOR_STUB_DU_KIB}" "$2"
+  exit 0
+fi
+exec du.real "$@"
+DU_STUB
+chmod +x "${stub_bin}/du"
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
@@ -338,30 +364,101 @@ expect_contains "present kache binary is reported" "PASS binary 'kache' resolves
 
 # --- kache store size: a store that has never been populated here degrades
 # silently (no PASS, WARN, or FAIL line at all) rather than treating
-# "kache hasn't run yet" as a problem worth reporting. ---
+# "kache hasn't run yet" as a problem worth reporting. This is also the
+# baseline for every resolution-order case below: nothing exists yet at
+# KACHE_CACHE_DIR, the platform default, or the XDG_CACHE_HOME fallback. ---
 expect_exit "absent kache store degrades silently" 0 "${stub_bin}"
 expect_not_contains "absent kache store has no output line" "kache store size"
 
-# --- a populated store under the threshold passes, reporting its size and
-# raising no warning: this is the portable `du -sk` path, not the GNU-only
-# `du -sb` apparent-size path the check used to take. ---
+# --- Linux platform default: with no KACHE_CACHE_DIR override and the real
+# (non-Darwin) uname this PATH resolves, a populated $HOME/.cache/kache is
+# found and its size reported. This is also the portable `du -sk` path, not
+# the GNU-only `du -sb` apparent-size path the check used to take. ---
+linux_default="${scratch_home}/.cache/kache"
+mkdir -p "${linux_default}"
+echo x >"${linux_default}/marker"
+expect_exit "Linux default kache store passes" 0 "${stub_bin}"
+expect_contains "Linux default kache store size is reported" "PASS kache store size:"
+expect_not_contains "Linux default kache store has no WARN lines" "WARN "
+rm -rf "${linux_default}"
+
+# --- macOS platform default: the regression test for the finding that the
+# check only ever looked at $XDG_CACHE_HOME/.cache/kache, so a real Mac's
+# store at ~/Library/Caches/kache went unreported. uname is stubbed to
+# report Darwin; everything else is the same stubbed PATH. ---
+stub_bin_darwin="${tmp}/bin-darwin"
+mkdir -p "${stub_bin_darwin}"
+for f in "${stub_bin}"/*; do
+  name="$(basename "${f}")"
+  [ "${name}" = "uname" ] && continue
+  cp -P "${f}" "${stub_bin_darwin}/${name}"
+done
+cat >"${stub_bin_darwin}/uname" <<'UNAME_STUB'
+#!/usr/bin/env bash
+printf '%s\n' Darwin
+UNAME_STUB
+chmod +x "${stub_bin_darwin}/uname"
+
+macos_default="${scratch_home}/Library/Caches/kache"
+mkdir -p "${macos_default}"
+echo x >"${macos_default}/marker"
+expect_exit "macOS default kache store passes" 0 "${stub_bin_darwin}"
+expect_contains "macOS default kache store size is reported" "PASS kache store size:"
+rm -rf "${macos_default}"
+
+# A store sitting at the Linux-only path must not be picked up on a
+# Darwin-reporting run: the platform default branches on uname, not on
+# whichever path happens to exist.
+mkdir -p "${linux_default}"
+echo x >"${linux_default}/marker"
+expect_exit "macOS run ignores the Linux-only default path" 0 "${stub_bin_darwin}"
+expect_not_contains "macOS run does not report the Linux-only store" "kache store size"
+rm -rf "${linux_default}"
+
+# --- KACHE_CACHE_DIR override takes precedence over the platform default:
+# pointing it at a directory that does not exist must degrade silently even
+# though a real, populated store sits at the platform default right next to
+# it, proving the default is not consulted once the override is set. ---
+mkdir -p "${linux_default}"
+echo x >"${linux_default}/marker"
+export KACHE_CACHE_DIR="${tmp}/kache-override-missing"
+expect_exit "KACHE_CACHE_DIR override silently skips an absent target" 0 "${stub_bin}"
+expect_not_contains "KACHE_CACHE_DIR override does not fall back to the platform default" "kache store size"
+unset KACHE_CACHE_DIR
+rm -rf "${linux_default}"
+
+# --- XDG_CACHE_HOME fallback: consulted only when the platform default is
+# absent (as it is here, cleaned up above). kache's docs do not document it
+# as affecting the cache directory, so this is a best-effort extra
+# candidate, not a substitute for the documented default. ---
 mkdir -p "${xdg_cache}/kache"
 echo x >"${xdg_cache}/kache/marker"
-expect_exit "small kache store passes" 0 "${stub_bin}"
-expect_contains "small kache store size is reported" "PASS kache store size:"
-expect_not_contains "small kache store has no WARN lines" "WARN "
+expect_exit "XDG_CACHE_HOME fallback is found when the default is absent" 0 "${stub_bin}"
+expect_contains "XDG_CACHE_HOME fallback store size is reported" "PASS kache store size:"
 rm -rf "${xdg_cache}/kache"
 
-# NOTE: the >=20 GiB warning branch is not exercised here. The old fixture
-# for it wrote a sparse file and relied on GNU `du -sb` reporting apparent
-# size, which counts a sparse file's logical length rather than the disk
-# blocks it actually occupies. `du -sk` (the portable replacement, used for
-# real disk-usage reporting rather than GNU-only apparent size) reports
-# actual block usage, so the same sparse-file trick measures ~0 KiB and
-# cannot stand in for an oversized store. Exercising the warning branch for
-# real would mean writing 20+ GiB of non-sparse data into the fixture,
-# which this fast self-test does not do; that branch is left to manual
-# verification (`just doctor` against a real oversized ~/.cache/kache).
+# --- the over-threshold warning: DOCTOR_STUB_DU_KIB reports a controlled
+# figure so this fires without writing a real 20+ GiB store. An earlier
+# claim that this branch could not be covered without doing exactly that
+# was wrong; the harness already stubs PATH, including du. ---
+mkdir -p "${linux_default}"
+export DOCTOR_STUB_DU_KIB=$((21 * 1024 * 1024)) # 21 GiB, safely over the 20 GiB threshold
+expect_exit "over-threshold kache store warns" 0 "${stub_bin}"
+expect_contains "over-threshold warning fires with the rounded figure" "WARN kache store size: 21 GiB"
+expect_contains "over-threshold warning names the exact remediation" "WARN kache store size: 21 GiB -- fix: kache gc --max-age 30d"
+unset DOCTOR_STUB_DU_KIB
+
+# --- boundary case: a KiB figure that truncates to 20 GiB but rounds to 21
+# GiB must not display "20 GiB" next to a warning that says the store is
+# over the 20 GiB threshold; the displayed figure must agree with the
+# warning that produced it. 20 GiB is 20 * 1024 * 1024 KiB; 600000 KiB more
+# crosses the threshold while still truncating to 20 in integer division. ---
+export DOCTOR_STUB_DU_KIB=$((20 * 1024 * 1024 + 600000))
+expect_exit "boundary kache store still warns" 0 "${stub_bin}"
+expect_contains "boundary warning rounds up, not truncates" "WARN kache store size: 21 GiB"
+expect_not_contains "boundary warning does not display the truncated 20 GiB figure" "kache store size: 20 GiB"
+unset DOCTOR_STUB_DU_KIB
+rm -rf "${linux_default}"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"

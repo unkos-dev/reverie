@@ -229,15 +229,42 @@ fi
 # 12. kache content-addressed store size. The store has no automatic
 # eviction, so left alone it grows without bound; warn well before it
 # threatens disk space. A store that has never been populated (kache has
-# never run here) is not a problem to report on, so an absent directory
-# degrades silently rather than warning or failing.
+# never run here, or the resolved directory does not exist on this
+# platform) is not a problem to report on, so an absent directory degrades
+# silently rather than warning or failing.
 #
+# Directory resolution follows kache's own documented precedence (kache's
+# configuration reference, v0.11.0): the KACHE_CACHE_DIR environment
+# variable overrides everywhere it is set, and otherwise the platform
+# default applies: ~/Library/Caches/kache on macOS, ~/.cache/kache
+# everywhere else. kache's docs describe XDG_CACHE_HOME as affecting only
+# where kache looks for its *config* file, never the cache directory
+# itself, so it is not treated as authoritative here and never substitutes
+# for the documented default when that default exists. It is still probed
+# as a last-resort fallback, after both documented sources, only when the
+# platform default directory is absent: Rust's common cache-dir resolution
+# libraries honor $XDG_CACHE_HOME as the Linux cache root when it is set,
+# so a machine that relies on that convention is still found rather than
+# silently going unreported. Probing this extra candidate can only add a
+# location to check; it never suppresses the documented default when that
+# one is actually present.
+platform="$(uname -s 2>/dev/null || echo unknown)"
+if [ -n "${KACHE_CACHE_DIR:-}" ]; then
+  kache_store="${KACHE_CACHE_DIR}"
+elif [ "${platform}" = "Darwin" ]; then
+  kache_store="${HOME}/Library/Caches/kache"
+else
+  kache_store="${HOME}/.cache/kache"
+  if [ ! -d "${kache_store}" ] && [ -n "${XDG_CACHE_HOME:-}" ]; then
+    kache_store="${XDG_CACHE_HOME}/kache"
+  fi
+fi
+
 # `du -sk` (1024-byte blocks) rather than GNU-only `du -sb` (bytes, via
 # `--apparent-size`): `-b` has no BSD/macOS equivalent, so it either fails
 # or reports wildly different units on a non-GNU userland. `-sk` is
 # supported by both and, as a real-disk-usage measurement rather than an
 # apparent-size one, is the more honest number for a disk-space check.
-kache_store="${XDG_CACHE_HOME:-${HOME}/.cache}/kache"
 twenty_gib_kib=$((20 * 1024 * 1024))
 if [ -d "${kache_store}" ]; then
   if store_kib="$(du -sk "${kache_store}" 2>/dev/null | cut -f1)" && [ -n "${store_kib}" ]; then
