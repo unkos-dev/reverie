@@ -75,7 +75,7 @@ jobs:
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           sarif_file: snyk-code.sarif
           category: snyk-code
@@ -128,7 +128,7 @@ jobs:
         run: scripts/sanitize-sarif-severities.sh snyk-oss.sarif snyk-oss-clean.sarif
 
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           sarif_file: snyk-oss-clean.sarif
           category: snyk-open-source
@@ -280,7 +280,7 @@ jobs:
 
       - name: Upload to code-scanning
         if: steps.image.outputs.present == 'true'
-        uses: github/codeql-action/upload-sarif@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
           sarif_file: snyk-container-clean.sarif
           category: snyk-container
