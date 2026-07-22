@@ -96,7 +96,14 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # double quotes do not stop command substitution, so a branch name
 # containing $() would execute. Git permits such names.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.
+# The worktree also gets its own `.cargo/config.toml` pinning `target-dir` to
+# its local `target/`, so concurrent worktree builds never share (and thrash)
+# a machine-level target-dir override. Cargo gives an exported
+# CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR precedence over that config key
+# (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
+# than silently unsetting a variable in the caller's environment.
+#
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it.
 [group('git')]
 [positional-arguments]
 worktree branch:
@@ -131,6 +138,39 @@ worktree branch:
         git worktree add --track -b "$branch" "$dest" "origin/${branch}"
     else
         git worktree add -b "$branch" "$dest"
+    fi
+    # A user-level `[build] target-dir` override (a known cargo pattern for
+    # warm cross-checkout builds) makes concurrent worktree builds thrash a
+    # shared target dir: each branch's rebuild invalidates the other's freshly
+    # built binaries. Cargo resolves config by nearest-file-wins, so a
+    # worktree-local override pins this worktree to its own `target/`
+    # regardless of what the user level sets. On a machine with no such
+    # override this restates cargo's own default, so it is a no-op there.
+    # `target/` lives inside the worktree, so `git worktree remove` deletes it
+    # with no separate cleanup step.
+    mkdir -p "$dest/.cargo"
+    printf '%s\n' '[build]' 'target-dir = "target"' > "$dest/.cargo/config.toml"
+    # A config file cannot outrank the environment: cargo resolves both
+    # CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR (its generic
+    # CARGO_<SECTION>_<KEY> mapping for [build] target-dir) before it ever
+    # reads the config key, so either one, exported by a developer's shell
+    # profile or an inherited CI env, silently defeats the isolation just
+    # written above while this recipe still reports success. Verified
+    # empirically: with both set, CARGO_TARGET_DIR is the one cargo actually
+    # honors, so that is the variable named as active below. Detect and warn
+    # rather than unsetting the variable ourselves, since surprising the
+    # caller's environment is worse than naming the fix. The warning never
+    # echoes the variable's value: an unsanitized value could contain
+    # newlines or control sequences and forge or obscure other log lines.
+    if [ -n "${CARGO_TARGET_DIR:-}" ] && [ -n "${CARGO_BUILD_TARGET_DIR:-}" ]; then
+        echo "warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir just written to $dest/.cargo/config.toml (CARGO_BUILD_TARGET_DIR is also set but is shadowed by CARGO_TARGET_DIR)" >&2
+        echo "fix: unset both CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR, or set both to $dest/target for work in this worktree" >&2
+    elif [ -n "${CARGO_TARGET_DIR:-}" ]; then
+        echo "warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir just written to $dest/.cargo/config.toml" >&2
+        echo "fix: unset CARGO_TARGET_DIR, or set it to $dest/target for work in this worktree" >&2
+    elif [ -n "${CARGO_BUILD_TARGET_DIR:-}" ]; then
+        echo "warning: CARGO_BUILD_TARGET_DIR is set and overrides the isolated target-dir just written to $dest/.cargo/config.toml" >&2
+        echo "fix: unset CARGO_BUILD_TARGET_DIR, or set it to $dest/target for work in this worktree" >&2
     fi
     # mise keys trust to path, so a fresh worktree is untrusted and the first
     # command run there blocks on an interactive prompt, which a non-interactive

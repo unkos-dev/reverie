@@ -2,6 +2,11 @@
 target/
 **/*.rs.bk
 
+# Per-worktree cargo target-dir override written by `just worktree`, pinning
+# the worktree to its own target/ so concurrent worktree builds cannot thrash
+# a machine-level shared target-dir config.
+/.cargo/
+
 # Node
 node_modules/
 dist/
