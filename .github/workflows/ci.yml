@@ -890,6 +890,9 @@ jobs:
       - name: Plan-reference gate self-test
         run: just infra::no-plan-refs-selftest
 
+      - name: Issue-reference gate self-test
+        run: just infra::no-issue-refs-selftest
+
       - name: Tool-pin gate self-test
         run: just infra::tool-pin-drift-selftest
 
