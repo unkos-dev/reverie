@@ -76,7 +76,10 @@ by editing the page.
 Use `just worktree <branch>` to create a worktree. It places the checkout
 outside the repository, where it cannot enter the Docker build context or
 cargo's workspace discovery, and refuses to create one on a temporary
-filesystem where unpushed commits would not survive a reboot.
+filesystem where unpushed commits would not survive a reboot. It also writes
+a worktree-local cargo target dir, so concurrent worktree builds cannot
+thrash a shared target cache; worktrees created by other means should set
+`CARGO_TARGET_DIR` to the worktree's own `target/` for any build.
 
 Two aggregates anchor the local loop and should be the default reflex:
 

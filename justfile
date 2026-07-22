@@ -85,7 +85,11 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # double quotes do not stop command substitution, so a branch name
 # containing $() would execute. Git permits such names.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`.
+# The worktree also gets its own `.cargo/config.toml` pinning `target-dir` to
+# its local `target/`, so concurrent worktree builds never share (and thrash)
+# a machine-level target-dir override.
+#
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir.
 [group('git')]
 [positional-arguments]
 worktree branch:
@@ -121,6 +125,17 @@ worktree branch:
     else
         git worktree add -b "$branch" "$dest"
     fi
+    # A user-level `[build] target-dir` override (a known cargo pattern for
+    # warm cross-checkout builds) makes concurrent worktree builds thrash a
+    # shared target dir: each branch's rebuild invalidates the other's freshly
+    # built binaries. Cargo resolves config by nearest-file-wins, so a
+    # worktree-local override pins this worktree to its own `target/`
+    # regardless of what the user level sets. On a machine with no such
+    # override this restates cargo's own default, so it is a no-op there.
+    # `target/` lives inside the worktree, so `git worktree remove` deletes it
+    # with no separate cleanup step.
+    mkdir -p "$dest/.cargo"
+    printf '%s\n' '[build]' 'target-dir = "target"' > "$dest/.cargo/config.toml"
     # mise keys trust to path, so a fresh worktree is untrusted and the first
     # command run there blocks on an interactive prompt, which a non-interactive
     # session cannot answer. Inherit the decision rather than make it: trust the
