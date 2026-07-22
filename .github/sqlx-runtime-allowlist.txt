@@ -96,3 +96,12 @@ backend/src/test_support.rs:
 backend/src/services/settings.rs:
 
 SELECT set_config('app.current_user_id', $1, true)
+
+# (1) models/password_reset_pin.rs reconciliation regression test — DDL that
+# cannot be a compile-time macro (Postgres does not PREPARE utility statements).
+# It drops the single-active partial unique index to seed the pre-index dirty
+# state (duplicate unconsumed rows) the migration reconciles, then recreates it
+# to prove the migration applies cleanly. Test-only, exact strings (the file is
+# otherwise macro-based, so no blanket).
+sqlx::query("DROP INDEX idx_password_reset_pins_active_unique")
+sqlx::query("CREATE UNIQUE INDEX idx_password_reset_pins_active_unique ON password_reset_pins (user_id) WHERE consumed_at IS NULL")

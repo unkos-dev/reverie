@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE password_reset_pins SET consumed_at = now() WHERE user_id = $1 AND consumed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0e5da8ebecc6849c377d81ccaa21d7a68da0714be32ae10542114010f5156634"
+}

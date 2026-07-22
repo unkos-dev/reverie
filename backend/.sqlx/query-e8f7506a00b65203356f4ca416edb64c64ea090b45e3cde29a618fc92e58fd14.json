@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM password_reset_pins p USING ( SELECT id, row_number() OVER ( PARTITION BY user_id ORDER BY created_at DESC, id DESC) AS rn FROM password_reset_pins WHERE consumed_at IS NULL) ranked WHERE p.id = ranked.id AND ranked.rn > 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e8f7506a00b65203356f4ca416edb64c64ea090b45e3cde29a618fc92e58fd14"
+}
