@@ -83,9 +83,10 @@ required a `--policy-path` flag on both the `test` and `monitor`
 invocations, 88 entries with renewable expiry dates, and a second
 unfiltered scan plus a diff to detect an entry becoming fixable. The
 dynamic predicate gets the same guarantee for free, because an entry
-that becomes fixable simply stops matching. The cost is the loss of a
-per-CVE audit trail, which is a poor trade for base-OS CVEs where no
-per-CVE judgement is genuinely being exercised.
+that becomes fixable stops matching. The cost is the loss of a per-CVE
+audit trail, which is a poor trade for base-OS CVEs: the entries would
+all carry the same reason, and renewing 88 expiry dates on a schedule
+is a ritual, not a judgement.
 
 A note on vocabulary, since these findings reach an SBOM consumer:
 withholding an unfixable base-OS CVE is a risk acceptance, not a CISA VEX
