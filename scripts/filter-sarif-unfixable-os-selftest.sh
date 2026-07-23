@@ -69,7 +69,7 @@ check "rule metadata untouched" "6" \
   "$(jq '.runs[0].tool.driver.rules | length' "${tmp}/out.sarif")"
 
 if grep -q 'Scanned 7, ingested 3, withheld 4' <<<"$summary" \
-  && grep -q '`curl` | 2' <<<"$summary"; then
+  && grep -q 'curl. | 2' <<<"$summary"; then
   echo "ok   summary reports counts and packages"
 else
   echo "FAIL summary reports counts and packages"

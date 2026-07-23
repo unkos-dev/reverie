@@ -41,7 +41,7 @@ nofix_marker='There is no fixed version for'
 
 # Rules and results are separate arrays; the remediation text lives on the
 # rule, so resolve the withheld rule IDs per run before filtering results.
-filter='
+jq --arg distro "$distro_pattern" --arg nofix "$nofix_marker" '
   def unfixable:
     [ .tool.driver.rules[]?
       | select((.id // "") | test($distro))
@@ -52,10 +52,7 @@ filter='
     | .results = ((.results // []) | map(
         (.ruleId // "") as $r | select(($withheld | index($r)) | not)
       ))
-  )'
-
-jq --arg distro "$distro_pattern" --arg nofix "$nofix_marker" "$filter" \
-  "$input" >"$output"
+  )' "$input" >"$output"
 
 total="$(jq '[.runs[]?.results[]?] | length' "$input")"
 kept="$(jq '[.runs[]?.results[]?] | length' "$output")"
