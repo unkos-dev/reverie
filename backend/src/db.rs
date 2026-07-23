@@ -126,6 +126,26 @@ const LOCK_RETRY_ATTEMPTS: u32 = 10;
 const LOCK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
 const LOCK_MAGIC: i64 = 0x3d32_ad9e;
 
+/// How long [`run_migrations`] waits for its single connection before
+/// reporting [`MigrationError::Connection`].
+///
+/// This budget covers the whole of connection establishment (TCP handshake,
+/// TLS, authentication), and sqlx's pool additionally treats a refused
+/// connection as retryable for its duration. It therefore doubles as the
+/// startup-race tolerance for the deployment modes that have no readiness
+/// gate. The shipped compose topology gates both the migrate container and
+/// the app on `depends_on: { condition: service_healthy }`, but the bare
+/// `docker run` and `REVERIE_AUTO_MIGRATE` paths the migration ADR supports
+/// have no such sequencing, and a database still running initdb on a fresh
+/// volume can take many seconds to accept its first connection.
+///
+/// Thirty seconds is what sqlx would default to anyway. It is stated here so
+/// the tolerance is a recorded decision rather than an inherited default,
+/// and so that shortening it reads as the change to deployment behaviour it
+/// would be. Tests that assert the unreachable-database path pass their own
+/// short budget instead of paying this one.
+const MIGRATION_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Outcome of a migration run.
 #[derive(Debug)]
 pub struct MigrationReport {
@@ -279,13 +299,30 @@ fn generate_lock_id(database_name: &str) -> i64 {
 /// single-connection pool. The pool is dropped before this function
 /// returns.
 ///
+/// Waits up to [`MIGRATION_CONNECT_TIMEOUT`] for the connection, which is
+/// also the startup-race tolerance for the deployment modes that have no
+/// readiness gate.
+///
 /// # Errors
 ///
 /// Returns [`MigrationError`] on connection failure, lock timeout,
 /// schema-ahead detection, checksum mismatch, or SQL execution failure.
 pub async fn run_migrations(url: &str) -> Result<MigrationReport, MigrationError> {
+    run_migrations_with_connect_timeout(url, MIGRATION_CONNECT_TIMEOUT).await
+}
+
+/// [`run_migrations`] with an explicit connection budget.
+///
+/// Exists so a test can assert the unreachable-database path without
+/// spending the production startup tolerance on it. Production callers go
+/// through [`run_migrations`] and get [`MIGRATION_CONNECT_TIMEOUT`].
+async fn run_migrations_with_connect_timeout(
+    url: &str,
+    connect_timeout: std::time::Duration,
+) -> Result<MigrationReport, MigrationError> {
     let pool = PgPoolOptions::new()
         .max_connections(1)
+        .acquire_timeout(connect_timeout)
         .connect(url)
         .await
         .map_err(MigrationError::Connection)?;
@@ -783,9 +820,21 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_credentials_clear_error() {
-        let err = run_migrations("postgres://bad:bad@localhost:5433/nonexistent")
-            .await
-            .unwrap_err();
+        // Its own budget, not MIGRATION_CONNECT_TIMEOUT: that constant is the
+        // startup-race tolerance for ungated deployments, and this test has
+        // no reason to spend it. Port 5433 refuses instantly, but sqlx's pool
+        // retries a refused connection for the whole budget, so an unbounded
+        // run here costs the suite the full production tolerance.
+        const TEST_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+        let started = Instant::now();
+        let err = run_migrations_with_connect_timeout(
+            "postgres://bad:bad@localhost:5433/nonexistent",
+            TEST_CONNECT_TIMEOUT,
+        )
+        .await
+        .unwrap_err();
+        let elapsed = started.elapsed();
         assert!(
             matches!(err, MigrationError::Connection(_)),
             "expected Connection error, got: {err}"
@@ -794,6 +843,15 @@ mod tests {
         assert!(
             !msg.contains("bad:bad"),
             "DSN credentials must not appear in error message: {msg}"
+        );
+        // Loose at 3x the budget so a loaded runner cannot fail it; it only
+        // has to catch the budget silently ceasing to apply, which would put
+        // this back on the 30s production tolerance.
+        let bound = TEST_CONNECT_TIMEOUT * 3;
+        assert!(
+            elapsed < bound,
+            "unreachable database should fail within {bound:?}, took {elapsed:?} \
+             (is the connect budget still applied to the pool?)"
         );
     }
 
