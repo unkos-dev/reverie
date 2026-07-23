@@ -73,6 +73,71 @@ else
   fail=1
 fi
 
+# The summary groups on the rule/file pair, so one rule withheld from two
+# files reports two rows rather than one merged count.
+cat >"${tmp}/two-files.sarif" <<'EOF'
+{
+  "runs": [
+    {
+      "tool": {"driver": {"rules": [{"id": "javascript/NoHardcodedPasswords/test"}]}},
+      "results": [
+        {"ruleId": "javascript/NoHardcodedPasswords/test",
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/api/auth.test.ts"}}}]},
+        {"ruleId": "javascript/NoHardcodedPasswords/test",
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/api/auth.test.ts"}}}]},
+        {"ruleId": "javascript/NoHardcodedPasswords/test",
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/lib/token.test.ts"}}}]}
+      ]
+    }
+  ]
+}
+EOF
+two_summary="$("$filter" "${tmp}/two-files.sarif" "${tmp}/two-files-out.sarif" "${tmp}/allow.txt")"
+
+two_rows="${two_summary//\`/}"
+
+check "each withheld rule/file pair gets its own row" "2" \
+  "$(grep -c '^| javascript/NoHardcodedPasswords/test ' <<<"$two_rows")"
+
+if grep -qF '| src/api/auth.test.ts | 2 |' <<<"$two_rows" \
+  && grep -qF '| src/lib/token.test.ts | 1 |' <<<"$two_rows"; then
+  echo "ok   per-pair counts are independent"
+else
+  echo "FAIL per-pair counts are independent"
+  echo "${two_summary}"
+  fail=1
+fi
+
+# A separator byte embedded in the source would make git treat the script
+# as binary and editors mangle it on save. The grouping key is structural,
+# so no such byte belongs in the file.
+#
+# Stripping NUL bytes must not change the byte count. That phrasing uses no
+# GNU-only flag and fails closed, because a tool that cannot run produces no
+# output, which reads as a mismatch rather than as a pass. It also avoids
+# grep, whose pattern matching does not reach inside a file it has already
+# classified as binary, which is precisely the file this check must catch.
+nul_free() {
+  [ "$(wc -c <"$1")" -eq "$(LC_ALL=C tr -d '\000' <"$1" | wc -c)" ]
+}
+
+# Positive control. A detector that never fires would pass the assertion
+# below while catching nothing, so prove it fires on a file that has one.
+printf 'a\000b\n' >"${tmp}/has-nul.bin"
+if nul_free "${tmp}/has-nul.bin"; then
+  echo "FAIL NUL detection fires on a file that contains one"
+  fail=1
+else
+  echo "ok   NUL detection fires on a file that contains one"
+fi
+
+if nul_free "$filter"; then
+  echo "ok   filter script is free of NUL bytes"
+else
+  echo "FAIL filter script is free of NUL bytes"
+  fail=1
+fi
+
 # An unregistered `/test` rule must stop the run rather than be dropped
 # silently or pass through unremarked.
 cat >"${tmp}/unlisted.sarif" <<'EOF'
