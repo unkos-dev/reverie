@@ -153,8 +153,10 @@ jobs:
       # spawns: rustc links each unit from that unit's package root, and for
       # a registry dependency that root is under ~/.cargo/registry, where no
       # mise.toml is discoverable. See the linker note on the mold install
-      # step below. Every mise tool in this job is reached through the
-      # concrete install path instead.
+      # step below. Every step that needs a mise tool runs under `mise exec`,
+      # which puts the concrete install directory on PATH for that command
+      # and everything it spawns; with shims off, a step that forgets the
+      # wrapper fails loudly instead of silently resolving through a shim.
       - name: Install just (mise)
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
@@ -162,10 +164,6 @@ jobs:
           version: "2026.7.7"
           install_args: just
           add_shims_to_path: false
-
-      - name: Put mise tools on PATH by concrete path
-        working-directory: ${{ github.workspace }}
-        run: scripts/ci/mise-path.sh
 
       # Single-sourced in scripts/backend-guards.sh (see the justfile header:
       # CI command definitions live once, not duplicated inline here): runtime
@@ -175,7 +173,7 @@ jobs:
       # guard, none).
       - name: Backend static guards
         working-directory: ${{ github.workspace }}
-        run: just rust::guards
+        run: mise exec just -- just rust::guards
 
       # dtolnay/rust-toolchain reads the toolchain from the git ref name,
       # so a SHA pin requires naming the channel explicitly via
@@ -203,9 +201,8 @@ jobs:
       # re-resolves its version per exec from the config at the caller's
       # working directory, and rustc links each unit from that unit's package
       # root, so a registry dependency links from ~/.cargo/registry with no
-      # mise.toml above it. Hence shims off plus the concrete-path step, and
-      # not `mise use -g`, which would keep a mise process spawn on every
-      # link. Worth knowing before switching the driver: gcc takes only a
+      # mise.toml above it. Hence shims off plus `mise exec`, and not
+      # `mise use -g`, which would keep a mise process spawn on every link. Worth knowing before switching the driver: gcc takes only a
       # linker *name* here, while clang also accepts an absolute path.
       # cargo-machete rides along rather than taking a second mise-action
       # step: mise's own setup dominates a small tool install, so one step
@@ -220,25 +217,23 @@ jobs:
           install_args: mold github:bnjbvr/cargo-machete
           add_shims_to_path: false
 
-      - name: Put mise tools on PATH by concrete path
-        working-directory: ${{ github.workspace }}
-        run: scripts/ci/mise-path.sh
-
       # Temporary: proves which `ld.mold` the compiler driver reaches, and
       # that it resolves from a working directory outside the checkout.
       # Removed once the run has recorded the evidence.
       - name: Diagnose linker resolution
         working-directory: ${{ github.workspace }}
         run: |
-          echo "== ld.mold candidates on PATH =="
-          type -a ld.mold || true
-          echo "== what the compiler driver picks =="
-          cc -print-prog-name=ld.mold
-          echo "== concrete binary, from a cwd outside the checkout =="
-          (cd "$RUNNER_TEMP" && ld.mold --version) || echo "FAILED outside the checkout"
+          echo "== bare step: ld.mold on PATH (expect none, shims are off) =="
+          type -a ld.mold || echo "not on PATH"
+          echo "== under mise exec: what the compiler driver picks =="
+          mise exec mold -- cc -print-prog-name=ld.mold
+          echo "== the concrete binary, from a cwd outside the checkout =="
+          real="$(mise which ld.mold)"
+          echo "resolved: ${real}"
+          (cd "$RUNNER_TEMP" && "$real" --version) || echo "FAILED outside the checkout"
           shim="${HOME}/.local/share/mise/shims/ld.mold"
           if [ -x "$shim" ]; then
-            echo "== shim, from a cwd outside the checkout =="
+            echo "== the shim, from a cwd outside the checkout =="
             (cd "$RUNNER_TEMP" && "$shim" --version) \
               || echo "shim FAILED outside the checkout (this is the reported defect)"
           else
@@ -269,19 +264,19 @@ jobs:
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
         # No `--locked`: sqlx-cli 0.9 stopped shipping Cargo.lock in its
         # published crate, so `--locked` errors with no lockfile to honour.
-        run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
+        run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
 
       # Every unused crate is dead advisory/license/audit surface. Static
       # manifest-vs-source scan; justified carve-outs live in Cargo.toml's
       # [package.metadata.cargo-machete] ignored list.
       - name: Unused dependencies (cargo-machete)
-        run: cargo machete
+        run: mise exec github:bnjbvr/cargo-machete -- cargo machete
 
       - name: Apply migrations
         run: sqlx migrate run
 
       - name: Lint
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: mise exec mold -- cargo clippy --workspace --all-targets --locked -- -D warnings
 
       # Kills broken intra-doc cross-refs in existing docstrings. Without
       # --document-private-items the scope is pub items only, matching the
@@ -289,18 +284,18 @@ jobs:
       - name: Doc lint (broken intra-doc links)
         env:
           RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
-        run: cargo doc --no-deps --workspace
+        run: mise exec mold -- cargo doc --no-deps --workspace
 
       # Drift guard on the committed .sqlx/ query cache: fails if the cache
       # is stale relative to the query macros + live schema.
       - name: Check sqlx query cache freshness
-        run: cargo sqlx prepare --check -- --tests
+        run: mise exec mold -- cargo sqlx prepare --check -- --tests
 
       # nextest does not run doctests. Reverie has none today; this step
       # exists so doctest drift fails CI from day one and is near-instant
       # while empty.
       - name: Doctests
-        run: cargo test --locked --doc --workspace
+        run: mise exec mold -- cargo test --locked --doc --workspace
 
   # Keep the instrumented build off the checks job's serial critical path.
   # A dedicated target directory is safe to retain because it is used only
@@ -371,10 +366,6 @@ jobs:
           install_args: mold github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
           add_shims_to_path: false
 
-      - name: Put mise tools on PATH by concrete path
-        working-directory: ${{ github.workspace }}
-        run: scripts/ci/mise-path.sh
-
       - name: Cache sqlx-cli binary
         id: cache-sqlx-cli
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -386,7 +377,7 @@ jobs:
 
       - name: Install sqlx-cli (cache miss only)
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
+        run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
 
       - name: Apply migrations
         run: sqlx migrate run
@@ -398,7 +389,8 @@ jobs:
         run: |
           mkdir -p "$CARGO_LLVM_COV_TARGET_DIR"
           find "$CARGO_LLVM_COV_TARGET_DIR" -type f -name '*.profraw' -delete
-          cargo llvm-cov nextest --no-clean --locked --workspace --remap-path-prefix --lcov --output-path lcov.info
+          mise exec mold github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov -- \
+            cargo llvm-cov nextest --no-clean --locked --workspace --remap-path-prefix --lcov --output-path lcov.info
 
       - name: Upload backend coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
