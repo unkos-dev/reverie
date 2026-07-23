@@ -97,13 +97,20 @@ jobs:
       # Withheld must not mean unobservable: the pre-filter SARIF is
       # retained so a reviewer can audit exactly what the dashboard did
       # not receive, without rerunning the scan.
+      #
+      # always() because the case that most needs this artifact is the
+      # filter refusing an unregistered rule. `warn` rather than `error`
+      # for the same reason: on a hard scan failure there is no SARIF to
+      # retain, and a second red step there would only bury the real
+      # cause. A silently absent file still fails loud one step later,
+      # where the filter cannot read its input.
       - name: Upload unfiltered SARIF
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: snyk-code-sarif-unfiltered
           path: snyk-code.sarif
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
   deps:
@@ -330,15 +337,16 @@ jobs:
           sarif_file: snyk-container-filtered.sarif
           category: snyk-container
 
-      # Same audit trail as the Snyk Code job: the full result set stays
-      # retrievable so "withheld" is reviewable rather than invisible.
+      # Same audit trail, and the same always()/warn reasoning, as the
+      # Snyk Code job above: the full result set stays retrievable so
+      # "withheld" is reviewable rather than invisible.
       - name: Upload unfiltered SARIF
         if: always() && steps.image.outputs.present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: snyk-container-sarif-unfiltered
           path: snyk-container.sarif
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       # The image's counterpart to the npm baseline snapshot above:
