@@ -115,6 +115,18 @@ adr-frontmatter-selftest:
 sanitize-sarif-severities-selftest:
     scripts/sanitize-sarif-severities-selftest.sh
 
+# Self-test the Snyk Code test-variant rule filter, including that an
+# ordinary rule reported in a test file still reaches the dashboard.
+[group('infra')]
+filter-sarif-test-rules-selftest:
+    scripts/filter-sarif-test-rules-selftest.sh
+
+# Self-test the base-OS finding filter, including that a distro CVE with
+# a fix available is never withheld.
+[group('infra')]
+filter-sarif-unfixable-os-selftest:
+    scripts/filter-sarif-unfixable-os-selftest.sh
+
 # Test the vale-lint.sh scope policy (include/exclude classification).
 [group('infra')]
 vale-scope-test:
@@ -197,7 +209,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest worktree-cargo-target-selftest preflight-scope-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest worktree-cargo-target-selftest preflight-scope-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

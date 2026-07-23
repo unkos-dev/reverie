@@ -74,11 +74,44 @@ jobs:
           snyk code test --org=reverie --sarif-file-output=snyk-code.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
+      # Snyk labels a finding it places in test code with a distinct
+      # `<rule>/test` rule ID. Registered ones are analysed but withheld
+      # from the dashboard so the alert queue stays actionable. The scan
+      # itself is unchanged, so a trace running from a test helper into
+      # production code is still found and still reported, under its
+      # ordinary rule ID. An unregistered `/test` ID fails the job rather
+      # than widening the suppression on its own.
+      - name: Withhold registered test-variant rules
+        run: |
+          scripts/filter-sarif-test-rules.sh \
+            snyk-code.sarif snyk-code-filtered.sarif \
+            .github/snyk-code-test-rule-allowlist.txt \
+            >>"$GITHUB_STEP_SUMMARY"
+
       - name: Upload to code-scanning
         uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
-          sarif_file: snyk-code.sarif
+          sarif_file: snyk-code-filtered.sarif
           category: snyk-code
+
+      # Withheld must not mean unobservable: the pre-filter SARIF is
+      # retained so a reviewer can audit exactly what the dashboard did
+      # not receive, without rerunning the scan.
+      #
+      # always() because the case that most needs this artifact is the
+      # filter refusing an unregistered rule. `warn` rather than `error`
+      # for the same reason: on a hard scan failure there is no SARIF to
+      # retain, and a second red step there would only bury the real
+      # cause. A silently absent file still fails loud one step later,
+      # where the filter cannot read its input.
+      - name: Upload unfiltered SARIF
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: snyk-code-sarif-unfiltered
+          path: snyk-code.sarif
+          if-no-files-found: warn
+          retention-days: 14
 
   deps:
     name: Snyk Open Source (npm SCA)
@@ -278,12 +311,43 @@ jobs:
         if: steps.image.outputs.present == 'true'
         run: scripts/sanitize-sarif-severities.sh snyk-container.sarif snyk-container-clean.sarif
 
+      # The runtime image is Debian slim plus ca-certificates and curl, so
+      # most of what a container scan finds is base-layer CVEs Debian has
+      # not fixed and this project cannot fix either. Withholding those
+      # keeps the dashboard an actionable queue instead of a standing
+      # inventory of the base image.
+      #
+      # The predicate is evaluated against each scan rather than held in a
+      # static ignore list, so nothing can go stale: when Debian ships a
+      # fix the remediation text changes, the finding stops matching, and
+      # the alert reappears on its own. It also fails closed. A finding
+      # with a fix available, an application-layer finding, or one the
+      # filter cannot classify is ingested.
+      - name: Withhold unfixable base-OS findings
+        if: steps.image.outputs.present == 'true'
+        run: |
+          scripts/filter-sarif-unfixable-os.sh \
+            snyk-container-clean.sarif snyk-container-filtered.sarif \
+            >>"$GITHUB_STEP_SUMMARY"
+
       - name: Upload to code-scanning
         if: steps.image.outputs.present == 'true'
         uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
         with:
-          sarif_file: snyk-container-clean.sarif
+          sarif_file: snyk-container-filtered.sarif
           category: snyk-container
+
+      # Same audit trail, and the same always()/warn reasoning, as the
+      # Snyk Code job above: the full result set stays retrievable so
+      # "withheld" is reviewable rather than invisible.
+      - name: Upload unfiltered SARIF
+        if: always() && steps.image.outputs.present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: snyk-container-sarif-unfiltered
+          path: snyk-container.sarif
+          if-no-files-found: warn
+          retention-days: 14
 
       # The image's counterpart to the npm baseline snapshot above:
       # `test` reports today's findings, `monitor` is what accrues the
