@@ -70,6 +70,20 @@ d2-*.png
 # Personal agent-workflow tooling — kept local, not project-shared
 SDL.md
 
+# Impeccable working directory: critique and polish screenshots, live-mode
+# session and preview state, runtime caches, per-developer config. Ignored
+# whole rather than file by file, so runtime files added by a future version
+# stay ignored by default instead of appearing in `git status` as candidates
+# for an accidental commit. The `**/` prefix is load-bearing: a pattern with
+# a slash anywhere but the end is anchored to this file's directory, so a
+# bare `.impeccable/` would miss `frontend/.impeccable/`, which is where the
+# design-showcase runs put it.
+#
+# To track a shared artifact later, switch to the contents form
+# (`**/.impeccable/**` plus negations). Negating a path under an ignored
+# directory does not work: git never descends into it to see the exception.
+**/.impeccable/
+
 # Background backend dev-server artifacts (just rust::dev-start); backend has
 # no plane-local gitignore, so they are listed here.
 backend/.dev-server.pid

@@ -23,9 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Impeccable critique snapshots (local scratch archive)
-.impeccable/
-
 # Background dev-server pidfile and start/stop lock (just js::dev-start);
 # its log is under *.log
 .dev-server.pid
