@@ -111,12 +111,32 @@ fi
 # A separator byte embedded in the source would make git treat the script
 # as binary and editors mangle it on save. The grouping key is structural,
 # so no such byte belongs in the file.
-# Stripping NUL bytes must not change the size. Comparing counts keeps the
-# check portable and fails closed: a tr that cannot run yields no bytes,
-# which reads as a mismatch rather than as a pass.
-filter_bytes="$(wc -c <"$filter")"
-stripped_bytes="$(LC_ALL=C tr -d '\000' <"$filter" | wc -c)"
-check "filter script is free of NUL bytes" "$filter_bytes" "$stripped_bytes"
+#
+# Stripping NUL bytes must not change the byte count. That phrasing uses no
+# GNU-only flag and fails closed, because a tool that cannot run produces no
+# output, which reads as a mismatch rather than as a pass. It also avoids
+# grep, whose pattern matching does not reach inside a file it has already
+# classified as binary, which is precisely the file this check must catch.
+nul_free() {
+  [ "$(wc -c <"$1")" -eq "$(LC_ALL=C tr -d '\000' <"$1" | wc -c)" ]
+}
+
+# Positive control. A detector that never fires would pass the assertion
+# below while catching nothing, so prove it fires on a file that has one.
+printf 'a\000b\n' >"${tmp}/has-nul.bin"
+if nul_free "${tmp}/has-nul.bin"; then
+  echo "FAIL NUL detection fires on a file that contains one"
+  fail=1
+else
+  echo "ok   NUL detection fires on a file that contains one"
+fi
+
+if nul_free "$filter"; then
+  echo "ok   filter script is free of NUL bytes"
+else
+  echo "FAIL filter script is free of NUL bytes"
+  fail=1
+fi
 
 # An unregistered `/test` rule must stop the run rather than be dropped
 # silently or pass through unremarked.
