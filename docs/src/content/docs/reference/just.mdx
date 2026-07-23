@@ -60,6 +60,8 @@ across every plane.
 | `just infra::dco-selftest`                       | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).                                              |
 | `just infra::dev-server-selftest`                | Exercise the dev-server lifecycle script against a fake server on a scratch port.                                 |
 | `just infra::doctor-selftest`                    | Self-test `just doctor` (missing-binary, fully-stubbed happy path, warn-only path).                               |
+| `just infra::filter-sarif-test-rules-selftest`   | ordinary rule reported in a test file still reaches the dashboard.                                                |
+| `just infra::filter-sarif-unfixable-os-selftest` | a fix available is never withheld.                                                                                |
 | `just infra::greptile-config`                    | Validate greptile.json parses and every pinned context path resolves.                                             |
 | `just infra::hadolint`                           | Hadolint every tracked Dockerfile.                                                                                |
 | `just infra::just-reference`                     | Regenerate the just recipe reference from the justfiles. WRITES.                                                  |
