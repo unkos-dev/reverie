@@ -111,12 +111,12 @@ fi
 # A separator byte embedded in the source would make git treat the script
 # as binary and editors mangle it on save. The grouping key is structural,
 # so no such byte belongs in the file.
-if grep -qP '\x00' "$filter"; then
-  echo "FAIL filter script is free of NUL bytes"
-  fail=1
-else
-  echo "ok   filter script is free of NUL bytes"
-fi
+# Stripping NUL bytes must not change the size. Comparing counts keeps the
+# check portable and fails closed: a tr that cannot run yields no bytes,
+# which reads as a mismatch rather than as a pass.
+filter_bytes="$(wc -c <"$filter")"
+stripped_bytes="$(LC_ALL=C tr -d '\000' <"$filter" | wc -c)"
+check "filter script is free of NUL bytes" "$filter_bytes" "$stripped_bytes"
 
 # An unregistered `/test` rule must stop the run rather than be dropped
 # silently or pass through unremarked.
