@@ -73,6 +73,51 @@ else
   fail=1
 fi
 
+# The summary groups on the rule/file pair, so one rule withheld from two
+# files reports two rows rather than one merged count.
+cat >"${tmp}/two-files.sarif" <<'EOF'
+{
+  "runs": [
+    {
+      "tool": {"driver": {"rules": [{"id": "javascript/NoHardcodedPasswords/test"}]}},
+      "results": [
+        {"ruleId": "javascript/NoHardcodedPasswords/test",
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/api/auth.test.ts"}}}]},
+        {"ruleId": "javascript/NoHardcodedPasswords/test",
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/api/auth.test.ts"}}}]},
+        {"ruleId": "javascript/NoHardcodedPasswords/test",
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/lib/token.test.ts"}}}]}
+      ]
+    }
+  ]
+}
+EOF
+two_summary="$("$filter" "${tmp}/two-files.sarif" "${tmp}/two-files-out.sarif" "${tmp}/allow.txt")"
+
+two_rows="${two_summary//\`/}"
+
+check "each withheld rule/file pair gets its own row" "2" \
+  "$(grep -c '^| javascript/NoHardcodedPasswords/test ' <<<"$two_rows")"
+
+if grep -qF '| src/api/auth.test.ts | 2 |' <<<"$two_rows" \
+  && grep -qF '| src/lib/token.test.ts | 1 |' <<<"$two_rows"; then
+  echo "ok   per-pair counts are independent"
+else
+  echo "FAIL per-pair counts are independent"
+  echo "${two_summary}"
+  fail=1
+fi
+
+# A separator byte embedded in the source would make git treat the script
+# as binary and editors mangle it on save. The grouping key is structural,
+# so no such byte belongs in the file.
+if grep -qP '\x00' "$filter"; then
+  echo "FAIL filter script is free of NUL bytes"
+  fail=1
+else
+  echo "ok   filter script is free of NUL bytes"
+fi
+
 # An unregistered `/test` rule must stop the run rather than be dropped
 # silently or pass through unremarked.
 cat >"${tmp}/unlisted.sarif" <<'EOF'
