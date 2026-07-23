@@ -139,6 +139,12 @@ export default defineConfig({
           globals: true,
           setupFiles: ["./tests/setup.ts"],
           include: ["src/**/*.{test,spec}.{ts,tsx}"],
+          // Must stay above the async query ceiling in tests/setup.ts.
+          // At the 5s default the two collide: a failing `findBy*` spends
+          // its whole budget waiting, so the test times out first and the
+          // report blames the test rather than naming the element that
+          // never appeared.
+          testTimeout: 15_000,
         },
       },
     ],
