@@ -25,7 +25,9 @@ cat >"${tmp}/in.sarif" <<'EOF'
          "help": {"text": "## Remediation\nUpgrade `Debian:13` `openssl` to version 3.5.0-1 or higher."}},
         {"id": "SNYK-JS-LODASH-5",
          "help": {"text": "## Remediation\nThere is no fixed version for `lodash`."}},
-        {"id": "SNYK-DEBIAN13-MYSTERY-6", "help": {}}
+        {"id": "SNYK-DEBIAN13-MYSTERY-6", "help": {}},
+        {"id": "SNYK-DEBIAN14-ZLIB-7",
+         "help": {"text": "There is no fixed version for `Debian:13` `zlib`.\nUpgrade `Debian:14` `zlib` to version 1.3.1-1 or higher."}}
       ]}},
       "results": [
         {"ruleId": "SNYK-DEBIAN13-CURL-1"},
@@ -34,7 +36,8 @@ cat >"${tmp}/in.sarif" <<'EOF'
         {"ruleId": "SNYK-DEBIAN14-GLIBC-3"},
         {"ruleId": "SNYK-DEBIAN13-OPENSSL-4"},
         {"ruleId": "SNYK-JS-LODASH-5"},
-        {"ruleId": "SNYK-DEBIAN13-MYSTERY-6"}
+        {"ruleId": "SNYK-DEBIAN13-MYSTERY-6"},
+        {"ruleId": "SNYK-DEBIAN14-ZLIB-7"}
       ]
     }
   ]
@@ -65,10 +68,17 @@ check "distro finding WITH a fix is ingested" "1" "$(kept SNYK-DEBIAN13-OPENSSL-
 check "application-layer finding with no fix is ingested" "1" "$(kept SNYK-JS-LODASH-5)"
 check "unclassifiable finding is ingested (fails closed)" "1" "$(kept SNYK-DEBIAN13-MYSTERY-6)"
 
-check "rule metadata untouched" "6" \
+# The marker is tied to the release in the rule's own ID. An advisory that
+# mentions an older release having no fix while offering an upgrade for
+# the scanned one is fixable, and withholding it would be the exact
+# failure this filter exists to avoid.
+check "no-fix text for another release does not withhold a fixable finding" "1" \
+  "$(kept SNYK-DEBIAN14-ZLIB-7)"
+
+check "rule metadata untouched" "7" \
   "$(jq '.runs[0].tool.driver.rules | length' "${tmp}/out.sarif")"
 
-if grep -q 'Scanned 7, ingested 3, withheld 4' <<<"$summary" \
+if grep -q 'Scanned 8, ingested 4, withheld 4' <<<"$summary" \
   && grep -q 'curl. | 2' <<<"$summary"; then
   echo "ok   summary reports counts and packages"
 else

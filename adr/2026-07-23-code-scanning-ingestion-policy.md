@@ -73,10 +73,13 @@ by a reviewed commit.
 
 **Snyk Container** withholds a result only when its rule ID is in the
 distro namespace (`SNYK-DEBIAN<n>-`) and that rule's remediation text
-states no fixed version exists. An application-layer dependency with no
-upstream fix is still actionable and stays. The predicate runs against
-each scan, so when Debian ships a fix the text changes, the finding stops
-matching, and the alert returns unaided.
+states no fixed version exists for the release named in that same rule
+ID. An application-layer dependency with no upstream fix is still
+actionable and stays, and so does an advisory that mentions an older
+release having no fix while offering an upgrade for the release being
+scanned. The predicate runs against each scan, so when Debian ships a
+fix the text changes, the finding stops matching, and the alert returns
+unaided.
 
 Rejecting the `.snyk` ignore list is the substantive call. It would have
 required a `--policy-path` flag on both the `test` and `monitor`
@@ -119,7 +122,8 @@ version of this decision.
 Both filters are covered by self-tests in the repo-lint aggregate. The
 load-bearing cases are asserted directly: an ordinary rule reported in a
 test file survives the Snyk Code filter, and a distro CVE that has a fix
-available survives the container filter. Every scan retains its
+available survives the container filter, including one whose advisory
+also names an older release as unfixed. Every scan retains its
 pre-filter SARIF as a build artifact and prints what it withheld to the
 job summary.
 
