@@ -1,8 +1,18 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeEach } from "vite-plus/test";
 
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
+
+// Async queries (`findBy*`, `waitFor`) default to a 1s ceiling, which the
+// full suite loses under parallel load: a screen that renders comfortably in
+// isolation can still be empty at 1s when setup and environment time roughly
+// double against a standalone run. The ceiling only bounds how long a query
+// waits before failing, so raising it costs nothing on the passing path and
+// removes a class of load-dependent failure that looks like a real defect.
+// 5s matches the timeout individual `waitFor` calls in the suite already
+// specify by hand.
+configure({ asyncUtilTimeout: 5000 });
 
 // Authenticated steady state: the CSRF cache starts hydrated, so suites
 // that exercise mutating API calls pin the request shape without also
