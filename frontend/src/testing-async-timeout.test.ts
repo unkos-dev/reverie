@@ -16,8 +16,10 @@ test("a query that never resolves waits for the configured ceiling", async () =>
   await expect(screen.findByRole("heading", { name: "absent" })).rejects.toThrow();
   const waited = performance.now() - started;
 
-  // Bounded on both sides: below the 1s default proves the ceiling is not
-  // merely declared, and the upper bound catches a runaway value.
+  // Lower bound only. Waiting past the 1s default proves the ceiling is
+  // applied rather than merely declared, and a slow worker can only push
+  // this figure up, never down. An upper bound here would be load-sensitive
+  // in exactly the way this suite is being fixed for; a runaway ceiling is
+  // caught instead by the project's testTimeout, which sits above it.
   expect(waited).toBeGreaterThan(1500);
-  expect(waited).toBeLessThan(8000);
 });
