@@ -217,35 +217,6 @@ jobs:
           install_args: mold github:bnjbvr/cargo-machete
           add_shims_to_path: false
 
-      # Temporary: proves which `ld.mold` the compiler driver reaches, and
-      # that it resolves from a working directory outside the checkout.
-      # Removed once the run has recorded the evidence.
-      - name: Diagnose linker resolution
-        working-directory: ${{ github.workspace }}
-        run: |
-          echo "== bare step: ld.mold on PATH (expect none, shims are off) =="
-          type -a ld.mold || echo "not on PATH"
-          echo "== under mise exec: what the compiler driver picks =="
-          mise exec mold -- cc -print-prog-name=ld.mold
-          echo "== the concrete binary, from a cwd outside the checkout =="
-          real="$(mise which ld.mold)"
-          echo "resolved: ${real}"
-          (cd "$RUNNER_TEMP" && "$real" --version) || echo "FAILED outside the checkout"
-          shim="${HOME}/.local/share/mise/shims/ld.mold"
-          if [ -x "$shim" ]; then
-            echo "== the shim, from a cwd outside the checkout =="
-            (cd "$RUNNER_TEMP" && "$shim" --version) \
-              || echo "shim FAILED outside the checkout (this is the reported defect)"
-          else
-            echo "== no shim present =="
-          fi
-
-      # Temporary: forces the exact unit that failed (a registry crate's
-      # build script) to relink, so the fix is proven against a cold link
-      # rather than a warm cache. Removed with the diagnostic step.
-      - name: Force a cold link of a registry build script
-        run: cargo clean -p serde_json
-
       # sqlx-cli has no upstream prebuilt binaries, so a cache miss
       # compiles it from source (~60-90s with the feature trim to rustls +
       # postgres — the actual surface). The cache is keyed on version +
