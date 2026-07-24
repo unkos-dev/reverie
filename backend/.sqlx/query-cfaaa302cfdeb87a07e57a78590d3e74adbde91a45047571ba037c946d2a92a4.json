@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM manifestation_external_identifiers WHERE manifestation_id = $1 AND scheme = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cfaaa302cfdeb87a07e57a78590d3e74adbde91a45047571ba037c946d2a92a4"
+}

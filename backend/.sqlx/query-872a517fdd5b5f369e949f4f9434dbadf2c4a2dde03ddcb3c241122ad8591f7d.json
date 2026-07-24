@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestation_external_identifiers (manifestation_id, scheme, external_id, source_version_id) VALUES ($1, $2, $3, $4) ON CONFLICT (manifestation_id, scheme) DO UPDATE SET external_id = EXCLUDED.external_id, source_version_id = EXCLUDED.source_version_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "872a517fdd5b5f369e949f4f9434dbadf2c4a2dde03ddcb3c241122ad8591f7d"
+}

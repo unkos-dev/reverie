@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT external_id FROM manifestation_external_identifiers WHERE manifestation_id = $1 AND scheme = 'googlebooks'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_identifiers",
+            "name": "external_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8ec38f04cecaba426d1a31eb9cd19d09856ad0ab4a835cea797b3d4bf31f09da"
+}
