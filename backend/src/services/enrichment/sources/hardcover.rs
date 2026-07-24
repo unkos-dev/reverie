@@ -360,7 +360,7 @@ fn map_book(book: &Value, match_type: &str) -> LookupOutcome {
     }
 
     // Hardcover reports ratings on a 5-point scale.
-    let rating = super::rating_observation(
+    let rating = super::rating_signal(
         book.get("rating").and_then(Value::as_f64),
         book.get("ratings_count").and_then(Value::as_i64),
         5.0,
@@ -490,7 +490,10 @@ mod tests {
             .expect("book emits its own hardcover id");
         assert_eq!(own_id.raw_value, json!("dune"), "slug preferred over id");
 
-        let rating = out.rating.expect("rating maps");
+        let crate::services::enrichment::sources::RatingSignal::Reported(rating) = out.rating
+        else {
+            panic!("rating maps to a reported rating, got {:?}", out.rating);
+        };
         assert!((rating.rating - 4.31).abs() < 1e-6);
         assert_eq!(rating.review_count, 999);
     }

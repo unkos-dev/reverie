@@ -247,40 +247,59 @@ pub async fn run_once(
     })
 }
 
-/// Route rating observations straight into the `manifestation_external_ratings`
+/// Route rating signals straight into the `manifestation_external_ratings`
 /// cache, bypassing the journal and the policy engine entirely: ratings are
 /// per-source refreshable values with no canonical to reconcile, never
-/// journaled, locked, or written back. Out-of-range provider values are
-/// skipped (with a warning) instead of aborting the transaction on the DB
-/// CHECK.
+/// journaled, locked, or written back. A reported rating refreshes the row;
+/// a rating-capable record that omits its rating removes the cached row so
+/// the projection cannot serve an obsolete score indefinitely; a path that
+/// carries no rating data leaves the cache untouched. Out-of-range provider
+/// values are skipped (with a warning) instead of aborting the transaction
+/// on the DB CHECK.
 async fn upsert_ratings(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
     results: &[SourceRun],
 ) -> anyhow::Result<()> {
+    use crate::services::enrichment::sources::RatingSignal;
     for run in results {
         let Ok(outcome) = &run.outcome else { continue };
-        let Some(r) = &outcome.rating else { continue };
-        let in_range = r.rating_scale > 0.0
-            && r.rating >= 0.0
-            && r.rating <= r.rating_scale
-            && r.review_count >= 0;
-        if !in_range {
-            warn!(
-                source = %run.source_id, rating = r.rating, scale = r.rating_scale,
-                count = r.review_count, "skipping out-of-range provider rating"
-            );
-            continue;
+        match &outcome.rating {
+            RatingSignal::Unknown => {}
+            RatingSignal::Absent => {
+                let removed =
+                    external_rating::delete_rating(&mut **tx, manifestation_id, &run.source_id)
+                        .await?;
+                if removed {
+                    info!(
+                        %manifestation_id, source = %run.source_id,
+                        "enrichment: rating removed by provider; cache row cleared"
+                    );
+                }
+            }
+            RatingSignal::Reported(r) => {
+                let in_range = r.rating_scale > 0.0
+                    && r.rating >= 0.0
+                    && r.rating <= r.rating_scale
+                    && r.review_count >= 0;
+                if !in_range {
+                    warn!(
+                        source = %run.source_id, rating = r.rating, scale = r.rating_scale,
+                        count = r.review_count, "skipping out-of-range provider rating"
+                    );
+                    continue;
+                }
+                external_rating::upsert_rating(
+                    &mut **tx,
+                    manifestation_id,
+                    &run.source_id,
+                    r.rating,
+                    r.rating_scale,
+                    r.review_count,
+                )
+                .await?;
+            }
         }
-        external_rating::upsert_rating(
-            &mut **tx,
-            manifestation_id,
-            &run.source_id,
-            r.rating,
-            r.rating_scale,
-            r.review_count,
-        )
-        .await?;
     }
     Ok(())
 }
@@ -3348,6 +3367,91 @@ mod tests {
         assert_eq!(
             hit_kind, "hit",
             "the winning attempt caches under its own key"
+        );
+    }
+
+    /// A rating-capable record that stops reporting a rating clears the
+    /// cached row; a path that never carries rating data leaves it alone.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_clears_rating_when_provider_omits_it(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "googlebooks", "volDROPPED", None)
+            .await
+            .unwrap();
+        // A rating cached by an earlier run.
+        crate::models::external_rating::upsert_rating(&pool, m_id, "googlebooks", 4.5, 5.0, 100)
+            .await
+            .unwrap();
+
+        // The re-fetched Volume record no longer reports a rating.
+        Mock::given(method("GET"))
+            .and(path("/volumes/volDROPPED"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "volDROPPED",
+                "volumeInfo": {"title": "Unrated"}
+            })))
+            .mount(&gb)
+            .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+
+        let remaining: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
+             WHERE manifestation_id = $1 AND source = 'googlebooks'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            remaining, 0,
+            "a rating the provider no longer reports must be cleared"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_retains_rating_on_non_rating_capable_path(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
+            .await
+            .unwrap();
+        // An openlibrary rating cached from an earlier search-path run.
+        crate::models::external_rating::upsert_rating(&pool, m_id, "openlibrary", 4.2, 5.0, 55)
+            .await
+            .unwrap();
+
+        // The native edition record carries no rating data either way.
+        mock_ol_edition(&ol, "OL7353617M", json!({"title": "Dune"})).await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+
+        let remaining: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
+             WHERE manifestation_id = $1 AND source = 'openlibrary'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            remaining, 1,
+            "a path with no rating data must not clear the cached rating"
         );
     }
 

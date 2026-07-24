@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "808dc05977e4f744eac994af4fb81f3d8ada0e470e95e41cf1e17f8767dabe84"
+}

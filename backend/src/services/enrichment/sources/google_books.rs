@@ -305,7 +305,7 @@ fn map_volume(volume: &Value, match_type: &str) -> LookupOutcome {
     }
 
     // Google reports ratings on a 5-point scale.
-    let rating = super::rating_observation(
+    let rating = super::rating_signal(
         info.get("averageRating").and_then(Value::as_f64),
         info.get("ratingsCount").and_then(Value::as_i64),
         5.0,
@@ -383,7 +383,13 @@ mod tests {
         assert!(fields.contains(&"language"));
         assert!(fields.contains(&"identifiers.manifestation.googlebooks"));
 
-        let rating = out.rating.expect("averageRating maps to a rating");
+        let crate::services::enrichment::sources::RatingSignal::Reported(rating) = out.rating
+        else {
+            panic!(
+                "averageRating maps to a reported rating, got {:?}",
+                out.rating
+            );
+        };
         assert!((rating.rating - 4.5).abs() < f32::EPSILON);
         assert!((rating.rating_scale - 5.0).abs() < f32::EPSILON);
         assert_eq!(rating.review_count, 1234);
@@ -419,7 +425,10 @@ mod tests {
         let title = out.fields.iter().find(|r| r.field_name == "title").unwrap();
         assert_eq!(title.raw_value, json!("Dune"));
         assert_eq!(title.match_type, "external_id");
-        assert!(out.rating.is_some());
+        assert!(matches!(
+            out.rating,
+            crate::services::enrichment::sources::RatingSignal::Reported(_)
+        ));
     }
 
     #[tokio::test]
@@ -444,6 +453,39 @@ mod tests {
             .await
             .unwrap();
         assert!(out.is_empty(), "404 on a native id must be a clean miss");
+    }
+
+    #[tokio::test]
+    async fn volume_without_rating_signals_absent() {
+        // A Volume record is rating-capable: fetching one that omits
+        // averageRating means the provider has no rating, which must clear
+        // a previously cached value rather than leave it stale.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/volumes/noRatingVol"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "noRatingVol",
+                "volumeInfo": {"title": "Unrated"}
+            })))
+            .mount(&server)
+            .await;
+
+        let adapter = GoogleBooks::new(server.uri(), None);
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "googlebooks".into(),
+                    value: "noRatingVol".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            out.rating,
+            crate::services::enrichment::sources::RatingSignal::Absent
+        );
     }
 
     #[tokio::test]

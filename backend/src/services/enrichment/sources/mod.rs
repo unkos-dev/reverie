@@ -99,41 +99,64 @@ pub struct RatingObservation {
     pub review_count: i32,
 }
 
+/// What one lookup learned about the provider's aggregate rating.
+///
+/// The distinction between [`Self::Unknown`] and [`Self::Absent`] is
+/// load-bearing for cache invalidation: an Open Library works/editions
+/// record never carries rating data, so resolving through one says nothing
+/// about the provider's rating and must not erase a value cached from an
+/// earlier run. A rating-capable record that omits the rating is the
+/// provider saying it no longer has one.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum RatingSignal {
+    /// This lookup path carries no rating data either way; the cached
+    /// value (if any) is left untouched.
+    #[default]
+    Unknown,
+    /// A rating-capable record was fetched and reports no rating; any
+    /// previously cached rating for this provider is removed.
+    Absent,
+    /// The provider reports this rating; the cache row is refreshed.
+    Reported(RatingObservation),
+}
+
 /// Everything one `lookup` call produced: journal-bound field observations
-/// plus an optional non-journaled rating for the ratings cache.
+/// plus a non-journaled rating signal for the ratings cache.
 #[derive(Debug, Clone, Default)]
 pub struct LookupOutcome {
     /// Field observations; each becomes a candidate journal entry.
     pub fields: Vec<SourceResult>,
-    /// Aggregate rating, when the provider reports one for this record.
-    pub rating: Option<RatingObservation>,
+    /// What this lookup learned about the provider's aggregate rating.
+    pub rating: RatingSignal,
 }
 
 impl LookupOutcome {
-    /// Build an outcome carrying only field observations.
+    /// Build an outcome carrying only field observations, from a path that
+    /// says nothing about ratings.
     pub const fn from_fields(fields: Vec<SourceResult>) -> Self {
         Self {
             fields,
-            rating: None,
+            rating: RatingSignal::Unknown,
         }
     }
 
-    /// `true` when the lookup produced neither fields nor a rating (a miss).
+    /// `true` when the lookup produced neither fields nor a reported
+    /// rating (a miss for fallback purposes).
     pub const fn is_empty(&self) -> bool {
-        self.fields.is_empty() && self.rating.is_none()
+        self.fields.is_empty() && !matches!(self.rating, RatingSignal::Reported(_))
     }
 }
 
-/// Build a [`RatingObservation`] from a provider's optional average + count
-/// on the given scale. Shared by the adapters so the numeric coercion lives
-/// in one place.
-pub(super) fn rating_observation(
-    average: Option<f64>,
-    count: Option<i64>,
-    scale: f32,
-) -> Option<RatingObservation> {
-    let avg = average?;
-    Some(RatingObservation {
+/// Build a [`RatingSignal`] from a rating-capable record's optional average
+/// and count on the given scale. Shared by the adapters so the numeric
+/// coercion lives in one place. Call this only when the fetched record
+/// would carry the rating if the provider had one; paths that never carry
+/// ratings keep [`RatingSignal::Unknown`].
+pub(super) fn rating_signal(average: Option<f64>, count: Option<i64>, scale: f32) -> RatingSignal {
+    let Some(avg) = average else {
+        return RatingSignal::Absent;
+    };
+    RatingSignal::Reported(RatingObservation {
         #[expect(
             clippy::cast_possible_truncation,
             reason = "provider ratings are small values on a 5-point scale; f64→f32 is lossless in that range"

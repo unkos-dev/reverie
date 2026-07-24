@@ -64,6 +64,26 @@ pub async fn upsert_rating(
     .map(|_| ())
 }
 
+/// Remove the cached rating for a `(manifestation_id, source)` pair.
+/// Used when a rating-capable provider record is re-fetched and no longer
+/// reports a rating, so the cache reflects the provider's removal instead
+/// of serving the old score indefinitely. Returns whether a row existed.
+pub async fn delete_rating(
+    executor: impl sqlx::PgExecutor<'_>,
+    manifestation_id: Uuid,
+    source: &str,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM manifestation_external_ratings \
+         WHERE manifestation_id = $1 AND source = $2",
+        manifestation_id,
+        source,
+    )
+    .execute(executor)
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

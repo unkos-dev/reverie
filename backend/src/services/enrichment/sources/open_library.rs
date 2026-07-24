@@ -536,7 +536,7 @@ fn map_search_response(body: &Value) -> LookupOutcome {
     }
 
     // Search docs carry the work-level aggregate rating on a 5-point scale.
-    let rating = super::rating_observation(
+    let rating = super::rating_signal(
         doc.get("ratings_average").and_then(Value::as_f64),
         doc.get("ratings_count").and_then(Value::as_i64),
         5.0,
@@ -949,6 +949,48 @@ mod tests {
     }
 
     #[test]
+    fn search_without_rating_signals_absent() {
+        // Search docs are rating-capable; a doc without ratings_average is
+        // the provider reporting no rating.
+        let body = json!({"docs": [{"key": "/works/OL45804W", "title": "Dune"}]});
+        let out = map_search_response(&body);
+        assert_eq!(
+            out.rating,
+            crate::services::enrichment::sources::RatingSignal::Absent
+        );
+    }
+
+    #[tokio::test]
+    async fn edition_record_leaves_rating_unknown() {
+        // The works/editions records never carry rating data, so resolving
+        // through one must not signal anything about the provider's rating
+        // (a cached value from an earlier search run stays intact).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/books/OL7353617M.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"title": "Dune"})))
+            .mount(&server)
+            .await;
+
+        let adapter = OpenLibrary::new(server.uri());
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "openlibrary".into(),
+                    value: "OL7353617M".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            out.rating,
+            crate::services::enrichment::sources::RatingSignal::Unknown
+        );
+    }
+
+    #[test]
     fn map_search_response_emits_work_id_and_rating() {
         let body = json!({
             "docs": [{
@@ -967,7 +1009,13 @@ mod tests {
             .expect("search doc emits its work id");
         assert_eq!(work_id.raw_value, json!("OL45804W"));
 
-        let rating = out.rating.expect("ratings_average maps to a rating");
+        let crate::services::enrichment::sources::RatingSignal::Reported(rating) = out.rating
+        else {
+            panic!(
+                "ratings_average maps to a reported rating, got {:?}",
+                out.rating
+            );
+        };
         assert!((rating.rating - 4.25).abs() < f32::EPSILON);
         assert!((rating.rating_scale - 5.0).abs() < f32::EPSILON);
         assert_eq!(rating.review_count, 4321);
