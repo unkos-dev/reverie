@@ -8176,6 +8176,8 @@
           "openlibrary_base_url",
           "googlebooks_base_url",
           "hardcover_base_url",
+          "provider_visibility",
+          "revision",
           "updated_at"
         ],
         "properties": {
@@ -8249,6 +8251,15 @@
           "openlibrary_base_url": {
             "type": "string",
             "description": "`OpenLibrary` API base URL."
+          },
+          "provider_visibility": {
+            "type": "object",
+            "description": "Per-provider display visibility for external identifiers and ratings\n(`{\"googlebooks\": false}` hides that provider from projections).\nKeys are validated on write against the union of `identifier_schemes`\nand `rating_sources`; absent keys mean visible. Display-only: hiding\na provider never gates fetching."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "DB-generated monotonic row version, incremented inside every settings\nUPDATE. Cache writers only install a snapshot whose revision exceeds\nthe resident one, which makes the shared settings cache independent\nof lock-acquisition order and transaction-start timestamps\n(`updated_at` is transaction-start time and can move backwards across\nconcurrent writers). Not operator-settable."
           },
           "updated_at": {
             "type": "string",
@@ -9087,6 +9098,19 @@
               "null"
             ],
             "description": "`OpenLibrary` API base URL."
+          },
+          "provider_visibility": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Per-provider display visibility, replacing the stored map wholesale.\nValues must be booleans; keys are validated against the union of\n`identifier_schemes` and `rating_sources`.",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "writeback_concurrency": {
             "type": [

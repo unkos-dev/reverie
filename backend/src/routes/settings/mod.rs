@@ -142,6 +142,14 @@ async fn put_settings(
     }
 
     validate_update(&req).map_err(AppError::Validation)?;
+    crate::services::settings::validate_provider_keys(&state.pool, &req)
+        .await
+        .map_err(|e| match e {
+            crate::services::settings::ProviderKeyError::UnknownKey(_) => {
+                AppError::Validation(e.to_string())
+            }
+            crate::services::settings::ProviderKeyError::Db(db) => AppError::Internal(db.into()),
+        })?;
 
     let restart_required = has_restart_required_field(&req);
 
@@ -149,11 +157,13 @@ async fn put_settings(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    // Update local cache immediately so same-process reads reflect
-    // the new values without waiting for the NOTIFY round-trip.
+    // Update local cache immediately so same-process reads reflect the new
+    // values without waiting for the NOTIFY round-trip. Guarded by the
+    // revision counter: if a concurrent writer committed (and swapped) a
+    // newer row between our save and this lock acquisition, keep theirs.
     {
         let mut guard = state.settings.write().await;
-        *guard = updated.clone();
+        crate::services::settings::apply_if_newer(&mut guard, updated.clone());
     }
 
     Ok(axum::Json(PutSettingsResponse {

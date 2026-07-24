@@ -66,6 +66,22 @@ pub struct Settings {
     /// Hardcover `GraphQL` API base URL.
     pub hardcover_base_url: String,
 
+    /// Per-provider display visibility for external identifiers and ratings
+    /// (`{"googlebooks": false}` hides that provider from projections).
+    /// Keys are validated on write against the union of `identifier_schemes`
+    /// and `rating_sources`; absent keys mean visible. Display-only: hiding
+    /// a provider never gates fetching.
+    #[schema(value_type = Object)]
+    pub provider_visibility: serde_json::Value,
+
+    /// DB-generated monotonic row version, incremented inside every settings
+    /// UPDATE. Cache writers only install a snapshot whose revision exceeds
+    /// the resident one, which makes the shared settings cache independent
+    /// of lock-acquisition order and transaction-start timestamps
+    /// (`updated_at` is transaction-start time and can move backwards across
+    /// concurrent writers). Not operator-settable.
+    pub revision: i64,
+
     /// DB-assigned (`now()` on every UPDATE); not operator-settable.
     pub updated_at: OffsetDateTime,
 }
@@ -162,6 +178,11 @@ pub struct UpdateSettings {
     pub googlebooks_base_url: Option<String>,
     /// Hardcover `GraphQL` API base URL.
     pub hardcover_base_url: Option<String>,
+
+    /// Per-provider display visibility, replacing the stored map wholesale.
+    /// Values must be booleans; keys are validated against the union of
+    /// `identifier_schemes` and `rating_sources`.
+    pub provider_visibility: Option<std::collections::BTreeMap<String, bool>>,
 }
 
 impl UpdateSettings {
@@ -186,6 +207,7 @@ impl UpdateSettings {
             && self.openlibrary_base_url.is_none()
             && self.googlebooks_base_url.is_none()
             && self.hardcover_base_url.is_none()
+            && self.provider_visibility.is_none()
     }
 }
 

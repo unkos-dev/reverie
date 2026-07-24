@@ -166,6 +166,8 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         openlibrary_base_url: "https://openlibrary.org".into(),
         googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
         hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
+        provider_visibility: serde_json::json!({}),
+        revision: 0,
         updated_at: time::OffsetDateTime::now_utc(),
     }))
 }
