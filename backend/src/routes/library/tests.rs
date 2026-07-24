@@ -4066,3 +4066,228 @@ async fn filter_composes_with_pagination_exactly_once(pool: PgPool) {
         "the sub-100-page book must not appear"
     );
 }
+
+// ── external identifiers + ratings projection ────────────────────────────
+
+/// Seed one book with identifiers on both levels plus two provider
+/// ratings, via the ingestion pool (enrichment's write path).
+async fn seed_external_refs(ingestion_pool: &PgPool, work_id: Uuid, m_id: Uuid) {
+    use crate::models::external_identifier::{
+        upsert_manifestation_identifier, upsert_work_identifier,
+    };
+    use crate::models::external_rating::upsert_rating;
+
+    upsert_work_identifier(ingestion_pool, work_id, "openlibrary", "OL45804W", None)
+        .await
+        .expect("seed work id");
+    upsert_manifestation_identifier(ingestion_pool, m_id, "googlebooks", "zyTZAAAAYAAJ", None)
+        .await
+        .expect("seed googlebooks id");
+    upsert_manifestation_identifier(ingestion_pool, m_id, "asin", "B004GXAX8C", None)
+        .await
+        .expect("seed asin id");
+    upsert_rating(ingestion_pool, m_id, "googlebooks", 4.5, 5.0, 100)
+        .await
+        .expect("seed googlebooks rating");
+    upsert_rating(ingestion_pool, m_id, "amazon", 4.1, 5.0, 2000)
+        .await
+        .expect("seed amazon rating");
+}
+
+fn id_entry<'a>(items: &'a [serde_json::Value], scheme: &str) -> Option<&'a serde_json::Value> {
+    items.iter().find(|e| e["scheme"] == scheme)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_and_detail_surface_external_ids_and_ratings(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (work_id, m_id) = insert_book(&ingestion_pool, "extref", "Dune").await;
+    seed_external_refs(&ingestion_pool, work_id, m_id).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let item = &body["items"].as_array().expect("items")[0];
+
+    let ids = item["external_ids"].as_array().expect("external_ids");
+    assert_eq!(ids.len(), 3, "both levels surfaced: {ids:?}");
+    let ol = id_entry(ids, "openlibrary").expect("openlibrary id");
+    assert_eq!(ol["level"], "work");
+    assert_eq!(ol["external_id"], "OL45804W");
+    let gb = id_entry(ids, "googlebooks").expect("googlebooks id");
+    assert_eq!(gb["level"], "manifestation");
+    assert_eq!(gb["external_id"], "zyTZAAAAYAAJ");
+    assert!(id_entry(ids, "asin").is_some());
+
+    let ratings = item["external_ratings"]
+        .as_array()
+        .expect("external_ratings");
+    assert_eq!(ratings.len(), 2, "one row per provider: {ratings:?}");
+    let gb_rating = ratings
+        .iter()
+        .find(|r| r["source"] == "googlebooks")
+        .expect("googlebooks rating");
+    assert!((gb_rating["rating"].as_f64().unwrap() - 4.5).abs() < 1e-6);
+    assert!((gb_rating["rating_scale"].as_f64().unwrap() - 5.0).abs() < 1e-6);
+    assert_eq!(gb_rating["review_count"], 100);
+    assert!(gb_rating["fetched_at"].is_string(), "RFC 3339 timestamp");
+
+    // Detail carries the same projection.
+    let detail = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(detail.status_code(), StatusCode::OK);
+    let detail: serde_json::Value = detail.json();
+    assert_eq!(detail["external_ids"].as_array().unwrap().len(), 3);
+    assert_eq!(detail["external_ratings"].as_array().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn hidden_provider_absent_from_projection_and_hot_reloads(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (work_id, m_id) = insert_book(&ingestion_pool, "extvis", "Dune").await;
+    seed_external_refs(&ingestion_pool, work_id, m_id).await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Hide googlebooks (ids + rating share the key) and asin (ids only;
+    // Amazon's rating key is 'amazon' and stays visible).
+    let put = server
+        .put("/api/v1/settings")
+        .add_header(AUTHORIZATION, basic.clone())
+        .json(&serde_json::json!({"provider_visibility": {"googlebooks": false, "asin": false}}))
+        .await;
+    assert_eq!(put.status_code(), StatusCode::OK, "body = {}", put.text());
+
+    let body: serde_json::Value = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .json();
+    let ids = body["external_ids"].as_array().unwrap();
+    assert!(
+        id_entry(ids, "googlebooks").is_none(),
+        "hidden id leaked: {ids:?}"
+    );
+    assert!(id_entry(ids, "asin").is_none(), "hidden id leaked: {ids:?}");
+    assert!(id_entry(ids, "openlibrary").is_some(), "visible id dropped");
+    let ratings = body["external_ratings"].as_array().unwrap();
+    assert!(
+        ratings.iter().all(|r| r["source"] != "googlebooks"),
+        "hiding googlebooks must hide its rating too: {ratings:?}"
+    );
+    assert!(
+        ratings.iter().any(|r| r["source"] == "amazon"),
+        "hiding asin must not hide the amazon rating: {ratings:?}"
+    );
+
+    // Unhide everything: the next read reflects it without a restart —
+    // the projection reads the hot-reloaded settings cache per request.
+    let put = server
+        .put("/api/v1/settings")
+        .add_header(AUTHORIZATION, basic.clone())
+        .json(&serde_json::json!({"provider_visibility": {}}))
+        .await;
+    assert_eq!(put.status_code(), StatusCode::OK);
+
+    let body: serde_json::Value = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await
+        .json();
+    assert_eq!(
+        body["external_ids"].as_array().unwrap().len(),
+        3,
+        "toggling visibility back must restore the projection immediately"
+    );
+    assert_eq!(body["external_ratings"].as_array().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_pagination_unaffected_by_multiple_ids_and_ratings(pool: PgPool) {
+    use crate::models::external_identifier::{
+        upsert_manifestation_identifier, upsert_work_identifier,
+    };
+    use crate::models::external_rating::upsert_rating;
+
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Three books, each carrying several identifier + rating rows: with the
+    // one-to-many tables kept out of the paginated base query, page math
+    // must still count distinct books, not joined rows.
+    let mut all_ids = Vec::new();
+    for (n, marker) in ["pg-a", "pg-b", "pg-c"].iter().enumerate() {
+        let (work_id, m_id) = insert_book_at(
+            &ingestion_pool,
+            marker,
+            &format!("Paged {marker}"),
+            ts(i64::try_from(n).unwrap()),
+        )
+        .await;
+        upsert_work_identifier(
+            &ingestion_pool,
+            work_id,
+            "openlibrary",
+            &format!("OL{n}1W"),
+            None,
+        )
+        .await
+        .expect("seed work id");
+        upsert_manifestation_identifier(
+            &ingestion_pool,
+            m_id,
+            "googlebooks",
+            &format!("vol{n}A"),
+            None,
+        )
+        .await
+        .expect("seed gb id");
+        upsert_manifestation_identifier(&ingestion_pool, m_id, "goodreads", "5907", None)
+            .await
+            .expect("seed goodreads id");
+        upsert_rating(&ingestion_pool, m_id, "googlebooks", 4.0, 5.0, 10)
+            .await
+            .expect("seed rating");
+        upsert_rating(&ingestion_pool, m_id, "openlibrary", 3.5, 5.0, 7)
+            .await
+            .expect("seed rating");
+        all_ids.push(m_id);
+    }
+
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 2);
+    let first = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(first.status_code(), StatusCode::OK);
+    let body: serde_json::Value = first.json();
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "exactly `limit` distinct books per page");
+    let distinct: std::collections::HashSet<&str> =
+        items.iter().map(|i| i["id"].as_str().unwrap()).collect();
+    assert_eq!(distinct.len(), 2, "no duplicated rows from the 1:N tables");
+    assert!(body["next_cursor"].is_string(), "a third book remains");
+
+    let walked = walk_all_ids(&server, &basic, "/api/v1/books").await;
+    assert_eq!(
+        walked.len(),
+        3,
+        "cursor walk covers every book exactly once"
+    );
+    let unique: std::collections::HashSet<Uuid> = walked.iter().copied().collect();
+    assert_eq!(unique.len(), 3);
+    for id in all_ids {
+        assert!(unique.contains(&id));
+    }
+}
