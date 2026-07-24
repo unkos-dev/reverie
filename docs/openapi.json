@@ -8806,6 +8806,22 @@
             ],
             "description": "New language. Absent = unchanged; `null` clears."
           },
+          "manifestation_identifiers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Manifestation-level external identifiers keyed by scheme (e.g.\n`{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\nas `work_identifiers`.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "moods": {
             "type": [
               "array",
@@ -8864,6 +8880,22 @@
               "null"
             ],
             "description": "New title. Absent = unchanged; `null` is rejected (canonical title\nis NOT NULL)."
+          },
+          "work_identifiers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Work-level external identifiers keyed by scheme (e.g.\n`{\"openlibrary\": \"OL45804W\"}`). Each entry independently sets its\nscheme's single slot; a `null` entry clears it. Absent (or `null`)\nleaves all work-level identifiers unchanged. Handled separately from\nthe scalar fields — not part of [`Self::populated`].",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },

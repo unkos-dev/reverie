@@ -678,6 +678,7 @@ async fn load_existing_pending(
 fn is_work_field(field: &str) -> bool {
     matches!(field, "title" | "description" | "language" | "subtitle")
         || field.starts_with("contributors.")
+        || field.starts_with("identifiers.work.")
 }
 
 fn is_cover_field(f: &str) -> bool {

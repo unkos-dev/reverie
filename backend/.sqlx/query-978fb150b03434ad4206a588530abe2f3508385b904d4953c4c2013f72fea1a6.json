@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT source_version_id FROM work_external_identifiers WHERE work_id = $1 AND scheme = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "work_external_identifiers",
+            "name": "source_version_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "978fb150b03434ad4206a588530abe2f3508385b904d4953c4c2013f72fea1a6"
+}
