@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT scheme, external_id FROM manifestation_external_identifiers WHERE manifestation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "scheme",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_identifiers",
+            "name": "scheme"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_identifiers",
+            "name": "external_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4b192ba06c78162dd9248a53194f4c3e1f633785ebfecea9118567418741dd13"
+}

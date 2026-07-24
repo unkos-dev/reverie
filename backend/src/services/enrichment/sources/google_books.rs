@@ -17,7 +17,7 @@ use governor::{Quota, RateLimiter};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use super::{LookupCtx, LookupKey, MetadataSource, SourceError, SourceResult};
+use super::{LookupCtx, LookupKey, LookupOutcome, MetadataSource, SourceError, SourceResult};
 
 type Limiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 
@@ -69,10 +69,20 @@ impl MetadataSource for GoogleBooks {
         &self,
         ctx: &LookupCtx<'_>,
         key: &LookupKey,
-    ) -> Result<Vec<SourceResult>, SourceError> {
+    ) -> Result<LookupOutcome, SourceError> {
         while let Err(not_ready) = limiter().check() {
             let wait = not_ready.wait_time_from(DefaultClock::default().now());
             tokio::time::sleep(wait).await;
+        }
+
+        // Native volume-id lookups fetch one Volume resource directly; the
+        // id travels as a structural path segment, never string-concatenated
+        // into the URL.
+        if let LookupKey::ExternalId { scheme, value } = key {
+            if scheme != "googlebooks" {
+                return Ok(LookupOutcome::default());
+            }
+            return self.lookup_volume_by_id(ctx, value).await;
         }
 
         let (query, max_results) = match key {
@@ -88,6 +98,7 @@ impl MetadataSource for GoogleBooks {
                 ),
                 5_u32,
             ),
+            LookupKey::ExternalId { .. } => unreachable!("handled above"),
         };
 
         let mut url = format!(
@@ -117,11 +128,62 @@ impl MetadataSource for GoogleBooks {
         }
 
         let body: Value = resp.json().await.map_err(to_source_error)?;
-        let match_type = match key {
-            LookupKey::Isbn(_) => "isbn",
-            LookupKey::TitleAuthor { .. } => "title_author_fuzzy",
-        };
-        Ok(map_volumes(&body, match_type))
+        let match_type = key.match_type_for();
+        let first = body
+            .get("items")
+            .and_then(Value::as_array)
+            .and_then(|items| items.first());
+        Ok(first.map_or_else(LookupOutcome::default, |volume| {
+            map_volume(volume, match_type)
+        }))
+    }
+}
+
+impl GoogleBooks {
+    /// `GET {base}/volumes/{id}` — direct Volume fetch by native id.
+    /// A 404 is a clean miss so the orchestrator can fall through to the
+    /// next eligible key.
+    async fn lookup_volume_by_id(
+        &self,
+        ctx: &LookupCtx<'_>,
+        id: &str,
+    ) -> Result<LookupOutcome, SourceError> {
+        let mut url = reqwest::Url::parse(&self.base_url)
+            .map_err(|e| SourceError::Other(anyhow::anyhow!("invalid base url: {e}")))?;
+        url.path_segments_mut()
+            .map_err(|()| SourceError::Other(anyhow::anyhow!("base url cannot hold a path")))?
+            .pop_if_empty()
+            .push("volumes")
+            .push(id);
+        if let Some(k) = &self.api_key {
+            url.query_pairs_mut().append_pair("key", k);
+        }
+
+        let resp = ctx
+            .http
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(to_source_error)?;
+        let status = resp.status();
+        if status == StatusCode::NOT_FOUND {
+            return Ok(LookupOutcome::default());
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(Duration::from_secs);
+            return Err(SourceError::RateLimited { retry_after });
+        }
+        if !status.is_success() {
+            return Err(SourceError::Http(status));
+        }
+
+        let body: Value = resp.json().await.map_err(to_source_error)?;
+        Ok(map_volume(&body, "external_id"))
     }
 }
 
@@ -133,17 +195,26 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
     }
 }
 
-fn map_volumes(body: &Value, match_type: &str) -> Vec<SourceResult> {
-    let items = body.get("items").and_then(Value::as_array);
-    let Some(items) = items else {
-        return Vec::new();
-    };
-    let Some(first) = items.first() else {
-        return Vec::new();
-    };
-    let info = first.get("volumeInfo").unwrap_or(&Value::Null);
+/// Map one Volume resource (an `items[]` element or a direct `/volumes/{id}`
+/// body) into field observations, its native volume id, and any inline
+/// aggregate rating. `averageRating` is per-Volume (edition-level), which is
+/// exactly the granularity the manifestation-keyed ratings cache stores.
+#[expect(
+    clippy::too_many_lines,
+    reason = "map_volume maps 10+ Volume fields to observations; the per-field cases are mechanical and extracting would obscure the API-to-model mapping"
+)]
+fn map_volume(volume: &Value, match_type: &str) -> LookupOutcome {
+    let info = volume.get("volumeInfo").unwrap_or(&Value::Null);
 
     let mut out = Vec::new();
+
+    if let Some(volume_id) = volume.get("id").and_then(Value::as_str) {
+        out.push(SourceResult {
+            field_name: "identifiers.manifestation.googlebooks".into(),
+            raw_value: json!(volume_id),
+            match_type: match_type.into(),
+        });
+    }
 
     if let Some(title) = info.get("title").and_then(Value::as_str) {
         out.push(SourceResult {
@@ -232,7 +303,18 @@ fn map_volumes(body: &Value, match_type: &str) -> Vec<SourceResult> {
             }
         }
     }
-    out
+
+    // Google reports ratings on a 5-point scale.
+    let rating = super::rating_observation(
+        info.get("averageRating").and_then(Value::as_f64),
+        info.get("ratingsCount").and_then(Value::as_i64),
+        5.0,
+    );
+
+    LookupOutcome {
+        fields: out,
+        rating,
+    }
 }
 
 #[cfg(test)]
@@ -250,22 +332,29 @@ mod tests {
         LookupCtx { http, cached: None }
     }
 
+    fn sample_volume_info() -> serde_json::Value {
+        json!({
+            "title": "Dune",
+            "authors": ["Frank Herbert"],
+            "publisher": "Ace",
+            "publishedDate": "1965-08-01",
+            "description": "Desert planet epic.",
+            "categories": ["Fiction", "Science Fiction"],
+            "language": "en",
+            "averageRating": 4.5,
+            "ratingsCount": 1234,
+            "industryIdentifiers": [
+                {"type": "ISBN_13", "identifier": "9780441172719"},
+                {"type": "ISBN_10", "identifier": "0441172717"}
+            ]
+        })
+    }
+
     fn sample_volume() -> serde_json::Value {
         json!({
             "items": [{
-                "volumeInfo": {
-                    "title": "Dune",
-                    "authors": ["Frank Herbert"],
-                    "publisher": "Ace",
-                    "publishedDate": "1965-08-01",
-                    "description": "Desert planet epic.",
-                    "categories": ["Fiction", "Science Fiction"],
-                    "language": "en",
-                    "industryIdentifiers": [
-                        {"type": "ISBN_13", "identifier": "9780441172719"},
-                        {"type": "ISBN_10", "identifier": "0441172717"}
-                    ]
-                }
+                "id": "zyTZAAAAYAAJ",
+                "volumeInfo": sample_volume_info()
             }]
         })
     }
@@ -287,11 +376,93 @@ mod tests {
             .await
             .unwrap();
 
-        let fields: Vec<&str> = out.iter().map(|r| r.field_name.as_str()).collect();
+        let fields: Vec<&str> = out.fields.iter().map(|r| r.field_name.as_str()).collect();
         assert!(fields.contains(&"title"));
         assert!(fields.contains(&"contributors.author"));
         assert!(fields.contains(&"isbn_13"));
         assert!(fields.contains(&"language"));
+        assert!(fields.contains(&"identifiers.manifestation.googlebooks"));
+
+        let rating = out.rating.expect("averageRating maps to a rating");
+        assert!((rating.rating - 4.5).abs() < f32::EPSILON);
+        assert!((rating.rating_scale - 5.0).abs() < f32::EPSILON);
+        assert_eq!(rating.review_count, 1234);
+    }
+
+    #[tokio::test]
+    async fn volume_id_lookup_uses_structural_path_and_maps() {
+        let server = MockServer::start().await;
+        // The volume id must arrive as its own path segment; a query-string
+        // or concatenated form would not match this path expectation.
+        Mock::given(method("GET"))
+            .and(path("/volumes/zyTZAAAAYAAJ"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "zyTZAAAAYAAJ",
+                "volumeInfo": sample_volume_info()
+            })))
+            .mount(&server)
+            .await;
+
+        let adapter = GoogleBooks::new(server.uri(), None);
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "googlebooks".into(),
+                    value: "zyTZAAAAYAAJ".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let title = out.fields.iter().find(|r| r.field_name == "title").unwrap();
+        assert_eq!(title.raw_value, json!("Dune"));
+        assert_eq!(title.match_type, "external_id");
+        assert!(out.rating.is_some());
+    }
+
+    #[tokio::test]
+    async fn volume_id_404_is_clean_miss() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/volumes/unknownVOL"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let adapter = GoogleBooks::new(server.uri(), None);
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "googlebooks".into(),
+                    value: "unknownVOL".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(out.is_empty(), "404 on a native id must be a clean miss");
+    }
+
+    #[tokio::test]
+    async fn foreign_scheme_is_clean_miss_without_network() {
+        // No mock server at all: a non-googlebooks scheme must return empty
+        // without issuing a request (a request would error and fail the test).
+        let adapter = GoogleBooks::new("http://127.0.0.1:9", None);
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "openlibrary".into(),
+                    value: "OL7353617M".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(out.is_empty());
     }
 
     #[tokio::test]

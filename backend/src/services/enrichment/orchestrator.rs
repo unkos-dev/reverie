@@ -26,6 +26,11 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::models::external_identifier::{
+    IdentifierLevel, get_manifestation_identifier, get_work_identifier,
+    upsert_manifestation_identifier, upsert_work_identifier,
+};
+use crate::models::external_rating;
 use crate::models::work;
 use crate::services::enrichment::cache::{self, ApiCacheKind, CacheTtls};
 use crate::services::enrichment::confidence;
@@ -34,10 +39,12 @@ use crate::services::enrichment::http::api_client;
 use crate::services::enrichment::lookup_key;
 use crate::services::enrichment::policy::{self, Decision, PolicyInputRow};
 use crate::services::enrichment::sources::{
-    LookupCtx, LookupKey, MetadataSource, SourceError, SourceResult, google_books::GoogleBooks,
-    hardcover::Hardcover, open_library::OpenLibrary,
+    LookupCtx, LookupKey, LookupOutcome, MetadataSource, SourceError, SourceResult,
+    google_books::GoogleBooks, hardcover::Hardcover, is_fetchable_scheme,
+    open_library::OpenLibrary,
 };
 use crate::services::enrichment::value_hash;
+use crate::services::metadata::external_id;
 
 /// Outcome of a single [`run_once`] call.  Returned to the queue layer so it
 /// can drive retry/skipped state transitions.
@@ -79,8 +86,12 @@ pub struct Snapshot {
     pub manifestation_id: Uuid,
     /// Parent work of the manifestation.
     pub work_id: Uuid,
-    /// Best available lookup key (`ISBN` preferred, title/author fallback).
-    pub lookup_key: Option<LookupKey>,
+    /// Every eligible lookup key in total priority order: ISBN first, then
+    /// registry ids for the API-capable schemes (provider `base_priority`
+    /// descending, fixed provider precedence on ties, manifestation-level
+    /// before work-level, value-lexicographic last), then title/author.
+    /// Empty when nothing usable exists.
+    pub lookup_keys: Vec<LookupKey>,
     /// Current canonical field values loaded before the fan-out.
     pub canonical: CanonicalState,
 }
@@ -110,6 +121,12 @@ pub struct CanonicalState {
     pub subtitle: Option<String>,
     /// Manifestation-level page count (`manifestations.pages`).
     pub pages: Option<i32>,
+    /// Active external-identifier slots for the manifestation and its work,
+    /// keyed by canonical field name (`identifiers.<level>.<scheme>` =>
+    /// `external_id`). Loaded so `is_empty_for` reports a populated registry
+    /// slot as non-empty; without it every identifier observation would
+    /// `AutoFill` over an existing value instead of staging for review.
+    pub identifiers: std::collections::HashMap<String, String>,
 }
 
 impl CanonicalState {
@@ -131,6 +148,7 @@ impl CanonicalState {
             "isbn_13" => blank(self.isbn_13.as_deref()),
             "subtitle" => blank(self.subtitle.as_deref()),
             "pages" => self.pages.is_none(),
+            f if f.starts_with("identifiers.") => !self.identifiers.contains_key(f),
             _ => true,
         }
     }
@@ -175,10 +193,10 @@ pub async fn run_once(
     manifestation_id: Uuid,
 ) -> anyhow::Result<RunOutcome> {
     let snapshot = load_snapshot(pool, manifestation_id).await?;
-    let Some(lookup_key) = snapshot.lookup_key.clone() else {
+    if snapshot.lookup_keys.is_empty() {
         info!(
             %manifestation_id,
-            "no lookup key (missing ISBN + title/author) — nothing to enrich"
+            "no lookup key (missing ISBN + native ids + title/author) — nothing to enrich"
         );
         return Ok(RunOutcome {
             manifestation_id,
@@ -188,28 +206,26 @@ pub async fn run_once(
             source_failures: Vec::new(),
             duplicate_suspected: false,
         });
-    };
+    }
 
     let sources = build_sources(config);
     let ua = config.user_agent();
     let http = api_client(&ua);
 
-    let results = fan_out(
-        &sources,
-        &http,
-        &lookup_key,
-        Duration::from_secs(config.enrichment.fetch_budget_secs),
-    )
-    .await;
-
-    // Persist api_cache rows for every source (success & failure) before any
-    // DB mutation — caching a miss saves future calls against dead ISBNs.
     let ttls = CacheTtls {
         hit: time::Duration::days(i64::from(config.enrichment.cache_ttl_hit_days)),
         miss: time::Duration::days(i64::from(config.enrichment.cache_ttl_miss_days)),
         error: time::Duration::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
-    cache_all(pool, &results, &lookup_key, &ttls).await;
+    let results = fan_out_with_fallback(
+        pool,
+        &sources,
+        &http,
+        &snapshot.lookup_keys,
+        Duration::from_secs(config.enrichment.fetch_budget_secs),
+        &ttls,
+    )
+    .await;
 
     // Open the single mutating transaction: journal writes + canonical updates
     // + rematch hook all commit or roll back together.
@@ -217,6 +233,7 @@ pub async fn run_once(
 
     let (per_field, failures) = apply_journal_batch(&mut tx, manifestation_id, &results).await?;
     let canonical = apply_canonical_batch(&mut tx, &snapshot, &per_field).await?;
+    upsert_ratings(&mut tx, manifestation_id, &results).await?;
 
     tx.commit().await?;
 
@@ -228,6 +245,44 @@ pub async fn run_once(
         source_failures: failures,
         duplicate_suspected: canonical.duplicate_suspected,
     })
+}
+
+/// Route rating observations straight into the `manifestation_external_ratings`
+/// cache, bypassing the journal and the policy engine entirely: ratings are
+/// per-source refreshable values with no canonical to reconcile, never
+/// journaled, locked, or written back. Out-of-range provider values are
+/// skipped (with a warning) instead of aborting the transaction on the DB
+/// CHECK.
+async fn upsert_ratings(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    results: &[SourceRun],
+) -> anyhow::Result<()> {
+    for run in results {
+        let Ok(outcome) = &run.outcome else { continue };
+        let Some(r) = &outcome.rating else { continue };
+        let in_range = r.rating_scale > 0.0
+            && r.rating >= 0.0
+            && r.rating <= r.rating_scale
+            && r.review_count >= 0;
+        if !in_range {
+            warn!(
+                source = %run.source_id, rating = r.rating, scale = r.rating_scale,
+                count = r.review_count, "skipping out-of-range provider rating"
+            );
+            continue;
+        }
+        external_rating::upsert_rating(
+            &mut **tx,
+            manifestation_id,
+            &run.source_id,
+            r.rating,
+            r.rating_scale,
+            r.review_count,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -253,8 +308,8 @@ async fn apply_journal_batch(
 
     for r in results {
         match &r.outcome {
-            Ok(source_results) => {
-                for sr in source_results {
+            Ok(outcome) => {
+                for sr in &outcome.fields {
                     let id = upsert_journal_row(tx, manifestation_id, &r.source_id, sr).await?;
                     per_field.entry(sr.field_name.clone()).or_default().push((
                         r.source_id.clone(),
@@ -270,6 +325,45 @@ async fn apply_journal_batch(
     }
 
     Ok((per_field, failures))
+}
+
+/// Compute the Apply-vs-Stage emptiness input for one field.
+///
+/// For identifier fields the decision must be made against the registry's
+/// *current* state, not the pre-fan-out snapshot. Work-level slots are
+/// shared across sibling manifestations, so the work row is locked FOR
+/// UPDATE *before* the decision and the slot re-read under that lock: a
+/// concurrent run on a sibling then serialises here and sees the winner's
+/// value, flipping its own decision from Apply to Stage instead of
+/// clobbering. A lock taken later (inside the write) could only serialise
+/// the write, not change an already-made decision. Non-identifier fields
+/// keep the snapshot-based check.
+async fn canonical_empty_under_lock(
+    tx: &mut Transaction<'_, Postgres>,
+    snapshot: &Snapshot,
+    field: &str,
+) -> anyhow::Result<bool> {
+    match external_id::parse_canonical_field(field) {
+        Ok((IdentifierLevel::Work, scheme)) => {
+            sqlx::query!(
+                "SELECT id FROM works WHERE id = $1 FOR UPDATE",
+                snapshot.work_id,
+            )
+            .fetch_optional(&mut **tx)
+            .await?;
+            Ok(get_work_identifier(&mut **tx, snapshot.work_id, scheme)
+                .await?
+                .is_none())
+        }
+        Ok((IdentifierLevel::Manifestation, scheme)) => {
+            Ok(
+                get_manifestation_identifier(&mut **tx, snapshot.manifestation_id, scheme)
+                    .await?
+                    .is_none(),
+            )
+        }
+        Err(_) => Ok(snapshot.canonical.is_empty_for(field)),
+    }
 }
 
 /// For each field, compute confidence per upserted row, decide via
@@ -291,9 +385,11 @@ async fn apply_canonical_batch(
         };
         let locked = field_lock::is_locked_tx(tx, manifestation_id, entity, field).await?;
 
-        let canonical_empty = snapshot.canonical.is_empty_for(field);
+        let canonical_empty = canonical_empty_under_lock(tx, snapshot, field).await?;
 
-        // Existing pending rows from prior runs (other value_hashes).
+        // Existing pending rows from prior runs (other value_hashes),
+        // loaded after the work-row lock so identifier disagreement is
+        // also judged against committed concurrent state.
         let existing_pending = load_existing_pending(tx, manifestation_id, field).await?;
 
         // quorum counts distinct rows in *this* run with the same hash.
@@ -375,7 +471,11 @@ async fn apply_canonical_batch(
                     // and file-side reflection either both commit or both
                     // roll back.  Worker deduplicates if two fields flip on
                     // the same manifestation in <1s; not the emitter's job.
-                    enqueue_writeback(tx, manifestation_id, field).await?;
+                    // External identifiers are never written back to the
+                    // source file, so their applies skip the enqueue.
+                    if !field.starts_with("identifiers.") {
+                        enqueue_writeback(tx, manifestation_id, field).await?;
+                    }
                     // Avoid re-applying on the same run when two sources agree.
                     break;
                 }
@@ -436,13 +536,56 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
         Some(row.title)
     };
 
-    // Borrow-only view for `derive_lookup_key`; the move into `canonical`
-    // happens after so each field travels exactly once.
-    let lookup_key = derive_lookup_key(
+    // Active registry slots for the manifestation and its work, both for
+    // `is_empty_for` (a populated slot must not AutoFill) and for deriving
+    // native-id lookup keys.
+    let mut identifiers: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let manif_ids = sqlx::query!(
+        "SELECT scheme, external_id FROM manifestation_external_identifiers \
+         WHERE manifestation_id = $1",
+        manifestation_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    for r in manif_ids {
+        identifiers.insert(
+            IdentifierLevel::Manifestation.canonical_field(&r.scheme),
+            r.external_id,
+        );
+    }
+    let work_ids = sqlx::query!(
+        "SELECT scheme, external_id FROM work_external_identifiers WHERE work_id = $1",
+        row.work_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    for r in work_ids {
+        identifiers.insert(
+            IdentifierLevel::Work.canonical_field(&r.scheme),
+            r.external_id,
+        );
+    }
+
+    // Provider base priorities for the API-capable schemes; the scheme id
+    // and the metadata_sources id coincide for exactly these three.
+    let priorities: std::collections::HashMap<String, i32> = sqlx::query!(
+        "SELECT id, base_priority FROM metadata_sources \
+         WHERE id IN ('openlibrary', 'googlebooks', 'hardcover')",
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|r| (r.id, r.base_priority))
+    .collect();
+
+    let lookup_keys = derive_lookup_keys(
         row.isbn_13.as_deref(),
         row.isbn_10.as_deref(),
         title_opt.as_deref(),
         row.first_author.as_deref(),
+        &identifiers,
+        &priorities,
     );
 
     let canonical = CanonicalState {
@@ -455,50 +598,150 @@ pub async fn load_snapshot(pool: &PgPool, manifestation_id: Uuid) -> anyhow::Res
         isbn_13: row.isbn_13,
         subtitle: row.subtitle,
         pages: row.pages,
+        identifiers,
     };
 
     Ok(Snapshot {
         manifestation_id,
         work_id: row.work_id,
-        lookup_key,
+        lookup_keys,
         canonical,
     })
 }
 
-fn derive_lookup_key(
+/// Fixed provider precedence used to break `base_priority` ties. Lower index
+/// wins. `openlibrary` and `googlebooks` both seed at the same priority, so
+/// this is the operative tie-break between them.
+fn scheme_precedence(scheme: &str) -> usize {
+    ["openlibrary", "googlebooks", "hardcover"]
+        .iter()
+        .position(|s| *s == scheme)
+        .unwrap_or(usize::MAX)
+}
+
+/// Derive the total-ordered eligible lookup-key list.
+///
+/// Order: (1) the ISBN key; (2) registry ids for the API-capable schemes,
+/// sorted by provider `base_priority` descending, then the fixed precedence
+/// `[openlibrary, googlebooks, hardcover]`, then manifestation-level before
+/// work-level (edition ids are more specific), then value-lexicographic;
+/// (3) title/author last. Non-fetchable schemes (`goodreads`, `asin`, ...)
+/// never become keys.
+fn derive_lookup_keys(
     isbn_13: Option<&str>,
     isbn_10: Option<&str>,
     title: Option<&str>,
     author: Option<&str>,
-) -> Option<LookupKey> {
-    if let Some(v) = isbn_13
-        && let Some(k) = lookup_key::isbn_key(v)
+    identifiers: &std::collections::HashMap<String, String>,
+    priorities: &std::collections::HashMap<String, i32>,
+) -> Vec<LookupKey> {
+    let mut keys = Vec::new();
+
+    if let Some(k) = isbn_13
+        .and_then(lookup_key::isbn_key)
+        .or_else(|| isbn_10.and_then(lookup_key::isbn_key))
     {
-        return Some(LookupKey::Isbn(k));
+        keys.push(LookupKey::Isbn(k));
     }
-    if let Some(v) = isbn_10
-        && let Some(k) = lookup_key::isbn_key(v)
-    {
-        return Some(LookupKey::Isbn(k));
-    }
+
+    // (level_rank, scheme, value): manifestation-level ranks before work.
+    let mut ids: Vec<(u8, &str, &str)> = identifiers
+        .iter()
+        .filter_map(|(field, value)| {
+            let (level, scheme) = external_id::parse_canonical_field(field).ok()?;
+            if !is_fetchable_scheme(scheme) {
+                return None;
+            }
+            let level_rank = match level {
+                IdentifierLevel::Manifestation => 0_u8,
+                IdentifierLevel::Work => 1_u8,
+            };
+            Some((level_rank, scheme, value.as_str()))
+        })
+        .collect();
+    ids.sort_by(|a, b| {
+        let pa = priorities.get(a.1).copied().unwrap_or(0);
+        let pb = priorities.get(b.1).copied().unwrap_or(0);
+        pb.cmp(&pa)
+            .then_with(|| scheme_precedence(a.1).cmp(&scheme_precedence(b.1)))
+            .then_with(|| a.0.cmp(&b.0))
+            .then_with(|| a.2.cmp(b.2))
+    });
+    keys.extend(
+        ids.into_iter()
+            .map(|(_, scheme, value)| LookupKey::ExternalId {
+                scheme: scheme.to_string(),
+                value: value.to_string(),
+            }),
+    );
+
     if let (Some(t), Some(a)) = (title, author)
         && !t.is_empty()
         && !a.is_empty()
     {
-        return Some(LookupKey::TitleAuthor {
+        keys.push(LookupKey::TitleAuthor {
             title: t.to_string(),
             author: a.to_string(),
         });
     }
-    None
+    keys
 }
 
 /// One fan-out entry: the result of a single source lookup during [`fan_out`].
 pub struct SourceRun {
     /// Source identifier (e.g. `"openlibrary"`, `"googlebooks"`).
     pub source_id: String,
-    /// Field results on success, or the first error on failure.
-    pub outcome: Result<Vec<SourceResult>, SourceError>,
+    /// Field + rating results on success, or the first error on failure.
+    pub outcome: Result<LookupOutcome, SourceError>,
+}
+
+/// Try each eligible key in priority order until one attempt produces data,
+/// under a single wall-clock budget shared across attempts.
+///
+/// An [`LookupKey::ExternalId`] attempt dispatches only to the adapter whose
+/// id matches the scheme; every other key fans out to all enabled sources.
+/// A clean miss, an error, or a disabled/absent adapter falls through to the
+/// next key. Every attempt caches its runs under that attempt's own
+/// type-prefixed key, so a fallback result can never poison another key's
+/// cache entry. Runs from every attempt are returned; missed attempts
+/// contribute empty results and their failures.
+pub async fn fan_out_with_fallback(
+    pool: &PgPool,
+    sources: &[Arc<dyn MetadataSource>],
+    http: &reqwest::Client,
+    keys: &[LookupKey],
+    budget: Duration,
+    ttls: &CacheTtls,
+) -> Vec<SourceRun> {
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut all: Vec<SourceRun> = Vec::new();
+    for key in keys {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let attempt: Vec<Arc<dyn MetadataSource>> = match key {
+            LookupKey::ExternalId { scheme, .. } => sources
+                .iter()
+                .filter(|s| s.id() == scheme)
+                .cloned()
+                .collect(),
+            LookupKey::Isbn(_) | LookupKey::TitleAuthor { .. } => sources.to_vec(),
+        };
+        if !attempt.iter().any(|s| s.enabled()) {
+            continue;
+        }
+        let runs = fan_out(&attempt, http, key, remaining).await;
+        cache_all(pool, &runs, key, ttls).await;
+        let hit = runs
+            .iter()
+            .any(|r| matches!(&r.outcome, Ok(o) if !o.is_empty()));
+        all.extend(runs);
+        if hit {
+            break;
+        }
+    }
+    all
 }
 
 /// Parallel lookup bounded by a wall-clock budget.  A slow provider cannot
@@ -575,13 +818,19 @@ async fn cache_all(pool: &PgPool, runs: &[SourceRun], key: &LookupKey, ttls: &Ca
     let cache_key = key.cache_key();
     for run in runs {
         let (payload, kind, status) = match &run.outcome {
-            Ok(results) if results.is_empty() => (serde_json::json!([]), ApiCacheKind::Miss, None),
-            Ok(results) => (
-                serde_json::to_value(results.iter().map(|r| &r.raw_value).collect::<Vec<_>>())
-                    .unwrap_or_else(|e| {
-                        warn!(error = %e, source = %run.source_id, "cache: failed to serialise results; writing NULL");
-                        serde_json::Value::Null
-                    }),
+            Ok(outcome) if outcome.is_empty() => (serde_json::json!([]), ApiCacheKind::Miss, None),
+            Ok(outcome) => (
+                serde_json::to_value(
+                    outcome
+                        .fields
+                        .iter()
+                        .map(|r| &r.raw_value)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_else(|e| {
+                    warn!(error = %e, source = %run.source_id, "cache: failed to serialise results; writing NULL");
+                    serde_json::Value::Null
+                }),
                 ApiCacheKind::Hit,
                 None,
             ),
@@ -884,6 +1133,45 @@ async fn apply_field(
             .await?;
             Ok(true)
         }
+        f if f.starts_with("identifiers.") => {
+            let Ok((level, scheme)) = external_id::parse_canonical_field(f) else {
+                tracing::warn!(field = %f, "malformed identifier field name; skipping apply");
+                return Ok(false);
+            };
+            let Some(raw) = value.as_str() else {
+                tracing::warn!(field = %f, raw = %value, "non-string identifier value; skipping apply");
+                return Ok(false);
+            };
+            // Provider-emitted ids are untrusted; the typed parser is the
+            // gate before the registry (the DB CHECK is only a backstop).
+            let Ok(canonical) = external_id::parse_external_id(level, scheme, raw) else {
+                tracing::warn!(field = %f, raw = %raw, "identifier fails scheme format; skipping apply");
+                return Ok(false);
+            };
+            match level {
+                IdentifierLevel::Work => {
+                    upsert_work_identifier(
+                        &mut **tx,
+                        snapshot.work_id,
+                        scheme,
+                        &canonical,
+                        Some(version_id),
+                    )
+                    .await?;
+                }
+                IdentifierLevel::Manifestation => {
+                    upsert_manifestation_identifier(
+                        &mut **tx,
+                        snapshot.manifestation_id,
+                        scheme,
+                        &canonical,
+                        Some(version_id),
+                    )
+                    .await?;
+                }
+            }
+            Ok(true)
+        }
         // Cover fields and any other recognised non-canonical fields rely on
         // the writeback worker for the actual change (Step 11), so the
         // caller still enqueues a writeback and counts the apply.
@@ -961,26 +1249,26 @@ pub async fn fan_out_for_dry_run(
     manifestation_id: Uuid,
 ) -> anyhow::Result<(Snapshot, Vec<SourceRun>)> {
     let snapshot = load_snapshot(pool, manifestation_id).await?;
-    let Some(key) = snapshot.lookup_key.clone() else {
+    if snapshot.lookup_keys.is_empty() {
         return Ok((snapshot, Vec::new()));
-    };
+    }
     let sources = build_sources(config);
     let ua = config.user_agent();
     let http = api_client(&ua);
-    let results = fan_out(
-        &sources,
-        &http,
-        &key,
-        Duration::from_secs(config.enrichment.fetch_budget_secs),
-    )
-    .await;
-
     let ttls = CacheTtls {
         hit: time::Duration::days(i64::from(config.enrichment.cache_ttl_hit_days)),
         miss: time::Duration::days(i64::from(config.enrichment.cache_ttl_miss_days)),
         error: time::Duration::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
-    cache_all(pool, &results, &key, &ttls).await;
+    let results = fan_out_with_fallback(
+        pool,
+        &sources,
+        &http,
+        &snapshot.lookup_keys,
+        Duration::from_secs(config.enrichment.fetch_budget_secs),
+        &ttls,
+    )
+    .await;
     Ok((snapshot, results))
 }
 
@@ -1012,8 +1300,8 @@ mod tests {
             &self,
             _ctx: &LookupCtx<'_>,
             _key: &LookupKey,
-        ) -> Result<Vec<SourceResult>, SourceError> {
-            Ok(Vec::new())
+        ) -> Result<LookupOutcome, SourceError> {
+            Ok(LookupOutcome::default())
         }
     }
 
@@ -1030,9 +1318,9 @@ mod tests {
             &self,
             _ctx: &LookupCtx<'_>,
             _key: &LookupKey,
-        ) -> Result<Vec<SourceResult>, SourceError> {
+        ) -> Result<LookupOutcome, SourceError> {
             tokio::time::sleep(Duration::from_mins(1)).await;
-            Ok(Vec::new())
+            Ok(LookupOutcome::default())
         }
     }
 
@@ -1258,7 +1546,7 @@ mod tests {
         .unwrap();
 
         let snapshot = load_snapshot(&pool, m_id).await.unwrap();
-        match snapshot.lookup_key {
+        match snapshot.lookup_keys.last().cloned() {
             Some(LookupKey::TitleAuthor { title: t, author }) => {
                 assert_eq!(t, title);
                 assert_eq!(
@@ -2020,7 +2308,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
 
@@ -2095,7 +2383,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
 
@@ -2173,7 +2461,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
 
@@ -2220,7 +2508,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
         let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
@@ -2274,7 +2562,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
         let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
@@ -2424,7 +2712,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
 
@@ -2501,7 +2789,7 @@ mod tests {
         let snapshot = Snapshot {
             manifestation_id: m_id,
             work_id,
-            lookup_key: None,
+            lookup_keys: Vec::new(),
             canonical: CanonicalState::default(),
         };
 
@@ -2535,5 +2823,618 @@ mod tests {
             writeback_rows, 0,
             "no writeback should be enqueued for a skipped apply"
         );
+    }
+
+    // ── external identifiers + ratings (native-id enrichment) ────────────
+
+    /// ISBN-less fixture: no isbn column and an empty stub title, so lookup
+    /// keys can only come from the identifier registry.
+    async fn insert_isbnless_fixture(pool: &PgPool, marker: &str) -> (Uuid, Uuid) {
+        let work_id = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ('', '') RETURNING id",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let path = format!("/tmp/orch-extid-{marker}.epub");
+        let hash = format!("orch-extid-hash-{marker}");
+        let manifestation_id = sqlx::query_scalar!(
+            "INSERT INTO manifestations \
+               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING id",
+            work_id,
+            path,
+            hash,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        (work_id, manifestation_id)
+    }
+
+    async fn mock_ol_edition(server: &MockServer, olid: &str, body: serde_json::Value) {
+        Mock::given(method("GET"))
+            .and(path(format!("/books/{olid}.json")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(server)
+            .await;
+    }
+
+    #[test]
+    fn derive_lookup_keys_order_is_pinned() {
+        let mut identifiers = std::collections::HashMap::new();
+        identifiers.insert(
+            "identifiers.manifestation.openlibrary".to_string(),
+            "OL7353617M".to_string(),
+        );
+        identifiers.insert(
+            "identifiers.work.openlibrary".to_string(),
+            "OL45804W".to_string(),
+        );
+        identifiers.insert(
+            "identifiers.manifestation.googlebooks".to_string(),
+            "zyTZAAAAYAAJ".to_string(),
+        );
+        identifiers.insert("identifiers.work.hardcover".to_string(), "dune".to_string());
+        // Never-fetched schemes must not become keys.
+        identifiers.insert(
+            "identifiers.manifestation.asin".to_string(),
+            "B004GXAX8C".to_string(),
+        );
+        identifiers.insert("identifiers.work.goodreads".to_string(), "5907".to_string());
+
+        let priorities: std::collections::HashMap<String, i32> = [
+            ("openlibrary".to_string(), 100),
+            ("googlebooks".to_string(), 100),
+            ("hardcover".to_string(), 90),
+        ]
+        .into_iter()
+        .collect();
+
+        let keys = derive_lookup_keys(
+            Some("9780441172719"),
+            None,
+            Some("Dune"),
+            Some("Frank Herbert"),
+            &identifiers,
+            &priorities,
+        );
+
+        let rendered: Vec<String> = keys
+            .iter()
+            .map(|k| match k {
+                LookupKey::Isbn(v) => format!("isbn|{v}"),
+                LookupKey::ExternalId { scheme, value } => format!("ext|{scheme}|{value}"),
+                LookupKey::TitleAuthor { .. } => "ta".to_string(),
+            })
+            .collect();
+        // Pinned total order: ISBN; then priority desc with the fixed
+        // [openlibrary, googlebooks, hardcover] tie-break, manifestation
+        // before work within a scheme; title/author last. asin/goodreads
+        // never appear.
+        assert_eq!(
+            rendered,
+            vec![
+                "isbn|isbn:9780441172719".to_string(),
+                "ext|openlibrary|OL7353617M".to_string(),
+                "ext|openlibrary|OL45804W".to_string(),
+                "ext|googlebooks|zyTZAAAAYAAJ".to_string(),
+                "ext|hardcover|dune".to_string(),
+                "ta".to_string(),
+            ],
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn load_snapshot_never_fetched_schemes_yield_no_keys(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "asin", "B004GXAX8C", None)
+            .await
+            .unwrap();
+
+        let snapshot = load_snapshot(&pool, m_id).await.unwrap();
+        assert!(
+            snapshot.lookup_keys.is_empty(),
+            "an asin-only manifestation has nothing fetchable, got {:?}",
+            snapshot.lookup_keys
+        );
+    }
+
+    /// An ISBN-less manifestation with a stored OL edition id resolves by
+    /// native id, and the edition's parent-work link `AutoFill`s the empty
+    /// work-level slot in the registry — with a journal pointer, no
+    /// writeback, and no calls to the other adapters.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_external_id_autofills_empty_registry_slot(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
+            .await
+            .unwrap();
+
+        mock_ol_edition(
+            &ol,
+            "OL7353617M",
+            json!({"works": [{"key": "/works/OL45804W"}]}),
+        )
+        .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        assert_eq!(outcome.applied, 1, "work-level id should AutoFill");
+
+        let row = sqlx::query!(
+            "SELECT external_id, source_version_id FROM work_external_identifiers \
+             WHERE work_id = $1 AND scheme = 'openlibrary'",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.external_id, "OL45804W");
+        let version_id = row.source_version_id.expect("journal pointer wired");
+        let journaled: serde_json::Value = sqlx::query_scalar!(
+            "SELECT new_value AS \"new_value!\" FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(journaled, json!("OL45804W"));
+
+        let writebacks: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(writebacks, 0, "identifier applies never enqueue writeback");
+
+        // Dispatch is per-scheme: the other adapters must not be called.
+        assert!(
+            gb.received_requests().await.unwrap_or_default().is_empty(),
+            "googlebooks must not be queried for an openlibrary id"
+        );
+        assert!(
+            hc.received_requests().await.unwrap_or_default().is_empty(),
+            "hardcover must not be queried for an openlibrary id"
+        );
+
+        // The attempt cached under its own type-prefixed key.
+        let kind: String = sqlx::query_scalar!(
+            "SELECT response_kind::text AS \"kind!\" FROM api_cache \
+             WHERE source = 'openlibrary' AND lookup_key = 'external:openlibrary:OL7353617M'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(kind, "hit");
+    }
+
+    /// A populated work-level slot with a different value must Stage, not be
+    /// overwritten: single-slot replacement stays an explicit human accept.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_stages_when_registry_slot_populated_with_different_value(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
+            .await
+            .unwrap();
+        upsert_work_identifier(&pool, work_id, "openlibrary", "OL999W", None)
+            .await
+            .unwrap();
+
+        mock_ol_edition(
+            &ol,
+            "OL7353617M",
+            json!({"works": [{"key": "/works/OL45804W"}]}),
+        )
+        .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        assert_eq!(outcome.applied, 0);
+        assert_eq!(outcome.staged, 1, "disagreeing observation must Stage");
+
+        let resident: String = sqlx::query_scalar!(
+            "SELECT external_id FROM work_external_identifiers \
+             WHERE work_id = $1 AND scheme = 'openlibrary'",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(resident, "OL999W", "populated slot must not be overwritten");
+
+        let pending: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 \
+               AND field_name = 'identifiers.work.openlibrary' \
+               AND status = 'pending'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(pending, 1, "the observation stays pending for review");
+    }
+
+    /// A prior pending row with a different value downgrades `AutoFill` to
+    /// Stage even though the slot itself is empty (cross-source or
+    /// cross-run disagreement).
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_identifier_disagreement_with_prior_pending_stages(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL7353617M", None)
+            .await
+            .unwrap();
+        // A disagreeing observation from an earlier run, still pending.
+        let hash = value_hash::value_hash("identifiers.work.openlibrary", &json!("OL777W"));
+        sqlx::query!(
+            "INSERT INTO metadata_versions \
+                 (manifestation_id, source, field_name, new_value, value_hash, \
+                  match_type, confidence_score) \
+             VALUES ($1, 'hardcover', 'identifiers.work.openlibrary', $2, $3, \
+                     'external_id', 0.85)",
+            m_id,
+            json!("OL777W"),
+            hash,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        mock_ol_edition(
+            &ol,
+            "OL7353617M",
+            json!({"works": [{"key": "/works/OL45804W"}]}),
+        )
+        .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        assert_eq!(outcome.applied, 0, "disagreement must downgrade AutoFill");
+        assert!(outcome.staged >= 1);
+
+        let rows: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM work_external_identifiers WHERE work_id = $1",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 0, "no registry write on disagreement");
+    }
+
+    /// Ratings land in the cache keyed (manifestation, source), are updated
+    /// in place on re-run, and are never journaled.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_upserts_ratings_in_place_and_never_journals_them(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        upsert_manifestation_identifier(&pool, m_id, "googlebooks", "zyTZAAAAYAAJ", None)
+            .await
+            .unwrap();
+
+        let volume = |rating: f64, count: i64| {
+            json!({
+                "id": "zyTZAAAAYAAJ",
+                "volumeInfo": {"averageRating": rating, "ratingsCount": count}
+            })
+        };
+        Mock::given(method("GET"))
+            .and(path("/volumes/zyTZAAAAYAAJ"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(volume(4.5, 100)))
+            .mount(&gb)
+            .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+
+        let row = sqlx::query!(
+            "SELECT rating, rating_scale, review_count FROM manifestation_external_ratings \
+             WHERE manifestation_id = $1 AND source = 'googlebooks'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!((row.rating - 4.5).abs() < 1e-6);
+        assert!((row.rating_scale - 5.0).abs() < 1e-6);
+        assert_eq!(row.review_count, 100);
+
+        // Ratings never enter the journal.
+        let journaled: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 AND field_name ILIKE '%rating%'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(journaled, 0, "rating observations must never be journaled");
+
+        // Re-run with a changed score: same row, updated in place. Reset the
+        // enrichment cache row first so the rerun actually refetches.
+        gb.reset().await;
+        Mock::given(method("GET"))
+            .and(path("/volumes/zyTZAAAAYAAJ"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(volume(3.9, 250)))
+            .mount(&gb)
+            .await;
+        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+
+        let rows = sqlx::query!(
+            "SELECT rating, review_count FROM manifestation_external_ratings \
+             WHERE manifestation_id = $1 AND source = 'googlebooks'",
+            m_id,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1, "re-run must update in place, not duplicate");
+        assert!((rows[0].rating - 3.9).abs() < 1e-6);
+        assert_eq!(rows[0].review_count, 250);
+    }
+
+    /// Two editions of one work keep independent per-source ratings: the
+    /// manifestation-level cache cannot cross-clobber.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_ratings_are_independent_per_edition(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m1) = insert_isbnless_fixture(&pool, &marker).await;
+        let path2 = format!("/tmp/orch-extid-b-{marker}.epub");
+        let hash2 = format!("orch-extid-b-hash-{marker}");
+        let m2: Uuid = sqlx::query_scalar!(
+            "INSERT INTO manifestations \
+               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING id",
+            work_id,
+            path2,
+            hash2,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        upsert_manifestation_identifier(&pool, m1, "googlebooks", "volAAA111", None)
+            .await
+            .unwrap();
+        upsert_manifestation_identifier(&pool, m2, "googlebooks", "volBBB222", None)
+            .await
+            .unwrap();
+
+        for (vol, rating) in [("volAAA111", 4.0), ("volBBB222", 2.0)] {
+            Mock::given(method("GET"))
+                .and(path(format!("/volumes/{vol}")))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "id": vol,
+                    "volumeInfo": {"averageRating": rating, "ratingsCount": 10}
+                })))
+                .mount(&gb)
+                .await;
+        }
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let _ = run_once(&pool, &cfg, m1).await.unwrap();
+        let _ = run_once(&pool, &cfg, m2).await.unwrap();
+
+        let r1 = sqlx::query_scalar!(
+            "SELECT rating FROM manifestation_external_ratings \
+             WHERE manifestation_id = $1 AND source = 'googlebooks'",
+            m1,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let r2 = sqlx::query_scalar!(
+            "SELECT rating FROM manifestation_external_ratings \
+             WHERE manifestation_id = $1 AND source = 'googlebooks'",
+            m2,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!((r1 - 4.0).abs() < 1e-6);
+        assert!((r2 - 2.0).abs() < 1e-6, "editions keep independent ratings");
+    }
+
+    /// A missed native id falls through to the next key in order, and each
+    /// attempt caches under its own type-prefixed key so the miss cannot
+    /// poison the winning key's cache entry.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_fallback_tries_next_key_and_caches_per_key(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) = insert_isbnless_fixture(&pool, &marker).await;
+        // openlibrary outranks googlebooks (same priority, fixed precedence),
+        // so the OL id is attempted first and misses.
+        upsert_manifestation_identifier(&pool, m_id, "openlibrary", "OL404404M", None)
+            .await
+            .unwrap();
+        upsert_manifestation_identifier(&pool, m_id, "googlebooks", "volFALLBACK", None)
+            .await
+            .unwrap();
+
+        Mock::given(method("GET"))
+            .and(path("/books/OL404404M.json"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&ol)
+            .await;
+        let title = format!("Fallback Title {marker}");
+        Mock::given(method("GET"))
+            .and(path("/volumes/volFALLBACK"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "volFALLBACK",
+                "volumeInfo": {"title": title}
+            })))
+            .mount(&gb)
+            .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        assert!(outcome.applied >= 1, "fallback key should produce applies");
+
+        let canon_title: String = sqlx::query_scalar!(
+            "SELECT w.title FROM works w \
+             JOIN manifestations m ON m.work_id = w.id WHERE m.id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(canon_title, title, "title applied from the fallback key");
+
+        let miss_kind: String = sqlx::query_scalar!(
+            "SELECT response_kind::text AS \"kind!\" FROM api_cache \
+             WHERE source = 'openlibrary' AND lookup_key = 'external:openlibrary:OL404404M'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(miss_kind, "miss", "the missed attempt caches as a miss");
+
+        let hit_kind: String = sqlx::query_scalar!(
+            "SELECT response_kind::text AS \"kind!\" FROM api_cache \
+             WHERE source = 'googlebooks' AND lookup_key = 'external:googlebooks:volFALLBACK'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            hit_kind, "hit",
+            "the winning attempt caches under its own key"
+        );
+    }
+
+    /// Two sibling manifestations concurrently observing disagreeing
+    /// work-level ids must not clobber: the work row is locked FOR UPDATE
+    /// before the Apply-vs-Stage decision and the slot re-read under the
+    /// lock, so the loser Stages against the winner's committed value.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_concurrent_work_identifier_disagreement_stages(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m1) = insert_isbnless_fixture(&pool, &marker).await;
+        let path2 = format!("/tmp/orch-conc-{marker}.epub");
+        let hash2 = format!("orch-conc-hash-{marker}");
+        let m2: Uuid = sqlx::query_scalar!(
+            "INSERT INTO manifestations \
+               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                file_size_bytes, ingestion_status, validation_status) \
+             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+                     'complete'::ingestion_status, 'clean'::validation_status) \
+             RETURNING id",
+            work_id,
+            path2,
+            hash2,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        upsert_manifestation_identifier(&pool, m1, "openlibrary", "OL111M", None)
+            .await
+            .unwrap();
+        upsert_manifestation_identifier(&pool, m2, "openlibrary", "OL222M", None)
+            .await
+            .unwrap();
+
+        mock_ol_edition(&ol, "OL111M", json!({"works": [{"key": "/works/OL111W"}]})).await;
+        mock_ol_edition(&ol, "OL222M", json!({"works": [{"key": "/works/OL222W"}]})).await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let (a, b) = tokio::join!(run_once(&pool, &cfg, m1), run_once(&pool, &cfg, m2));
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_eq!(
+            a.applied + b.applied,
+            1,
+            "exactly one run wins the empty slot"
+        );
+        assert_eq!(
+            a.staged + b.staged,
+            1,
+            "the other run stages against the committed value"
+        );
+
+        let rows = sqlx::query!(
+            "SELECT external_id FROM work_external_identifiers \
+             WHERE work_id = $1 AND scheme = 'openlibrary'",
+            work_id,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1, "single slot survives the race");
+        let resident = rows[0].external_id.clone();
+        assert!(["OL111W", "OL222W"].contains(&resident.as_str()));
+
+        let loser = if resident == "OL111W" {
+            "OL222W"
+        } else {
+            "OL111W"
+        };
+        let pending: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
+             WHERE field_name = 'identifiers.work.openlibrary' \
+               AND new_value = to_jsonb($1::text) \
+               AND status = 'pending' \
+               AND manifestation_id IN ($2, $3)",
+            loser,
+            m1,
+            m2,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(pending, 1, "the losing value stays pending for review");
     }
 }

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT response_kind::text AS \"kind!\" FROM api_cache WHERE source = 'openlibrary' AND lookup_key = 'external:openlibrary:OL7353617M'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5856658a51c66dab3ef3f80712b946a4db69bc10143a946c7d8ff1396cb7f9e3"
+}

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM metadata_versions WHERE field_name = 'identifiers.work.openlibrary' AND new_value = to_jsonb($1::text) AND status = 'pending' AND manifestation_id IN ($2, $3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "69ce7496637f9c746f37628b5c7c7aa6ff36456274345ddc9f54e9f2f740e2d0"
+}

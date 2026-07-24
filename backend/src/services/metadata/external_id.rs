@@ -199,6 +199,27 @@ pub fn validate_scheme_level(level: IdentifierLevel, scheme: &str) -> Result<(),
     }
 }
 
+/// Split a canonical `identifiers.<level>.<scheme>` field name into its
+/// level and scheme, rejecting a malformed shape, an unknown level segment,
+/// or a scheme unknown at that level. Shared by the manual PATCH dispatch
+/// and the enrichment apply path so both address the registry identically.
+///
+/// # Errors
+/// Returns a user-facing message describing the malformed part.
+pub fn parse_canonical_field(field: &str) -> Result<(IdentifierLevel, &str), String> {
+    let rest = field
+        .strip_prefix("identifiers.")
+        .ok_or_else(|| format!("'{field}' is not an identifier field"))?;
+    let (level_segment, scheme) = rest.split_once('.').ok_or_else(|| {
+        format!("identifier field '{field}' must be identifiers.<level>.<scheme>")
+    })?;
+    let level = IdentifierLevel::from_segment(level_segment).ok_or_else(|| {
+        format!("identifier level must be 'work' or 'manifestation', got '{level_segment}'")
+    })?;
+    validate_scheme_level(level, scheme)?;
+    Ok((level, scheme))
+}
+
 /// Parse a raw operator- or source-supplied identifier value into the
 /// canonical form for `(scheme, level)`.
 ///
