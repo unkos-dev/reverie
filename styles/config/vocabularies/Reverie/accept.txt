@@ -1,28 +1,18 @@
-# Reverie vocabulary accept-list (Vale Vocab). One case-insensitive regex per
-# line; lines starting with '#' are comments. Matching is case-insensitive for
-# the spelling check, and a base term also covers its possessive (Greptile
-# covers Greptile's), so neither case variants nor '"'"'s forms are listed.
 #
-# Do NOT use [..] character classes here: a bracketed entry can disable
-# Vale.Spelling entirely. Spelling is Australian English (en_AU); genuine
 # American spellings in prose are recast, not accepted. Entries below are
-# identifiers, library/service names, proper nouns, and technical jargon that
-# no English dictionary carries. Keep alphabetical.
-#
-# Brand and product vocabulary.
-Reverie
-Parchment
-gilt
-Unkos
-#
 # Australian-English forms the bundled en_AU dictionary happens to lack, so the
+# Brand and product vocabulary.
 # correct AU spelling is not flagged. The American spelling is NOT accepted, so
-# it still warns and nudges toward these forms.
-sanitisation
-virtualised
-virtualiser
-#
+# covers Greptile's), so neither case variants nor '"'"'s forms are listed.
+# Do NOT use [..] character classes here: a bracketed entry can disable
 # Identifiers, libraries, services, and technical jargon.
+# identifiers, library/service names, proper nouns, and technical jargon that
+# it still warns and nudges toward these forms.
+# line; lines starting with '#' are comments. Matching is case-insensitive for
+# no English dictionary carries. Keep alphabetical.
+# Reverie vocabulary accept-list (Vale Vocab). One case-insensitive regex per
+# the spelling check, and a base term also covers its possessive (Greptile
+# Vale.Spelling entirely. Spelling is Australian English (en_AU); genuine
 accreted
 adapter
 adapters
@@ -45,6 +35,8 @@ approver
 arg
 artifact
 artifacts
+ASIN
+asin
 aspirational
 Astro
 async
@@ -111,6 +103,7 @@ cutover
 debuggability
 declaratively
 decrypted
+dedup
 deduplication
 dep
 Dependabot
@@ -166,16 +159,20 @@ frontend
 frontmatter
 fsync
 gha
+gilt
 Gitea
 gitignored
 gitleaks
 glyphs
+Goodreads
+googlebooks
 Grafana
 Greptile
 gzipped
 Hadolint
 handoff
 hardcoded
+Hardcover
 hardlink
 hardlinks
 Hasura
@@ -202,7 +199,11 @@ interop
 Introspectability
 introspectable
 invariants
+ISBN
+isbn
+ISBNs
 Jellyfin
+journaled
 JSDoc
 jsdom
 jsonb
@@ -216,6 +217,8 @@ keyless
 keyset
 Kubernetes
 Leonxlnx
+LibraryThing
+librarything
 lifecycle
 Linear
 Linsley
@@ -243,18 +246,22 @@ namespaced
 natively
 nav
 nginx
+normalized
 npm
 Nullable
 Nygard
 OAuth
 observability
 OOMs
+openlibrary
+OpenLibrary
 operability
 orchestrator
 outsized
 oxfmt
 oxlint
 params
+Parchment
 parseable
 perf
 pixmap
@@ -306,6 +313,7 @@ reskinning
 resvg
 revalidated
 revalidation
+Reverie
 reviewable
 ripgrep
 roadmap
@@ -315,6 +323,7 @@ roundtrip
 ruleset
 runnable
 rustdoc
+sanitisation
 Satoshi
 SBOM
 SBOMs
@@ -387,6 +396,7 @@ unapplied
 unbuilt
 uncatchable
 uninitialized
+Unkos
 Unkovich
 unlayered
 unmerged
@@ -412,6 +422,8 @@ vendored
 Vercel
 verifier
 viewport
+virtualised
+virtualiser
 Vite
 Vitest
 VoidZero
@@ -419,6 +431,8 @@ vp
 WAFs
 wayfinding
 webhooks
+Wikidata
+wikidata
 wiremock
 wontfix
 wordmark

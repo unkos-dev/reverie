@@ -166,6 +166,8 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         openlibrary_base_url: "https://openlibrary.org".into(),
         googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
         hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
+        provider_visibility: serde_json::json!({}),
+        revision: 0,
         updated_at: time::OffsetDateTime::now_utc(),
     }))
 }
@@ -316,6 +318,17 @@ pub mod db {
         let password = std::env::var("REVERIE_INGESTION_PASSWORD")
             .unwrap_or_else(|_| "reverie_ingestion".into());
         pool_as_role(pool, "reverie_ingestion", &password, false).await
+    }
+
+    /// Build a `reverie_readonly` pool against the same DB as the given pool.
+    /// Use this to prove read-only RLS access and write denial on tables the
+    /// readonly reporting role only holds `SELECT` on.
+    /// Password defaults to the role name (matches `docker/init-roles.sql`);
+    /// override with `REVERIE_READONLY_PASSWORD` env var.
+    pub async fn readonly_pool_for(pool: &PgPool) -> PgPool {
+        let password = std::env::var("REVERIE_READONLY_PASSWORD")
+            .unwrap_or_else(|_| "reverie_readonly".into());
+        pool_as_role(pool, "reverie_readonly", &password, false).await
     }
 
     async fn pool_as_role(

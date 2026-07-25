@@ -29,7 +29,17 @@ use super::cache::CachedResponse;
 pub enum LookupKey {
     /// ISBN-10 or ISBN-13 in canonical form (from `lookup_key::isbn_key`).
     Isbn(String),
-    /// Fuzzy title+author search when `ISBN` is unavailable.
+    /// A provider-native identifier from the external-identifier registry.
+    /// Dispatch is by `scheme` (the identifier namespace), never by the
+    /// observer that recorded the value: a manually entered Google Books id
+    /// still routes to the Google adapter.
+    ExternalId {
+        /// Identifier scheme (`identifier_schemes.id`, e.g. `"googlebooks"`).
+        scheme: String,
+        /// The canonical identifier value on that scheme.
+        value: String,
+    },
+    /// Fuzzy title+author search when no stronger key is available.
     TitleAuthor {
         /// Book title to search for.
         title: String,
@@ -39,10 +49,13 @@ pub enum LookupKey {
 }
 
 impl LookupKey {
-    /// Cache-key form used by `cache`.
+    /// Cache-key form used by `cache`. Every variant is type-prefixed so a
+    /// fallback attempt can never cache its result under another key form's
+    /// entry (`isbn:` keys come pre-prefixed from `lookup_key::isbn_key`).
     pub fn cache_key(&self) -> String {
         match self {
             Self::Isbn(k) => k.clone(),
+            Self::ExternalId { scheme, value } => format!("external:{scheme}:{value}"),
             Self::TitleAuthor { title, author } => {
                 format!("ta:{title}|{author}")
             }
@@ -56,9 +69,102 @@ impl LookupKey {
     pub const fn match_type_for(&self) -> &'static str {
         match self {
             Self::Isbn(_) => "isbn",
+            Self::ExternalId { .. } => "external_id",
             Self::TitleAuthor { .. } => "title_author_fuzzy",
         }
     }
+}
+
+/// Whether identifiers on `scheme` can be resolved by an API adapter.
+/// Only these schemes ever become [`LookupKey::ExternalId`] fetch keys;
+/// every other scheme (`goodreads`, `asin`, `calibre`, ...) is stored and
+/// displayed but never fetched.
+pub fn is_fetchable_scheme(scheme: &str) -> bool {
+    matches!(scheme, "openlibrary" | "googlebooks" | "hardcover")
+}
+
+/// A per-manifestation aggregate rating observed from one provider.
+///
+/// Ratings deliberately travel outside the [`SourceResult`] stream: a
+/// `SourceResult` becomes one `metadata_versions` journal row by contract,
+/// and ratings are a refreshable direct-write cache that is never journaled,
+/// locked, or written back.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RatingObservation {
+    /// The provider's score on its own scale.
+    pub rating: f32,
+    /// The provider's maximum score (e.g. 5).
+    pub rating_scale: f32,
+    /// Number of reviews backing the score; 0 when unreported.
+    pub review_count: i32,
+}
+
+/// What one lookup learned about the provider's aggregate rating.
+///
+/// The distinction between [`Self::Unknown`] and [`Self::Absent`] is
+/// load-bearing for cache invalidation: an Open Library works/editions
+/// record never carries rating data, so resolving through one says nothing
+/// about the provider's rating and must not erase a value cached from an
+/// earlier run. A rating-capable record that omits the rating is the
+/// provider saying it no longer has one.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum RatingSignal {
+    /// This lookup path carries no rating data either way; the cached
+    /// value (if any) is left untouched.
+    #[default]
+    Unknown,
+    /// A rating-capable record was fetched and reports no rating; any
+    /// previously cached rating for this provider is removed.
+    Absent,
+    /// The provider reports this rating; the cache row is refreshed.
+    Reported(RatingObservation),
+}
+
+/// Everything one `lookup` call produced: journal-bound field observations
+/// plus a non-journaled rating signal for the ratings cache.
+#[derive(Debug, Clone, Default)]
+pub struct LookupOutcome {
+    /// Field observations; each becomes a candidate journal entry.
+    pub fields: Vec<SourceResult>,
+    /// What this lookup learned about the provider's aggregate rating.
+    pub rating: RatingSignal,
+}
+
+impl LookupOutcome {
+    /// Build an outcome carrying only field observations, from a path that
+    /// says nothing about ratings.
+    pub const fn from_fields(fields: Vec<SourceResult>) -> Self {
+        Self {
+            fields,
+            rating: RatingSignal::Unknown,
+        }
+    }
+
+    /// `true` when the lookup produced neither fields nor a reported
+    /// rating (a miss for fallback purposes).
+    pub const fn is_empty(&self) -> bool {
+        self.fields.is_empty() && !matches!(self.rating, RatingSignal::Reported(_))
+    }
+}
+
+/// Build a [`RatingSignal`] from a rating-capable record's optional average
+/// and count on the given scale. Shared by the adapters so the numeric
+/// coercion lives in one place. Call this only when the fetched record
+/// would carry the rating if the provider had one; paths that never carry
+/// ratings keep [`RatingSignal::Unknown`].
+pub(super) fn rating_signal(average: Option<f64>, count: Option<i64>, scale: f32) -> RatingSignal {
+    let Some(avg) = average else {
+        return RatingSignal::Absent;
+    };
+    RatingSignal::Reported(RatingObservation {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "provider ratings are small values on a 5-point scale; f64→f32 is lossless in that range"
+        )]
+        rating: avg as f32,
+        rating_scale: scale,
+        review_count: count.and_then(|n| i32::try_from(n).ok()).unwrap_or(0),
+    })
 }
 
 /// A single field observation from a metadata source.
@@ -124,17 +230,21 @@ pub trait MetadataSource: Send + Sync {
     /// e.g. Hardcover returns `false` when no API token is set.
     fn enabled(&self) -> bool;
 
-    /// Perform a lookup.  Returns `Ok(vec![])` for a clean miss.
+    /// Perform a lookup.  Returns an empty [`LookupOutcome`] for a clean
+    /// miss, including for a [`LookupKey`] variant the adapter cannot
+    /// resolve (a miss lets the orchestrator fall through to the next key).
     ///
     /// The adapter is responsible for:
     /// * rate-limiting itself,
     /// * mapping HTTP + JSON errors to [`SourceError`],
-    /// * normalising the payload into one `SourceResult` per field.
+    /// * normalising the payload into one `SourceResult` per field, with any
+    ///   provider-reported aggregate rating carried separately in
+    ///   [`LookupOutcome::rating`] (never as a field).
     async fn lookup(
         &self,
         ctx: &LookupCtx<'_>,
         key: &LookupKey,
-    ) -> Result<Vec<SourceResult>, SourceError>;
+    ) -> Result<LookupOutcome, SourceError>;
 }
 
 /// Percent-encode a query-string component using RFC 3986 rules for the

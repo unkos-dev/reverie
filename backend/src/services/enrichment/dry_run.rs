@@ -91,8 +91,8 @@ pub async fn preview(
         HashMap::new();
     for run in &runs {
         match &run.outcome {
-            Ok(results) => {
-                for sr in results {
+            Ok(outcome) => {
+                for sr in &outcome.fields {
                     let hash = value_hash::value_hash(&sr.field_name, &sr.raw_value);
                     let row = PolicyInputRow {
                         id: Uuid::nil(),

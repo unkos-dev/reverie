@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT rating, review_count FROM manifestation_external_ratings WHERE manifestation_id = $1 AND source = 'googlebooks'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rating",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_ratings",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "review_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestation_external_ratings",
+            "name": "review_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b7201545dc35c0dd799a67d1ccb29d48f061d486cb5dcc2687a927ae2cc385d8"
+}

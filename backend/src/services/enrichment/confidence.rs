@@ -26,7 +26,9 @@ pub fn base_source(source: &str) -> f32 {
 /// Returns 0.50 for any unknown match type (conservative default).
 pub fn match_modifier(match_type: &str) -> f32 {
     match match_type {
-        "isbn" => 1.00,
+        // A provider-native id fetches the exact record, so it carries the
+        // same certainty as an ISBN match.
+        "isbn" | "external_id" => 1.00,
         "title_author_exact" => 0.90,
         "title_author_fuzzy" => 0.75,
         // "title" and any unknown match type both get the conservative 0.50 default.

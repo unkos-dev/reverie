@@ -1673,7 +1673,7 @@
           "enrichment"
         ],
         "summary": "`POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the\nmanifestation for a fresh enrichment pass.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "description": "An `in_progress` row is not flipped to `pending`: the active worker\nstill owns the claim, and releasing it would let a second worker run\nthe same manifestation concurrently. The trigger sets\n`enrichment_rerun_requested` instead, and the worker's completion\nbookkeeping converts the flag into a fresh eligible row. All CASE arms\nread the pre-update row state, so the status test is consistent across\nevery column.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "trigger",
         "parameters": [
           {
@@ -1689,7 +1689,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Enrichment state reset to pending; the background worker picks the manifestation up on its next poll"
+            "description": "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"
           },
           "401": {
             "description": "Authentication required",
@@ -6772,6 +6772,8 @@
           "ingestion_status",
           "validation_status",
           "enrichment_status",
+          "external_ids",
+          "external_ratings",
           "metadata_version_summary",
           "metadata_versions",
           "created_at",
@@ -6815,6 +6817,20 @@
           "enrichment_status": {
             "$ref": "#/components/schemas/EnrichmentStatus",
             "description": "Enrichment lifecycle state."
+          },
+          "external_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdRef"
+            },
+            "description": "External-source identifiers for visible providers: the parent\nwork's ids followed by this edition's, each sorted by scheme.\nProviders hidden via `provider_visibility` are absent."
+          },
+          "external_ratings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalRatingRef"
+            },
+            "description": "Per-provider aggregate ratings for visible providers, sorted by\nsource."
           },
           "genres": {
             "type": "array",
@@ -6971,6 +6987,8 @@
           "ingestion_status",
           "validation_status",
           "enrichment_status",
+          "external_ids",
+          "external_ratings",
           "created_at"
         ],
         "properties": {
@@ -6993,6 +7011,20 @@
           "enrichment_status": {
             "$ref": "#/components/schemas/EnrichmentStatus",
             "description": "Enrichment lifecycle state."
+          },
+          "external_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdRef"
+            },
+            "description": "External-source identifiers for visible providers: the parent\nwork's ids followed by this edition's, each sorted by scheme.\nBatch-loaded per page; providers hidden via `provider_visibility`\nare absent."
+          },
+          "external_ratings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalRatingRef"
+            },
+            "description": "Per-provider aggregate ratings for visible providers, sorted by\nsource. Batch-loaded per page."
           },
           "id": {
             "type": "string",
@@ -7314,6 +7346,66 @@
           "skipped"
         ]
       },
+      "ExternalIdRef": {
+        "type": "object",
+        "description": "One external-source identifier surfaced on a book projection.\nRegistry rows for providers hidden via the `provider_visibility`\nsetting are filtered out before this DTO is built.",
+        "required": [
+          "level",
+          "scheme",
+          "external_id"
+        ],
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "The identifier value on that scheme."
+          },
+          "level": {
+            "$ref": "#/components/schemas/IdentifierLevel",
+            "description": "FRBR level the id attaches to: `work` ids are shared across\neditions, `manifestation` ids name this edition specifically."
+          },
+          "scheme": {
+            "type": "string",
+            "description": "Identifier scheme (`identifier_schemes.id`, e.g. `openlibrary`)."
+          }
+        }
+      },
+      "ExternalRatingRef": {
+        "type": "object",
+        "description": "One provider's aggregate rating surfaced on a book projection.\nRatings are per-edition and per-source; each provider is\nauthoritative for its own scale, so no cross-source aggregate is\ncomputed. Hidden providers are filtered out before this DTO is built.",
+        "required": [
+          "source",
+          "rating",
+          "rating_scale",
+          "review_count",
+          "fetched_at"
+        ],
+        "properties": {
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the enrichment pipeline last refreshed this value."
+          },
+          "rating": {
+            "type": "number",
+            "format": "float",
+            "description": "The provider's score on its own scale."
+          },
+          "rating_scale": {
+            "type": "number",
+            "format": "float",
+            "description": "The provider's maximum score (e.g. 5)."
+          },
+          "review_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of reviews backing the score; 0 when unreported."
+          },
+          "source": {
+            "type": "string",
+            "description": "Rating provider (`rating_sources.id`, e.g. `googlebooks`)."
+          }
+        }
+      },
       "FieldChange": {
         "type": "object",
         "description": "One proposed change to a single field from a single source.",
@@ -7402,6 +7494,14 @@
             "type": "string"
           }
         }
+      },
+      "IdentifierLevel": {
+        "type": "string",
+        "description": "FRBR level an external identifier is attached to.\n\nA work-level id (e.g. an Open Library work `OL…W`) lives in\n`work_external_identifiers`; a manifestation/edition-level id (e.g. an\nOpen Library edition `OL…M`, or a Google Books volume) lives in\n`manifestation_external_identifiers`. The level is the middle segment of\nthe canonical field name `identifiers.<level>.<scheme>` and routes both the\njournal `field_name` and the target table.",
+        "enum": [
+          "work",
+          "manifestation"
+        ]
       },
       "IngestionStatus": {
         "type": "string",
@@ -8176,6 +8276,8 @@
           "openlibrary_base_url",
           "googlebooks_base_url",
           "hardcover_base_url",
+          "provider_visibility",
+          "revision",
           "updated_at"
         ],
         "properties": {
@@ -8249,6 +8351,15 @@
           "openlibrary_base_url": {
             "type": "string",
             "description": "`OpenLibrary` API base URL."
+          },
+          "provider_visibility": {
+            "type": "object",
+            "description": "Per-provider display visibility for external identifiers and ratings\n(`{\"googlebooks\": false}` hides that provider from projections).\nKeys are validated on write against the union of `identifier_schemes`\nand `rating_sources`; absent keys mean visible. Display-only: hiding\na provider never gates fetching."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "DB-generated monotonic row version, incremented inside every settings\nUPDATE. Cache writers only install a snapshot whose revision exceeds\nthe resident one, which makes the shared settings cache independent\nof lock-acquisition order and transaction-start timestamps\n(`updated_at` is transaction-start time and can move backwards across\nconcurrent writers). Not operator-settable."
           },
           "updated_at": {
             "type": "string",
@@ -8806,6 +8917,22 @@
             ],
             "description": "New language. Absent = unchanged; `null` clears."
           },
+          "manifestation_identifiers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Manifestation-level external identifiers keyed by scheme (e.g.\n`{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\nas `work_identifiers`.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "moods": {
             "type": [
               "array",
@@ -8864,6 +8991,22 @@
               "null"
             ],
             "description": "New title. Absent = unchanged; `null` is rejected (canonical title\nis NOT NULL)."
+          },
+          "work_identifiers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Work-level external identifiers keyed by scheme (e.g.\n`{\"openlibrary\": \"OL45804W\"}`). Each entry independently sets its\nscheme's single slot; a `null` entry clears it. Absent (or `null`)\nleaves all work-level identifiers unchanged. Handled separately from\nthe scalar fields — not part of [`Self::populated`].",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -9055,6 +9198,19 @@
               "null"
             ],
             "description": "`OpenLibrary` API base URL."
+          },
+          "provider_visibility": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Per-provider display visibility, replacing the stored map wholesale.\nValues must be booleans; keys are validated against the union of\n`identifier_schemes` and `rating_sources`.",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "writeback_concurrency": {
             "type": [

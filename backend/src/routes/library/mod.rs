@@ -42,10 +42,11 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::content_rating::ContentRating;
 use crate::models::enrichment_status::EnrichmentStatus;
+use crate::models::external_identifier::IdentifierLevel;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::library::{
-    BookDetail, BookListRow, MetadataVersionRow, MetadataVersionSummary, SeriesRef, WorkDetail,
-    WorkManifestation,
+    BookDetail, BookListRow, ExternalIdRef, ExternalRatingRef, MetadataVersionRow,
+    MetadataVersionSummary, SeriesRef, WorkDetail, WorkManifestation,
 };
 use crate::models::reading_state::ReadingStateSummary;
 use crate::models::reading_status::ReadingStatus;
@@ -372,6 +373,13 @@ async fn list(
     let manifestation_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
     let reading_by_manifestation =
         load_reading_state_for_manifestations(&mut tx, &manifestation_ids).await?;
+    // Snapshot of the hot-reloaded visibility setting; reading it per
+    // request is what makes a toggle apply without a restart.
+    let hidden = hidden_providers(&state.settings.read().await.provider_visibility);
+    let (ids_by_manifestation, ids_by_work) =
+        load_external_ids(&mut tx, &manifestation_ids, &work_ids, &hidden).await?;
+    let ratings_by_manifestation =
+        load_external_ratings(&mut tx, &manifestation_ids, &hidden).await?;
 
     let mut items: Vec<BookListRow> = Vec::with_capacity(page_rows.len());
     for r in page_rows {
@@ -403,6 +411,11 @@ async fn list(
             })?,
             enrichment_status: parse_enrichment(&enrichment_raw)?,
             reading_state: reading_by_manifestation.get(&m_id).cloned(),
+            external_ids: merge_external_ids(&ids_by_work, &ids_by_manifestation, work_id, m_id),
+            external_ratings: ratings_by_manifestation
+                .get(&m_id)
+                .cloned()
+                .unwrap_or_default(),
             created_at: r.get("created_at"),
         });
     }
@@ -789,6 +802,148 @@ pub(crate) async fn load_reading_state_for_manifestations(
     Ok(out)
 }
 
+/// Providers the operator has hidden: `provider_visibility` keys whose
+/// value is exactly `false`. Absent keys mean visible, so an empty map
+/// hides nothing.
+fn hidden_providers(visibility: &serde_json::Value) -> std::collections::HashSet<String> {
+    visibility
+        .as_object()
+        .map(|m| {
+            m.iter()
+                .filter(|(_, v)| v.as_bool() == Some(false))
+                .map(|(k, _)| k.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Batch-load external identifiers for a page of manifestations and their
+/// works, filtered to visible providers. Returns per-manifestation and
+/// per-work maps; the caller concatenates work-level ids (shared across
+/// sibling editions) ahead of the edition's own. The one-to-many tables are
+/// deliberately NOT joined into the paginated base query: a cartesian
+/// product there would break `LIMIT` and the cursor math.
+pub(crate) async fn load_external_ids(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_ids: &[Uuid],
+    work_ids: &[Uuid],
+    hidden: &std::collections::HashSet<String>,
+) -> Result<
+    (
+        std::collections::HashMap<Uuid, Vec<ExternalIdRef>>,
+        std::collections::HashMap<Uuid, Vec<ExternalIdRef>>,
+    ),
+    AppError,
+> {
+    let mut by_manifestation: std::collections::HashMap<Uuid, Vec<ExternalIdRef>> =
+        std::collections::HashMap::new();
+    let mut by_work: std::collections::HashMap<Uuid, Vec<ExternalIdRef>> =
+        std::collections::HashMap::new();
+    if manifestation_ids.is_empty() && work_ids.is_empty() {
+        return Ok((by_manifestation, by_work));
+    }
+    let m_rows = sqlx::query!(
+        "SELECT manifestation_id, scheme, external_id \
+         FROM manifestation_external_identifiers \
+         WHERE manifestation_id = ANY($1::uuid[]) \
+         ORDER BY scheme ASC",
+        manifestation_ids,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in m_rows {
+        if hidden.contains(&r.scheme) {
+            continue;
+        }
+        by_manifestation
+            .entry(r.manifestation_id)
+            .or_default()
+            .push(ExternalIdRef {
+                level: IdentifierLevel::Manifestation,
+                scheme: r.scheme,
+                external_id: r.external_id,
+            });
+    }
+    let w_rows = sqlx::query!(
+        "SELECT work_id, scheme, external_id \
+         FROM work_external_identifiers \
+         WHERE work_id = ANY($1::uuid[]) \
+         ORDER BY scheme ASC",
+        work_ids,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in w_rows {
+        if hidden.contains(&r.scheme) {
+            continue;
+        }
+        by_work.entry(r.work_id).or_default().push(ExternalIdRef {
+            level: IdentifierLevel::Work,
+            scheme: r.scheme,
+            external_id: r.external_id,
+        });
+    }
+    Ok((by_manifestation, by_work))
+}
+
+/// Batch-load per-provider ratings for a page of manifestations, filtered
+/// to visible providers and sorted by source.
+pub(crate) async fn load_external_ratings(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    manifestation_ids: &[Uuid],
+    hidden: &std::collections::HashSet<String>,
+) -> Result<std::collections::HashMap<Uuid, Vec<ExternalRatingRef>>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, Vec<ExternalRatingRef>> =
+        std::collections::HashMap::new();
+    if manifestation_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = sqlx::query!(
+        "SELECT manifestation_id, source, rating, rating_scale, review_count, fetched_at \
+         FROM manifestation_external_ratings \
+         WHERE manifestation_id = ANY($1::uuid[]) \
+         ORDER BY source ASC",
+        manifestation_ids,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in rows {
+        if hidden.contains(&r.source) {
+            continue;
+        }
+        out.entry(r.manifestation_id)
+            .or_default()
+            .push(ExternalRatingRef {
+                source: r.source,
+                rating: r.rating,
+                rating_scale: r.rating_scale,
+                review_count: r.review_count,
+                fetched_at: r.fetched_at,
+            });
+    }
+    Ok(out)
+}
+
+/// Merge the shared work-level ids with the edition's own for one row.
+fn merge_external_ids(
+    by_work: &std::collections::HashMap<Uuid, Vec<ExternalIdRef>>,
+    by_manifestation: &std::collections::HashMap<Uuid, Vec<ExternalIdRef>>,
+    work_id: Uuid,
+    manifestation_id: Uuid,
+) -> Vec<ExternalIdRef> {
+    let mut out = by_work.get(&work_id).cloned().unwrap_or_default();
+    out.extend(
+        by_manifestation
+            .get(&manifestation_id)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    out
+}
+
 /// `GET /api/v1/books/{id}` — single-manifestation detail with the
 /// work-level prose, tags, and a metadata-version summary used by the
 /// book-detail Versions tab.
@@ -833,6 +988,14 @@ async fn detail(
     let tags = load_manifestation_tags(&mut tx, id).await?;
     let genres = load_manifestation_genres(&mut tx, id).await?;
     let moods = load_manifestation_moods(&mut tx, id).await?;
+    let hidden = hidden_providers(&state.settings.read().await.provider_visibility);
+    let (ids_by_manifestation, ids_by_work) =
+        load_external_ids(&mut tx, &[id], &[work_id], &hidden).await?;
+    let external_ids = merge_external_ids(&ids_by_work, &ids_by_manifestation, work_id, id);
+    let external_ratings = load_external_ratings(&mut tx, &[id], &hidden)
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
     let mut canonical_ids = canonical_pointer_ids(&row);
     let junction_ids = junction_pointer_ids(&mut tx, id, work_id).await?;
     // Junction-held pointers are applied versions too: without them the
@@ -886,6 +1049,8 @@ async fn detail(
         ingestion_status: parse_ingestion(&row.ingestion_status)?,
         validation_status: row.validation_status,
         enrichment_status: parse_enrichment(&row.enrichment_status)?,
+        external_ids,
+        external_ratings,
         metadata_version_summary: MetadataVersionSummary {
             pending,
             accepted: accepted_count,

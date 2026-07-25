@@ -20,7 +20,7 @@ use governor::{Quota, RateLimiter};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use super::{LookupCtx, LookupKey, MetadataSource, SourceError, SourceResult};
+use super::{LookupCtx, LookupKey, LookupOutcome, MetadataSource, SourceError, SourceResult};
 
 type Limiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 
@@ -35,37 +35,49 @@ fn limiter() -> &'static Limiter {
     })
 }
 
-const ISBN_QUERY: &str = r"
-query BooksByIsbn($isbn: String!) {
-  books(where: { isbns: { isbn: { _eq: $isbn } } }, limit: 1) {
+const BOOK_FIELDS: &str = r"
+    id
+    slug
     title
     subtitle
     description
     release_date
+    rating
+    ratings_count
     language { code3 }
     publisher { name }
     contributions { author { name } contribution }
     isbns { isbn type }
     cached_tags
-  }
-}
 ";
 
-const TITLE_AUTHOR_QUERY: &str = r"
-query SearchByTitleAuthor($title: String!, $author: String!) {
-  books(where: { title: { _ilike: $title }, contributions: { author: { name: { _ilike: $author } } } }, limit: 1) {
-    title
-    subtitle
-    description
-    release_date
-    language { code3 }
-    publisher { name }
-    contributions { author { name } contribution }
-    isbns { isbn type }
-    cached_tags
-  }
+/// Compose one of the fixed query shapes with the shared field selection.
+/// The id/slug/isbn/title/author values are always bound as typed GraphQL
+/// variables against these fixed documents, never interpolated into the
+/// query text.
+fn query_doc(head: &str) -> String {
+    format!("{head} {{ {BOOK_FIELDS} }} }}")
 }
-";
+
+fn isbn_query() -> String {
+    query_doc(
+        "query BooksByIsbn($isbn: String!) { books(where: { isbns: { isbn: { _eq: $isbn } } }, limit: 1)",
+    )
+}
+
+fn title_author_query() -> String {
+    query_doc(
+        "query SearchByTitleAuthor($title: String!, $author: String!) { books(where: { title: { _ilike: $title }, contributions: { author: { name: { _ilike: $author } } } }, limit: 1)",
+    )
+}
+
+fn book_by_id_query() -> String {
+    query_doc("query BookById($id: Int!) { books(where: { id: { _eq: $id } }, limit: 1)")
+}
+
+fn book_by_slug_query() -> String {
+    query_doc("query BookBySlug($slug: String!) { books(where: { slug: { _eq: $slug } }, limit: 1)")
+}
 
 /// `Hardcover` metadata adapter (`GraphQL`-backed).
 ///
@@ -104,9 +116,9 @@ impl MetadataSource for Hardcover {
         &self,
         ctx: &LookupCtx<'_>,
         key: &LookupKey,
-    ) -> Result<Vec<SourceResult>, SourceError> {
+    ) -> Result<LookupOutcome, SourceError> {
         let Some(token) = self.token.as_deref() else {
-            return Ok(Vec::new());
+            return Ok(LookupOutcome::default());
         };
 
         while let Err(not_ready) = limiter().check() {
@@ -117,7 +129,19 @@ impl MetadataSource for Hardcover {
         let (query, variables, match_type) = match key {
             LookupKey::Isbn(k) => {
                 let isbn = k.strip_prefix("isbn:").unwrap_or(k).to_string();
-                (ISBN_QUERY, json!({"isbn": isbn}), "isbn")
+                (isbn_query(), json!({"isbn": isbn}), "isbn")
+            }
+            LookupKey::ExternalId { scheme, value } => {
+                if scheme != "hardcover" {
+                    return Ok(LookupOutcome::default());
+                }
+                // Numeric ids bind as Int, slugs as String; either way the
+                // value is a typed GraphQL variable against a fixed query
+                // document, never spliced into the query text.
+                value.parse::<i64>().map_or_else(
+                    |_| (book_by_slug_query(), json!({"slug": value}), "external_id"),
+                    |id| (book_by_id_query(), json!({"id": id}), "external_id"),
+                )
             }
             LookupKey::TitleAuthor { title, author } => {
                 // Strip existing '%' so an incoming value of "%" or long
@@ -127,10 +151,10 @@ impl MetadataSource for Hardcover {
                 let t = sanitise_ilike_term(title);
                 let a = sanitise_ilike_term(author);
                 if t.chars().count() < 3 || a.chars().count() < 3 {
-                    return Ok(Vec::new());
+                    return Ok(LookupOutcome::default());
                 }
                 (
-                    TITLE_AUTHOR_QUERY,
+                    title_author_query(),
                     json!({"title": format!("%{t}%"), "author": format!("%{a}%")}),
                     "title_author_fuzzy",
                 )
@@ -176,7 +200,7 @@ impl MetadataSource for Hardcover {
             .and_then(|d| d.get("books"))
             .and_then(Value::as_array)
             .and_then(|xs| xs.first());
-        Ok(book.map_or_else(Vec::new, |b| map_book(b, match_type)))
+        Ok(book.map_or_else(LookupOutcome::default, |b| map_book(b, match_type)))
     }
 }
 
@@ -201,8 +225,28 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
     clippy::too_many_lines,
     reason = "map_book maps 10+ Hardcover API fields to SourceResults; the per-field cases are mechanical and extracting would obscure the API→model mapping"
 )]
-fn map_book(book: &Value, match_type: &str) -> Vec<SourceResult> {
+fn map_book(book: &Value, match_type: &str) -> LookupOutcome {
     let mut out = Vec::new();
+
+    // The book's own Hardcover id: prefer the stable slug, fall back to the
+    // numeric id. Hardcover models a "book" at the work level.
+    let own_id = book
+        .get("slug")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            book.get("id")
+                .and_then(Value::as_i64)
+                .map(|n| n.to_string())
+        });
+    if let Some(id) = own_id {
+        out.push(SourceResult {
+            field_name: "identifiers.work.hardcover".into(),
+            raw_value: json!(id),
+            match_type: match_type.into(),
+        });
+    }
 
     if let Some(title) = book.get("title").and_then(Value::as_str) {
         out.push(SourceResult {
@@ -314,7 +358,18 @@ fn map_book(book: &Value, match_type: &str) -> Vec<SourceResult> {
             });
         }
     }
-    out
+
+    // Hardcover reports ratings on a 5-point scale.
+    let rating = super::rating_signal(
+        book.get("rating").and_then(Value::as_f64),
+        book.get("ratings_count").and_then(Value::as_i64),
+        5.0,
+    );
+
+    LookupOutcome {
+        fields: out,
+        rating,
+    }
 }
 
 #[cfg(test)]
@@ -383,12 +438,108 @@ mod tests {
             .await
             .unwrap();
 
-        let fields: Vec<&str> = out.iter().map(|r| r.field_name.as_str()).collect();
+        let fields: Vec<&str> = out.fields.iter().map(|r| r.field_name.as_str()).collect();
         assert!(fields.contains(&"title"));
         assert!(fields.contains(&"contributors.author"));
         assert!(fields.contains(&"isbn_13"));
         assert!(fields.contains(&"language"));
         assert!(fields.contains(&"publisher"));
+    }
+
+    #[tokio::test]
+    async fn book_id_lookup_binds_typed_int_variable() {
+        let server = MockServer::start().await;
+        let body = json!({
+            "data": {
+                "books": [{
+                    "id": 431,
+                    "slug": "dune",
+                    "title": "Dune",
+                    "rating": 4.31,
+                    "ratings_count": 999
+                }]
+            }
+        });
+        // The id must arrive as a typed GraphQL variable, not inside the
+        // query text.
+        Mock::given(method("POST"))
+            .and(body_partial_json(json!({ "variables": { "id": 431 } })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .mount(&server)
+            .await;
+
+        let adapter = Hardcover::new(server.uri(), Some("test-token".into()));
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "hardcover".into(),
+                    value: "431".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let title = out.fields.iter().find(|r| r.field_name == "title").unwrap();
+        assert_eq!(title.match_type, "external_id");
+        let own_id = out
+            .fields
+            .iter()
+            .find(|r| r.field_name == "identifiers.work.hardcover")
+            .expect("book emits its own hardcover id");
+        assert_eq!(own_id.raw_value, json!("dune"), "slug preferred over id");
+
+        let crate::services::enrichment::sources::RatingSignal::Reported(rating) = out.rating
+        else {
+            panic!("rating maps to a reported rating, got {:?}", out.rating);
+        };
+        assert!((rating.rating - 4.31).abs() < 1e-6);
+        assert_eq!(rating.review_count, 999);
+    }
+
+    #[tokio::test]
+    async fn book_slug_lookup_binds_typed_string_variable() {
+        let server = MockServer::start().await;
+        let body = json!({ "data": { "books": [{ "id": 431, "slug": "dune", "title": "Dune" }] } });
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                json!({ "variables": { "slug": "dune" } }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .mount(&server)
+            .await;
+
+        let adapter = Hardcover::new(server.uri(), Some("test-token".into()));
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "hardcover".into(),
+                    value: "dune".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(out.fields.iter().any(|r| r.field_name == "title"));
+    }
+
+    #[tokio::test]
+    async fn foreign_scheme_is_clean_miss_without_network() {
+        let adapter = Hardcover::new("http://127.0.0.1:9", Some("test-token".into()));
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "googlebooks".into(),
+                    value: "zyTZAAAAYAAJ".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(out.is_empty());
     }
 
     #[tokio::test]

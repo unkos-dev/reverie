@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_status = 'failed', enrichment_attempt_count = 3, enrichment_attempted_at = now(), enrichment_error = 'boom' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cea0eebc24a6b1ab6e4456e5f1cb085f6992cdb39d3bba6f8e5ef95da883bdad"
+}

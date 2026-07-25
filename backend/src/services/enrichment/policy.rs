@@ -46,6 +46,12 @@ pub fn default_policy(field: &str) -> FieldPolicy {
     match field {
         "title" | "sort_title" | "language" | "isbn_10" | "isbn_13" | "publisher" | "pub_date"
         | "cover" | "subtitle" | "pages" => FieldPolicy::AutoFill,
+        // External identifiers are closed single-value-per-scheme facts, so
+        // they AutoFill like the ISBN columns: an empty slot fills itself,
+        // a populated or disputed slot stages for review. This deliberately
+        // differs from the open multi-value vocabularies (genres/moods),
+        // which stay Propose.
+        f if f.starts_with("identifiers.") => FieldPolicy::AutoFill,
         // All other known fields ("description", "series", "contributors.*", etc.)
         // and any unknown fields default to Propose: cautious until a human promotes.
         // THREAT: content_rating must stay Propose, never AutoFill: it is the
@@ -113,6 +119,39 @@ mod tests {
         // Safety pin: a failure here means someone promoted content_rating
         // into the AutoFill list. See the THREAT note in default_policy.
         assert_eq!(default_policy("content_rating"), FieldPolicy::Propose);
+    }
+
+    #[test]
+    fn identifier_fields_autofill_at_both_levels() {
+        assert_eq!(
+            default_policy("identifiers.work.openlibrary"),
+            FieldPolicy::AutoFill
+        );
+        assert_eq!(
+            default_policy("identifiers.manifestation.googlebooks"),
+            FieldPolicy::AutoFill
+        );
+    }
+
+    #[test]
+    fn identifier_populated_slot_stages() {
+        let incoming = row(b"abc");
+        let result = decide("identifiers.work.openlibrary", false, &incoming, false, &[]);
+        assert_eq!(result, Decision::Stage);
+    }
+
+    #[test]
+    fn identifier_disagreement_stages_even_when_empty() {
+        let incoming = row(b"abc");
+        let pending = row(b"xyz");
+        let result = decide(
+            "identifiers.manifestation.googlebooks",
+            true,
+            &incoming,
+            false,
+            &[pending],
+        );
+        assert_eq!(result, Decision::Stage);
     }
 
     #[test]

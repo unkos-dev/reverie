@@ -21,10 +21,14 @@ use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
 use crate::models::content_rating::ContentRating;
+use crate::models::external_identifier::{
+    IdentifierLevel, delete_manifestation_identifier, delete_work_identifier,
+    upsert_manifestation_identifier, upsert_work_identifier,
+};
 use crate::models::work;
 use crate::services::enrichment::field_lock::{self, EntityType};
 use crate::services::enrichment::value_hash;
-use crate::services::metadata::isbn;
+use crate::services::metadata::{external_id, isbn};
 use crate::state::AppState;
 
 /// Build the metadata-review router.
@@ -562,11 +566,37 @@ async fn unlock_field(
 /// target. `genres`/`moods`/`tags` are per-manifestation vocabulary
 /// junctions despite also hanging off the work's editions, so they stay
 /// out of this set and use the strict same-manifestation match.
+/// `identifiers.work.*` values live in `work_external_identifiers`, keyed
+/// by the shared work, so they are work-scoped too;
+/// `identifiers.manifestation.*` values are per-edition and are not.
 fn is_work_scoped_field(field_name: &str) -> bool {
     matches!(
         field_name,
         "title" | "subtitle" | "description" | "language"
     ) || field_name.starts_with("contributors.")
+        || field_name.starts_with("identifiers.work.")
+}
+
+/// Split a canonical `identifiers.<level>.<scheme>` field name into its level
+/// and scheme, rejecting a malformed level segment or a scheme unknown at
+/// that level. Shared by the PATCH map handler, `apply_version`, and
+/// `clear_field` so every path addresses the registry identically.
+fn parse_identifier_field(field: &str) -> Result<(IdentifierLevel, &str), AppError> {
+    let rest = field
+        .strip_prefix("identifiers.")
+        .ok_or_else(|| AppError::Validation(format!("'{field}' is not an identifier field")))?;
+    let (level_segment, scheme) = rest.split_once('.').ok_or_else(|| {
+        AppError::Validation(format!(
+            "identifier field '{field}' must be identifiers.<level>.<scheme>"
+        ))
+    })?;
+    let level = IdentifierLevel::from_segment(level_segment).ok_or_else(|| {
+        AppError::Validation(format!(
+            "identifier level must be 'work' or 'manifestation', got '{level_segment}'"
+        ))
+    })?;
+    external_id::validate_scheme_level(level, scheme).map_err(AppError::Validation)?;
+    Ok((level, scheme))
 }
 
 fn parse_entity(s: &str) -> Result<EntityType, AppError> {
@@ -809,13 +839,75 @@ async fn apply_version(
             }
             previous_version_id
         }
+        _ if field.starts_with("identifiers.") => {
+            let (level, scheme) = parse_identifier_field(field)?;
+            let raw = value
+                .as_str()
+                .ok_or_else(|| AppError::Validation(format!("{field} must be a string")))?;
+            // Re-run the typed parser here (not only at the PATCH boundary)
+            // so accept/revert of a journaled value cannot promote a
+            // malformed identifier into the registry.
+            let canonical =
+                external_id::parse_external_id(level, scheme, raw).map_err(AppError::Validation)?;
+            match level {
+                IdentifierLevel::Work => {
+                    let previous: Option<Uuid> = sqlx::query_scalar!(
+                        "SELECT source_version_id FROM work_external_identifiers \
+                         WHERE work_id = $1 AND scheme = $2",
+                        work_id,
+                        scheme,
+                    )
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .flatten();
+                    upsert_work_identifier(
+                        &mut **tx,
+                        work_id,
+                        scheme,
+                        &canonical,
+                        Some(version_id),
+                    )
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?;
+                    previous
+                }
+                IdentifierLevel::Manifestation => {
+                    let previous: Option<Uuid> = sqlx::query_scalar!(
+                        "SELECT source_version_id FROM manifestation_external_identifiers \
+                         WHERE manifestation_id = $1 AND scheme = $2",
+                        manifestation_id,
+                        scheme,
+                    )
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .flatten();
+                    upsert_manifestation_identifier(
+                        &mut **tx,
+                        manifestation_id,
+                        scheme,
+                        &canonical,
+                        Some(version_id),
+                    )
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?;
+                    previous
+                }
+            }
+        }
         other => {
             return Err(AppError::Validation(format!(
                 "unsupported auto-apply field '{other}' (list/complex fields must be accepted via their dedicated routes)"
             )));
         }
     };
-    enqueue_writeback(tx, manifestation_id, field).await?;
+    // External identifiers are never written back to the source file, so an
+    // identifier apply (manual set, accept, or revert) must not enqueue an
+    // OPF writeback job.
+    if !field.starts_with("identifiers.") {
+        enqueue_writeback(tx, manifestation_id, field).await?;
+    }
     Ok(previous_version_id)
 }
 
@@ -991,11 +1083,51 @@ async fn clear_field(
                 }
             }
         }
+        _ if field.starts_with("identifiers.") => {
+            let (level, scheme) = parse_identifier_field(field)?;
+            match level {
+                IdentifierLevel::Work => {
+                    let previous: Option<Uuid> = sqlx::query_scalar!(
+                        "SELECT source_version_id FROM work_external_identifiers \
+                         WHERE work_id = $1 AND scheme = $2",
+                        work_id,
+                        scheme,
+                    )
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .flatten();
+                    delete_work_identifier(&mut **tx, work_id, scheme)
+                        .await
+                        .map_err(|e| AppError::Internal(e.into()))?;
+                    previous
+                }
+                IdentifierLevel::Manifestation => {
+                    let previous: Option<Uuid> = sqlx::query_scalar!(
+                        "SELECT source_version_id FROM manifestation_external_identifiers \
+                         WHERE manifestation_id = $1 AND scheme = $2",
+                        manifestation_id,
+                        scheme,
+                    )
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| AppError::Internal(e.into()))?
+                    .flatten();
+                    delete_manifestation_identifier(&mut **tx, manifestation_id, scheme)
+                        .await
+                        .map_err(|e| AppError::Internal(e.into()))?;
+                    previous
+                }
+            }
+        }
         other => {
             return Err(AppError::Validation(format!("unsupported field '{other}'")));
         }
     };
-    enqueue_writeback(tx, manifestation_id, field).await?;
+    // Identifier clears mirror identifier applies: no OPF writeback.
+    if !field.starts_with("identifiers.") {
+        enqueue_writeback(tx, manifestation_id, field).await?;
+    }
     Ok(previous_version_id)
 }
 
@@ -1556,6 +1688,20 @@ struct UpdateMetadataFields {
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[schema(value_type = Option<ContributorsPatch>)]
     contributors: Option<Option<ContributorsPatch>>,
+    /// Work-level external identifiers keyed by scheme (e.g.
+    /// `{"openlibrary": "OL45804W"}`). Each entry independently sets its
+    /// scheme's single slot; a `null` entry clears it. Absent (or `null`)
+    /// leaves all work-level identifiers unchanged. Handled separately from
+    /// the scalar fields — not part of [`Self::populated`].
+    #[serde(default)]
+    #[schema(value_type = Option<BTreeMap<String, Option<String>>>)]
+    work_identifiers: Option<BTreeMap<String, Option<String>>>,
+    /// Manifestation-level external identifiers keyed by scheme (e.g.
+    /// `{"googlebooks": "zyTZAAAAYAAJ"}`). Same per-entry set/clear semantics
+    /// as `work_identifiers`.
+    #[serde(default)]
+    #[schema(value_type = Option<BTreeMap<String, Option<String>>>)]
+    manifestation_identifiers: Option<BTreeMap<String, Option<String>>>,
 }
 
 /// Per-role contributor replace/clear, nested under `UpdateMetadataFields::contributors`.
@@ -1699,6 +1845,10 @@ impl UpdateMetadataFields {
         (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails)
     )
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "sequential dispatch across the six patchable field families (scalars, vocabularies, contributors, identifiers, ISBN rematch, response assembly); each family already delegates to its own helper"
+)]
 async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
@@ -1714,12 +1864,18 @@ async fn update_book_metadata(
     let genres = req_fields.genres.take();
     let moods = req_fields.moods.take();
     let tags = req_fields.tags.take();
+    let work_identifiers = req_fields.work_identifiers.take();
+    let manifestation_identifiers = req_fields.manifestation_identifiers.take();
     let fields = req_fields.populated();
     if fields.is_empty()
         && contributors.is_none()
         && genres.is_none()
         && moods.is_none()
         && tags.is_none()
+        && work_identifiers.as_ref().is_none_or(BTreeMap::is_empty)
+        && manifestation_identifiers
+            .as_ref()
+            .is_none_or(BTreeMap::is_empty)
     {
         return Err(AppError::Validation("no fields".into()));
     }
@@ -1793,6 +1949,17 @@ async fn update_book_metadata(
         .await?;
         response_fields.extend(changes);
     }
+
+    apply_identifier_patches(
+        &mut tx,
+        manifestation_id,
+        work_id,
+        current_user.user_id,
+        work_identifiers,
+        manifestation_identifiers,
+        &mut response_fields,
+    )
+    .await?;
 
     if touched_isbn {
         work::rematch_on_isbn_change(&mut tx, manifestation_id)
@@ -1869,6 +2036,116 @@ async fn apply_scalar_patch_field(
         )
         .await?;
         let previous_version_id = clear_field(tx, field, manifestation_id, work_id).await?;
+        Ok(FieldVersionChange {
+            value: None,
+            version_id: None,
+            previous_version_id,
+        })
+    }
+}
+
+/// Apply both identifier maps from the manual PATCH surface, then re-queue
+/// enrichment once if anything changed. Resetting the attempt counter and
+/// timestamp alongside the status clears any backoff window from a prior
+/// failed run; status alone would leave the row uneligible for up to 24
+/// hours (see `queue::claim_next`).
+///
+/// An `in_progress` row is never flipped to `pending` here: the active
+/// worker still owns the claim, and making the row eligible again would let
+/// a second worker run the same manifestation concurrently. The edit sets
+/// `enrichment_rerun_requested` instead, and the worker's completion
+/// bookkeeping converts the flag into a fresh eligible row (the active run
+/// snapshotted its lookup keys before this edit, so its result may be
+/// stale). All CASE arms read the pre-update row state, so the status test
+/// is consistent across every column.
+async fn apply_identifier_patches(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    work_id: Uuid,
+    user_id: Uuid,
+    work_identifiers: Option<BTreeMap<String, Option<String>>>,
+    manifestation_identifiers: Option<BTreeMap<String, Option<String>>>,
+    response_fields: &mut BTreeMap<String, FieldVersionChange>,
+) -> Result<(), AppError> {
+    let mut touched = false;
+    for (level, map) in [
+        (IdentifierLevel::Work, work_identifiers),
+        (IdentifierLevel::Manifestation, manifestation_identifiers),
+    ] {
+        for (scheme, maybe_value) in map.into_iter().flatten() {
+            let change = apply_identifier_patch(
+                tx,
+                manifestation_id,
+                work_id,
+                user_id,
+                level,
+                &scheme,
+                maybe_value,
+            )
+            .await?;
+            touched = true;
+            response_fields.insert(level.canonical_field(&scheme), change);
+        }
+    }
+    if touched {
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_rerun_requested = (enrichment_status = 'in_progress'), \
+                 enrichment_status = CASE WHEN enrichment_status = 'in_progress' \
+                                          THEN enrichment_status \
+                                          ELSE 'pending'::enrichment_status END, \
+                 enrichment_attempt_count = CASE WHEN enrichment_status = 'in_progress' \
+                                                 THEN enrichment_attempt_count ELSE 0 END, \
+                 enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
+                                                THEN enrichment_attempted_at ELSE NULL END, \
+                 enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
+                                         THEN enrichment_error ELSE NULL END \
+             WHERE id = $1",
+            manifestation_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    }
+    Ok(())
+}
+
+/// Journal + apply one external-identifier slot from the manual PATCH
+/// surface. A set (`Some`) parses the raw value into the scheme's canonical
+/// form, journals it under `identifiers.<level>.<scheme>`, and upserts the
+/// registry slot via `apply_version`; a clear (`None`) journals an
+/// accountability row and deletes the slot via `clear_field`. Neither path
+/// enqueues a writeback (identifiers are never written back to the file).
+async fn apply_identifier_patch(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+    work_id: Uuid,
+    user_id: Uuid,
+    level: IdentifierLevel,
+    scheme: &str,
+    maybe_value: Option<String>,
+) -> Result<FieldVersionChange, AppError> {
+    // Validate the address before journaling so an unknown scheme or a
+    // wrong-level address never produces a journal row, on the clear path
+    // included.
+    external_id::validate_scheme_level(level, scheme).map_err(AppError::Validation)?;
+    let field = level.canonical_field(scheme);
+    if let Some(raw) = maybe_value {
+        let canonical =
+            external_id::parse_external_id(level, scheme, &raw).map_err(AppError::Validation)?;
+        let json = Value::String(canonical);
+        let version_id =
+            insert_manual_version(tx, manifestation_id, user_id, &field, &json).await?;
+        let previous_version_id =
+            apply_version(tx, &field, &json, version_id, manifestation_id, work_id).await?;
+        Ok(FieldVersionChange {
+            value: Some(json),
+            version_id: Some(version_id),
+            previous_version_id,
+        })
+    } else {
+        insert_manual_version(tx, manifestation_id, user_id, &field, &Value::Null).await?;
+        let previous_version_id = clear_field(tx, &field, manifestation_id, work_id).await?;
         Ok(FieldVersionChange {
             value: None,
             version_id: None,
@@ -5201,6 +5478,627 @@ mod tests {
         assert_eq!(
             junction_count, 0,
             "revert-to-null must clear the junction rows"
+        );
+    }
+
+    // ── external identifiers: manual write paths ──────────────────────────
+
+    /// Force a failed, backed-off enrichment state so a test can assert the
+    /// identifier re-queue clears the whole backoff window, not just status.
+    async fn set_enrichment_backoff(ing_pool: &sqlx::PgPool, m_id: Uuid) {
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'failed', \
+                 enrichment_attempt_count = 3, \
+                 enrichment_attempted_at = now(), \
+                 enrichment_error = 'boom' \
+             WHERE id = $1",
+            m_id,
+        )
+        .execute(ing_pool)
+        .await
+        .expect("preset backoff state");
+    }
+
+    async fn writeback_job_count(pool: &sqlx::PgPool, m_id: Uuid) -> i64 {
+        sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(pool)
+        .await
+        .expect("count writeback jobs")
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_sets_work_identifier_journals_and_requeues(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        set_enrichment_backoff(&ing_pool, m_id).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // Lower-case input: the parser canonicalises Open Library ids to
+        // upper case before journaling and storage.
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"work_identifiers": {"openlibrary": "ol45804w"}}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        let field = "identifiers.work.openlibrary";
+        assert_eq!(
+            body["fields"][field]["value"],
+            serde_json::json!("OL45804W")
+        );
+        let version_id = version_id_of(&body, field);
+
+        let row = sqlx::query!(
+            "SELECT external_id, source_version_id FROM work_external_identifiers \
+             WHERE work_id = $1 AND scheme = 'openlibrary'",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("registry row");
+        assert_eq!(row.external_id, "OL45804W");
+        assert_eq!(
+            row.source_version_id.map(|u| u.to_string()),
+            Some(version_id.clone()),
+            "registry row must point at the journal row"
+        );
+
+        let v = sqlx::query!(
+            "SELECT source, field_name, status::text AS \"status!\" \
+             FROM metadata_versions WHERE id = $1::uuid",
+            Uuid::parse_str(&version_id).expect("uuid"),
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("journal row");
+        assert_eq!(v.source, "manual");
+        assert_eq!(v.field_name, field);
+        assert_eq!(v.status, "pending");
+
+        let m = sqlx::query!(
+            "SELECT enrichment_status::text AS \"enrichment_status!\", \
+                    enrichment_attempt_count, enrichment_attempted_at, enrichment_error \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("manifestation row");
+        assert_eq!(m.enrichment_status, "pending");
+        assert_eq!(
+            m.enrichment_attempt_count, 0,
+            "re-queue must clear the backoff counter"
+        );
+        assert!(
+            m.enrichment_attempted_at.is_none(),
+            "re-queue must null the attempt timestamp"
+        );
+        assert!(m.enrichment_error.is_none());
+
+        assert_eq!(
+            writeback_job_count(&app_pool, m_id).await,
+            0,
+            "identifier set must not enqueue a writeback"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_sets_manifestation_identifier_and_requeues(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        set_enrichment_backoff(&ing_pool, m_id).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(
+                &serde_json::json!({"manifestation_identifiers": {"googlebooks": "zyTZAAAAYAAJ"}}),
+            )
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let got: String = sqlx::query_scalar!(
+            "SELECT external_id FROM manifestation_external_identifiers \
+             WHERE manifestation_id = $1 AND scheme = 'googlebooks'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("registry row");
+        assert_eq!(got, "zyTZAAAAYAAJ");
+
+        let m = sqlx::query!(
+            "SELECT enrichment_status::text AS \"enrichment_status!\", \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_rerun_requested \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("manifestation row");
+        assert_eq!(m.enrichment_status, "pending");
+        assert_eq!(m.enrichment_attempt_count, 0);
+        assert!(m.enrichment_attempted_at.is_none());
+        assert!(
+            !m.enrichment_rerun_requested,
+            "an idle-row edit re-queues directly; no rerun request is left behind"
+        );
+    }
+
+    /// An identifier edit while enrichment is actively running must not
+    /// release the worker's claim (a second worker could pick the row up
+    /// concurrently). The edit records a rerun request instead; the queue's
+    /// completion bookkeeping converts it into a fresh pending row.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_identifier_during_active_run_defers_requeue(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'in_progress', \
+                 enrichment_attempt_count = 1, \
+                 enrichment_attempted_at = now() \
+             WHERE id = $1",
+            m_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("preset in_progress state");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(
+                &serde_json::json!({"manifestation_identifiers": {"googlebooks": "zyTZAAAAYAAJ"}}),
+            )
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let m = sqlx::query!(
+            "SELECT enrichment_status::text AS \"enrichment_status!\", \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_rerun_requested \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("manifestation row");
+        assert_eq!(
+            m.enrichment_status, "in_progress",
+            "the edit must not release the active claim"
+        );
+        assert!(
+            m.enrichment_rerun_requested,
+            "the edit must leave a rerun request for the completion path"
+        );
+        assert_eq!(
+            m.enrichment_attempt_count, 1,
+            "the active claim's attempt counter is untouched"
+        );
+        assert!(
+            m.enrichment_attempted_at.is_some(),
+            "the active claim's timestamp is untouched"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_replaces_identifier_slot_in_place(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let first = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL111W"}}))
+            .await;
+        assert_eq!(first.status_code(), StatusCode::OK);
+        let first_body: serde_json::Value = first.json();
+        let first_version = version_id_of(&first_body, "identifiers.work.openlibrary");
+
+        let second = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL222W"}}))
+            .await;
+        assert_eq!(second.status_code(), StatusCode::OK);
+        let second_body: serde_json::Value = second.json();
+        assert_eq!(
+            second_body["fields"]["identifiers.work.openlibrary"]["previous_version_id"],
+            serde_json::json!(first_version),
+            "replacement must report the replaced journal pointer"
+        );
+
+        let rows: Vec<String> = sqlx::query_scalar!(
+            "SELECT external_id FROM work_external_identifiers \
+             WHERE work_id = $1 AND scheme = 'openlibrary'",
+            work_id,
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("select");
+        assert_eq!(
+            rows,
+            vec!["OL222W".to_string()],
+            "single slot: old and new must not both persist"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_clears_identifier_slot_without_writeback(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let set = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"manifestation_identifiers": {"asin": "B004GXAX8C"}}))
+            .await;
+        assert_eq!(set.status_code(), StatusCode::OK);
+
+        let clear = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"manifestation_identifiers": {"asin": null}}))
+            .await;
+        assert_eq!(
+            clear.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            clear.text()
+        );
+        let body: serde_json::Value = clear.json();
+        assert_eq!(
+            body["fields"]["identifiers.manifestation.asin"]["value"],
+            serde_json::Value::Null
+        );
+
+        let remaining: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM manifestation_external_identifiers \
+             WHERE manifestation_id = $1 AND scheme = 'asin'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+        assert_eq!(remaining, 0, "clear must delete the slot");
+
+        // Accountability row for the clear, mirroring the scalar clear path.
+        let audit: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM metadata_versions \
+             WHERE manifestation_id = $1 \
+               AND field_name = 'identifiers.manifestation.asin' \
+               AND new_value = 'null'::jsonb",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count audit rows");
+        assert_eq!(audit, 1, "clear must journal an accountability row");
+
+        assert_eq!(
+            writeback_job_count(&app_pool, m_id).await,
+            0,
+            "identifier set + clear must enqueue no writeback"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_identifier_unknown_scheme_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // `manual` is a provenance source, not an identifier scheme; clearing
+        // an unknown scheme is rejected identically to setting one.
+        for payload in [
+            serde_json::json!({"work_identifiers": {"manual": "x1"}}),
+            serde_json::json!({"manifestation_identifiers": {"manual": null}}),
+        ] {
+            let response = server
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&payload)
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "payload {payload} must be rejected; body = {}",
+                response.text()
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_identifier_level_mismatch_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        for payload in [
+            // A Google Books volume id has no work-level form.
+            serde_json::json!({"work_identifiers": {"googlebooks": "zyTZAAAAYAAJ"}}),
+            // An Open Library edition id in the work map and vice versa.
+            serde_json::json!({"work_identifiers": {"openlibrary": "OL7353617M"}}),
+            serde_json::json!({"manifestation_identifiers": {"openlibrary": "OL45804W"}}),
+        ] {
+            let response = server
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&payload)
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "payload {payload} must be rejected; body = {}",
+                response.text()
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_identifier_malformed_value_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        for bad in ["OL45804W/../x", "OL45804W?x=1", "OL45804W\u{0}", "OL४५W"] {
+            let response = server
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .json(&serde_json::json!({"work_identifiers": {"openlibrary": bad}}))
+                .await;
+            assert_eq!(
+                response.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{bad:?} must be rejected; body = {}",
+                response.text()
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accept_staged_identifier_writes_registry_without_writeback(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let version_id = insert_version(
+            &ing_pool,
+            m_id,
+            "identifiers.manifestation.googlebooks",
+            serde_json::json!("zyTZAAAAYAAJ"),
+        )
+        .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "accept of a staged identifier must round-trip; body = {}",
+            response.text()
+        );
+
+        let row = sqlx::query!(
+            "SELECT external_id, source_version_id \
+             FROM manifestation_external_identifiers \
+             WHERE manifestation_id = $1 AND scheme = 'googlebooks'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("registry row");
+        assert_eq!(row.external_id, "zyTZAAAAYAAJ");
+        assert_eq!(row.source_version_id, Some(version_id));
+
+        assert_eq!(
+            writeback_job_count(&app_pool, m_id).await,
+            0,
+            "identifier accept must not enqueue a writeback"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_identifier_restores_prior_value(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let first = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL111W"}}))
+            .await;
+        assert_eq!(first.status_code(), StatusCode::OK);
+        let first_body: serde_json::Value = first.json();
+        let first_version = version_id_of(&first_body, "identifiers.work.openlibrary");
+
+        let second = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL222W"}}))
+            .await;
+        assert_eq!(second.status_code(), StatusCode::OK);
+
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "identifiers.work.openlibrary",
+                "version_id": first_version,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "revert of an identifier version must round-trip; body = {}",
+            revert.text()
+        );
+
+        let got: String = sqlx::query_scalar!(
+            "SELECT external_id FROM work_external_identifiers \
+             WHERE work_id = $1 AND scheme = 'openlibrary'",
+            work_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("registry row");
+        assert_eq!(got, "OL111W", "revert must restore the prior value");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_identifier_to_null_clears_slot(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let set = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"manifestation_identifiers": {"goodreads": "5907"}}))
+            .await;
+        assert_eq!(set.status_code(), StatusCode::OK);
+
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "identifiers.manifestation.goodreads",
+                "version_id": null,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "revert-to-null of an identifier must round-trip; body = {}",
+            revert.text()
+        );
+
+        let remaining: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM manifestation_external_identifiers \
+             WHERE manifestation_id = $1 AND scheme = 'goodreads'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+        assert_eq!(remaining, 0);
+
+        assert_eq!(
+            writeback_job_count(&app_pool, m_id).await,
+            0,
+            "identifier clear via revert must not enqueue a writeback"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_work_identifier_accepts_version_from_sibling_manifestation(pool: sqlx::PgPool) {
+        // Work-level identifiers live on the shared work row, so a version
+        // journaled under one edition is a valid revert target from another.
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_a) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let set = server
+            .patch(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL333W"}}))
+            .await;
+        assert_eq!(set.status_code(), StatusCode::OK);
+        let set_body: serde_json::Value = set.json();
+        let version = version_id_of(&set_body, "identifiers.work.openlibrary");
+
+        let revert = server
+            .post(&format!("/api/v1/manifestations/{m_b}/metadata/revert"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "identifiers.work.openlibrary",
+                "version_id": version,
+            }))
+            .await;
+        assert_eq!(
+            revert.status_code(),
+            StatusCode::OK,
+            "work-scoped identifier version journaled under a sibling must be accepted; body = {}",
+            revert.text()
         );
     }
 }

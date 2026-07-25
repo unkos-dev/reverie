@@ -22,7 +22,7 @@ use governor::{Quota, RateLimiter};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use super::{LookupCtx, LookupKey, MetadataSource, SourceError, SourceResult};
+use super::{LookupCtx, LookupKey, LookupOutcome, MetadataSource, SourceError, SourceResult};
 
 type Limiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 
@@ -73,7 +73,7 @@ impl MetadataSource for OpenLibrary {
         &self,
         ctx: &LookupCtx<'_>,
         key: &LookupKey,
-    ) -> Result<Vec<SourceResult>, SourceError> {
+    ) -> Result<LookupOutcome, SourceError> {
         // Rate-limit (non-blocking sleep until a token is available).
         while let Err(not_ready) = limiter().check() {
             let wait = not_ready.wait_time_from(DefaultClock::default().now());
@@ -88,6 +88,29 @@ impl MetadataSource for OpenLibrary {
                     self.base_url.trim_end_matches('/'),
                 )
             }
+            LookupKey::ExternalId { scheme, value } => {
+                if scheme != "openlibrary" {
+                    return Ok(LookupOutcome::default());
+                }
+                // The id travels as a structural path segment: works ids
+                // (`OL…W`) resolve on /works, edition ids (`OL…M`) on
+                // /books. Never string-concatenated into the path.
+                let collection = if value.ends_with('W') {
+                    "works"
+                } else {
+                    "books"
+                };
+                let mut url = reqwest::Url::parse(&self.base_url)
+                    .map_err(|e| SourceError::Other(anyhow::anyhow!("invalid base url: {e}")))?;
+                url.path_segments_mut()
+                    .map_err(|()| {
+                        SourceError::Other(anyhow::anyhow!("base url cannot hold a path"))
+                    })?
+                    .pop_if_empty()
+                    .push(collection)
+                    .push(&format!("{value}.json"));
+                url.to_string()
+            }
             LookupKey::TitleAuthor { title, author } => format!(
                 "{}/search.json?title={}&author={}&limit=5",
                 self.base_url.trim_end_matches('/'),
@@ -100,7 +123,7 @@ impl MetadataSource for OpenLibrary {
         let status = resp.status();
 
         if status == StatusCode::NOT_FOUND {
-            return Ok(Vec::new());
+            return Ok(LookupOutcome::default());
         }
         if status == StatusCode::TOO_MANY_REQUESTS {
             let retry_after = resp
@@ -120,7 +143,16 @@ impl MetadataSource for OpenLibrary {
             LookupKey::Isbn(k) => {
                 let isbn = k.strip_prefix("isbn:").unwrap_or(k);
                 let bibkey = format!("ISBN:{isbn}");
-                Ok(map_api_books_response(&body, &bibkey))
+                Ok(LookupOutcome::from_fields(map_api_books_response(
+                    &body, &bibkey,
+                )))
+            }
+            LookupKey::ExternalId { value, .. } => {
+                if value.ends_with('W') {
+                    Ok(LookupOutcome::from_fields(map_work_response(&body)))
+                } else {
+                    Ok(LookupOutcome::from_fields(map_edition_response(&body)))
+                }
             }
             LookupKey::TitleAuthor { .. } => Ok(map_search_response(&body)),
         }
@@ -140,6 +172,10 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
 /// The response is a map keyed by bibkey (e.g. `"ISBN:9780441172719"`).  A
 /// missing key is treated as a clean miss (empty vec), matching
 /// `OpenLibrary`'s behaviour for unknown ISBNs on this endpoint.
+#[expect(
+    clippy::too_many_lines,
+    reason = "map_api_books_response maps 10+ data-view fields to observations; the per-field cases are mechanical and extracting would obscure the API-to-model mapping"
+)]
 fn map_api_books_response(body: &Value, isbn_key: &str) -> Vec<SourceResult> {
     let mut out = Vec::new();
     let mt = "isbn";
@@ -246,21 +282,204 @@ fn map_api_books_response(body: &Value, isbn_key: &str) -> Vec<SourceResult> {
                 match_type: mt.into(),
             });
         }
+        push_cross_provider_ids(ids, mt, &mut out);
+    }
+
+    // The record's own edition id ("key": "/books/OL…M").
+    if let Some(olid) = entry
+        .get("key")
+        .and_then(Value::as_str)
+        .and_then(|k| k.strip_prefix("/books/"))
+        && olid.starts_with("OL")
+        && olid.ends_with('M')
+    {
+        out.push(SourceResult {
+            field_name: "identifiers.manifestation.openlibrary".into(),
+            raw_value: json!(olid),
+            match_type: mt.into(),
+        });
     }
 
     out
 }
 
-fn map_search_response(body: &Value) -> Vec<SourceResult> {
+/// Cross-provider ids piggyback on the data view's `identifiers` object:
+/// goodreads and librarything ids are stored + displayed but never fetched.
+/// Only clean numeric values are emitted; anything else is dropped here
+/// rather than journaled and rejected at apply time.
+fn push_cross_provider_ids(ids: &Value, mt: &str, out: &mut Vec<SourceResult>) {
+    for (ol_key, field) in [
+        ("goodreads", "identifiers.manifestation.goodreads"),
+        ("librarything", "identifiers.manifestation.librarything"),
+    ] {
+        if let Some(v) = ids
+            .get(ol_key)
+            .and_then(Value::as_array)
+            .and_then(|arr| arr.first())
+            .and_then(Value::as_str)
+            && !v.is_empty()
+            && v.bytes().all(|b| b.is_ascii_digit())
+        {
+            out.push(SourceResult {
+                field_name: field.into(),
+                raw_value: json!(v),
+                match_type: mt.into(),
+            });
+        }
+    }
+}
+
+/// Parse a `/works/{OL…W}.json` work record fetched by native id.
+fn map_work_response(body: &Value) -> Vec<SourceResult> {
+    let mt = "external_id";
+    let mut out = Vec::new();
+
+    if let Some(title) = body.get("title").and_then(Value::as_str) {
+        out.push(SourceResult {
+            field_name: "title".into(),
+            raw_value: json!(title),
+            match_type: mt.into(),
+        });
+    }
+    // `description` is either a bare string or `{"type": ..., "value": s}`.
+    let description = match body.get("description") {
+        Some(Value::String(s)) => Some(s.as_str()),
+        Some(obj) => obj.get("value").and_then(Value::as_str),
+        None => None,
+    };
+    if let Some(desc) = description {
+        out.push(SourceResult {
+            field_name: "description".into(),
+            raw_value: json!(desc),
+            match_type: mt.into(),
+        });
+    }
+    if let Some(subjects) = body.get("subjects").and_then(Value::as_array) {
+        let subjects: Vec<String> = subjects
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .take(10)
+            .collect();
+        if !subjects.is_empty() {
+            out.push(SourceResult {
+                field_name: "subjects".into(),
+                raw_value: json!(subjects),
+                match_type: mt.into(),
+            });
+        }
+    }
+    out
+}
+
+/// Parse a `/books/{OL…M}.json` edition record fetched by native id.
+///
+/// The raw edition endpoint returns author references as `/authors/OL…A`
+/// keys without names, so no contributor observation is emitted from this
+/// path (resolving names would need a second hop).
+fn map_edition_response(body: &Value) -> Vec<SourceResult> {
+    let mt = "external_id";
+    let mut out = Vec::new();
+
+    if let Some(title) = body.get("title").and_then(Value::as_str) {
+        out.push(SourceResult {
+            field_name: "title".into(),
+            raw_value: json!(title),
+            match_type: mt.into(),
+        });
+    }
+    if let Some(subtitle) = body.get("subtitle").and_then(Value::as_str) {
+        out.push(SourceResult {
+            field_name: "subtitle".into(),
+            raw_value: json!(subtitle),
+            match_type: mt.into(),
+        });
+    }
+    if let Some(publisher) = body
+        .get("publishers")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(Value::as_str)
+    {
+        out.push(SourceResult {
+            field_name: "publisher".into(),
+            raw_value: json!(publisher),
+            match_type: mt.into(),
+        });
+    }
+    if let Some(pub_date) = body.get("publish_date").and_then(Value::as_str) {
+        out.push(SourceResult {
+            field_name: "pub_date".into(),
+            raw_value: json!(pub_date),
+            match_type: mt.into(),
+        });
+    }
+    if let Some(pages) = body.get("number_of_pages").and_then(Value::as_i64) {
+        out.push(SourceResult {
+            field_name: "pages".into(),
+            raw_value: json!(pages),
+            match_type: mt.into(),
+        });
+    }
+    for (field, ol_key) in [("isbn_13", "isbn_13"), ("isbn_10", "isbn_10")] {
+        if let Some(v) = body
+            .get(ol_key)
+            .and_then(Value::as_array)
+            .and_then(|arr| arr.first())
+            .and_then(Value::as_str)
+        {
+            out.push(SourceResult {
+                field_name: field.into(),
+                raw_value: json!(v),
+                match_type: mt.into(),
+            });
+        }
+    }
+    // Link the edition to its parent work's OL id so the work-level slot
+    // can fill from an edition lookup.
+    if let Some(work_key) = body
+        .get("works")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|w| w.get("key"))
+        .and_then(Value::as_str)
+        .and_then(|k| k.strip_prefix("/works/"))
+        && work_key.starts_with("OL")
+        && work_key.ends_with('W')
+    {
+        out.push(SourceResult {
+            field_name: "identifiers.work.openlibrary".into(),
+            raw_value: json!(work_key),
+            match_type: mt.into(),
+        });
+    }
+    out
+}
+
+fn map_search_response(body: &Value) -> LookupOutcome {
     let mt = "title_author_fuzzy";
     let doc = body
         .get("docs")
         .and_then(Value::as_array)
         .and_then(|docs| docs.first());
     let Some(doc) = doc else {
-        return Vec::new();
+        return LookupOutcome::default();
     };
     let mut out = Vec::new();
+
+    // The matched work's own OL id ("key": "/works/OL…W").
+    if let Some(work_key) = doc
+        .get("key")
+        .and_then(Value::as_str)
+        .and_then(|k| k.strip_prefix("/works/"))
+        && work_key.starts_with("OL")
+        && work_key.ends_with('W')
+    {
+        out.push(SourceResult {
+            field_name: "identifiers.work.openlibrary".into(),
+            raw_value: json!(work_key),
+            match_type: mt.into(),
+        });
+    }
 
     if let Some(title) = doc.get("title").and_then(Value::as_str) {
         out.push(SourceResult {
@@ -315,7 +534,18 @@ fn map_search_response(body: &Value) -> Vec<SourceResult> {
             break; // take the first ISBN only
         }
     }
-    out
+
+    // Search docs carry the work-level aggregate rating on a 5-point scale.
+    let rating = super::rating_signal(
+        doc.get("ratings_average").and_then(Value::as_f64),
+        doc.get("ratings_count").and_then(Value::as_i64),
+        5.0,
+    );
+
+    LookupOutcome {
+        fields: out,
+        rating,
+    }
 }
 
 #[cfg(test)]
@@ -460,7 +690,7 @@ mod tests {
             .await
             .unwrap();
 
-        let fields: Vec<&str> = out.iter().map(|r| r.field_name.as_str()).collect();
+        let fields: Vec<&str> = out.fields.iter().map(|r| r.field_name.as_str()).collect();
         assert!(fields.contains(&"title"));
         assert!(fields.contains(&"contributors.author"));
         assert!(fields.contains(&"publisher"));
@@ -547,5 +777,247 @@ mod tests {
             err,
             SourceError::Http(StatusCode::INTERNAL_SERVER_ERROR)
         ));
+    }
+
+    // ── native-id lookups ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn work_id_lookup_uses_structural_path_and_maps() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/works/OL45804W.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "title": "Dune",
+                "description": {"type": "/type/text", "value": "Desert planet epic."},
+                "subjects": ["Science Fiction", "Ecology"]
+            })))
+            .mount(&server)
+            .await;
+
+        let adapter = OpenLibrary::new(server.uri());
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "openlibrary".into(),
+                    value: "OL45804W".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let title = out.fields.iter().find(|r| r.field_name == "title").unwrap();
+        assert_eq!(title.raw_value, json!("Dune"));
+        assert_eq!(title.match_type, "external_id");
+        let desc = out
+            .fields
+            .iter()
+            .find(|r| r.field_name == "description")
+            .unwrap();
+        assert_eq!(desc.raw_value, json!("Desert planet epic."));
+    }
+
+    #[tokio::test]
+    async fn edition_id_lookup_maps_and_links_parent_work() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/books/OL7353617M.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "title": "Dune",
+                "publishers": ["Ace"],
+                "publish_date": "1990",
+                "number_of_pages": 535,
+                "isbn_13": ["9780441172719"],
+                "isbn_10": ["0441172717"],
+                "works": [{"key": "/works/OL45804W"}]
+            })))
+            .mount(&server)
+            .await;
+
+        let adapter = OpenLibrary::new(server.uri());
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "openlibrary".into(),
+                    value: "OL7353617M".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let fields: Vec<&str> = out.fields.iter().map(|r| r.field_name.as_str()).collect();
+        assert!(fields.contains(&"title"));
+        assert!(fields.contains(&"publisher"));
+        assert!(fields.contains(&"pages"));
+        assert!(fields.contains(&"isbn_13"));
+        let work_link = out
+            .fields
+            .iter()
+            .find(|r| r.field_name == "identifiers.work.openlibrary")
+            .expect("edition lookup links its parent work id");
+        assert_eq!(work_link.raw_value, json!("OL45804W"));
+    }
+
+    #[tokio::test]
+    async fn native_id_404_is_clean_miss() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/works/OL999999W.json"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let adapter = OpenLibrary::new(server.uri());
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "openlibrary".into(),
+                    value: "OL999999W".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn foreign_scheme_is_clean_miss_without_network() {
+        let adapter = OpenLibrary::new("http://127.0.0.1:9");
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "googlebooks".into(),
+                    value: "zyTZAAAAYAAJ".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(out.is_empty());
+    }
+
+    // ── identifier + rating emission from existing paths ─────────────────
+
+    #[test]
+    fn map_api_books_response_emits_cross_provider_ids_and_own_olid() {
+        let body = json!({
+            "ISBN:9780441172719": {
+                "key": "/books/OL7353617M",
+                "title": "Dune",
+                "identifiers": {
+                    "isbn_13": ["9780441172719"],
+                    "goodreads": ["35486"],
+                    "librarything": ["3306"]
+                }
+            }
+        });
+        let out = map_api_books_response(&body, "ISBN:9780441172719");
+        let get = |f: &str| {
+            out.iter()
+                .find(|r| r.field_name == f)
+                .unwrap_or_else(|| panic!("expected field {f}"))
+                .raw_value
+                .clone()
+        };
+        assert_eq!(
+            get("identifiers.manifestation.openlibrary"),
+            json!("OL7353617M")
+        );
+        assert_eq!(get("identifiers.manifestation.goodreads"), json!("35486"));
+        assert_eq!(get("identifiers.manifestation.librarything"), json!("3306"));
+    }
+
+    #[test]
+    fn map_api_books_response_skips_non_numeric_cross_provider_ids() {
+        let body = json!({
+            "ISBN:9780441172719": {
+                "identifiers": {"goodreads": ["not/numeric"]}
+            }
+        });
+        let out = map_api_books_response(&body, "ISBN:9780441172719");
+        assert!(
+            out.iter()
+                .all(|r| r.field_name != "identifiers.manifestation.goodreads"),
+            "malformed cross-provider id must not be emitted"
+        );
+    }
+
+    #[test]
+    fn search_without_rating_signals_absent() {
+        // Search docs are rating-capable; a doc without ratings_average is
+        // the provider reporting no rating.
+        let body = json!({"docs": [{"key": "/works/OL45804W", "title": "Dune"}]});
+        let out = map_search_response(&body);
+        assert_eq!(
+            out.rating,
+            crate::services::enrichment::sources::RatingSignal::Absent
+        );
+    }
+
+    #[tokio::test]
+    async fn edition_record_leaves_rating_unknown() {
+        // The works/editions records never carry rating data, so resolving
+        // through one must not signal anything about the provider's rating
+        // (a cached value from an earlier search run stays intact).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/books/OL7353617M.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"title": "Dune"})))
+            .mount(&server)
+            .await;
+
+        let adapter = OpenLibrary::new(server.uri());
+        let http = reqwest::Client::new();
+        let out = adapter
+            .lookup(
+                &ctx(&http),
+                &LookupKey::ExternalId {
+                    scheme: "openlibrary".into(),
+                    value: "OL7353617M".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            out.rating,
+            crate::services::enrichment::sources::RatingSignal::Unknown
+        );
+    }
+
+    #[test]
+    fn map_search_response_emits_work_id_and_rating() {
+        let body = json!({
+            "docs": [{
+                "key": "/works/OL45804W",
+                "title": "Dune",
+                "author_name": ["Frank Herbert"],
+                "ratings_average": 4.25,
+                "ratings_count": 4321
+            }]
+        });
+        let out = map_search_response(&body);
+        let work_id = out
+            .fields
+            .iter()
+            .find(|r| r.field_name == "identifiers.work.openlibrary")
+            .expect("search doc emits its work id");
+        assert_eq!(work_id.raw_value, json!("OL45804W"));
+
+        let crate::services::enrichment::sources::RatingSignal::Reported(rating) = out.rating
+        else {
+            panic!(
+                "ratings_average maps to a reported rating, got {:?}",
+                out.rating
+            );
+        };
+        assert!((rating.rating - 4.25).abs() < f32::EPSILON);
+        assert!((rating.rating_scale - 5.0).abs() < f32::EPSILON);
+        assert_eq!(rating.review_count, 4321);
     }
 }

@@ -7,6 +7,8 @@
 
 /// Write extracted metadata fields as `metadata_versions` journal rows.
 pub mod draft;
+/// Typed per-(scheme, level) parsing of external identifier values.
+pub mod external_id;
 /// Transform raw `OPF` data into [`crate::services::metadata::extractor::ExtractedMetadata`].
 pub mod extractor;
 /// Heuristic title-author inversion detection.

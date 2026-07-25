@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM metadata_versions WHERE field_name = 'identifiers.manifestation.googlebooks' AND new_value = to_jsonb('volPROVIDER2'::text) AND status = 'pending' AND manifestation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e69bafe4a7bcaf28d06d14e33565bfc49ba0860a55ccf5644e004db3f124b3f9"
+}

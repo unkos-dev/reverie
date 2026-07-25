@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::models::content_rating::ContentRating;
 use crate::models::enrichment_status::EnrichmentStatus;
+use crate::models::external_identifier::IdentifierLevel;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::reading_state::ReadingStateSummary;
 use crate::models::validation_status::ValidationStatus;
@@ -41,6 +42,41 @@ pub struct SeriesRef {
     /// Position within the series (`series_works.position`), `None`
     /// when the membership row has a null position.
     pub position: Option<f64>,
+}
+
+/// One external-source identifier surfaced on a book projection.
+/// Registry rows for providers hidden via the `provider_visibility`
+/// setting are filtered out before this DTO is built.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub struct ExternalIdRef {
+    /// FRBR level the id attaches to: `work` ids are shared across
+    /// editions, `manifestation` ids name this edition specifically.
+    pub level: IdentifierLevel,
+    /// Identifier scheme (`identifier_schemes.id`, e.g. `openlibrary`).
+    pub scheme: String,
+    /// The identifier value on that scheme.
+    pub external_id: String,
+}
+
+/// One provider's aggregate rating surfaced on a book projection.
+/// Ratings are per-edition and per-source; each provider is
+/// authoritative for its own scale, so no cross-source aggregate is
+/// computed. Hidden providers are filtered out before this DTO is built.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub struct ExternalRatingRef {
+    /// Rating provider (`rating_sources.id`, e.g. `googlebooks`).
+    pub source: String,
+    /// The provider's score on its own scale.
+    pub rating: f32,
+    /// The provider's maximum score (e.g. 5).
+    pub rating_scale: f32,
+    /// Number of reviews backing the score; 0 when unreported.
+    pub review_count: i32,
+    /// When the enrichment pipeline last refreshed this value.
+    #[serde(with = "time::serde::rfc3339")]
+    pub fetched_at: OffsetDateTime,
 }
 
 /// One row of a paginated book list. Decoded via [`sqlx::FromRow`]
@@ -84,6 +120,14 @@ pub struct BookListRow {
     /// Caller's reading state for this book; `None` when unread (no
     /// `reading_state` row). Batch-loaded alongside `authors`.
     pub reading_state: Option<ReadingStateSummary>,
+    /// External-source identifiers for visible providers: the parent
+    /// work's ids followed by this edition's, each sorted by scheme.
+    /// Batch-loaded per page; providers hidden via `provider_visibility`
+    /// are absent.
+    pub external_ids: Vec<ExternalIdRef>,
+    /// Per-provider aggregate ratings for visible providers, sorted by
+    /// source. Batch-loaded per page.
+    pub external_ratings: Vec<ExternalRatingRef>,
     /// `manifestations.created_at`. RFC 3339 on the wire; also the
     /// recent-sort cursor key and the value behind the "Added" sort column.
     #[serde(with = "time::serde::rfc3339")]
@@ -144,6 +188,13 @@ pub struct BookDetail {
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
+    /// External-source identifiers for visible providers: the parent
+    /// work's ids followed by this edition's, each sorted by scheme.
+    /// Providers hidden via `provider_visibility` are absent.
+    pub external_ids: Vec<ExternalIdRef>,
+    /// Per-provider aggregate ratings for visible providers, sorted by
+    /// source.
+    pub external_ratings: Vec<ExternalRatingRef>,
     /// Metadata-version counts for the Versions tab.
     pub metadata_version_summary: MetadataVersionSummary,
     /// Pending `metadata_versions` rows for this manifestation. Filtered

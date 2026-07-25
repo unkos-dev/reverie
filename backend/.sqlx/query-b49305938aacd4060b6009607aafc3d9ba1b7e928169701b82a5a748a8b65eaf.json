@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_error FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enrichment_status!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "enrichment_attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "enrichment_attempted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "enrichment_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b49305938aacd4060b6009607aafc3d9ba1b7e928169701b82a5a748a8b65eaf"
+}

@@ -341,6 +341,107 @@ async fn put_settings_unknown_field_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_persists_and_round_trips(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
+        .json(&serde_json::json!({"provider_visibility": {"googlebooks": false, "asin": true}}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body = {}", r.text());
+    let body: serde_json::Value = r.json();
+    assert_eq!(
+        body["provider_visibility"],
+        serde_json::json!({"asin": true, "googlebooks": false})
+    );
+
+    let r2 = server
+        .get("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .await;
+    let body2: serde_json::Value = r2.json();
+    assert_eq!(
+        body2["provider_visibility"],
+        serde_json::json!({"asin": true, "googlebooks": false})
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_unknown_key_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    // `manual` exists in metadata_sources but is neither an identifier
+    // scheme nor a rating source, so it is not a valid visibility key.
+    let r = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"provider_visibility": {"manual": false}}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let body: serde_json::Value = r.json();
+    let detail = body["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("manual"),
+        "expected detail naming the unknown key, got {detail}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_non_bool_value_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"provider_visibility": {"googlebooks": "hidden"}}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_revision_increases_per_update(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r1 = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
+        .json(&serde_json::json!({"opds_page_size": 60}))
+        .await;
+    assert_eq!(r1.status_code(), StatusCode::OK);
+    let rev1 = r1.json::<serde_json::Value>()["revision"]
+        .as_i64()
+        .expect("revision in response");
+
+    let r2 = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"opds_page_size": 70}))
+        .await;
+    assert_eq!(r2.status_code(), StatusCode::OK);
+    let rev2 = r2.json::<serde_json::Value>()["revision"]
+        .as_i64()
+        .expect("revision in response");
+    assert!(
+        rev2 > rev1,
+        "revision must increase on every update (got {rev1} then {rev2})"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn put_settings_zero_cover_max_bytes_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

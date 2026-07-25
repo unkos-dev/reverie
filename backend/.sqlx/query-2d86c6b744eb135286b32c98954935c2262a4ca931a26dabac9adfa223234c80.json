@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_versions (manifestation_id, source, field_name, new_value, value_hash, match_type, confidence_score) VALUES ($1, 'hardcover', 'identifiers.work.openlibrary', $2, $3, 'external_id', 0.85)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d86c6b744eb135286b32c98954935c2262a4ca931a26dabac9adfa223234c80"
+}

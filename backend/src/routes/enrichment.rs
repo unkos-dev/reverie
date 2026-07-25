@@ -47,6 +47,14 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// `POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the
 /// manifestation for a fresh enrichment pass.
 ///
+/// An `in_progress` row is not flipped to `pending`: the active worker
+/// still owns the claim, and releasing it would let a second worker run
+/// the same manifestation concurrently. The trigger sets
+/// `enrichment_rerun_requested` instead, and the worker's completion
+/// bookkeeping converts the flag into a fresh eligible row. All CASE arms
+/// read the pre-update row state, so the status test is consistent across
+/// every column.
+///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
 /// - [`AppError::NotFound`] when the manifestation is missing or
@@ -59,7 +67,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
-        (status = 202, description = "Enrichment state reset to pending; the background worker picks the manifestation up on its next poll"),
+        (status = 202, description = "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails)
@@ -79,10 +87,16 @@ async fn trigger(
 
     let rows = sqlx::query!(
         "UPDATE manifestations \
-         SET enrichment_status = 'pending', \
-             enrichment_attempt_count = 0, \
-             enrichment_attempted_at = NULL, \
-             enrichment_error = NULL \
+         SET enrichment_rerun_requested = (enrichment_status = 'in_progress'), \
+             enrichment_status = CASE WHEN enrichment_status = 'in_progress' \
+                                      THEN enrichment_status \
+                                      ELSE 'pending'::enrichment_status END, \
+             enrichment_attempt_count = CASE WHEN enrichment_status = 'in_progress' \
+                                             THEN enrichment_attempt_count ELSE 0 END, \
+             enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
+                                            THEN enrichment_attempted_at ELSE NULL END, \
+             enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
+                                     THEN enrichment_error ELSE NULL END \
          WHERE id = $1",
         id,
     )
@@ -313,5 +327,71 @@ mod tests {
         );
         assert_eq!(row.enrichment_attempt_count, 0, "attempt_count not reset");
         assert_eq!(row.enrichment_error, None, "enrichment_error not cleared");
+    }
+
+    /// A trigger while a run is active must not release the worker's claim
+    /// (a second worker could pick the row up concurrently); it records a
+    /// rerun request for the completion bookkeeping instead.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn trigger_during_active_run_defers_requeue(pool: sqlx::PgPool) {
+        use axum::http::header::AUTHORIZATION;
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'in_progress'::enrichment_status, \
+                 enrichment_attempt_count = 1, \
+                 enrichment_attempted_at = now() \
+             WHERE id = $1",
+            m_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("seed in_progress state");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/enrichment/trigger"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::ACCEPTED,
+            "body = {}",
+            response.text()
+        );
+
+        let row = sqlx::query!(
+            "SELECT enrichment_status AS \"status!: crate::models::enrichment_status::EnrichmentStatus\", \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_rerun_requested \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .expect("fetch manifestation");
+        assert_eq!(
+            row.status,
+            crate::models::enrichment_status::EnrichmentStatus::InProgress,
+            "the trigger must not release the active claim"
+        );
+        assert!(
+            row.enrichment_rerun_requested,
+            "the trigger must leave a rerun request for the completion path"
+        );
+        assert_eq!(
+            row.enrichment_attempt_count, 1,
+            "the active claim's attempt counter is untouched"
+        );
+        assert!(
+            row.enrichment_attempted_at.is_some(),
+            "the active claim's timestamp is untouched"
+        );
     }
 }

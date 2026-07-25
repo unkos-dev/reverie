@@ -32,6 +32,12 @@ fn normalise(field: &str, v: &Value) -> Value {
             Value::String(s) => Value::String(s.trim().to_string()),
             other => other.clone(),
         },
+        // External identifiers are single canonical strings; trim so a manual
+        // entry with stray whitespace dedups against the same source value.
+        f if f.starts_with("identifiers.") => match v {
+            Value::String(s) => Value::String(s.trim().to_string()),
+            other => other.clone(),
+        },
         "pub_date" => match v {
             Value::String(s) => {
                 // Best-effort ISO date coercion: keep the YYYY-MM-DD prefix if
@@ -151,6 +157,13 @@ mod tests {
         let a = value_hash("other", &json!(["a", "b"]));
         let b = value_hash("other", &json!(["b", "a"]));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn identifier_fields_trimmed() {
+        let a = value_hash("identifiers.work.openlibrary", &json!("OL45804W"));
+        let b = value_hash("identifiers.work.openlibrary", &json!("  OL45804W  "));
+        assert_eq!(a, b);
     }
 
     #[test]

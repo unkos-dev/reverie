@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT response_kind::text AS \"kind!\" FROM api_cache WHERE source = 'googlebooks' AND lookup_key = 'external:googlebooks:volFALLBACK'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6625f5f258120333f79ea8d8c7279bb48cc8e1b02d0634301e7f7f3f98e48b5b"
+}

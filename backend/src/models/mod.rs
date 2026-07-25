@@ -10,6 +10,11 @@ pub mod content_rating;
 pub mod device_token;
 /// Closed value set for the `enrichment_status` Postgres `ENUM`.
 pub mod enrichment_status;
+/// External-source identifier registry (work + manifestation level), keyed
+/// `(entity, scheme)` and journal-integrated.
+pub mod external_identifier;
+/// Per-source aggregate ratings cache, keyed `(manifestation, source)`.
+pub mod external_rating;
 /// Closed value set for the `identity_provider` Postgres `ENUM`.
 pub mod identity_provider;
 /// Per-file ingestion job rows produced by the import pipeline.
