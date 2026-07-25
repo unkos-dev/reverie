@@ -276,11 +276,20 @@ worktree-rm branch:
     git worktree prune
     echo "removed worktree for ${branch}"
 
-# Roles seed from docker/init-roles.sql on first init only.
+# Roles seed from docker/init-roles.sql on first init only. Probe-first:
+# when the database already answers over its unix socket the recipe exits
+# without touching the docker CLI, so gate runs inside a network-isolated
+# sandbox (which blocks the docker socket but not AF_UNIX connects) treat
+# an already-running stack as up instead of failing on docker. Only a
+# stack that is genuinely down falls through to compose, which needs an
+# unsandboxed run.
 #
 # Start (or create) the local dev Postgres.
 [group('db')]
 db-up:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    if scripts/db-ready.sh; then exit 0; fi
     docker compose -f docker/compose.dev.yml up -d --wait
 
 # Stop the local dev Postgres; the data volume survives.
@@ -300,7 +309,7 @@ db-reset:
 # Apply pending migrations with the dedicated migrator identity.
 [group('db')]
 db-migrate:
-    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev}" cargo run -- migrate
+    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run -- migrate
 
 # Idempotent by construction: db-up is a no-op when the container is already
 # healthy, db-migrate is a no-op once the schema is current, and each

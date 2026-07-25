@@ -78,7 +78,21 @@ if [ "$volume" != "pgdata:/var/lib/postgresql" ]; then
   fail=1
 fi
 
+# The socket bind-mount serves the cluster's unix socket to host tooling:
+# the DB-backed just recipes' committed DSN defaults point at this exact
+# host path (see rust.just). Losing the mount silently strands those
+# recipes; moving it breaks every committed socket DSN default, so both
+# sides are pinned.
+# shellcheck disable=SC2016  # the expected value is a compose interpolation literal
+socket_mount="$(yq '.services.postgres.volumes[2]' "$compose")"
+# shellcheck disable=SC2016
+expected_socket_mount='${XDG_STATE_HOME:-${HOME}/.local/state}/reverie/pgsock:/var/run/postgresql'
+if [ "$socket_mount" != "$expected_socket_mount" ]; then
+  echo "FAIL: ${compose}: socket mount is '${socket_mount}', expected '${expected_socket_mount}' (host unix socket the DB-backed recipes connect to)" >&2
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi
-echo "OK: ${compose} invariants hold (project name, container name, loopback bind, digest pin, dev/CI image parity, parent mount)"
+echo "OK: ${compose} invariants hold (project name, container name, loopback bind, digest pin, dev/CI image parity, parent mount, socket mount)"

@@ -134,6 +134,21 @@ exit 2
 MISE_STUB
 chmod +x "${stub_bin}/mise"
 
+cat >"${stub_bin}/psql" <<'PSQL_STUB'
+#!/usr/bin/env bash
+# Fixture stub for the host-side unix-socket probe: asserts the DSN doctor.sh
+# hands libpq actually targets the socket directory (a drifted DSN would
+# probe the wrong thing while reading as healthy), and reports
+# reachable/unreachable via DOCTOR_STUB_SOCKET_OK.
+set -euo pipefail
+case "${1:-}" in
+  postgres:///reverie_dev\?host=*/reverie/pgsock*) ;;
+  *) exit 2 ;;
+esac
+[ "${DOCTOR_STUB_SOCKET_OK:-1}" = "1" ]
+PSQL_STUB
+chmod +x "${stub_bin}/psql"
+
 cat >"${stub_bin}/docker" <<'DOCKER_STUB'
 #!/usr/bin/env bash
 # Fixture stub: only supports the four invocations doctor.sh makes (info,
@@ -221,12 +236,14 @@ export DOCTOR_STUB_MISE_MISSING=""
 expect_exit "happy path exits zero" 0 "${stub_bin}"
 expect_not_contains "happy path has no FAIL lines" "FAIL "
 expect_not_contains "happy path has no WARN lines" "WARN "
+expect_contains "happy path reports host-side socket reachability" "PASS dev Postgres reachable over the unix socket"
 
 # --- WARN-only run: dev DB absent, mise pin missing -> still exit 0 ---
 export DOCTOR_STUB_CONTAINER_STATUS=""
 export DOCTOR_STUB_CONTAINER_HEALTH=""
 expect_exit "warn-only run exits zero" 0 "${stub_bin}"
 expect_contains "warn-only run reports the absent dev DB" "WARN dev Postgres container"
+expect_contains "warn-only run degrades the socket probe to a warn" "WARN dev Postgres reachable over the unix socket"
 expect_not_contains "warn-only run has no FAIL lines" "FAIL "
 # restore for later assertions
 export DOCTOR_STUB_CONTAINER_STATUS=running
@@ -254,6 +271,30 @@ expect_contains "app-role login failure is reported" "FAIL reverie_app role auth
 export DOCTOR_STUB_APP_LOGIN=1
 expect_exit "healthy app-role login passes" 0 "${stub_bin}"
 expect_contains "app-role login success is reported" "PASS reverie_app role authenticates"
+
+# --- host-side socket probe: an unreachable socket on a running container
+# is the "container predates the socket mount" state and must fail with
+# the recreate advice, since every DB-backed recipe's default DSN depends
+# on it. ---
+export DOCTOR_STUB_SOCKET_OK=0
+expect_exit "unreachable socket fails the run" 1 "${stub_bin}"
+expect_contains "unreachable socket names the recreate fix" "FAIL dev Postgres reachable over the unix socket"
+expect_contains "unreachable socket advises db-up" "just db-up (recreates the container with the socket mount)"
+export DOCTOR_STUB_SOCKET_OK=1
+
+# --- a host without psql skips the socket probe as INFO: db-up degrades
+# gracefully without psql, so absence only reduces diagnostic coverage
+# and must not warn or fail. ---
+stub_bin_no_psql="${tmp}/bin-no-psql"
+mkdir -p "${stub_bin_no_psql}"
+for f in "${stub_bin}"/*; do
+  name="$(basename "${f}")"
+  [ "${name}" = "psql" ] && continue
+  cp -P "${f}" "${stub_bin_no_psql}/${name}"
+done
+expect_exit "absent host psql still exits zero" 0 "${stub_bin_no_psql}"
+expect_contains "absent host psql is an INFO skip" "INFO host psql not on PATH; unix-socket probe skipped"
+expect_not_contains "absent host psql produces no socket FAIL" "FAIL dev Postgres reachable over the unix socket"
 
 # --- a login failure with an override signal present (REVERIE_APP_PASSWORD
 # set, the env var docker/init-roles.sql reads for a non-default password)

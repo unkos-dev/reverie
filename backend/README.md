@@ -4,9 +4,15 @@ This directory contains the Rust Axum backend.
 
 ## Development Database
 
-The development database is a local Docker Postgres cluster defined in `docker/compose.dev.yml`. Start it with `just db-up` (or `docker compose -f docker/compose.dev.yml up -d --wait` from the repository root). The cluster binds to `127.0.0.1:5432` only, keeping the trivially-credentialed dev cluster off the LAN. Roles seed from `docker/init-roles.sql` on first init. The cluster is a fresh install: roles and schema build from zero, with no data imports from any prior environment.
+The development database is a local Docker Postgres cluster defined in `docker/compose.dev.yml`. Start it with `just db-up` (or `docker compose -f docker/compose.dev.yml up -d --wait` from the repository root). The cluster serves two transports: loopback-only TCP on `127.0.0.1:5432`, keeping the trivially-credentialed dev cluster off the LAN, and a unix socket bind-mounted to `${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock` on the host. Tooling defaults to the socket; the server and GUI clients use TCP (see "Transports" below). Roles seed from `docker/init-roles.sql` on first init. The cluster is a fresh install: roles and schema build from zero, with no data imports from any prior environment.
 
-The local loop: `just db-up`, then `just db-migrate` to apply migrations, then `just rust::test` / `just rust::doctests` / `just rust::sqlx-check`. Those recipes inject the schema-owner DSN (`postgres://reverie:reverie@localhost:5432/reverie_dev`); bare `cargo` invocations must set `DATABASE_URL` to it themselves.
+The local loop: `just db-up`, then `just db-migrate` to apply migrations, then `just rust::test` / `just rust::doctests` / `just rust::sqlx-check`. Those recipes inject the schema-owner DSN over the socket (`postgres:///reverie_dev?host=$HOME/.local/state/reverie/pgsock&user=reverie&password=reverie`); bare `cargo` invocations must set `DATABASE_URL` themselves, to either that socket form or the TCP form from the roles table below.
+
+### Transports
+
+Local tooling (the DB-backed just recipes: tests, doctests, the sqlx cache, migrations) connects over the unix socket. That is what lets those recipes run inside network-isolated dev sandboxes, which block TCP loopback but not AF_UNIX connects. The runtime server keeps connecting over TCP as the `reverie_app` role, matching the transport and password auth mode it ships with, and GUI clients keep using `localhost:5432`; both transports reach the same cluster.
+
+Socket DSNs use the params-only URI form: `postgres:///reverie_dev?host=<socket-dir>&user=<role>&password=<password>`. sqlx rejects the libpq-style `postgres://user@/db?host=...` spelling (userinfo with an empty authority host fails its URL parsing), and a socket DSN never falls back to TCP: if the socket is absent the connection fails immediately. A container created before the socket mount existed has no host socket; one `just db-up` recreates it. Socket connections match the image's `local all all trust` pg_hba rule and are passwordless for every role, the same effective access the role-name passwords on TCP already grant. Docker Desktop on macOS/Windows cannot share unix sockets across its VM boundary; there, drop the mount with a local compose override and set `REVERIE_DEV_DB_URL` to the TCP schema-owner DSN.
 
 To run the server itself: `just rust::dev` in the foreground, or `just rust::dev-start` / `dev-stop` / `dev-status` for a background process logging to `backend/.dev-server.log`. `just dev-up` from the repository root does the whole sequence above and brings Vite up as well. Unlike the test recipes, these run as the RLS-enforced `reverie_app` role, the identity the deployed server uses. They fill in `DATABASE_URL` and the OPDS-required `REVERIE_PUBLIC_URL` only when neither the environment nor `.env` supplies one, so a `.env` copied from `.env.example` stays authoritative.
 
@@ -28,7 +34,7 @@ The `tower_sessions` schema bypasses RLS. The session id resolves user identity.
 
 ### Migrations
 
-The `reverie_migrator` role executes migrations out of band. Set `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev` and run `cargo run -- migrate`. The application process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the built-in sqlx migrator for tests.
+The `reverie_migrator` role executes migrations out of band: `just db-migrate` runs them over the socket, or set `DATABASE_URL_MIGRATION` to either transport's migrator DSN and run `cargo run -- migrate`. The application process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the built-in sqlx migrator for tests.
 
 Operator-facing `MigrationError` modes:
 
