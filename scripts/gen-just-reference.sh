@@ -106,7 +106,10 @@ across every plane.
 verdict line, `GATE: PASS ...` or `GATE: FAIL ... at <lane>`, so a run read back
 through a pipe, a truncated log, or a detached shell still says whether it
 passed. `just gate-status` replays the last recorded run with its per-lane
-timings, and exits nonzero when that run failed or never finished.
+timings, warns when the checkout has moved past the commit that run was
+recorded on, and exits nonzero unless that run finished green: distinct
+statuses tell a failed run, a killed one, one still in progress, and no
+recorded run at all apart.
 
 HEADER
   render

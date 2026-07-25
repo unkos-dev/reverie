@@ -52,19 +52,20 @@ EOF
 state="${tmpdir}/state"
 outfile="${tmpdir}/out"
 
-# Run the runner from the fixture directory against an isolated record
-# location, leaving the combined output in $out and the status in $rc. Not a
-# command substitution: that would run the assignment to $rc in a subshell and
-# every exit-status assertion below would silently read a stale value.
+# Run the runner from a fixture directory against an isolated record location,
+# leaving the combined output in $out and the status in $rc. Not a command
+# substitution: that would run the assignment to $rc in a subshell and every
+# exit-status assertion below would silently read a stale value.
 out=''
 rc=0
-run_gate() {
-  local state_home="$1"
-  shift
+run_gate_in() {
+  local dir="$1" state_home="$2"
+  shift 2
   rc=0
-  (cd "$lanes_dir" && XDG_STATE_HOME="$state_home" "$runner" "$@") > "$outfile" 2>&1 || rc=$?
+  (cd "$dir" && XDG_STATE_HOME="$state_home" "$runner" "$@") > "$outfile" 2>&1 || rc=$?
   out="$(cat "$outfile")"
 }
+run_gate() { run_gate_in "$lanes_dir" "$@"; }
 
 last_line() { tail -1 "$outfile"; }
 
@@ -180,6 +181,11 @@ if ! grep -q '"event":"start","lanes":2,"plan":\["ok","boom"\]' "$latest"; then
 else
   pass 'the record opens with the plan'
 fi
+if ! grep -q '"head":null,"dirty":null,"pid":[0-9][0-9]*}' "$latest"; then
+  fail 'a run outside a git repository records a null tree and its pid' "$(cat "$latest")"
+else
+  pass 'a run outside a git repository records a null tree and its pid'
+fi
 
 # --- lane output never reaches the record ------------------------------------
 
@@ -211,13 +217,16 @@ else
   pass '--status exits 1 after a failing run'
 fi
 
-# A killed run leaves lane records and no summary. Reporting that as a pass
-# would be the same false green the verdict line exists to prevent, so it gets
-# a status of its own. The far-future id makes it sort last, ahead of any run
-# this test has already recorded.
+# An unfinished run either died or is still going, told apart by whether the
+# recorded runner pid is alive. Both fixtures share one far-future id so they
+# sort last, ahead of any run this test has already recorded; the dead pid is
+# a real, reaped child so the kernel cannot still be running it.
+( : ) &
+dead_pid=$!
+wait "$dead_pid"
 killed="${record_dir}/29991231T235959Z-0.jsonl"
-cat > "$killed" << 'EOF'
-{"run":"29991231T235959Z-0","label":"demo","event":"start","lanes":3,"plan":["ok","boom","also-ok"],"started":"2999-12-31T23:59:59Z"}
+cat > "$killed" << EOF
+{"run":"29991231T235959Z-0","label":"demo","event":"start","lanes":3,"plan":["ok","boom","also-ok"],"started":"2999-12-31T23:59:59Z","head":null,"dirty":null,"pid":${dead_pid}}
 {"run":"29991231T235959Z-0","lane":"ok","status":"pass","exit":0,"seconds":1}
 EOF
 run_gate "$state" --status
@@ -228,13 +237,44 @@ elif ! printf '%s' "$out" | grep -q 'it stopped during boom'; then
 else
   pass '--status names the lane a killed run stopped in, and exits 2'
 fi
+
+# The same record with a live pid (this test's own shell) is a run in
+# progress, and must not read as killed: a poller that cannot tell the two
+# apart abandons or restarts a gate that is minutes from finishing.
+sed "s/\"pid\":${dead_pid}}/\"pid\":$$}/" "$killed" > "${killed}.tmp"
+mv "${killed}.tmp" "$killed"
+run_gate "$state" --status
+if [ "$rc" -ne 3 ]; then
+  fail '--status distinguishes a run still in progress' "expected 3, got ${rc}"
+elif ! printf '%s' "$out" | grep -q 'still in progress, currently in boom'; then
+  fail '--status names the lane a live run is in' "output: ${out}"
+else
+  pass '--status reports a live run as in progress, and exits 3'
+fi
+
+# A record written before the pid and tree fields existed has no liveness to
+# check and must fall back to the killed-run answer, not a crash or a false
+# green. The sed is asserted to have actually stripped the field, so this can
+# never quietly re-test the live-pid case above.
+sed 's/,"head":null,"dirty":null,"pid":[0-9]*}/}/' "$killed" > "${killed}.tmp"
+mv "${killed}.tmp" "$killed"
+if grep -q '"pid":' "$killed"; then
+  fail '--status treats a legacy record without a pid as unfinished' 'fixture still carries a pid field'
+else
+  run_gate "$state" --status
+  if [ "$rc" -ne 2 ]; then
+    fail '--status treats a legacy record without a pid as unfinished' "expected 2, got ${rc}"
+  else
+    pass '--status treats a legacy record without a pid as unfinished'
+  fi
+fi
 rm -f "$killed"
 
 run_gate "${tmpdir}/empty-state" --status
-if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | grep -q 'no recorded gate run'; then
-  fail '--status with no history is not an error' "rc=${rc} output: ${out}"
+if [ "$rc" -ne 4 ] || ! printf '%s' "$out" | grep -q 'no recorded gate run'; then
+  fail '--status with no history says so and exits 4' "rc=${rc} output: ${out}"
 else
-  pass '--status with no history is not an error'
+  pass '--status with no history says so and exits 4'
 fi
 
 # --- an unwritable record location degrades, it does not fail the gate -------
@@ -249,6 +289,53 @@ elif [ "$(last_line)" != 'GATE: PASS demo (1 lane, 0s: ok)' ]; then
   fail 'an unwritable record location still reports a verdict' "last line: $(last_line)"
 else
   pass 'an unwritable record location degrades without failing the gate'
+fi
+
+# --- the record ties a verdict to the tree that earned it --------------------
+
+# A verdict answers for the commit it ran on. Inside a git repository the
+# start event carries HEAD and a dirty flag, and --status warns when the
+# checkout has moved since, so an old green cannot quietly stand in for the
+# current tree. The identity and hook overrides keep the fixture immune to
+# whatever global git config the host carries.
+git_fixture="${tmpdir}/gitlanes"
+mkdir -p "$git_fixture"
+cp "${lanes_dir}/justfile" "${git_fixture}/justfile"
+git_q() { git -C "$git_fixture" -c user.name=fixture -c user.email=fixture@invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+git_q init -q
+git_q add justfile
+git_q commit -qm fixture
+git_state="${tmpdir}/git-state"
+
+run_gate_in "$git_fixture" "$git_state" demo ok
+git_record_dir="$(find "${git_state}/reverie/gate" -mindepth 1 -maxdepth 1 -type d -print -quit 2> /dev/null || true)"
+git_latest() { find "$git_record_dir" -maxdepth 1 -type f -name '*.jsonl' -print | sort | tail -1; }
+head_before="$(git_q rev-parse HEAD)"
+if ! grep -q "\"head\":\"${head_before}\",\"dirty\":false" "$(git_latest)"; then
+  fail 'a clean run records the commit it was earned on' "$(cat "$(git_latest)")"
+else
+  pass 'a clean run records the commit it was earned on'
+fi
+
+: > "${git_fixture}/scratch"
+run_gate_in "$git_fixture" "$git_state" demo ok
+if ! grep -q "\"head\":\"${head_before}\",\"dirty\":true" "$(git_latest)"; then
+  fail 'an uncommitted tree records dirty' "$(cat "$(git_latest)")"
+else
+  pass 'an uncommitted tree records dirty'
+fi
+
+# Move HEAD past the recorded run: the verdict still stands (exit 0), but the
+# reader is told it no longer describes this tree.
+git_q add scratch
+git_q commit -qm moved
+run_gate_in "$git_fixture" "$git_state" --status
+if [ "$rc" -ne 0 ]; then
+  fail '--status keeps a passed verdict after HEAD moves' "exited ${rc}"
+elif ! printf '%s' "$out" | grep -q 'the checkout has moved since that run'; then
+  fail '--status warns when the checkout has outgrown the recorded run' "output: ${out}"
+else
+  pass '--status warns when the checkout has outgrown the recorded run'
 fi
 
 # --- pruning bounds the record directory -------------------------------------

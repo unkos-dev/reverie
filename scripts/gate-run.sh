@@ -22,6 +22,12 @@
 #
 # Usage: gate-run.sh <label> [lane...]   # run the lanes, print the verdict
 #        gate-run.sh --status            # report the last recorded run
+#
+# --status exit codes, one per outcome a caller must not confuse: 0 the last
+# run passed, 1 it failed, 2 it died unfinished, 3 it is still in progress,
+# 4 there is no recorded run at all. The record is still the secondary channel:
+# a run whose record location was unwritable leaves nothing here, so the
+# `GATE:` line in the captured output remains the authority.
 set -ueo pipefail
 
 # Runs older than this, or beyond this many newer runs, are pruned at startup.
@@ -66,25 +72,57 @@ list_runs() {
   find "$run_dir" -maxdepth 1 -type f -name '*.jsonl' -print 2> /dev/null | sort -r || true
 }
 
+# The commit the checkout sits on, empty outside a git repository (a fixture,
+# a plain directory). Recorded with each run and compared on --status, so a
+# verdict can be tied to the tree that earned it rather than whatever the
+# checkout holds by the time someone asks.
+current_head() {
+  git -C "$checkout" rev-parse HEAD 2> /dev/null || true
+}
+
 if [ "${1:-}" = '--status' ]; then
   [ "$#" -eq 1 ] || die 'usage: gate-run.sh --status'
   latest="$(list_runs | head -1)"
   if [ -z "$latest" ]; then
-    printf 'no recorded gate run for %s\n' "$checkout"
-    exit 0
+    # Nonzero on purpose: "no record" and "the last run passed" must never
+    # share an exit status. A record can be missing for benign reasons (first
+    # run on a machine) and for the dangerous one (the run that mattered could
+    # not write here), and this script cannot tell those apart.
+    printf 'gate-run: no recorded gate run for %s\n' "$checkout" >&2
+    exit 4
   fi
   printf 'last gate run: %s\n' "$latest"
   cat "$latest"
-  # A run killed mid-flight (Ctrl-C, a dropped connection, a reboot) leaves
-  # per-lane records and no summary. Reporting that as a pass would be the same
-  # false green this script exists to prevent, so an unfinished run is a
-  # nonzero status of its own, distinct from a failed one. The lane it died in
-  # is the one after the last it finished, which the plan recorded at the top
-  # of the file can name outright.
+  # A verdict answers for the tree it ran on. If the checkout has moved since,
+  # say so out loud rather than letting an old green pass for the current
+  # tree; the exit status is left alone because committing verified work moves
+  # HEAD by construction, and a warning is the honest strength of the signal.
+  recorded_head="$(sed -n 's/.*"head":"\([0-9a-f]*\)".*/\1/p' "$latest" | head -1)"
+  checkout_head="$(current_head)"
+  if [ -n "$recorded_head" ] && [ -n "$checkout_head" ] &&
+    [ "$recorded_head" != "$checkout_head" ]; then
+    printf 'gate-run: the checkout has moved since that run (was %.12s, now %.12s); its verdict does not cover the current tree\n' \
+      "$recorded_head" "$checkout_head" >&2
+  fi
+  # A run with no verdict either died mid-flight (Ctrl-C, a dropped
+  # connection, a reboot) or is still going. Reporting either as a pass would
+  # be the same false green this script exists to prevent, so each gets a
+  # nonzero status of its own, decided by whether the recorded runner pid is
+  # alive. kill -0 answers liveness, not identity: a pid recycled since the
+  # run can make a dead run read as live, which is accepted for the newest
+  # same-user record over anything unportable like procfs. The lane in
+  # question is the one after the last that finished, which the plan recorded
+  # at the top of the file can name outright.
   if ! grep -q '"verdict":' "$latest"; then
     completed="$(grep -c '"status":"pass"' "$latest" || true)"
     stopped_in="$(sed -n 's/.*"plan":\[\(.*\)\].*/\1/p' "$latest" \
       | head -1 | tr ',' '\n' | tr -d '"' | sed -n "$((completed + 1))p")"
+    runner_pid="$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$latest" | head -1)"
+    if [ -n "$runner_pid" ] && kill -0 "$runner_pid" 2> /dev/null; then
+      printf 'gate-run: that run is still in progress%s\n' \
+        "${stopped_in:+, currently in ${stopped_in}}" >&2
+      exit 3
+    fi
     printf 'gate-run: that run never finished (no verdict recorded)%s\n' \
       "${stopped_in:+, it stopped during ${stopped_in}}" >&2
     exit 2
@@ -157,7 +195,23 @@ plan=''
 for lane in ${lanes[@]+"${lanes[@]}"}; do
   plan="${plan:+${plan},}\"${lane}\""
 done
-record "{\"run\":\"${run_id}\",\"label\":\"${label}\",\"event\":\"start\",\"lanes\":${total},\"plan\":[${plan}],\"started\":\"${started_at}\"}"
+# The start event also pins down what this run answers for: the commit and
+# whether the tree was dirty, so --status can flag a verdict the checkout has
+# outgrown, and the runner pid, so --status can tell a run that died from one
+# still going. rev-parse output is hex by construction; anything else (or no
+# repository at all) records null rather than an unquoted surprise.
+tree_head="$(current_head)"
+case "$tree_head" in
+  *[!0-9a-f]* | '') tree='"head":null,"dirty":null' ;;
+  *)
+    if [ -n "$(git -C "$checkout" status --porcelain 2> /dev/null | head -1)" ]; then
+      tree="\"head\":\"${tree_head}\",\"dirty\":true"
+    else
+      tree="\"head\":\"${tree_head}\",\"dirty\":false"
+    fi
+    ;;
+esac
+record "{\"run\":\"${run_id}\",\"label\":\"${label}\",\"event\":\"start\",\"lanes\":${total},\"plan\":[${plan}],\"started\":\"${started_at}\",${tree},\"pid\":$$}"
 
 for lane in ${lanes[@]+"${lanes[@]}"}; do
   index=$((index + 1))

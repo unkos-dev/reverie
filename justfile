@@ -136,9 +136,11 @@ preflight-scoped *args:
 
 # The record lives under $XDG_STATE_HOME, keyed per checkout: it is machine
 # state rather than repository content, and two worktrees running a gate at
-# once must not write over each other. Exits nonzero when the last run failed,
-# and with a distinct status when it never finished, so a run that was killed
-# mid-flight cannot be mistaken for either outcome.
+# once must not write over each other. Every outcome a caller must not confuse
+# gets its own exit status: 1 the last run failed, 2 it died unfinished, 3 it
+# is still in progress, 4 there is no recorded run at all. A warning also
+# names a checkout that has moved past the recorded commit, so an old green
+# cannot quietly stand in for the current tree.
 #
 # Report the last recorded preflight run: per-lane timings and the verdict.
 [group('aggregate')]
