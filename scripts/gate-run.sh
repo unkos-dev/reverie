@@ -106,6 +106,21 @@ if [ "${1:-}" = '--status' ]; then
     printf 'gate-run: the checkout has moved since that run (was %.12s, now %.12s); its verdict does not cover the current tree\n' \
       "$recorded_head" "$checkout_head" >&2
   fi
+  # The dirty flag gets the same warning-strength treatment as HEAD. A verdict
+  # earned on a clean tree stops covering the checkout at the first
+  # uncommitted edit, and one earned on a dirty tree answers for content no
+  # later reader can reconstruct. The exit status is left alone in both cases:
+  # an edit on an already-dirty tree is undetectable without hashing the whole
+  # tree, and an exit code that failed one unverified case while passing its
+  # twin would be a guarantee the record cannot keep.
+  if [ -n "$checkout_head" ]; then
+    if grep -q '"dirty":true' "$latest"; then
+      printf 'gate-run: that run verified a dirty tree; its verdict answers for uncommitted content that cannot be re-checked\n' >&2
+    elif grep -q '"dirty":false' "$latest" &&
+      [ -n "$(git -C "$checkout" status --porcelain 2> /dev/null | head -1)" ]; then
+      printf 'gate-run: the tree has uncommitted changes that run never saw; its verdict does not cover them\n' >&2
+    fi
+  fi
   # A run with no verdict either died mid-flight (Ctrl-C, a dropped
   # connection, a reboot) or is still going. Reporting either as a pass would
   # be the same false green this script exists to prevent, so each gets a

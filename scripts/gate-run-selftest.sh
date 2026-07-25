@@ -317,12 +317,35 @@ else
   pass 'a clean run records the commit it was earned on'
 fi
 
+# Dirty the tree after the clean run: HEAD is unchanged, so only the dirty
+# comparison can notice that the verdict no longer covers the checkout.
 : > "${git_fixture}/scratch"
+run_gate_in "$git_fixture" "$git_state" --status
+if [ "$rc" -ne 0 ]; then
+  fail '--status keeps a passed verdict when the tree dirties' "exited ${rc}"
+elif ! printf '%s' "$out" | grep -q 'uncommitted changes that run never saw'; then
+  fail '--status warns when a clean-verified tree has been edited' "output: ${out}"
+else
+  pass '--status warns when a clean-verified tree has been edited'
+fi
+
 run_gate_in "$git_fixture" "$git_state" demo ok
 if ! grep -q "\"head\":\"${head_before}\",\"dirty\":true" "$(git_latest)"; then
   fail 'an uncommitted tree records dirty' "$(cat "$(git_latest)")"
 else
   pass 'an uncommitted tree records dirty'
+fi
+
+# A run recorded on a dirty tree can never be re-checked against anything:
+# the uncommitted content it verified is gone the moment it changes. The
+# reader is told so every time that verdict is replayed.
+run_gate_in "$git_fixture" "$git_state" --status
+if [ "$rc" -ne 0 ]; then
+  fail '--status keeps a passed dirty-tree verdict' "exited ${rc}"
+elif ! printf '%s' "$out" | grep -q 'that run verified a dirty tree'; then
+  fail '--status notes a verdict earned on a dirty tree' "output: ${out}"
+else
+  pass '--status notes a verdict earned on a dirty tree'
 fi
 
 # Move HEAD past the recorded run: the verdict still stands (exit 0), but the

@@ -141,7 +141,8 @@ is also recorded per lane under `$XDG_STATE_HOME/reverie/gate/`, outside the
 checkout and keyed per worktree; `just gate-status` replays the last one with
 its timings and tells every outcome apart by exit status: 1 it failed, 2 it
 died unfinished, 3 it is still in progress, 4 nothing is recorded. It also
-warns when the checkout has moved past the commit the run was recorded on. The
+warns when the checkout has moved past the commit the run was recorded on or
+picked up uncommitted changes the run never saw. The
 `GATE:` line in the captured output stays the authority: a sandboxed or
 otherwise write-blocked run leaves no record, so `gate-status` can only answer
 for the last run that managed to write one.

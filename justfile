@@ -139,8 +139,9 @@ preflight-scoped *args:
 # once must not write over each other. Every outcome a caller must not confuse
 # gets its own exit status: 1 the last run failed, 2 it died unfinished, 3 it
 # is still in progress, 4 there is no recorded run at all. A warning also
-# names a checkout that has moved past the recorded commit, so an old green
-# cannot quietly stand in for the current tree.
+# names a checkout that has moved past the recorded commit or picked up
+# uncommitted changes the run never saw, so an old green cannot quietly stand
+# in for the current tree.
 #
 # Report the last recorded preflight run: per-lane timings and the verdict.
 [group('aggregate')]
