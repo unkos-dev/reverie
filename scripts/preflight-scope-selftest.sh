@@ -57,6 +57,7 @@ FULL='rust::guards
 infra::check
 db-up
 rust::check
+rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
@@ -74,6 +75,7 @@ BACKEND='rust::guards
 infra::check
 db-up
 rust::check
+rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
@@ -148,6 +150,7 @@ expect_lanes 'a cargo manifest edit unions backend and audit' \
 infra::check
 db-up
 rust::check
+rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
@@ -160,6 +163,7 @@ frontend/src/App.tsx' 'rust::guards
 infra::check
 db-up
 rust::check
+rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
