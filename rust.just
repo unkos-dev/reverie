@@ -24,15 +24,20 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
+# SQLX_OFFLINE pins the sqlx macros to the committed .sqlx cache. Every
+# compiling recipe uses the same mode so alternating recipes cannot thrash
+# the leaf-crate fingerprint (the macros track the env, and a mode flip
+# forces a full recompile); only sqlx-prepare/sqlx-check compile online.
+#
 # Clippy across the whole workspace, all targets, warnings denied.
 [group('rust')]
 clippy:
-    cargo clippy --workspace --all-targets --locked -- -D warnings
+    SQLX_OFFLINE=true cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # Reject broken intra-doc links in the public docstrings.
 [group('rust')]
 doc-lint:
-    RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps --workspace
+    SQLX_OFFLINE=true RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps --workspace
 
 # Offline (no database), so it runs locally; this is the backend pre-push gate.
 #
@@ -41,30 +46,53 @@ doc-lint:
 drift:
     SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
 
+# Extra args pass through to nextest as filters, so the red-green loop can
+# run just the tests under work instead of the whole suite: e.g.
+# `just rust::test patch_identifier` (name substring) or
+# `just rust::test -E 'test(rls)'` (filterset). No args = full suite.
+#
 # DB: full test suite, fast local loop (no coverage; see `cov`).
 [group('rust')]
-test:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked
+test *args:
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked {{ args }}
 
 # DB: full test suite under coverage instrumentation.
 [group('rust')]
 cov:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
 
 # DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
 
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
     DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare --check -- --tests
 
+# WRITES backend/.sqlx; commit the result in the same change as the queries
+# that produced it. `sqlx-check` is the read-only gate form.
+#
+# DB: regenerate the sqlx offline query cache from the live schema.
+[group('rust')]
+sqlx-prepare:
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare -- --tests
+
+# WRITES docs/openapi.json plus the generated config reference and schema;
+# commit the result in the same change that moved the API or config surface.
+# `drift` is the read-only gate form. Offline: compiles against the sqlx
+# cache, so run `sqlx-prepare` first when queries changed.
+#
+# Regenerate the OpenAPI spec, config reference, and config schema in place.
+[group('rust')]
+regen:
+    REGEN=1 SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
+
 # Compile the workspace.
 [group('rust')]
 build:
-    cargo build --workspace --locked
+    SQLX_OFFLINE=true cargo build --workspace --locked
 
 # Offline (no database, no toolchain needed). Mirrors ci.yml's backend-checks
 # static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
@@ -96,11 +124,13 @@ deny:
 lint: clippy doc-lint
 
 # DB-backed recipes (test/doctests/sqlx-check) are excluded from the offline
-# gate; run them with the dev DB up (`just db-up`).
+# gate; run them with the dev DB up (`just db-up`). doc-lint is excluded
+# from the mid-task gate on cost grounds (a full rustdoc pass per check);
+# preflight and CI still run it, so broken links cannot reach a push.
 #
-# Locally-runnable backend gate: format check, clippy, doc-lint, drift.
+# Locally-runnable backend gate: format check, clippy, drift.
 [group('rust')]
-check: fmt-check clippy doc-lint drift
+check: fmt-check clippy drift
 
 # DB: needs the local dev Postgres up (`just db-up`).
 #

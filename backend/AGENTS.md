@@ -38,7 +38,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 <database_and_sqlx>
 
 - **No ORM:** Use explicit `sqlx` queries.
-- **Compile-Time SQL:** `query!`, `query_as!`, and `query_scalar!` are mandatory for the data path. If the macro fails because of a missing schema change, update the `.sqlx` cache (`DATABASE_URL=<schema-owner DSN> cargo sqlx prepare -- --tests` from `backend/`). DO NOT downgrade to runtime `sqlx::query()` to bypass the compiler.
+- **Compile-Time SQL:** `query!`, `query_as!`, and `query_scalar!` are mandatory for the data path. If the macro fails because of a missing schema change, update the `.sqlx` cache with `just rust::sqlx-prepare`. DO NOT downgrade to runtime `sqlx::query()` to bypass the compiler.
 - **Transaction Binding:** When executing a query inside a transaction, you MUST pass the transaction reference (e.g., `&mut *tx`) to the query executor. Passing the connection `&pool` will execute outside the transaction and silently break atomicity.
 - **Runtime SQL Ban:** Runtime `sqlx::query(...)` and `sqlx::raw_sql(...)` are strictly reserved for DDL, dynamic SQL, Postgres GUCs, enum-drift tests, and static multi-statement operator scripts executed verbatim. A CI grep-gate rejects every other invocation: add a justified entry to `.github/sqlx-runtime-allowlist.txt` (with reviewer rationale in the PR) in the same PR, or CI fails.
 - **Transactions:** Wrap multi-statement state changes in an atomic transaction.
@@ -63,5 +63,5 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 - **Formatting & Linting:** You must respect `cargo fmt` and `cargo clippy`. Do not fight the formatter. Fix warnings, do not suppress them with `#[allow(...)]` unless heavily justified.
 - **Time Crate:** Use the `time` crate. The `chrono` crate is strictly forbidden in first-party code.
 - **Logging:** Use `tracing` with structured fields. Never use `println!`.
-- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts. Run `REGEN=1 cargo test --test gen_openapi --test gen_config_ref --test gen_config_schema` and commit them in the same PR; drift tests gate CI.
+- **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts. Run `just rust::regen` and commit them in the same PR; drift tests gate CI.
   </tool_standards>
