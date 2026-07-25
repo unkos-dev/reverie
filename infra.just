@@ -177,6 +177,11 @@ worktree-cargo-target-selftest:
 preflight-scope-selftest:
     scripts/preflight-scope-selftest.sh
 
+# Self-test the gate runner's verdict line, run record, and status reporting.
+[group('infra')]
+gate-run-selftest:
+    scripts/gate-run-selftest.sh
+
 # lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation
 # is cheap and offline, so it joins the lint aggregate.
 #
@@ -209,7 +214,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest worktree-cargo-target-selftest preflight-scope-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest worktree-cargo-target-selftest preflight-scope-selftest gate-run-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

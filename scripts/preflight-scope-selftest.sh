@@ -314,14 +314,21 @@ fi
 # command line breaks as soon as any lane takes parameters: `rust::test *args`
 # consumes every following name as a nextest filter, so those lanes never run.
 # The gate can still exit 0 that way, which is the same confidently-narrowed
-# green this tool exists to prevent. Pin the one-lane-per-invocation form.
-# Comments are stripped first: prose in the recipe may name the broken form to
-# explain why it is banned, and that must not read as the form being present.
+# green this tool exists to prevent.
+#
+# Lane execution now lives in scripts/gate-run.sh, which loops, so the
+# behavioural half of this invariant is asserted where it runs:
+# gate-run-selftest.sh puts a variadic fixture lane ahead of another and proves
+# the second one still runs. What stays here is the structural half this file
+# is placed to see, that the recipe delegates rather than re-inlining the
+# broken call. Comments are stripped first: prose in the recipe names the
+# broken form to explain why it is banned, and that must not read as the form
+# being present.
 justfile_code="$(grep -v '^[[:space:]]*#' justfile)"
 # shellcheck disable=SC2016  # the patterns are recipe text; $ must stay literal
-if printf '%s\n' "$justfile_code" | grep -qF 'just "$lane"' &&
+if printf '%s\n' "$justfile_code" | grep -qF 'scripts/gate-run.sh preflight-scoped "${lanes[@]}"' &&
   ! printf '%s\n' "$justfile_code" | grep -qF 'just "${lanes[@]}"'; then
-  printf 'ok   %s\n' 'preflight-scoped invokes one lane per just call'
+  printf 'ok   %s\n' 'preflight-scoped delegates its lane list to the looping runner'
 else
   printf 'FAIL %s\n' 'preflight-scoped passes its lane list to a single just call; a variadic lane swallows the lanes after it'
   failures=$((failures + 1))

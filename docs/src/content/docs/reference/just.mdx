@@ -17,6 +17,12 @@ Recipes are namespaced by module: `just rust::check` runs the backend gate,
 `just js::check` the frontend one. The unprefixed aggregates at the top fan out
 across every plane.
 
+`just preflight` and `just preflight-scoped` end with one machine-readable
+verdict line, `GATE: PASS ...` or `GATE: FAIL ... at <lane>`, so a run read back
+through a pipe, a truncated log, or a detached shell still says whether it
+passed. `just gate-status` replays the last recorded run with its per-lane
+timings, and exits nonzero when that run failed or never finished.
+
 | Recipe                         | Purpose                                                                                                                                                                        |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `just build`                   | Build every shippable artifact.                                                                                                                                                |
@@ -30,6 +36,7 @@ across every plane.
 | `just dev-up`                  | Start the whole dev stack in the background: dev Postgres, migrations, backend API, Vite.                                                                                      |
 | `just doctor`                  | Check the local dev environment: tools, mise pins, docker, dev DB, deps.                                                                                                       |
 | `just fmt`                     | Format the whole tree in place. WRITES; never depended on by check/lint.                                                                                                       |
+| `just gate-status`             | Report the last recorded preflight run: per-lane timings and the verdict.                                                                                                      |
 | `just help`                    | List every recipe, including the ones inside modules.                                                                                                                          |
 | `just lint`                    | Lint the js, rust, and infra surfaces.                                                                                                                                         |
 | `just preflight`               | Run everything CI runs that is locally runnable, DB-backed tests included.                                                                                                     |
@@ -62,6 +69,7 @@ across every plane.
 | `just infra::doctor-selftest`                    | Self-test `just doctor` (missing-binary, fully-stubbed happy path, warn-only path).                               |
 | `just infra::filter-sarif-test-rules-selftest`   | ordinary rule reported in a test file still reaches the dashboard.                                                |
 | `just infra::filter-sarif-unfixable-os-selftest` | a fix available is never withheld.                                                                                |
+| `just infra::gate-run-selftest`                  | Self-test the gate runner's verdict line, run record, and status reporting.                                       |
 | `just infra::greptile-config`                    | Validate greptile.json parses and every pinned context path resolves.                                             |
 | `just infra::hadolint`                           | Hadolint every tracked Dockerfile.                                                                                |
 | `just infra::just-reference`                     | Regenerate the just recipe reference from the justfiles. WRITES.                                                  |

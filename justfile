@@ -77,9 +77,22 @@ build: js::build rust::build docs::build
 # toolchain check, coverage lanes, the docker image build, IaC/SAST/secret
 # scans, npm-license, and dependency-review.
 #
+# The lanes are a list passed to scripts/gate-run.sh rather than just
+# dependencies, so the run ends with one `GATE: PASS`/`GATE: FAIL` line naming
+# the lane that failed. A dependency list cannot do that: a failing dependency
+# stops the chain before any recipe body could report on it, which leaves the
+# last line of a captured run saying nothing about the run. See gate-run.sh for
+# why that matters and what it costs.
+#
 # Run everything CI runs that is locally runnable, DB-backed tests included.
 [group('aggregate')]
-preflight: rust::guards db-up check rust::doc-lint test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y infra::zizmor
+preflight:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    scripts/gate-run.sh preflight \
+        rust::guards db-up check rust::doc-lint test rust::doctests \
+        rust::sqlx-check rust::machete rust::deny js::build \
+        js::font-integrity js::a11y infra::zizmor
 
 # The same gate as `preflight`, minus the lanes CI itself would skip. A
 # frontend-only branch pays for the frontend lanes and the unconditional
@@ -107,18 +120,30 @@ preflight-scoped *args:
     # empty lane list and this recipe would report a green "nothing to do".
     scope="$(scripts/preflight-scope.sh --explain "$@")"
     if [ -z "$scope" ]; then
+        # Still a gate run, so it still gets a verdict: a no-op that printed
+        # only prose would be the one outcome a caller could not read back.
         echo "preflight-scoped: no lane required for the changed paths"
-        exit 0
+        exec scripts/gate-run.sh preflight-scoped
     fi
     mapfile -t lanes <<< "$scope"
     echo "preflight-scoped: ${lanes[*]}"
-    # One lane per invocation, never the whole array on a single command line:
-    # a lane that takes parameters, such as `rust::test *args`, swallows every
-    # following name as its own argument, so the lanes after it silently never
-    # run. `set -e` still stops the gate at the first failing lane.
-    for lane in "${lanes[@]}"; do
-        just "$lane"
-    done
+    # Safe to pass the whole array here only because gate-run.sh runs one lane
+    # per `just` invocation. It must never reach `just` on a single command
+    # line: a lane that takes parameters, such as `rust::test *args`, swallows
+    # every following name as its own argument, so the lanes after it silently
+    # never run and the gate can still exit 0.
+    exec scripts/gate-run.sh preflight-scoped "${lanes[@]}"
+
+# The record lives under $XDG_STATE_HOME, keyed per checkout: it is machine
+# state rather than repository content, and two worktrees running a gate at
+# once must not write over each other. Exits nonzero when the last run failed,
+# and with a distinct status when it never finished, so a run that was killed
+# mid-flight cannot be mistaken for either outcome.
+#
+# Report the last recorded preflight run: per-lane timings and the verdict.
+[group('aggregate')]
+gate-status:
+    scripts/gate-run.sh --status
 
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
 # default is a sibling of the repo so it inherits the same filesystem and

@@ -131,4 +131,13 @@ Two aggregates anchor the local loop and should be the default reflex:
   lane set, and the whole-tree repo-lint mirror always runs. Prefer it
   mid-branch; `just preflight` is still the unconditional answer and the one
   to run when the change is broad or you are unsure.
-  </task_runner>
+
+Both gates end with a single verdict line, `GATE: PASS <label> (...)` or
+`GATE: FAIL <label> at <lane> (...)`. Read that line, not the tail of the last
+lane's output: piping a gate run replaces its exit status with the pipe's, and
+a truncated or detached log drops the status entirely, so the final lane's
+build log looks the same whether the lanes before it passed or failed. Each run
+is also recorded per lane under `$XDG_STATE_HOME/reverie/gate/`, outside the
+checkout and keyed per worktree; `just gate-status` replays the last one with
+its timings and exits nonzero if it failed or never finished.
+</task_runner>
