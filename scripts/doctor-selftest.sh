@@ -69,10 +69,10 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat tail tr cut uname grep; do
+for real in env bash git jq ls df date dirname cat head tail tr cut uname grep; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node npm npx kache; do
+for tool in just cargo rustc node npm npx; do
   noop_stub "${stub_bin}" "${tool}"
 done
 
@@ -107,6 +107,35 @@ fi
 exec du.real "$@"
 DU_STUB
 chmod +x "${stub_bin}/du"
+
+cat >"${stub_bin}/kache" <<'KACHE_STUB'
+#!/usr/bin/env bash
+# Fixture stub: supports only `kache daemon status`, the single invocation
+# doctor.sh makes, and exits 2 on anything else so an argument regression in
+# doctor.sh fails this selftest instead of the stub silently accepting
+# whatever it was called with. The reported state comes from
+# DOCTOR_STUB_KACHE_DAEMON (default "running"); setting it to the empty
+# string drops the Daemon line entirely, modelling a future release that
+# changes the status format.
+#
+# The output is reproduced with the ANSI colour real kache wraps the state
+# in. That wrapping is the whole reason the check cannot simply compare the
+# line to a literal, so a stub emitting bare text would test a parser this
+# repo does not have.
+set -euo pipefail
+if [ "$#" -eq 2 ] && [ "$1" = "daemon" ] && [ "$2" = "status" ]; then
+  state="${DOCTOR_STUB_KACHE_DAEMON-running}"
+  printf '  kache:    v0.11.0 (epoch 1)\n'
+  printf '  Service:  \033[32minstalled\033[0m (/dev/null)\n'
+  if [ -n "${state}" ]; then
+    printf '  Daemon:   \033[31m%s\033[0m\n' "${state}"
+  fi
+  printf '  Socket:   /dev/null\n'
+  exit 0
+fi
+exit 2
+KACHE_STUB
+chmod +x "${stub_bin}/kache"
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
@@ -500,6 +529,44 @@ expect_contains "boundary warning rounds up, not truncates" "WARN kache store si
 expect_not_contains "boundary warning does not display the truncated 20 GiB figure" "kache store size: 20 GiB"
 unset DOCTOR_STUB_DU_KIB
 rm -rf "${linux_default}"
+
+# --- kache daemon check. The daemon is what sweeps the store, so a stopped
+# one is the usual cause of the over-threshold warning above, but local hits
+# and misses survive without it: every branch below stays at WARN and exits
+# zero. `kache daemon status` exits 0 either way and colours the state, so
+# the check parses its output, and these cases pin that parse. ---
+expect_exit "running kache daemon passes" 0 "${stub_bin}"
+expect_contains "running kache daemon is reported" "PASS kache daemon is running"
+expect_not_contains "running kache daemon produces no WARN lines" "WARN "
+
+# "not running" contains "running", so a naive substring match would report a
+# stopped daemon as healthy. This is the regression test for that ordering.
+export DOCTOR_STUB_KACHE_DAEMON="not running"
+expect_exit "stopped kache daemon warns, does not fail" 0 "${stub_bin}"
+expect_contains "stopped kache daemon names the exact fix" "WARN kache daemon is running -- fix: kache daemon start"
+expect_not_contains "stopped kache daemon is never reported as passing" "PASS kache daemon is running"
+expect_not_contains "stopped kache daemon produces no FAIL lines" "FAIL "
+
+# A status format this check no longer recognises must read as indeterminate.
+# Silently passing would leave the check reporting health forever after an
+# upstream output change, which is the failure mode the mise-pin check above
+# is also written to avoid.
+export DOCTOR_STUB_KACHE_DAEMON=""
+expect_exit "absent Daemon line warns, does not fail" 0 "${stub_bin}"
+expect_contains "absent Daemon line reports the state as indeterminate" "WARN kache daemon is running -- fix: cannot determine daemon state"
+expect_not_contains "absent Daemon line does not forge a pass" "PASS kache daemon is running"
+
+export DOCTOR_STUB_KACHE_DAEMON="wedged"
+expect_exit "unrecognised daemon state warns, does not fail" 0 "${stub_bin}"
+expect_contains "unrecognised daemon state reports the state as indeterminate" "WARN kache daemon is running -- fix: cannot determine daemon state"
+expect_not_contains "unrecognised daemon state does not forge a pass" "PASS kache daemon is running"
+unset DOCTOR_STUB_KACHE_DAEMON
+
+# With no kache on PATH there is no daemon to ask about: the binary check
+# above already warns, and a second warning naming a command that cannot run
+# would be noise.
+expect_exit "absent kache binary skips the daemon check" 0 "${stub_bin_no_kache}"
+expect_not_contains "absent kache binary produces no daemon line" "kache daemon is running"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"

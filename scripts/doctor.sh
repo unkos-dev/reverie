@@ -2,8 +2,8 @@
 # Fast, read-only environment self-check: "is this machine ready to develop
 # Reverie?" Prints one PASS/WARN/FAIL line per check plus a summary, and
 # exits nonzero iff any check FAILed. No writes, no network calls beyond the
-# already-running local docker daemon this repo's dev stack owns and the dev
-# cluster's own unix socket.
+# already-running local docker daemon this repo's dev stack owns, the dev
+# cluster's own unix socket, and the kache build cache's own unix socket.
 set -ueo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -270,14 +270,45 @@ fi
 # cargo rustc-wrapper outside this repo; absence only means local builds
 # fall back to uncached compiles, not a broken toolchain, so this warns
 # rather than fails.
+kache_present=0
 if command -v kache >/dev/null 2>&1; then
+  kache_present=1
   pass "binary 'kache' resolves on PATH"
 else
   warn "binary 'kache' resolves on PATH" "mise install"
 fi
 
-# 13. kache content-addressed store size. The store has no automatic
-# eviction, so left alone it grows without bound; warn well before it
+# 13. kache daemon reachable. The daemon owns the store's only automatic
+# eviction (one sweep on startup, then every six hours), so a stopped daemon
+# is the usual reason the size check below eventually fires. Local cache hits
+# and misses work without it, which is why this warns rather than fails.
+#
+# `kache daemon status` exits 0 whether or not the daemon is up, so the state
+# has to be read out of its output rather than its exit code. Two properties
+# shape the match: the state is wrapped in ANSI colour that no NO_COLOR
+# setting suppresses, and "not running" contains "running". Hence globs that
+# tolerate the escape sequences, with the negative case tested first.
+# Anything neither pattern recognises is reported as indeterminate: an
+# upstream change to this output must surface as a warning, never keep
+# forging a PASS.
+if [ "${kache_present}" -eq 1 ]; then
+  daemon_line="$(kache daemon status 2>/dev/null | grep 'Daemon:' | head -n 1 || true)"
+  case "${daemon_line}" in
+    *not*running*)
+      warn "kache daemon is running" "kache daemon start"
+      ;;
+    *running*)
+      pass "kache daemon is running"
+      ;;
+    *)
+      warn "kache daemon is running" "cannot determine daemon state (unrecognized 'kache daemon status' output); run it manually"
+      ;;
+  esac
+fi
+
+# 14. kache content-addressed store size. Automatic eviction only happens
+# while the daemon runs (check 13), and the cap it enforces is well above
+# what this repo needs, so warn on size independently and well before it
 # threatens disk space. A store that has never been populated (kache has
 # never run here, or the resolved directory does not exist on this
 # platform) is not a problem to report on, so an absent directory degrades
