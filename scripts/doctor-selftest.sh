@@ -515,7 +515,7 @@ mkdir -p "${linux_default}"
 export DOCTOR_STUB_DU_KIB=$((21 * 1024 * 1024)) # 21 GiB, safely over the 20 GiB threshold
 expect_exit "over-threshold kache store warns" 0 "${stub_bin}"
 expect_contains "over-threshold warning fires with the rounded figure" "WARN kache store size: 21 GiB"
-expect_contains "over-threshold warning names the exact remediation" "WARN kache store size: 21 GiB -- fix: kache gc --max-age 30d"
+expect_contains "over-threshold warning names the exact remediation" "WARN kache store size: 21 GiB -- fix: kache gc --max-age 7d"
 unset DOCTOR_STUB_DU_KIB
 
 # --- boundary case: a KiB figure that truncates to 20 GiB but rounds to 21

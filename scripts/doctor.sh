@@ -314,6 +314,15 @@ fi
 # platform) is not a problem to report on, so an absent directory degrades
 # silently rather than warning or failing.
 #
+# The remedy has to be an age sweep, not a size one. `kache gc` with no age
+# evicts only down to the configured cap, which defaults far above this
+# threshold, and KACHE_MAX_SIZE in the invoking environment does not reach
+# that sweep: measured against a 31 GiB store, a 29 GiB cap evicted nothing
+# while an age sweep over the same store reclaimed 6.7 GiB. The age also has
+# to be short enough to match something. Entries turn over in days here, not
+# weeks, so the 30d this once advised could evict nothing on a store that had
+# just tripped the threshold.
+#
 # Directory resolution follows kache's own documented precedence (kache's
 # configuration reference, v0.11.0): the KACHE_CACHE_DIR environment
 # variable overrides everywhere it is set, and otherwise the platform
@@ -354,7 +363,7 @@ if [ -d "${kache_store}" ]; then
     # warning fired under its own stated threshold.
     store_gib=$(( (store_kib + 524288) / 1048576 ))
     if [ "${store_kib}" -ge "${twenty_gib_kib}" ]; then
-      warn "kache store size: ${store_gib} GiB" "kache gc --max-age 30d"
+      warn "kache store size: ${store_gib} GiB" "kache gc --max-age 7d"
     else
       pass "kache store size: ${store_gib} GiB"
     fi
