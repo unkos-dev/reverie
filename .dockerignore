@@ -13,6 +13,9 @@ docs/*
 target
 node_modules
 dist
+# Static-guard allowlists are lint policy read by scripts/backend-guards.sh,
+# never build input.
+backend/guards
 *.md
 !README.md
 LICENSE

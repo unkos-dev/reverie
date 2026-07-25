@@ -66,9 +66,9 @@ run_grep_guard \
     "Disallowed runtime sqlx::query invocations" \
     'sqlx::(query[a-z_]*|raw_sql)\(' \
     backend/src/ \
-    .github/sqlx-runtime-allowlist.txt \
+    backend/guards/sqlx-runtime-allowlist.txt \
     "Use compile-time macros (query!, query_as!, query_scalar!)" \
-    "or add a justified entry to .github/sqlx-runtime-allowlist.txt."
+    "or add a justified entry to backend/guards/sqlx-runtime-allowlist.txt."
 
 # 2. Every shipped endpoint must register via OpenApiRouter + routes!(...)
 # backed by #[utoipa::path] so the generated spec stays complete; raw
@@ -77,9 +77,9 @@ run_grep_guard \
     "Raw .route( registrations" \
     '\.route\(' \
     backend/src/ \
-    .github/axum-route-allowlist.txt \
+    backend/guards/axum-route-allowlist.txt \
     "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," \
-    "or add a justified entry to .github/axum-route-allowlist.txt."
+    "or add a justified entry to backend/guards/axum-route-allowlist.txt."
 
 # 3. The backend standardises on the `time` crate (backend/AGENTS.md);
 # chrono exists in Cargo.toml solely for openidconnect's test-support
@@ -88,10 +88,10 @@ run_grep_guard \
     "chrono imports" \
     'use chrono|extern crate chrono' \
     backend/src/ \
-    .github/chrono-allowlist.txt \
+    backend/guards/chrono-allowlist.txt \
     "Reverie uses the time crate (backend/AGENTS.md); chrono is" \
     "reserved for the documented openidconnect test-support carve-out." \
-    "Justify any new entry in .github/chrono-allowlist.txt."
+    "Justify any new entry in backend/guards/chrono-allowlist.txt."
 
 # 4. The schema descriptions are config-struct doc-comments (schemars folds
 # them in); the Vale gate covers Markdown but not this generated JSON. Match
