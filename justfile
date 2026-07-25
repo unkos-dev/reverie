@@ -79,7 +79,7 @@ build: js::build rust::build docs::build
 #
 # Run everything CI runs that is locally runnable, DB-backed tests included.
 [group('aggregate')]
-preflight: rust::guards db-up check test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y infra::zizmor
+preflight: rust::guards db-up check rust::doc-lint test rust::doctests rust::sqlx-check rust::machete rust::deny js::build js::font-integrity js::a11y infra::zizmor
 
 # The same gate as `preflight`, minus the lanes CI itself would skip. A
 # frontend-only branch pays for the frontend lanes and the unconditional

@@ -124,11 +124,13 @@ deny:
 lint: clippy doc-lint
 
 # DB-backed recipes (test/doctests/sqlx-check) are excluded from the offline
-# gate; run them with the dev DB up (`just db-up`).
+# gate; run them with the dev DB up (`just db-up`). doc-lint is excluded
+# from the mid-task gate on cost grounds (a full rustdoc pass per check);
+# preflight and CI still run it, so broken links cannot reach a push.
 #
-# Locally-runnable backend gate: format check, clippy, doc-lint, drift.
+# Locally-runnable backend gate: format check, clippy, drift.
 [group('rust')]
-check: fmt-check clippy doc-lint drift
+check: fmt-check clippy drift
 
 # DB: needs the local dev Postgres up (`just db-up`).
 #
