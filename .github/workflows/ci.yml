@@ -107,12 +107,12 @@ jobs:
       # per-test in code.
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       # CI-only build-speed tweaks; local dev is untouched. Incremental
-      # metadata tracking is wasted in a single-shot build.
-      # line-tables-only keeps file:line panic backtraces while cutting
-      # link size/time. mold (installed below) removes the single-threaded
-      # ld bottleneck.
+      # metadata tracking is wasted in a single-shot build. mold (installed
+      # below) removes the single-threaded ld bottleneck. The dev profile's
+      # line-tables-only debuginfo is not here because it is no longer
+      # CI-only: backend/Cargo.toml declares it, so both planes compile the
+      # same way without two settings having to agree.
       CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -304,7 +304,6 @@ jobs:
     env:
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
       CARGO_LLVM_COV_TARGET_DIR: target/llvm-cov-target
     steps:
