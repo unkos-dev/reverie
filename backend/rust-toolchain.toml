@@ -1,0 +1,25 @@
+# The Rust toolchain both planes compile with.
+#
+# rustup reads this file for every cargo invocation under backend/, so a local
+# build and a CI build cannot land on different compilers. Without it each side
+# tracked `stable` on its own schedule, and a release could introduce lints
+# that fired in CI on a branch touching none of the code they fired on, or that
+# a developer saw weeks before CI did.
+#
+# CI installs this same version explicitly rather than relying on rustup to
+# correct it after the fact: dtolnay/rust-toolchain does not read this file at
+# all (its `toolchain` input is required and is the only thing it resolves), so
+# naming `stable` there would install a toolchain each job then discards. The
+# workflows parse the channel out of this file instead of repeating the version
+# where it could drift. Renovate's rust-toolchain manager owns the bumps.
+#
+# Components are deliberately not declared here. They are per-consumer rather
+# than global: the lint job needs clippy and rustfmt, the coverage job and the
+# local `cov` recipe need llvm-tools, and neither should install the other's.
+# Each consumer asks for its own.
+#
+# This pin is not the MSRV. `rust-version` in Cargo.toml is the supported
+# floor, and the MSRV job overrides this file through RUSTUP_TOOLCHAIN so it
+# still compiles on that floor rather than on the version pinned here.
+[toolchain]
+channel = "1.97.0"
