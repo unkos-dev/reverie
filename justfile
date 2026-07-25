@@ -170,7 +170,7 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and the untracked `.claude/settings.local.json` overlay carried over; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it.
 [group('git')]
 [positional-arguments]
 worktree branch:
@@ -257,6 +257,17 @@ worktree branch:
         else
             echo "mise: this checkout is untrusted, so $dest is too; run 'mise trust' there after reviewing mise.toml" >&2
         fi
+    fi
+    # Worktrees inherit only tracked files, but per-checkout tool behavior
+    # can live in the ignored `.claude/settings.local.json` overlay (for
+    # example, sandbox scoping for this repo's recipes). Without the copy
+    # that configuration silently does not apply in the new checkout, and
+    # the resulting failures look environmental rather than caused by the
+    # missing overlay.
+    if [ -f .claude/settings.local.json ]; then
+        mkdir -p "$dest/.claude"
+        cp .claude/settings.local.json "$dest/.claude/settings.local.json"
+        echo "copied .claude/settings.local.json into the worktree"
     fi
     echo "worktree ready: $dest"
 
