@@ -24,15 +24,20 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
+# SQLX_OFFLINE pins the sqlx macros to the committed .sqlx cache. Every
+# compiling recipe uses the same mode so alternating recipes cannot thrash
+# the leaf-crate fingerprint (the macros track the env, and a mode flip
+# forces a full recompile); only sqlx-prepare/sqlx-check compile online.
+#
 # Clippy across the whole workspace, all targets, warnings denied.
 [group('rust')]
 clippy:
-    cargo clippy --workspace --all-targets --locked -- -D warnings
+    SQLX_OFFLINE=true cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # Reject broken intra-doc links in the public docstrings.
 [group('rust')]
 doc-lint:
-    RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps --workspace
+    SQLX_OFFLINE=true RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps --workspace
 
 # Offline (no database), so it runs locally; this is the backend pre-push gate.
 #
@@ -49,17 +54,17 @@ drift:
 # DB: full test suite, fast local loop (no coverage; see `cov`).
 [group('rust')]
 test *args:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked {{ args }}
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked {{ args }}
 
 # DB: full test suite under coverage instrumentation.
 [group('rust')]
 cov:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
 
 # DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
 
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
@@ -87,7 +92,7 @@ regen:
 # Compile the workspace.
 [group('rust')]
 build:
-    cargo build --workspace --locked
+    SQLX_OFFLINE=true cargo build --workspace --locked
 
 # Offline (no database, no toolchain needed). Mirrors ci.yml's backend-checks
 # static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
