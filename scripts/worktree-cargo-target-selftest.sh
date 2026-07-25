@@ -23,18 +23,27 @@ branch_env_target="test/worktree-cargo-target-selftest-envtarget-${pids}"
 branch_env_build="test/worktree-cargo-target-selftest-envbuild-${pids}"
 branch_env_both="test/worktree-cargo-target-selftest-envboth-${pids}"
 branch_env_sanitize="test/worktree-cargo-target-selftest-envsanitize-${pids}"
+branch_overlay="test/worktree-cargo-target-selftest-overlay-${pids}"
 slug_ok="${branch_ok//\//-}"
 slug_dirty="${branch_dirty//\//-}"
 slug_env_target="${branch_env_target//\//-}"
 slug_env_build="${branch_env_build//\//-}"
 slug_env_both="${branch_env_both//\//-}"
 slug_env_sanitize="${branch_env_sanitize//\//-}"
+slug_overlay="${branch_overlay//\//-}"
 dest_ok="${scratch_root}/reverie/${slug_ok}"
 dest_dirty="${scratch_root}/reverie/${slug_dirty}"
 dest_env_target="${scratch_root}/reverie/${slug_env_target}"
 dest_env_build="${scratch_root}/reverie/${slug_env_build}"
 dest_env_both="${scratch_root}/reverie/${slug_env_both}"
 dest_env_sanitize="${scratch_root}/reverie/${slug_env_sanitize}"
+dest_overlay="${scratch_root}/reverie/${slug_overlay}"
+
+# Sentinel-overlay bookkeeping: the sentinel section only ever creates
+# these when the checkout has no real overlay, and cleanup must remove
+# exactly what this run created, never a developer's actual settings.
+sentinel_overlay_created=0
+sentinel_overlay_dir_created=0
 
 # shellcheck disable=SC2329  # invoked via the EXIT trap
 cleanup() {
@@ -44,6 +53,7 @@ cleanup() {
   git -C "${repo_root}" worktree remove --force "${dest_env_build}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_env_both}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_env_sanitize}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_overlay}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree prune >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_ok}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_dirty}" >/dev/null 2>&1 || true
@@ -51,6 +61,13 @@ cleanup() {
   git -C "${repo_root}" branch -D "${branch_env_build}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_env_both}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_env_sanitize}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_overlay}" >/dev/null 2>&1 || true
+  if [ "${sentinel_overlay_created}" = "1" ]; then
+    rm -f "${repo_root}/.claude/settings.local.json"
+  fi
+  if [ "${sentinel_overlay_dir_created}" = "1" ]; then
+    rmdir "${repo_root}/.claude" >/dev/null 2>&1 || true
+  fi
   rm -rf "${scratch_root}"
 }
 trap cleanup EXIT
@@ -112,6 +129,28 @@ else
   bad "worktree git status is clean after creation" "${status_out}"
 fi
 
+# The untracked .claude/settings.local.json overlay must be carried into
+# the worktree when the source checkout has one, and never fabricated when
+# it does not. This branch asserts whichever state the running checkout is
+# in; the sentinel section further down covers the copy path hermetically
+# on checkouts (CI) that have no real overlay.
+overlay="${repo_root}/.claude/settings.local.json"
+if [ -f "${overlay}" ]; then
+  if cmp -s "${overlay}" "${dest_ok}/.claude/settings.local.json"; then
+    ok "existing settings.local.json overlay is copied into the worktree"
+  else
+    bad "existing settings.local.json overlay is copied into the worktree" \
+      "missing or differing: ${dest_ok}/.claude/settings.local.json"
+  fi
+else
+  if [ -e "${dest_ok}/.claude/settings.local.json" ]; then
+    bad "no overlay in the source checkout means none in the worktree" \
+      "unexpected file: ${dest_ok}/.claude/settings.local.json"
+  else
+    ok "no overlay in the source checkout means none in the worktree"
+  fi
+fi
+
 remove_out=""
 remove_rc=0
 remove_out="$(git -C "${repo_root}" worktree remove "${dest_ok}" 2>&1)" || remove_rc=$?
@@ -119,6 +158,61 @@ if [ "${remove_rc}" -eq 0 ]; then
   ok "git worktree remove succeeds without --force"
 else
   bad "git worktree remove succeeds without --force" "exit ${remove_rc}" "${remove_out}"
+fi
+
+# --- overlay copy path, hermetic: on a checkout with no real overlay (CI),
+# plant a sentinel one, prove the recipe carries it byte-for-byte, and
+# remove exactly what was planted. Skipped when a real overlay exists,
+# because the happy-path assertion above already exercised the copy and
+# overwriting a developer's actual settings to re-prove it is not worth
+# the risk. ---
+if [ ! -f "${overlay}" ]; then
+  if [ ! -d "${repo_root}/.claude" ]; then
+    mkdir "${repo_root}/.claude"
+    sentinel_overlay_dir_created=1
+  fi
+  printf '{"probe":"worktree-overlay-%s"}\n' "${pids}" >"${overlay}"
+  sentinel_overlay_created=1
+
+  overlay_rc=0
+  overlay_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_overlay}" 2>&1)" || overlay_rc=$?
+  if [ "${overlay_rc}" -eq 0 ]; then
+    ok "overlay-sentinel worktree creation exits zero"
+  else
+    bad "overlay-sentinel worktree creation exits zero" "exit ${overlay_rc}" "${overlay_out}"
+  fi
+  if cmp -s "${overlay}" "${dest_overlay}/.claude/settings.local.json"; then
+    ok "sentinel settings.local.json overlay is copied byte-for-byte"
+  else
+    bad "sentinel settings.local.json overlay is copied byte-for-byte" \
+      "missing or differing: ${dest_overlay}/.claude/settings.local.json"
+  fi
+
+  # Mirror the .cargo/config.toml assertions: the ignore rule and the
+  # non-force removal are what keep the copied overlay from dirtying the
+  # worktree, and this sentinel section is the only place they run on CI.
+  if git -C "${dest_overlay}" check-ignore -q .claude/settings.local.json; then
+    ok "sentinel overlay is covered by the ignore rule in the worktree"
+  else
+    bad "sentinel overlay is covered by the ignore rule in the worktree" \
+      "git check-ignore did not match it"
+  fi
+
+  overlay_remove_rc=0
+  overlay_remove_out="$(git -C "${repo_root}" worktree remove "${dest_overlay}" 2>&1)" || overlay_remove_rc=$?
+  if [ "${overlay_remove_rc}" -eq 0 ]; then
+    ok "overlay-sentinel worktree removes without --force"
+  else
+    bad "overlay-sentinel worktree removes without --force" \
+      "exit ${overlay_remove_rc}" "${overlay_remove_out}"
+  fi
+  git -C "${repo_root}" branch -D "${branch_overlay}" >/dev/null 2>&1 || true
+  rm -f "${overlay}"
+  sentinel_overlay_created=0
+  if [ "${sentinel_overlay_dir_created}" = "1" ]; then
+    rmdir "${repo_root}/.claude" >/dev/null 2>&1 || true
+    sentinel_overlay_dir_created=0
+  fi
 fi
 
 # --- edge case / negative control: prove the clean-removal assertion above
