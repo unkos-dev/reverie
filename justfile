@@ -112,7 +112,13 @@ preflight-scoped *args:
     fi
     mapfile -t lanes <<< "$scope"
     echo "preflight-scoped: ${lanes[*]}"
-    just "${lanes[@]}"
+    # One lane per invocation, never the whole array on a single command line:
+    # a lane that takes parameters, such as `rust::test *args`, swallows every
+    # following name as its own argument, so the lanes after it silently never
+    # run. `set -e` still stops the gate at the first failing lane.
+    for lane in "${lanes[@]}"; do
+        just "$lane"
+    done
 
 # Worktree root. Override with WORKTREE_ROOT to keep checkouts elsewhere; the
 # default is a sibling of the repo so it inherits the same filesystem and

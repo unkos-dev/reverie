@@ -15,7 +15,7 @@
 #
 # Each non-comment line is a plain substring; if it appears in a
 # `grep -rn` output line `path:line:content`, that registration is
-# allowed. Pattern styles mirror .github/sqlx-runtime-allowlist.txt:
+# allowed. Pattern styles mirror sqlx-runtime-allowlist.txt:
 #   - `<repo-relative-path>:` entries act as file-level blankets: the
 #     trailing colon makes the substring match every hit in that file.
 #     Use only when the entire file's raw routing falls under one
