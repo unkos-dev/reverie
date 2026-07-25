@@ -14,8 +14,10 @@ services:
   postgres:
     image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
     # Suffixed like the project so an alternate-env stack does not clash on
-    # the global container namespace; the published host port is then the
-    # only resource shared between env stacks.
+    # the global container namespace; the published host port and the socket
+    # directory are then the only resources shared between env stacks, and
+    # both already serialize the stacks (two postmasters cannot bind the
+    # same port or the same socket path).
     container_name: reverie-postgres${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
     restart: unless-stopped
     environment:
@@ -33,6 +35,23 @@ services:
       # errors out at first init — mount the parent.
       - pgdata:/var/lib/postgresql
       - ./init-roles.sql:/docker-entrypoint-initdb.d/01-init-roles.sql:ro
+      # Serve the cluster's unix socket on the host alongside TCP. Local
+      # tooling (the DB-backed just recipes) connects here, which is what
+      # lets it run inside network-isolated dev sandboxes; the dev server
+      # and GUI clients keep using the published TCP port. Socket
+      # connections match pg_hba's `local all all trust` and are therefore
+      # passwordless for every role: the same effective access the
+      # role-name-password TCP port already grants, without a listener.
+      # The image entrypoint owns the directory (chowns it at startup and
+      # recreates the socket), so nothing needs to pre-create it, but the
+      # result is uid-999-owned with the sticky bit: deleting it needs
+      # root or a container exec. Docker Desktop (macOS/Windows) cannot
+      # share unix sockets across its VM boundary; there, drop this mount
+      # via a local compose override and set REVERIE_DEV_DB_URL to the TCP
+      # form. The interpolation mirrors the shell default
+      # `${XDG_STATE_HOME:-$HOME/.local/state}` used by the recipes, so
+      # both sides resolve to the same directory.
+      - ${XDG_STATE_HOME:-${HOME}/.local/state}/reverie/pgsock:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U reverie -d reverie_dev"]
       interval: 5s

@@ -2,7 +2,8 @@
 # Fast, read-only environment self-check: "is this machine ready to develop
 # Reverie?" Prints one PASS/WARN/FAIL line per check plus a summary, and
 # exits nonzero iff any check FAILed. No writes, no network calls beyond the
-# already-running local docker daemon this repo's dev stack owns.
+# already-running local docker daemon this repo's dev stack owns and the dev
+# cluster's own unix socket.
 set -ueo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -117,6 +118,31 @@ case "${state_status}" in
     warn "reverie_app role authenticates (psql SELECT 1)" "just db-up"
     ;;
 esac
+
+# 5b. Host-side unix-socket reachability. The DB-backed just recipes'
+# default DSNs connect over the socket docker/compose.dev.yml bind-mounts
+# to the host (see rust.just), so a healthy container whose socket is not
+# reachable from the host still strands every DB recipe: exactly the state
+# of a container created before the socket mount existed, which db-up
+# fixes by recreating it. Probed from the host with psql because that is
+# the path the recipes actually take; the in-container checks above cannot
+# see a missing host mount. A host without psql skips the probe as INFO
+# rather than warning: db-up itself degrades gracefully without psql, so
+# absence only reduces diagnostic coverage.
+sock_dir="${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock"
+if [ "${state_status}" = "running" ]; then
+  if command -v psql >/dev/null 2>&1; then
+    if psql "postgres:///reverie_dev?host=${sock_dir}&user=reverie&password=reverie&connect_timeout=2" -Atc 'SELECT 1' >/dev/null 2>&1; then
+      pass "dev Postgres reachable over the unix socket (${sock_dir})"
+    else
+      fail "dev Postgres reachable over the unix socket (${sock_dir})" "just db-up (recreates the container with the socket mount)"
+    fi
+  else
+    info "host psql not on PATH; unix-socket probe skipped"
+  fi
+else
+  warn "dev Postgres reachable over the unix socket" "just db-up"
+fi
 
 # 6. node_modules present at the workspace root, and not stale against the
 # committed lockfile. npm workspaces hoist frontend and docs dependencies

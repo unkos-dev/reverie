@@ -67,6 +67,7 @@ one, one still in progress, and no recorded run at all apart.
 | `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.                                |
 | `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.                                        |
 | `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                                               |
+| `just infra::db-ready-selftest`                  | Self-test the db-up socket readiness probe against a stubbed psql.                                                |
 | `just infra::dco-selftest`                       | Self-test the DCO gate (dco-check.sh verdicts on fixture histories).                                              |
 | `just infra::dev-server-selftest`                | Exercise the dev-server lifecycle script against a fake server on a scratch port.                                 |
 | `just infra::doctor-selftest`                    | Self-test `just doctor` (missing-binary, fully-stubbed happy path, warn-only path).                               |

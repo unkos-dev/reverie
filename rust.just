@@ -10,6 +10,17 @@
 # echo. The owner DSN is injected explicitly (mirroring the CI job env)
 # because sqlx::test needs a superuser connection to mint per-test databases,
 # and a developer `.env` carries the reverie_app runtime DSN instead.
+#
+# The default DSN targets the dev cluster's unix socket, which is what lets
+# these recipes run inside network-isolated dev sandboxes (no TCP loopback).
+# The params-only URI form is deliberate: sqlx rejects the libpq-style
+# `postgres://user@/db?host=…` spelling (userinfo with an empty authority
+# host fails URL parsing), while `postgres:///db?host=…&user=…` parses in
+# both sqlx and libpq. There is no TCP fallback in a socket DSN; if the
+# socket is absent the recipe fails fast and `just db-up` recreates the
+# container with the socket mount. The runtime server deliberately stays on
+# TCP (production-faithful transport; see backend/AGENTS.md), and CI keeps
+# its TCP service container by overriding DATABASE_URL per job.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set working-directory := 'backend'
@@ -54,17 +65,17 @@ drift:
 # DB: full test suite, fast local loop (no coverage; see `cov`).
 [group('rust')]
 test *args:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked {{ args }}
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo nextest run --workspace --locked {{ args }}
 
 # DB: full test suite under coverage instrumentation.
 [group('rust')]
 cov:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
 
 # DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo test --doc --workspace
 
 # This is the one recipe that dirties the shared target dir, and it is
 # unavoidable: `sqlx prepare` deliberately bumps the mtimes of the crate's
@@ -80,7 +91,7 @@ doctests:
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare --check -- --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare --check -- --tests
 
 # WRITES backend/.sqlx; commit the result in the same change as the queries
 # that produced it. `sqlx-check` is the read-only gate form.
@@ -88,7 +99,7 @@ sqlx-check:
 # DB: regenerate the sqlx offline query cache from the live schema.
 [group('rust')]
 sqlx-prepare:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare -- --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --tests
 
 # WRITES docs/openapi.json plus the generated config reference and schema;
 # commit the result in the same change that moved the API or config surface.

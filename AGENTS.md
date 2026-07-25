@@ -103,8 +103,9 @@ created by other means, should point it at that worktree's own `target/`.
 Two aggregates anchor the local loop and should be the default reflex:
 
 - `just doctor` answers "is this machine ready to develop Reverie?" in
-  seconds: required binaries, mise pins, docker daemon, dev Postgres health
-  and runtime-role login, node_modules freshness, the sqlx offline cache,
+  seconds: required binaries, mise pins, docker daemon, dev Postgres health,
+  runtime-role login and host unix-socket reachability, node_modules
+  freshness, the sqlx offline cache,
   a CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR override of a worktree's
   isolated target dir, git sync state, disk space, and the kache build
   cache's presence and store size. Every warning and failure names the

@@ -675,6 +675,48 @@ async fn release_lock(conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>, loc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::postgres::PgConnectOptions;
+
+    // Mirror a source's transport in the documented URI shape for each:
+    // params-only for a socket (an authority would make sqlx's handling of
+    // the mix ambiguous to readers), authority-form for TCP. Split out so
+    // both arms are unit-testable without a live cluster; only one arm can
+    // ever execute against a given test database.
+    fn migrator_url_for(opts: &PgConnectOptions, db_name: &str, password: &str) -> String {
+        opts.get_socket().map_or_else(
+            || {
+                format!(
+                    "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
+                    opts.get_host(),
+                    opts.get_port()
+                )
+            },
+            |socket| {
+                format!(
+                    "postgres:///{db_name}?host={}&user=reverie_migrator&password={password}",
+                    socket.display()
+                )
+            },
+        )
+    }
+
+    #[test]
+    fn migrator_url_uses_params_only_form_for_a_socket_source() {
+        let opts = PgConnectOptions::new().socket("/tmp/pgsock");
+        assert_eq!(
+            migrator_url_for(&opts, "db1", "pw"),
+            "postgres:///db1?host=/tmp/pgsock&user=reverie_migrator&password=pw"
+        );
+    }
+
+    #[test]
+    fn migrator_url_uses_authority_form_for_a_tcp_source() {
+        let opts = PgConnectOptions::new().host("db.internal").port(6432);
+        assert_eq!(
+            migrator_url_for(&opts, "db1", "pw"),
+            "postgres://reverie_migrator:pw@db.internal:6432/db1"
+        );
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn acquire_with_rls_sets_session_variable(pool: PgPool) {
@@ -1130,11 +1172,7 @@ mod tests {
         let opts = pool.connect_options();
         let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
             .unwrap_or_else(|_| "reverie_migrator".into());
-        let migrator_url = format!(
-            "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
-            opts.get_host(),
-            opts.get_port()
-        );
+        let migrator_url = migrator_url_for(&opts, &db_name, &password);
 
         let report = run_migrations(&migrator_url)
             .await

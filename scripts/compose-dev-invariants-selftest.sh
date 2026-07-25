@@ -58,5 +58,18 @@ if "$guard" >/dev/null 2>&1; then
   echo "FAIL: compose invariant guard accepted an unscoped container name" >&2
   exit 1
 fi
+# Restore the scoped name and prove the guard passes again, so the socket
+# mount failure below is attributable to the mount alone.
+# shellcheck disable=SC2016  # the expected value is a compose interpolation literal
+yq -i '.services.postgres.container_name = "reverie-postgres${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}"' "$compose_fixture"
+"$guard" >/dev/null
 
-echo "OK: compose dev invariant guard rejects drift in both backend postgres pins, an unpinned project name, and an unscoped container name"
+# A missing socket mount must fail: the DB-backed recipes' committed DSN
+# defaults point at the host socket path it serves.
+yq -i 'del(.services.postgres.volumes[2])' "$compose_fixture"
+if "$guard" >/dev/null 2>&1; then
+  echo "FAIL: compose invariant guard accepted a missing socket mount" >&2
+  exit 1
+fi
+
+echo "OK: compose dev invariant guard rejects drift in both backend postgres pins, an unpinned project name, an unscoped container name, and a missing socket mount"

@@ -48,7 +48,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
 <local_environment>
 
-- **Database Reachability:** Local dev DB runs on `localhost:5432` (loopback-only) via `docker/compose.dev.yml`; start it with `just db-up`. You must use `DATABASE_URL_MIGRATION=postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev cargo run -- migrate` (or `just db-migrate`) to run migrations. See `./README.md` for full connection tables and role details.
+- **Database Reachability:** The local dev cluster (`docker/compose.dev.yml`; start with `just db-up`) serves two transports: a unix socket at `${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock` and loopback-only TCP on `localhost:5432`. The DB-backed just recipes (tests, migrations, the sqlx cache) default to the socket, which lets them run inside network-isolated dev sandboxes; the runtime server and GUI clients use TCP, the transport the server ships with. Run migrations with `just db-migrate`, or set `DATABASE_URL_MIGRATION` and run `cargo run -- migrate`. Socket DSNs use the params-only form `postgres:///reverie_dev?host=<dir>&user=<role>&password=<pw>`; sqlx rejects `postgres://user@/db?host=...`. See `./README.md` for full connection tables and role details.
   </local_environment>
 
 <testing_standards>
