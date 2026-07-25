@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at FROM manifestations WHERE id = $1",
+  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_rerun_requested FROM manifestations WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -30,6 +30,17 @@
             "name": "enrichment_attempted_at"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "enrichment_rerun_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_rerun_requested"
+          }
+        }
       }
     ],
     "parameters": {
@@ -40,8 +51,9 @@
     "nullable": [
       null,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "b0ddb6e4110297a8e6950ca99252ef10bf73a045416cd802aa8f6bd5fbca99a7"
+  "hash": "e906c27eeff9233f4ca945bba8ca01b5426af820db47fb55b97188ac38546afe"
 }

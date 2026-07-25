@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT enrichment_status AS \"status!: EnrichmentStatus\", enrichment_attempt_count, enrichment_attempted_at, enrichment_error, enrichment_rerun_requested FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!: EnrichmentStatus",
+        "type_info": {
+          "Custom": {
+            "name": "enrichment_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "in_progress",
+                "complete",
+                "failed",
+                "skipped"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enrichment_attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "enrichment_attempted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "enrichment_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_error"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "enrichment_rerun_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_rerun_requested"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "d9a64c419da66965968a07dda63efedc61d65ec7a8ee901db9dd0e5d36ccea23"
+}

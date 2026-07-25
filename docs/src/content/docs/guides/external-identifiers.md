@@ -45,7 +45,11 @@ its scheme's format before it is accepted (for example, an Open Library
 edition id `OL...M` is rejected in the work-level map). Edits are journaled
 like any other metadata change, so they appear on the Versions tab and can
 be reverted. An identifier edit also re-queues the book for enrichment
-immediately, clearing any retry backoff from earlier failed runs.
+immediately, clearing any retry backoff from earlier failed runs. If an
+enrichment run is active at the moment of the edit, the re-queue waits for
+that run to finish instead of starting a second one; the book then re-enters
+the queue on its own, since the active run looked the book up before the
+edit landed.
 
 Identifier changes never trigger a file writeback: they describe the book's
 place in external catalogues, not the file's own metadata.

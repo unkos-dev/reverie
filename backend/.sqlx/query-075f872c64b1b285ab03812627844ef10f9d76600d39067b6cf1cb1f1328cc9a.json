@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_status = 'in_progress', enrichment_attempt_count = 1, enrichment_attempted_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "075f872c64b1b285ab03812627844ef10f9d76600d39067b6cf1cb1f1328cc9a"
+}

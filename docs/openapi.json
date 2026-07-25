@@ -1673,7 +1673,7 @@
           "enrichment"
         ],
         "summary": "`POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the\nmanifestation for a fresh enrichment pass.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "description": "An `in_progress` row is not flipped to `pending`: the active worker\nstill owns the claim, and releasing it would let a second worker run\nthe same manifestation concurrently. The trigger sets\n`enrichment_rerun_requested` instead, and the worker's completion\nbookkeeping converts the flag into a fresh eligible row. All CASE arms\nread the pre-update row state, so the status test is consistent across\nevery column.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "trigger",
         "parameters": [
           {
@@ -1689,7 +1689,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Enrichment state reset to pending; the background worker picks the manifestation up on its next poll"
+            "description": "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"
           },
           "401": {
             "description": "Authentication required",

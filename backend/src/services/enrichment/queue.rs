@@ -95,6 +95,11 @@ pub async fn spawn_queue(
 ///
 /// Returns `Some((id, new_attempt_count))` when a row was claimed; `None`
 /// when the queue is empty (or every row is still in its backoff window).
+///
+/// The claim also clears `enrichment_rerun_requested`: a rerun requested
+/// before the claim is satisfied by this very run (its snapshot postdates
+/// the edit). Only an edit landing after the claim must survive to the
+/// completion bookkeeping, which converts the flag back into `pending`.
 async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
     let row = sqlx::query!(
         r"WITH eligible AS (
@@ -120,9 +125,10 @@ async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
              FOR UPDATE SKIP LOCKED
            )
            UPDATE manifestations m
-              SET enrichment_status        = 'in_progress',
-                  enrichment_attempted_at  = now(),
-                  enrichment_attempt_count = m.enrichment_attempt_count + 1
+              SET enrichment_status         = 'in_progress',
+                  enrichment_attempted_at   = now(),
+                  enrichment_attempt_count  = m.enrichment_attempt_count + 1,
+                  enrichment_rerun_requested = FALSE
              FROM eligible
             WHERE m.id = eligible.id
            RETURNING m.id, m.enrichment_attempt_count",
@@ -177,11 +183,24 @@ async fn finish(
     Ok(())
 }
 
+/// Completion bookkeeping for a successful run. Guarded on `in_progress` so
+/// only the claim holder transitions the row (a shutdown-time revert already
+/// released the claim). A rerun requested mid-run (an identifier edit landed
+/// after this run snapshotted its lookup keys) turns the row back into a
+/// fresh, immediately eligible `pending` instead of `complete`.
 async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
     sqlx::query!(
         "UPDATE manifestations \
-         SET enrichment_status = 'complete', enrichment_error = NULL \
-         WHERE id = $1",
+         SET enrichment_status = CASE WHEN enrichment_rerun_requested \
+                                      THEN 'pending'::enrichment_status \
+                                      ELSE 'complete'::enrichment_status END, \
+             enrichment_attempt_count = CASE WHEN enrichment_rerun_requested \
+                                             THEN 0 ELSE enrichment_attempt_count END, \
+             enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
+                                            THEN NULL ELSE enrichment_attempted_at END, \
+             enrichment_error = NULL, \
+             enrichment_rerun_requested = FALSE \
+         WHERE id = $1 AND enrichment_status = 'in_progress'",
         id,
     )
     .execute(pool)
@@ -189,6 +208,11 @@ async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
     Ok(())
 }
 
+/// Failure bookkeeping, guarded on `in_progress` like [`mark_complete`]. A
+/// rerun requested mid-run overrides the failure transition entirely: the
+/// operator's edit resets the row to a fresh `pending` with no backoff, the
+/// same shape an edit on an idle failed row produces, so the rerun is never
+/// deferred behind a backoff window or swallowed by `skipped`.
 async fn mark_failed(
     pool: &PgPool,
     id: Uuid,
@@ -214,10 +238,17 @@ async fn mark_failed(
         let secs_str = secs.to_string();
         sqlx::query!(
             "UPDATE manifestations \
-             SET enrichment_status = $1, \
-                 enrichment_attempted_at = now() + ($2 || ' seconds')::interval, \
-                 enrichment_error = $3 \
-             WHERE id = $4",
+             SET enrichment_status = CASE WHEN enrichment_rerun_requested \
+                                          THEN 'pending'::enrichment_status ELSE $1 END, \
+                 enrichment_attempt_count = CASE WHEN enrichment_rerun_requested \
+                                                 THEN 0 ELSE enrichment_attempt_count END, \
+                 enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
+                                                THEN NULL \
+                                                ELSE now() + ($2 || ' seconds')::interval END, \
+                 enrichment_error = CASE WHEN enrichment_rerun_requested \
+                                         THEN NULL ELSE $3 END, \
+                 enrichment_rerun_requested = FALSE \
+             WHERE id = $4 AND enrichment_status = 'in_progress'",
             next_status as EnrichmentStatus,
             secs_str,
             error,
@@ -228,9 +259,16 @@ async fn mark_failed(
     } else {
         sqlx::query!(
             "UPDATE manifestations \
-             SET enrichment_status = $1, \
-                 enrichment_error = $2 \
-             WHERE id = $3",
+             SET enrichment_status = CASE WHEN enrichment_rerun_requested \
+                                          THEN 'pending'::enrichment_status ELSE $1 END, \
+                 enrichment_attempt_count = CASE WHEN enrichment_rerun_requested \
+                                                 THEN 0 ELSE enrichment_attempt_count END, \
+                 enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
+                                                THEN NULL ELSE enrichment_attempted_at END, \
+                 enrichment_error = CASE WHEN enrichment_rerun_requested \
+                                         THEN NULL ELSE $2 END, \
+                 enrichment_rerun_requested = FALSE \
+             WHERE id = $3 AND enrichment_status = 'in_progress'",
             next_status as EnrichmentStatus,
             error,
             id,
@@ -547,6 +585,191 @@ mod tests {
                 s, expected,
                 "manifestation {id} status mismatch (expected {expected:?}, got {s:?})"
             );
+        }
+    }
+
+    struct QueueRowState {
+        status: EnrichmentStatus,
+        attempt_count: i32,
+        attempted_at_set: bool,
+        error: Option<String>,
+        rerun_requested: bool,
+    }
+
+    async fn queue_row_state(pool: &PgPool, id: Uuid) -> QueueRowState {
+        let r = sqlx::query!(
+            "SELECT enrichment_status AS \"status!: EnrichmentStatus\", \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_error, enrichment_rerun_requested \
+             FROM manifestations WHERE id = $1",
+            id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        QueueRowState {
+            status: r.status,
+            attempt_count: r.enrichment_attempt_count,
+            attempted_at_set: r.enrichment_attempted_at.is_some(),
+            error: r.enrichment_error,
+            rerun_requested: r.enrichment_rerun_requested,
+        }
+    }
+
+    async fn set_rerun_requested(pool: &PgPool, id: Uuid) {
+        sqlx::query!(
+            "UPDATE manifestations SET enrichment_rerun_requested = TRUE WHERE id = $1",
+            id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// An identifier edit on an actively running row sets the rerun flag
+    /// without releasing the claim, so a second worker must not pick the
+    /// row up while the original run is still active.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rerun_flagged_in_progress_row_is_not_claimable(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+        set_rerun_requested(&pool, m_id).await;
+
+        let claim = claim_next(&pool).await.unwrap();
+        assert!(
+            claim.is_none(),
+            "an in_progress row with a rerun request must stay unclaimable, got {claim:?}"
+        );
+    }
+
+    /// A rerun requested before any claim is satisfied by the claim itself
+    /// (the new run's snapshot postdates the edit): the claim clears the
+    /// flag, so completion lands on `complete` instead of re-queueing a
+    /// redundant second run.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn claim_clears_pre_claim_rerun_flag(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+        set_rerun_requested(&pool, m_id).await;
+
+        let (claimed_id, _) = claim_next(&pool).await.unwrap().expect("claim");
+        assert_eq!(claimed_id, m_id);
+        let state = queue_row_state(&pool, m_id).await;
+        assert!(
+            !state.rerun_requested,
+            "the claim must absorb a pre-claim rerun request"
+        );
+
+        mark_complete(&pool, m_id).await.unwrap();
+        let state = queue_row_state(&pool, m_id).await;
+        assert_eq!(state.status, EnrichmentStatus::Complete);
+    }
+
+    /// A rerun requested while the run was active converts completion into
+    /// a fresh, immediately eligible `pending` row instead of `complete`.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn mark_complete_requeues_when_rerun_requested(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 2, Some(10)).await;
+        set_rerun_requested(&pool, m_id).await;
+
+        mark_complete(&pool, m_id).await.unwrap();
+
+        let state = queue_row_state(&pool, m_id).await;
+        assert_eq!(state.status, EnrichmentStatus::Pending);
+        assert_eq!(
+            state.attempt_count, 0,
+            "re-queue must clear the backoff counter"
+        );
+        assert!(
+            !state.attempted_at_set,
+            "re-queue must null the attempt timestamp"
+        );
+        assert!(state.error.is_none());
+        assert!(
+            !state.rerun_requested,
+            "the flag is consumed by the re-queue"
+        );
+
+        let (claimed_id, _) = claim_next(&pool).await.unwrap().expect("re-claim");
+        assert_eq!(
+            claimed_id, m_id,
+            "the re-queued row is immediately eligible"
+        );
+    }
+
+    /// Without a rerun request completion still lands on `complete`.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn mark_complete_without_rerun_completes(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+
+        mark_complete(&pool, m_id).await.unwrap();
+
+        let state = queue_row_state(&pool, m_id).await;
+        assert_eq!(state.status, EnrichmentStatus::Complete);
+        assert_eq!(state.attempt_count, 1, "attempt bookkeeping is untouched");
+    }
+
+    /// A mid-run edit overrides the failure path in both branches: instead
+    /// of `failed`-with-backoff (Retry-After) or `skipped` (attempt cap),
+    /// the row resets to a fresh eligible `pending`.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn mark_failed_requeues_when_rerun_requested(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let max_attempts: u32 = 3;
+        let config = test_config_with_max_attempts(max_attempts);
+
+        // Attempt cap reached — without the flag this row would go `skipped`.
+        let (_work_id, m_capped, _) = insert_queue_fixture(
+            &pool,
+            EnrichmentStatus::InProgress,
+            max_attempts as i32,
+            Some(10),
+        )
+        .await;
+        set_rerun_requested(&pool, m_capped).await;
+        mark_failed(
+            &pool,
+            m_capped,
+            max_attempts as i32,
+            &config,
+            None,
+            Some("boom"),
+        )
+        .await
+        .unwrap();
+
+        // Rate-limited — without the flag this row would sit in a
+        // Retry-After backoff window.
+        let (_work_id, m_limited, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+        set_rerun_requested(&pool, m_limited).await;
+        mark_failed(
+            &pool,
+            m_limited,
+            1,
+            &config,
+            Some(Duration::from_mins(2)),
+            Some("rate limited"),
+        )
+        .await
+        .unwrap();
+
+        for id in [m_capped, m_limited] {
+            let state = queue_row_state(&pool, id).await;
+            assert_eq!(state.status, EnrichmentStatus::Pending, "row {id}");
+            assert_eq!(state.attempt_count, 0, "row {id}: backoff counter cleared");
+            assert!(
+                !state.attempted_at_set,
+                "row {id}: attempt timestamp nulled"
+            );
+            assert!(state.error.is_none(), "row {id}: error cleared");
+            assert!(!state.rerun_requested, "row {id}: flag consumed");
         }
     }
 }

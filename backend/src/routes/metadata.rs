@@ -2049,6 +2049,15 @@ async fn apply_scalar_patch_field(
 /// timestamp alongside the status clears any backoff window from a prior
 /// failed run; status alone would leave the row uneligible for up to 24
 /// hours (see `queue::claim_next`).
+///
+/// An `in_progress` row is never flipped to `pending` here: the active
+/// worker still owns the claim, and making the row eligible again would let
+/// a second worker run the same manifestation concurrently. The edit sets
+/// `enrichment_rerun_requested` instead, and the worker's completion
+/// bookkeeping converts the flag into a fresh eligible row (the active run
+/// snapshotted its lookup keys before this edit, so its result may be
+/// stale). All CASE arms read the pre-update row state, so the status test
+/// is consistent across every column.
 async fn apply_identifier_patches(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -2081,10 +2090,16 @@ async fn apply_identifier_patches(
     if touched {
         sqlx::query!(
             "UPDATE manifestations \
-             SET enrichment_status = 'pending', \
-                 enrichment_attempt_count = 0, \
-                 enrichment_attempted_at = NULL, \
-                 enrichment_error = NULL \
+             SET enrichment_rerun_requested = (enrichment_status = 'in_progress'), \
+                 enrichment_status = CASE WHEN enrichment_status = 'in_progress' \
+                                          THEN enrichment_status \
+                                          ELSE 'pending'::enrichment_status END, \
+                 enrichment_attempt_count = CASE WHEN enrichment_status = 'in_progress' \
+                                                 THEN enrichment_attempt_count ELSE 0 END, \
+                 enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
+                                                THEN enrichment_attempted_at ELSE NULL END, \
+                 enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
+                                         THEN enrichment_error ELSE NULL END \
              WHERE id = $1",
             manifestation_id,
         )
@@ -5618,7 +5633,8 @@ mod tests {
 
         let m = sqlx::query!(
             "SELECT enrichment_status::text AS \"enrichment_status!\", \
-                    enrichment_attempt_count, enrichment_attempted_at \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_rerun_requested \
              FROM manifestations WHERE id = $1",
             m_id,
         )
@@ -5628,6 +5644,77 @@ mod tests {
         assert_eq!(m.enrichment_status, "pending");
         assert_eq!(m.enrichment_attempt_count, 0);
         assert!(m.enrichment_attempted_at.is_none());
+        assert!(
+            !m.enrichment_rerun_requested,
+            "an idle-row edit re-queues directly; no rerun request is left behind"
+        );
+    }
+
+    /// An identifier edit while enrichment is actively running must not
+    /// release the worker's claim (a second worker could pick the row up
+    /// concurrently). The edit records a rerun request instead; the queue's
+    /// completion bookkeeping converts it into a fresh pending row.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_identifier_during_active_run_defers_requeue(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_status = 'in_progress', \
+                 enrichment_attempt_count = 1, \
+                 enrichment_attempted_at = now() \
+             WHERE id = $1",
+            m_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("preset in_progress state");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(
+                &serde_json::json!({"manifestation_identifiers": {"googlebooks": "zyTZAAAAYAAJ"}}),
+            )
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let m = sqlx::query!(
+            "SELECT enrichment_status::text AS \"enrichment_status!\", \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_rerun_requested \
+             FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("manifestation row");
+        assert_eq!(
+            m.enrichment_status, "in_progress",
+            "the edit must not release the active claim"
+        );
+        assert!(
+            m.enrichment_rerun_requested,
+            "the edit must leave a rerun request for the completion path"
+        );
+        assert_eq!(
+            m.enrichment_attempt_count, 1,
+            "the active claim's attempt counter is untouched"
+        );
+        assert!(
+            m.enrichment_attempted_at.is_some(),
+            "the active claim's timestamp is untouched"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
