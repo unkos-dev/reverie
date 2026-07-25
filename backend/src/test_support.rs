@@ -337,22 +337,26 @@ pub mod db {
         password: &str,
         writeback_context: bool,
     ) -> PgPool {
-        let (host, port, database) = {
+        let (host, port, socket, database) = {
             let opts = pool.connect_options();
             (
                 opts.get_host().to_owned(),
                 opts.get_port(),
+                opts.get_socket().cloned(),
                 opts.get_database()
                     .expect("injected pool has database name")
                     .to_owned(),
             )
         };
-        let new_opts = PgConnectOptions::new()
+        let mut new_opts = PgConnectOptions::new()
             .host(&host)
             .port(port)
             .database(&database)
             .username(username)
             .password(password);
+        if let Some(socket) = socket {
+            new_opts = new_opts.socket(socket);
+        }
         let mut builder = PgPoolOptions::new().max_connections(5);
         if writeback_context {
             builder = builder.after_connect(|conn, _meta| {

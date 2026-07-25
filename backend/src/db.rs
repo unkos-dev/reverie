@@ -1130,8 +1130,12 @@ mod tests {
         let opts = pool.connect_options();
         let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
             .unwrap_or_else(|_| "reverie_migrator".into());
+        let socket_param = opts
+            .get_socket()
+            .map(|socket| format!("?host={}", socket.display()))
+            .unwrap_or_default();
         let migrator_url = format!(
-            "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
+            "postgres://reverie_migrator:{password}@{}:{}/{db_name}{socket_param}",
             opts.get_host(),
             opts.get_port()
         );
