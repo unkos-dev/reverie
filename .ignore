@@ -1,0 +1,10 @@
+# Search-tool scope, not version control. Read by ripgrep, fd, and anything
+# else built on the same ignore machinery; git does not read this file.
+#
+# Those tools skip dot directories by default, which hides `.github/` from a
+# plain `rg`. Contributor process (CONTRIBUTING.md, SECURITY.md), the issue
+# templates, CODEOWNERS, and every CI workflow live there, so a search for
+# them silently returns nothing and reads as "this repository has none".
+# Re-include the directory rather than teaching every caller `--hidden`, which
+# would also drag in `.git/`.
+!.github/

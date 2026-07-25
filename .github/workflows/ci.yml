@@ -844,15 +844,15 @@ jobs:
           node_ref=""
           for f in .github/workflows/ci.yml .github/workflows/docs-build.yml .github/workflows/scheduled-audit.yml; do
             vp="$(yq '.env.VP_VERSION' "$f")"
-            nd="$(yq '.env.NODE_VERSION' "$f")"
+            node_pin="$(yq '.env.NODE_VERSION' "$f")"
             if [ "$vp" != "$pkg" ]; then
               echo "::error file=${f}::VP_VERSION ($vp) != vite-plus in package.json ($pkg) — keep every workflow's vp pin in lockstep; they ship in the grouped vite-plus Renovate PR"
               rc=1
             fi
             if [ -z "$node_ref" ]; then
-              node_ref="$nd"
-            elif [ "$nd" != "$node_ref" ]; then
-              echo "::error file=${f}::NODE_VERSION ($nd) != the pin in the earlier workflows ($node_ref) — keep the node pins in lockstep"
+              node_ref="$node_pin"
+            elif [ "$node_pin" != "$node_ref" ]; then
+              echo "::error file=${f}::NODE_VERSION ($node_pin) != the pin in the earlier workflows ($node_ref) — keep the node pins in lockstep"
               rc=1
             fi
           done
