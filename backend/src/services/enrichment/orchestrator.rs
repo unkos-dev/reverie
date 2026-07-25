@@ -355,8 +355,11 @@ async fn apply_journal_batch(
 /// concurrent run on a sibling then serialises here and sees the winner's
 /// value, flipping its own decision from Apply to Stage instead of
 /// clobbering. A lock taken later (inside the write) could only serialise
-/// the write, not change an already-made decision. Non-identifier fields
-/// keep the snapshot-based check.
+/// the write, not change an already-made decision. Manifestation-level
+/// slots race the manual PATCH path rather than sibling runs; their re-read
+/// relies on the manifestation row lock [`apply_canonical_batch`] takes at
+/// entry, which every manual write path also contends on. Non-identifier
+/// fields keep the snapshot-based check.
 async fn canonical_empty_under_lock(
     tx: &mut Transaction<'_, Postgres>,
     snapshot: &Snapshot,
@@ -395,6 +398,25 @@ async fn apply_canonical_batch(
 ) -> anyhow::Result<CanonicalBatchOutcome> {
     let manifestation_id = snapshot.manifestation_id;
     let mut outcome = CanonicalBatchOutcome::default();
+
+    // Lock the owning manifestation row before any decision. Two jobs: the
+    // manual write paths (PATCH/accept/revert) lock this row at handler
+    // entry, so manifestation-level identifier emptiness is decided against
+    // their committed edits instead of clobbering an operator value that
+    // landed mid-run; and taking the manifestation lock before any work-row
+    // lock matches the manual paths' acquisition order (manifestation, then
+    // work), keeping the two sides deadlock-free regardless of per-field
+    // iteration order below. A fresh journal INSERT earlier in this
+    // transaction incidentally serialises with the manual paths through the
+    // FK check's KEY SHARE on this row, but a repeat observation takes the
+    // journal upsert's DO UPDATE arm, which locks no parent row — this
+    // explicit lock is the only guarantee that holds on both paths.
+    sqlx::query!(
+        "SELECT id FROM manifestations WHERE id = $1 FOR UPDATE",
+        manifestation_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
 
     for (field, rows) in per_field {
         let entity = if is_work_field(field) {
@@ -3540,5 +3562,146 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(pending, 1, "the losing value stays pending for review");
+    }
+
+    /// A manifestation-level identifier entered manually while enrichment is
+    /// mid-run must not be clobbered. The editor transaction holds the
+    /// manifestation row FOR UPDATE (as the PATCH handler does at entry) and
+    /// has written the slot but not yet committed when the enrichment batch
+    /// starts; the batch must serialise behind the editor at its own
+    /// manifestation-row lock, re-read the slot after the editor commits,
+    /// and stage its disagreeing observation instead of overwriting the
+    /// operator's value.
+    ///
+    /// The journal row is committed up front, modelling a repeat observation:
+    /// on that path the journal upsert takes its DO UPDATE arm, which locks
+    /// no parent row, so the batch-entry lock is the only thing standing
+    /// between the emptiness decision and the concurrent edit (a fresh
+    /// observation's INSERT would incidentally serialise through the FK
+    /// check's KEY SHARE on the manifestation row and mask a missing lock).
+    /// The test releases the editor only once the batch is provably blocked
+    /// (an ungranted lock appears in `pg_locks`), so the decision window
+    /// genuinely overlaps the edit.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn manual_manifestation_identifier_edit_mid_run_is_not_clobbered(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let isbn = format!("978{}", &marker[..10]);
+        let (_work_id, m_id) = insert_enrich_fixture(&ing, &isbn, &marker).await;
+
+        let field = "identifiers.manifestation.googlebooks";
+        let provider_value = json!("volPROVIDER2");
+        let provider_hash = value_hash::value_hash(field, &provider_value);
+        let row_id = sqlx::query_scalar!(
+            "INSERT INTO metadata_versions \
+                 (manifestation_id, source, field_name, new_value, value_hash, \
+                  match_type, confidence_score) \
+             VALUES ($1, 'googlebooks', $2, $3, $4, 'isbn', 0.9) \
+             RETURNING id",
+            m_id,
+            field,
+            provider_value,
+            provider_hash,
+        )
+        .fetch_one(&ing)
+        .await
+        .unwrap();
+
+        // Editor: manifestation row locked, slot written, commit withheld.
+        let mut editor_tx = ing.begin().await.unwrap();
+        sqlx::query!(
+            "SELECT id FROM manifestations WHERE id = $1 FOR UPDATE",
+            m_id,
+        )
+        .fetch_optional(&mut *editor_tx)
+        .await
+        .unwrap();
+        upsert_manifestation_identifier(&mut *editor_tx, m_id, "googlebooks", "volOPERATOR1", None)
+            .await
+            .unwrap();
+
+        // Enrichment: canonical batch over the pre-journaled observation, in
+        // its own transaction.
+        let run = {
+            let ing = ing.clone();
+            async move {
+                let snapshot = load_snapshot(&ing, m_id).await.unwrap();
+                let mut tx = ing.begin().await.unwrap();
+                let mut per_field: PerFieldRows = std::collections::HashMap::new();
+                per_field.insert(
+                    field.into(),
+                    vec![(
+                        "googlebooks".into(),
+                        PolicyInputRow {
+                            id: row_id,
+                            value_hash: provider_hash,
+                        },
+                    )],
+                );
+                let outcome = apply_canonical_batch(&mut tx, &snapshot, &per_field)
+                    .await
+                    .unwrap();
+                tx.commit().await.unwrap();
+                outcome
+            }
+        };
+        let batch = tokio::spawn(run);
+
+        // Release the editor only once the batch is provably waiting on it.
+        let mut waited_ms = 0;
+        loop {
+            let blocked: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"count!\" FROM pg_locks WHERE NOT granted",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if blocked > 0 {
+                break;
+            }
+            assert!(
+                waited_ms < 5000,
+                "enrichment batch never blocked behind the editor transaction"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            waited_ms += 10;
+        }
+        editor_tx.commit().await.unwrap();
+
+        let outcome = batch.await.unwrap();
+        assert_eq!(
+            outcome.applied, 0,
+            "the operator's mid-run edit owns the slot; enrichment must not apply"
+        );
+        assert_eq!(
+            outcome.staged, 1,
+            "the provider observation stages as a disagreement"
+        );
+
+        let resident: String = sqlx::query_scalar!(
+            "SELECT external_id FROM manifestation_external_identifiers \
+             WHERE manifestation_id = $1 AND scheme = 'googlebooks'",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            resident, "volOPERATOR1",
+            "the operator value survives the race"
+        );
+
+        let pending: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM metadata_versions \
+             WHERE field_name = 'identifiers.manifestation.googlebooks' \
+               AND new_value = to_jsonb('volPROVIDER2'::text) \
+               AND status = 'pending' \
+               AND manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(pending, 1, "the provider value stays pending for review");
     }
 }
