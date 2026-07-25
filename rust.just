@@ -41,10 +41,15 @@ doc-lint:
 drift:
     SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
 
+# Extra args pass through to nextest as filters, so the red-green loop can
+# run just the tests under work instead of the whole suite: e.g.
+# `just rust::test patch_identifier` (name substring) or
+# `just rust::test -E 'test(rls)'` (filterset). No args = full suite.
+#
 # DB: full test suite, fast local loop (no coverage; see `cov`).
 [group('rust')]
-test:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked
+test *args:
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo nextest run --workspace --locked {{ args }}
 
 # DB: full test suite under coverage instrumentation.
 [group('rust')]
@@ -60,6 +65,24 @@ doctests:
 [group('rust')]
 sqlx-check:
     DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare --check -- --tests
+
+# WRITES backend/.sqlx; commit the result in the same change as the queries
+# that produced it. `sqlx-check` is the read-only gate form.
+#
+# DB: regenerate the sqlx offline query cache from the live schema.
+[group('rust')]
+sqlx-prepare:
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo sqlx prepare -- --tests
+
+# WRITES docs/openapi.json plus the generated config reference and schema;
+# commit the result in the same change that moved the API or config surface.
+# `drift` is the read-only gate form. Offline: compiles against the sqlx
+# cache, so run `sqlx-prepare` first when queries changed.
+#
+# Regenerate the OpenAPI spec, config reference, and config schema in place.
+[group('rust')]
+regen:
+    REGEN=1 SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
 
 # Compile the workspace.
 [group('rust')]
