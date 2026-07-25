@@ -102,6 +102,15 @@ Recipes are namespaced by module: `just rust::check` runs the backend gate,
 `just js::check` the frontend one. The unprefixed aggregates at the top fan out
 across every plane.
 
+`just preflight` and `just preflight-scoped` end with one machine-readable
+verdict line, `GATE: PASS ...` or `GATE: FAIL ... at <lane>`, so a run read back
+through a pipe, a truncated log, or a detached shell still says whether it
+passed. `just gate-status` replays the last recorded run with its per-lane
+timings, warns when the checkout has moved past the commit that run was
+recorded on or picked up uncommitted changes it never saw, and exits nonzero
+unless that run finished green: distinct statuses tell a failed run, a killed
+one, one still in progress, and no recorded run at all apart.
+
 HEADER
   render
 }

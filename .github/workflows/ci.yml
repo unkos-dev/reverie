@@ -964,6 +964,13 @@ jobs:
       - name: Worktree cargo target-dir isolation self-test
         run: just infra::worktree-cargo-target-selftest
 
+      # The gate runner turns a local preflight into a single PASS/FAIL line.
+      # A wrong verdict is invisible by construction (a green line on a failed
+      # run reads exactly like a green line on a passing one), so the runner
+      # is exercised against a fixture justfile here rather than trusted.
+      - name: Gate runner verdict self-test
+        run: just infra::gate-run-selftest
+
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate
 

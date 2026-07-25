@@ -66,6 +66,17 @@ cov:
 doctests:
     SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres://reverie:reverie@localhost:5432/reverie_dev}" cargo test --doc --workspace
 
+# This is the one recipe that dirties the shared target dir, and it is
+# unavoidable: `sqlx prepare` deliberately bumps the mtimes of the crate's
+# sources so the sqlx macros re-expand, then runs `cargo check` with
+# SQLX_OFFLINE=false. Measured consequence: the next `cargo build` and the next
+# `cargo clippy` each recompile the leaf crate, whatever env they carry. That is
+# why `preflight` and scripts/preflight-scope.sh order it after every Rust lane
+# that reads the target dir, so the cost lands on the next run rather than on
+# this one. machete and deny may follow it: they read sources and the lockfile,
+# never build artifacts. Do not "fix" it by pinning SQLX_OFFLINE here: checking
+# the cache against the live schema is the entire purpose.
+#
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
