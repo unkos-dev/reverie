@@ -56,8 +56,10 @@ valid_name() {
 # content, and nothing untracked should land in the tree. The directory is keyed
 # per checkout so concurrent worktrees never write to the same place, and within
 # a checkout every run owns one file named after itself, so concurrent runs need
-# no locking either. Pruning only ever deletes files outside the newest
-# KEEP_RUNS, which no live run can be inside.
+# no locking either. The count prune only ever deletes records that carry a
+# verdict: one without may belong to a run that is merely slow, and deleting it
+# under its writer would recreate it headless on the next append. Records that
+# never get a verdict are left to the age prune.
 checkout="$(git rev-parse --show-toplevel 2> /dev/null || pwd -P)"
 key="$(printf '%s' "$checkout" | sha256sum | cut -c1-12)"
 slug="$(printf '%s' "${checkout##*/}" | tr -c 'A-Za-z0-9._-' '-')"
@@ -144,15 +146,24 @@ done
 
 # Two runs can start inside the same second (a scripted retry, a test harness),
 # and both pruning and `--status` order runs by name, so the id carries
-# sub-second precision. EPOCHREALTIME is a bash builtin, so this costs no
-# process; the pid keeps names unique if a shell leaves it unset or renders it
-# for a locale whose decimal separator is not a dot.
+# sub-second precision. The second and the sub-second both come from the one
+# EPOCHREALTIME reading: stamping the second with a separate clock read let a
+# run that captured .9999 cross the boundary before the stamp, sort itself
+# above every run started later in the new second, and hand --status the wrong
+# file as newest. EPOCHREALTIME and %()T are bash builtins, so this costs no
+# process; the pid keeps names unique if a shell leaves EPOCHREALTIME unset or
+# renders it for a locale whose decimal separator is not a dot.
 epoch="${EPOCHREALTIME:-}"
 subsecond="${epoch#*[.,]}"
+whole="${epoch%%[.,]*}"
 case "$subsecond" in
   '' | *[!0-9]*) subsecond='000000' ;;
 esac
-run_id="$(date -u +%Y%m%dT%H%M%SZ)-${subsecond}-$$"
+case "$whole" in
+  '' | *[!0-9]*) whole='-1' ;;
+esac
+TZ=UTC0 printf -v stamp '%(%Y%m%dT%H%M%SZ)T' "$whole"
+run_id="${stamp}-${subsecond}-$$"
 run_log="${run_dir}/${run_id}.jsonl"
 if mkdir -p "$run_dir" 2> /dev/null && : >> "$run_log" 2> /dev/null; then
   # Pruning is deliberately non-fatal: an unpruned directory is cosmetic, and
@@ -161,7 +172,7 @@ if mkdir -p "$run_dir" 2> /dev/null && : >> "$run_log" 2> /dev/null; then
   kept=0
   while IFS= read -r stale; do
     kept=$((kept + 1))
-    if [ "$kept" -gt "$KEEP_RUNS" ]; then
+    if [ "$kept" -gt "$KEEP_RUNS" ] && grep -q '"verdict":' "$stale" 2> /dev/null; then
       rm -f "$stale"
     fi
   done < <(list_runs)
@@ -185,7 +196,7 @@ record() {
 
 total="${#lanes[@]}"
 started="$SECONDS"
-started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+TZ=UTC0 printf -v started_at '%(%Y-%m-%dT%H:%M:%SZ)T' "$whole"
 index=0
 
 # The plan goes in before the first lane runs, so a run that is killed rather

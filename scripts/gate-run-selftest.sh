@@ -345,7 +345,20 @@ for i in $(seq 1 25); do
   printf '%s\n' "{\"run\":\"20000101T00000${i}Z-0\",\"verdict\":\"pass\"}" \
     > "${record_dir}/20000101T0000$(printf '%02d' "$i")Z-0.jsonl"
 done
+# A record with no verdict may belong to a run that is still writing it. The
+# count prune must step over it however far down the order it sits, or a
+# gate would delete a slower neighbour's record out from under it; named
+# oldest so only the verdict gate can be what spares it.
+unfinished_seed="${record_dir}/19990101T000000Z-000000-1.jsonl"
+printf '%s\n' '{"run":"19990101T000000Z-000000-1","label":"demo","event":"start","lanes":1,"plan":["ok"],"started":"1999-01-01T00:00:00Z"}' \
+  > "$unfinished_seed"
 run_gate "$state" demo ok
+if [ ! -f "$unfinished_seed" ]; then
+  fail 'the count prune spares a record that has no verdict yet' 'the unfinished record was deleted'
+else
+  pass 'the count prune spares a record that has no verdict yet'
+fi
+rm -f "$unfinished_seed"
 after="$(find "$record_dir" -maxdepth 1 -type f -name '*.jsonl' | wc -l)"
 if [ "$after" -gt 20 ]; then
   fail 'pruning bounds the record directory' "kept ${after} runs (was ${before} before seeding)"
