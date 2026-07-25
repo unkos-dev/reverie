@@ -331,32 +331,36 @@ pub mod db {
         pool_as_role(pool, "reverie_readonly", &password, false).await
     }
 
+    /// Rebuild connection options against the same database as `opts`, as a
+    /// different role. Carries the transport across: a socket-backed source
+    /// yields socket-backed options, because rebuilding from host and port
+    /// alone would silently aim a socket-DSN test run at TCP.
+    fn role_opts_from(opts: &PgConnectOptions, username: &str, password: &str) -> PgConnectOptions {
+        let mut new_opts = PgConnectOptions::new()
+            .host(opts.get_host())
+            .port(opts.get_port())
+            .database(
+                opts.get_database()
+                    .expect("injected pool has database name"),
+            )
+            .username(username)
+            .password(password);
+        if let Some(socket) = opts.get_socket() {
+            new_opts = new_opts.socket(socket);
+        }
+        new_opts
+    }
+
     async fn pool_as_role(
         pool: &PgPool,
         username: &str,
         password: &str,
         writeback_context: bool,
     ) -> PgPool {
-        let (host, port, socket, database) = {
+        let new_opts = {
             let opts = pool.connect_options();
-            (
-                opts.get_host().to_owned(),
-                opts.get_port(),
-                opts.get_socket().cloned(),
-                opts.get_database()
-                    .expect("injected pool has database name")
-                    .to_owned(),
-            )
+            role_opts_from(&opts, username, password)
         };
-        let mut new_opts = PgConnectOptions::new()
-            .host(&host)
-            .port(port)
-            .database(&database)
-            .username(username)
-            .password(password);
-        if let Some(socket) = socket {
-            new_opts = new_opts.socket(socket);
-        }
         let mut builder = PgPoolOptions::new().max_connections(5);
         if writeback_context {
             builder = builder.after_connect(|conn, _meta| {
@@ -960,6 +964,38 @@ pub mod db {
     /// Malformed (truncated) SVG cover — exercises the negative serve path.
     pub fn make_minimal_epub_with_malformed_svg_cover(marker: &str) -> Vec<u8> {
         build_svg_cover_epub(marker, b"<svg><broken", false)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::role_opts_from;
+        use sqlx::postgres::PgConnectOptions;
+
+        #[test]
+        fn role_opts_carry_a_socket_source() {
+            let source = PgConnectOptions::new()
+                .socket("/tmp/pgsock")
+                .database("per_test_db");
+            let derived = role_opts_from(&source, "reverie_app", "pw");
+            assert_eq!(
+                derived.get_socket(),
+                Some(&std::path::PathBuf::from("/tmp/pgsock"))
+            );
+            assert_eq!(derived.get_database(), Some("per_test_db"));
+            assert_eq!(derived.get_username(), "reverie_app");
+        }
+
+        #[test]
+        fn role_opts_stay_tcp_for_a_tcp_source() {
+            let source = PgConnectOptions::new()
+                .host("db.internal")
+                .port(6432)
+                .database("per_test_db");
+            let derived = role_opts_from(&source, "reverie_ingestion", "pw");
+            assert_eq!(derived.get_socket(), None);
+            assert_eq!(derived.get_host(), "db.internal");
+            assert_eq!(derived.get_port(), 6432);
+        }
     }
 }
 
