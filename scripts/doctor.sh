@@ -306,10 +306,17 @@ if [ "${kache_present}" -eq 1 ]; then
   esac
 fi
 
-# 14. kache content-addressed store size. Automatic eviction only happens
-# while the daemon runs (check 13), and the cap it enforces is well above
-# what this repo needs, so warn on size independently and well before it
-# threatens disk space. A store that has never been populated (kache has
+# 14. kache content-addressed store size, checked against the cap kache
+# itself enforces rather than against free disk. Eviction only happens while
+# the daemon runs (check 13), and it holds the store under
+# `cache.local_max_size`, so a store found above that ceiling means eviction
+# is not happening: a dead daemon, a failing sweep, or a machine whose
+# configured cap no longer matches this threshold. Sizing the check to the cap
+# rather than to a smaller number of its own keeps the two from disagreeing,
+# which is the state that made an earlier 20 GiB threshold fire permanently
+# against a 50 GiB cap on a disk with hundreds of gigabytes free.
+#
+# A store that has never been populated (kache has
 # never run here, or the resolved directory does not exist on this
 # platform) is not a problem to report on, so an absent directory degrades
 # silently rather than warning or failing.
@@ -355,14 +362,14 @@ fi
 # or reports wildly different units on a non-GNU userland. `-sk` is
 # supported by both and, as a real-disk-usage measurement rather than an
 # apparent-size one, is the more honest number for a disk-space check.
-twenty_gib_kib=$((20 * 1024 * 1024))
+store_cap_kib=$((50 * 1024 * 1024))
 if [ -d "${kache_store}" ]; then
   if store_kib="$(du -sk "${kache_store}" 2>/dev/null | cut -f1)" && [ -n "${store_kib}" ]; then
     # Round to the nearest GiB rather than truncating: truncation alone
     # would display a 20.9 GiB store as "20 GiB", reading as though the
     # warning fired under its own stated threshold.
     store_gib=$(( (store_kib + 524288) / 1048576 ))
-    if [ "${store_kib}" -ge "${twenty_gib_kib}" ]; then
+    if [ "${store_kib}" -ge "${store_cap_kib}" ]; then
       warn "kache store size: ${store_gib} GiB" "kache gc --max-age 7d"
     else
       pass "kache store size: ${store_gib} GiB"

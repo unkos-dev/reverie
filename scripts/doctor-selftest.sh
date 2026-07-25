@@ -507,26 +507,35 @@ expect_exit "XDG_CACHE_HOME fallback is found when the default is absent" 0 "${s
 expect_contains "XDG_CACHE_HOME fallback store size is reported" "PASS kache store size:"
 rm -rf "${xdg_cache}/kache"
 
-# --- the over-threshold warning: DOCTOR_STUB_DU_KIB reports a controlled
-# figure so this fires without writing a real 20+ GiB store. An earlier
-# claim that this branch could not be covered without doing exactly that
-# was wrong; the harness already stubs PATH, including du. ---
+# --- the over-cap warning: DOCTOR_STUB_DU_KIB reports a controlled figure so
+# this fires without writing a real 50+ GiB store. An earlier claim that this
+# branch could not be covered without doing exactly that was wrong; the
+# harness already stubs PATH, including du. ---
 mkdir -p "${linux_default}"
-export DOCTOR_STUB_DU_KIB=$((21 * 1024 * 1024)) # 21 GiB, safely over the 20 GiB threshold
-expect_exit "over-threshold kache store warns" 0 "${stub_bin}"
-expect_contains "over-threshold warning fires with the rounded figure" "WARN kache store size: 21 GiB"
-expect_contains "over-threshold warning names the exact remediation" "WARN kache store size: 21 GiB -- fix: kache gc --max-age 7d"
+export DOCTOR_STUB_DU_KIB=$((51 * 1024 * 1024)) # 51 GiB, safely over the 50 GiB cap
+expect_exit "over-cap kache store warns" 0 "${stub_bin}"
+expect_contains "over-cap warning fires with the rounded figure" "WARN kache store size: 51 GiB"
+expect_contains "over-cap warning names the exact remediation" "WARN kache store size: 51 GiB -- fix: kache gc --max-age 7d"
 unset DOCTOR_STUB_DU_KIB
 
-# --- boundary case: a KiB figure that truncates to 20 GiB but rounds to 21
-# GiB must not display "20 GiB" next to a warning that says the store is
-# over the 20 GiB threshold; the displayed figure must agree with the
-# warning that produced it. 20 GiB is 20 * 1024 * 1024 KiB; 600000 KiB more
-# crosses the threshold while still truncating to 20 in integer division. ---
-export DOCTOR_STUB_DU_KIB=$((20 * 1024 * 1024 + 600000))
+# --- a store comfortably under the cap must stay silent. This is what stops
+# the threshold drifting back below kache's own ceiling, where it would fire
+# permanently against a store the daemon is already keeping in bounds. ---
+export DOCTOR_STUB_DU_KIB=$((30 * 1024 * 1024)) # 30 GiB, a normal working store
+expect_exit "under-cap kache store passes" 0 "${stub_bin}"
+expect_contains "under-cap store is reported without a warning" "PASS kache store size: 30 GiB"
+expect_not_contains "under-cap store produces no WARN lines" "WARN "
+unset DOCTOR_STUB_DU_KIB
+
+# --- boundary case: a KiB figure that truncates to 50 GiB but rounds to 51
+# GiB must not display "50 GiB" next to a warning that says the store is over
+# the 50 GiB cap; the displayed figure must agree with the warning that
+# produced it. 50 GiB is 50 * 1024 * 1024 KiB; 600000 KiB more crosses the cap
+# while still truncating to 50 in integer division. ---
+export DOCTOR_STUB_DU_KIB=$((50 * 1024 * 1024 + 600000))
 expect_exit "boundary kache store still warns" 0 "${stub_bin}"
-expect_contains "boundary warning rounds up, not truncates" "WARN kache store size: 21 GiB"
-expect_not_contains "boundary warning does not display the truncated 20 GiB figure" "kache store size: 20 GiB"
+expect_contains "boundary warning rounds up, not truncates" "WARN kache store size: 51 GiB"
+expect_not_contains "boundary warning does not display the truncated 50 GiB figure" "kache store size: 50 GiB"
 unset DOCTOR_STUB_DU_KIB
 rm -rf "${linux_default}"
 
