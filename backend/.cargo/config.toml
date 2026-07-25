@@ -1,9 +1,0 @@
-# Route linking through mold, the linker this repo already pins in mise.toml
-# and uses in CI (the backend jobs set the same flag as job-level RUSTFLAGS).
-# Living here instead of only in CI env means the local loop, raw cargo, and
-# rust-analyzer all link the same way. gcc's -fuse-ld takes a linker name and
-# resolves `ld.mold` from PATH, which the mise-managed install provides both
-# locally and in CI. An environment RUSTFLAGS overrides this file wholesale
-# (cargo semantics), which is why CI's identical value cannot drift from it.
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
