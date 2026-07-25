@@ -308,6 +308,25 @@ else
   failures=$((failures + 1))
 fi
 
+# --- the lane-invocation invariant -------------------------------------------
+
+# The selected lanes are recipe names handed to `just`. Passing them all on one
+# command line breaks as soon as any lane takes parameters: `rust::test *args`
+# consumes every following name as a nextest filter, so those lanes never run.
+# The gate can still exit 0 that way, which is the same confidently-narrowed
+# green this tool exists to prevent. Pin the one-lane-per-invocation form.
+# Comments are stripped first: prose in the recipe may name the broken form to
+# explain why it is banned, and that must not read as the form being present.
+justfile_code="$(grep -v '^[[:space:]]*#' justfile)"
+# shellcheck disable=SC2016  # the patterns are recipe text; $ must stay literal
+if printf '%s\n' "$justfile_code" | grep -qF 'just "$lane"' &&
+  ! printf '%s\n' "$justfile_code" | grep -qF 'just "${lanes[@]}"'; then
+  printf 'ok   %s\n' 'preflight-scoped invokes one lane per just call'
+else
+  printf 'FAIL %s\n' 'preflight-scoped passes its lane list to a single just call; a variadic lane swallows the lanes after it'
+  failures=$((failures + 1))
+fi
+
 if [ "$failures" -ne 0 ]; then
   printf '\n%d check(s) failed\n' "$failures" >&2
   exit 1
