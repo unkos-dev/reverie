@@ -1130,14 +1130,23 @@ mod tests {
         let opts = pool.connect_options();
         let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
             .unwrap_or_else(|_| "reverie_migrator".into());
-        let socket_param = opts
-            .get_socket()
-            .map(|socket| format!("?host={}", socket.display()))
-            .unwrap_or_default();
-        let migrator_url = format!(
-            "postgres://reverie_migrator:{password}@{}:{}/{db_name}{socket_param}",
-            opts.get_host(),
-            opts.get_port()
+        // Mirror the injected pool's transport in the documented URI shape
+        // for each: params-only for a socket (an authority would make sqlx's
+        // handling of the mix ambiguous to readers), authority-form for TCP.
+        let migrator_url = opts.get_socket().map_or_else(
+            || {
+                format!(
+                    "postgres://reverie_migrator:{password}@{}:{}/{db_name}",
+                    opts.get_host(),
+                    opts.get_port()
+                )
+            },
+            |socket| {
+                format!(
+                    "postgres:///{db_name}?host={}&user=reverie_migrator&password={password}",
+                    socket.display()
+                )
+            },
         );
 
         let report = run_migrations(&migrator_url)
