@@ -81,6 +81,13 @@ no cross-provider average. Ratings refresh in place on every enrichment
 run; they are not journaled, cannot be locked, and are never written back
 to the file.
 
+A refreshed record that no longer reports a rating, or reports one Reverie
+cannot store (a score outside the provider's own scale, an impossible
+review count), clears the cached value rather than leaving an obsolete
+score on display. A failed fetch, or a lookup path that carries no rating
+data either way, leaves the cached value alone, so a provider outage does
+not blank the ratings already on your shelf.
+
 ## Hiding providers from display
 
 The admin settings carry a `provider_visibility` map that hides individual

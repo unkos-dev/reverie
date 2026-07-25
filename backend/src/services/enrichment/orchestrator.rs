@@ -251,11 +251,12 @@ pub async fn run_once(
 /// cache, bypassing the journal and the policy engine entirely: ratings are
 /// per-source refreshable values with no canonical to reconcile, never
 /// journaled, locked, or written back. A reported rating refreshes the row;
-/// a rating-capable record that omits its rating removes the cached row so
-/// the projection cannot serve an obsolete score indefinitely; a path that
-/// carries no rating data leaves the cache untouched. Out-of-range provider
-/// values are skipped (with a warning) instead of aborting the transaction
-/// on the DB CHECK.
+/// a rating-capable record that omits its rating, or reports one the schema
+/// would reject, removes the cached row so the projection cannot serve an
+/// obsolete score indefinitely; a path that carries no rating data leaves
+/// the cache untouched. The range guard mirrors the table's CHECK
+/// constraints, so an unusable value clears the row rather than aborting the
+/// whole enrichment transaction on the DB CHECK.
 async fn upsert_ratings(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -283,9 +284,16 @@ async fn upsert_ratings(
                     && r.rating <= r.rating_scale
                     && r.review_count >= 0;
                 if !in_range {
+                    // A value the schema would reject is no evidence that the
+                    // cached score still holds, so drop it instead of serving
+                    // it until the provider next reports something usable.
+                    let removed =
+                        external_rating::delete_rating(&mut **tx, manifestation_id, &run.source_id)
+                            .await?;
                     warn!(
-                        source = %run.source_id, rating = r.rating, scale = r.rating_scale,
-                        count = r.review_count, "skipping out-of-range provider rating"
+                        %manifestation_id, source = %run.source_id, rating = r.rating,
+                        scale = r.rating_scale, count = r.review_count, cleared = removed,
+                        "enrichment: unusable provider rating; cache row cleared"
                     );
                     continue;
                 }
@@ -3436,6 +3444,69 @@ mod tests {
         assert_eq!(
             remaining, 0,
             "a rating the provider no longer reports must be cleared"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_clears_rating_when_provider_reports_unusable_value(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ol, gb, hc) = (
+            MockServer::start().await,
+            MockServer::start().await,
+            MockServer::start().await,
+        );
+        // Two editions cover both reachable halves of the range guard. The
+        // scale half is unreachable from the adapters, which pin 5.0.
+        let over_scale = Uuid::new_v4().simple().to_string();
+        let (_ow, over_id) = insert_isbnless_fixture(&pool, &over_scale).await;
+        upsert_manifestation_identifier(&pool, over_id, "googlebooks", "volOVER", None)
+            .await
+            .unwrap();
+        let negative_count = Uuid::new_v4().simple().to_string();
+        let (_nw, negative_id) = insert_isbnless_fixture(&pool, &negative_count).await;
+        upsert_manifestation_identifier(&pool, negative_id, "googlebooks", "volNEG", None)
+            .await
+            .unwrap();
+        for m in [over_id, negative_id] {
+            crate::models::external_rating::upsert_rating(&pool, m, "googlebooks", 4.5, 5.0, 100)
+                .await
+                .unwrap();
+        }
+
+        // Both payloads carry values the table's CHECK constraints reject.
+        Mock::given(method("GET"))
+            .and(path("/volumes/volOVER"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "volOVER",
+                "volumeInfo": {"title": "Over Scale", "averageRating": 6.0, "ratingsCount": 12}
+            })))
+            .mount(&gb)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/volumes/volNEG"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "volNEG",
+                "volumeInfo": {"title": "Negative Count", "averageRating": 4.0, "ratingsCount": -1}
+            })))
+            .mount(&gb)
+            .await;
+
+        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        for m in [over_id, negative_id] {
+            let _ = run_once(&pool, &cfg, m).await.unwrap();
+        }
+
+        let remaining: i64 = sqlx::query_scalar!(
+            "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
+             WHERE manifestation_id = ANY($1::uuid[]) AND source = 'googlebooks'",
+            &[over_id, negative_id][..],
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            remaining, 0,
+            "a rating the schema would reject must not survive as the cached score"
         );
     }
 
