@@ -274,9 +274,18 @@ jobs:
       # the 10 GiB quota this exists to escape. The version comes from
       # mise.toml via the changes job, so CI and a developer's machine install
       # the same kache.
+      #
+      # Pinned past the v1 tag deliberately. v1 was published 2026-06-15 and
+      # never re-pointed, so `namespace` and `pr-comment` below do not exist in
+      # its contract: GitHub discards an undeclared input with a warning rather
+      # than an error, leaving the job green and the setting silently inert.
+      # Both arrived in the seven commits since. Return this to a tag once
+      # upstream publishes one past v1; until then the digest is the contract,
+      # and any input added here has to be checked against action.yml at this
+      # exact revision rather than at main.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
-        uses: kunobi-ninja/kache-action@49398d37113c616fdb61be434cb497e3c2c8f3e6 # v1
+        uses: kunobi-ninja/kache-action@a257c055543c2840700a9bbca8f9c3094a421b1b # main@2026-06-19
         with:
           version: ${{ needs.changes.outputs.kache }}
           s3-bucket: reverie-ci-cache
@@ -286,6 +295,25 @@ jobs:
           s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
           github-cache: false
           pr-comment: false
+          # Cache linked executables as well as rlibs. Without this the build
+          # scripts and doctest binaries are passed through uncached, which
+          # the last run counted as 580 skipped executables.
+          cache-executables: true
+          # Enabling shards is what makes prefetch useful. Left unset, the
+          # post step logs "No namespace provided, skipping shard upload" and
+          # prefetch contributed under a fifth of hits, so the rest arrived as
+          # individual requests: measured at ~2min of request and header
+          # latency against ~14s of actual body transfer across 1354 hits.
+          #
+          # The value identifies the build configuration, not the job, which
+          # is the shape kache asks for (target/rustc_hash/profile). Encoding
+          # the compiler means a toolchain bump rotates the namespace instead
+          # of leaving prefetch warming shards for artifacts that no longer
+          # exist; the bucket lifecycle rule sweeps the orphans. A job with a
+          # different configuration needs its own value spelled out here,
+          # coverage most of all: `-C instrument-coverage` is a separate key
+          # space, and reusing this namespace would silently cross the two.
+          namespace: x86_64-unknown-linux-gnu/${{ needs.changes.outputs.toolchain }}/dev
 
       # A cache is built to degrade quietly: kache compiles for real whenever
       # the store is unreachable, and `kache sync` reports failed transfers on
