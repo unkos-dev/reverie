@@ -22,4 +22,4 @@
 # floor, and the MSRV job overrides this file through RUSTUP_TOOLCHAIN so it
 # still compiles on that floor rather than on the version pinned here.
 [toolchain]
-channel = "1.97.0"
+channel = "1.97.1"
