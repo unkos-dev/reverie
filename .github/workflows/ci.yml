@@ -212,7 +212,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: just
           add_shims_to_path: false
 
@@ -371,7 +371,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: mold github:bnjbvr/cargo-machete
           add_shims_to_path: false
 
@@ -514,7 +514,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: mold github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
           add_shims_to_path: false
 
@@ -653,7 +653,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: github:EmbarkStudios/cargo-deny
       # advisories reads the RustSec database; check also enforces the
       # license, ban, and source policy in backend/deny.toml. Advisory
@@ -713,7 +713,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: actionlint
 
       - name: Lint workflow files
@@ -764,7 +764,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: just zizmor
 
       - name: Workflow security audit (zizmor)
@@ -1062,7 +1062,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: just shellcheck hadolint typos vale yamllint
 
       - name: Shell lint (shellcheck)
@@ -1240,7 +1240,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: just
 
       - name: Lint
@@ -1543,7 +1543,7 @@ jobs:
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.7.11"
+          version: "2026.7.12"
           install_args: gitleaks
 
       # On a pull_request, scan every commit the branch introduces — a
