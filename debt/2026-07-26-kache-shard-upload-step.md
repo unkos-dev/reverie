@@ -23,7 +23,7 @@ root and logs `No Cargo.lock found, skipping shard upload`.
 
 The namespace input reaches kache correctly and the wrapper reports
 `shard context: available`, so nothing in the configuration is wrong. The
-upload simply never happens.
+upload never happens.
 
 ## Workaround
 
