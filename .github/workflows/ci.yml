@@ -274,9 +274,18 @@ jobs:
       # the 10 GiB quota this exists to escape. The version comes from
       # mise.toml via the changes job, so CI and a developer's machine install
       # the same kache.
+      #
+      # Pinned past the v1 tag deliberately. v1 was published 2026-06-15 and
+      # never re-pointed, so `namespace` and `pr-comment` below do not exist in
+      # its contract: GitHub discards an undeclared input with a warning rather
+      # than an error, leaving the job green and the setting silently inert.
+      # Both arrived in the seven commits since. Return this to a tag once
+      # upstream publishes one past v1; until then the digest is the contract,
+      # and any input added here has to be checked against action.yml at this
+      # exact revision rather than at main.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
-        uses: kunobi-ninja/kache-action@49398d37113c616fdb61be434cb497e3c2c8f3e6 # v1
+        uses: kunobi-ninja/kache-action@a257c055543c2840700a9bbca8f9c3094a421b1b # main@2026-06-19
         with:
           version: ${{ needs.changes.outputs.kache }}
           s3-bucket: reverie-ci-cache
