@@ -157,6 +157,14 @@ jobs:
       # restores from, so it is told not to try rather than relying on the
       # bucket to reject it.
       KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
+      # Fork pull requests cannot read repository secrets, so the remote cache
+      # does not exist for them. Pointing kache at an endpoint it can never
+      # reach would spend the job timing out per crate and leave the setup
+      # check asserting something meaningless, so the job detects the absence
+      # here and falls back to the tarball carrying `target/`, exactly as it
+      # did before this cache existed. Hoisted into job env because the
+      # secrets context reaches `env` and `with` but not a step's `if`.
+      R2_CONFIGURED: ${{ secrets.R2_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -232,11 +240,13 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: backend
-          # Registry only. Compiled artifacts moved to the content-addressed
-          # store below, which is what lets this tarball fit the quota: the
+          # Registry only, wherever the content-addressed store below is
+          # reachable. That is what lets this tarball fit the quota: the
           # registry is a fraction of `target/`, so it no longer evicts
-          # unrelated caches.
-          cache-targets: false
+          # unrelated caches. A fork pull request has no credentials for that
+          # store, so it keeps caching `target/` here instead and is never
+          # left with neither.
+          cache-targets: ${{ secrets.R2_ACCOUNT_ID == '' }}
           # Restore-only on PR branches: the repo cache quota (10 GiB) cannot
           # hold per-branch copies of the gigabyte-scale rust caches, and the
           # resulting LRU eviction was costing warm caches elsewhere. PRs
@@ -265,6 +275,7 @@ jobs:
       # mise.toml via the changes job, so CI and a developer's machine install
       # the same kache.
       - name: Remote build cache (kache)
+        if: env.R2_CONFIGURED == 'true'
         uses: kunobi-ninja/kache-action@49398d37113c616fdb61be434cb497e3c2c8f3e6 # v1
         with:
           version: ${{ needs.changes.outputs.kache }}
@@ -284,6 +295,7 @@ jobs:
       # to distinguish it from a cold cache. Assert the remote actually
       # resolved before the compiling steps below start depending on it.
       - name: Verify the remote cache resolved
+        if: env.R2_CONFIGURED == 'true'
         run: |
           set -euo pipefail
           stats="$(kache stats 2>&1 || true)"

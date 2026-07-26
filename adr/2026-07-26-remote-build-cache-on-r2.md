@@ -100,6 +100,10 @@ that job's runtime.
 - Neutral, because the bucket is same-continent with the runners but not
   co-located, so restore throughput is a measured quantity rather than an
   assumed one.
+- Neutral, because fork pull requests cannot read repository secrets and so
+  cannot reach the store at all. They fall back to the tarball carrying
+  `target/`, which is what they had before, rather than being left with no
+  compilation cache or with a remote they can never reach.
 - Neutral, because artifacts are never shared with developer machines. The
   compiler flags, linker build, and libc differ enough that keys would not match
   even if credentials were distributed, so local builds keep their own store.
