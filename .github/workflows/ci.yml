@@ -421,6 +421,25 @@ jobs:
       - name: Doctests
         run: mise exec mold -- cargo test --locked --doc --workspace
 
+      # Upload the prefetch shards the cache action cannot.
+      #
+      # Its post step runs `kache save-manifest` from $GITHUB_WORKSPACE, being
+      # a JavaScript action: `defaults.run.working-directory` applies to `run`
+      # steps only. There is no Cargo.lock at the repository root because this
+      # workspace lives in backend/, so shard upload is skipped and prefetch
+      # falls back to the monolithic manifest. That was measured as ~2min of
+      # request and header latency against ~14s of body transfer across 1354
+      # hits, because artifacts then arrive one request at a time.
+      #
+      # Running it here picks up the crate root from the job's working
+      # directory. It takes no arguments deliberately: the setup step exports
+      # KACHE_NAMESPACE and the remote settings into the job environment, so
+      # the namespace is still declared in exactly one place. Writes are
+      # confined to the default branch like every other push to the store.
+      - name: Upload prefetch shards
+        if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
+        run: kache save-manifest
+
   # Keep the instrumented build off the checks job's serial critical path.
   # A dedicated target directory is safe to retain because it is used only
   # with this job's fixed coverage flags; raw execution profiles are deleted
