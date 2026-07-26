@@ -243,9 +243,14 @@ jobs:
           # Registry only, wherever the content-addressed store below is
           # reachable. That is what lets this tarball fit the quota: the
           # registry is a fraction of `target/`, so it no longer evicts
-          # unrelated caches. A fork pull request has no credentials for that
-          # store, so it keeps caching `target/` here instead and is never
-          # left with neither.
+          # unrelated caches.
+          #
+          # A fork pull request has no credentials for that store, so it asks
+          # for `target/` here instead. That request does not restore what the
+          # default branch saves: actions/cache derives its version from the
+          # path set, and the default branch now saves registry-only. Once the
+          # last full-target generation expires, a fork restores nothing and
+          # compiles cold. Tracked in debt/2026-07-26-fork-pr-cache-fallback.md.
           cache-targets: ${{ secrets.R2_ACCOUNT_ID == '' }}
           # Restore-only on PR branches: the repo cache quota (10 GiB) cannot
           # hold per-branch copies of the gigabyte-scale rust caches, and the
