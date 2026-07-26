@@ -13,35 +13,43 @@ informed: "Reverie contributors"
 
 CI caches Rust compilation with `Swatinem/rust-cache`, which archives the
 workspace `target/` directory and the cargo registry into one tarball per job,
-keyed on the toolchain and the `Cargo.lock` hash. That cache is all or nothing:
-when the key matches, the job is fast; when any input moves, the job rebuilds
-the whole dependency graph.
+keyed on the toolchain and the `Cargo.lock` hash. It degrades in two steps
+rather than one. A lockfile change misses the exact key but still restores the
+previous tarball through a prefix restore-key, leaving cargo to rebuild only
+what moved. A toolchain, profile, or `RUSTFLAGS` change rotates the key prefix
+itself, and nothing restores.
 
 Measured on the `Backend checks` job:
 
-| Run      | Total | Lint | Doctests |
-| -------- | ----- | ---- | -------- |
-| Key hit  | 194s  | 79s  | 26s      |
-| Key miss | 786s  | 342s | 349s     |
+| Run                                  | Total | Lint | Doctests |
+| ------------------------------------ | ----- | ---- | -------- |
+| Exact key hit                        | 194s  | 79s  | 26s      |
+| Lockfile bump, restored by prefix    | 252s  | 87s  | 57s      |
+| Key prefix rotated, nothing restored | 786s  | 342s | 349s     |
 
-A single Renovate lockfile bump moves that key, so one changed dependency costs
-the same as changing all of them. Renovate runs weekly lockfile maintenance and
-raises grouped dependency pull requests, so the miss path is a recurring tax
-rather than an edge case.
+The recurring event is the middle row, not the bottom one. Renovate raises
+dependency pull requests continuously, and each costs an extra minute or so
+rather than a full rebuild. The bottom row is a toolchain or profile change,
+which a content-addressed store cannot improve either: the compiler version is
+part of every cache key it computes.
 
-The tarball also has to fit a quota. GitHub allows 10 GiB of Actions cache per
-repository, which cannot hold gigabyte-scale per-branch copies, so the caches
-are configured `save-if: main`. Pull requests can restore but never contribute,
-and each job keeps its own tarball rather than sharing one body of artifacts.
+The pressure is therefore storage, not compilation. GitHub allows 10 GiB of
+Actions cache per repository. This repository sits at 9.75 GiB across 69
+entries, with three Rust tarball streams competing for it, and each lockfile
+bump mints a new generation of each. Restore-keys only work while an older
+generation survives eviction, so the prefix restore that makes a lockfile bump
+cheap is exactly what the quota threatens.
 
-Can CI keep compiled artifacts in a form where one changed dependency
-invalidates one crate, without a storage ceiling that forces branches to be
-read-only?
+Can CI keep compiled artifacts outside the repository quota, so the tarball
+streams stop competing for eviction, without making the common runs slower than
+the tarball already makes them?
 
 ## Decision Drivers
 
-- One changed dependency should not rebuild the whole graph.
-- Storage must not be capped so low that branches cannot write to it.
+- Compiled artifacts should not compete with unrelated caches for a fixed
+  repository quota.
+- Cache granularity should survive eviction, not depend on an older generation
+  surviving alongside the current one.
 - A pull request must not be able to poison the cache the default branch reads.
 - A cache fault must degrade to a slow build, never a wrong or failing one.
 - Reverting must be cheap if the remote store does not pay for itself.
@@ -85,13 +93,19 @@ that job's runtime.
 
 ### Consequences
 
-- Good, because a single dependency bump now invalidates only the crates that
-  depend on it instead of the entire tarball.
-- Good, because object storage has no repository quota, so branches can
-  contribute artifacts rather than only restoring them, and jobs share one body
-  of artifacts instead of one tarball each.
+- Good, because a dependency bump invalidates only the crates that depend on
+  it, and that granularity survives eviction, where the tarball's prefix
+  restore does not.
+- Good, because object storage has no repository quota, so one of the three
+  Rust tarball streams leaves the 10 GiB pool entirely and stops competing for
+  eviction with the other two.
 - Good, because relieving the tarball of `target/` leaves the registry cache
   well inside the 10 GiB quota, which stops unrelated caches being evicted.
+- Bad, because measured runs are slower than an exact tarball hit, roughly 300s
+  against 196s. Most of that gap is one defect rather than the design: a
+  zero-byte `.rmeta` emitted under `cargo clippy --all-targets` makes the
+  workspace crate permanently uncacheable, and it is the last serial unit in
+  two steps. Tracked upstream.
 - Bad, because CI gains a dependency on a third-party action, a young caching
   tool, and an external storage provider, any of which can fail or change.
   Failures degrade to uncached compilation rather than breaking the build.
@@ -100,10 +114,11 @@ that job's runtime.
 - Neutral, because the bucket is same-continent with the runners but not
   co-located, so restore throughput is a measured quantity rather than an
   assumed one.
-- Neutral, because fork pull requests cannot read repository secrets and so
-  cannot reach the store at all. They fall back to the tarball carrying
-  `target/`, which is what they had before, rather than being left with no
-  compilation cache or with a remote they can never reach.
+- Bad, because fork pull requests cannot read repository secrets and so cannot
+  reach the store. They request the tarball with `target/` included, but
+  `actions/cache` derives its version from the path set, so they cannot restore
+  the registry-only tarball the default branch now saves. Once the last
+  full-target generation expires they restore nothing. Recorded in `debt/`.
 - Neutral, because artifacts are never shared with developer machines. The
   compiler flags, linker build, and libc differ enough that keys would not match
   even if credentials were distributed, so local builds keep their own store.
@@ -121,10 +136,11 @@ never reach a pull-request run.
 - Good, because it is already in place, well understood, and has no external
   dependency beyond GitHub.
 - Good, because a key hit is fast and needs no network beyond GitHub's own.
-- Bad, because the key covers the whole tarball, so one dependency bump costs a
-  full rebuild.
-- Bad, because the quota forces `save-if: main`, leaving branches unable to
-  contribute and each job holding a separate copy.
+- Good, because a lockfile bump still restores through a prefix restore-key, so
+  it costs about a minute rather than a full rebuild.
+- Bad, because three Rust tarball streams share a 10 GiB quota already at 9.75
+  GiB, and that prefix restore only works while an older generation survives
+  eviction.
 
 ### Replace it with `kache` backed by the GitHub Actions cache
 
