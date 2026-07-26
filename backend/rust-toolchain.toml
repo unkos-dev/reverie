@@ -13,13 +13,22 @@
 # workflows parse the channel out of this file instead of repeating the version
 # where it could drift. Renovate's rust-toolchain manager owns the bumps.
 #
-# Components are deliberately not declared here. They are per-consumer rather
-# than global: the lint job needs clippy and rustfmt, the coverage job and the
-# local `cov` recipe need llvm-tools, and neither should install the other's.
-# Each consumer asks for its own.
+# Only `llvm-tools` is declared here, and only because both planes need it:
+# the coverage CI job reads instrumentation with it, and so does the local
+# `just rust::cov` recipe. Leaving it per-consumer meant a developer machine
+# silently dropped back to the default profile on every toolchain bump, taking
+# `cargo llvm-cov` with it, which is what happened on the move to 1.97.1. The
+# cost of declaring it is roughly 10 MiB fetched by two jobs that do not use
+# it, a couple of seconds against runs measured in minutes.
+#
+# clippy and rustfmt are not listed because rustup's default profile already
+# carries them. `rust-src` and `rust-analyzer` are not listed because nothing
+# in CI or in any recipe uses them: they serve an editor, so they belong on
+# the machine that runs one, via `rustup component add`.
 #
 # This pin is not the MSRV. `rust-version` in Cargo.toml is the supported
 # floor, and the MSRV job overrides this file through RUSTUP_TOOLCHAIN so it
 # still compiles on that floor rather than on the version pinned here.
 [toolchain]
 channel = "1.97.1"
+components = ["llvm-tools"]
