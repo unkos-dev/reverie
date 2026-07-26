@@ -217,6 +217,7 @@ keyless
 keyset
 Kubernetes
 Leonxlnx
+libc
 LibraryThing
 librarything
 lifecycle
@@ -394,6 +395,7 @@ UAs
 ubuntu
 unapplied
 unbuilt
+uncached
 uncatchable
 uninitialized
 Unkos

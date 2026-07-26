@@ -58,21 +58,26 @@ jobs:
       npm: ${{ steps.filter.outputs.npm }}
       docs: ${{ steps.filter.outputs.docs }}
       toolchain: ${{ steps.toolchain.outputs.version }}
+      kache: ${{ steps.toolchain.outputs.kache }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # Resolve the pinned Rust toolchain once for every job that needs it.
+      # Resolve the pinned Rust toolchain and build-cache versions once for
+      # every job that needs them.
+      #
       # backend/rust-toolchain.toml is what rustup actually honours, but
       # dtolnay/rust-toolchain never reads it and requires an explicit
       # version, so naming `stable` there would install a toolchain the first
-      # cargo call then replaces. Reading the channel here keeps one source of
-      # truth and one install. Same extraction shape as the MSRV job's
-      # rust-version read: the sed stops at the closing quote, and `|| true`
-      # lets a dropped field reach the format guard instead of failing the
-      # pipe opaquely.
-      - name: Resolve pinned toolchain
+      # cargo call then replaces. mise.toml is likewise the pin a developer's
+      # machine installs kache from, and the cache action takes a version
+      # string of its own. Reading both here keeps one source of truth apiece
+      # and stops a second copy drifting. Same extraction shape as the MSRV
+      # job's rust-version read: the match stops at the closing quote, and
+      # `|| true` lets a dropped field reach the format guard instead of
+      # failing the pipe opaquely.
+      - name: Resolve pinned toolchain and cache versions
         id: toolchain
         run: |
           set -euo pipefail
@@ -82,6 +87,17 @@ jobs:
             exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          kache=$(awk '
+            /^\[tools\."github:kunobi-ninja\/kache"\]/ { in_kache = 1; next }
+            in_kache && /^\[/ { exit }
+            in_kache && /^version[[:space:]]*=/ { gsub(/[^0-9.]/, ""); print; exit }
+          ' mise.toml || true)
+          if [[ ! "${kache}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not extract a valid kache version from mise.toml (got: '${kache}')" >&2
+            exit 1
+          fi
+          echo "kache=${kache}" >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
@@ -136,6 +152,19 @@ jobs:
       # same way without two settings having to agree.
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
+      # Belt and braces with the object-read credentials selected below: a
+      # pull-request run must not write to the store the default branch
+      # restores from, so it is told not to try rather than relying on the
+      # bucket to reject it.
+      KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
+      # Fork pull requests cannot read repository secrets, so the remote cache
+      # does not exist for them. Pointing kache at an endpoint it can never
+      # reach would spend the job timing out per crate and leave the setup
+      # check asserting something meaningless, so the job detects the absence
+      # here and falls back to the tarball carrying `target/`, exactly as it
+      # did before this cache existed. Hoisted into job env because the
+      # secrets context reaches `env` and `with` but not a step's `if`.
+      R2_CONFIGURED: ${{ secrets.R2_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -211,12 +240,77 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: backend
+          # Registry only, wherever the content-addressed store below is
+          # reachable. That is what lets this tarball fit the quota: the
+          # registry is a fraction of `target/`, so it no longer evicts
+          # unrelated caches. A fork pull request has no credentials for that
+          # store, so it keeps caching `target/` here instead and is never
+          # left with neither.
+          cache-targets: ${{ secrets.R2_ACCOUNT_ID == '' }}
           # Restore-only on PR branches: the repo cache quota (10 GiB) cannot
           # hold per-branch copies of the gigabyte-scale rust caches, and the
           # resulting LRU eviction was costing warm caches elsewhere. PRs
           # branch from a fresh main, so main's cache is the right restore
           # source anyway.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Content-addressed compile cache in R2, keyed per crate on compiler
+      # version, source, dependency hashes, and normalised flags. It sits
+      # alongside the tarball cache above rather than replacing it: that one
+      # carries the registry, this one owns compiled artifacts. The point is
+      # granularity. A Renovate lockfile bump moves the tarball key and costs a
+      # full rebuild (measured: 194s warm against 786s on a key miss), where
+      # this invalidates the bumped crate and its dependents.
+      # See adr/2026-07-26-remote-build-cache-on-r2.md.
+      #
+      # Write credentials are reserved for pushes to main; a pull request gets
+      # object-read keys. A branch must not be able to write into the store the
+      # default branch later restores from, which is the same poisoning surface
+      # the docker-build job records about its buildx cache scopes.
+      #
+      # pr-comment is off because it needs `pull-requests: write` and this
+      # workflow is read-only by default. github-cache is off because the store
+      # lives in R2; leaving it on would put the artifacts straight back inside
+      # the 10 GiB quota this exists to escape. The version comes from
+      # mise.toml via the changes job, so CI and a developer's machine install
+      # the same kache.
+      - name: Remote build cache (kache)
+        if: env.R2_CONFIGURED == 'true'
+        uses: kunobi-ninja/kache-action@49398d37113c616fdb61be434cb497e3c2c8f3e6 # v1
+        with:
+          version: ${{ needs.changes.outputs.kache }}
+          s3-bucket: reverie-ci-cache
+          s3-region: auto
+          s3-endpoint: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          s3-access-key-id: ${{ github.ref == 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RW || secrets.R2_ACCESS_KEY_ID_RO }}
+          s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
+          github-cache: false
+          pr-comment: false
+
+      # A cache is built to degrade quietly: kache compiles for real whenever
+      # the store is unreachable, and `kache sync` reports failed transfers on
+      # its progress line while still exiting 0. That is right for a build and
+      # wrong for a setup check. A mistyped secret or a renamed action input
+      # would leave every job uncached, slow, and green forever, with nothing
+      # to distinguish it from a cold cache. Assert the remote actually
+      # resolved before the compiling steps below start depending on it.
+      - name: Verify the remote cache resolved
+        if: env.R2_CONFIGURED == 'true'
+        run: |
+          set -euo pipefail
+          stats="$(kache stats 2>&1 || true)"
+          printf '%s\n' "${stats}"
+          remote="$(printf '%s\n' "${stats}" | grep -m1 'Remote:' || true)"
+          if [ -z "${remote}" ]; then
+            echo "kache stats reported no Remote line; the output shape changed and this check can no longer tell configured from not" >&2
+            exit 1
+          fi
+          case "${remote}" in
+            *"not configured"*)
+              echo "kache has no remote configured: the S3 inputs did not reach it, so this job would compile uncached and still pass" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Check formatting
         run: cargo fmt --check
