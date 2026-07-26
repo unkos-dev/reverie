@@ -185,5 +185,21 @@ unimplemented = "warn"
 # `dev`, so `cargo test` also builds dependencies at opt-level 3 — this only
 # makes test builds faster and changes no semantics; the one-time recompile is
 # absorbed by `rust-cache` in CI.
+# Debuginfo level for `dev`, and for `test` which inherits it.
+#
+# Full debuginfo dominates the first-party artifact: across the sections of
+# the dev-profile rlib, DWARF outweighs code and data by roughly seven to one.
+# The content-addressed build cache keeps one entry per distinct source state
+# compiled, so that crate's own churn, not the dependency graph, is what fills
+# the store. Line tables keep file and line numbers in panics, backtraces, and
+# test failures, which is the debugging surface this workflow actually uses;
+# what goes is a stepping debugger's variable inspection.
+#
+# CI already compiled this way, through a `CARGO_PROFILE_DEV_DEBUG` set once
+# per job. Declaring it here instead makes the local and CI dev profiles
+# identical by construction rather than by several places agreeing.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 opt-level = 3

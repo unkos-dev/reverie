@@ -69,10 +69,10 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat tail tr cut uname grep; do
+for real in env bash git jq ls df date dirname cat head tail tr cut uname grep; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node npm npx kache; do
+for tool in just cargo rustc node npm npx; do
   noop_stub "${stub_bin}" "${tool}"
 done
 
@@ -107,6 +107,35 @@ fi
 exec du.real "$@"
 DU_STUB
 chmod +x "${stub_bin}/du"
+
+cat >"${stub_bin}/kache" <<'KACHE_STUB'
+#!/usr/bin/env bash
+# Fixture stub: supports only `kache daemon status`, the single invocation
+# doctor.sh makes, and exits 2 on anything else so an argument regression in
+# doctor.sh fails this selftest instead of the stub silently accepting
+# whatever it was called with. The reported state comes from
+# DOCTOR_STUB_KACHE_DAEMON (default "running"); setting it to the empty
+# string drops the Daemon line entirely, modelling a future release that
+# changes the status format.
+#
+# The output is reproduced with the ANSI colour real kache wraps the state
+# in. That wrapping is the whole reason the check cannot simply compare the
+# line to a literal, so a stub emitting bare text would test a parser this
+# repo does not have.
+set -euo pipefail
+if [ "$#" -eq 2 ] && [ "$1" = "daemon" ] && [ "$2" = "status" ]; then
+  state="${DOCTOR_STUB_KACHE_DAEMON-running}"
+  printf '  kache:    v0.11.0 (epoch 1)\n'
+  printf '  Service:  \033[32minstalled\033[0m (/dev/null)\n'
+  if [ -n "${state}" ]; then
+    printf '  Daemon:   \033[31m%s\033[0m\n' "${state}"
+  fi
+  printf '  Socket:   /dev/null\n'
+  exit 0
+fi
+exit 2
+KACHE_STUB
+chmod +x "${stub_bin}/kache"
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
@@ -478,28 +507,75 @@ expect_exit "XDG_CACHE_HOME fallback is found when the default is absent" 0 "${s
 expect_contains "XDG_CACHE_HOME fallback store size is reported" "PASS kache store size:"
 rm -rf "${xdg_cache}/kache"
 
-# --- the over-threshold warning: DOCTOR_STUB_DU_KIB reports a controlled
-# figure so this fires without writing a real 20+ GiB store. An earlier
-# claim that this branch could not be covered without doing exactly that
-# was wrong; the harness already stubs PATH, including du. ---
+# --- the over-cap warning: DOCTOR_STUB_DU_KIB reports a controlled figure so
+# this fires without writing a real 50+ GiB store. An earlier claim that this
+# branch could not be covered without doing exactly that was wrong; the
+# harness already stubs PATH, including du. ---
 mkdir -p "${linux_default}"
-export DOCTOR_STUB_DU_KIB=$((21 * 1024 * 1024)) # 21 GiB, safely over the 20 GiB threshold
-expect_exit "over-threshold kache store warns" 0 "${stub_bin}"
-expect_contains "over-threshold warning fires with the rounded figure" "WARN kache store size: 21 GiB"
-expect_contains "over-threshold warning names the exact remediation" "WARN kache store size: 21 GiB -- fix: kache gc --max-age 30d"
+export DOCTOR_STUB_DU_KIB=$((51 * 1024 * 1024)) # 51 GiB, safely over the 50 GiB cap
+expect_exit "over-cap kache store warns" 0 "${stub_bin}"
+expect_contains "over-cap warning fires with the rounded figure" "WARN kache store size: 51 GiB"
+expect_contains "over-cap warning names the exact remediation" "WARN kache store size: 51 GiB -- fix: kache gc --max-age 7d"
 unset DOCTOR_STUB_DU_KIB
 
-# --- boundary case: a KiB figure that truncates to 20 GiB but rounds to 21
-# GiB must not display "20 GiB" next to a warning that says the store is
-# over the 20 GiB threshold; the displayed figure must agree with the
-# warning that produced it. 20 GiB is 20 * 1024 * 1024 KiB; 600000 KiB more
-# crosses the threshold while still truncating to 20 in integer division. ---
-export DOCTOR_STUB_DU_KIB=$((20 * 1024 * 1024 + 600000))
+# --- a store comfortably under the cap must stay silent. This is what stops
+# the threshold drifting back below kache's own ceiling, where it would fire
+# permanently against a store the daemon is already keeping in bounds. ---
+export DOCTOR_STUB_DU_KIB=$((30 * 1024 * 1024)) # 30 GiB, a normal working store
+expect_exit "under-cap kache store passes" 0 "${stub_bin}"
+expect_contains "under-cap store is reported without a warning" "PASS kache store size: 30 GiB"
+expect_not_contains "under-cap store produces no WARN lines" "WARN "
+unset DOCTOR_STUB_DU_KIB
+
+# --- boundary case: a KiB figure that truncates to 50 GiB but rounds to 51
+# GiB must not display "50 GiB" next to a warning that says the store is over
+# the 50 GiB cap; the displayed figure must agree with the warning that
+# produced it. 50 GiB is 50 * 1024 * 1024 KiB; 600000 KiB more crosses the cap
+# while still truncating to 50 in integer division. ---
+export DOCTOR_STUB_DU_KIB=$((50 * 1024 * 1024 + 600000))
 expect_exit "boundary kache store still warns" 0 "${stub_bin}"
-expect_contains "boundary warning rounds up, not truncates" "WARN kache store size: 21 GiB"
-expect_not_contains "boundary warning does not display the truncated 20 GiB figure" "kache store size: 20 GiB"
+expect_contains "boundary warning rounds up, not truncates" "WARN kache store size: 51 GiB"
+expect_not_contains "boundary warning does not display the truncated 50 GiB figure" "kache store size: 50 GiB"
 unset DOCTOR_STUB_DU_KIB
 rm -rf "${linux_default}"
+
+# --- kache daemon check. The daemon is what sweeps the store, so a stopped
+# one is the usual cause of the over-threshold warning above, but local hits
+# and misses survive without it: every branch below stays at WARN and exits
+# zero. `kache daemon status` exits 0 either way and colours the state, so
+# the check parses its output, and these cases pin that parse. ---
+expect_exit "running kache daemon passes" 0 "${stub_bin}"
+expect_contains "running kache daemon is reported" "PASS kache daemon is running"
+expect_not_contains "running kache daemon produces no WARN lines" "WARN "
+
+# "not running" contains "running", so a naive substring match would report a
+# stopped daemon as healthy. This is the regression test for that ordering.
+export DOCTOR_STUB_KACHE_DAEMON="not running"
+expect_exit "stopped kache daemon warns, does not fail" 0 "${stub_bin}"
+expect_contains "stopped kache daemon names the exact fix" "WARN kache daemon is running -- fix: kache daemon start"
+expect_not_contains "stopped kache daemon is never reported as passing" "PASS kache daemon is running"
+expect_not_contains "stopped kache daemon produces no FAIL lines" "FAIL "
+
+# A status format this check no longer recognises must read as indeterminate.
+# Silently passing would leave the check reporting health forever after an
+# upstream output change, which is the failure mode the mise-pin check above
+# is also written to avoid.
+export DOCTOR_STUB_KACHE_DAEMON=""
+expect_exit "absent Daemon line warns, does not fail" 0 "${stub_bin}"
+expect_contains "absent Daemon line reports the state as indeterminate" "WARN kache daemon is running -- fix: cannot determine daemon state"
+expect_not_contains "absent Daemon line does not forge a pass" "PASS kache daemon is running"
+
+export DOCTOR_STUB_KACHE_DAEMON="wedged"
+expect_exit "unrecognised daemon state warns, does not fail" 0 "${stub_bin}"
+expect_contains "unrecognised daemon state reports the state as indeterminate" "WARN kache daemon is running -- fix: cannot determine daemon state"
+expect_not_contains "unrecognised daemon state does not forge a pass" "PASS kache daemon is running"
+unset DOCTOR_STUB_KACHE_DAEMON
+
+# With no kache on PATH there is no daemon to ask about: the binary check
+# above already warns, and a second warning naming a command that cannot run
+# would be noise.
+expect_exit "absent kache binary skips the daemon check" 0 "${stub_bin_no_kache}"
+expect_not_contains "absent kache binary produces no daemon line" "kache daemon is running"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"

@@ -57,10 +57,32 @@ jobs:
       openapi: ${{ steps.filter.outputs.openapi }}
       npm: ${{ steps.filter.outputs.npm }}
       docs: ${{ steps.filter.outputs.docs }}
+      toolchain: ${{ steps.toolchain.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      # Resolve the pinned Rust toolchain once for every job that needs it.
+      # backend/rust-toolchain.toml is what rustup actually honours, but
+      # dtolnay/rust-toolchain never reads it and requires an explicit
+      # version, so naming `stable` there would install a toolchain the first
+      # cargo call then replaces. Reading the channel here keeps one source of
+      # truth and one install. Same extraction shape as the MSRV job's
+      # rust-version read: the sed stops at the closing quote, and `|| true`
+      # lets a dropped field reach the format guard instead of failing the
+      # pipe opaquely.
+      - name: Resolve pinned toolchain
+        id: toolchain
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^channel' backend/rust-toolchain.toml | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Could not extract a valid channel from backend/rust-toolchain.toml (got: '${version}')" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
         with:
@@ -107,12 +129,12 @@ jobs:
       # per-test in code.
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       # CI-only build-speed tweaks; local dev is untouched. Incremental
-      # metadata tracking is wasted in a single-shot build.
-      # line-tables-only keeps file:line panic backtraces while cutting
-      # link size/time. mold (installed below) removes the single-threaded
-      # ld bottleneck.
+      # metadata tracking is wasted in a single-shot build. mold (installed
+      # below) removes the single-threaded ld bottleneck. The dev profile's
+      # line-tables-only debuginfo is not here because it is no longer
+      # CI-only: backend/Cargo.toml declares it, so both planes compile the
+      # same way without two settings having to agree.
       CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -175,12 +197,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: mise exec just -- just rust::guards
 
-      # dtolnay/rust-toolchain reads the toolchain from the git ref name,
-      # so a SHA pin requires naming the channel explicitly via
-      # `toolchain:`.
+      # dtolnay/rust-toolchain reads the toolchain from the git ref name, so a
+      # SHA pin requires naming it explicitly via `toolchain:`. The version
+      # comes from backend/rust-toolchain.toml via the changes job rather than
+      # being written here, so this job and a developer's machine compile with
+      # the same rustc. Components stay per-job: this one lints, so it takes
+      # clippy and rustfmt and not the coverage job's llvm-tools.
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
-          toolchain: stable
+          toolchain: ${{ needs.changes.outputs.toolchain }}
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -304,7 +329,6 @@ jobs:
     env:
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
       CARGO_LLVM_COV_TARGET_DIR: target/llvm-cov-target
     steps:
@@ -312,9 +336,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Version from backend/rust-toolchain.toml via the changes job; see the
+      # backend-checks toolchain step. Coverage instrumentation is read back by
+      # llvm-tools, so that component is this job's alone.
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
-          toolchain: stable
+          toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -437,8 +464,31 @@ jobs:
       # --locked forbids resolving newer, higher-MSRV dependency versions
       # than the committed lockfile; --all-targets covers tests and
       # benches, not just lib + bin.
+      #
+      # RUSTUP_TOOLCHAIN is what actually holds this job to the floor.
+      # backend/rust-toolchain.toml pins the everyday toolchain and rustup
+      # honours that file over whatever this job installed, so without the
+      # override the job would install the MSRV, compile on the pinned version
+      # instead, and pass while checking nothing. The environment variable
+      # outranks the file. The assertion is the regression test for that: it
+      # fails loudly if the override ever stops taking effect, rather than
+      # letting the job go quietly green on the wrong compiler. rustc reports
+      # a full x.y.z, while rust-version may be x.y, so the match allows the
+      # patch suffix.
       - name: Check workspace builds on MSRV
-        run: cargo check --workspace --all-targets --locked
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: |
+          set -euo pipefail
+          active=$(rustc --version | cut -d' ' -f2)
+          case "${active}" in
+            "${RUSTUP_TOOLCHAIN}" | "${RUSTUP_TOOLCHAIN}".*) ;;
+            *)
+              echo "MSRV job is compiling on rustc ${active}, not the declared floor ${RUSTUP_TOOLCHAIN}: the toolchain override is not in effect" >&2
+              exit 1
+              ;;
+          esac
+          cargo check --workspace --all-targets --locked
 
   audit:
     name: Dependency policy (cargo-deny)

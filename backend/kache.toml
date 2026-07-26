@@ -1,0 +1,16 @@
+# Compile-time inputs the kache build cache cannot discover on its own.
+#
+# kache keys a cached artifact on the files rustc names in its dep-info. Under
+# SQLX_OFFLINE the sqlx query macros read `.sqlx/*.json` and bake the resulting
+# type information into the expansion, but they read it with `std::fs` rather
+# than `include_str!`, so rustc never records the file and the cache key does
+# not move when regenerated query metadata does. Without this declaration a
+# `cargo sqlx prepare` that changes only the prepared JSON leaves the previous
+# artifact eligible for reuse.
+#
+# `migrations/` is defensive rather than load-bearing: `sqlx::migrate!` already
+# registers every `.sql` file in dep-info (confirmed against the emitted `.d`),
+# so the migration set is keyed correctly today. It is declared anyway because
+# the build script already treats that directory as a compile input, and the
+# two should not disagree if sqlx changes how the macro tracks its reads.
+extra_inputs = [".sqlx/**/*.json", "migrations/**/*.sql"]

@@ -117,6 +117,8 @@ Workflow and infrastructure files are additionally scanned in CI by zizmor, Chec
 
 ### CI toolchain pins
 
+Rust itself is pinned in [`backend/rust-toolchain.toml`](../backend/rust-toolchain.toml). rustup reads that file for every cargo invocation under `backend/`, so a contributor's build and a CI build use the same compiler; before it, each side tracked `stable` on its own schedule and a release could surface new lints on one side weeks before the other. `dtolnay/rust-toolchain` does not read the file, so the backend jobs parse the channel out of it and install exactly that version rather than naming it a second time where it could drift. Renovate's `rust-toolchain` manager raises the bump PRs. The pin is not the minimum supported version: `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) stays the supported floor, and the MSRV job overrides the file through `RUSTUP_TOOLCHAIN` so it still compiles against that floor rather than against the pinned version.
+
 CI installs vp and node through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev/setup-vp), reading two workflow env vars: `VP_VERSION` (the global vp) and `NODE_VERSION`. Both carry `# renovate:` annotations, so Renovate raises bump PRs; `VP_VERSION` and the npm `vite-plus` devDependency share the grouped `vite-plus` PR, and the `repo-lint` drift guard fails the build if they diverge. On a `vite-plus` bump, re-check the `dependency-review` `allow-ghsas` list in [`ci.yml`](workflows/ci.yml) against new advisories for the aliased vite package; a vp bump is the deliberate review trigger recorded in [`debt/2026-06-30-vite-plus-alias-dependency-review.md`](../debt/2026-06-30-vite-plus-alias-dependency-review.md).
 
 ## Testing requirements

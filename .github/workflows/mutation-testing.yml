@@ -57,7 +57,6 @@ jobs:
       SQLX_OFFLINE: "true"
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -68,24 +67,57 @@ jobs:
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
-      # Mutation testing rebuilds per mutant — the link-time win compounds.
-      - name: Install mold linker
-        run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends mold
+      # The version comes out of backend/rust-toolchain.toml, the file rustup
+      # honours for every cargo call, rather than being named here: naming
+      # `stable` would install a toolchain the first cargo call then replaces,
+      # and would let this workflow drift onto a different compiler from the
+      # one ci.yml and a developer's machine use. This workflow has no changes
+      # job to resolve it once, so it reads the channel itself. Same extraction
+      # shape as ci.yml's; `|| true` sends a dropped field to the format guard
+      # rather than failing the pipe opaquely.
+      - name: Resolve pinned toolchain
+        id: toolchain
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^channel' backend/rust-toolchain.toml | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Could not extract a valid channel from backend/rust-toolchain.toml (got: '${version}')" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
-          toolchain: stable
+          toolchain: ${{ steps.toolchain.outputs.version }}
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: backend
 
-      - name: Install cargo-mutants (mise)
+      # Mutation testing rebuilds and relinks once per mutant, so the linker
+      # choice compounds here more than anywhere else in CI. mold rides along
+      # with cargo-mutants rather than taking a step of its own: mise's setup
+      # dominates a small tool install, so one step installing two tools costs
+      # less than two steps installing one. Taking it from mise also drops an
+      # unpinned `apt-get install mold` from this workflow, which is the whole
+      # reason mise.toml pins mold in the first place, and puts this job on the
+      # same mold build as ci.yml and a developer's machine.
+      #
+      # Shims stay off PATH and the run below goes through `mise exec`, for the
+      # reason ci.yml records on its own mold step: `-fuse-ld=mold` makes the
+      # linker driver search for a program named `ld.mold`, which it must find
+      # as the real binary. A mise shim re-resolves its version per exec from
+      # the config at the caller's working directory, and rustc links each unit
+      # from that unit's package root, so a registry dependency links from
+      # ~/.cargo/registry with no mise.toml above it.
+      - name: Install mold and cargo-mutants (mise)
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.11"
-          install_args: cargo:cargo-mutants
+          install_args: mold cargo:cargo-mutants
+          add_shims_to_path: false
 
       # Exit-code triage keeps the advisory posture honest: missed mutants
       # (2) and mutant timeouts (3) are findings, not failures; anything
@@ -97,7 +129,7 @@ jobs:
           shard=$(( 10#$(date -u +%V) % 8 ))
           echo "ISO week $(date -u +%V) -> shard ${shard}/8"
           rc=0
-          cargo mutants --workspace --shard "${shard}/8" -- --all-targets || rc=$?
+          mise exec mold cargo:cargo-mutants -- cargo mutants --workspace --shard "${shard}/8" -- --all-targets || rc=$?
           case "$rc" in
             0) echo "shard clean: every mutant caught" ;;
             2|3)
