@@ -209,7 +209,7 @@ jobs:
       # and everything it spawns; with shims off, a step that forgets the
       # wrapper fails loudly instead of silently resolving through a shim.
       - name: Install just (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -368,7 +368,7 @@ jobs:
       # in mise.toml like every other tool, which also drops an unpinned
       # `apt-get install` from the job's supply chain.
       - name: Install mold and cargo-machete (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -511,7 +511,7 @@ jobs:
       # linker is spawned by the compiler from a package root outside the
       # checkout, where a shim cannot resolve its version.
       - name: Install linker and coverage tools (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -650,7 +650,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install cargo-deny (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -710,7 +710,7 @@ jobs:
           persist-credentials: false
 
       - name: Install actionlint (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -761,7 +761,7 @@ jobs:
       # `just infra::zizmor` locally and there is no per-workflow version
       # copy to drift.
       - name: Install pinned tools (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -1059,7 +1059,7 @@ jobs:
       # mise.toml, so this job runs the same binaries as the local hooks and
       # there is no per-workflow version copy to drift.
       - name: Install pinned tools (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -1237,7 +1237,7 @@ jobs:
       # directory; each js:: recipe re-enters frontend/ via its own
       # [working-directory].
       - name: Install just (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
@@ -1540,7 +1540,7 @@ jobs:
           persist-credentials: false
 
       - name: Install gitleaks (mise)
-        uses: jdx/mise-action@f10502fc09dadecfefb962fff68ce77213930204 # v4.2.2
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.7.12"
