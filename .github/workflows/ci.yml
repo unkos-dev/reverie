@@ -1017,43 +1017,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # Static guard, no toolchain — runs first so drift fails in seconds,
-      # before any install. Each workflow carries its own VP_VERSION and
-      # NODE_VERSION (reusable and standalone workflows do not inherit
-      # ci.yml's env), so a partial edit or Renovate update could desync them
-      # and run a different global vp. Assert every workflow's VP_VERSION
-      # equals package.json's vite-plus devDependency (the local
-      # node_modules/.bin/vp every recipe runs), and that all NODE_VERSION
-      # pins agree. The grouped vite-plus Renovate PR moves the vp set
-      # together; this fails loud if any file lags.
-      - name: vp and node pins match across workflows and package.json
-        run: |
-          pkg="$(jq -r '.devDependencies["vite-plus"]' package.json)"
-          case "$pkg" in
-            [0-9]*.[0-9]*) ;;
-            *)
-              echo "::error file=package.json::could not parse vite-plus devDependency version (got '$pkg'); the dependency shape may have changed — update this guard"
-              exit 1
-              ;;
-          esac
-          rc=0
-          node_ref=""
-          for f in .github/workflows/ci.yml .github/workflows/docs-build.yml .github/workflows/scheduled-audit.yml; do
-            vp="$(yq '.env.VP_VERSION' "$f")"
-            node_pin="$(yq '.env.NODE_VERSION' "$f")"
-            if [ "$vp" != "$pkg" ]; then
-              echo "::error file=${f}::VP_VERSION ($vp) != vite-plus in package.json ($pkg) — keep every workflow's vp pin in lockstep; they ship in the grouped vite-plus Renovate PR"
-              rc=1
-            fi
-            if [ -z "$node_ref" ]; then
-              node_ref="$node_pin"
-            elif [ "$node_pin" != "$node_ref" ]; then
-              echo "::error file=${f}::NODE_VERSION ($node_pin) != the pin in the earlier workflows ($node_ref) — keep the node pins in lockstep"
-              rc=1
-            fi
-          done
-          if [ "$rc" -ne 0 ]; then exit 1; fi
-          echo "all workflow vp pins ($pkg) match package.json; node pins ($node_ref) consistent"
+      # Static guard, invoked as the script rather than through `just` so it
+      # still runs first, before mise and any install: the pins it checks are
+      # what those installs would use, so drift should fail in seconds rather
+      # than after provisioning the wrong vp. `just infra::vp-pin-drift` runs
+      # the same script locally and in the preflight gate. jq and yq are both
+      # preinstalled on the runner image, so this step needs no toolchain.
+      - name: vp and node pins agree across every copy
+        run: scripts/vp-pin-drift.sh
 
       # Single-source tool provisioning: mise installs the exact pins from
       # mise.toml, so this job runs the same binaries as the local hooks and
@@ -1082,6 +1053,9 @@ jobs:
 
       - name: No workflow re-pins a mise-managed tool
         run: just infra::tool-pin-drift
+
+      - name: vp-pin gate self-test
+        run: just infra::vp-pin-drift-selftest
 
       - name: ADR frontmatter and index coverage
         run: just infra::adr-frontmatter-selftest
