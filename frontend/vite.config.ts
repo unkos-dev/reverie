@@ -31,7 +31,7 @@ export default defineConfig({
     // light-dark() (parcel-bundler/lightningcss#873), silently corrupting the
     // grid's dark palette in production builds. esbuild minifies it correctly.
     cssMinify: "esbuild",
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         // Route the dev-only design tree into its own named chunk. main.tsx
         // gates the import behind `if (import.meta.env.DEV)`; in production

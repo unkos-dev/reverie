@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
 import { describe, expect, test } from "vite-plus/test";
 
@@ -13,8 +13,13 @@ function renderHost(initialEntry: string): {
   let clearGen: { current: number } | undefined;
   function Host(): ReactElement {
     const live = useLiveSearchParams();
-    applyParams = live.applyParams;
-    clearGen = live.clearGen;
+    // Capturing in an effect rather than during render keeps the host free of
+    // render-phase side effects. Testing Library flushes effects inside act,
+    // so both handles are set by the time render() returns.
+    useEffect(() => {
+      applyParams = live.applyParams;
+      clearGen = live.clearGen;
+    });
     const location = useLocation();
     return <div data-testid="search">{location.search}</div>;
   }
