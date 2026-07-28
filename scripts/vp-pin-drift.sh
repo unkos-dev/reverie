@@ -19,12 +19,6 @@
 #     guard keeps it in that form.
 set -euo pipefail
 
-WORKFLOWS=(
-  .github/workflows/ci.yml
-  .github/workflows/docs-build.yml
-  .github/workflows/scheduled-audit.yml
-)
-
 fail=0
 err() {
   echo "::error file=$1::$2" >&2
@@ -63,21 +57,55 @@ if [ "$override" != "\$vite" ]; then
   err package.json "overrides.vite is '${override}', not the '\$vite' reference to the direct dependency; a literal spec lags the next vite-plus bump and npm then rejects the tree with EOVERRIDE"
 fi
 
+# Discover the workflows to check rather than listing them: a hand-kept census
+# silently excludes the next workflow someone adds, which is the one most
+# likely to carry a lagging copy. A file qualifies either by installing vp or
+# by declaring the pin, so neither half can hide from the other.
+shopt -s nullglob
+workflows=()
+for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+  if grep -q 'voidzero-dev/setup-vp' "$f" || [ "$(yq '.env.VP_VERSION' "$f")" != "null" ]; then
+    workflows+=("$f")
+  fi
+done
+shopt -u nullglob
+
+# Fail closed. An empty census would make the loop below a no-op and report
+# success having checked nothing, so treat "found none" as the discovery
+# pattern having gone stale, not as agreement.
+if [ "${#workflows[@]}" -eq 0 ]; then
+  echo "::error::no workflow installs vp or declares VP_VERSION, so this guard checked nothing; update the discovery pattern if setup-vp moved" >&2
+  exit 1
+fi
+
 node_ref=""
-for f in "${WORKFLOWS[@]}"; do
+node_ref_file=""
+for f in "${workflows[@]}"; do
   vp="$(yq '.env.VP_VERSION' "$f")"
   node_pin="$(yq '.env.NODE_VERSION' "$f")"
   if [ "$vp" != "$ref" ]; then
-    err "$f" "VP_VERSION (${vp}) != vite-plus in package.json (${ref}); keep every workflow's vp pin in lockstep"
+    err "$f" "VP_VERSION (${vp}) != vite-plus in package.json (${ref}); every workflow that installs vp carries its own copy, so keep them in lockstep"
   fi
+  # Shape-check before comparing. yq prints the string "null" for an absent
+  # key, so pins missing everywhere would agree with each other and pass,
+  # and setup-vp falls back to the latest LTS node when given no version:
+  # the floating runtime the pin exists to prevent.
+  case "$node_pin" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *)
+      err "$f" "NODE_VERSION is '${node_pin}', not a pinned x.y.z version; without it setup-vp resolves whatever node is latest LTS that day"
+      continue
+      ;;
+  esac
   if [ -z "$node_ref" ]; then
     node_ref="$node_pin"
+    node_ref_file="$f"
   elif [ "$node_pin" != "$node_ref" ]; then
-    err "$f" "NODE_VERSION (${node_pin}) != the pin in the earlier workflows (${node_ref}); keep the node pins in lockstep"
+    err "$f" "NODE_VERSION (${node_pin}) != the pin in ${node_ref_file} (${node_ref}); keep the node pins in lockstep"
   fi
 done
 
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi
-echo "vp pins agree (${ref}) across both package.json files, the vite alias, the npm override, and ${#WORKFLOWS[@]} workflows; node pins (${node_ref}) consistent"
+echo "vp pins agree (${ref}) across both package.json files, the vite alias, the npm override, and ${#workflows[@]} discovered workflows; node pins (${node_ref}) consistent"
