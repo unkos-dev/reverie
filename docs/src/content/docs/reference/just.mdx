@@ -94,6 +94,8 @@ one, one still in progress, and no recorded run at all apart.
 | `just infra::typos`                              | Spell check the tree (honours .gitignore and \_typos.toml excludes).                                              |
 | `just infra::vale-scope-test`                    | Test the vale-lint.sh scope policy (include/exclude classification).                                              |
 | `just infra::vale-selftest`                      | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).                                       |
+| `just infra::vp-pin-drift`                       | Assert every vite-plus pin agrees: both package.json files, the alias spec, the override, and each workflow.      |
+| `just infra::vp-pin-drift-selftest`              | Exercise the vp-pin guard against planted drift before trusting it.                                               |
 | `just infra::worktree-cargo-target-selftest`     | Self-test the worktree recipe's isolated cargo target-dir config.                                                 |
 | `just infra::yamllint`                           | yamllint every tracked YAML file.                                                                                 |
 | `just infra::zizmor`                             | Audit workflow files for GitHub Actions supply-chain and security issues (matches the CI zizmor gate).            |
