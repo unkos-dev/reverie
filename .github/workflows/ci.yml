@@ -155,6 +155,20 @@ jobs:
       # is told not to write to the store the default branch restores from,
       # rather than relying on the bucket to reject it.
       KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
+      # kache refuses to cache a C compilation carrying a flag its table does
+      # not model, which is why zstd-sys recompiles every run.
+      # -fmerge-all-constants is deterministic codegen with no host-dependent
+      # component, so opting it in is safe: an allowlisted flag is folded into
+      # the cache key verbatim, and a compile without it keys differently.
+      #
+      # Env rather than a repository `.kache.toml`, because kache resolves that
+      # file by walking up from the working directory and these compiles are
+      # spawned by build scripts whose directory is under ~/.cargo/registry,
+      # where the repository is not an ancestor. The other flag these builds
+      # carry, `-Wa,--debug-prefix-map=`, is deliberately absent: the allowlist
+      # matches by exact string and that value embeds the versioned registry
+      # path, so an entry would stop matching on the next aws-lc-sys bump.
+      KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
       # Fork pull requests cannot read repository secrets, so the remote does
       # not exist for them; pointing kache at an unreachable endpoint would
       # time out per crate and leave the setup check asserting nothing. They
