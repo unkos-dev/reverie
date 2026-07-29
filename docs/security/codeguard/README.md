@@ -250,3 +250,28 @@ ungated, without failing the build.
 **Compensating controls:** n/a — this entry documents reverie's mechanism for
 satisfying the guard's own deny-by-default and testing-and-automation
 principles, not a departure from them.
+
+### 8. shadcn/ui generator is resolved on demand
+
+**Override:** `codeguard-0-supply-chain-security.md` requires lockfiles and
+version pinning for third-party packages.
+
+**Reverie's position:** The shadcn CLI is not a project dependency. Developers
+invoke it manually as `npx shadcn@latest add <component>` when adding a UI
+primitive. It is not invoked by CI, builds, tests, hooks, or unattended
+automation.
+
+**Rationale:** shadcn is an infrequently used source generator whose upstream
+workflow resolves the current CLI on demand. Retaining it as a development
+dependency added 219 packages that Reverie's build and runtime do not use,
+including a server stack that created advisory and dependency-hoisting costs.
+The persistent dependency surface outweighs the exposure from a small number
+of deliberate invocations.
+
+**Compensating controls:** Invocation remains manual and interactive, with no
+`--yes` flag suppressing npm's confirmation behavior. Generated source is
+committed, reviewed, and tested through the normal frontend gates. Those checks
+protect the generated result; they do not protect the developer environment
+from a compromised generator. Reverie explicitly accepts the residual risk that
+the mutable `latest` tag could resolve to a compromised publication before
+output review occurs.
