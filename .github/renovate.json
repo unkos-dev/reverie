@@ -15,8 +15,10 @@
   "minimumReleaseAge": "3 days",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
+    "description": "Labelled so the weekly refresh is distinguishable from a targeted update in the PR list. Its diff is whole-tree churn and is reviewed on different terms.",
     "enabled": true,
-    "schedule": ["before 6am on monday"]
+    "schedule": ["before 6am on monday"],
+    "addLabels": ["lockfile-maintenance"]
   },
   "vulnerabilityAlerts": {
     "description": "Renovate is the only bot that opens remediation PRs; Dependabot keeps raising the alerts this block consumes but no longer raises its own PRs against them. minimumReleaseAge is restated as null because the 3-day stability hold above would otherwise read as applying here, and a security fix should not sit behind it. The severity label is templated so the queue can be triaged without opening each PR.",

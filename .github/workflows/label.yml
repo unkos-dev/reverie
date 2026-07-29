@@ -29,8 +29,17 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      # Additive only. sync-labels removes any label named in labeler.yml that
+      # the changed paths do not match, and it cannot tell a stale path label
+      # from one another actor set deliberately. Both `security` and
+      # `dependencies` are path rules here and are also applied by Renovate and
+      # by hand, so syncing strips them from exactly the pull requests that
+      # need them: a vulnerability PR touches only a lockfile, matches no
+      # security path, and loses the label minutes after Renovate sets it. The
+      # cost of turning this off is a path label that lingers after a file is
+      # dropped from a PR, which is the cheaper failure.
       - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
-          sync-labels: true
+          sync-labels: false
