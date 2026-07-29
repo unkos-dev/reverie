@@ -24,7 +24,7 @@
     "description": "minimumReleaseAge restates Renovate's own default for this block; without it the 3-day hold above reads as applying to security fixes.",
     "enabled": true,
     "schedule": ["at any time"],
-    "labels": ["dependencies", "security", "security:{{{lowercase vulnerabilitySeverity}}}"],
+    "addLabels": ["security:{{{lowercase vulnerabilitySeverity}}}"],
     "prCreation": "immediate",
     "minimumReleaseAge": null
   },
