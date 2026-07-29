@@ -173,7 +173,7 @@ jobs:
       # sqlx-cli must track the sqlx *crate* version, or `cargo sqlx prepare
       # --check` validates against a cache built by a mismatched proc-macro.
       # Both are hand-set in different files, so anchor on the crate and fail
-      # loud when the cli pin lags behind it.
+      # loud when the cli pin differs from it in either direction.
       - name: sqlx-cli pin matches sqlx crate version
         run: |
           crate="$(yq -p toml -o yaml '.dependencies.sqlx.version // .dependencies.sqlx' Cargo.toml)"
