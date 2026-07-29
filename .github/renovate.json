@@ -15,14 +15,18 @@
   "minimumReleaseAge": "3 days",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
+    "description": "Label the weekly whole-tree refresh so it is distinguishable from a targeted update.",
     "enabled": true,
-    "schedule": ["before 6am on monday"]
+    "schedule": ["before 6am on monday"],
+    "addLabels": ["lockfile-maintenance"]
   },
   "vulnerabilityAlerts": {
+    "description": "minimumReleaseAge restates Renovate's own default for this block; without it the 3-day hold above reads as applying to security fixes.",
     "enabled": true,
     "schedule": ["at any time"],
-    "labels": ["dependencies", "security"],
-    "prCreation": "immediate"
+    "addLabels": ["security:{{{lowercase vulnerabilitySeverity}}}"],
+    "prCreation": "immediate",
+    "minimumReleaseAge": null
   },
   "packageRules": [
     {
