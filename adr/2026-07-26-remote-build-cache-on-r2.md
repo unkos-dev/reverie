@@ -109,10 +109,10 @@ that job's runtime.
   those units and a warm default-branch run measures 191s. Pull request runs
   measure 238s to 242s, so parity is the default branch's figure rather than
   every run's, and the difference is unexplained.
-- Bad, because a share of every run still compiles uncached. Roughly 285 C
-  translation units bypass the cache on compiler flags kache declines to model,
-  and aggregate remote request latency exceeds transfer time, which together
-  account for most of what the compile phase still costs.
+- Bad, because a share of every run still compiles uncached. Roughly 220 C
+  translation units bypass the cache on a compiler flag kache declines to
+  model, and aggregate remote request latency exceeds transfer time, which
+  together account for most of what the compile phase still costs.
 - Bad, because CI gains a dependency on a third-party action, a young caching
   tool, and an external storage provider, any of which can fail or change.
   Failures degrade to uncached compilation rather than breaking the build.
