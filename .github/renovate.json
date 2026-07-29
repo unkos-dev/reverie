@@ -19,10 +19,12 @@
     "schedule": ["before 6am on monday"]
   },
   "vulnerabilityAlerts": {
+    "description": "Renovate is the only bot that opens remediation PRs; Dependabot keeps raising the alerts this block consumes but no longer raises its own PRs against them. minimumReleaseAge is restated as null because the 3-day stability hold above would otherwise read as applying here, and a security fix should not sit behind it. The severity label is templated so the queue can be triaged without opening each PR.",
     "enabled": true,
     "schedule": ["at any time"],
-    "labels": ["dependencies", "security"],
-    "prCreation": "immediate"
+    "labels": ["dependencies", "security", "security:{{{lowercase vulnerabilitySeverity}}}"],
+    "prCreation": "immediate",
+    "minimumReleaseAge": null
   },
   "packageRules": [
     {
