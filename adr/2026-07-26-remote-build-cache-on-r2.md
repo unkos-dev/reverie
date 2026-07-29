@@ -102,10 +102,11 @@ that job's runtime.
 - Good, because relieving the tarball of `target/` leaves the registry cache
   well inside the 10 GiB quota, which stops unrelated caches being evicted.
 - Bad, because measured runs are slower than an exact tarball hit, roughly 300s
-  against 196s. Most of that gap is one defect rather than the design: a
-  zero-byte `.rmeta` emitted under `cargo clippy --all-targets` makes the
-  workspace crate permanently uncacheable, and it is the last serial unit in
-  two steps. Tracked upstream.
+  against 196s on kache 0.11.0. Most of that gap was one defect rather than the
+  design: a zero-byte `.rmeta` emitted under `cargo clippy --all-targets` made
+  the workspace crate permanently uncacheable, and it was the last serial unit
+  in two steps. kache 0.12.0 stores those units, so that figure now bounds the
+  gap rather than describing it.
 - Bad, because CI gains a dependency on a third-party action, a young caching
   tool, and an external storage provider, any of which can fail or change.
   Failures degrade to uncached compilation rather than breaking the build.
