@@ -56,7 +56,6 @@
     "colorjs.io": "0.7.0",
     "impeccable": "^3.1.0",
     "jsdom": "^29.1.1",
-    "shadcn": "^4.9.0",
     "stylelint": "^17.14.0",
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.1",

@@ -7,7 +7,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 1. **No Any:** `any` is forbidden. Use `unknown` and narrow with type guards.
 2. **No Inline Styles or Hex:** Do not use inline style objects (except dynamic calcs) or arbitrary hex values. Use Tailwind utility classes and the established theme variables.
-3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run `npx --no-install shadcn add <component>` from `frontend/` so the CLI resolves from the lockfile-backed local dependency and reads the workspace `components.json`.
+3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run `npx shadcn@latest add <component>` from `frontend/` so the CLI reads the workspace `components.json`. The CLI is deliberately not a dependency: it writes source files that are reviewed and committed, and pinning it only guarantees components generated against a stale Radix and Tailwind.
 4. **No console.log:** Do not leave `console.log` statements in production code.
    </cardinal_rules>
 
