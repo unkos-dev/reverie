@@ -302,7 +302,11 @@ jobs:
           pr-comment: false
           # Cache linked executables as well as rlibs. Without this the build
           # scripts and doctest binaries are passed through uncached, which
-          # the last run counted as 580 skipped executables.
+          # the last run counted as 580 skipped executables. It became the
+          # default on Linux in kache 0.12.0 and stays spelled out here: that
+          # default rests on where the platform keeps debug information, so it
+          # can move again, and losing it would read as a slow run rather than
+          # a broken one.
           cache-executables: true
           # Enabling shards is what makes prefetch useful. Left unset, the
           # post step logs "No namespace provided, skipping shard upload" and
