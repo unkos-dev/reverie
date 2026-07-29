@@ -306,6 +306,13 @@ jobs:
           # most of all: `-C instrument-coverage` is a separate key space and
           # reusing this namespace would silently cross the two.
           namespace: x86_64-unknown-linux-gnu/${{ needs.changes.outputs.toolchain }}/dev
+          # PROBE, not for merge. The action's default skips prefetching any
+          # crate that compiled in under a second, on the grounds that
+          # recompiling is cheaper than downloading. That trade does not apply
+          # here: a skipped crate is still fetched from R2 when the build
+          # reaches it, one request at a time, which is the latency this
+          # namespace exists to avoid.
+          min-compile-ms: 0
 
       # A cache degrades quietly by design: kache compiles for real whenever
       # the store is unreachable and still exits 0. A mistyped secret or a
@@ -415,6 +422,24 @@ jobs:
       - name: Upload prefetch shards
         if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
         run: kache save-manifest
+
+      # PROBE, not for merge. The daemon logs its planning to a file, never to
+      # the job log, so a prefetch that plans nothing looks the same as one
+      # that plans well and arrives late. Surface it once.
+      - name: Dump kache daemon log (probe)
+        if: always() && env.R2_CONFIGURED == 'true'
+        run: |
+          set -uo pipefail
+          log="${HOME}/.cache/kache/kache.log"
+          if [ ! -f "${log}" ]; then
+            echo "no daemon log at ${log}"
+            ls -la "${HOME}/.cache/kache" || true
+            exit 0
+          fi
+          echo "== planner and prefetch lines =="
+          grep -aiE "planner|prefetch|shard" "${log}" | tail -n 120 || true
+          echo "== last 40 lines =="
+          tail -n 40 "${log}" || true
 
   # Keep the instrumented build off the checks job's serial critical path.
   # A dedicated target directory is safe to retain because it is used only
