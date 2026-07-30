@@ -53,7 +53,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.8",
     "bezier-easing": "3.0.1",
-    "colorjs.io": "0.7.0",
+    "colorjs.io": "0.7.1",
     "impeccable": "^3.1.0",
     "jsdom": "^29.1.1",
     "stylelint": "^17.14.0",
