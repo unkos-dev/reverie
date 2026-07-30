@@ -86,10 +86,10 @@ else does: the RLS-enforced `reverie_app` DSN and the `REVERIE_PUBLIC_URL` that
 OPDS requires. They defer to the repository root `.env` (copy `.env.example` to
 start one), so a value you set there is the one the server uses.
 
-Frontend only (Node.js at or above the `engines.node` floor in `package.json`):
+Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where npm workspaces hoist every plane's dependencies):
 
 ```bash
-cd frontend && npm install && npm run dev
+npm install && npm run dev --workspace frontend
 ```
 
 Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/AGENTS.md](../backend/AGENTS.md) and [frontend/AGENTS.md](../frontend/AGENTS.md).
