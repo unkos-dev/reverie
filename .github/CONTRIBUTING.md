@@ -86,10 +86,10 @@ else does: the RLS-enforced `reverie_app` DSN and the `REVERIE_PUBLIC_URL` that
 OPDS requires. They defer to the repository root `.env` (copy `.env.example` to
 start one), so a value you set there is the one the server uses.
 
-Frontend only (Node.js at or above the `engines.node` floor in `package.json`):
+Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where npm workspaces hoist every plane's dependencies):
 
 ```bash
-cd frontend && npm install && npm run dev
+npm ci && npm run dev --workspace frontend
 ```
 
 Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/AGENTS.md](../backend/AGENTS.md) and [frontend/AGENTS.md](../frontend/AGENTS.md).
@@ -175,3 +175,5 @@ Reviewer findings are advisory: address actionable ones in follow-up commits, di
 Dependency updates are managed by [Renovate](https://docs.renovatebot.com/) on a weekly schedule. **Don't file separate PRs for dependency bumps** unless you're patching a security advisory that Renovate hasn't yet flagged. Security-related dependency updates bypass the weekly schedule and land whenever the advisory is published.
 
 New Rust dependencies must satisfy the supply-chain policy in [`backend/deny.toml`](../backend/deny.toml): a crate whose license is outside the permissive allowlist (any GPL/LGPL/AGPL or otherwise unlisted license) or that resolves to a git source rather than crates.io will fail the `cargo deny check` run in the `audit` CI job. If you have a legitimate need for such a dependency, raise it in the PR so the policy exception can be reviewed.
+
+npm install scripts are gated by the `allowScripts` field in the root `package.json`: npm skips any install script not approved there and prints a warning naming the package. Approvals are pinned to exact versions, so a version bump of an approved package warns again until the new version is re-approved. If a dependency legitimately needs its install script, review what the script does, then run `npm install-scripts approve <pkg>` and commit the resulting `package.json` change in the same PR.

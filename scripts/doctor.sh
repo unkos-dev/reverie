@@ -168,9 +168,9 @@ if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
     # newer with no vp binary ever having been installed, and npx
     # --no-install has nothing to fall back to in that case either.
     if [ -x node_modules/.bin/vp ]; then
-      warn "node_modules matches package-lock.json" "npx --no-install vp install"
+      warn "node_modules stale against package-lock.json" "npx --no-install vp install"
     else
-      warn "node_modules matches package-lock.json" "npm install"
+      warn "node_modules stale against package-lock.json" "npm install"
     fi
   else
     pass "node_modules matches package-lock.json"
@@ -181,7 +181,7 @@ else
   # node_modules/.bin/vp may itself be missing. npx --no-install has
   # nothing to fall back to there, so advise the same npm install bootstrap
   # as the absent-tree branch above rather than a command that may not run.
-  warn "node_modules matches package-lock.json" "npm install"
+  warn "node_modules install incomplete (marker missing)" "npm install"
 fi
 
 # 7. sqlx offline cache present, with at least one entry that actually
