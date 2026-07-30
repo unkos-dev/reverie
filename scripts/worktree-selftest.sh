@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Self-test `just worktree`'s per-worktree cargo target-dir isolation. The
-# generated-reference drift check only reads recipe metadata and never
-# executes the file write, so a wrong path or malformed cargo config would
-# otherwise reach CI unnoticed. This runs the real recipe (not a copy)
-# against disposable branches, so a regression in the recipe itself, not a
-# stand-in, fails the build.
+# Self-test `just worktree`'s cargo isolation and operator-owned overlays. The
+# generated-reference drift check only reads recipe metadata and never executes
+# the recipe. Most cases invoke the checkout's real recipe directly. Codex
+# policy cases mirror the current justfile into a disposable source worktree so
+# uncommitted recipe changes are exercised before their first commit; if the
+# recipe delegates behavior to another file, that fixture must mirror it too.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -14,16 +14,23 @@ repo_root="$(git rev-parse --show-toplevel)"
 # temp dir often is one, while the checkout's own filesystem never is. This
 # mirrors the recipe's own default WORKTREE_ROOT (parent_directory of the
 # repo), so this selftest passes everywhere the recipe itself would work.
-scratch_root="$(mktemp -d "$(dirname "${repo_root}")/.worktree-cargo-target-selftest.XXXXXX")"
+scratch_root="$(mktemp -d "$(dirname "${repo_root}")/.worktree-selftest.XXXXXX")"
+export CODEX_HOME="${scratch_root}/codex-home"
+mkdir -p "${CODEX_HOME}"
 
 pids="$$"
-branch_ok="test/worktree-cargo-target-selftest-ok-${pids}"
-branch_dirty="test/worktree-cargo-target-selftest-dirty-${pids}"
-branch_env_target="test/worktree-cargo-target-selftest-envtarget-${pids}"
-branch_env_build="test/worktree-cargo-target-selftest-envbuild-${pids}"
-branch_env_both="test/worktree-cargo-target-selftest-envboth-${pids}"
-branch_env_sanitize="test/worktree-cargo-target-selftest-envsanitize-${pids}"
-branch_overlay="test/worktree-cargo-target-selftest-overlay-${pids}"
+branch_ok="test/worktree-selftest-ok-${pids}"
+branch_dirty="test/worktree-selftest-dirty-${pids}"
+branch_env_target="test/worktree-selftest-envtarget-${pids}"
+branch_env_build="test/worktree-selftest-envbuild-${pids}"
+branch_env_both="test/worktree-selftest-envboth-${pids}"
+branch_env_sanitize="test/worktree-selftest-envsanitize-${pids}"
+branch_overlay="test/worktree-selftest-overlay-${pids}"
+branch_codex_source="test/worktree-codex-policy-source-${pids}"
+branch_codex_missing="test/worktree-codex-policy-missing-${pids}"
+branch_codex_overlay="test/worktree-codex-policy-overlay-${pids}"
+branch_codex_untrusted="test/worktree-codex-policy-untrusted-${pids}"
+branch_codex_dest_untrusted="test/worktree-codex-policy-dest-untrusted-${pids}"
 slug_ok="${branch_ok//\//-}"
 slug_dirty="${branch_dirty//\//-}"
 slug_env_target="${branch_env_target//\//-}"
@@ -31,6 +38,11 @@ slug_env_build="${branch_env_build//\//-}"
 slug_env_both="${branch_env_both//\//-}"
 slug_env_sanitize="${branch_env_sanitize//\//-}"
 slug_overlay="${branch_overlay//\//-}"
+slug_codex_source="${branch_codex_source//\//-}"
+slug_codex_missing="${branch_codex_missing//\//-}"
+slug_codex_overlay="${branch_codex_overlay//\//-}"
+slug_codex_untrusted="${branch_codex_untrusted//\//-}"
+slug_codex_dest_untrusted="${branch_codex_dest_untrusted//\//-}"
 dest_ok="${scratch_root}/reverie/${slug_ok}"
 dest_dirty="${scratch_root}/reverie/${slug_dirty}"
 dest_env_target="${scratch_root}/reverie/${slug_env_target}"
@@ -38,6 +50,11 @@ dest_env_build="${scratch_root}/reverie/${slug_env_build}"
 dest_env_both="${scratch_root}/reverie/${slug_env_both}"
 dest_env_sanitize="${scratch_root}/reverie/${slug_env_sanitize}"
 dest_overlay="${scratch_root}/reverie/${slug_overlay}"
+dest_codex_source="${scratch_root}/reverie/${slug_codex_source}"
+dest_codex_missing="${scratch_root}/reverie/${slug_codex_missing}"
+dest_codex_overlay="${scratch_root}/reverie/${slug_codex_overlay}"
+dest_codex_untrusted="${scratch_root}/reverie/${slug_codex_untrusted}"
+dest_codex_dest_untrusted="${scratch_root}/reverie/${slug_codex_dest_untrusted}"
 
 # Sentinel-overlay bookkeeping: the sentinel section only ever creates
 # these when the checkout has no real overlay, and cleanup must remove
@@ -54,6 +71,11 @@ cleanup() {
   git -C "${repo_root}" worktree remove --force "${dest_env_both}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_env_sanitize}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_overlay}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_codex_missing}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_codex_overlay}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_codex_untrusted}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_codex_dest_untrusted}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_codex_source}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree prune >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_ok}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_dirty}" >/dev/null 2>&1 || true
@@ -62,6 +84,11 @@ cleanup() {
   git -C "${repo_root}" branch -D "${branch_env_both}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_env_sanitize}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_overlay}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_codex_missing}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_codex_overlay}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_codex_untrusted}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_codex_dest_untrusted}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_codex_source}" >/dev/null 2>&1 || true
   if [ "${sentinel_overlay_created}" = "1" ]; then
     rm -f "${repo_root}/.claude/settings.local.json"
   fi
@@ -213,6 +240,187 @@ if [ ! -f "${overlay}" ]; then
     rmdir "${repo_root}/.claude" >/dev/null 2>&1 || true
     sentinel_overlay_dir_created=0
   fi
+fi
+
+# --- Codex policy overlay: use a disposable source worktree so both the
+# missing-policy and copy-policy paths are hermetic. The recipe under test is
+# mirrored into that source so uncommitted TDD changes are exercised before
+# their first commit. It creates both destination worktrees; only the
+# controlled source fixture is created directly. ---
+
+codex_source_rc=0
+git -C "${repo_root}" worktree add -b "${branch_codex_source}" "${dest_codex_source}" >/dev/null 2>&1 || codex_source_rc=$?
+if [ "${codex_source_rc}" -eq 0 ]; then
+  ok "Codex policy source fixture creation exits zero"
+  cp "${repo_root}/justfile" "${dest_codex_source}/justfile"
+  printf '[projects."%s"]\ntrust_level = "trusted"\n' \
+    "${dest_codex_source}" >"${CODEX_HOME}/config.toml"
+else
+  bad "Codex policy source fixture creation exits zero" "exit ${codex_source_rc}"
+fi
+
+codex_missing_rc=0
+codex_missing_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_missing}" 2>&1)" || codex_missing_rc=$?
+if [ "${codex_missing_rc}" -eq 0 ]; then
+  ok "missing-policy worktree creation exits zero"
+else
+  bad "missing-policy worktree creation exits zero" "exit ${codex_missing_rc}" "${codex_missing_out}"
+fi
+if [ -e "${dest_codex_missing}/.codex/config.toml" ] || [ -e "${dest_codex_missing}/.codex/rules" ]; then
+  bad "missing Codex policy creates no destination policy" \
+    "unexpected policy under ${dest_codex_missing}/.codex"
+else
+  ok "missing Codex policy creates no destination policy"
+fi
+if grep -qF "[projects.\"${dest_codex_missing}\"]" "${CODEX_HOME}/config.toml"; then
+  bad "missing Codex policy creates no destination trust entry" \
+    "unexpected trust entry for ${dest_codex_missing}"
+else
+  ok "missing Codex policy creates no destination trust entry"
+fi
+
+mkdir -p "${dest_codex_source}/.codex/rules/nested" \
+  "${dest_codex_source}/.codex/cache" \
+  "${dest_codex_source}/.codex/sessions" \
+  "${dest_codex_source}/.codex/state"
+printf 'model = "sentinel-%s"\n' "${pids}" >"${dest_codex_source}/.codex/config.toml"
+printf 'allow_command(prefix=["just", "check"])\n# sentinel %s\n' "${pids}" \
+  >"${dest_codex_source}/.codex/rules/nested/workflow.rules"
+printf 'cache-%s\n' "${pids}" >"${dest_codex_source}/.codex/cache/index.bin"
+printf 'credential-metadata-%s\n' "${pids}" >"${dest_codex_source}/.codex/credentials.json"
+printf 'session-%s\n' "${pids}" >"${dest_codex_source}/.codex/sessions/session.jsonl"
+printf 'state-%s\n' "${pids}" >"${dest_codex_source}/.codex/state/cache.bin"
+
+codex_overlay_rc=0
+codex_overlay_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_overlay}" 2>&1)" || codex_overlay_rc=$?
+if [ "${codex_overlay_rc}" -eq 0 ]; then
+  ok "Codex policy worktree creation exits zero"
+else
+  bad "Codex policy worktree creation exits zero" "exit ${codex_overlay_rc}" "${codex_overlay_out}"
+fi
+
+if cmp -s "${dest_codex_source}/.codex/config.toml" "${dest_codex_overlay}/.codex/config.toml"; then
+  ok "Codex config.toml is copied byte-for-byte"
+else
+  bad "Codex config.toml is copied byte-for-byte" \
+    "missing or differing: ${dest_codex_overlay}/.codex/config.toml"
+fi
+if cmp -s \
+  "${dest_codex_source}/.codex/rules/nested/workflow.rules" \
+  "${dest_codex_overlay}/.codex/rules/nested/workflow.rules"; then
+  ok "nested Codex rules are copied byte-for-byte"
+else
+  bad "nested Codex rules are copied byte-for-byte" \
+    "missing or differing: ${dest_codex_overlay}/.codex/rules/nested/workflow.rules"
+fi
+
+if git -C "${dest_codex_overlay}" check-ignore -q .codex/config.toml \
+  && git -C "${dest_codex_overlay}" check-ignore -q .codex/rules/nested/workflow.rules; then
+  ok "copied Codex policy files remain ignored"
+else
+  bad "copied Codex policy files remain ignored" \
+    "git check-ignore did not match both copied files"
+fi
+
+if [ -e "${dest_codex_overlay}/.codex/cache" ] \
+  || [ -e "${dest_codex_overlay}/.codex/credentials.json" ] \
+  || [ -e "${dest_codex_overlay}/.codex/sessions" ] \
+  || [ -e "${dest_codex_overlay}/.codex/state" ]; then
+  bad "unrelated .codex content is not copied" \
+    "unexpected cache, credentials, sessions, or state content under ${dest_codex_overlay}/.codex"
+else
+  ok "unrelated .codex content is not copied"
+fi
+
+if grep -A1 -F "[projects.\"${dest_codex_overlay}\"]" "${CODEX_HOME}/config.toml" \
+  | grep -qF 'trust_level = "trusted"'; then
+  ok "trusted Codex source activates policy in the destination"
+else
+  bad "trusted Codex source activates policy in the destination" \
+    "missing trusted entry for ${dest_codex_overlay}"
+fi
+
+printf '[projects."%s"]\ntrust_level = "untrusted"\n' \
+  "${dest_codex_source}" >"${CODEX_HOME}/config.toml"
+codex_untrusted_rc=0
+codex_untrusted_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_untrusted}" 2>&1)" || codex_untrusted_rc=$?
+if [ "${codex_untrusted_rc}" -eq 0 ]; then
+  ok "untrusted-source Codex worktree creation exits zero"
+else
+  bad "untrusted-source Codex worktree creation exits zero" \
+    "exit ${codex_untrusted_rc}" "${codex_untrusted_out}"
+fi
+if printf '%s\n' "${codex_untrusted_out}" \
+  | grep -qF "Codex: this checkout is untrusted, so copied policy in ${dest_codex_untrusted}/.codex is inactive"; then
+  ok "untrusted Codex source warns that copied policy is inactive"
+else
+  bad "untrusted Codex source warns that copied policy is inactive" \
+    "${codex_untrusted_out}"
+fi
+if grep -qF "[projects.\"${dest_codex_untrusted}\"]" "${CODEX_HOME}/config.toml"; then
+  bad "untrusted Codex source does not grant destination trust" \
+    "unexpected trust entry for ${dest_codex_untrusted}"
+else
+  ok "untrusted Codex source does not grant destination trust"
+fi
+
+printf '[projects."%s"]\ntrust_level = "trusted"\n\n[projects."%s"]\ntrust_level = "untrusted"\n' \
+  "${dest_codex_source}" "${dest_codex_dest_untrusted}" >"${CODEX_HOME}/config.toml"
+codex_dest_untrusted_rc=0
+codex_dest_untrusted_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_dest_untrusted}" 2>&1)" || codex_dest_untrusted_rc=$?
+if [ "${codex_dest_untrusted_rc}" -eq 0 ]; then
+  ok "explicitly untrusted destination worktree creation exits zero"
+else
+  bad "explicitly untrusted destination worktree creation exits zero" \
+    "exit ${codex_dest_untrusted_rc}" "${codex_dest_untrusted_out}"
+fi
+if printf '%s\n' "${codex_dest_untrusted_out}" \
+  | grep -qF "Codex: ${dest_codex_dest_untrusted} has an explicit or unrecognized trust setting"; then
+  ok "explicit destination distrust warns that copied policy is inactive"
+else
+  bad "explicit destination distrust warns that copied policy is inactive" \
+    "${codex_dest_untrusted_out}"
+fi
+if grep -A1 -F "[projects.\"${dest_codex_dest_untrusted}\"]" "${CODEX_HOME}/config.toml" \
+  | grep -qF 'trust_level = "untrusted"'; then
+  ok "explicit destination distrust remains authoritative"
+else
+  bad "explicit destination distrust remains authoritative" \
+    "destination trust changed for ${dest_codex_dest_untrusted}"
+fi
+
+codex_missing_remove_rc=0
+git -C "${repo_root}" worktree remove "${dest_codex_missing}" >/dev/null 2>&1 || codex_missing_remove_rc=$?
+if [ "${codex_missing_remove_rc}" -eq 0 ]; then
+  ok "missing-policy worktree removes without --force"
+else
+  bad "missing-policy worktree removes without --force" "exit ${codex_missing_remove_rc}"
+fi
+
+codex_overlay_remove_rc=0
+git -C "${repo_root}" worktree remove "${dest_codex_overlay}" >/dev/null 2>&1 || codex_overlay_remove_rc=$?
+if [ "${codex_overlay_remove_rc}" -eq 0 ]; then
+  ok "Codex-policy worktree removes without --force"
+else
+  bad "Codex-policy worktree removes without --force" "exit ${codex_overlay_remove_rc}"
+fi
+
+codex_untrusted_remove_rc=0
+git -C "${repo_root}" worktree remove "${dest_codex_untrusted}" >/dev/null 2>&1 || codex_untrusted_remove_rc=$?
+if [ "${codex_untrusted_remove_rc}" -eq 0 ]; then
+  ok "untrusted-source Codex worktree removes without --force"
+else
+  bad "untrusted-source Codex worktree removes without --force" \
+    "exit ${codex_untrusted_remove_rc}"
+fi
+
+codex_dest_untrusted_remove_rc=0
+git -C "${repo_root}" worktree remove "${dest_codex_dest_untrusted}" >/dev/null 2>&1 || codex_dest_untrusted_remove_rc=$?
+if [ "${codex_dest_untrusted_remove_rc}" -eq 0 ]; then
+  ok "explicitly untrusted destination worktree removes without --force"
+else
+  bad "explicitly untrusted destination worktree removes without --force" \
+    "exit ${codex_dest_untrusted_remove_rc}"
 fi
 
 # --- edge case / negative control: prove the clean-removal assertion above

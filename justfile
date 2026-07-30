@@ -170,7 +170,7 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and the untracked `.claude/settings.local.json` overlay carried over; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; warns if Cargo environment overrides defeat isolation.
 [group('git')]
 [positional-arguments]
 worktree branch:
@@ -206,6 +206,11 @@ worktree branch:
     else
         git worktree add -b "$branch" "$dest"
     fi
+    # Trust is keyed to Codex's canonical absolute project path, so use the
+    # physical paths Codex will resolve instead of preserving a symlinked
+    # spelling from the invoking shell.
+    source_root="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
+    dest="$(cd "$dest" && pwd -P)"
     # A user-level `[build] target-dir` override (a known cargo pattern for
     # warm cross-checkout builds) makes concurrent worktree builds thrash a
     # shared target dir: each branch's rebuild invalidates the other's freshly
@@ -268,6 +273,119 @@ worktree branch:
         mkdir -p "$dest/.claude"
         cp .claude/settings.local.json "$dest/.claude/settings.local.json"
         echo "copied .claude/settings.local.json into the worktree"
+    fi
+    # Codex project policy is operator-owned and ignored for the same reason,
+    # but `.codex` can also contain runtime and account data that must not
+    # spread across checkouts.
+    # THREAT: Keep this allowlist narrow so sessions, caches, credentials,
+    # state, and other unrelated `.codex` content never cross this boundary.
+    if [ -f .codex/config.toml ]; then
+        mkdir -p "$dest/.codex"
+        cp .codex/config.toml "$dest/.codex/config.toml"
+        echo "copied .codex/config.toml into the worktree"
+    fi
+    if [ -d .codex/rules ]; then
+        mkdir -p "$dest/.codex"
+        cp -R .codex/rules "$dest/.codex/rules"
+        echo "copied .codex/rules into the worktree"
+    fi
+    # Codex keys project trust to the checkout's exact absolute path and skips
+    # project-local policy for untrusted paths. Inherit only an existing trust
+    # decision from this checkout. An explicit destination decision remains
+    # authoritative, and an unrecognized config shape fails closed.
+    if [ -f .codex/config.toml ] || [ -d .codex/rules ]; then
+        codex_home="${CODEX_HOME:-${HOME}/.codex}"
+        codex_user_config="${codex_home}/config.toml"
+        codex_toml_escape() {
+            local value="$1"
+            value="${value//\\/\\\\}"
+            value="${value//\"/\\\"}"
+            printf '%s' "$value"
+        }
+        codex_trust_level() {
+            local config="$1"
+            local project="$2"
+            local header
+            if [ ! -f "$config" ]; then
+                printf '%s\n' absent
+                return
+            fi
+            header="[projects.\"$(codex_toml_escape "$project")\"]"
+            awk -v wanted_header="$header" '
+                function trim(value) {
+                    sub(/^[[:space:]]+/, "", value)
+                    sub(/[[:space:]]+$/, "", value)
+                    return value
+                }
+                {
+                    line = $0
+                    sub(/[[:space:]]+#.*$/, "", line)
+                    line = trim(line)
+                    if (line == wanted_header) {
+                        if (found) duplicate = 1
+                        found = 1
+                        in_project = 1
+                        next
+                    }
+                    if (in_project && line ~ /^\[/) {
+                        in_project = 0
+                    }
+                    if (in_project && line ~ /^trust_level[[:space:]]*=/) {
+                        if (saw_value) duplicate = 1
+                        saw_value = 1
+                        sub(/^[^=]*=[[:space:]]*/, "", line)
+                        sub(/[[:space:]]+#.*$/, "", line)
+                        value = trim(line)
+                    }
+                }
+                END {
+                    if (duplicate || (found && (!saw_value || (value != "\"trusted\"" && value != "\"untrusted\"")))) {
+                        print "unknown"
+                    } else if (value == "\"trusted\"") {
+                        print "trusted"
+                    } else if (value == "\"untrusted\"") {
+                        print "untrusted"
+                    } else {
+                        print "absent"
+                    }
+                }
+            ' "$config"
+        }
+
+        case "${source_root}${dest}" in
+            *$'\n'* | *$'\r'* | *$'\t'*)
+                echo "Codex: cannot safely persist trust for a path containing control characters; copied policy in $dest/.codex is inactive" >&2
+                ;;
+            *)
+                source_trust="$(codex_trust_level "$codex_user_config" "$source_root")"
+                dest_trust="$(codex_trust_level "$codex_user_config" "$dest")"
+                if [ "$source_trust" = trusted ]; then
+                    case "$dest_trust" in
+                        trusted)
+                            echo "Codex: $dest is already trusted"
+                            ;;
+                        absent)
+                            dest_key="$(codex_toml_escape "$dest")"
+                            if ! (
+                                umask 077
+                                printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$dest_key" >> "$codex_user_config"
+                            ); then
+                                echo "Codex: failed to inherit trust for $dest" >&2
+                                exit 1
+                            fi
+                            echo "Codex: inherited trust for $dest"
+                            ;;
+                        *)
+                            echo "Codex: $dest has an explicit or unrecognized trust setting; copied policy in $dest/.codex is inactive" >&2
+                            echo "fix: review the copied policy, then trust this worktree from Codex" >&2
+                            ;;
+                    esac
+                else
+                    echo "Codex: this checkout is untrusted, so copied policy in $dest/.codex is inactive" >&2
+                    echo "fix: review the copied policy, then trust this worktree from Codex" >&2
+                fi
+                ;;
+        esac
     fi
     echo "worktree ready: $dest"
 
