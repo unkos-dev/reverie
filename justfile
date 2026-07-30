@@ -170,7 +170,7 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and the untracked `.claude/settings.local.json` overlay carried over; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, `.claude/settings.local.json`, `.codex/config.toml`, and `.codex/rules/` overlays carried over; warns if CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR would override it.
 [group('git')]
 [positional-arguments]
 worktree branch:
@@ -268,6 +268,21 @@ worktree branch:
         mkdir -p "$dest/.claude"
         cp .claude/settings.local.json "$dest/.claude/settings.local.json"
         echo "copied .claude/settings.local.json into the worktree"
+    fi
+    # Codex project policy is operator-owned and ignored for the same reason,
+    # but `.codex` can also contain runtime and account data that must not
+    # spread across checkouts.
+    # THREAT: Keep this allowlist narrow so sessions, caches, credentials,
+    # state, and other unrelated `.codex` content never cross this boundary.
+    if [ -f .codex/config.toml ]; then
+        mkdir -p "$dest/.codex"
+        cp .codex/config.toml "$dest/.codex/config.toml"
+        echo "copied .codex/config.toml into the worktree"
+    fi
+    if [ -d .codex/rules ]; then
+        mkdir -p "$dest/.codex"
+        cp -R .codex/rules "$dest/.codex/rules"
+        echo "copied .codex/rules into the worktree"
     fi
     echo "worktree ready: $dest"
 
