@@ -256,8 +256,8 @@ principles, not a departure from them.
 **Override:** `codeguard-0-supply-chain-security.md` requires lockfiles and
 version pinning for third-party packages.
 
-**Reverie's position:** The shadcn CLI is not a project dependency. Developers
-invoke it manually as `npx shadcn@latest add <component>` when adding a UI
+**Reverie's position:** The shadcn CLI is not a project dependency. It is
+invoked deliberately as `npx shadcn@latest add <component>` when adding a UI
 primitive. It is not invoked by CI, builds, tests, hooks, or unattended
 automation.
 
@@ -268,10 +268,15 @@ including a server stack that created advisory and dependency-hoisting costs.
 The persistent dependency surface outweighs the exposure from a small number
 of deliberate invocations.
 
-**Compensating controls:** Invocation remains manual and interactive, with no
-`--yes` flag suppressing npm's confirmation behavior. Generated source is
-committed, reviewed, and tested through the normal frontend gates. Those checks
-protect the generated result; they do not protect the developer environment
-from a compromised generator. Reverie explicitly accepts the residual risk that
-the mutable `latest` tag could resolve to a compromised publication before
-output review occurs.
+**Compensating controls:** Invocation is limited to deliberate
+component-generation work and is not part of an automated path. Generated
+source is committed, reviewed, and tested through the normal frontend gates.
+Those checks protect the generated result; they do not protect the developer
+environment from a compromised generator.
+
+Because the CLI is absent from the manifests and lockfile, on-demand invocations
+are not covered by Renovate's three-day release quarantine or OSV alerts, the
+scheduled npm audit, Snyk Open Source, or lockfile integrity hashes. npm also
+proceeds without confirmation in non-TTY environments. Reverie explicitly
+accepts these gaps and the residual risk that the mutable `latest` tag could
+resolve to a compromised publication before output review occurs.
