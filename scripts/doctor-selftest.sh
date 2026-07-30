@@ -382,7 +382,7 @@ echo '{}' >"${fixture}/node_modules/.package-lock.json"
 # this must also advise npm install rather than npx --no-install.
 rm -f "${fixture}/node_modules/.package-lock.json"
 expect_exit "missing install marker warns" 0 "${stub_bin}"
-expect_contains "missing install marker advises npm install" "WARN node_modules matches package-lock.json -- fix: npm install"
+expect_contains "missing install marker advises npm install" "WARN node_modules install incomplete (marker missing) -- fix: npm install"
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
 
 # (c) both files present but the lockfile is strictly newer than the
@@ -397,7 +397,7 @@ echo '{}' >"${fixture}/node_modules/.package-lock.json"
 sleep 1
 echo '{}' >"${fixture}/package-lock.json"
 expect_exit "stale lockfile warns" 0 "${stub_bin}"
-expect_contains "stale lockfile advises npx --no-install vp install" "WARN node_modules matches package-lock.json -- fix: npx --no-install vp install"
+expect_contains "stale lockfile advises npx --no-install vp install" "WARN node_modules stale against package-lock.json -- fix: npx --no-install vp install"
 
 # (d) the same staleness, but node_modules/.bin/vp does not exist: an
 # install that predates vite-plus entering the lockfile, so the marker is
@@ -408,7 +408,7 @@ expect_contains "stale lockfile advises npx --no-install vp install" "WARN node_
 # marker files.
 rm -f "${fixture}/node_modules/.bin/vp"
 expect_exit "stale lockfile with no vp binary warns" 0 "${stub_bin}"
-expect_contains "stale lockfile with no vp binary advises npm install" "WARN node_modules matches package-lock.json -- fix: npm install"
+expect_contains "stale lockfile with no vp binary advises npm install" "WARN node_modules stale against package-lock.json -- fix: npm install"
 install_vp_stub
 
 # restore the happy-path ordering (lockfile written before the marker) for
