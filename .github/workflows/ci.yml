@@ -1070,12 +1070,11 @@ jobs:
       - name: Doctor environment check self-test
         run: just infra::doctor-selftest
 
-      # Exercises the real `just worktree` recipe end to end (git worktree
-      # add/remove included), so a wrong path or malformed cargo config in
-      # the isolated target-dir write fails here instead of only in the
-      # generated-reference drift check, which never executes the recipe.
-      - name: Worktree cargo target-dir isolation self-test
-        run: just infra::worktree-cargo-target-selftest
+      # Exercises `just worktree` end to end (git worktree add/remove
+      # included), covering Cargo isolation plus ignored Claude and Codex
+      # overlays that the generated-reference drift check never executes.
+      - name: Worktree isolation and overlay self-test
+        run: just infra::worktree-selftest
 
       # The gate runner turns a local preflight into a single PASS/FAIL line.
       # A wrong verdict is invisible by construction (a green line on a failed
