@@ -33,7 +33,7 @@ env:
   # inputs Renovate never tracked. engines.node and the Dockerfile base image
   # stay separately Renovate-managed.
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: "24.18.0"
+  NODE_VERSION: "24.18.1"
   # Single source of truth for the migration CLI used by both backend jobs.
   # The backend-checks guard keeps this in lockstep with the sqlx crate.
   SQLX_CLI_VERSION: "0.9.0"
