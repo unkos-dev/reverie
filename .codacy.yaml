@@ -1,0 +1,24 @@
+---
+# Codacy analyses the git tree, so gitignored build output (backend/target,
+# frontend/dist, frontend/node_modules, frontend/coverage) is already outside
+# its view and needs no entry here.
+#
+# What is excluded is tracked output that mechanically projects source already
+# under analysis, where reporting both would double-count one decision. Each
+# entry below names the command that rewrites it; the source that decides its
+# content is analysed in place.
+#
+# Being generated is not itself grounds for exclusion, since generated code
+# ships and can carry a real vulnerability. docs/openapi.json is rewritten by
+# the same command as two of these entries and stays in scope: global security
+# schemes, operation coverage, and cross-endpoint naming are properties of the
+# composed document that no single annotation expresses, so a finding there
+# describes the API surface rather than restating one already reported against
+# the Rust source.
+exclude_paths:
+  # Query metadata cache, rewritten by `just rust::sqlx-prepare`.
+  - "backend/.sqlx/**"
+  # JSON Schema projected from the Rust config types by `just rust::regen`.
+  - "backend/config.schema.json"
+  # Design-token stylesheet emitted by the primitives generator.
+  - "frontend/src/styles/themes/primitives.generated.css"
