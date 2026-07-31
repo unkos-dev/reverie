@@ -1753,16 +1753,17 @@ jobs:
             echo 'token=set' >> "${GITHUB_OUTPUT}"
           fi
 
-      # coverage-reporter-version pins the binary the action downloads at run
-      # time; pinning the action alone would not, because it fetches the
-      # reporter through a bootstrap script on every run.
+      # The action SHA pins the wrapper, not the reporter: v1.3.0 fetches
+      # Codacy's bootstrap script from master on every run, and no released
+      # revision accepts a reporter version. The script verifies the SHA512 of
+      # the binary it installs, so the unpinned surface is the script itself,
+      # against a vendor that already receives the whole repository.
       - name: Upload coverage to Codacy
         if: steps.reports.outputs.list != '' && steps.reports.outputs.token == 'set'
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: ${{ steps.reports.outputs.list }}
-          coverage-reporter-version: 14.1.3
 
   # Single required status check for the branch ruleset. Path-conditional
   # jobs that legitimately skip on a given PR no longer leave an
