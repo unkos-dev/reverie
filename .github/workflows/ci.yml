@@ -1666,6 +1666,104 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  # Advisory: absent from ci-gate.needs[] and continue-on-error, so a Codacy
+  # outage or missing token never fails the build. Deliberately a sibling of
+  # the sonar job rather than steps inside it: the two coverage vendors are
+  # under comparison, and separate jobs let either be dropped without
+  # untangling shared steps.
+  codacy-coverage:
+    name: Codacy coverage
+    needs: [backend, frontend]
+    # Fork PRs carry no CODACY_PROJECT_TOKEN, so the upload can only fail.
+    # Bot dependency branches carry no analyzable first-party code and would
+    # annotate on a missing coverage artifact; keying on the head branch
+    # rather than the actor keeps the job skipped when a human pushes a fix
+    # to the bot branch. On push both producers must have succeeded, so a
+    # commit's coverage is never published from a single stack.
+    if: >-
+      !cancelled() &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        !startsWith(github.head_ref, 'renovate/') &&
+        !startsWith(github.head_ref, 'dependabot/'))) &&
+      (github.event_name != 'push' ||
+       (needs.backend.result == 'success' && needs.frontend.result == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Best-effort: the producing job may be skipped on a single-stack PR.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: backend-coverage
+          path: backend
+        continue-on-error: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+        continue-on-error: true
+
+      # Both reports carry stack-relative SF: paths. Codacy resolves coverage
+      # against repository-root paths and reports no data at all when a report
+      # references files it cannot locate, so prepend each stack directory.
+      - name: Normalize coverage paths to repo root
+        run: |
+          set -euo pipefail
+          if [ -f backend/lcov.info ]; then
+            sed -i 's#^SF:#SF:backend/#' backend/lcov.info
+          fi
+          if [ -f frontend/coverage/lcov.info ]; then
+            sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
+          fi
+
+      # The reporter is handed only the reports that exist: naming a missing
+      # file fails the whole upload, which would otherwise turn every
+      # single-stack PR into an error. Reports above 10 MB fail server-side
+      # with a JSON parse error, so size is surfaced here where it is legible.
+      - name: Collect coverage reports
+        id: reports
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: |
+          set -euo pipefail
+          list=''
+          for f in backend/lcov.info frontend/coverage/lcov.info; do
+            if [ ! -f "${f}" ]; then
+              echo "::warning title=Coverage report missing::${f} was not produced; Codacy coverage will be partial."
+              continue
+            fi
+            size=$(wc -c < "${f}")
+            if [ "${size}" -gt 10485760 ]; then
+              echo "::warning title=Coverage report oversized::${f} is ${size} bytes; Codacy rejects reports above 10 MB."
+            fi
+            list="${list:+${list},}${f}"
+          done
+          echo "list=${list}" >> "${GITHUB_OUTPUT}"
+          if [ -z "${CODACY_PROJECT_TOKEN}" ]; then
+            echo "::warning title=CODACY_PROJECT_TOKEN missing::Codacy coverage upload skipped."
+            echo 'token=' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'token=set' >> "${GITHUB_OUTPUT}"
+          fi
+
+      # coverage-reporter-version pins the binary the action downloads at run
+      # time; pinning the action alone would not, because it fetches the
+      # reporter through a bootstrap script on every run.
+      - name: Upload coverage to Codacy
+        if: steps.reports.outputs.list != '' && steps.reports.outputs.token == 'set'
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: ${{ steps.reports.outputs.list }}
+          coverage-reporter-version: 14.1.3
+
   # Single required status check for the branch ruleset. Path-conditional
   # jobs that legitimately skip on a given PR no longer leave an
   # individually-required check unsatisfied; the gate fails only when a
