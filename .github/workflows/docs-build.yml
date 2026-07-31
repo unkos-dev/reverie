@@ -26,7 +26,7 @@ env:
   # renovate: datasource=npm depName=vite-plus
   VP_VERSION: "0.2.6"
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: "24.18.0"
+  NODE_VERSION: "24.18.1"
 
 jobs:
   build:
