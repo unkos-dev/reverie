@@ -168,9 +168,24 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
                         text.push(';');
                     }
                 }
-                Err(_) => break 'parse None,
+                Err(_) => {
+                    // The reference was syntactically valid but its code
+                    // point is illegal XML (a surrogate, NUL, or
+                    // out-of-range value), so `resolve_char_ref` errors.
+                    // Treat this exactly like the unresolvable named-entity
+                    // case above rather than aborting: bailing here would
+                    // leave the reader positioned mid-element, and the
+                    // caller's loop would misread the remainder of this
+                    // element's body as document-level content.
+                    let Ok(name) = r.decode() else {
+                        break 'parse None;
+                    };
+                    text.push('&');
+                    text.push_str(&name);
+                    text.push(';');
+                }
             },
-            Event::Eof => break 'parse Some(text),
+            Event::Eof => break 'parse None,
             _ => {}
         }
     };
@@ -1235,6 +1250,51 @@ mod tests {
         let mut issues = Vec::new();
         let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
         assert_eq!(data.description.as_deref(), Some("&amp;"));
+    }
+
+    #[test]
+    fn unresolvable_char_ref_does_not_desync_parse() {
+        // `&#xD800;` is a UTF-16 surrogate: syntactically a valid character
+        // reference but not a legal XML character, so `resolve_char_ref`
+        // errors. That error must not abort the element read mid-body: doing
+        // so leaves the reader positioned just past the reference, still
+        // inside `<dc:description>`, so the top-level loop misreads the rest
+        // of the body as document-level content, including the nested
+        // `<dc:title>` here, which would otherwise shadow the real title
+        // that follows.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:description>&#xD800;<dc:title>Fake</dc:title></dc:description>
+                <dc:title>Real</dc:title>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.title.as_deref(), Some("Real"));
+        assert!(
+            data.description
+                .as_deref()
+                .is_some_and(|d| d.contains("&#xD800;"))
+        );
+    }
+
+    #[test]
+    fn truncated_document_missing_end_tag_yields_none() {
+        // A document that ends before an open element's end tag must not
+        // salvage the partial text seen so far: quick-xml delivers this as a
+        // clean `Event::Eof` rather than an error (it does not validate tag
+        // balance), so treating `Eof` as "found the end" would silently
+        // return truncated content instead of signalling the missing field.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title>Cut off mid"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert!(data.title.is_none());
     }
 
     #[test]

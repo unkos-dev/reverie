@@ -1,6 +1,9 @@
 //! Text sanitisation for metadata fields: `HTML` stripping, entity decoding, whitespace normalisation.
 //!
 //! `OPF` metadata fields arrive as untrusted strings from ingested `EPUB` files.
+//! Element text bodies are already entity-decoded by the `OPF` parsing layer;
+//! attribute-sourced values (for example `<meta content="...">`) still arrive
+//! raw, so this module cannot assume either source and decodes unconditionally.
 //! Without sanitisation, attacker-controlled descriptions or titles containing
 //! `HTML` markup or entity-encoded payloads could propagate injection vectors
 //! into the rendered UI. This module reduces all text fields to plaintext before
