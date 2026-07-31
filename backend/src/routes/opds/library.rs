@@ -772,7 +772,7 @@ pub(super) async fn emit_series_books(
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
-                w.id AS work_id, w.title, w.description, w.language, sw.position \
+                w.id AS work_id, w.title, w.description, w.language, sw.position::float8 AS position \
          FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
          JOIN series_works sw ON sw.work_id = w.id \

@@ -1721,7 +1721,7 @@ async fn detail_endpoint_series_position_matches_stored_value(pool: PgPool) {
     .await
     .expect("insert series");
     // Cast through float8 on write, matching the real enrichment writer
-    // (models::work::apply_metadata) so this test exercises the same
+    // (models::work::upgrade_stub) so this test exercises the same
     // NUMERIC column shape production data has.
     sqlx::query!(
         "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
