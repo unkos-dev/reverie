@@ -7624,7 +7624,8 @@
         "properties": {
           "has_cover": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Sidecar cover present (`cover_path`) OR a usable embedded cover was\nfound at ingestion (`has_embedded_cover`). Either one makes the book\nhave a usable cover; a sidecar can exist even for an EPUB with no\nembedded cover of its own, and vice versa."
           },
           "has_description": {
             "type": "integer",

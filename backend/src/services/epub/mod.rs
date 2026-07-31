@@ -192,6 +192,10 @@ pub struct ValidationReport {
     pub accessibility_metadata: Option<serde_json::Value>,
     /// Parsed `OPF` data including Dublin Core metadata.
     pub opf_data: Option<opf_layer::OpfData>,
+    /// Whether Layer 5 found a usable embedded cover (declared, present, and
+    /// decodable/parsable). `false` for `Quarantined` reports, since Layers
+    /// 1-4 return before Layer 5 ever runs.
+    pub has_usable_embedded_cover: bool,
 }
 
 // ── Shared utilities ──────────────────────────────────────────────────────────
@@ -257,6 +261,7 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
             outcome: ValidationOutcome::Quarantined,
             accessibility_metadata: None,
             opf_data: None,
+            has_usable_embedded_cover: false,
         });
     }
 
@@ -268,6 +273,7 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
             outcome: ValidationOutcome::Quarantined,
             accessibility_metadata: None,
             opf_data: None,
+            has_usable_embedded_cover: false,
         });
     }
 
@@ -278,7 +284,8 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
     xhtml_layer::validate(&zip_result, opf_data.as_ref(), &mut issues);
 
     // Layer 5: Cover
-    cover_layer::validate(&zip_result, opf_data.as_ref(), &mut issues);
+    let has_usable_embedded_cover =
+        cover_layer::validate(&zip_result, opf_data.as_ref(), &mut issues);
 
     // Determine outcome and repair if needed
     let has_irrecoverable = issues.iter().any(|i| i.severity == Severity::Irrecoverable);
@@ -291,6 +298,7 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
             outcome: ValidationOutcome::Quarantined,
             accessibility_metadata: None,
             opf_data: None,
+            has_usable_embedded_cover: false,
         });
     }
 
@@ -306,6 +314,7 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
             outcome: ValidationOutcome::Repaired,
             accessibility_metadata,
             opf_data,
+            has_usable_embedded_cover,
         });
     }
 
@@ -320,5 +329,6 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
         outcome,
         accessibility_metadata,
         opf_data,
+        has_usable_embedded_cover,
     })
 }

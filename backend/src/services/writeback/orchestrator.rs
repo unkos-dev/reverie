@@ -1476,6 +1476,7 @@ mod tests {
             outcome,
             accessibility_metadata: None,
             opf_data: None,
+            has_usable_embedded_cover: false,
         }
     }
 

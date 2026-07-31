@@ -77,6 +77,10 @@ struct MetadataCoverage {
     has_description: i64,
     has_language: i64,
     has_isbn_13: i64,
+    /// Sidecar cover present (`cover_path`) OR a usable embedded cover was
+    /// found at ingestion (`has_embedded_cover`). Either one makes the book
+    /// have a usable cover; a sidecar can exist even for an EPUB with no
+    /// embedded cover of its own, and vice versa.
     has_cover: i64,
 }
 
@@ -158,7 +162,9 @@ async fn stats(
               COUNT(*) FILTER (WHERE w.description IS NOT NULL AND w.description <> '') AS "has_description!",
               COUNT(*) FILTER (WHERE w.language    IS NOT NULL AND w.language    <> '') AS "has_language!",
               COUNT(*) FILTER (WHERE m.isbn_13     IS NOT NULL) AS "has_isbn_13!",
-              COUNT(*) FILTER (WHERE m.cover_path  IS NOT NULL) AS "has_cover!"
+              COUNT(*) FILTER (
+                  WHERE m.cover_path IS NOT NULL OR m.has_embedded_cover IS TRUE
+              ) AS "has_cover!"
            FROM manifestations m
            JOIN works w ON w.id = m.work_id"#,
     )

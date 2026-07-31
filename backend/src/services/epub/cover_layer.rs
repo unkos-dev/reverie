@@ -20,12 +20,17 @@ use super::{
 /// `handle`, and accepts it if it decodes as a raster (`JPEG`/`PNG`/`WebP`) or
 /// parses as `SVG`. A missing, undecodable, or unparsable cover appends a
 /// `Degraded` issue; no cover declared is not an error.
-pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec<Issue>) {
-    let Some(opf) = opf_data else { return };
+///
+/// Returns `true` when a usable embedded cover was found (declared, present,
+/// and decodable/parsable) so the ingestion caller can persist that outcome
+/// on the manifestation row without re-parsing the archive later. `false`
+/// covers every other case: no cover declared, missing, or undecodable.
+pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec<Issue>) -> bool {
+    let Some(opf) = opf_data else { return false };
 
     let cover_href = find_cover_href(opf);
     let Some(href) = cover_href else {
-        return; // No cover declared — not an error
+        return false; // No cover declared — not an error, but nothing embedded
     };
 
     let opf_dir = opf.opf_path.rfind('/').map_or("", |i| &opf.opf_path[..i]);
@@ -41,23 +46,27 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
             severity: Severity::Degraded,
             kind: IssueKind::MissingCover { href },
         });
-        return;
+        return false;
     };
 
     // Attempt to decode as a raster first. SVG-declared covers aren't
     // raster-decodable — accept them when they parse as SVG (parse only; no
     // rasterization at ingestion). Anything else → Degraded.
     match image::load_from_memory(&bytes) {
-        Ok(_) => {} // decodable raster — no issue
+        Ok(_) => true, // decodable raster — no issue
         Err(_)
             if crate::services::covers::svg::looks_like_svg(&bytes)
-                && crate::services::covers::svg::parses_as_svg(&bytes) => {}
+                && crate::services::covers::svg::parses_as_svg(&bytes) =>
+        {
+            true
+        }
         Err(_) => {
             issues.push(Issue {
                 layer: Layer::Cover,
                 severity: Severity::Degraded,
                 kind: IssueKind::UndecodableCover { href },
             });
+            false
         }
     }
 }
@@ -144,11 +153,28 @@ mod tests {
         let handle = make_handle_with_cover(&png_bytes);
         let opf = make_opf_data("cover", "cover.jpg");
         let mut issues = Vec::new();
-        validate(&handle, Some(&opf), &mut issues);
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
         assert!(
             issues.is_empty(),
             "expected no issues for valid cover: {issues:?}"
         );
+        assert!(has_cover, "a decodable raster cover must report has_cover");
+    }
+
+    #[test]
+    fn no_cover_declared_reports_no_cover_without_issues() {
+        // No manifest entry keyed "cover"/"cover-image"/etc and no cover_href:
+        // find_cover_href resolves to None. Not an error, but not a usable
+        // embedded cover either.
+        let handle = make_handle_with_cover(b"unused");
+        let opf = make_opf_data("chapter1", "chapter1.xhtml");
+        let mut issues = Vec::new();
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
+        assert!(
+            issues.is_empty(),
+            "no cover declared is not an error: {issues:?}"
+        );
+        assert!(!has_cover, "no cover declared must not report has_cover");
     }
 
     #[test]
@@ -168,10 +194,11 @@ mod tests {
         };
         let opf = make_opf_data("cover", "cover.jpg");
         let mut issues = Vec::new();
-        validate(&handle, Some(&opf), &mut issues);
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Degraded && matches!(&i.kind, IssueKind::MissingCover { .. })
         }));
+        assert!(!has_cover, "a missing cover file must not report has_cover");
     }
 
     #[test]
@@ -179,11 +206,12 @@ mod tests {
         let handle = make_handle_with_cover(b"not an image");
         let opf = make_opf_data("cover", "cover.jpg");
         let mut issues = Vec::new();
-        validate(&handle, Some(&opf), &mut issues);
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Degraded
                 && matches!(&i.kind, IssueKind::UndecodableCover { .. })
         }));
+        assert!(!has_cover, "an undecodable cover must not report has_cover");
     }
 
     fn make_handle_with_svg_cover(svg_bytes: &[u8]) -> ZipHandle {
@@ -217,11 +245,12 @@ mod tests {
         let handle = make_handle_with_svg_cover(svg);
         let opf = make_se_svg_opf("cover.svg");
         let mut issues = Vec::new();
-        validate(&handle, Some(&opf), &mut issues);
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
         assert!(
             issues.is_empty(),
             "expected no issues for SVG cover: {issues:?}"
         );
+        assert!(has_cover, "a parseable SVG cover must report has_cover");
     }
 
     #[test]
@@ -229,11 +258,15 @@ mod tests {
         let handle = make_handle_with_svg_cover(b"<svg><broken");
         let opf = make_se_svg_opf("cover.svg");
         let mut issues = Vec::new();
-        validate(&handle, Some(&opf), &mut issues);
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Degraded
                 && matches!(&i.kind, IssueKind::UndecodableCover { .. })
         }));
+        assert!(
+            !has_cover,
+            "a malformed SVG cover must not report has_cover"
+        );
     }
 
     #[test]
@@ -245,11 +278,12 @@ mod tests {
         let handle = make_handle_with_svg_cover(svg);
         let opf = make_se_svg_opf("cover.svg");
         let mut issues = Vec::new();
-        validate(&handle, Some(&opf), &mut issues);
+        let has_cover = validate(&handle, Some(&opf), &mut issues);
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Degraded
                 && matches!(&i.kind, IssueKind::UndecodableCover { .. })
         }));
+        assert!(!has_cover, "a filtered SVG cover must not report has_cover");
     }
 
     #[test]

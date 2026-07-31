@@ -405,10 +405,14 @@ async fn process_file(
     // claiming 'clean' for a check that never happened. If a
     // validator for another format ships later, its files are already in
     // the truthful pre-validation state.
-    let (validation_status, accessibility_metadata, opf_data): (
+    let (validation_status, accessibility_metadata, opf_data, has_embedded_cover): (
         ValidationStatus,
         Option<serde_json::Value>,
         Option<epub::opf_layer::OpfData>,
+        // NULL/None means "unknown" (non-EPUB, or the validator crashed) —
+        // distinct from Some(false) ("checked, no usable embedded cover"),
+        // mirroring the pending/clean split already drawn for validation_status.
+        Option<bool>,
     ) = if ext == "epub" {
         let lib_file = library_path.join(&final_relative);
         let validation = {
@@ -427,6 +431,7 @@ async fn process_file(
                 let a11y = report.accessibility_metadata;
                 let opf = report.opf_data;
                 let issues = report.issues;
+                let has_cover = report.has_usable_embedded_cover;
                 match report.outcome {
                     ValidationOutcome::Quarantined => {
                         let lib_file_str = lib_file.display().to_string();
@@ -451,9 +456,15 @@ async fn process_file(
                         quarantine_async(&source, &quarantine_path, &reason).await;
                         return ProcessResult::Failed(format!("EPUB quarantined: {reason}"));
                     }
-                    ValidationOutcome::Clean => (ValidationStatus::Clean, a11y, opf),
-                    ValidationOutcome::Repaired => (ValidationStatus::Repaired, a11y, opf),
-                    ValidationOutcome::Degraded => (ValidationStatus::Degraded, a11y, opf),
+                    ValidationOutcome::Clean => {
+                        (ValidationStatus::Clean, a11y, opf, Some(has_cover))
+                    }
+                    ValidationOutcome::Repaired => {
+                        (ValidationStatus::Repaired, a11y, opf, Some(has_cover))
+                    }
+                    ValidationOutcome::Degraded => {
+                        (ValidationStatus::Degraded, a11y, opf, Some(has_cover))
+                    }
                 }
             }
             Ok(Err(e)) => {
@@ -464,12 +475,12 @@ async fn process_file(
                 // validator-crash state; the file is still
                 // ingested and served.
                 tracing::warn!(error = %e, "epub validation error; storing validation_status=failed");
-                (ValidationStatus::Failed, None, None)
+                (ValidationStatus::Failed, None, None, None)
             }
             Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
-        (ValidationStatus::Pending, None, None)
+        (ValidationStatus::Pending, None, None, None)
     };
 
     // Step 5: Extract metadata and create work + manifestation
@@ -555,6 +566,7 @@ async fn process_file(
         format,
         validation_status,
         &accessibility_metadata,
+        has_embedded_cover,
     )
     .await;
 
@@ -641,6 +653,7 @@ async fn commit_ingest(
     format: ManifestationFormat,
     validation_status: ValidationStatus,
     accessibility_metadata: &Option<serde_json::Value>,
+    has_embedded_cover: Option<bool>,
 ) -> Result<(Uuid, Uuid), sqlx::Error> {
     use crate::services::metadata::draft;
     use crate::services::metadata::extractor::ExtractedMetadata;
@@ -668,8 +681,9 @@ async fn commit_ingest(
     let manifestation_id = sqlx::query_scalar!(
         "INSERT INTO manifestations \
              (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
-              file_size_bytes, ingestion_status, validation_status, accessibility_metadata) \
-         VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8) \
+              file_size_bytes, ingestion_status, validation_status, accessibility_metadata, \
+              has_embedded_cover) \
+         VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9) \
          RETURNING id",
         work_id,
         format as ManifestationFormat,
@@ -679,6 +693,7 @@ async fn commit_ingest(
         ingestion_status as IngestionStatus,
         validation_status as ValidationStatus,
         accessibility_metadata.as_ref(),
+        has_embedded_cover,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -995,6 +1010,52 @@ mod tests {
         )
     }
 
+    /// Build an EPUB declaring a decodable cover image (`properties="cover-image"`)
+    /// so ingestion's Layer 5 cover check finds it and sets
+    /// `has_embedded_cover=true` on the manifestation row.
+    fn make_epub_with_cover() -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+
+        let mut png_bytes: Vec<u8> = Vec::new();
+        let img = image::DynamicImage::new_rgb8(1, 1);
+        img.write_to(
+            &mut std::io::Cursor::new(&mut png_bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", stored).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+        w.start_file("META-INF/container.xml", default.clone())
+            .unwrap();
+        w.write_all(CONTAINER_XML).unwrap();
+
+        w.start_file("OEBPS/content.opf", default.clone()).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest>
+    <item id="cover-image" href="cover.png" media-type="image/png" properties="cover-image"/>
+  </manifest>
+  <spine/>
+</package>"#,
+        )
+        .unwrap();
+
+        w.start_file("OEBPS/cover.png", default).unwrap();
+        w.write_all(&png_bytes).unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
     /// Build an EPUB with Dublin Core metadata for integration testing.
     fn make_metadata_epub() -> Vec<u8> {
         build_epub(
@@ -1244,6 +1305,46 @@ mod tests {
             ValidationStatus::Clean,
             "expected validation_status=clean"
         );
+
+        // No cover declared in the OPF manifest — has_embedded_cover must be
+        // Some(false), not NULL: the validator ran and found nothing, which is
+        // distinct from "never checked".
+        let has_cover: Option<bool> = sqlx::query_scalar!(
+            "SELECT has_embedded_cover FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(has_cover, Some(false), "expected has_embedded_cover=false");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_epub_with_cover_sets_has_embedded_cover_true(pool: PgPool) {
+        // Companion to the dashboard-level coverage test: proves the
+        // ingestion pipeline itself sets has_embedded_cover from the
+        // validator's Layer 5 cover check, not just that the dashboard query
+        // reads the column correctly.
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, _quarantine, config) = scan_env();
+
+        let source = ingestion.path().join("Cover - Present.epub");
+        std::fs::write(&source, make_epub_with_cover()).unwrap();
+
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+        assert_eq!(result.failed, 0);
+
+        let dest = library.path().join("Cover/Present.epub");
+        let dest_str = dest.to_str().unwrap();
+        let has_cover: Option<bool> = sqlx::query_scalar!(
+            "SELECT has_embedded_cover FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(has_cover, Some(true), "expected has_embedded_cover=true");
     }
 
     #[sqlx::test(migrations = "./migrations")]
