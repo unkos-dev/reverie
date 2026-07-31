@@ -494,6 +494,48 @@ async fn list_endpoint_multi_series_work_does_not_duplicate(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_series_position_matches_stored_value(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "list-series-pos", "Volume Seven").await;
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert series");
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+        series_id,
+        work_id,
+        7.0_f64,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert series_works");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    // Same NUMERIC-decoded-as-float8 hazard as the detail endpoint: the
+    // list query's LATERAL join must also cast `sw.position::float8`
+    // before sqlx decodes it.
+    let position = items[0]["series"]["position"].as_f64().unwrap();
+    assert!(
+        (position - 7.0).abs() < 1e-9,
+        "series.position must equal the stored ordinal, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1666,6 +1708,50 @@ async fn detail_endpoint_timestamps_are_rfc3339_strings(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_series_position_matches_stored_value(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, m_id) = insert_book(&ingestion_pool, "series-pos", "Volume Eighty-Five").await;
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert series");
+    // Cast through float8 on write, matching the real enrichment writer
+    // (models::work::apply_metadata) so this test exercises the same
+    // NUMERIC column shape production data has.
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+        series_id,
+        work_id,
+        85.0_f64,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert series_works");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    // Regression guard: reading `series_works.position` (NUMERIC)
+    // without a SQL-level `::float8` cast lets sqlx decode the NUMERIC
+    // wire bytes as if they were an IEEE-754 float8, producing a
+    // denormal garbage value instead of the true ordinal.
+    let position = body["series"]["position"].as_f64().unwrap();
+    assert!(
+        (position - 85.0).abs() < 1e-9,
+        "series.position must equal the stored ordinal, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_endpoint_hidden_id_returns_404(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1806,6 +1892,43 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
     assert!(
         body["series"].is_null(),
         "no series seeded → series must surface null, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn work_endpoint_series_position_matches_stored_value(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "work-series-pos", "Volume One").await;
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert series");
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+        series_id,
+        work_id,
+        1.0_f64,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert series_works");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/works/{work_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let position = body["series"]["position"].as_f64().unwrap();
+    assert!(
+        (position - 1.0).abs() < 1e-9,
+        "series.position must equal the stored ordinal, got {body}",
     );
 }
 

@@ -342,7 +342,8 @@ async fn list(
         " FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
          LEFT JOIN LATERAL ( \
-             SELECT s.id AS series_id, s.name AS series_name, sw.position AS series_position \
+             SELECT s.id AS series_id, s.name AS series_name, \
+                    sw.position::float8 AS series_position \
              FROM series_works sw \
              JOIN series s ON s.id = sw.series_id \
              WHERE sw.work_id = w.id \
@@ -1149,7 +1150,7 @@ async fn fetch_detail_row(
           LEFT JOIN LATERAL (
               SELECT s.id    AS series_id,
                      s.name  AS series_name,
-                     sw.position AS series_position
+                     sw.position::float8 AS series_position
               FROM series_works sw
               JOIN series s ON s.id = sw.series_id
               WHERE sw.work_id = w.id
@@ -1471,7 +1472,7 @@ async fn work_detail(
     let series_row = sqlx::query!(
         "SELECT s.id   AS \"id!\", \
                 s.name AS \"name!\", \
-                sw.position AS \"position: f64\" \
+                sw.position::float8 AS \"position: f64\" \
          FROM series_works sw \
          JOIN series s ON s.id = sw.series_id \
          WHERE sw.work_id = $1 \
