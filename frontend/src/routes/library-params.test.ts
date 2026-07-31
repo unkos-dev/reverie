@@ -106,6 +106,17 @@ describe("paramsFromSearch", () => {
       genre_any: ["fantasy"],
     });
   });
+
+  test("never sends title_empty to the API: the backend has no such predicate", () => {
+    const result = paramsFromSearch(search("title_empty=true&title_contains=dune"));
+    expect(result).toEqual({ title_contains: "dune" });
+    expect("title_empty" in result).toBe(false);
+  });
+
+  test("a duplicate scalar key (title_contains repeated) sends only the first value", () => {
+    const result = paramsFromSearch(search("title_contains=a&title_contains=b"));
+    expect(result).toEqual({ title_contains: "a" });
+  });
 });
 
 describe("parseFilterParams", () => {
@@ -169,6 +180,15 @@ describe("parseFilterParams", () => {
     const qs = Array.from({ length: 25 }, (_, i) => `author_any=a${String(i)}`).join("&");
     expect(parseFilterParams(search(qs)).authors.any).toHaveLength(20);
   });
+
+  test("drops a hand-crafted title_empty: the backend has no such predicate (title is NOT NULL)", () => {
+    expect(parseFilterParams(search("title_empty=true")).title).toEqual({});
+  });
+
+  test("a duplicate scalar key keeps only the first value", () => {
+    const state = parseFilterParams(search("title_contains=a&title_contains=b"));
+    expect(state.title).toEqual({ contains: "a" });
+  });
 });
 
 describe("serializeFilterParams", () => {
@@ -215,6 +235,12 @@ describe("serializeFilterParams", () => {
     const params = new URLSearchParams();
     serializeFilterParams(emptyFilterState(), params);
     expect([...params.keys()]).toEqual([]);
+  });
+
+  test("purges a hand-crafted title_empty: any filter rewrite sweeps up the dead key", () => {
+    const params = search("title_empty=true");
+    serializeFilterParams(parseFilterParams(params), params);
+    expect(params.has("title_empty")).toBe(false);
   });
 });
 

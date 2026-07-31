@@ -56,6 +56,11 @@ export const MAX_FILTER_VALUES = 20;
  * `serializeFilterParams`, and the page's clear-all / has-active-filter checks
  * cannot drift. `q` and the single-value `series`/`shelf` filters are included;
  * pagination (`cursor`) and ordering (`sort`) are not filters and stay out.
+ *
+ * `title_empty` is listed despite having no live predicate (see
+ * {@link textFromSearch}): keeping it here lets `serializeFilterParams`'s
+ * delete-then-set sweep and the page's clear-all purge a hand-crafted or
+ * stale `?title_empty=` from the URL instead of leaving it stuck forever.
  */
 export const FILTER_PARAM_KEYS = [
   "q",
@@ -78,6 +83,7 @@ export const FILTER_PARAM_KEYS = [
   "title_contains",
   "title_eq",
   "title_ne",
+  "title_empty",
   "subtitle_contains",
   "subtitle_empty",
   "isbn_13_contains",
@@ -202,7 +208,14 @@ function statusFromSearch(search: URLSearchParams, key: string): string[] {
   return setFromSearch(search, key).filter((token) => STATUS_TOKENS.has(token));
 }
 
-function textFromSearch(search: URLSearchParams, prefix: string): TextFilter {
+/**
+ * Parse a text-column condition. `supportsEmpty` gates whether `${prefix}_empty`
+ * is read at all: `title` has no is-empty predicate (the backend column is
+ * `NOT NULL`, so the condition can never match a row and the API has no
+ * `title_empty` field), so a hand-crafted `?title_empty=` must be dropped here
+ * rather than surfacing as an unremovable chip that silently does nothing.
+ */
+function textFromSearch(search: URLSearchParams, prefix: string, supportsEmpty = true): TextFilter {
   const filter: TextFilter = {};
   const contains = trimmedOrUndefined(search.get(`${prefix}_contains`));
   if (contains !== undefined) filter.contains = contains;
@@ -210,8 +223,10 @@ function textFromSearch(search: URLSearchParams, prefix: string): TextFilter {
   if (eq !== undefined) filter.eq = eq;
   const ne = trimmedOrUndefined(search.get(`${prefix}_ne`));
   if (ne !== undefined) filter.ne = ne;
-  const empty = boolFromSearch(search.get(`${prefix}_empty`));
-  if (empty !== undefined) filter.empty = empty;
+  if (supportsEmpty) {
+    const empty = boolFromSearch(search.get(`${prefix}_empty`));
+    if (empty !== undefined) filter.empty = empty;
+  }
   return filter;
 }
 
@@ -234,7 +249,7 @@ function rangeFromSearch(search: URLSearchParams, prefix: string): RangeFilter {
 export function parseFilterParams(search: URLSearchParams): FilterState {
   const state = emptyFilterState();
   state.q = trimmedOrUndefined(search.get("q"));
-  state.title = textFromSearch(search, "title");
+  state.title = textFromSearch(search, "title", false);
   state.subtitle = textFromSearch(search, "subtitle");
   state.isbn13 = textFromSearch(search, "isbn_13");
   state.pages = rangeFromSearch(search, "pages");
@@ -288,11 +303,16 @@ function appendSet(search: URLSearchParams, key: string, values: readonly string
   }
 }
 
-function serializeText(search: URLSearchParams, prefix: string, filter: TextFilter): void {
+function serializeText(
+  search: URLSearchParams,
+  prefix: string,
+  filter: TextFilter,
+  supportsEmpty = true,
+): void {
   setText(search, `${prefix}_contains`, filter.contains);
   setText(search, `${prefix}_eq`, filter.eq);
   setText(search, `${prefix}_ne`, filter.ne);
-  setBool(search, `${prefix}_empty`, filter.empty);
+  if (supportsEmpty) setBool(search, `${prefix}_empty`, filter.empty);
 }
 
 function serializeRange(search: URLSearchParams, prefix: string, filter: RangeFilter): void {
@@ -310,7 +330,7 @@ function serializeRange(search: URLSearchParams, prefix: string, filter: RangeFi
 export function serializeFilterParams(state: FilterState, search: URLSearchParams): void {
   for (const key of FILTER_PARAM_KEYS) search.delete(key);
   setText(search, "q", state.q);
-  serializeText(search, "title", state.title);
+  serializeText(search, "title", state.title, false);
   serializeText(search, "subtitle", state.subtitle);
   serializeText(search, "isbn_13", state.isbn13);
   serializeRange(search, "pages", state.pages);
