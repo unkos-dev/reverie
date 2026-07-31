@@ -73,6 +73,12 @@ sqlx::query(explain_pages_sql)
 sqlx::query("ANALYZE works, manifestations")
 sqlx::query(explain_subtitle_sql)
 
+# (1, 2) title trigram-index diacritic-folding EXPLAIN test — planner
+# introspection over the literal folded `title_contains` filter SQL, asserting
+# the folded GIST trigram index (on `immutable_unaccent(title)`) is the access
+# path at scale; test-only, same carve-out shape as the subtitle EXPLAIN above.
+sqlx::query(explain_title_sql)
+
 # (3) subtitle trigram-index EXPLAIN test: transaction-scoped planner GUCs
 # penalize seq scans and limit-driven nested loops so the probe proves the
 # trigram index can serve the joined filter. A missing index still fails.

@@ -18,8 +18,11 @@
 //!   key makes at most one `rs` row visible per manifestation, so every
 //!   status/rating probe refers to the same row.
 //! - Text matching is case-insensitive `ILIKE` with backslash-escaped
-//!   wildcards ([`escape_like`]) and accent-sensitive, matching the search
-//!   and suggest endpoints.
+//!   wildcards ([`escape_like`]). The `_contains` legs and the quick `q`
+//!   filter are also accent-insensitive (folded through `immutable_unaccent`,
+//!   matching the search and suggest endpoints); the `_eq`/`_ne` exact-match
+//!   legs are not folded, matching the exact-match convention `isbn_13_eq`
+//!   already set.
 
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, QueryBuilder};
@@ -424,8 +427,10 @@ fn push_vocab_predicates(
 }
 
 /// Push the text-column conditions (`title`/`subtitle` on `works`, `isbn_13`
-/// on `manifestations`). `_contains` wraps the escaped needle in `%…%`,
-/// `_eq` binds it wildcard-free, `_ne` negates, `_empty` is a null check.
+/// on `manifestations`). `_contains` wraps the escaped needle in `%…%` and
+/// folds accents on both sides (see [`push_ilike_contains`]); `_eq` binds it
+/// wildcard-free and accent-sensitive, `_ne` negates the same way, `_empty`
+/// is a null check.
 fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(needle) = trimmed(p.title_contains.as_deref()) {
         push_ilike_contains(qb, "w.title", needle);
@@ -453,13 +458,17 @@ fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     }
 }
 
-/// `AND <col> ILIKE '%needle%'`. `col` is a fixed fragment; `needle` is
-/// escaped so `%`/`_`/`\` match literally.
+/// `AND immutable_unaccent(<col>) ILIKE immutable_unaccent('%needle%')`. `col`
+/// is a fixed fragment; `needle` is escaped so `%`/`_`/`\` match literally.
+/// Both sides fold through the same `IMMUTABLE` wrapper the folded trigram
+/// indexes are built on, so an unaccented needle matches an accented stored
+/// value without the column losing its stored accents.
 fn push_ilike_contains(qb: &mut QueryBuilder<Postgres>, col: &str, needle: &str) {
-    qb.push(" AND ");
+    qb.push(" AND immutable_unaccent(");
     qb.push(col);
-    qb.push(" ILIKE ");
+    qb.push(") ILIKE immutable_unaccent(");
     qb.push_bind(format!("%{}%", escape_like(needle)));
+    qb.push(")");
 }
 
 /// `AND <col> [NOT] ILIKE 'needle'` (no wildcards): a case-insensitive
@@ -615,14 +624,18 @@ fn push_rating_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
 
 /// Push the quick-search filter: a full-text match OR a title trigram match,
 /// with no ranking so the active sort order is preserved. Both legs are
-/// index-backed (GIN `search_vector`, `GiST` `title` trigram).
+/// index-backed (GIN `search_vector`, `GiST` `title` trigram) and both fold
+/// accents: `search_vector` is built under the `unaccent_english` text search
+/// configuration, so the tsquery leg must query under the same configuration
+/// to keep matching an accented query against a folded lexeme; the title leg
+/// wraps both sides in `immutable_unaccent`, matching the folded index.
 fn push_q_predicate(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(raw) = trimmed(p.q.as_deref()) {
-        qb.push(" AND (w.search_vector @@ websearch_to_tsquery('english', ");
+        qb.push(" AND (w.search_vector @@ websearch_to_tsquery('unaccent_english', ");
         qb.push_bind(raw.to_owned());
-        qb.push(") OR w.title ILIKE ");
+        qb.push(") OR immutable_unaccent(w.title) ILIKE immutable_unaccent(");
         qb.push_bind(format!("%{}%", escape_like(raw)));
-        qb.push(")");
+        qb.push("))");
     }
 }
 

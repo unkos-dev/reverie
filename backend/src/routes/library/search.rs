@@ -20,6 +20,15 @@
 //!    single-OR predicate would force the planner into a bitmap-or
 //!    scan; this shape keeps each leg index-friendly even at the
 //!    50K-row library size the blueprint targets.
+//! 3. **Accent folding** — both legs are accent-insensitive. The
+//!    tsvector leg runs under the `unaccent_english` text search
+//!    configuration (chained `unaccent` + `english_stem`), so
+//!    `search_vector` and the `websearch_to_tsquery`/`ts_headline`
+//!    calls against it must share that configuration name; the
+//!    trigram leg wraps both `w.title` and the bound query in
+//!    `immutable_unaccent`, matching the folded expression index. An
+//!    unaccented query therefore finds an accented row on either leg,
+//!    while stored titles keep their accents for display.
 //!
 //! # Invariants
 //! - RLS on `manifestations` gates row visibility; the handler never
@@ -157,17 +166,18 @@ pub(super) async fn search(
     let rows = sqlx::query!(
         r#"
         WITH
-            q AS (SELECT websearch_to_tsquery('english', $1) AS tsq),
+            q AS (SELECT websearch_to_tsquery('unaccent_english', $1) AS tsq),
             ts_hits AS (
                 SELECT w.id, ts_rank_cd(w.search_vector, q.tsq, 32) AS rank
                 FROM works w, q
                 WHERE w.search_vector @@ q.tsq
             ),
             trgm_hits AS (
-                SELECT w.id, similarity(w.title, $1) * 0.5 AS rank
+                SELECT w.id,
+                       similarity(immutable_unaccent(w.title), immutable_unaccent($1)) * 0.5 AS rank
                 FROM works w
-                WHERE w.title % $1
-                  AND similarity(w.title, $1) > $4
+                WHERE immutable_unaccent(w.title) % immutable_unaccent($1)
+                  AND similarity(immutable_unaccent(w.title), immutable_unaccent($1)) > $4
             ),
             merged AS (
                 SELECT id, MAX(rank) AS rank, BOOL_OR(src = 'ts') AS has_ts
@@ -186,7 +196,7 @@ pub(super) async fn search(
                CASE
                    WHEN merged.has_ts THEN
                        ts_headline(
-                           'english',
+                           'unaccent_english',
                            COALESCE(w.title, '') || ' ' || COALESCE(w.description, ''),
                            (SELECT tsq FROM q),
                            $3

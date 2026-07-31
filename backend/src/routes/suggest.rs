@@ -21,6 +21,11 @@
 //!   default `LIKE`/`ILIKE` escape character is already backslash, so no
 //!   explicit `ESCAPE` clause is needed) so a caller cannot smuggle wildcard
 //!   metacharacters into the prefix match.
+//! - Every match is also accent-insensitive: both the vocabulary column and
+//!   the bound query text are wrapped in `immutable_unaccent` (the `ILIKE`
+//!   prefix leg and the `word_similarity`/`<%` fuzzy leg alike), so `garcia`
+//!   finds `García` without the caller stripping diacritics itself. Stored
+//!   values are untouched; folding happens only at match time.
 
 use axum::Json;
 use axum::extract::State;
@@ -211,7 +216,7 @@ async fn query_genres(
                           JOIN manifestations m ON m.id = mg.manifestation_id
                          WHERE mg.genre_id = g.id
                       )
-                  AND g.name ILIKE $1 || '%'
+                  AND immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')
                 ORDER BY g.name ASC
                 LIMIT $2"#,
             q.escaped,
@@ -230,9 +235,10 @@ async fn query_genres(
                           JOIN manifestations m ON m.id = mg.manifestation_id
                          WHERE mg.genre_id = g.id
                       )
-                  AND (g.name ILIKE $1 || '%' OR $2 <% g.name)
-                ORDER BY (g.name ILIKE $1 || '%') DESC,
-                         word_similarity($2, g.name) DESC,
+                  AND (immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')
+                       OR immutable_unaccent($2) <% immutable_unaccent(g.name))
+                ORDER BY (immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')) DESC,
+                         word_similarity(immutable_unaccent($2), immutable_unaccent(g.name)) DESC,
                          g.name ASC
                 LIMIT $3"#,
             q.escaped,
@@ -263,7 +269,7 @@ async fn query_moods(
                           JOIN manifestations m ON m.id = mm.manifestation_id
                          WHERE mm.mood_id = mo.id
                       )
-                  AND mo.name ILIKE $1 || '%'
+                  AND immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')
                 ORDER BY mo.name ASC
                 LIMIT $2"#,
             q.escaped,
@@ -282,9 +288,10 @@ async fn query_moods(
                           JOIN manifestations m ON m.id = mm.manifestation_id
                          WHERE mm.mood_id = mo.id
                       )
-                  AND (mo.name ILIKE $1 || '%' OR $2 <% mo.name)
-                ORDER BY (mo.name ILIKE $1 || '%') DESC,
-                         word_similarity($2, mo.name) DESC,
+                  AND (immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')
+                       OR immutable_unaccent($2) <% immutable_unaccent(mo.name))
+                ORDER BY (immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')) DESC,
+                         word_similarity(immutable_unaccent($2), immutable_unaccent(mo.name)) DESC,
                          mo.name ASC
                 LIMIT $3"#,
             q.escaped,
@@ -315,7 +322,7 @@ async fn query_tags(
                           JOIN manifestations m ON m.id = mt.manifestation_id
                          WHERE mt.tag_id = t.id
                       )
-                  AND t.name ILIKE $1 || '%'
+                  AND immutable_unaccent(t.name) ILIKE immutable_unaccent($1 || '%')
                 ORDER BY t.name ASC
                 LIMIT $2"#,
             q.escaped,
@@ -334,9 +341,10 @@ async fn query_tags(
                           JOIN manifestations m ON m.id = mt.manifestation_id
                          WHERE mt.tag_id = t.id
                       )
-                  AND (t.name ILIKE $1 || '%' OR $2 <% t.name)
-                ORDER BY (t.name ILIKE $1 || '%') DESC,
-                         word_similarity($2, t.name) DESC,
+                  AND (immutable_unaccent(t.name) ILIKE immutable_unaccent($1 || '%')
+                       OR immutable_unaccent($2) <% immutable_unaccent(t.name))
+                ORDER BY (immutable_unaccent(t.name) ILIKE immutable_unaccent($1 || '%')) DESC,
+                         word_similarity(immutable_unaccent($2), immutable_unaccent(t.name)) DESC,
                          t.name ASC
                 LIMIT $3"#,
             q.escaped,
@@ -373,7 +381,7 @@ async fn query_authors(
                           JOIN manifestations m ON m.work_id = wa.work_id
                          WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
-                  AND a.name ILIKE $1 || '%'
+                  AND immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')
                 ORDER BY a.name ASC
                 LIMIT $2"#,
             q.escaped,
@@ -392,9 +400,10 @@ async fn query_authors(
                           JOIN manifestations m ON m.work_id = wa.work_id
                          WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
-                  AND (a.name ILIKE $1 || '%' OR $2 <% a.name)
-                ORDER BY (a.name ILIKE $1 || '%') DESC,
-                         word_similarity($2, a.name) DESC,
+                  AND (immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')
+                       OR immutable_unaccent($2) <% immutable_unaccent(a.name))
+                ORDER BY (immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')) DESC,
+                         word_similarity(immutable_unaccent($2), immutable_unaccent(a.name)) DESC,
                          a.name ASC
                 LIMIT $3"#,
             q.escaped,
@@ -430,7 +439,7 @@ async fn query_series(
                           JOIN manifestations m ON m.work_id = sw.work_id
                          WHERE sw.series_id = s.id
                       )
-                  AND s.name ILIKE $1 || '%'
+                  AND immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')
                 ORDER BY s.name ASC
                 LIMIT $2"#,
             q.escaped,
@@ -449,9 +458,10 @@ async fn query_series(
                           JOIN manifestations m ON m.work_id = sw.work_id
                          WHERE sw.series_id = s.id
                       )
-                  AND (s.name ILIKE $1 || '%' OR $2 <% s.name)
-                ORDER BY (s.name ILIKE $1 || '%') DESC,
-                         word_similarity($2, s.name) DESC,
+                  AND (immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')
+                       OR immutable_unaccent($2) <% immutable_unaccent(s.name))
+                ORDER BY (immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')) DESC,
+                         word_similarity(immutable_unaccent($2), immutable_unaccent(s.name)) DESC,
                          s.name ASC
                 LIMIT $3"#,
             q.escaped,
@@ -485,7 +495,7 @@ async fn query_publishers(
                )
                SELECT name AS "name!"
                  FROM pubs
-                WHERE name ILIKE $1 || '%'
+                WHERE immutable_unaccent(name) ILIKE immutable_unaccent($1 || '%')
                 ORDER BY name ASC
                 LIMIT $2"#,
             q.escaped,
@@ -503,9 +513,10 @@ async fn query_publishers(
                )
                SELECT name AS "name!"
                  FROM pubs
-                WHERE name ILIKE $1 || '%' OR $2 <% name
-                ORDER BY (name ILIKE $1 || '%') DESC,
-                         word_similarity($2, name) DESC,
+                WHERE immutable_unaccent(name) ILIKE immutable_unaccent($1 || '%')
+                   OR immutable_unaccent($2) <% immutable_unaccent(name)
+                ORDER BY (immutable_unaccent(name) ILIKE immutable_unaccent($1 || '%')) DESC,
+                         word_similarity(immutable_unaccent($2), immutable_unaccent(name)) DESC,
                          name ASC
                 LIMIT $3"#,
             q.escaped,
@@ -1004,6 +1015,42 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn genres_diacritic_folding_matches_unaccented_query(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "genre-accent").await;
+        insert_linked_genre(&ingestion_pool, "\u{c9}poque", m_id).await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "genre-accent").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // Unaccented query finds the accented genre name.
+        let r = server
+            .get("/api/v1/genres/suggest?q=epoque")
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert!(
+            values.contains(&"\u{c9}poque".to_owned()),
+            "unaccented query should surface \u{c9}poque via folding: {values:?}"
+        );
+
+        // Exact accented query still matches (no regression from folding).
+        let r = server
+            .get("/api/v1/genres/suggest?q=%C3%89poque")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert!(
+            values.contains(&"\u{c9}poque".to_owned()),
+            "accented query should still match \u{c9}poque: {values:?}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn short_query_is_prefix_only(pool: PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1269,6 +1316,49 @@ mod tests {
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
         assert!(suggestion_values(&r.json()).contains(&"Ann Leckie".to_owned()));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authors_suggest_diacritic_folding_matches_unaccented_prefix(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (work_id, _m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "author-accent").await;
+        test_support::db::insert_contributor(
+            &ingestion_pool,
+            work_id,
+            "Gabriel Garc\u{ed}a M\u{e1}rquez",
+            "author",
+            0,
+        )
+        .await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "author-accent").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // Unaccented prefix rides the folded ILIKE-prefix leg.
+        let r = server
+            .get("/api/v1/authors/suggest?q=Gabriel%20Garcia")
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert!(
+            values.contains(&"Gabriel Garc\u{ed}a M\u{e1}rquez".to_owned()),
+            "unaccented prefix must find the accented author: {values:?}"
+        );
+
+        // Exact accented prefix still matches (no regression from folding).
+        let r = server
+            .get("/api/v1/authors/suggest?q=Gabriel%20Garc%C3%ADa")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert!(
+            values.contains(&"Gabriel Garc\u{ed}a M\u{e1}rquez".to_owned()),
+            "accented prefix must still match: {values:?}"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
