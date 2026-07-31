@@ -291,6 +291,19 @@ mod tests {
     }
 
     #[test]
+    fn find_cover_href_meta_beats_magic_id() {
+        // Both a resolved EPUB 2 meta cover and a magic-id manifest entry
+        // (a different image) exist -- the explicit meta declaration
+        // outranks the id guess.
+        let mut opf = make_opf_data("cover-image", "images/wrong-cover.jpg");
+        opf.meta_cover_href = Some("images/right-cover.jpg".to_string());
+        assert_eq!(
+            find_cover_href(&opf).as_deref(),
+            Some("images/right-cover.jpg")
+        );
+    }
+
+    #[test]
     fn find_cover_href_property_wins_over_epub2_meta() {
         // Both an EPUB 3 property="cover-image" and an EPUB 2 meta exist --
         // the explicit modern property still wins over the meta fallback.

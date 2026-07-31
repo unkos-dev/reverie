@@ -63,8 +63,12 @@ pub struct OpfData {
     /// the manifest id lookup. The referenced `ID` is an author-chosen
     /// manifest item id and is not necessarily one of the legacy magic ids
     /// (`cover-image`, `cover`, ...), so this must be resolved independently
-    /// of the id heuristic. `None` when no such meta exists or its `content`
-    /// does not resolve to a manifest item.
+    /// of the id heuristic. Only resolves when the referenced item's
+    /// `media-type` starts with `image/` -- real EPUB2s routinely point this
+    /// meta at the XHTML cover page rather than the image, and resolving that
+    /// would shadow the magic-id heuristic that would otherwise find the real
+    /// cover. `None` when no such meta exists, its `content` does not resolve
+    /// to a manifest item, or the resolved item is not an image.
     pub meta_cover_href: Option<String>,
     /// Spine idrefs (after removing broken refs)
     pub spine_idrefs: Vec<String>,
@@ -130,6 +134,10 @@ pub fn validate(
     let xml = std::str::from_utf8(&bytes).ok()?;
 
     let mut manifest: HashMap<String, String> = HashMap::new();
+    // id -> media-type, kept alongside `manifest` only to gate EPUB 2 meta
+    // cover resolution below (see `meta_cover_href` resolution): the public
+    // `OpfData.manifest` shape stays id -> href for every other consumer.
+    let mut manifest_media_types: HashMap<String, String> = HashMap::new();
     let mut cover_href: Option<String> = None;
     // Manifest item id referenced by an EPUB 2 <meta name="cover"
     // content="ID"/>, buffered raw and resolved against `manifest` after the
@@ -537,6 +545,9 @@ pub fn validate(
                         // C4: validate href path safety via shared helper.
                         if super::is_safe_path(href) {
                             manifest.insert(id.clone(), href.clone());
+                            if let Some(media_type) = attrs.get("media-type") {
+                                manifest_media_types.insert(id.clone(), media_type.clone());
+                            }
                             // EPUB 3 cover detection: the cover is the item
                             // carrying `properties="cover-image"`, regardless of
                             // its id. `properties` is a space-separated token
@@ -575,8 +586,17 @@ pub fn validate(
     }
 
     // Resolve the EPUB 2 meta-declared cover id against the manifest now that
-    // the full pass has completed.
-    let meta_cover_href = meta_cover_id.and_then(|id| manifest.get(&id).cloned());
+    // the full pass has completed. Real EPUB2s routinely point <meta
+    // name="cover"> at the XHTML cover PAGE while the actual image sits
+    // under a magic id (e.g. "cover-image") -- gate on media-type so a
+    // non-image target leaves this None and lets the id heuristic run
+    // instead of resolving to an undecodable page. Mirrors calibre's own
+    // cover-detection behavior.
+    let meta_cover_href = meta_cover_id.and_then(|id| {
+        let href = manifest.get(&id)?;
+        let media_type = manifest_media_types.get(&id)?;
+        media_type.starts_with("image/").then(|| href.clone())
+    });
 
     // Validate spine refs against manifest
     let manifest_ids: HashSet<&String> = manifest.keys().collect();
@@ -796,6 +816,33 @@ mod tests {
         let mut issues = Vec::new();
         let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
         assert_eq!(data.meta_cover_href.as_deref(), Some("images/cover.jpg"));
+    }
+
+    #[test]
+    fn meta_cover_pointing_to_non_image_item_falls_through_to_magic_id() {
+        // Real-world EPUB 2 shape: <meta name="cover"> targets the XHTML
+        // cover PAGE, not the image, while the actual cover image sits under
+        // the magic id `cover-image`. The media-type gate must reject the
+        // XHTML target so `meta_cover_href` stays None and the id heuristic
+        // still finds the real image (calibre applies the same gate).
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="titlepage"/>
+            </metadata>
+            <manifest>
+                <item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>
+                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg"/>
+            </manifest>
+            <spine><itemref idref="titlepage"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert!(data.meta_cover_href.is_none());
+        assert_eq!(
+            crate::services::epub::cover_layer::find_cover_href(&data).as_deref(),
+            Some("images/cover.jpg")
+        );
     }
 
     #[test]
