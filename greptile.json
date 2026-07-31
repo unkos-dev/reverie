@@ -1,10 +1,10 @@
 {
   "strictness": 1,
   "commentTypes": ["logic", "syntax", "style"],
-  "triggerOnUpdates": true,
+  "triggerOnUpdates": false,
   "shouldUpdateDescription": false,
   "statusCommentsEnabled": true,
-  "statusCheck": true,
+  "statusCheck": false,
   "fixWithAI": false,
   "summarySection": {
     "included": true,
@@ -21,8 +21,17 @@
     "included": true,
     "collapsible": true
   },
-  "excludeAuthors": [],
-  "excludeBranches": ["release-please--**"],
+  "excludeAuthors": ["renovate[bot]", "dependabot[bot]", "github-actions[bot]"],
+  "excludeBranches": [
+    "release-please--**",
+    "chore/**",
+    "docs/**",
+    "test/**",
+    "perf/**",
+    "ci/**",
+    "revert/**",
+    "agent/**"
+  ],
   "ignorePatterns": [
     "**/package-lock.json",
     "**/Cargo.lock",
