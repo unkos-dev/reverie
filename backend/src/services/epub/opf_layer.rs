@@ -64,7 +64,8 @@ pub struct OpfData {
     /// manifest item id and is not necessarily one of the legacy magic ids
     /// (`cover-image`, `cover`, ...), so this must be resolved independently
     /// of the id heuristic. Only resolves when the referenced item's
-    /// `media-type` starts with `image/` -- real EPUB2s routinely point this
+    /// `media-type` is an `image` type (matched case-insensitively per MIME
+    /// rules) -- real EPUB2s routinely point this
     /// meta at the XHTML cover page rather than the image, and resolving that
     /// would shadow the magic-id heuristic that would otherwise find the real
     /// cover. `None` when no such meta exists, its `content` does not resolve
@@ -595,7 +596,12 @@ pub fn validate(
     let meta_cover_href = meta_cover_id.and_then(|id| {
         let href = manifest.get(&id)?;
         let media_type = manifest_media_types.get(&id)?;
-        media_type.starts_with("image/").then(|| href.clone())
+        // MIME type matching is case-insensitive (RFC 2045), so IMAGE/JPEG
+        // is as valid as image/jpeg.
+        let top_level = media_type.split('/').next().unwrap_or("");
+        top_level
+            .eq_ignore_ascii_case("image")
+            .then(|| href.clone())
     });
 
     // Validate spine refs against manifest
@@ -788,6 +794,26 @@ mod tests {
             </metadata>
             <manifest>
                 <item id="cvr" href="images/cover.jpg" media-type="image/jpeg"/>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.meta_cover_href.as_deref(), Some("images/cover.jpg"));
+    }
+
+    #[test]
+    fn epub2_meta_cover_uppercase_media_type_resolves() {
+        // MIME type matching is case-insensitive (RFC 2045); IMAGE/JPEG is
+        // as valid as image/jpeg and must pass the image gate.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="cvr"/>
+            </metadata>
+            <manifest>
+                <item id="cvr" href="images/cover.jpg" media-type="IMAGE/JPEG"/>
                 <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
             </manifest>
             <spine><itemref idref="ch1"/></spine>
