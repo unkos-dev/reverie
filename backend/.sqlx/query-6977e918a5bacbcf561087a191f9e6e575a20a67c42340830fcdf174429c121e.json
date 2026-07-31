@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT has_embedded_cover FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_embedded_cover",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "has_embedded_cover"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "6977e918a5bacbcf561087a191f9e6e575a20a67c42340830fcdf174429c121e"
+}
