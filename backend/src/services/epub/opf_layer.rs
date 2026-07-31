@@ -8,7 +8,9 @@
 //! that fail the path-safety check are dropped and recorded as `Degraded`.
 
 use quick_xml::Reader;
+use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
+use quick_xml::name::QName;
 use std::collections::{HashMap, HashSet};
 
 use super::{
@@ -98,6 +100,88 @@ fn local_name(name: &[u8]) -> &[u8] {
         .map_or(name, |pos| &name[pos + 1..])
 }
 
+/// Read an element's character data up to its matching end tag.
+///
+/// `Reader::read_text` returns the raw markup span between the tags rather
+/// than decoding it, which is wrong for two different reasons at once: a
+/// `CDATA` section comes back as literal `<![CDATA[...]]>` markup instead of
+/// its content, while a text node's entities (`&amp;`) come back unresolved.
+/// The two need opposite treatment, not one shared pass over the raw span:
+/// `CDATA` content is never escaped (`<![CDATA[&amp;]]>` is the five literal
+/// characters `&amp;`), but a text node's entities must be resolved (`a
+/// &amp; b` is the string `a & b`). Walking events keeps that distinction:
+/// `Text` is decoded and its split-out `GeneralRef` entities resolved,
+/// `CData` is taken verbatim, and the parts are concatenated in document
+/// order, which also naturally handles a body mixing both forms (legal XML).
+fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
+    // `trim_text` (enabled document-wide, so that insignificant whitespace
+    // between sibling elements is ignored elsewhere) trims each `Text` event
+    // independently. That is wrong here: it would eat the spaces on either
+    // side of a `CData` section or a resolved entity, since those split a
+    // single logical body into more than one `Text` event. Disable it for
+    // the span this call reads and restore it before returning, since the
+    // caller's final `.trim()` on the assembled string already handles
+    // trimming the body's outer edges.
+    let config = reader.config_mut();
+    let trim_start = config.trim_text_start;
+    let trim_end = config.trim_text_end;
+    config.trim_text_start = false;
+    config.trim_text_end = false;
+
+    let mut text = String::new();
+    let mut depth = 0u32;
+    let result = 'parse: loop {
+        let Ok(event) = reader.read_event() else {
+            break 'parse None;
+        };
+        match event {
+            Event::Start(s) if s.name().as_ref() == end.as_ref() => depth += 1,
+            Event::End(e) if e.name().as_ref() == end.as_ref() => {
+                if depth == 0 {
+                    break 'parse Some(text);
+                }
+                depth -= 1;
+            }
+            Event::Text(t) => match t.decode() {
+                Ok(s) => text.push_str(&s),
+                Err(_) => break 'parse None,
+            },
+            Event::CData(c) => match c.decode() {
+                Ok(s) => text.push_str(&s),
+                Err(_) => break 'parse None,
+            },
+            Event::GeneralRef(r) => match r.resolve_char_ref() {
+                Ok(Some(ch)) => text.push(ch),
+                Ok(None) => {
+                    let Ok(name) = r.decode() else {
+                        break 'parse None;
+                    };
+                    if let Some(resolved) = resolve_xml_entity(&name) {
+                        text.push_str(resolved);
+                    } else {
+                        // Not one of the five predefined XML entities and
+                        // not a character reference; without a DTD there is
+                        // nothing to resolve it against, so keep the
+                        // original markup rather than lose it.
+                        text.push('&');
+                        text.push_str(&name);
+                        text.push(';');
+                    }
+                }
+                Err(_) => break 'parse None,
+            },
+            Event::Eof => break 'parse Some(text),
+            _ => {}
+        }
+    };
+
+    let config = reader.config_mut();
+    config.trim_text_start = trim_start;
+    config.trim_text_end = trim_end;
+
+    result
+}
+
 /// Parse the `OPF` package document at `opf_path` and return structured metadata.
 ///
 /// Extracts the manifest, spine, Dublin Core fields, W3C accessibility `<meta>`
@@ -165,7 +249,7 @@ pub fn validate(
             // Also handles belongs-to-collection and group-position.
             // Must come BEFORE general Event::Start arm to avoid shadowing.
             Event::Start(e) if e.name().as_ref() == b"meta" => {
-                let e = e.into_owned(); // release reader buffer borrow before read_text
+                let e = e.into_owned(); // release reader buffer borrow before read_element_text
                 let prop = e
                     .attributes()
                     .flatten()
@@ -205,10 +289,7 @@ pub fn validate(
 
                 if let Some(ref prop) = prop {
                     if prop == "belongs-to-collection" {
-                        let text = reader
-                            .read_text(e.name())
-                            .ok()
-                            .and_then(|t| t.decode().ok())
+                        let text = read_element_text(&mut reader, e.name())
                             .map(|t| t.trim().to_string())
                             .filter(|s| !s.is_empty());
                         if let Some(name) = text {
@@ -224,10 +305,7 @@ pub fn validate(
                         // pass so element order doesn't matter.
                         if let Some(refines) = refines_attr {
                             let text = content_attr.or_else(|| {
-                                reader
-                                    .read_text(e.name())
-                                    .ok()
-                                    .and_then(|t| t.decode().ok())
+                                read_element_text(&mut reader, e.name())
                                     .map(|t| t.trim().to_string())
                                     .filter(|s| !s.is_empty())
                             });
@@ -242,10 +320,7 @@ pub fn validate(
                         // (EPUB 3.3 §D.3.10 example: one creator, aut + ill).
                         if let Some(refines) = refines_attr {
                             let text = content_attr.or_else(|| {
-                                reader
-                                    .read_text(e.name())
-                                    .ok()
-                                    .and_then(|t| t.decode().ok())
+                                read_element_text(&mut reader, e.name())
                                     .map(|t| t.trim().to_string())
                                     .filter(|s| !s.is_empty())
                             });
@@ -258,10 +333,7 @@ pub fn validate(
                     if prop == "title-type" {
                         if let Some(refines) = refines_attr {
                             let text = content_attr.or_else(|| {
-                                reader
-                                    .read_text(e.name())
-                                    .ok()
-                                    .and_then(|t| t.decode().ok())
+                                read_element_text(&mut reader, e.name())
                                     .map(|t| t.trim().to_string())
                                     .filter(|s| !s.is_empty())
                             });
@@ -273,10 +345,7 @@ pub fn validate(
                     }
                     if prop == "schema:numberOfPages" {
                         let text = content_attr.or_else(|| {
-                            reader
-                                .read_text(e.name())
-                                .ok()
-                                .and_then(|t| t.decode().ok())
+                            read_element_text(&mut reader, e.name())
                                 .map(|t| t.trim().to_string())
                                 .filter(|s| !s.is_empty())
                         });
@@ -287,10 +356,7 @@ pub fn validate(
                     }
                     if prop.starts_with("schema:access") || prop.starts_with("dcterms:") {
                         let val = content_attr.or_else(|| {
-                            reader
-                                .read_text(e.name())
-                                .ok()
-                                .and_then(|t| t.decode().ok())
+                            read_element_text(&mut reader, e.name())
                                 .map(|t| t.trim().to_string())
                                 .filter(|s| !s.is_empty())
                         });
@@ -451,10 +517,7 @@ pub fn validate(
                     });
 
                 let e = e.into_owned();
-                let text = reader
-                    .read_text(e.name())
-                    .ok()
-                    .and_then(|t| t.decode().ok())
+                let text = read_element_text(&mut reader, e.name())
                     .map(|t| t.trim().to_string())
                     .filter(|s| !s.is_empty());
 
@@ -759,7 +822,7 @@ mod tests {
         assert_eq!(data.creators[0].name, "J. R. R. Tolkien");
         assert_eq!(data.creators[0].roles, vec!["aut"]);
         assert_eq!(data.description.as_deref(), Some("A fantasy novel"));
-        assert_eq!(data.publisher.as_deref(), Some("Allen &amp; Unwin"));
+        assert_eq!(data.publisher.as_deref(), Some("Allen & Unwin"));
         assert_eq!(data.date.as_deref(), Some("1937-09-21"));
         assert_eq!(data.language.as_deref(), Some("en"));
         assert_eq!(data.identifiers.len(), 2);
@@ -1063,6 +1126,115 @@ mod tests {
         let mut issues = Vec::new();
         let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
         assert_eq!(data.number_of_pages.as_deref(), Some("353"));
+    }
+
+    #[test]
+    fn cdata_title_extracts_character_data() {
+        // CDATA is character data (XML 1.0 section 2.7); a title wrapped in
+        // it must yield the same value as a plain text node, not the raw
+        // `<![CDATA[...]]>` markup.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title><![CDATA[Main]]></dc:title>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.title.as_deref(), Some("Main"));
+    }
+
+    #[test]
+    fn cdata_description_extracts_character_data() {
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:description><![CDATA[Blurb]]></dc:description>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.description.as_deref(), Some("Blurb"));
+    }
+
+    #[test]
+    fn cdata_title_type_refine_resolves_subtitle() {
+        // A title-type refine declared via CDATA must resolve exactly as its
+        // text-node equivalent does; a raw-markup comparison would never
+        // match "subtitle" and leave the field unset.
+        let opf = br##"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title id="t1">Mistborn</dc:title>
+                <dc:title id="t2">The Final Empire</dc:title>
+                <meta refines="#t2" property="title-type"><![CDATA[subtitle]]></meta>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"##;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.title.as_deref(), Some("Mistborn"));
+        assert_eq!(data.subtitle.as_deref(), Some("The Final Empire"));
+    }
+
+    #[test]
+    fn mixed_text_and_cdata_body_concatenates_in_document_order() {
+        // A body mixing plain text and CDATA parts is legal XML; both are
+        // character data, so the correct reading concatenates them in
+        // document order rather than keeping only one part. No whitespace
+        // sits at the text/CDATA boundary here, since the reader's
+        // `trim_text` setting (needed to ignore insignificant inter-element
+        // whitespace elsewhere) trims each Text event independently and
+        // would otherwise eat space adjacent to a CDATA section.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:description>Before<![CDATA[Middle]]>After</dc:description>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.description.as_deref(), Some("BeforeMiddleAfter"));
+    }
+
+    #[test]
+    fn text_node_entity_is_resolved() {
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:description>a &amp; b</dc:description>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.description.as_deref(), Some("a & b"));
+    }
+
+    #[test]
+    fn cdata_body_entity_like_text_is_not_unescaped() {
+        // CDATA content is never escaped: the five characters `&amp;` inside
+        // a CDATA section are literal text, not an entity reference, unlike
+        // the same characters in a text node.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:description><![CDATA[&amp;]]></dc:description>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.description.as_deref(), Some("&amp;"));
     }
 
     #[test]
