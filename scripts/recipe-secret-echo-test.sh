@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 
 sentinel='S3CRET-sentinel-credential'
 recipes=(
-  rust::test rust::cov rust::sqlx-check rust::doctests db-migrate
+  rust::test rust::cov rust::sqlx-check rust::doctests db-migrate db-migrate-raw
   rust::dev rust::dev-start rust::dev-stop rust::dev-status
 )
 

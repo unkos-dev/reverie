@@ -440,6 +440,41 @@ db-reset:
 db-migrate:
     cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run -- migrate
 
+# Is: a development-loop unblocker for the compile/cache/migration cycle
+# when a branch is authoring a new migration. `db-migrate` compiles the
+# backend binary first, but the binary cannot compile until the sqlx
+# offline cache reflects the new migration, and the cache cannot
+# regenerate until the migration has been applied to the dev DB. This
+# recipe breaks that cycle by applying the SQL files in
+# backend/migrations/ straight through sqlx-cli, no compile involved.
+# After it runs, `just rust::sqlx-prepare` regenerates the offline cache
+# against the now-migrated schema so the binary builds again.
+#
+# Is not: the deployment path. Real instances still migrate through the
+# application binary's `migrate` command (what `db-migrate` runs), which
+# may perform runtime checks sqlx-cli does not. This recipe is a local
+# authoring shortcut, never a substitute for that command in a shipped
+# environment.
+#
+# Is not: a cache regenerator. Run `just rust::sqlx-prepare` afterward;
+# this recipe only touches the database.
+#
+# Takes optional passthrough args, e.g. `--ignore-missing` for a shared
+# dev DB that already carries a sibling worktree's migration. Not on by
+# default: it weakens sqlx-cli's check that applied migrations match the
+# local migration files, and that check should stay strict unless a
+# developer knowingly needs to relax it.
+#
+# Same migrator DSN as db-migrate (the default above), reused verbatim so
+# the two cannot drift apart. Duplicated rather than lifted into a just
+# variable for the same reason db-migrate inlines it: a just variable
+# would echo an overridden credential into dry-run/verbose recipe output.
+#
+# Apply pending migrations directly with sqlx-cli, bypassing the backend build.
+[group('db')]
+db-migrate-raw *args:
+    cd backend && DATABASE_URL="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo sqlx migrate run {{ args }}
+
 # Idempotent by construction: db-up is a no-op when the container is already
 # healthy, db-migrate is a no-op once the schema is current, and each
 # dev-start exits 0 when it already owns a serving process, so re-running

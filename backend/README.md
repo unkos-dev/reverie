@@ -36,6 +36,8 @@ The `tower_sessions` schema bypasses RLS. The session id resolves user identity.
 
 The `reverie_migrator` role executes migrations out of band: `just db-migrate` runs them over the socket, or set `DATABASE_URL_MIGRATION` to either transport's migrator DSN and run `cargo run -- migrate`. The application process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the built-in sqlx migrator for tests.
 
+`just db-migrate` compiles the backend binary first, which is circular when a branch is authoring a new migration: the binary needs the sqlx offline cache to reflect the migration, and the cache needs the migration already applied. `just db-migrate-raw` breaks that cycle by applying `backend/migrations/` with sqlx-cli directly, no compile step; follow it with `just rust::sqlx-prepare`. It is a local authoring shortcut only, not a substitute for `just db-migrate` in any shipped environment.
+
 Operator-facing `MigrationError` modes:
 
 | Variant              | Meaning                             | Recovery                                      |
