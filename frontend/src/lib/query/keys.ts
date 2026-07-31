@@ -34,13 +34,56 @@ function byCodepoint(a: string, b: string): number {
   return 0;
 }
 
+/** The `ListBooksParams` keys whose value is a string array (the vocab/author
+ *  set filters), so `normalizeListParams` can sort them without widening to
+ *  `never`. */
+type ArrayParamKey = {
+  [K in keyof ListBooksParams]-?: NonNullable<ListBooksParams[K]> extends readonly string[]
+    ? K
+    : never;
+}[keyof ListBooksParams];
+
+const ARRAY_PARAM_KEYS: readonly ArrayParamKey[] = [
+  "author",
+  "author_any",
+  "author_none",
+  "tag",
+  "tag_any",
+  "tag_none",
+  "genre",
+  "genre_any",
+  "genre_none",
+  "mood",
+  "mood_any",
+  "mood_none",
+  "status_any",
+  "status_none",
+];
+
+/**
+ * Sort every array-valued filter param with the same locale-independent
+ * comparator `authors.resolve` uses. Two filter sets that differ only in
+ * the order their multi-value params were appended to the URL (e.g. tag
+ * chips added in a different sequence) must hit the same cache slot rather
+ * than fragmenting into two.
+ */
+function normalizeListParams(params: ListBooksParams): ListBooksParams {
+  const normalized: ListBooksParams = { ...params };
+  for (const key of ARRAY_PARAM_KEYS) {
+    const value = normalized[key];
+    if (value !== undefined) normalized[key] = [...value].sort(byCodepoint);
+  }
+  return normalized;
+}
+
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
   books: {
     /** Root namespace; invalidate to wipe every books-* cache slot. */
     all: ["books"] as const satisfies BooksAllKey,
     /** List endpoint with filters/sort/cursor. Distinct params = distinct slot. */
-    list: (params: ListBooksParams): BooksListKey => ["books", "list", params] as const,
+    list: (params: ListBooksParams): BooksListKey =>
+      ["books", "list", normalizeListParams(params)] as const,
     /** Prefix of the whole detail family; invalidate to mark every cached
      *  book detail stale (refetches only the ones currently on screen). */
     detailsAll: ["books", "detail"] as const satisfies BookDetailsAllKey,
