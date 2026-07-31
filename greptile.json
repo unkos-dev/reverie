@@ -126,10 +126,6 @@
         "description": "Source of the four-tier comment policy AGENTS.md summarises, and the reasoning behind it. Tier 1 public items describe purpose, invariants, and non-obvious WHY; Tier 2 security and auth code carries explicit `// THREAT:` annotations; Tier 3 internal code comments only where the WHY is non-obvious and otherwise not at all; Tier 4 test functions carry no docstrings. The density tiebreaker matters on review: new comments follow the tiers, never the density of verbose legacy neighbours."
       },
       {
-        "path": "adr/2026-05-18-outbound-http-user-agent.md",
-        "description": "Every outbound HTTP client in production code sets an explicit User-Agent: `reverie/<CARGO_PKG_VERSION>` as the floor, and enrichment clients hitting third-party metadata APIs append the operator-configured contact as `reverie/<version> (+<contact>)`. Relying on the reqwest default (no header at all) is forbidden in production code, and spoofing a browser UA is rejected outright. Test-only clients targeting wiremock on loopback are exempt."
-      },
-      {
         "path": "docs/astro.config.mjs",
         "description": "Starlight (Astro) documentation-site config: site nav, sidebar, and integrations. Changes to docs structure or the docs build go through here."
       },
@@ -246,6 +242,12 @@
         "id": "conventional-commits",
         "severity": "low",
         "rule": "Conventional Commits are mandatory. Branch names follow GitHub Flow with prefixes feat/, fix/, refactor/, docs/, chore/, test/."
+      },
+      {
+        "id": "outbound-user-agent",
+        "severity": "medium",
+        "rule": "Every outbound HTTP client in production code sets an explicit User-Agent. The floor is `reverie/<CARGO_PKG_VERSION>`, set with `concat!(\"reverie/\", env!(\"CARGO_PKG_VERSION\"))` on the ClientBuilder, and clients hitting third-party metadata APIs (Google Books, Hardcover, Open Library) append the operator-configured contact through `config.user_agent()`, giving `reverie/<version> (+<contact>)`. Relying on the reqwest default, which sends no header at all, is forbidden in production code, because self-hosted deployments sit behind whichever WAF the operator already runs and a headerless client is what those block. Spoofing a browser User-Agent is rejected outright: it removes upstream operators' ability to identify the client. Test-only clients targeting wiremock on loopback under #[cfg(test)] are exempt.",
+        "scope": ["backend/**/*.rs"]
       },
       {
         "id": "theme-tier-contract",
