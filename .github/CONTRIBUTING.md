@@ -158,7 +158,7 @@ Active reviewer:
 
 Data handling:
 
-- Greptile is a managed SaaS provider; inference runs through third-party LLM platforms (OpenAI, Anthropic, Google). Repository code is cached on their infrastructure while the GitHub App has access; cache is deleted on App uninstall per their retention policy
+- Greptile is a managed SaaS provider; inference runs through OpenAI's and Anthropic's API platforms, per their security disclosure. Repository code is cached on their infrastructure while the GitHub App has access; cache is deleted on App uninstall per their retention policy
 - Reverie is AGPL-3.0 and the code the reviewer receives is already public, so the marginal exposure is near zero; the disclosure exists for transparency
 - **AI-training opt-in.** Reverie uses Greptile under their "free for open-source" arrangement, and as a token form of reciprocity, this repository has training-data use enabled at the account level. Per Greptile's policy this means de-identified, aggregated repository data may be used to monitor, improve, or expand their services. PII and customer-specific references are stripped per their disclosure
 - **External contributions.** If active external contributions start arriving, the training opt-in is reconsidered with those contributors in the loop. Reverie remains AGPL-3.0
