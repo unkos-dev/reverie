@@ -3691,12 +3691,7 @@ async fn filter_title_contains_folds_accents(pool: PgPool) {
     assert_eq!(hits, vec!["\u{c9}mile Zola"]);
 
     // Accented needle still matches (no regression from folding).
-    let hits = filtered_titles(
-        &server,
-        &basic,
-        "/api/v1/books?title_contains=%C3%89mile",
-    )
-    .await;
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%C3%89mile").await;
     assert_eq!(hits, vec!["\u{c9}mile Zola"]);
 }
 

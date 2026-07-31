@@ -455,7 +455,7 @@
           {
             "name": "title_contains",
             "in": "query",
-            "description": "Case-insensitive substring match on the work title.",
+            "description": "Case-insensitive, accent-insensitive substring match on the work\ntitle.",
             "required": false,
             "schema": {
               "type": "string"
@@ -482,7 +482,7 @@
           {
             "name": "subtitle_contains",
             "in": "query",
-            "description": "Case-insensitive substring match on the work subtitle.",
+            "description": "Case-insensitive, accent-insensitive substring match on the work\nsubtitle.",
             "required": false,
             "schema": {
               "type": "string"
@@ -500,7 +500,7 @@
           {
             "name": "isbn_13_contains",
             "in": "query",
-            "description": "Case-insensitive substring match on the manifestation ISBN-13.",
+            "description": "Case-insensitive, accent-insensitive substring match on the\nmanifestation ISBN-13.",
             "required": false,
             "schema": {
               "type": "string"
@@ -629,7 +629,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Quick-search text: narrows the current result set to rows whose\ntitle or full-text vector matches, within the active sort order.\nA filter, not a ranked search (that lives at `/api/v1/search`).",
+            "description": "Quick-search text: narrows the current result set to rows whose\ntitle or full-text vector matches, within the active sort order.\nCase- and accent-insensitive. A filter, not a ranked search (that\nlives at `/api/v1/search`).",
             "required": false,
             "schema": {
               "type": "string"
