@@ -4,7 +4,8 @@
     "config:recommended",
     ":semanticCommits",
     ":gitSignOff",
-    "helpers:pinGitHubActionDigests"
+    "helpers:pinGitHubActionDigests",
+    "mergeConfidence:all-badges"
   ],
   "configMigration": true,
   "timezone": "Australia/Perth",
@@ -13,12 +14,15 @@
   "prHourlyLimit": 4,
   "prConcurrentLimit": 10,
   "minimumReleaseAge": "3 days",
+  "abandonmentThreshold": "1 year",
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
-    "description": "Label the weekly whole-tree refresh so it is distinguishable from a targeted update.",
+    "description": "Label the weekly whole-tree refresh so it is distinguishable from a targeted update. The release-age hold is nulled here: regeneration lets npm and cargo pick transitive versions, so the hold cannot be enforced and would sit pending on nearly every run. Green required checks automerge the refresh; a red one stays open for diagnosis.",
     "enabled": true,
     "schedule": ["before 6am on monday"],
-    "addLabels": ["lockfile-maintenance"]
+    "addLabels": ["lockfile-maintenance"],
+    "minimumReleaseAge": null,
+    "automerge": true
   },
   "vulnerabilityAlerts": {
     "description": "minimumReleaseAge restates Renovate's own default for this block; without it the 3-day hold above reads as applying to security fixes.",
