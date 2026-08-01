@@ -76,23 +76,6 @@ expect_failure() {
   esac
 }
 
-# Assert a stderr substring is present alongside a successful resolution
-# (the HEAD-fallback warning), without treating the warning as a failure.
-expect_stderr_contains() {
-  local name="$1" fixture="$2" want_substr="$3"
-  shift 3
-  local err rc=0
-  err="$(cd "$fixture" && ./scripts/worktree-base.sh "$@" 2>&1 1> /dev/null)" || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    bad "$name" "exited $rc, expected success"
-    return
-  fi
-  case "$err" in
-    *"$want_substr"*) ok "$name" ;;
-    *) bad "$name" "stderr did not contain '${want_substr}'" "stderr: ${err}" ;;
-  esac
-}
-
 # --- fixture: a repo with both origin/main and a local main ----------------
 # origin/main must win even when a local main also exists, so this fixture
 # deliberately carries both.
@@ -141,17 +124,17 @@ git -C "$neither_repo" add -A
 git -C "$neither_repo" commit -qm 'base'
 install_resolver "$neither_repo"
 
-expect_output 'HEAD is the fallback when neither origin/main nor local main exists' \
-  "$neither_repo" 'head HEAD' \
+expect_failure 'missing base refs refuse to fall back to the caller HEAD' \
+  "$neither_repo" 'refusing to guess a base' \
   some-new-branch
 
-expect_stderr_contains 'the HEAD fallback names the branch and the fetch fix' \
-  "$neither_repo" "new branch 'some-new-branch' will start from this checkout's current HEAD" \
-  some-new-branch
-
-expect_stderr_contains 'the HEAD fallback names the fetch command to run instead' \
+expect_failure 'the refusal names the fetch command that restores the base' \
   "$neither_repo" 'git fetch origin main' \
   some-new-branch
+
+expect_output 'an explicit HEAD opts into basing on the current checkout' \
+  "$neither_repo" 'explicit HEAD' \
+  some-new-branch HEAD
 
 # --- explicit base --------------------------------------------------------
 # Reuse the "both" fixture: an explicit base must win even though origin/main

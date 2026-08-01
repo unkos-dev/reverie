@@ -13,15 +13,19 @@
 #   origin   origin/main  origin/main exists (this reads the last-fetched
 #                          state; the caller decides whether to fetch first)
 #   local    main         no origin/main, but a local main exists
-#   head     HEAD         neither exists; the new branch starts from this
-#                          checkout's current HEAD. A WARNING is printed to
-#                          stderr, since this is almost never the intended
-#                          base.
 #
-# An explicit-base argument that does not resolve to a commit is a hard
-# failure: nothing is printed to stdout and the script exits nonzero, so a
-# caller that forgets to check the exit status cannot silently fall through
-# to the resolution chain below.
+# When neither canonical ref exists the resolver fails rather than guessing:
+# the only remaining candidate is the invoking checkout's HEAD, and basing a
+# brand-new branch on whatever happens to be checked out is exactly the
+# contamination this script exists to prevent. A warning does not enforce
+# that invariant (automation and detached logs never read it), so the
+# invocation stops instead. Passing HEAD as the explicit base is the
+# deliberate opt-in for the rare case where the current checkout is the
+# intended start point.
+#
+# Every failure, including an explicit-base argument that does not resolve
+# to a commit, prints nothing to stdout and exits nonzero, so a caller that
+# forgets to check the exit status cannot silently receive a start point.
 set -ueo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -50,6 +54,6 @@ if git show-ref --verify --quiet refs/heads/main; then
   exit 0
 fi
 
-echo "warning: neither origin/main nor a local main exists; new branch '${branch}' will start from this checkout's current HEAD" >&2
-echo "fix: run 'git fetch origin main' to fetch the intended base, then retry" >&2
-printf 'head HEAD\n'
+echo "worktree-base: neither origin/main nor a local main exists; refusing to guess a base for new branch '${branch}'" >&2
+echo "fix: run 'git fetch origin main' to fetch the intended base, or pass an explicit base (pass HEAD to deliberately base on this checkout)" >&2
+exit 1

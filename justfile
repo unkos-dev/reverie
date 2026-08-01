@@ -167,10 +167,11 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # reused as-is; failing that, an existing origin/<branch> is checked out as a
 # new tracking branch; failing that, a brand-new branch is created and its
 # start point comes from scripts/worktree-base.sh, which prefers origin/main,
-# then falls back to a local main, then to this checkout's current HEAD (with
-# a warning, since basing a new branch on whatever the invoking checkout
-# happens to have checked out silently carries that branch's own commits into
-# every new worktree). BASE, when given, is an explicit start point that
+# then falls back to a local main, and fails when neither exists rather than
+# guessing: the only remaining candidate is the invoking checkout's current
+# HEAD, and basing a new branch on that silently carries the checked-out
+# branch's own commits into every new worktree (pass HEAD as BASE to opt in
+# deliberately). BASE, when given, is an explicit start point that
 # overrides that whole chain for the brand-new-branch case; it is validated
 # and the recipe fails clearly if it does not resolve. BASE has no effect on
 # the first two cases, since an existing branch (local or remote-tracking)
@@ -183,7 +184,7 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; a new branch bases on origin/main (falling back to local main, then current HEAD with a warning) unless BASE is given explicitly; warns if Cargo environment overrides defeat isolation.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; a new branch bases on origin/main (falling back to local main, failing when neither exists) unless BASE is given explicitly; warns if Cargo environment overrides defeat isolation.
 [group('git')]
 [positional-arguments]
 worktree branch base="":
