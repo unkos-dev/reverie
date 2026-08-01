@@ -7624,7 +7624,8 @@
         "properties": {
           "has_cover": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "A cover artefact is recorded: a sidecar (`cover_path`) or a usable\nembedded cover found at ingestion (`has_embedded_cover`). The two are\ndistinct artefacts; only the embedded cover is served."
           },
           "has_description": {
             "type": "integer",

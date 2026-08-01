@@ -20,7 +20,16 @@
 //! - **Decode bombs**: `resvg`'s raster decoders have no built-in limits
 //!   (resvg#647). Every embedded raster (sibling *and* data-URI) is bounded by
 //!   byte size (`MAX_EMBEDDED_IMAGE_BYTES`) and header-sniffed megapixels
-//!   (`MAX_EMBEDDED_PIXELS`) before decode.
+//!   (`MAX_EMBEDDED_PIXELS`) before decode, and a cumulative decoded-pixel
+//!   budget (`MAX_TOTAL_DECODED_PIXELS`) bounds the aggregate across every
+//!   image one rasterization admits, so many small payloads cannot multiply
+//!   the per-image cap.
+//! - **Resolution amplification**: usvg consults the sibling resolver once per
+//!   `<image href>` element while building the tree — before the node budget
+//!   can reject it — and each consultation decompresses a ZIP entry, so many
+//!   references to one entry multiply that cost. A cumulative per-rasterization
+//!   budget (`MAX_SIBLING_RESOLUTIONS`, `MAX_TOTAL_SIBLING_BYTES`) refuses
+//!   further resolutions once spent.
 //! - **Output-size bomb**: render output is capped at `MAX_RENDER_LONG_EDGE`;
 //!   `Pixmap::new` returning `None` (zero/oversize) maps to a decode error.
 //! - **Parser stack overflow**: both `roxmltree`'s parser and `usvg`'s tree
@@ -41,6 +50,7 @@
 //! See ADR `2026-06-13-svg-cover-rasterization.md`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use resvg::{tiny_skia, usvg};
 
@@ -53,6 +63,25 @@ const MAX_SVG_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EMBEDDED_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 /// Hard cap on an embedded raster's pixel count (decode-bomb guard).
 const MAX_EMBEDDED_PIXELS: u64 = 16 * 1024 * 1024;
+/// Cumulative cap on decoded pixels admitted across one rasterization, both
+/// resolvers combined. The per-image megapixel cap bounds each decode and the
+/// input cap bounds encoded bytes, but neither bounds aggregate decode work:
+/// a few-KB payload can decode to the per-image cap, and the node budget
+/// admits thousands of images. Accounted from header-sniffed dimensions, so
+/// refusal costs no decode. 4x the per-image cap covers any real cover (one
+/// artwork image) with wide headroom.
+const MAX_TOTAL_DECODED_PIXELS: u64 = 64 * 1024 * 1024;
+/// Cap on `<image href>` sibling resolutions in one rasterization. usvg
+/// consults the resolver once per `<image>` element while building the tree,
+/// before `check_render_complexity` can reject it, and every consultation
+/// costs a ZIP-entry decompression, so the per-image caps alone let a single
+/// cover reference one entry thousands of times. Real covers use one sibling.
+const MAX_SIBLING_RESOLUTIONS: usize = 8;
+/// Cumulative byte cap across all sibling fetches in one rasterization; belt
+/// over [`MAX_SIBLING_RESOLUTIONS`] so total fetched bytes stay bounded even
+/// when every fetch is under the per-image cap. Once exceeded, remaining
+/// resolutions return `None` without touching the archive.
+const MAX_TOTAL_SIBLING_BYTES: usize = 32 * 1024 * 1024;
 /// Long-edge cap of the rasterized output, in pixels. Matches `CoverSize::Full`
 /// so the downstream resize step is a near-no-op.
 const MAX_RENDER_LONG_EDGE: u32 = 1200;
@@ -152,15 +181,21 @@ where
         .map_err(|e| CoverError::Decode(format!("png encode: {e}")))
 }
 
-/// Acceptance check for the ingestion validator (Layer 5). Does not rasterize
-/// and resolves no siblings — it answers "does this parse and clear the
+/// Parse/gate-only check reused by the ingestion validator (Layer 5) to
+/// classify *why* a full rasterization attempt failed. Does not rasterize and
+/// resolves no siblings: it answers "does this parse and clear the
 /// render-cost gate?". Shares [`parse_and_gate`] with serve-time
 /// [`rasterize_svg`], so the two cannot disagree on the parse/gate verdict: a
-/// cover that clears those gates here will not be rejected by them at serve. The
-/// serve path additionally rasterizes and rejects an all-transparent result, so
-/// an SVG that parses and is within budget but resolves to no visible pixels (an
-/// `<image>` whose sibling is absent at serve, or an empty `<svg>`) is accepted
-/// here yet falls back to the spine at serve — both avoid serving a blank cover.
+/// cover that clears those gates here will not be rejected by them at serve.
+///
+/// A `true` result is not sufficient on its own for ingestion to call a cover
+/// usable: an SVG can clear the parse/gate check yet still resolve to nothing
+/// visible (an `<image>` whose sibling is absent, or an empty `<svg>`), which
+/// is exactly what [`rasterize_svg`]'s all-transparent and non-positive-size
+/// checks reject. The validator calls [`rasterize_svg`] first, with the same
+/// sibling resolution serving uses, and falls back to this function only to
+/// tell a genuine parse/gate failure (worth an `UndecodableCover` issue) apart
+/// from a visibility-only one (not an error, just not usable).
 pub(crate) fn parses_as_svg(svg_bytes: &[u8]) -> bool {
     parse_and_gate(svg_bytes, |_: &str| None).is_ok()
 }
@@ -447,32 +482,72 @@ fn check_node(
 /// `<image href>` to path-checked sibling entries via `resolve_sibling`; the
 /// data resolver bounds base64 data-URI payloads. Both reject rasters over the
 /// byte/megapixel caps. Replaces usvg's default, which reads local files.
+///
+/// The string resolver additionally carries a cumulative budget: every call
+/// counts against [`MAX_SIBLING_RESOLUTIONS`] and every fetched sibling
+/// against [`MAX_TOTAL_SIBLING_BYTES`]; past either, it returns `None` before
+/// consulting `resolve_sibling`, and usvg drops the image node. The counters
+/// live in the resolver, which is built fresh per parse, so the budget is
+/// per-rasterization.
 fn hardened_resolver<'a, F>(resolve_sibling: F) -> usvg::ImageHrefResolver<'a>
 where
     F: Fn(&str) -> Option<Vec<u8>> + Send + Sync + 'a,
 {
+    let resolutions = AtomicUsize::new(0);
+    let fetched_bytes = AtomicUsize::new(0);
+    // Shared across BOTH closures: aggregate decode cost is one axis no matter
+    // which resolver admits the image.
+    let decoded_pixels = Arc::new(AtomicU64::new(0));
+    let data_pixels = Arc::clone(&decoded_pixels);
     usvg::ImageHrefResolver {
         // THREAT: default data resolver wraps base64 payloads without bounding
-        // decode size. Apply the same byte+megapixel guard.
-        resolve_data: Box::new(|_mime, data, _opts| safe_image_kind(data)),
+        // decode size. Apply the same byte+megapixel guard. Data-URI payloads
+        // live inside the input-capped SVG bytes, so total encoded bytes are
+        // bounded without a fetch budget here; aggregate decode cost is
+        // bounded by the decoded-pixel budget shared with the string resolver.
+        resolve_data: Box::new(move |_mime, data, _opts| safe_image_kind(data, &data_pixels)),
         // THREAT: default string resolver reads local files. Restrict to
-        // path-checked siblings inside the same EPUB ZIP.
+        // path-checked siblings inside the same EPUB ZIP, within the
+        // cumulative budget above.
         resolve_string: Box::new(move |href, _opts| {
+            if resolutions.fetch_add(1, Ordering::Relaxed) >= MAX_SIBLING_RESOLUTIONS
+                || fetched_bytes.load(Ordering::Relaxed) > MAX_TOTAL_SIBLING_BYTES
+            {
+                tracing::debug!(
+                    resolution_cap = MAX_SIBLING_RESOLUTIONS,
+                    byte_cap = MAX_TOTAL_SIBLING_BYTES,
+                    "svg cover: sibling resolution refused (cumulative budget spent)"
+                );
+                return None;
+            }
             if !crate::services::epub::is_safe_path(href) {
                 return None;
             }
             let bytes = resolve_sibling(href)?;
-            safe_image_kind(Arc::new(bytes))
+            if fetched_bytes.fetch_add(bytes.len(), Ordering::Relaxed) + bytes.len()
+                > MAX_TOTAL_SIBLING_BYTES
+            {
+                tracing::debug!(
+                    bytes = bytes.len(),
+                    byte_cap = MAX_TOTAL_SIBLING_BYTES,
+                    "svg cover: sibling image rejected (over cumulative byte cap)"
+                );
+                return None;
+            }
+            safe_image_kind(Arc::new(bytes), &decoded_pixels)
         }),
     }
 }
 
 /// Wrap embedded raster bytes in an [`usvg::ImageKind`] only if they pass the
-/// byte and megapixel caps and decode to a supported format. Dimension sniffing
-/// is header-only (no full decode). GIF is intentionally excluded — the `image`
-/// crate is built without the `gif` feature, so its dimensions cannot be sniffed
-/// and it is not a cover format we accept.
-fn safe_image_kind(data: Arc<Vec<u8>>) -> Option<usvg::ImageKind> {
+/// per-image byte and megapixel caps and the rasterization's shared
+/// cumulative decoded-pixel budget, and decode to a supported format.
+/// Dimension sniffing is header-only, and the cumulative budget is accounted
+/// from the sniffed dimensions, so no full decode happens here either way.
+/// GIF is intentionally excluded — the `image` crate is built without the
+/// `gif` feature, so its dimensions cannot be sniffed and it is not a cover
+/// format we accept.
+fn safe_image_kind(data: Arc<Vec<u8>>, decoded_pixels: &AtomicU64) -> Option<usvg::ImageKind> {
     // Cap rejections log shape only (size/dims/format), never payload bytes, at
     // `debug` — input is attacker-controlled and a single SVG may embed many
     // images, so a louder level would let a crafted cover amplify log volume.
@@ -501,12 +576,26 @@ fn safe_image_kind(data: Arc<Vec<u8>>) -> Option<usvg::ImageKind> {
         );
         return None;
     };
-    if u64::from(width).saturating_mul(u64::from(height)) > MAX_EMBEDDED_PIXELS {
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
+    if pixels > MAX_EMBEDDED_PIXELS {
         tracing::debug!(
             width,
             height,
             cap = MAX_EMBEDDED_PIXELS,
             "svg cover: embedded image rejected (over pixel cap)"
+        );
+        return None;
+    }
+    if decoded_pixels
+        .fetch_add(pixels, Ordering::Relaxed)
+        .saturating_add(pixels)
+        > MAX_TOTAL_DECODED_PIXELS
+    {
+        tracing::debug!(
+            width,
+            height,
+            cap = MAX_TOTAL_DECODED_PIXELS,
+            "svg cover: embedded image refused (cumulative decoded-pixel budget spent)"
         );
         return None;
     }
@@ -557,9 +646,11 @@ mod tests {
         img.width().max(img.height())
     }
 
-    // PNG signature + a single IHDR chunk declaring `width`×`height`. Enough for
-    // header-only dimension sniffing; lets us assert the megapixel guard without
-    // allocating a real giant image.
+    // PNG signature, an IHDR declaring `width`×`height`, an empty IDAT, and
+    // IEND. The empty IDAT matters: dimension sniffing stops at the first
+    // IDAT, so without one the sniff fails and the guards under test reject
+    // for "undecodable header" instead of the dimensions. Carries no pixel
+    // data, so a later full decode at render still fails.
     fn png_header_only(width: u32, height: u32) -> Vec<u8> {
         fn crc32(data: &[u8]) -> u32 {
             let mut crc = 0xFFFF_FFFFu32;
@@ -575,14 +666,21 @@ mod tests {
             }
             !crc
         }
+        fn chunk(out: &mut Vec<u8>, tag: [u8; 4], data: &[u8]) {
+            out.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+            let mut body = tag.to_vec();
+            body.extend_from_slice(data);
+            out.extend_from_slice(&body);
+            out.extend_from_slice(&crc32(&body).to_be_bytes());
+        }
         let mut out = vec![137, 80, 78, 71, 13, 10, 26, 10];
-        out.extend_from_slice(&13u32.to_be_bytes());
-        let mut chunk = b"IHDR".to_vec();
-        chunk.extend_from_slice(&width.to_be_bytes());
-        chunk.extend_from_slice(&height.to_be_bytes());
-        chunk.extend_from_slice(&[8, 2, 0, 0, 0]); // 8-bit, RGB, no interlace
-        out.extend_from_slice(&chunk);
-        out.extend_from_slice(&crc32(&chunk).to_be_bytes());
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&width.to_be_bytes());
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8-bit, RGB, no interlace
+        chunk(&mut out, *b"IHDR", &ihdr);
+        chunk(&mut out, *b"IDAT", &[]);
+        chunk(&mut out, *b"IEND", &[]);
         out
     }
 
@@ -610,6 +708,95 @@ mod tests {
         // leaving a transparent render → Decode error.
         let err = rasterize_svg(image_only_svg("/etc/hostname").as_bytes(), |_| {
             Some(raster(2, 2, image::ImageFormat::Png))
+        })
+        .unwrap_err();
+        assert!(matches!(err, CoverError::Decode(_)));
+    }
+
+    #[test]
+    fn caps_sibling_resolution_count() {
+        let images: String = std::iter::repeat_n(
+            r#"<image href="cover.png" width="10" height="10"/>"#,
+            MAX_SIBLING_RESOLUTIONS * 3,
+        )
+        .collect();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">{images}</svg>"#
+        );
+        let sibling = raster(2, 2, image::ImageFormat::Png);
+        let fetches = AtomicUsize::new(0);
+        // The admitted resolutions still render, so the cap degrades rather
+        // than rejects.
+        rasterize_svg(svg.as_bytes(), |href| {
+            fetches.fetch_add(1, Ordering::Relaxed);
+            (href == "cover.png").then(|| sibling.clone())
+        })
+        .unwrap();
+        assert_eq!(fetches.load(Ordering::Relaxed), MAX_SIBLING_RESOLUTIONS);
+    }
+
+    #[test]
+    fn caps_cumulative_sibling_bytes() {
+        // Valid PNG header padded to exactly the per-image cap: each fetch
+        // passes the single-image guards, so only the cumulative byte cap can
+        // stop the sequence. It admits floor(total/per-image) fetches, trips on
+        // the next one, and refuses the rest before consulting the resolver.
+        let mut padded = png_header_only(2, 2);
+        padded.resize(MAX_EMBEDDED_IMAGE_BYTES, 0);
+        let images: String = std::iter::repeat_n(
+            r#"<image href="big.png" width="10" height="10"/>"#,
+            MAX_SIBLING_RESOLUTIONS,
+        )
+        .collect();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">{images}</svg>"#
+        );
+        let fetches = AtomicUsize::new(0);
+        // Header-only padding never decodes at render, so every node drops and
+        // the blank-render rejection fires.
+        rasterize_svg(svg.as_bytes(), |_| {
+            fetches.fetch_add(1, Ordering::Relaxed);
+            Some(padded.clone())
+        })
+        .unwrap_err();
+        let admitted = MAX_TOTAL_SIBLING_BYTES / MAX_EMBEDDED_IMAGE_BYTES;
+        assert!(admitted + 1 < MAX_SIBLING_RESOLUTIONS);
+        assert_eq!(fetches.load(Ordering::Relaxed), admitted + 1);
+    }
+
+    #[test]
+    fn caps_cumulative_decoded_pixels() {
+        // Header declares exactly the per-image pixel cap, so only the
+        // cumulative budget can refuse: it admits floor(total/per-image)
+        // images and refuses every one after.
+        let img = Arc::new(png_header_only(4096, 4096));
+        let budget = AtomicU64::new(0);
+        let admitted = MAX_TOTAL_DECODED_PIXELS / MAX_EMBEDDED_PIXELS;
+        for _ in 0..admitted {
+            assert!(safe_image_kind(Arc::clone(&img), &budget).is_some());
+        }
+        assert!(safe_image_kind(Arc::clone(&img), &budget).is_none());
+    }
+
+    #[test]
+    fn decoded_pixel_budget_is_shared_across_resolvers() {
+        use base64ct::Encoding as _;
+        // Four data-URI images at the per-image pixel cap spend the whole
+        // decoded-pixel budget, so the sibling image that would render the
+        // only visible content is refused and the blank-render rejection
+        // fires. A per-resolver budget would admit the sibling and succeed.
+        let big = base64ct::Base64::encode_string(&png_header_only(4096, 4096));
+        let element = format!(r#"<image href="data:image/png;base64,{big}"/>"#);
+        let mut svg = String::from(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">"#,
+        );
+        for _ in 0..(MAX_TOTAL_DECODED_PIXELS / MAX_EMBEDDED_PIXELS) {
+            svg.push_str(&element);
+        }
+        svg.push_str(r#"<image href="cover.png" width="100" height="150"/></svg>"#);
+        let sibling = raster(2, 2, image::ImageFormat::Png);
+        let err = rasterize_svg(svg.as_bytes(), move |href| {
+            (href == "cover.png").then(|| sibling.clone())
         })
         .unwrap_err();
         assert!(matches!(err, CoverError::Decode(_)));
@@ -764,14 +951,20 @@ mod tests {
         assert!(parses_as_svg(STANDARD_EBOOKS_COVER.as_bytes()));
     }
 
-    /// Many zero-segment nodes (`<image>`), to drive the node-count budget
-    /// without first tripping the path-segment budget.
+    /// Many zero-segment nodes: one data-URI `<image>` in `defs`, cloned by
+    /// `count` `<use>` references, which usvg expands into per-reference
+    /// nodes. Drives the node-count budget without path segments, without the
+    /// sibling resolver (whose cumulative budget would drop the nodes first),
+    /// and within the input byte cap (a `<use>` is far smaller than an inline
+    /// data URI).
     fn many_images_svg(count: usize) -> String {
-        let mut s = String::from(
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">"#,
+        use base64ct::Encoding as _;
+        let uri = base64ct::Base64::encode_string(&png_header_only(1, 1));
+        let mut s = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150"><defs><image id="i" href="data:image/png;base64,{uri}"/></defs>"#
         );
         for _ in 0..count {
-            s.push_str(r#"<image href="c.png" width="1" height="1"/>"#);
+            s.push_str(r##"<use href="#i"/>"##);
         }
         s.push_str("</svg>");
         s
@@ -779,19 +972,18 @@ mod tests {
 
     #[test]
     fn rejects_excessive_node_count() {
-        // Each `<image>` resolves to a 1px raster so usvg keeps the node; the
-        // count trips the node budget while contributing no path segments.
         let svg = many_images_svg(MAX_SVG_NODES + 5);
         assert!(
             svg.len() <= MAX_SVG_INPUT_BYTES,
             "fixture must fit input cap"
         );
-        let px = raster(1, 1, image::ImageFormat::Png);
-        let err = rasterize_svg(svg.as_bytes(), move |href| {
-            (href == "c.png").then(|| px.clone())
-        })
-        .unwrap_err();
-        assert!(matches!(err, CoverError::Decode(_)));
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
+        // Pin the message: a fixture usvg quietly prunes would still fail on
+        // the blank render, and this test would stop guarding the budget.
+        let CoverError::Decode(msg) = err else {
+            panic!("unexpected error class: {err}");
+        };
+        assert!(msg.contains("node budget"), "unexpected rejection: {msg}");
     }
 
     /// `depth` nested `<g>` wrapping a single rect. Plain groups — the pre-parse

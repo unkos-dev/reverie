@@ -92,7 +92,13 @@ Concrete shape of the decision:
   ([resvg#647](https://github.com/linebender/resvg/issues/647)). Every embedded
   raster is bounded by byte size and a header-sniffed megapixel cap before
   decode; raw SVG input is capped before parse; render output is capped at the
-  long edge (`Pixmap::new` over/zero-size → error).
+  long edge (`Pixmap::new` over/zero-size → error). Per-image caps alone do not
+  bound the aggregate, so each rasterization also carries cumulative budgets:
+  a cap on sibling `<image href>` resolutions and on total fetched sibling
+  bytes (usvg consults the resolver while building the tree, before the
+  render-cost gate can run, and every consultation decompresses a ZIP entry),
+  and a cap on total decoded pixels admitted across both resolver paths,
+  accounted from header-sniffed dimensions before any decode.
 - **Parser stack overflow.** Both `roxmltree`'s parser **and** `usvg`'s tree
   conversion recurse on element nesting with no depth guard and _abort the
   process_ (stack overflow, uncatchable) on SVG with deep nesting: observed at a few
@@ -114,16 +120,18 @@ Concrete shape of the decision:
 - **Blank-output guard.** `usvg` silently drops unresolvable `<image>` nodes and
   "succeeds" with a transparent pixmap; an all-transparent render is rejected so
   the `<img onError>` spine fallback is preserved.
-- **Validator (Layer 5) parses + gates, does not rasterize.** A parseable SVG
-  cover within the render-cost budget is not flagged; one that breaches it
-  (filters, or geometry/node/depth over budget) is flagged `Degraded` at
-  ingestion. Acceptance and serve-time apply the _same_ parse-and-render-cost
-  gate, so a cover that clears ingestion will not later fail at serve _on those
-  gates_. The serve path additionally rasterizes and rejects an all-transparent
-  result, so an SVG that parses and is within budget but resolves to no visible
-  pixels (an `<image>` whose sibling is absent, or an empty `<svg>`) is accepted
-  at ingestion yet falls back to the spine at serve; both correctly avoid
-  serving a blank cover, by different paths.
+- **Validator (Layer 5) rasterizes exactly as serve does.** Layer 5 calls the
+  same rasterize routine with the same sibling resolution as serving, so the
+  ingestion usability verdict and the serve-time result cannot disagree: an
+  SVG that would fall back to the spine at serve (blank render, absent
+  sibling, budget refusal) is recorded as "no usable embedded cover" at
+  ingestion, with no issue emitted, because the resolver-free parse-and-gate
+  check still accepts it. A genuine parse or render-cost breach (filters, or
+  geometry/node/depth over budget) is flagged `Degraded`, unchanged. This
+  means attacker-supplied SVG is rendered on the ingestion worker, under the
+  same hardened resolver and cumulative budgets as serving; the ingest loop
+  processes files serially, so at most one validation render is in flight at
+  a time.
 
 ### Consequences
 
