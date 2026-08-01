@@ -7,11 +7,17 @@
 //! manifest) are removed and recorded as `Repaired` issues. Manifest hrefs
 //! that fail the path-safety check are dropped and recorded as `Degraded`.
 //!
-//! This layer owns entity and character-reference decoding for every text
-//! field it emits, whether the source is element text (`read_element_text`)
-//! or an attribute value (`attr_text`). Downstream consumers, including the
-//! metadata sanitiser, must treat these fields as already-decoded character
-//! data and must not decode them again.
+//! This layer owns entity and character-reference decoding for the
+//! human-readable text it emits: element text (`read_element_text`) and
+//! `content` attribute values (`attr_text`). Downstream consumers, including
+//! the metadata sanitiser, must treat those fields as already-decoded
+//! character data and must not decode them again. The remaining attributes
+//! (`id`, `idref`, `refines`, `name`, `property`, `href`) are read raw:
+//! they are reference keys compared only with each other or with literal
+//! vocabulary terms, where consistent raw readings still match, and `href`
+//! values in real EPUBs escape special characters with percent-encoding,
+//! not entity references. The known limitation is that an entity-escaped
+//! `href` stays raw and will not resolve to its archive entry.
 
 use quick_xml::Reader;
 use quick_xml::escape::resolve_xml_entity;
@@ -108,25 +114,124 @@ fn local_name(name: &[u8]) -> &[u8] {
         .map_or(name, |pos| &name[pos + 1..])
 }
 
+/// Resolve a named entity reference in `OPF` metadata text.
+///
+/// The five predefined XML entities plus `nbsp`, the one HTML entity this
+/// pipeline has always resolved: `OPF` metadata is routinely authored by
+/// HTML-oriented tooling that emits a singly-escaped `&nbsp;` in titles and
+/// descriptions, and leaving it raw would surface literal markup in the UI
+/// and re-escape it to `&amp;nbsp;` in the source file on writeback.
+/// Anything else is unresolvable without a `DTD` and is kept as literal
+/// markup by callers rather than guessed at.
+fn resolve_metadata_entity(name: &str) -> Option<&'static str> {
+    match name {
+        "nbsp" => Some("\u{00A0}"),
+        _ => resolve_xml_entity(name),
+    }
+}
+
+/// Parse the numeric body of a character reference (`233` or `x1F`) to a
+/// character under the same rules as the strict parser: lowercase `x` for
+/// hex, no sign, no `NUL`, and the code point must be a valid `char`.
+fn parse_char_ref(num: &str) -> Option<char> {
+    let (digits, radix) = num.strip_prefix('x').map_or((num, 10), |hex| (hex, 16));
+    // `from_str_radix` accepts a leading `+`, which XML does not.
+    if digits.starts_with('+') {
+        return None;
+    }
+    let code = u32::from_str_radix(digits, radix).ok()?;
+    if code == 0 {
+        return None;
+    }
+    char::from_u32(code)
+}
+
+/// Resolve one reference body (the text between `&` and `;`) to its
+/// replacement text, or `None` when it is not resolvable.
+fn resolve_reference(body: &str) -> Option<String> {
+    body.strip_prefix('#').map_or_else(
+        || resolve_metadata_entity(body).map(String::from),
+        |num| parse_char_ref(num).map(String::from),
+    )
+}
+
+/// Best-effort decode of an attribute value that failed strict decoding.
+///
+/// Mirrors `read_element_text`'s treatment of references one at a time:
+/// resolvable character and named references decode, and an unresolvable or
+/// malformed one stays as literal markup without disturbing its neighbours.
+/// Literal whitespace is normalised to spaces first (XML attribute-value
+/// normalisation), before references are expanded, so whitespace produced
+/// by a character reference such as `&#x9;` survives as itself, matching
+/// the strict path's ordering.
+fn lenient_attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
+    let raw = decoder.decode(&a.value).ok()?;
+
+    let mut normalized = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                normalized.push(' ');
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+            }
+            '\n' | '\t' => normalized.push(' '),
+            _ => normalized.push(c),
+        }
+    }
+
+    let mut result = String::with_capacity(normalized.len());
+    let mut remaining = normalized.as_str();
+    while let Some(amp) = remaining.find('&') {
+        result.push_str(&remaining[..amp]);
+        remaining = &remaining[amp..];
+        // Lookahead capped at 12 bytes: longer than any resolvable
+        // reference (`&#x10FFFF;` is 10 characters), so one missing
+        // semicolon does not pull the rest of the value into the scan.
+        let lookahead = remaining.len().min(12);
+        let semi = remaining.as_bytes()[..lookahead]
+            .iter()
+            .position(|&b| b == b';');
+        let resolved =
+            semi.and_then(|semi| resolve_reference(&remaining[1..semi]).map(|r| (r, semi)));
+        if let Some((replacement, semi)) = resolved {
+            result.push_str(&replacement);
+            remaining = &remaining[semi + 1..];
+        } else {
+            result.push('&');
+            remaining = &remaining[1..];
+        }
+    }
+    result.push_str(remaining);
+    Some(result)
+}
+
 /// Decode an attribute value as character data.
 ///
 /// Attribute values are never auto-unescaped by `quick-xml`, unlike element
 /// text (see `read_element_text`): `a.value` is the raw markup between the
-/// quotes. Predefined entities and numeric character references are
-/// resolved here so an attribute-sourced field (for example `<meta
-/// name="calibre:series" content="...">`) reaches the same decoded state as
-/// an element-text-sourced one, regardless of which XML construct carried
-/// it. Falls back to the raw decoded bytes when unescaping fails (an
-/// unrecognised named entity or an illegal character reference) rather than
-/// dropping the field: real-world `OPF` attribute values are not always
-/// strictly valid XML, and losing the field outright is worse than keeping
-/// the escape sequence literal.
+/// quotes. Predefined entities (plus `nbsp`) and numeric character
+/// references are resolved here so an attribute-sourced field (for example
+/// `<meta name="calibre:series" content="...">`) reaches the same decoded
+/// state as an element-text-sourced one, regardless of which XML construct
+/// carried it. When strict decoding fails (an unrecognised named entity, a
+/// bare `&`, or an illegal character reference), the value is re-decoded
+/// leniently instead: each unresolvable reference is kept as literal markup
+/// while every resolvable one around it still decodes, matching
+/// `read_element_text`'s per-reference degradation. Real-world `OPF`
+/// attribute values are not always strictly valid XML, and an
+/// all-or-nothing fallback would let a single bad reference turn every
+/// `&amp;` in the value back into literal markup.
 fn attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
-    a.decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
-        .map_or_else(
-            |_| std::str::from_utf8(&a.value).ok().map(str::to_string),
-            |v| Some(v.into_owned()),
-        )
+    a.decoded_and_normalized_value_with(
+        XmlVersion::Implicit1_0,
+        decoder,
+        1,
+        resolve_metadata_entity,
+    )
+    .map_or_else(|_| lenient_attr_text(decoder, a), |v| Some(v.into_owned()))
 }
 
 /// Read an element's character data up to its matching end tag.
@@ -185,13 +290,14 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
                     let Ok(name) = r.decode() else {
                         break 'parse None;
                     };
-                    if let Some(resolved) = resolve_xml_entity(&name) {
+                    if let Some(resolved) = resolve_metadata_entity(&name) {
                         text.push_str(resolved);
                     } else {
-                        // Not one of the five predefined XML entities and
-                        // not a character reference; without a DTD there is
-                        // nothing to resolve it against, so keep the
-                        // original markup rather than lose it.
+                        // Not a resolvable named entity (the predefined
+                        // set plus nbsp) and not a character reference;
+                        // without a DTD there is nothing to resolve it
+                        // against, so keep the original markup rather
+                        // than lose it.
                         text.push('&');
                         text.push_str(&name);
                         text.push(';');
@@ -1222,14 +1328,16 @@ mod tests {
     fn mixed_text_and_cdata_body_concatenates_in_document_order() {
         // A body mixing plain text and CDATA parts is legal XML; both are
         // character data, so the correct reading concatenates them in
-        // document order rather than keeping only one part. No whitespace
-        // sits at the text/CDATA boundary here, since the reader's
-        // `trim_text` setting (needed to ignore insignificant inter-element
-        // whitespace elsewhere) trims each Text event independently and
-        // would otherwise eat space adjacent to a CDATA section.
+        // document order rather than keeping only one part. The spaces
+        // around the CDATA section belong to the body's interior and must
+        // survive: they sit at the edges of the Text events the CDATA
+        // section splits the body into, and `read_element_text` suspends
+        // the reader's `trim_text` setting (needed to ignore insignificant
+        // inter-element whitespace elsewhere) precisely so those edges are
+        // not eaten.
         let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
             <metadata>
-                <dc:description>Before<![CDATA[Middle]]>After</dc:description>
+                <dc:description>Before <![CDATA[Middle]]> After</dc:description>
             </metadata>
             <manifest/>
             <spine/>
@@ -1237,7 +1345,7 @@ mod tests {
         let handle = make_handle(opf);
         let mut issues = Vec::new();
         let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
-        assert_eq!(data.description.as_deref(), Some("BeforeMiddleAfter"));
+        assert_eq!(data.description.as_deref(), Some("Before Middle After"));
     }
 
     #[test]
@@ -1253,6 +1361,25 @@ mod tests {
         let mut issues = Vec::new();
         let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
         assert_eq!(data.description.as_deref(), Some("a & b"));
+    }
+
+    #[test]
+    fn nbsp_entity_resolves_in_element_text() {
+        // `&nbsp;` is not an XML entity, but HTML-oriented EPUB tooling
+        // emits it in metadata routinely and this pipeline has always
+        // decoded it. Kept literal, it would reach the UI as markup and be
+        // re-escaped to `&amp;nbsp;` in the source file by OPF writeback.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title>Foo&nbsp;Bar</dc:title>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.title.as_deref(), Some("Foo\u{00A0}Bar"));
     }
 
     #[test]
@@ -1419,6 +1546,71 @@ mod tests {
         assert_eq!(
             extracted.series.as_ref().map(|s| s.name.as_str()),
             Some("Tom &amp; Jerry")
+        );
+    }
+
+    #[test]
+    fn nbsp_entity_resolves_in_attribute_value() {
+        // The strict attribute decoder is handed the same resolver as the
+        // element-text path, so `&nbsp;` in a content attribute decodes on
+        // the fast path without falling back to the lenient pass.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="calibre:series" content="Foo&nbsp;Saga"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(
+            data.series_meta.as_ref().map(|s| s.name.as_str()),
+            Some("Foo\u{00A0}Saga")
+        );
+    }
+
+    #[test]
+    fn attribute_unknown_entity_degrades_per_reference() {
+        // One unresolvable entity must not turn the whole attribute value
+        // back into raw markup: strict decoding fails on `&hellip;`, and
+        // the lenient pass still resolves the references around it,
+        // keeping only the unknown one literal.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="calibre:series" content="Nightside &amp; Dawn &hellip; Saga &#233;"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(
+            data.series_meta.as_ref().map(|s| s.name.as_str()),
+            Some("Nightside & Dawn &hellip; Saga \u{00E9}")
+        );
+    }
+
+    #[test]
+    fn attribute_bare_ampersand_keeps_the_rest_decoded() {
+        // A bare `&` is not well-formed XML but appears in real-world OPF
+        // attribute values. It fails strict decoding outright, so the
+        // lenient pass must keep it literal while the well-formed
+        // references elsewhere in the value still decode.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="calibre:series" content="Tom & Jerry &amp; Co"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(
+            data.series_meta.as_ref().map(|s| s.name.as_str()),
+            Some("Tom & Jerry & Co")
         );
     }
 }
