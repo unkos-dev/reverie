@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT mo.id, mo.name\n                 FROM moods mo\n                WHERE EXISTS (\n                          SELECT 1 FROM manifestation_moods mm\n                          JOIN manifestations m ON m.id = mm.manifestation_id\n                         WHERE mm.mood_id = mo.id\n                      )\n                  AND immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')\n                ORDER BY mo.name ASC\n                LIMIT $2",
+  "query": "SELECT mo.id, mo.name\n                 FROM moods mo\n                WHERE EXISTS (\n                          SELECT 1 FROM manifestation_moods mm\n                          JOIN manifestations m ON m.id = mm.manifestation_id\n                         WHERE mm.mood_id = mo.id\n                      )\n                  AND immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%'\n                ORDER BY mo.name ASC\n                LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       false
     ]
   },
-  "hash": "2e3af898d38e91e7ca465b306a51748d863a5dd570a63422a3ce163a5e56c4ac"
+  "hash": "39841e6e142c8623f62726abb5b72a33e3d1de001f76313645c15b3231983e1d"
 }

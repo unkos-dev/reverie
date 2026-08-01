@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.name\n                 FROM series s\n                WHERE EXISTS (\n                          SELECT 1 FROM series_works sw\n                          JOIN manifestations m ON m.work_id = sw.work_id\n                         WHERE sw.series_id = s.id\n                      )\n                  AND (immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%'\n                       OR immutable_unaccent($1) <% immutable_unaccent(s.name))\n                ORDER BY (immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%') DESC,\n                         word_similarity(immutable_unaccent($1), immutable_unaccent(s.name)) DESC,\n                         s.name ASC\n                LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5365599b1ef79ea54f93b4a2500aa192e240409d71f7f31c48bd30a5f8e0a47a"
+}

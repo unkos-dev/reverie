@@ -2837,7 +2837,8 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
     let explain_subtitle_sql = "EXPLAIN (FORMAT JSON) \
         SELECT m.id FROM manifestations m \
         JOIN works w ON w.id = m.work_id \
-        WHERE TRUE AND immutable_unaccent(w.subtitle) ILIKE immutable_unaccent($1) \
+        WHERE TRUE AND immutable_unaccent(w.subtitle) \
+            ILIKE '%' || immutable_unaccent_like($1) || '%' \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
     // Discourage seq scans and nested loops for this probe inside a throwaway
@@ -2865,7 +2866,7 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
     // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection over
     // the dynamic filter SQL the compile-time macros cannot prepare.
     let row = sqlx::query(explain_subtitle_sql)
-        .bind("%Subtitle 12345%")
+        .bind("Subtitle 12345")
         .fetch_one(&mut *tx)
         .await
         .expect("explain subtitle_contains");
@@ -2927,7 +2928,8 @@ async fn title_contains_diacritic_folding_rides_trgm_index_at_scale(pool: PgPool
     let explain_title_sql = "EXPLAIN (FORMAT JSON) \
         SELECT m.id FROM manifestations m \
         JOIN works w ON w.id = m.work_id \
-        WHERE TRUE AND immutable_unaccent(w.title) ILIKE immutable_unaccent($1) \
+        WHERE TRUE AND immutable_unaccent(w.title) \
+            ILIKE '%' || immutable_unaccent_like($1) || '%' \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
     let mut tx = ingestion_pool.begin().await.expect("begin explain txn");
@@ -2948,7 +2950,7 @@ async fn title_contains_diacritic_folding_rides_trgm_index_at_scale(pool: PgPool
     let row = sqlx::query(explain_title_sql)
         // Unaccented needle: the folded index, not the dropped raw one, must
         // serve this query.
-        .bind("%emile zola%")
+        .bind("emile zola")
         .fetch_one(&mut *tx)
         .await
         .expect("explain title_contains diacritic folding");
@@ -3837,6 +3839,39 @@ async fn filter_title_contains_folds_accents(pool: PgPool) {
     // Accented needle still matches (no regression from folding).
     let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%C3%89mile").await;
     assert_eq!(hits, vec!["\u{c9}mile Zola"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_title_contains_escapes_folded_metacharacters(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    insert_book(&ingestion_pool, "pct", "50% Discount Manual").await;
+    insert_book(&ingestion_pool, "bslash", r"Back\slash Path").await;
+    insert_book(&ingestion_pool, "other", "Unrelated Title").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // unaccent folds fullwidth ％ (U+FF05) to ASCII %. Folding must not
+    // re-materialize a live wildcard out of the needle: the folded % matches
+    // the title carrying a literal %, and nothing else.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%85").await;
+    assert_eq!(hits, vec!["50% Discount Manual"]);
+
+    // Fullwidth ＿ (U+FF3F) folds to _. As a literal it matches no title; as
+    // a smuggled single-character wildcard it would match every title.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BF").await;
+    assert_eq!(hits, Vec::<String>::new());
+
+    // Fullwidth ＼ (U+FF3C) folds to \ and must itself be escaped: it matches
+    // the literal backslash in the stored title.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BC").await;
+    assert_eq!(hits, vec![r"Back\slash Path"]);
+
+    // A folded ＼ directly before an ASCII % must not neutralize that %'s
+    // escape (which would leave a live wildcard matching any title with a
+    // backslash). No title contains a literal `\%`, so: no hits.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BC%25").await;
+    assert_eq!(hits, Vec::<String>::new());
 }
 
 #[sqlx::test(migrations = "./migrations")]

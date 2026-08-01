@@ -16,16 +16,22 @@
 //!   characters, trigram matching is unreliable (too few three-character
 //!   windows), so only the `ILIKE` prefix leg runs; three characters or more
 //!   adds a `word_similarity` fuzzy leg for typo tolerance.
-//! - `q` is matched case-insensitively via `ILIKE`; `%` and `_` in the raw
-//!   input are backslash-escaped before binding into the pattern (Postgres's
-//!   default `LIKE`/`ILIKE` escape character is already backslash, so no
-//!   explicit `ESCAPE` clause is needed) so a caller cannot smuggle wildcard
-//!   metacharacters into the prefix match.
-//! - Every match is also accent-insensitive: both the vocabulary column and
-//!   the bound query text are wrapped in `immutable_unaccent` (the `ILIKE`
-//!   prefix leg and the `word_similarity`/`<%` fuzzy leg alike), so `garcia`
-//!   finds `García` without the caller stripping diacritics itself. Stored
-//!   values are untouched; folding happens only at match time.
+//! - `q` is matched case-insensitively via `ILIKE`, and a caller cannot
+//!   smuggle wildcard metacharacters into the prefix match: the raw input is
+//!   bound as-is and `immutable_unaccent_like` backslash-escapes `%`/`_`/`\`
+//!   in SQL, after accent folding. The order is load-bearing: the unaccent
+//!   dictionary folds some Unicode punctuation (fullwidth `％`/`＿`/`＼`)
+//!   into those very metacharacters, so an escape applied before folding
+//!   would be undone by it. Postgres's default `LIKE`/`ILIKE` escape
+//!   character is already backslash, so no explicit `ESCAPE` clause is
+//!   needed.
+//! - Every match is also accent-insensitive: the vocabulary column is
+//!   wrapped in `immutable_unaccent` and the bound query text folds through
+//!   the same dictionary (the `ILIKE` prefix leg via
+//!   `immutable_unaccent_like`, the `word_similarity`/`<%` fuzzy leg via
+//!   `immutable_unaccent`), so `garcia` finds `García` without the caller
+//!   stripping diacritics itself. Stored values are untouched; folding
+//!   happens only at match time.
 
 use axum::Json;
 use axum::extract::State;
@@ -39,7 +45,6 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::db;
 use crate::error::AppError;
-use crate::routes::library::filters::escape_like;
 use crate::state::AppState;
 
 /// Build the `/api/v1/*/suggest` router as an [`OpenApiRouter`] so each
@@ -127,10 +132,9 @@ struct AuthorsResponse {
 /// Validated, normalized inputs shared by every entity's query pair, so each
 /// handler validates once and the six query functions take one argument.
 struct SuggestInput {
-    /// Raw trimmed `q`, `%`/`_`/`\` escaped, for the `ILIKE` prefix leg.
-    escaped: String,
-    /// Raw trimmed `q`, unescaped, for the `word_similarity` leg (fuzzy
-    /// matching operates on the literal text, not an `ILIKE` pattern).
+    /// Raw trimmed `q`, bound as-is by both legs: the `ILIKE` prefix leg
+    /// escapes it in SQL after folding (`immutable_unaccent_like`), and the
+    /// `word_similarity` leg operates on the literal text.
     raw: String,
     /// `true` when `raw` is under [`FUZZY_MIN_CHARS`]: prefix-only query.
     short: bool,
@@ -159,7 +163,6 @@ fn prepare(params: &SuggestParams) -> Result<SuggestInput, AppError> {
         .unwrap_or(DEFAULT_LIMIT)
         .clamp(MIN_LIMIT, MAX_LIMIT);
     Ok(SuggestInput {
-        escaped: escape_like(raw),
         raw: raw.to_owned(),
         short: raw.chars().count() < FUZZY_MIN_CHARS,
         limit,
@@ -216,10 +219,10 @@ async fn query_genres(
                           JOIN manifestations m ON m.id = mg.manifestation_id
                          WHERE mg.genre_id = g.id
                       )
-                  AND immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')
+                  AND immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%'
                 ORDER BY g.name ASC
                 LIMIT $2"#,
-            q.escaped,
+            q.raw,
             q.limit,
         )
         .fetch_all(&mut **tx)
@@ -235,13 +238,12 @@ async fn query_genres(
                           JOIN manifestations m ON m.id = mg.manifestation_id
                          WHERE mg.genre_id = g.id
                       )
-                  AND (immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')
-                       OR immutable_unaccent($2) <% immutable_unaccent(g.name))
-                ORDER BY (immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')) DESC,
-                         word_similarity(immutable_unaccent($2), immutable_unaccent(g.name)) DESC,
+                  AND (immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%'
+                       OR immutable_unaccent($1) <% immutable_unaccent(g.name))
+                ORDER BY (immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                         word_similarity(immutable_unaccent($1), immutable_unaccent(g.name)) DESC,
                          g.name ASC
-                LIMIT $3"#,
-            q.escaped,
+                LIMIT $2"#,
             q.raw,
             q.limit,
         )
@@ -269,10 +271,10 @@ async fn query_moods(
                           JOIN manifestations m ON m.id = mm.manifestation_id
                          WHERE mm.mood_id = mo.id
                       )
-                  AND immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')
+                  AND immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%'
                 ORDER BY mo.name ASC
                 LIMIT $2"#,
-            q.escaped,
+            q.raw,
             q.limit,
         )
         .fetch_all(&mut **tx)
@@ -288,13 +290,12 @@ async fn query_moods(
                           JOIN manifestations m ON m.id = mm.manifestation_id
                          WHERE mm.mood_id = mo.id
                       )
-                  AND (immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')
-                       OR immutable_unaccent($2) <% immutable_unaccent(mo.name))
-                ORDER BY (immutable_unaccent(mo.name) ILIKE immutable_unaccent($1 || '%')) DESC,
-                         word_similarity(immutable_unaccent($2), immutable_unaccent(mo.name)) DESC,
+                  AND (immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%'
+                       OR immutable_unaccent($1) <% immutable_unaccent(mo.name))
+                ORDER BY (immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                         word_similarity(immutable_unaccent($1), immutable_unaccent(mo.name)) DESC,
                          mo.name ASC
-                LIMIT $3"#,
-            q.escaped,
+                LIMIT $2"#,
             q.raw,
             q.limit,
         )
@@ -322,10 +323,10 @@ async fn query_tags(
                           JOIN manifestations m ON m.id = mt.manifestation_id
                          WHERE mt.tag_id = t.id
                       )
-                  AND immutable_unaccent(t.name) ILIKE immutable_unaccent($1 || '%')
+                  AND immutable_unaccent(t.name) ILIKE immutable_unaccent_like($1) || '%'
                 ORDER BY t.name ASC
                 LIMIT $2"#,
-            q.escaped,
+            q.raw,
             q.limit,
         )
         .fetch_all(&mut **tx)
@@ -341,13 +342,12 @@ async fn query_tags(
                           JOIN manifestations m ON m.id = mt.manifestation_id
                          WHERE mt.tag_id = t.id
                       )
-                  AND (immutable_unaccent(t.name) ILIKE immutable_unaccent($1 || '%')
-                       OR immutable_unaccent($2) <% immutable_unaccent(t.name))
-                ORDER BY (immutable_unaccent(t.name) ILIKE immutable_unaccent($1 || '%')) DESC,
-                         word_similarity(immutable_unaccent($2), immutable_unaccent(t.name)) DESC,
+                  AND (immutable_unaccent(t.name) ILIKE immutable_unaccent_like($1) || '%'
+                       OR immutable_unaccent($1) <% immutable_unaccent(t.name))
+                ORDER BY (immutable_unaccent(t.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                         word_similarity(immutable_unaccent($1), immutable_unaccent(t.name)) DESC,
                          t.name ASC
-                LIMIT $3"#,
-            q.escaped,
+                LIMIT $2"#,
             q.raw,
             q.limit,
         )
@@ -381,10 +381,10 @@ async fn query_authors(
                           JOIN manifestations m ON m.work_id = wa.work_id
                          WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
-                  AND immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')
+                  AND immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%'
                 ORDER BY a.name ASC
                 LIMIT $2"#,
-            q.escaped,
+            q.raw,
             q.limit,
         )
         .fetch_all(&mut **tx)
@@ -400,13 +400,12 @@ async fn query_authors(
                           JOIN manifestations m ON m.work_id = wa.work_id
                          WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
-                  AND (immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')
-                       OR immutable_unaccent($2) <% immutable_unaccent(a.name))
-                ORDER BY (immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')) DESC,
-                         word_similarity(immutable_unaccent($2), immutable_unaccent(a.name)) DESC,
+                  AND (immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%'
+                       OR immutable_unaccent($1) <% immutable_unaccent(a.name))
+                ORDER BY (immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                         word_similarity(immutable_unaccent($1), immutable_unaccent(a.name)) DESC,
                          a.name ASC
-                LIMIT $3"#,
-            q.escaped,
+                LIMIT $2"#,
             q.raw,
             q.limit,
         )
@@ -439,10 +438,10 @@ async fn query_series(
                           JOIN manifestations m ON m.work_id = sw.work_id
                          WHERE sw.series_id = s.id
                       )
-                  AND immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')
+                  AND immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%'
                 ORDER BY s.name ASC
                 LIMIT $2"#,
-            q.escaped,
+            q.raw,
             q.limit,
         )
         .fetch_all(&mut **tx)
@@ -458,13 +457,12 @@ async fn query_series(
                           JOIN manifestations m ON m.work_id = sw.work_id
                          WHERE sw.series_id = s.id
                       )
-                  AND (immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')
-                       OR immutable_unaccent($2) <% immutable_unaccent(s.name))
-                ORDER BY (immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')) DESC,
-                         word_similarity(immutable_unaccent($2), immutable_unaccent(s.name)) DESC,
+                  AND (immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%'
+                       OR immutable_unaccent($1) <% immutable_unaccent(s.name))
+                ORDER BY (immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                         word_similarity(immutable_unaccent($1), immutable_unaccent(s.name)) DESC,
                          s.name ASC
-                LIMIT $3"#,
-            q.escaped,
+                LIMIT $2"#,
             q.raw,
             q.limit,
         )
@@ -495,10 +493,10 @@ async fn query_publishers(
                )
                SELECT name AS "name!"
                  FROM pubs
-                WHERE immutable_unaccent(name) ILIKE immutable_unaccent($1 || '%')
+                WHERE immutable_unaccent(name) ILIKE immutable_unaccent_like($1) || '%'
                 ORDER BY name ASC
                 LIMIT $2"#,
-            q.escaped,
+            q.raw,
             q.limit,
         )
         .fetch_all(&mut **tx)
@@ -513,13 +511,12 @@ async fn query_publishers(
                )
                SELECT name AS "name!"
                  FROM pubs
-                WHERE immutable_unaccent(name) ILIKE immutable_unaccent($1 || '%')
-                   OR immutable_unaccent($2) <% immutable_unaccent(name)
-                ORDER BY (immutable_unaccent(name) ILIKE immutable_unaccent($1 || '%')) DESC,
-                         word_similarity(immutable_unaccent($2), immutable_unaccent(name)) DESC,
+                WHERE immutable_unaccent(name) ILIKE immutable_unaccent_like($1) || '%'
+                   OR immutable_unaccent($1) <% immutable_unaccent(name)
+                ORDER BY (immutable_unaccent(name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                         word_similarity(immutable_unaccent($1), immutable_unaccent(name)) DESC,
                          name ASC
-                LIMIT $3"#,
-            q.escaped,
+                LIMIT $2"#,
             q.raw,
             q.limit,
         )
@@ -1161,6 +1158,55 @@ mod tests {
         assert!(
             !values.contains(&"100% Wool".to_owned()),
             "escaped _ must not wildcard-match: {values:?}"
+        );
+
+        // unaccent folds fullwidth ％/＿/＼ (U+FF05/U+FF3F/U+FF3C) into LIKE
+        // metacharacters, so folding must not re-materialize wildcards from an
+        // already-escaped needle. Each probe stays under three characters so
+        // only the prefix leg runs.
+        insert_linked_genre(&ingestion_pool, "%wool blend", m_id).await;
+        insert_linked_genre(&ingestion_pool, r"\backdated", m_id).await;
+        insert_linked_genre(&ingestion_pool, "Wildcard Bait", m_id).await;
+
+        // ％ folds to %: a literal prefix match, not match-everything.
+        let r = server
+            .get("/api/v1/genres/suggest?q=%EF%BC%85")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert_eq!(
+            values,
+            vec!["%wool blend".to_owned()],
+            "folded % must prefix-match only the literal-% genre"
+        );
+
+        // ＿ folds to _: no genre starts with a literal underscore, and a
+        // smuggled single-character wildcard would match every genre.
+        let r = server
+            .get("/api/v1/genres/suggest?q=%EF%BC%BF")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert_eq!(
+            values,
+            Vec::<String>::new(),
+            "folded _ must not wildcard-match"
+        );
+
+        // ＼ folds to \ and must itself be escaped so it matches the literal
+        // backslash prefix.
+        let r = server
+            .get("/api/v1/genres/suggest?q=%EF%BC%BC")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert_eq!(
+            values,
+            vec![r"\backdated".to_owned()],
+            "folded backslash must match the literal-backslash genre"
         );
     }
 

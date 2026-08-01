@@ -10,7 +10,10 @@ CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
 -- immutable is the standard, documented workaround: a thin SQL wrapper that
 -- pins the dictionary explicitly, which both the expression indexes below and
 -- their matching queries call so the expressions stay index-eligible.
-CREATE FUNCTION public.immutable_unaccent(text)
+-- OR REPLACE (here and below): the down migration deliberately preserves the
+-- wrappers and the text search configuration (see its header), so a
+-- revert-then-reapply must tolerate the leftovers.
+CREATE OR REPLACE FUNCTION public.immutable_unaccent(text)
     RETURNS text
     LANGUAGE sql
     IMMUTABLE
@@ -20,21 +23,43 @@ CREATE FUNCTION public.immutable_unaccent(text)
         SELECT public.unaccent('public.unaccent', $1)
     $$;
 
+-- LIKE-pattern companion: fold first, then backslash-escape `\`, `%`, and
+-- `_`. The unaccent dictionary maps several Unicode characters (fullwidth and
+-- small-form punctuation) INTO those metacharacters, so escaping done before
+-- folding is undone by it; the only safe order is fold-then-escape, and only
+-- SQL sees the folded text. Callers bind the raw needle, wrap the result in
+-- their own live wildcards, and must not pre-escape.
+CREATE OR REPLACE FUNCTION public.immutable_unaccent_like(text)
+    RETURNS text
+    LANGUAGE sql
+    IMMUTABLE
+    PARALLEL SAFE
+    STRICT
+    AS $$
+        SELECT regexp_replace(public.immutable_unaccent($1), '([\\%_])', '\\\1', 'g')
+    $$;
+
 -- Text search configuration chaining unaccent before the english stemmer, so
 -- to_tsvector/to_tsquery fold accents the same way immutable_unaccent folds
 -- trigram input. Token types per the unaccent extension's documented recipe:
 -- `word`/`hword`/`hword_part` are the only token classes that can carry a
 -- non-ASCII letter, so the ascii-only classes keep the plain english mapping.
+DROP TEXT SEARCH CONFIGURATION IF EXISTS public.unaccent_english;
 CREATE TEXT SEARCH CONFIGURATION public.unaccent_english (COPY = pg_catalog.english);
 ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
     ALTER MAPPING FOR hword, hword_part, word
     WITH unaccent, english_stem;
 
+-- The pinned search_path keeps the trigger correct under any caller session:
+-- unlike the pg_catalog-resolved 'english', both unaccent_english and the
+-- unaccent function it chains live in public, so resolution must not depend
+-- on the writing session's search_path.
 CREATE OR REPLACE FUNCTION public.works_search_vector_update() RETURNS trigger
     LANGUAGE plpgsql
+    SET search_path = pg_catalog, public
     AS $$
 BEGIN
-    NEW.search_vector := to_tsvector('unaccent_english', COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.description, ''));
+    NEW.search_vector := to_tsvector('public.unaccent_english', COALESCE(NEW.title, '') || ' ' || COALESCE(NEW.description, ''));
     RETURN NEW;
 END;
 $$;

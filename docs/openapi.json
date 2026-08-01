@@ -500,7 +500,7 @@
           {
             "name": "isbn_13_contains",
             "in": "query",
-            "description": "Case-insensitive, accent-insensitive substring match on the\nmanifestation ISBN-13.",
+            "description": "Case-insensitive substring match on the manifestation ISBN-13.",
             "required": false,
             "schema": {
               "type": "string"

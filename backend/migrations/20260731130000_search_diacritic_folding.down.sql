@@ -1,3 +1,13 @@
+-- Deliberately partial rollback. The unaccent extension, the
+-- immutable_unaccent/immutable_unaccent_like wrappers, and the
+-- unaccent_english text search configuration all survive: the deployed
+-- application binary names them in its query text (filters, search, suggest),
+-- so a schema-only rollback that dropped them would turn every one of those
+-- read paths into a hard error. Left in place they are inert, and the reads
+-- degrade to accent-sensitive matching over the restored raw indexes.
+-- Removing them entirely requires rolling back the application image first;
+-- the up migration tolerates their presence on reapply.
+
 DROP INDEX IF EXISTS public.idx_works_subtitle_trgm;
 CREATE INDEX idx_works_subtitle_trgm
     ON public.works USING gin (subtitle public.gin_trgm_ops);
@@ -38,9 +48,3 @@ UPDATE public.works
    SET search_vector = to_tsvector('english', COALESCE(title, '') || ' ' || COALESCE(description, ''));
 
 REINDEX INDEX public.idx_works_search_vector;
-
-DROP TEXT SEARCH CONFIGURATION public.unaccent_english;
-
-DROP FUNCTION public.immutable_unaccent(text);
-
-DROP EXTENSION IF EXISTS unaccent;

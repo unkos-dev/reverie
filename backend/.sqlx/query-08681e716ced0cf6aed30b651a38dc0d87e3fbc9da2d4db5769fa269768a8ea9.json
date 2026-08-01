@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.name\n                 FROM authors a\n                WHERE EXISTS (\n                          SELECT 1 FROM work_authors wa\n                          JOIN manifestations m ON m.work_id = wa.work_id\n                         WHERE wa.author_id = a.id AND wa.role = 'author'\n                      )\n                  AND immutable_unaccent(a.name) ILIKE immutable_unaccent($1 || '%')\n                ORDER BY a.name ASC\n                LIMIT $2",
+  "query": "SELECT a.id, a.name\n                 FROM authors a\n                WHERE EXISTS (\n                          SELECT 1 FROM work_authors wa\n                          JOIN manifestations m ON m.work_id = wa.work_id\n                         WHERE wa.author_id = a.id AND wa.role = 'author'\n                      )\n                  AND immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%'\n                ORDER BY a.name ASC\n                LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       false
     ]
   },
-  "hash": "7314a8033a7f491c8e4b4a2ea2697af36d4739f71e85fcd15117913faca61105"
+  "hash": "08681e716ced0cf6aed30b651a38dc0d87e3fbc9da2d4db5769fa269768a8ea9"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id, s.name\n                 FROM series s\n                WHERE EXISTS (\n                          SELECT 1 FROM series_works sw\n                          JOIN manifestations m ON m.work_id = sw.work_id\n                         WHERE sw.series_id = s.id\n                      )\n                  AND immutable_unaccent(s.name) ILIKE immutable_unaccent($1 || '%')\n                ORDER BY s.name ASC\n                LIMIT $2",
+  "query": "SELECT s.id, s.name\n                 FROM series s\n                WHERE EXISTS (\n                          SELECT 1 FROM series_works sw\n                          JOIN manifestations m ON m.work_id = sw.work_id\n                         WHERE sw.series_id = s.id\n                      )\n                  AND immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%'\n                ORDER BY s.name ASC\n                LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       false
     ]
   },
-  "hash": "802d1f705319fb1fbe587b38221729bf3c37952445e1c62408398959c6311ecb"
+  "hash": "dcf7e7dead275b577779272a295c5beb9c6f4cd6929fd7e0328b4745dac26435"
 }

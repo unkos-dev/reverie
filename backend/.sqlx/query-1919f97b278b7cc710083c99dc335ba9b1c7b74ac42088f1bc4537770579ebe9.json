@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT g.id, g.name\n                 FROM genres g\n                WHERE EXISTS (\n                          SELECT 1 FROM manifestation_genres mg\n                          JOIN manifestations m ON m.id = mg.manifestation_id\n                         WHERE mg.genre_id = g.id\n                      )\n                  AND immutable_unaccent(g.name) ILIKE immutable_unaccent($1 || '%')\n                ORDER BY g.name ASC\n                LIMIT $2",
+  "query": "SELECT g.id, g.name\n                 FROM genres g\n                WHERE EXISTS (\n                          SELECT 1 FROM manifestation_genres mg\n                          JOIN manifestations m ON m.id = mg.manifestation_id\n                         WHERE mg.genre_id = g.id\n                      )\n                  AND immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%'\n                ORDER BY g.name ASC\n                LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       false
     ]
   },
-  "hash": "32676b1ec63acf51a5f22de96c9c619da70bd47b2f6adcb8bfb18435a1ef29fb"
+  "hash": "1919f97b278b7cc710083c99dc335ba9b1c7b74ac42088f1bc4537770579ebe9"
 }

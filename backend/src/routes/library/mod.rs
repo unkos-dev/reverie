@@ -195,8 +195,7 @@ struct ListParams {
     /// that have one.
     #[serde(default)]
     subtitle_empty: Option<bool>,
-    /// Case-insensitive, accent-insensitive substring match on the
-    /// manifestation ISBN-13.
+    /// Case-insensitive substring match on the manifestation ISBN-13.
     #[serde(default)]
     isbn_13_contains: Option<String>,
     /// Case-insensitive exact match on the manifestation ISBN-13.
