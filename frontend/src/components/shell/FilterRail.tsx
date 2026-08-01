@@ -63,8 +63,10 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   applySortToSearchParams,
   parseFilterParams,
+  TEXT_COLUMN_OPS,
   type RangeFilter,
   type TextFilter,
+  type TextOp,
 } from "@/routes/library-params";
 
 import {
@@ -73,7 +75,6 @@ import {
   StatusEditor,
   TextFilterEditor,
   VocabEditor,
-  type TextOp,
   type VocabFamily,
 } from "../library/editors";
 
@@ -82,10 +83,6 @@ export interface SeriesFacetOption {
   id: string;
   name: string;
 }
-
-const TITLE_OPS: readonly TextOp[] = ["contains", "eq", "ne"];
-const SUBTITLE_OPS: readonly TextOp[] = ["contains", "empty"];
-const ISBN_OPS: readonly TextOp[] = ["contains", "eq", "empty"];
 
 function textSliceToken(value: TextFilter): string {
   return [value.contains, value.eq, value.ne, value.empty]
@@ -293,7 +290,7 @@ export function FilterRail({
       </RailSection>
       <TextSection
         title="Title"
-        ops={TITLE_OPS}
+        ops={TEXT_COLUMN_OPS.title}
         committed={filters.title}
         fullToken={fullToken}
         lastEdit={lastEdit}
@@ -308,7 +305,7 @@ export function FilterRail({
       />
       <TextSection
         title="Subtitle"
-        ops={SUBTITLE_OPS}
+        ops={TEXT_COLUMN_OPS.subtitle}
         committed={filters.subtitle}
         fullToken={fullToken}
         lastEdit={lastEdit}
@@ -323,7 +320,7 @@ export function FilterRail({
       />
       <TextSection
         title="ISBN"
-        ops={ISBN_OPS}
+        ops={TEXT_COLUMN_OPS.isbn_13}
         committed={filters.isbn13}
         fullToken={fullToken}
         lastEdit={lastEdit}

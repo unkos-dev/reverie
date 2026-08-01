@@ -7,7 +7,9 @@ import {
   hasActiveFilterState,
   parseFilterParams,
   paramsFromSearch,
+  PURGE_ONLY_PARAM_KEYS,
   serializeFilterParams,
+  TEXT_COLUMN_OPS,
   viewFromSearch,
   type FilterState,
 } from "./library-params";
@@ -106,6 +108,17 @@ describe("paramsFromSearch", () => {
       genre_any: ["fantasy"],
     });
   });
+
+  test("never sends title_empty to the API: the backend has no such predicate", () => {
+    const result = paramsFromSearch(search("title_empty=true&title_contains=dune"));
+    expect(result).toEqual({ title_contains: "dune" });
+    expect("title_empty" in result).toBe(false);
+  });
+
+  test("a duplicate scalar key (title_contains repeated) sends only the first value", () => {
+    const result = paramsFromSearch(search("title_contains=a&title_contains=b"));
+    expect(result).toEqual({ title_contains: "a" });
+  });
 });
 
 describe("parseFilterParams", () => {
@@ -169,6 +182,15 @@ describe("parseFilterParams", () => {
     const qs = Array.from({ length: 25 }, (_, i) => `author_any=a${String(i)}`).join("&");
     expect(parseFilterParams(search(qs)).authors.any).toHaveLength(20);
   });
+
+  test("drops a hand-crafted title_empty: the backend has no such predicate (title is NOT NULL)", () => {
+    expect(parseFilterParams(search("title_empty=true")).title).toEqual({});
+  });
+
+  test("a duplicate scalar key keeps only the first value", () => {
+    const state = parseFilterParams(search("title_contains=a&title_contains=b"));
+    expect(state.title).toEqual({ contains: "a" });
+  });
 });
 
 describe("serializeFilterParams", () => {
@@ -215,6 +237,58 @@ describe("serializeFilterParams", () => {
     const params = new URLSearchParams();
     serializeFilterParams(emptyFilterState(), params);
     expect([...params.keys()]).toEqual([]);
+  });
+
+  test("purges a hand-crafted title_empty: any filter rewrite sweeps up the dead key", () => {
+    const params = search("title_empty=true");
+    serializeFilterParams(parseFilterParams(params), params);
+    expect(params.has("title_empty")).toBe(false);
+  });
+});
+
+describe("dead text params (no wire predicate)", () => {
+  /** Every dead key with a value each live sibling op would accept. */
+  function deadQuery(): string {
+    return PURGE_ONLY_PARAM_KEYS.map((key) => `${key}=true`).join("&");
+  }
+
+  test("covers exactly the column/op pairs the ops table omits", () => {
+    expect([...PURGE_ONLY_PARAM_KEYS].sort()).toEqual([
+      "isbn_13_ne",
+      "subtitle_eq",
+      "subtitle_ne",
+      "title_empty",
+    ]);
+  });
+
+  test("parse drops every dead param instead of surfacing an unremovable chip", () => {
+    expect(parseFilterParams(search(deadQuery()))).toEqual(emptyFilterState());
+  });
+
+  test("the wire projection never sends a dead param", () => {
+    expect(paramsFromSearch(search(deadQuery()))).toEqual({});
+  });
+
+  test("any filter rewrite sweeps dead params off the URL", () => {
+    const params = search(deadQuery());
+    serializeFilterParams(parseFilterParams(params), params);
+    for (const key of PURGE_ONLY_PARAM_KEYS) expect(params.has(key)).toBe(false);
+  });
+});
+
+describe("TEXT_COLUMN_OPS wire sync", () => {
+  test("every declared op round-trips URL -> state -> wire", () => {
+    // Locks the explicit projection in `assignText` to the ops table: an op
+    // added to the table without a matching projection branch fails here as
+    // a dead param (parsed but never sent).
+    for (const [column, ops] of Object.entries(TEXT_COLUMN_OPS)) {
+      for (const op of ops) {
+        const key = `${column}_${op}`;
+        const raw = op === "empty" ? "true" : "x";
+        const sent = op === "empty" ? true : "x";
+        expect(paramsFromSearch(search(`${key}=${raw}`)), key).toEqual({ [key]: sent });
+      }
+    }
   });
 });
 
