@@ -109,12 +109,14 @@ export const PURGE_ONLY_PARAM_KEYS: readonly string[] = TEXT_COLUMNS.flatMap((co
 });
 
 /**
- * Every live filter URL key, in one place so `paramsFromSearch`,
- * `serializeFilterParams`, and the page's clear-all / has-active-filter checks
- * cannot drift. `q` and the single-value `series`/`shelf` filters are included;
- * pagination (`cursor`) and ordering (`sort`) are not filters and stay out.
- * Dead params a URL might still carry live in {@link PURGE_ONLY_PARAM_KEYS},
- * which shares the purge sweeps but never the active-filter checks.
+ * Every live filter URL key, in one place so `serializeFilterParams`'s
+ * delete-then-set sweep and the page's clear-all cannot drift from the codec.
+ * `q` and the single-value `series`/`shelf` filters are included; pagination
+ * (`cursor`) and ordering (`sort`) are not filters and stay out. Dead params
+ * a URL might still carry live in {@link PURGE_ONLY_PARAM_KEYS}, which shares
+ * the purge sweeps. Active-filter checks (badge count, empty-state split) do
+ * not read either list: they derive from {@link filterStateToParams}, so only
+ * a condition that actually reaches the wire counts as active.
  */
 export const FILTER_PARAM_KEYS: readonly string[] = [
   "q",

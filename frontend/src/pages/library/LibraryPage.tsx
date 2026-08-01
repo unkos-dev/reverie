@@ -59,6 +59,8 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   applySortToSearchParams,
   FILTER_PARAM_KEYS,
+  filterStateToParams,
+  hasActiveFilterState,
   paramsFromSearch,
   parseFilterParams,
   PURGE_ONLY_PARAM_KEYS,
@@ -238,9 +240,10 @@ function LibraryContent(): ReactElement {
     writeDisplayPreferences({ hiddenColumns: [] });
   }
 
-  const activeFilterCount = FILTER_PARAM_KEYS.filter((key) =>
-    searchParams.getAll(key).some((value) => value !== ""),
-  ).length;
+  // Counted on the wire projection, not raw URL keys: a param the codec
+  // rejects (malformed number, unknown status token) is never sent, so it
+  // must not light the badge or flip the empty state either.
+  const activeFilterCount = Object.keys(filterStateToParams(filterState)).length;
 
   function openOverlay(next: Exclude<OverlayState, null>): void {
     overlayReturnFocus.current =
@@ -261,7 +264,8 @@ function LibraryContent(): ReactElement {
   /** Empty states first, then one branch per projection. */
   function renderBooks(): ReactElement {
     if (items.length === 0) {
-      if (hasActiveFilters(searchParams)) return <FilteredEmptyState onClear={clearAllFilters} />;
+      if (hasActiveFilterState(filterState))
+        return <FilteredEmptyState onClear={clearAllFilters} />;
       return <EmptyState />;
     }
     if (viewMode === "grid") return <BookGrid items={items} />;
@@ -597,17 +601,6 @@ function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement 
       </Button>
     </div>
   );
-}
-
-/**
- * True when any typed filter, vocabulary set, or quick search is active.
- * Drives the empty-state split: filters present means a zero-result set is
- * "filtered to nothing", not "library is empty". Every filter key is checked
- * with `getAll` so multi-value params (`?tag=a&tag=b`) count, and the set is
- * the shared {@link FILTER_PARAM_KEYS} so it cannot drift from the codec.
- */
-function hasActiveFilters(search: URLSearchParams): boolean {
-  return FILTER_PARAM_KEYS.some((key) => search.getAll(key).some((value) => value !== ""));
 }
 
 function LibrarySkeleton(): ReactElement {

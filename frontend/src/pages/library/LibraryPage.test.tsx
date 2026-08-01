@@ -466,6 +466,32 @@ describe("LibraryPage", () => {
     expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
   });
 
+  test("a malformed live-key value neither lights the badge nor flips the empty state", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?pages_gte=abc&created_at_gte=notadate&status_any=bogus"],
+    });
+    // The codec drops all three values, so nothing reaches the wire: the
+    // page must read as unfiltered even though the live keys are present.
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
+  });
+
+  test("a well-formed filter lights the badge with the sent-param count", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?pages_gte=500"],
+      cacheParams: { pages_gte: 500 },
+      extraCacheParams: [{}],
+    });
+    expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
+    // The count badge renders inside the trigger, so it joins the accessible
+    // name with no separator.
+    expect(screen.getByRole("button", { name: "Filters1" })).toBeInTheDocument();
+  });
+
   test("clear-all also sweeps dead params off the URL", async () => {
     renderLibrary({
       items: [],
