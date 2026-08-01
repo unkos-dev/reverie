@@ -253,6 +253,12 @@ git -C "${repo_root}" worktree add -b "${branch_codex_source}" "${dest_codex_sou
 if [ "${codex_source_rc}" -eq 0 ]; then
   ok "Codex policy source fixture creation exits zero"
   cp "${repo_root}/justfile" "${dest_codex_source}/justfile"
+  # The worktree recipe delegates new-branch base resolution to this script,
+  # so an uncommitted change to it must reach the fixture the same way the
+  # justfile copy above does, or every `just worktree` call below fails with
+  # "no such file" instead of exercising the change under test.
+  mkdir -p "${dest_codex_source}/scripts"
+  cp "${repo_root}/scripts/worktree-base.sh" "${dest_codex_source}/scripts/worktree-base.sh"
   printf '[projects."%s"]\ntrust_level = "trusted"\n' \
     "${dest_codex_source}" >"${CODEX_HOME}/config.toml"
 else
