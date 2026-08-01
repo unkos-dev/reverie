@@ -78,12 +78,16 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
 /// serving would: same [`crate::services::covers::svg::rasterize_svg`] routine,
 /// same sibling resolution scoped to `entry_path`'s directory within `handle`.
 ///
-/// A cover that clears the parse/render-cost gate but resolves to nothing
-/// visible (empty `SVG`, or an `<image>` whose sibling is absent) is *not* an
-/// ingestion error, since [`crate::services::covers::svg::parses_as_svg`]
-/// already passed it, so no issue is appended; it just doesn't count as
-/// usable, mirroring the "no cover declared" case above. A genuine parse or
-/// render-cost failure still appends `UndecodableCover`, unchanged from before.
+/// A rasterization failure after
+/// [`crate::services::covers::svg::parses_as_svg`] passes is *not* an
+/// ingestion error: the two calls do not evaluate the same tree (live sibling
+/// resolution adds nodes and trips guards that its no-op resolver never
+/// reaches), and rasterization can also fail on a blank render, a
+/// non-positive declared size, pixmap allocation, or PNG encoding.
+/// `parses_as_svg` is the conservative discriminator: anything it accepts is
+/// silently non-usable, mirroring the "no cover declared" case above, rather
+/// than gaining an `UndecodableCover` issue. A genuine parse or render-cost
+/// failure still appends `UndecodableCover`, unchanged from before.
 fn validate_svg(
     handle: &ZipHandle,
     entry_path: &str,
@@ -101,9 +105,12 @@ fn validate_svg(
         return true;
     }
     if crate::services::covers::svg::parses_as_svg(bytes) {
-        // Parsed and cleared the render-cost gate, but rasterize_svg still
-        // failed: that only happens by resolving to a blank render (see its
-        // doc). Not an error; matches serve's spine fallback for this shape.
+        // rasterize_svg can fail for reasons beyond a genuine parse/gate
+        // problem: a blank render, size/allocation/encode failures, or
+        // sibling-resolution guards that parses_as_svg's no-op resolver never
+        // reaches. This fallback is therefore load-bearing: it keeps every
+        // cover the resolver-free gate accepts out of UndecodableCover,
+        // matching serve's spine fallback for this shape.
         return false;
     }
     issues.push(Issue {

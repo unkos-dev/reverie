@@ -77,10 +77,11 @@ struct MetadataCoverage {
     has_description: i64,
     has_language: i64,
     has_isbn_13: i64,
-    /// Sidecar cover present (`cover_path`) OR a usable embedded cover was
-    /// found at ingestion (`has_embedded_cover`). Either one makes the book
-    /// have a usable cover; a sidecar can exist even for an EPUB with no
-    /// embedded cover of its own, and vice versa.
+    /// A cover artefact is recorded: a sidecar (`cover_path`) or a usable
+    /// embedded cover found at ingestion (`has_embedded_cover`). The two are
+    /// distinct artefacts and only the embedded cover is served; no ingestion
+    /// or enrichment path currently populates `cover_path`, so in practice
+    /// this measures embedded-cover coverage.
     has_cover: i64,
 }
 

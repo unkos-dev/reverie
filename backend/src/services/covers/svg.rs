@@ -21,6 +21,12 @@
 //!   (resvg#647). Every embedded raster (sibling *and* data-URI) is bounded by
 //!   byte size (`MAX_EMBEDDED_IMAGE_BYTES`) and header-sniffed megapixels
 //!   (`MAX_EMBEDDED_PIXELS`) before decode.
+//! - **Resolution amplification**: usvg consults the sibling resolver once per
+//!   `<image href>` element while building the tree — before the node budget
+//!   can reject it — and each consultation decompresses a ZIP entry, so many
+//!   references to one entry multiply that cost. A cumulative per-rasterization
+//!   budget (`MAX_SIBLING_RESOLUTIONS`, `MAX_TOTAL_SIBLING_BYTES`) refuses
+//!   further resolutions once spent.
 //! - **Output-size bomb**: render output is capped at `MAX_RENDER_LONG_EDGE`;
 //!   `Pixmap::new` returning `None` (zero/oversize) maps to a decode error.
 //! - **Parser stack overflow**: both `roxmltree`'s parser and `usvg`'s tree
@@ -41,6 +47,7 @@
 //! See ADR `2026-06-13-svg-cover-rasterization.md`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use resvg::{tiny_skia, usvg};
 
@@ -53,6 +60,17 @@ const MAX_SVG_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EMBEDDED_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 /// Hard cap on an embedded raster's pixel count (decode-bomb guard).
 const MAX_EMBEDDED_PIXELS: u64 = 16 * 1024 * 1024;
+/// Cap on `<image href>` sibling resolutions in one rasterization. usvg
+/// consults the resolver once per `<image>` element while building the tree,
+/// before `check_render_complexity` can reject it, and every consultation
+/// costs a ZIP-entry decompression, so the per-image caps alone let a single
+/// cover reference one entry thousands of times. Real covers use one sibling.
+const MAX_SIBLING_RESOLUTIONS: usize = 8;
+/// Cumulative byte cap across all sibling fetches in one rasterization; belt
+/// over [`MAX_SIBLING_RESOLUTIONS`] so total fetched bytes stay bounded even
+/// when every fetch is under the per-image cap. Once exceeded, remaining
+/// resolutions return `None` without touching the archive.
+const MAX_TOTAL_SIBLING_BYTES: usize = 32 * 1024 * 1024;
 /// Long-edge cap of the rasterized output, in pixels. Matches `CoverSize::Full`
 /// so the downstream resize step is a near-no-op.
 const MAX_RENDER_LONG_EDGE: u32 = 1200;
@@ -453,21 +471,53 @@ fn check_node(
 /// `<image href>` to path-checked sibling entries via `resolve_sibling`; the
 /// data resolver bounds base64 data-URI payloads. Both reject rasters over the
 /// byte/megapixel caps. Replaces usvg's default, which reads local files.
+///
+/// The string resolver additionally carries a cumulative budget: every call
+/// counts against [`MAX_SIBLING_RESOLUTIONS`] and every fetched sibling
+/// against [`MAX_TOTAL_SIBLING_BYTES`]; past either, it returns `None` before
+/// consulting `resolve_sibling`, and usvg drops the image node. The counters
+/// live in the resolver, which is built fresh per parse, so the budget is
+/// per-rasterization.
 fn hardened_resolver<'a, F>(resolve_sibling: F) -> usvg::ImageHrefResolver<'a>
 where
     F: Fn(&str) -> Option<Vec<u8>> + Send + Sync + 'a,
 {
+    let resolutions = AtomicUsize::new(0);
+    let fetched_bytes = AtomicUsize::new(0);
     usvg::ImageHrefResolver {
         // THREAT: default data resolver wraps base64 payloads without bounding
-        // decode size. Apply the same byte+megapixel guard.
+        // decode size. Apply the same byte+megapixel guard. (Data-URI payloads
+        // live inside the SVG bytes, already input-capped, so they need no
+        // cumulative budget.)
         resolve_data: Box::new(|_mime, data, _opts| safe_image_kind(data)),
         // THREAT: default string resolver reads local files. Restrict to
-        // path-checked siblings inside the same EPUB ZIP.
+        // path-checked siblings inside the same EPUB ZIP, within the
+        // cumulative budget above.
         resolve_string: Box::new(move |href, _opts| {
+            if resolutions.fetch_add(1, Ordering::Relaxed) >= MAX_SIBLING_RESOLUTIONS
+                || fetched_bytes.load(Ordering::Relaxed) > MAX_TOTAL_SIBLING_BYTES
+            {
+                tracing::debug!(
+                    resolution_cap = MAX_SIBLING_RESOLUTIONS,
+                    byte_cap = MAX_TOTAL_SIBLING_BYTES,
+                    "svg cover: sibling resolution refused (cumulative budget spent)"
+                );
+                return None;
+            }
             if !crate::services::epub::is_safe_path(href) {
                 return None;
             }
             let bytes = resolve_sibling(href)?;
+            if fetched_bytes.fetch_add(bytes.len(), Ordering::Relaxed) + bytes.len()
+                > MAX_TOTAL_SIBLING_BYTES
+            {
+                tracing::debug!(
+                    bytes = bytes.len(),
+                    byte_cap = MAX_TOTAL_SIBLING_BYTES,
+                    "svg cover: sibling image rejected (over cumulative byte cap)"
+                );
+                return None;
+            }
             safe_image_kind(Arc::new(bytes))
         }),
     }
@@ -622,6 +672,57 @@ mod tests {
     }
 
     #[test]
+    fn caps_sibling_resolution_count() {
+        let images: String = std::iter::repeat_n(
+            r#"<image href="cover.png" width="10" height="10"/>"#,
+            MAX_SIBLING_RESOLUTIONS * 3,
+        )
+        .collect();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">{images}</svg>"#
+        );
+        let sibling = raster(2, 2, image::ImageFormat::Png);
+        let fetches = AtomicUsize::new(0);
+        // The admitted resolutions still render, so the cap degrades rather
+        // than rejects.
+        rasterize_svg(svg.as_bytes(), |href| {
+            fetches.fetch_add(1, Ordering::Relaxed);
+            (href == "cover.png").then(|| sibling.clone())
+        })
+        .unwrap();
+        assert_eq!(fetches.load(Ordering::Relaxed), MAX_SIBLING_RESOLUTIONS);
+    }
+
+    #[test]
+    fn caps_cumulative_sibling_bytes() {
+        // Valid PNG header padded to exactly the per-image cap: each fetch
+        // passes the single-image guards, so only the cumulative byte cap can
+        // stop the sequence. It admits floor(total/per-image) fetches, trips on
+        // the next one, and refuses the rest before consulting the resolver.
+        let mut padded = png_header_only(2, 2);
+        padded.resize(MAX_EMBEDDED_IMAGE_BYTES, 0);
+        let images: String = std::iter::repeat_n(
+            r#"<image href="big.png" width="10" height="10"/>"#,
+            MAX_SIBLING_RESOLUTIONS,
+        )
+        .collect();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">{images}</svg>"#
+        );
+        let fetches = AtomicUsize::new(0);
+        // Header-only padding never decodes at render, so every node drops and
+        // the blank-render rejection fires.
+        rasterize_svg(svg.as_bytes(), |_| {
+            fetches.fetch_add(1, Ordering::Relaxed);
+            Some(padded.clone())
+        })
+        .unwrap_err();
+        let admitted = MAX_TOTAL_SIBLING_BYTES / MAX_EMBEDDED_IMAGE_BYTES;
+        assert!(admitted + 1 < MAX_SIBLING_RESOLUTIONS);
+        assert_eq!(fetches.load(Ordering::Relaxed), admitted + 1);
+    }
+
+    #[test]
     fn blocks_traversal_href() {
         let err = rasterize_svg(image_only_svg("../secret.png").as_bytes(), |_| {
             Some(raster(2, 2, image::ImageFormat::Png))
@@ -770,14 +871,19 @@ mod tests {
         assert!(parses_as_svg(STANDARD_EBOOKS_COVER.as_bytes()));
     }
 
-    /// Many zero-segment nodes (`<image>`), to drive the node-count budget
-    /// without first tripping the path-segment budget.
+    /// Many zero-segment nodes (`<image>` carrying a tiny data URI), to drive
+    /// the node-count budget without first tripping the path-segment budget.
+    /// Data URIs bypass the sibling resolver, whose cumulative budget would
+    /// otherwise drop all but the first few nodes before the walk ran.
     fn many_images_svg(count: usize) -> String {
+        use base64ct::Encoding as _;
+        let uri = base64ct::Base64::encode_string(&png_header_only(1, 1));
+        let element = format!(r#"<image href="data:image/png;base64,{uri}"/>"#);
         let mut s = String::from(
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150">"#,
         );
         for _ in 0..count {
-            s.push_str(r#"<image href="c.png" width="1" height="1"/>"#);
+            s.push_str(&element);
         }
         s.push_str("</svg>");
         s
@@ -785,18 +891,14 @@ mod tests {
 
     #[test]
     fn rejects_excessive_node_count() {
-        // Each `<image>` resolves to a 1px raster so usvg keeps the node; the
-        // count trips the node budget while contributing no path segments.
+        // Each data-URI image resolves, so usvg keeps the node; the count
+        // trips the node budget while contributing no path segments.
         let svg = many_images_svg(MAX_SVG_NODES + 5);
         assert!(
             svg.len() <= MAX_SVG_INPUT_BYTES,
             "fixture must fit input cap"
         );
-        let px = raster(1, 1, image::ImageFormat::Png);
-        let err = rasterize_svg(svg.as_bytes(), move |href| {
-            (href == "c.png").then(|| px.clone())
-        })
-        .unwrap_err();
+        let err = rasterize_svg(svg.as_bytes(), |_| None).unwrap_err();
         assert!(matches!(err, CoverError::Decode(_)));
     }
 
