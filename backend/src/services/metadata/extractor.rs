@@ -12,12 +12,14 @@ use super::{inversion, isbn, sanitiser};
 /// Fully processed metadata derived from a single `OPF` document.
 ///
 /// Free-form text fields (title, description, creators, publisher, subjects,
-/// series name) have been sanitised (entities decoded, `HTML` stripped,
-/// whitespace normalised). The `language` field is passed through unchanged
-/// because it is a structured `BCP 47` token, not free-form text — callers
-/// must validate it themselves before trusting it. Optional fields are
-/// `None` when absent or empty after sanitisation — callers must not treat
-/// empty strings as valid values.
+/// series name) have been sanitised (`HTML` stripped, whitespace
+/// normalised); entity and character-reference decoding happened earlier,
+/// at the `OPF` parse layer, so sanitisation receives already-decoded
+/// character data. The `language` field is passed through unchanged because
+/// it is a structured `BCP 47` token, not free-form text; callers must
+/// validate it themselves before trusting it. Optional fields are `None`
+/// when absent or empty after sanitisation; callers must not treat empty
+/// strings as valid values.
 #[derive(Debug, Clone)]
 pub struct ExtractedMetadata {
     /// Sanitised display title, or `None` if the `OPF` title was absent or empty.
@@ -353,6 +355,7 @@ mod tests {
         OpfData {
             manifest: HashMap::new(),
             cover_href: None,
+            meta_cover_href: None,
             spine_idrefs: vec![],
             opf_path: "OEBPS/content.opf".into(),
             accessibility_metadata: None,
@@ -384,7 +387,10 @@ mod tests {
             title: Some("The Hobbit".into()),
             creators: vec![creator("J. R. R. Tolkien", &["aut"])],
             description: Some("<p>A fantasy novel</p>".into()),
-            publisher: Some("Allen &amp; Unwin".into()),
+            // The OPF parse layer decodes entities before ExtractedMetadata
+            // ever sees this field, so the fixture supplies already-decoded
+            // text rather than raw "&amp;" markup.
+            publisher: Some("Allen & Unwin".into()),
             date: Some("1937-09-21".into()),
             language: Some("en".into()),
             identifiers: vec!["urn:isbn:9780547928227".into()],

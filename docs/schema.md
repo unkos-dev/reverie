@@ -54,7 +54,7 @@ ingestion_jobs     (standalone)
 | Table                  | Purpose                                       | Key Columns                                                                    |
 | ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
 | `series`               | Series with self-referential nesting          | `name`, `parent_id`                                                            |
-| `series_works`         | Series-Work join                              | `series_id`, `work_id`, `position` (NUMERIC for fractional ordering)           |
+| `series_works`         | Series-Work join                              | `series_id`, `work_id`, `position` (double precision for fractional ordering)  |
 | `omnibus_contents`     | Omnibus edition mapping                       | `omnibus_manifestation_id`, `contained_work_id`, `position`                    |
 | `metadata_versions`    | Metadata versioning (draft/accepted/rejected) | `manifestation_id`, `source`, `field_name`, `old_value`, `new_value`, `status` |
 | `tags`                 | Flat tag vocabulary, unique on `lower(name)`  | `name`                                                                         |
@@ -187,8 +187,9 @@ causes all visibility checks to fail, so queries return zero rows.
 - **`sort_title` / `sort_name`**: Separate columns strip leading articles for display
   ordering. Application logic populates these on insert.
 
-- **`position NUMERIC`** in `series_works`: Allows fractional ordering (e.g., 1.5 for
-  novellas between volumes 1 and 2).
+- **`position double precision`** in `series_works`: Allows fractional ordering
+  (e.g., 1.5 for novellas between volumes 1 and 2). Matches the f64 the API
+  serves and every writer binds, so no cast sits between storage and decode.
 
 - **Self-referential `series.parent_id`**: Uses `ON DELETE SET NULL` to orphan children
   rather than cascade-delete entire series trees.

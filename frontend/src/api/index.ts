@@ -34,6 +34,7 @@ export type {
   SortField,
   SortLevelParam,
   ListBooksParams,
+  ArrayParamKey,
   UpdateBookMetadataFields,
 } from "./books";
 export { searchLibrary } from "./search";

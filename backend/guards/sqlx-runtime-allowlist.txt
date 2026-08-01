@@ -103,6 +103,13 @@ backend/src/services/settings.rs:
 
 SELECT set_config('app.current_user_id', $1, true)
 
+# (4) series decode-drift test (routes/library/tests.rs): builds a row with
+# deliberately mistyped series columns to pin that series_ref_from_row
+# propagates a decode mismatch as an error. Compile-time macros cannot
+# express the mismatch: they type the columns and make it unrepresentable.
+# Test-only, exact string (tests.rs mixes legitimate macros, no blanket).
+sqlx::query(mistyped_series_row_sql)
+
 # (1) models/password_reset_pin.rs reconciliation regression test — DDL that
 # cannot be a compile-time macro (Postgres does not PREPARE utility statements).
 # It drops the single-active partial unique index to seed the pre-index dirty
