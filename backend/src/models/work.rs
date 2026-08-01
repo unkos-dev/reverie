@@ -195,9 +195,6 @@ pub async fn upgrade_stub(
         let series_id =
             find_or_create_series(conn, &series.name, &series.name.to_lowercase()).await?;
         sqlx::query!(
-            // $3 bound as float8; postgres implicitly casts to NUMERIC for
-            // the column. Avoids requiring sqlx's `bigdecimal` feature for
-            // an Option<f64> source value.
             "INSERT INTO series_works (series_id, work_id, position) \
              VALUES ($1, $2, $3::float8)",
             series_id,

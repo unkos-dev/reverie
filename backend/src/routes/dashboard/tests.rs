@@ -39,14 +39,46 @@ async fn seed_manifestation(
     validation_status: &str,
     file_size_bytes: i64,
 ) -> Uuid {
+    seed_manifestation_with_cover(
+        ingestion_pool,
+        work_id,
+        marker,
+        format,
+        validation_status,
+        file_size_bytes,
+        None,
+        false,
+    )
+    .await
+}
+
+/// Like [`seed_manifestation`] but with control over the two independent
+/// cover signals: `has_embedded_cover` (set at ingestion, `None` = unknown)
+/// and `with_cover_path` (the enrichment sidecar preview).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper threading every cover-coverage axis; a builder would be single-caller indirection"
+)]
+async fn seed_manifestation_with_cover(
+    ingestion_pool: &PgPool,
+    work_id: Uuid,
+    marker: &str,
+    format: &str,
+    validation_status: &str,
+    file_size_bytes: i64,
+    has_embedded_cover: Option<bool>,
+    with_cover_path: bool,
+) -> Uuid {
     let file_path = format!("/tmp/dash-{marker}.bin");
     let hash = format!("dash-hash-{marker}");
+    let cover_path = with_cover_path.then(|| format!("/tmp/dash-{marker}-cover.jpg"));
     sqlx::query_scalar!(
         "INSERT INTO manifestations \
             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
-             file_size_bytes, ingestion_status, validation_status) \
+             file_size_bytes, ingestion_status, validation_status, has_embedded_cover, \
+             cover_path) \
          VALUES ($1, ($2::text)::manifestation_format, $3, $4, $4, $5, \
-                 'complete'::ingestion_status, ($6::text)::validation_status) \
+                 'complete'::ingestion_status, ($6::text)::validation_status, $7, $8) \
          RETURNING id",
         work_id,
         format,
@@ -54,6 +86,8 @@ async fn seed_manifestation(
         hash,
         file_size_bytes,
         validation_status,
+        has_embedded_cover,
+        cover_path,
     )
     .fetch_one(ingestion_pool)
     .await
@@ -127,6 +161,85 @@ async fn stats_distinct_works_vs_manifestations(pool: PgPool) {
     // Default enrichment_status is `pending` for freshly-seeded rows.
     assert_eq!(bucket_count(&body, "enrichment_breakdown", "pending"), 2);
     assert_eq!(body["metadata_coverage"]["total"], 2);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn stats_cover_coverage_counts_embedded_and_sidecar(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, admin_auth) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    // Embedded-only: has_embedded_cover=true, no sidecar. Must count.
+    let embedded_only = seed_work(&ingestion_pool, "Embedded Only").await;
+    seed_manifestation_with_cover(
+        &ingestion_pool,
+        embedded_only,
+        "embedded-only",
+        "epub",
+        "clean",
+        100,
+        Some(true),
+        false,
+    )
+    .await;
+
+    // Sidecar-only: no embedded cover (or unknown), sidecar present. Must
+    // count — a sidecar is a usable cover even without an embedded one.
+    let sidecar_only = seed_work(&ingestion_pool, "Sidecar Only").await;
+    seed_manifestation_with_cover(
+        &ingestion_pool,
+        sidecar_only,
+        "sidecar-only",
+        "epub",
+        "clean",
+        100,
+        Some(false),
+        true,
+    )
+    .await;
+
+    // No cover at all: has_embedded_cover=false, no sidecar. Must not count.
+    let no_cover = seed_work(&ingestion_pool, "No Cover").await;
+    seed_manifestation_with_cover(
+        &ingestion_pool,
+        no_cover,
+        "no-cover",
+        "epub",
+        "clean",
+        100,
+        Some(false),
+        false,
+    )
+    .await;
+
+    // Unknown (pre-migration-style row, NULL flag): must not count either —
+    // NULL means "unknown", not "has a cover".
+    let unknown = seed_work(&ingestion_pool, "Unknown Cover").await;
+    seed_manifestation_with_cover(
+        &ingestion_pool,
+        unknown,
+        "unknown-cover",
+        "epub",
+        "clean",
+        100,
+        None,
+        false,
+    )
+    .await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/dashboard/stats")
+        .add_header(AUTHORIZATION, admin_auth)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: Value = response.json();
+
+    assert_eq!(body["metadata_coverage"]["total"], 4);
+    assert_eq!(
+        body["metadata_coverage"]["has_cover"], 2,
+        "only the embedded-only and sidecar-only rows count as covered"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

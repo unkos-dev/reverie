@@ -77,6 +77,13 @@ struct MetadataCoverage {
     has_description: i64,
     has_language: i64,
     has_isbn_13: i64,
+    // cover_path currently has no production writer, so in practice this
+    // measures embedded-cover coverage today. Kept out of the published
+    // description: which code paths happen to be unbuilt is not part of the
+    // contract and would go stale silently.
+    /// A cover artefact is recorded: a sidecar (`cover_path`) or a usable
+    /// embedded cover found at ingestion (`has_embedded_cover`). The two are
+    /// distinct artefacts; only the embedded cover is served.
     has_cover: i64,
 }
 
@@ -158,7 +165,9 @@ async fn stats(
               COUNT(*) FILTER (WHERE w.description IS NOT NULL AND w.description <> '') AS "has_description!",
               COUNT(*) FILTER (WHERE w.language    IS NOT NULL AND w.language    <> '') AS "has_language!",
               COUNT(*) FILTER (WHERE m.isbn_13     IS NOT NULL) AS "has_isbn_13!",
-              COUNT(*) FILTER (WHERE m.cover_path  IS NOT NULL) AS "has_cover!"
+              COUNT(*) FILTER (
+                  WHERE m.cover_path IS NOT NULL OR m.has_embedded_cover IS TRUE
+              ) AS "has_cover!"
            FROM manifestations m
            JOIN works w ON w.id = m.work_id"#,
     )
