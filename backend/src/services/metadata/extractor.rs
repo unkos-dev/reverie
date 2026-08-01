@@ -384,7 +384,10 @@ mod tests {
             title: Some("The Hobbit".into()),
             creators: vec![creator("J. R. R. Tolkien", &["aut"])],
             description: Some("<p>A fantasy novel</p>".into()),
-            publisher: Some("Allen &amp; Unwin".into()),
+            // The OPF parse layer decodes entities before ExtractedMetadata
+            // ever sees this field, so the fixture supplies already-decoded
+            // text rather than raw "&amp;" markup.
+            publisher: Some("Allen & Unwin".into()),
             date: Some("1937-09-21".into()),
             language: Some("en".into()),
             identifiers: vec!["urn:isbn:9780547928227".into()],

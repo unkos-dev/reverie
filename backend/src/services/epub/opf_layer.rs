@@ -6,11 +6,19 @@
 //! and `EPUB3` `belongs-to-collection`. Broken spine refs (idrefs not in the
 //! manifest) are removed and recorded as `Repaired` issues. Manifest hrefs
 //! that fail the path-safety check are dropped and recorded as `Degraded`.
+//!
+//! This layer owns entity and character-reference decoding for every text
+//! field it emits, whether the source is element text (`read_element_text`)
+//! or an attribute value (`attr_text`). Downstream consumers, including the
+//! metadata sanitiser, must treat these fields as already-decoded character
+//! data and must not decode them again.
 
 use quick_xml::Reader;
 use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
+use quick_xml::events::attributes::Attribute;
 use quick_xml::name::QName;
+use quick_xml::{Decoder, XmlVersion};
 use std::collections::{HashMap, HashSet};
 
 use super::{
@@ -98,6 +106,27 @@ fn local_name(name: &[u8]) -> &[u8] {
     name.iter()
         .position(|&b| b == b':')
         .map_or(name, |pos| &name[pos + 1..])
+}
+
+/// Decode an attribute value as character data.
+///
+/// Attribute values are never auto-unescaped by `quick-xml`, unlike element
+/// text (see `read_element_text`): `a.value` is the raw markup between the
+/// quotes. Predefined entities and numeric character references are
+/// resolved here so an attribute-sourced field (for example `<meta
+/// name="calibre:series" content="...">`) reaches the same decoded state as
+/// an element-text-sourced one, regardless of which XML construct carried
+/// it. Falls back to the raw decoded bytes when unescaping fails (an
+/// unrecognised named entity or an illegal character reference) rather than
+/// dropping the field: real-world `OPF` attribute values are not always
+/// strictly valid XML, and losing the field outright is worse than keeping
+/// the escape sequence literal.
+fn attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
+    a.decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+        .map_or_else(
+            |_| std::str::from_utf8(&a.value).ok().map(str::to_string),
+            |v| Some(v.into_owned()),
+        )
 }
 
 /// Read an element's character data up to its matching end tag.
@@ -278,11 +307,7 @@ pub fn validate(
                     .attributes()
                     .flatten()
                     .find(|a| a.key.as_ref() == b"content")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .and_then(|a| attr_text(reader.decoder(), &a));
                 let id_attr = e
                     .attributes()
                     .flatten()
@@ -405,11 +430,7 @@ pub fn validate(
                     .attributes()
                     .flatten()
                     .find(|a| a.key.as_ref() == b"content")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .and_then(|a| attr_text(reader.decoder(), &a));
                 let refines_attr = e
                     .attributes()
                     .flatten()
@@ -1313,5 +1334,91 @@ mod tests {
         assert!(data.subtitle.is_none());
         assert!(data.number_of_pages.is_none());
         assert!(data.creators.is_empty());
+    }
+
+    #[test]
+    fn end_to_end_title_entity_decoded_exactly_once() {
+        // XML 1.0 section 4.4.2: entity inclusion is one replacement
+        // operation. A title meant to contain the literal text "A &amp; B"
+        // must be encoded in the OPF as "A &amp;amp; B"; the parser resolves
+        // the outer &amp; once, yielding "A &amp; B", and nothing downstream
+        // (the metadata sanitiser included) may resolve it a second time.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title>A &amp;amp; B</dc:title>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        let extracted = crate::services::metadata::extractor::extract(&data);
+        assert_eq!(extracted.title.as_deref(), Some("A &amp; B"));
+    }
+
+    #[test]
+    fn end_to_end_numeric_reference_lookalike_decoded_exactly_once() {
+        // Same shape as the amp case, but the literal text that must survive
+        // looks like a numeric character reference ("&#65;"). The outer
+        // &amp; is resolved once by the parser; the following "#65;" must
+        // stay literal digits rather than be reinterpreted as a second
+        // character reference by anything downstream.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:title>Item &amp;#65; End</dc:title>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        let extracted = crate::services::metadata::extractor::extract(&data);
+        assert_eq!(extracted.title.as_deref(), Some("Item &#65; End"));
+    }
+
+    #[test]
+    fn end_to_end_cdata_entity_like_text_stays_literal() {
+        // CDATA content is never escaped, so the five characters "&amp;"
+        // inside a CDATA section are literal text. That must hold true
+        // through the full validate -> extract pipeline, not just at the
+        // parse layer.
+        let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata>
+                <dc:description><![CDATA[&amp;]]></dc:description>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        let extracted = crate::services::metadata::extractor::extract(&data);
+        assert_eq!(extracted.description.as_deref(), Some("&amp;"));
+    }
+
+    #[test]
+    fn end_to_end_calibre_series_attribute_entity_decoded_exactly_once() {
+        // calibre:series is attribute-sourced (Empty-form <meta>), not
+        // element-text-sourced, so it exercises a different code path than
+        // the dc:title/dc:description cases above: the attribute value must
+        // be decoded at the parse boundary now that the sanitiser no longer
+        // decodes, and still only once end to end.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="calibre:series" content="Tom &amp;amp; Jerry"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        let extracted = crate::services::metadata::extractor::extract(&data);
+        assert_eq!(
+            extracted.series.as_ref().map(|s| s.name.as_str()),
+            Some("Tom &amp; Jerry")
+        );
     }
 }
