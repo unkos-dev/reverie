@@ -68,7 +68,11 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
 /// `{cover_dir}/{href}` so a future change to how `cover_dir` is derived cannot
 /// silently reintroduce path traversal before the ZIP lookup. Returns `None`
 /// for any unsafe path.
-fn join_sibling_path(cover_dir: &str, href: &str) -> Option<String> {
+///
+/// `pub(crate)` so [`crate::services::epub::cover_layer::validate`] can resolve
+/// siblings the same way this module does: one path-join implementation for
+/// both the serve and ingestion routes to a rasterized SVG cover.
+pub(crate) fn join_sibling_path(cover_dir: &str, href: &str) -> Option<String> {
     let sibling_path = if cover_dir.is_empty() {
         href.to_owned()
     } else {

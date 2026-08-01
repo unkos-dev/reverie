@@ -152,15 +152,21 @@ where
         .map_err(|e| CoverError::Decode(format!("png encode: {e}")))
 }
 
-/// Acceptance check for the ingestion validator (Layer 5). Does not rasterize
-/// and resolves no siblings — it answers "does this parse and clear the
+/// Parse/gate-only check reused by the ingestion validator (Layer 5) to
+/// classify *why* a full rasterization attempt failed. Does not rasterize and
+/// resolves no siblings: it answers "does this parse and clear the
 /// render-cost gate?". Shares [`parse_and_gate`] with serve-time
 /// [`rasterize_svg`], so the two cannot disagree on the parse/gate verdict: a
-/// cover that clears those gates here will not be rejected by them at serve. The
-/// serve path additionally rasterizes and rejects an all-transparent result, so
-/// an SVG that parses and is within budget but resolves to no visible pixels (an
-/// `<image>` whose sibling is absent at serve, or an empty `<svg>`) is accepted
-/// here yet falls back to the spine at serve — both avoid serving a blank cover.
+/// cover that clears those gates here will not be rejected by them at serve.
+///
+/// A `true` result is not sufficient on its own for ingestion to call a cover
+/// usable: an SVG can clear the parse/gate check yet still resolve to nothing
+/// visible (an `<image>` whose sibling is absent, or an empty `<svg>`), which
+/// is exactly what [`rasterize_svg`]'s all-transparent and non-positive-size
+/// checks reject. The validator calls [`rasterize_svg`] first, with the same
+/// sibling resolution serving uses, and falls back to this function only to
+/// tell a genuine parse/gate failure (worth an `UndecodableCover` issue) apart
+/// from a visibility-only one (not an error, just not usable).
 pub(crate) fn parses_as_svg(svg_bytes: &[u8]) -> bool {
     parse_and_gate(svg_bytes, |_: &str| None).is_ok()
 }

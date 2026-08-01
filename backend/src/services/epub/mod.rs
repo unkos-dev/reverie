@@ -193,8 +193,8 @@ pub struct ValidationReport {
     /// Parsed `OPF` data including Dublin Core metadata.
     pub opf_data: Option<opf_layer::OpfData>,
     /// Whether Layer 5 found a usable embedded cover (declared, present, and
-    /// decodable/parsable). `false` for `Quarantined` reports, since Layers
-    /// 1-4 return before Layer 5 ever runs.
+    /// decodable, or an `SVG` that rasterizes to a visible image). `false` for
+    /// `Quarantined` reports, since Layers 1-4 return before Layer 5 ever runs.
     pub has_usable_embedded_cover: bool,
 }
 
