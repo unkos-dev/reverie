@@ -613,11 +613,10 @@ async fn process_file(
     }
 
     // Pre-warm the thumbnail cover off the request path so the first library
-    // grid view is a warm cache hit instead of a cold rasterize. Best-effort,
-    // concurrency-bounded, and EPUB-only (the sole format with an embedded
-    // cover today). `current_file_hash` is `copy_result.sha256` (see
-    // `commit_ingest`), which keys the cover cache.
-    if matches!(format, ManifestationFormat::Epub) {
+    // grid view is a warm cache hit instead of a cold rasterize. Best-effort
+    // and concurrency-bounded. `current_file_hash` is `copy_result.sha256`
+    // (see `commit_ingest`), which keys the cover cache.
+    if should_warm_cover(format, has_embedded_cover) {
         crate::services::covers::spawn_warm_thumb(
             library_path.display().to_string(),
             manifestation_id,
@@ -627,6 +626,16 @@ async fn process_file(
     }
 
     ProcessResult::Complete
+}
+
+/// Whether an ingest should pre-warm the cover thumbnail. EPUB is the only
+/// format with an embedded cover, and a validated "no usable cover" makes the
+/// warm a guaranteed wasted rasterization, since the validator reached that
+/// verdict through the serve path's own extraction and rasterize routine.
+/// Unknown (validator crashed, or no validator ran) still warms: serve is the
+/// authority and a cold miss there is harmless.
+fn should_warm_cover(format: ManifestationFormat, has_embedded_cover: Option<bool>) -> bool {
+    matches!(format, ManifestationFormat::Epub) && has_embedded_cover != Some(false)
 }
 
 /// Manifestation-typed metadata for the initial insert, grouped so the
@@ -799,6 +808,15 @@ mod tests {
     use crate::config::CleanupMode;
     use crate::test_support::db::ingestion_pool_for;
 
+    #[test]
+    fn warms_only_when_a_cover_could_be_served() {
+        assert!(should_warm_cover(ManifestationFormat::Epub, Some(true)));
+        assert!(should_warm_cover(ManifestationFormat::Epub, None));
+        assert!(!should_warm_cover(ManifestationFormat::Epub, Some(false)));
+        assert!(!should_warm_cover(ManifestationFormat::Pdf, None));
+        assert!(!should_warm_cover(ManifestationFormat::Pdf, Some(true)));
+    }
+
     fn test_config_for(ingestion: &str, library: &str, quarantine: &str) -> Config {
         Config {
             port: 3000,
@@ -940,6 +958,20 @@ mod tests {
             status,
             ValidationStatus::Pending,
             "expected validation_status=pending for never-validated non-EPUB"
+        );
+
+        // Same reasoning for the cover flag: no validator ran, so it must
+        // stay NULL ("never checked"), not become false ("checked, no cover").
+        let has_cover = sqlx::query_scalar!(
+            "SELECT has_embedded_cover FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            has_cover, None,
+            "expected has_embedded_cover NULL for never-validated non-EPUB"
         );
     }
 

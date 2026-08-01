@@ -77,11 +77,13 @@ struct MetadataCoverage {
     has_description: i64,
     has_language: i64,
     has_isbn_13: i64,
+    // cover_path currently has no production writer, so in practice this
+    // measures embedded-cover coverage today. Kept out of the published
+    // description: which code paths happen to be unbuilt is not part of the
+    // contract and would go stale silently.
     /// A cover artefact is recorded: a sidecar (`cover_path`) or a usable
     /// embedded cover found at ingestion (`has_embedded_cover`). The two are
-    /// distinct artefacts and only the embedded cover is served; no ingestion
-    /// or enrichment path currently populates `cover_path`, so in practice
-    /// this measures embedded-cover coverage.
+    /// distinct artefacts; only the embedded cover is served.
     has_cover: i64,
 }
 

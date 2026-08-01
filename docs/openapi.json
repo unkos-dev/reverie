@@ -7625,7 +7625,7 @@
           "has_cover": {
             "type": "integer",
             "format": "int64",
-            "description": "A cover artefact is recorded: a sidecar (`cover_path`) or a usable\nembedded cover found at ingestion (`has_embedded_cover`). The two are\ndistinct artefacts and only the embedded cover is served; no ingestion\nor enrichment path currently populates `cover_path`, so in practice\nthis measures embedded-cover coverage."
+            "description": "A cover artefact is recorded: a sidecar (`cover_path`) or a usable\nembedded cover found at ingestion (`has_embedded_cover`). The two are\ndistinct artefacts; only the embedded cover is served."
           },
           "has_description": {
             "type": "integer",

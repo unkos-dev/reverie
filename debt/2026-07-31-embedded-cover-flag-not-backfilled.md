@@ -4,7 +4,7 @@ surfaces: [server-operator, developer]
 adopted: 2026-07-31
 adopted-because: fixing the dashboard cover-coverage metric to count embedded EPUB covers required a new has_embedded_cover column set at ingestion; no data already stored (no persisted per-manifestation validation-issue rows, and cover_path covers only the enrichment sidecar) can reconstruct that flag for existing rows without re-reading each file
 lift-when-class: internal-refactor
-lift-when: a backfill pass exists that re-runs the EPUB cover check (the epub::cover_layer logic) against every manifestation where format='epub' and has_embedded_cover IS NULL, and has been run against production
+lift-when: a backfill pass exists that re-runs the EPUB cover check (the epub::cover_layer logic) against every manifestation where format='epub' and has_embedded_cover IS NULL, and has been run against production; non-EPUB rows are out of the backfill's scope by design (no structural validator exists to derive a value for them) and stay NULL after the lift
 ---
 
 # Pre-migration manifestations have no embedded-cover flag
@@ -33,3 +33,10 @@ manifestation where `format='epub'` and `has_embedded_cover IS NULL`, using
 the same `epub::cover_layer` logic ingestion already runs, and run it against
 production. Until then the "Cover" metric undercounts embedded covers on
 libraries that predate this column.
+
+Non-EPUB rows are deliberately outside this lift: no structural validator
+exists for those formats, so their flag stays `NULL` and the metric counts
+them as uncovered permanently. That is a property of the metric's
+total-manifestations denominator, not of the missing backfill; narrowing the
+denominator to formats a cover check can run on is a separate product
+decision, and closing this entry does not resolve it.

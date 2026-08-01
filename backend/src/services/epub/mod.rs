@@ -193,8 +193,13 @@ pub struct ValidationReport {
     /// Parsed `OPF` data including Dublin Core metadata.
     pub opf_data: Option<opf_layer::OpfData>,
     /// Whether Layer 5 found a usable embedded cover (declared, present, and
-    /// decodable, or an `SVG` that rasterizes to a visible image). `false` for
-    /// `Quarantined` reports, since Layers 1-4 return before Layer 5 ever runs.
+    /// decodable, or an `SVG` that rasterizes to a visible image). Always
+    /// `false` for `Quarantined` reports, whether or not Layer 5 ran: a
+    /// quarantined report deliberately carries no salvaged signal, matching
+    /// the `None` returned for `accessibility_metadata` and `opf_data` at the
+    /// same sites, and any later re-examination of the file re-runs the
+    /// validator instead of trusting a report for a file that failed
+    /// structural validation.
     pub has_usable_embedded_cover: bool,
 }
 
