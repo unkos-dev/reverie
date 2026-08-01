@@ -28,7 +28,9 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 <type>(<scope>): <description>
 ```
 
-Branch names use the same type prefix: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`, `test/`, `perf/`. Breaking changes append `!` after the type or scope and explain the break in a `BREAKING CHANGE:` footer.
+The accepted types are the [config-conventional](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional) set, enforced by commitlint on every commit: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`.
+
+Branch names use the same type as their prefix (`feat/`, `fix/`, `refactor/`, and so on through the same list). Breaking changes append `!` after the type or scope and explain the break in a `BREAKING CHANGE:` footer.
 
 ## Development setup
 
