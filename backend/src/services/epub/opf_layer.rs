@@ -58,6 +58,19 @@ pub struct OpfData {
     /// the item's `id` — Standard Ebooks declare `id="cover.svg"` (not a magic
     /// id), so id-only detection misses them.
     pub cover_href: Option<String>,
+    /// Href of the manifest item referenced by the EPUB 2
+    /// `<meta name="cover" content="ID"/>` declaration, if any, resolved via
+    /// the manifest id lookup. The referenced `ID` is an author-chosen
+    /// manifest item id and is not necessarily one of the legacy magic ids
+    /// (`cover-image`, `cover`, ...), so this must be resolved independently
+    /// of the id heuristic. Only resolves when the referenced item's
+    /// `media-type` is an `image` type (matched case-insensitively per MIME
+    /// rules) -- real EPUB2s routinely point this
+    /// meta at the XHTML cover page rather than the image, and resolving that
+    /// would shadow the magic-id heuristic that would otherwise find the real
+    /// cover. `None` when no such meta exists, its `content` does not resolve
+    /// to a manifest item, or the resolved item is not an image.
+    pub meta_cover_href: Option<String>,
     /// Spine idrefs (after removing broken refs)
     pub spine_idrefs: Vec<String>,
     /// `OPF` path within the archive (needed by repair and other layers)
@@ -122,7 +135,17 @@ pub fn validate(
     let xml = std::str::from_utf8(&bytes).ok()?;
 
     let mut manifest: HashMap<String, String> = HashMap::new();
+    // id -> media-type, kept alongside `manifest` only to gate EPUB 2 meta
+    // cover resolution below (see `meta_cover_href` resolution): the public
+    // `OpfData.manifest` shape stays id -> href for every other consumer.
+    let mut manifest_media_types: HashMap<String, String> = HashMap::new();
     let mut cover_href: Option<String> = None;
+    // Manifest item id referenced by an EPUB 2 <meta name="cover"
+    // content="ID"/>, buffered raw and resolved against `manifest` after the
+    // parse pass (metadata precedes manifest in a well-formed OPF, but the
+    // buffer-and-resolve pattern makes resolution independent of order,
+    // consistent with group_positions/role_refines below).
+    let mut meta_cover_id: Option<String> = None;
     let mut spine_idrefs: Vec<String> = Vec::new();
     let mut accessibility_meta: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
@@ -202,6 +225,25 @@ pub fn validate(
                             .ok()
                             .map(std::string::ToString::to_string)
                     });
+                let name_attr = e
+                    .attributes()
+                    .flatten()
+                    .find(|a| a.key.as_ref() == b"name")
+                    .and_then(|a| {
+                        std::str::from_utf8(&a.value)
+                            .ok()
+                            .map(std::string::ToString::to_string)
+                    });
+
+                // EPUB 2 cover declaration in Start-tag form:
+                // <meta name="cover" content="ID"></meta>. First match wins,
+                // mirroring the cover_href property-item resolution below.
+                if meta_cover_id.is_none()
+                    && name_attr.as_deref() == Some("cover")
+                    && let Some(ref id) = content_attr
+                {
+                    meta_cover_id = Some(id.clone());
+                }
 
                 if let Some(ref prop) = prop {
                     if prop == "belongs-to-collection" {
@@ -401,6 +443,10 @@ pub fn validate(
                     match name.as_str() {
                         "calibre:series" => calibre_series_name = Some(c.clone()),
                         "calibre:series_index" => calibre_series_index = c.parse::<f64>().ok(),
+                        // EPUB 2 cover declaration: <meta name="cover"
+                        // content="ID"/>, the common self-closing form. First
+                        // match wins, mirroring the Start-tag arm above.
+                        "cover" if meta_cover_id.is_none() => meta_cover_id = Some(c.clone()),
                         _ => {}
                     }
                 }
@@ -500,6 +546,9 @@ pub fn validate(
                         // C4: validate href path safety via shared helper.
                         if super::is_safe_path(href) {
                             manifest.insert(id.clone(), href.clone());
+                            if let Some(media_type) = attrs.get("media-type") {
+                                manifest_media_types.insert(id.clone(), media_type.clone());
+                            }
                             // EPUB 3 cover detection: the cover is the item
                             // carrying `properties="cover-image"`, regardless of
                             // its id. `properties` is a space-separated token
@@ -536,6 +585,24 @@ pub fn validate(
             _ => {}
         }
     }
+
+    // Resolve the EPUB 2 meta-declared cover id against the manifest now that
+    // the full pass has completed. Real EPUB2s routinely point <meta
+    // name="cover"> at the XHTML cover PAGE while the actual image sits
+    // under a magic id (e.g. "cover-image") -- gate on media-type so a
+    // non-image target leaves this None and lets the id heuristic run
+    // instead of resolving to an undecodable page. Mirrors calibre's own
+    // cover-detection behavior.
+    let meta_cover_href = meta_cover_id.and_then(|id| {
+        let href = manifest.get(&id)?;
+        let media_type = manifest_media_types.get(&id)?;
+        // MIME type matching is case-insensitive (RFC 2045), so IMAGE/JPEG
+        // is as valid as image/jpeg.
+        let top_level = media_type.split('/').next().unwrap_or("");
+        top_level
+            .eq_ignore_ascii_case("image")
+            .then(|| href.clone())
+    });
 
     // Validate spine refs against manifest
     let manifest_ids: HashSet<&String> = manifest.keys().collect();
@@ -622,6 +689,7 @@ pub fn validate(
     Some(OpfData {
         manifest,
         cover_href,
+        meta_cover_href,
         spine_idrefs: valid_spine,
         opf_path: path.to_string(),
         accessibility_metadata,
@@ -712,6 +780,114 @@ mod tests {
         let mut issues = Vec::new();
         let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
         assert!(data.cover_href.is_none());
+    }
+
+    #[test]
+    fn epub2_meta_cover_self_closing_resolves_via_manifest_id() {
+        // EPUB 2 declaration: <meta name="cover" content="ID"/> is the common
+        // self-closing form (no text body -> quick-xml yields Event::Empty).
+        // The referenced id ("cvr") is not one of the legacy magic ids, so
+        // only the meta lookup can resolve it.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="cvr"/>
+            </metadata>
+            <manifest>
+                <item id="cvr" href="images/cover.jpg" media-type="image/jpeg"/>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.meta_cover_href.as_deref(), Some("images/cover.jpg"));
+    }
+
+    #[test]
+    fn epub2_meta_cover_uppercase_media_type_resolves() {
+        // MIME type matching is case-insensitive (RFC 2045); IMAGE/JPEG is
+        // as valid as image/jpeg and must pass the image gate.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="cvr"/>
+            </metadata>
+            <manifest>
+                <item id="cvr" href="images/cover.jpg" media-type="IMAGE/JPEG"/>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.meta_cover_href.as_deref(), Some("images/cover.jpg"));
+    }
+
+    #[test]
+    fn epub2_meta_cover_start_tag_form_resolves_via_manifest_id() {
+        // Non-self-closing form emitted by some toolchains: quick-xml yields
+        // Event::Start/Event::End rather than Event::Empty.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="cvr"></meta>
+            </metadata>
+            <manifest>
+                <item id="cvr" href="images/cover.jpg" media-type="image/jpeg"/>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(data.meta_cover_href.as_deref(), Some("images/cover.jpg"));
+    }
+
+    #[test]
+    fn meta_cover_pointing_to_non_image_item_falls_through_to_magic_id() {
+        // Real-world EPUB 2 shape: <meta name="cover"> targets the XHTML
+        // cover PAGE, not the image, while the actual cover image sits under
+        // the magic id `cover-image`. The media-type gate must reject the
+        // XHTML target so `meta_cover_href` stays None and the id heuristic
+        // still finds the real image (calibre applies the same gate).
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="titlepage"/>
+            </metadata>
+            <manifest>
+                <item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>
+                <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg"/>
+            </manifest>
+            <spine><itemref idref="titlepage"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert!(data.meta_cover_href.is_none());
+        assert_eq!(
+            crate::services::epub::cover_layer::find_cover_href(&data).as_deref(),
+            Some("images/cover.jpg")
+        );
+    }
+
+    #[test]
+    fn epub2_meta_cover_with_unknown_id_leaves_meta_cover_href_none() {
+        // The meta points at an id that isn't in the manifest at all -- must
+        // not resolve to a bogus href.
+        let opf = br#"<package>
+            <metadata>
+                <meta name="cover" content="does-not-exist"/>
+            </metadata>
+            <manifest>
+                <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine><itemref idref="ch1"/></spine>
+        </package>"#;
+        let handle = make_handle(opf);
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert!(data.meta_cover_href.is_none());
     }
 
     #[test]

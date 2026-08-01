@@ -119,14 +119,20 @@ fn validate_svg(
 /// Prefers the EPUB 3 standard: the manifest item carrying
 /// `properties="cover-image"` ([`OpfData::cover_href`]) — this is how Standard
 /// Ebooks (and most modern EPUBs) declare the cover, with an arbitrary `id`
-/// like `cover.svg`. Falls back to the legacy id heuristic (`id="cover-image"`,
-/// `id="cover"`, …) for EPUBs that predate the property.
+/// like `cover.svg`. Falls back to the EPUB 2 `<meta name="cover"
+/// content="ID"/>` declaration ([`OpfData::meta_cover_href`]) — an explicit
+/// author declaration outranks a guess, so this comes before the id
+/// heuristic. Falls back last to the legacy id heuristic (`id="cover-image"`,
+/// `id="cover"`, …) for EPUBs that predate both.
 ///
 /// Exported so `services::covers::extract` can mirror Step 5 detection
 /// semantics exactly — any divergence between the validation pass and the
 /// OPDS cover serve would be a silent correctness hazard.
 pub fn find_cover_href(opf: &OpfData) -> Option<String> {
     if let Some(href) = &opf.cover_href {
+        return Some(href.clone());
+    }
+    if let Some(href) = &opf.meta_cover_href {
         return Some(href.clone());
     }
     for id in &["cover-image", "cover", "Cover", "Cover-Image"] {
@@ -164,6 +170,7 @@ mod tests {
         OpfData {
             manifest,
             cover_href: None,
+            meta_cover_href: None,
             spine_idrefs: vec![],
             opf_path: "OEBPS/content.opf".to_string(),
             accessibility_metadata: None,
@@ -433,5 +440,46 @@ mod tests {
         // Legacy EPUBs without the property: the id heuristic still resolves.
         let opf = make_opf_data("cover", "cover.jpg");
         assert_eq!(find_cover_href(&opf).as_deref(), Some("cover.jpg"));
+    }
+
+    fn make_epub2_meta_opf(meta_href: &str) -> OpfData {
+        // The manifest id ("cvr") is deliberately not one of the legacy magic
+        // ids, so only the EPUB 2 <meta name="cover"> resolution can find it.
+        let mut opf = make_opf_data("cvr", meta_href);
+        opf.meta_cover_href = Some(meta_href.to_string());
+        opf
+    }
+
+    #[test]
+    fn find_cover_href_resolves_epub2_meta_only_cover() {
+        // Book declares its cover only via <meta name="cover" content="ID"/>,
+        // with no EPUB 3 property and no magic-id manifest item.
+        let opf = make_epub2_meta_opf("images/cover.jpg");
+        assert_eq!(find_cover_href(&opf).as_deref(), Some("images/cover.jpg"));
+    }
+
+    #[test]
+    fn find_cover_href_meta_beats_magic_id() {
+        // Both a resolved EPUB 2 meta cover and a magic-id manifest entry
+        // (a different image) exist -- the explicit meta declaration
+        // outranks the id guess.
+        let mut opf = make_opf_data("cover-image", "images/wrong-cover.jpg");
+        opf.meta_cover_href = Some("images/right-cover.jpg".to_string());
+        assert_eq!(
+            find_cover_href(&opf).as_deref(),
+            Some("images/right-cover.jpg")
+        );
+    }
+
+    #[test]
+    fn find_cover_href_property_wins_over_epub2_meta() {
+        // Both an EPUB 3 property="cover-image" and an EPUB 2 meta exist --
+        // the explicit modern property still wins over the meta fallback.
+        let mut opf = make_epub2_meta_opf("images/legacy-cover.jpg");
+        opf.cover_href = Some("images/modern-cover.svg".to_string());
+        assert_eq!(
+            find_cover_href(&opf).as_deref(),
+            Some("images/modern-cover.svg")
+        );
     }
 }
