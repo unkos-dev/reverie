@@ -1899,6 +1899,25 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn series_ref_from_row_fails_loud_on_decode_mismatch(pool: PgPool) {
+    // Pins the loud-but-handled contract directly at the row boundary: a
+    // column type drift must surface as an error, not degrade to a silent
+    // None. Swallowing this Err is what hid the original NUMERIC mismatch.
+    let row = sqlx::query(
+        "SELECT 'not-a-uuid'::text AS series_id, \
+                'Long Saga'::text AS series_name, \
+                'seven'::text AS series_position",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fetch mistyped row");
+    assert!(
+        super::series_ref_from_row(&row).is_err(),
+        "a series column decode mismatch must propagate as an error",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn work_endpoint_series_position_matches_stored_value(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
