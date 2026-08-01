@@ -7,4 +7,4 @@
 -- evaluation hazard together. The conversion is lossless: every stored
 -- value arrived through a float8 bind.
 ALTER TABLE public.series_works
-    ALTER COLUMN position TYPE double precision USING position::float8;
+ALTER COLUMN position TYPE double precision USING position::float8;
