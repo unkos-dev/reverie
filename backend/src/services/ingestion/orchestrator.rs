@@ -563,10 +563,12 @@ async fn process_file(
         &vars,
         &final_path_str,
         &copy_result,
-        format,
-        validation_status,
-        &accessibility_metadata,
-        has_embedded_cover,
+        ManifestationMeta {
+            format,
+            validation_status,
+            accessibility_metadata: &accessibility_metadata,
+            has_embedded_cover,
+        },
     )
     .await;
 
@@ -627,6 +629,15 @@ async fn process_file(
     ProcessResult::Complete
 }
 
+/// Manifestation-typed metadata for the initial insert, grouped so the
+/// commit signature does not grow a parameter per new column.
+struct ManifestationMeta<'a> {
+    format: ManifestationFormat,
+    validation_status: ValidationStatus,
+    accessibility_metadata: &'a Option<serde_json::Value>,
+    has_embedded_cover: Option<bool>,
+}
+
 /// Run the ingest DB sequence atomically and return `(work_id, manifestation_id)`.
 ///
 /// Sequence:
@@ -637,12 +648,8 @@ async fn process_file(
 ///   5. upgrade stub work with pointers if newly created
 ///   6. UPDATE manifestation canonical values + pointer columns from draft IDs
 #[expect(
-    clippy::too_many_arguments,
-    reason = "commit_ingest threads the full ingest context; bundling into a struct would be single-caller indirection"
-)]
-#[expect(
     clippy::ref_option,
-    reason = "commit_ingest is called with &extracted and &accessibility_metadata from a site that holds owned Options; changing to Option<&T> would require .as_ref() at every call site with no readability benefit"
+    reason = "commit_ingest is called with &extracted from a site that holds an owned Option; changing to Option<&T> would require .as_ref() at the call site with no readability benefit"
 )]
 async fn commit_ingest(
     pool: &PgPool,
@@ -650,10 +657,7 @@ async fn commit_ingest(
     vars: &std::collections::HashMap<String, String>,
     final_path_str: &str,
     copy_result: &copier::CopyResult,
-    format: ManifestationFormat,
-    validation_status: ValidationStatus,
-    accessibility_metadata: &Option<serde_json::Value>,
-    has_embedded_cover: Option<bool>,
+    meta: ManifestationMeta<'_>,
 ) -> Result<(Uuid, Uuid), sqlx::Error> {
     use crate::services::metadata::draft;
     use crate::services::metadata::extractor::ExtractedMetadata;
@@ -686,14 +690,14 @@ async fn commit_ingest(
          VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9) \
          RETURNING id",
         work_id,
-        format as ManifestationFormat,
+        meta.format as ManifestationFormat,
         final_path_str,
         &copy_result.sha256,
         file_size,
         ingestion_status as IngestionStatus,
-        validation_status as ValidationStatus,
-        accessibility_metadata.as_ref(),
-        has_embedded_cover,
+        meta.validation_status as ValidationStatus,
+        meta.accessibility_metadata.as_ref(),
+        meta.has_embedded_cover,
     )
     .fetch_one(&mut *tx)
     .await?;
