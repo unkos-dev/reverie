@@ -93,3 +93,11 @@ literal matching; EXPLAIN guards asserting the folded indexes serve
 Revisit on any Postgres image or unaccent change (the recomputation
 duty above) and if match-time folding ever extends to write-side
 identity (dedup uses raw-column similarity by design today).
+
+The identified hardening path for persistent deployments is a
+dictionary fingerprint: fold a canary corpus at migration time, store
+the digest alongside the schema, and compare at application startup,
+failing closed until the indexes and `search_vector` are rebuilt. That
+converts the silent staleness above into a loud refusal. Deliberately
+unbuilt while every database here is disposable; revisit with the
+first persistent deployment.

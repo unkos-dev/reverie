@@ -3,10 +3,12 @@
 -- unaccent_english text search configuration all survive: the deployed
 -- application binary names them in its query text (filters, search, suggest),
 -- so a schema-only rollback that dropped them would turn every one of those
--- read paths into a hard error. Left in place they are inert, and the reads
--- degrade to accent-sensitive matching over the restored raw indexes.
--- Removing them entirely requires rolling back the application image first;
--- the up migration tolerates their presence on reapply.
+-- read paths into a hard error. While that binary remains deployed its
+-- queries keep folding (correct results), but the restored raw indexes
+-- cannot serve folded expressions, so trigram reads run unindexed until the
+-- image rolls back too. Roll the image back first when index support
+-- matters; the raw indexes below serve the pre-folding binary. The up
+-- migration tolerates the preserved objects on reapply.
 
 DROP INDEX IF EXISTS public.idx_works_subtitle_trgm;
 CREATE INDEX idx_works_subtitle_trgm
