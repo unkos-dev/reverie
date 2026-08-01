@@ -12,10 +12,10 @@ name: reverie${REVERIE_COMPOSE_ENV:+_${REVERIE_COMPOSE_ENV}}
 
 services:
   postgres:
-    # A major-version bump can change the unaccent dictionary the folded
-    # search indexes were built under; this volume persists, so REINDEX the
+    # Any image change can alter the unaccent dictionary the folded search
+    # indexes were built under; this volume persists, so REINDEX the
     # immutable_unaccent indexes and recompute works.search_vector with the
-    # bump. See debt/2026-08-02-unaccent-dictionary-reindex-obligation.md.
+    # bump. See adr/2026-08-02-match-time-accent-folding.md.
     image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
     # Suffixed like the project so an alternate-env stack does not clash on
     # the global container namespace; the published host port and the socket

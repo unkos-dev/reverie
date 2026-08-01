@@ -43,10 +43,10 @@
 
 services:
   reverie-postgres:
-    # A major-version bump can change the unaccent dictionary the folded
-    # search indexes were built under; this volume persists, so REINDEX the
+    # Any image change can alter the unaccent dictionary the folded search
+    # indexes were built under; this volume persists, so REINDEX the
     # immutable_unaccent indexes and recompute works.search_vector with the
-    # bump. See debt/2026-08-02-unaccent-dictionary-reindex-obligation.md.
+    # bump. See adr/2026-08-02-match-time-accent-folding.md.
     image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     # Scope explicitly: postgres only needs bootstrap credentials and the
     # init-roles.sql password inputs. Loading the full app `.env` would

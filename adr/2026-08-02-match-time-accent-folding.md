@@ -52,9 +52,15 @@ Two subtleties are part of the decision, not incidental:
 
 - The `IMMUTABLE` declaration is a documented lie. Postgres marks
   `unaccent()` STABLE because the dictionary can change; wrapping it
-  trades a plan-time rejection for a silent-staleness risk on Postgres
-  major bumps. That obligation is tracked as debt with the REINDEX
-  duty recorded at the persistent database pin sites.
+  trades a plan-time rejection for silent staleness whenever the
+  effective dictionary changes. This is a permanent operating duty of
+  the design, not tracked debt: any change to the dictionary against a
+  persistent database (a Postgres image refresh, major bump or not; an
+  extension update; a rules-file change) requires a `REINDEX` of the
+  folded expression indexes and a `works.search_vector` recompute. CI
+  databases are created fresh per run and carry no such duty. The
+  warning lives at the dev and staging image pins, the only places a
+  dictionary change enters a persistent database here.
 - Escaping composes with folding in one direction only. The unaccent
   dictionary maps fullwidth punctuation into `%`/`_`/`\`, so LIKE
   escaping must run after folding, in SQL (`immutable_unaccent_like`);
@@ -65,7 +71,8 @@ Two subtleties are part of the decision, not incidental:
 - Good, because `garcia` finds `García` on search, suggest, and
   filters alike, with stored accents intact and every leg index-backed.
 - Bad, because index correctness now depends on dictionary stability
-  across Postgres upgrades with no failure signal (see the debt entry).
+  with no failure signal; the recomputation duty above is the
+  compensating control.
 - Bad, because schema rollback is deliberately partial: the wrappers,
   configuration, and extension survive the down migration so a deployed
   binary that names them degrades to accent-sensitive matching instead
@@ -83,6 +90,6 @@ literal matching; EXPLAIN guards asserting the folded indexes serve
 
 ## More Information
 
-Revisit on any Postgres major bump (the debt entry's REINDEX duty) and
-if match-time folding ever extends to write-side identity (dedup uses
-raw-column similarity by design today).
+Revisit on any Postgres image or unaccent change (the recomputation
+duty above) and if match-time folding ever extends to write-side
+identity (dedup uses raw-column similarity by design today).
