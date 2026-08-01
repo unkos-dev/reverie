@@ -12,7 +12,8 @@
 //! `content` attribute values (`attr_text`). Downstream consumers, including
 //! the metadata sanitiser, must treat those fields as already-decoded
 //! character data and must not decode them again. The remaining attributes
-//! (`id`, `idref`, `refines`, `name`, `property`, `href`) are read raw:
+//! (`id`, `idref`, `refines`, `name`, `property`, `properties`,
+//! `role`/`opf:role`, `media-type`, `href`) are read raw:
 //! they are reference keys compared only with each other or with literal
 //! vocabulary terms, where consistent raw readings still match, and `href`
 //! values in real EPUBs escape special characters with percent-encoding,
@@ -1545,6 +1546,9 @@ mod tests {
         // emits it in metadata routinely and this pipeline has always
         // decoded it. Kept literal, it would reach the UI as markup and be
         // re-escaped to `&amp;nbsp;` in the source file by OPF writeback.
+        // This pins the parse-layer boundary only: downstream whitespace
+        // normalisation collapses the U+00A0 to a plain space, so this is
+        // not an end-to-end NBSP preservation guarantee.
         let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
             <metadata>
                 <dc:title>Foo&nbsp;Bar</dc:title>
@@ -1729,7 +1733,9 @@ mod tests {
     fn nbsp_entity_resolves_in_attribute_value() {
         // The strict attribute decoder is handed the same resolver as the
         // element-text path, so `&nbsp;` in a content attribute decodes on
-        // the fast path without falling back to the lenient pass.
+        // the fast path without falling back to the lenient pass. Like the
+        // element-text case above, this pins the parse-layer boundary, not
+        // end-to-end NBSP survival.
         let opf = br#"<package>
             <metadata>
                 <meta name="calibre:series" content="Foo&nbsp;Saga"/>
@@ -1765,6 +1771,33 @@ mod tests {
         assert_eq!(
             data.series_meta.as_ref().map(|s| s.name.as_str()),
             Some("Nightside & Dawn &hellip; Saga \u{00E9}")
+        );
+    }
+
+    #[test]
+    fn lenient_attribute_normalises_literal_whitespace_before_references() {
+        // The lenient pass must normalise literal whitespace before
+        // expanding references, matching strict attribute-value
+        // normalisation ordering: the literal tab in the value becomes a
+        // space, while the tab produced by `&#x9;` survives as itself. The
+        // unknown entity forces the strict decoder to fail so the whole
+        // value goes through the lenient path.
+        let tab = '\t';
+        let opf = format!(
+            r#"<package>
+            <metadata>
+                <meta name="calibre:series" content="A&#x9;B{tab}C &bogus;"/>
+            </metadata>
+            <manifest/>
+            <spine/>
+        </package>"#
+        );
+        let handle = make_handle(opf.as_bytes());
+        let mut issues = Vec::new();
+        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
+        assert_eq!(
+            data.series_meta.as_ref().map(|s| s.name.as_str()),
+            Some("A\tB C &bogus;")
         );
     }
 
