@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET cover_path = $1, has_embedded_cover = false WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "385423ce9de22aec8bf3d7ff674b9579462b764dcb02a18b3bfb14b35c2700fe"
+}

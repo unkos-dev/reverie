@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT has_embedded_cover FROM manifestations WHERE file_path = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_embedded_cover",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "has_embedded_cover"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f083d09e93b28ecff8a306b919e86c0d149720d75d3c965f0b8849cf991eadd0"
+}

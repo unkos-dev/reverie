@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status) VALUES ($1, ($2::text)::manifestation_format, $3, $4, $4, $5, 'complete'::ingestion_status, ($6::text)::validation_status) RETURNING id",
+  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, has_embedded_cover, cover_path) VALUES ($1, ($2::text)::manifestation_format, $3, $4, $4, $5, 'complete'::ingestion_status, ($6::text)::validation_status, $7, $8) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,8 @@
         "Text",
         "Text",
         "Int8",
+        "Text",
+        "Bool",
         "Text"
       ]
     },
@@ -29,5 +31,5 @@
       false
     ]
   },
-  "hash": "c5daf2734ad2763807af98325b25e41e25f5088cffee964988946630b71d010f"
+  "hash": "6130d7b974d7ad2e5e279ad4f5b78c78936d2015af583c87cce2c2807986d23c"
 }
