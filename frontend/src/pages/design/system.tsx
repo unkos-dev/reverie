@@ -107,7 +107,7 @@ export default function DesignSystemPage(): ReactElement {
 
         <Section
           title="Buttons"
-          description="Brand rule: bg-accent (Reverie Gold) is reserved for large CTAs, focus rings, and recovery actions on Light theme — the 8E6F38 darkened gold passes AA at 18pt+ but not at 14pt body. Default-size actions use the outline variant; lg size unlocks the gold fill."
+          description="Brand rule: the bg-accent gold fill (A77C00 on Light) is reserved for large CTAs and recovery actions as a brand restriction, not a contrast concession. The fill carries contrast through its Ink text (5.11:1, AA at any size); gold that must read as text or a hairline uses the darker accent-text step. Default-size actions use the outline variant; lg size unlocks the gold fill."
         >
           <Example label="Primary action (large CTA)">
             <Button size="lg">Add to library</Button>
