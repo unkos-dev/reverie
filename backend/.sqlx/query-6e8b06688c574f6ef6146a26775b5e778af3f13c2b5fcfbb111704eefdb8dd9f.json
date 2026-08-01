@@ -353,7 +353,12 @@
         "ordinal": 30,
         "name": "series_position?: f64",
         "type_info": "Float8",
-        "origin": "Expression"
+        "origin": {
+          "Table": {
+            "table": "series_works",
+            "name": "position"
+          }
+        }
       }
     ],
     "parameters": {

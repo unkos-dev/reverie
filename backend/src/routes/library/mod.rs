@@ -386,7 +386,7 @@ async fn list(
     for r in page_rows {
         let m_id: Uuid = r.get("id");
         let work_id: Uuid = r.get("work_id");
-        let series = series_ref_from_row(r);
+        let series = series_ref_from_row(r)?;
         let ingestion_raw: String = r.get("ingestion_status");
         let enrichment_raw: String = r.get("enrichment_status");
         items.push(BookListRow {
@@ -476,14 +476,24 @@ pub(crate) fn parse_enrichment(raw: &str) -> Result<EnrichmentStatus, AppError> 
     }
 }
 
-fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Option<SeriesRef> {
-    let id: Option<Uuid> = r.try_get("series_id").ok().flatten();
-    let name: Option<String> = r.try_get("series_name").ok().flatten();
-    let position: Option<f64> = r.try_get("series_position").ok().flatten();
-    match (id, name) {
+fn series_ref_from_row(r: &sqlx::postgres::PgRow) -> Result<Option<SeriesRef>, AppError> {
+    // Fallible decode at the same loud-but-handled boundary as
+    // validation_status above: a column type drift here must surface as a
+    // 500, not silently drop series from every list row. Swallowing the Err
+    // arm is what hid the NUMERIC decode mismatch on this exact path.
+    let id: Option<Uuid> = r
+        .try_get("series_id")
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("series_id decode failed: {e}")))?;
+    let name: Option<String> = r
+        .try_get("series_name")
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("series_name decode failed: {e}")))?;
+    let position: Option<f64> = r
+        .try_get("series_position")
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("series_position decode failed: {e}")))?;
+    Ok(match (id, name) {
         (Some(id), Some(name)) => Some(SeriesRef { id, name, position }),
         _ => None,
-    }
+    })
 }
 
 /// Push the generalized keyset "advance past the cursor" predicate for

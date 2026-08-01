@@ -525,9 +525,11 @@ async fn list_endpoint_series_position_matches_stored_value(pool: PgPool) {
     let body: serde_json::Value = response.json();
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
-    // Same NUMERIC-decoded-as-float8 hazard as the detail endpoint: the
-    // list query's LATERAL join must also cast `sw.position::float8`
-    // before sqlx decodes it.
+    // The list path fails differently from the detail endpoint: its dynamic
+    // QueryBuilder rows go through series_ref_from_row, where a column type
+    // mismatch surfaces as a decode error rather than garbage bytes. That
+    // error was once discarded into a silent null; this pins the ordinal
+    // actually reaching the API payload.
     let position = items[0]["series"]["position"].as_f64().unwrap();
     assert!(
         (position - 7.0).abs() < 1e-9,
@@ -1720,9 +1722,9 @@ async fn detail_endpoint_series_position_matches_stored_value(pool: PgPool) {
     .fetch_one(&ingestion_pool)
     .await
     .expect("insert series");
-    // Cast through float8 on write, matching the real enrichment writer
-    // (models::work::upgrade_stub) so this test exercises the same
-    // NUMERIC column shape production data has.
+    // Bind through float8 on write, matching the real enrichment writer
+    // (models::work::upgrade_stub) so this test stores the ordinal the way
+    // production data arrives.
     sqlx::query!(
         "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
         series_id,
@@ -1740,10 +1742,11 @@ async fn detail_endpoint_series_position_matches_stored_value(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
     let body: serde_json::Value = response.json();
-    // Regression guard: reading `series_works.position` (NUMERIC)
-    // without a SQL-level `::float8` cast lets sqlx decode the NUMERIC
-    // wire bytes as if they were an IEEE-754 float8, producing a
-    // denormal garbage value instead of the true ordinal.
+    // Regression guard: when this column was NUMERIC, a macro read without
+    // a SQL-level `::float8` cast decoded the NUMERIC wire bytes as if they
+    // were an IEEE-754 float8, producing a denormal garbage value. The
+    // column is double precision now; this stays as the end-to-end pin that
+    // the stored ordinal survives to the API.
     let position = body["series"]["position"].as_f64().unwrap();
     assert!(
         (position - 85.0).abs() < 1e-9,

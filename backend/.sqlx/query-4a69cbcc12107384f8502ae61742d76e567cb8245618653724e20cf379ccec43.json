@@ -29,7 +29,12 @@
         "ordinal": 2,
         "name": "position?",
         "type_info": "Float8",
-        "origin": "Expression"
+        "origin": {
+          "Table": {
+            "table": "series_works",
+            "name": "position"
+          }
+        }
       }
     ],
     "parameters": {
@@ -40,7 +45,7 @@
     "nullable": [
       false,
       false,
-      null
+      true
     ]
   },
   "hash": "4a69cbcc12107384f8502ae61742d76e567cb8245618653724e20cf379ccec43"
