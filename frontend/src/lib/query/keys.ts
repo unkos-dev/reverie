@@ -10,7 +10,7 @@
  * objects are passed in by reference — react-query handles structural
  * equality on the key, so equal params hit the same cache slot.
  */
-import type { ListBooksParams } from "@/api";
+import type { ArrayParamKey, ListBooksParams } from "@/api";
 import type { SuggestKind } from "@/api/suggest";
 
 /** Tuple for the root books namespace. */
@@ -34,16 +34,20 @@ function byCodepoint(a: string, b: string): number {
   return 0;
 }
 
-/** The `ListBooksParams` keys whose value is a string array (the vocab/author
- *  set filters), so `normalizeListParams` can sort them without widening to
- *  `never`. */
-type ArrayParamKey = {
-  [K in keyof ListBooksParams]-?: NonNullable<ListBooksParams[K]> extends readonly string[]
-    ? K
-    : never;
-}[keyof ListBooksParams];
+/**
+ * Identity that also proves the list complete: when any `ArrayParamKey` is
+ * missing, the `Exclude` is non-`never` and the parameter type collapses to
+ * `never`, failing compilation. Completeness matters because a key this list
+ * misses silently skips normalization and re-fragments the cache by value
+ * order; the element constraint rejects bogus keys in the other direction.
+ */
+function exhaustiveArrayParamKeys<K extends readonly ArrayParamKey[]>(
+  keys: K & ([Exclude<ArrayParamKey, K[number]>] extends [never] ? unknown : never),
+): readonly ArrayParamKey[] {
+  return keys;
+}
 
-const ARRAY_PARAM_KEYS: readonly ArrayParamKey[] = [
+const ARRAY_PARAM_KEYS = exhaustiveArrayParamKeys([
   "author",
   "author_any",
   "author_none",
@@ -58,7 +62,7 @@ const ARRAY_PARAM_KEYS: readonly ArrayParamKey[] = [
   "mood_none",
   "status_any",
   "status_none",
-];
+] as const);
 
 /**
  * Sort every array-valued filter param with the same locale-independent

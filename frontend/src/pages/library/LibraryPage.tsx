@@ -61,6 +61,7 @@ import {
   FILTER_PARAM_KEYS,
   paramsFromSearch,
   parseFilterParams,
+  PURGE_ONLY_PARAM_KEYS,
   viewFromSearch,
   type LibraryView,
 } from "@/routes/library-params";
@@ -207,6 +208,7 @@ function LibraryContent(): ReactElement {
     applyParams(
       (params) => {
         for (const key of FILTER_PARAM_KEYS) params.delete(key);
+        for (const key of PURGE_ONLY_PARAM_KEYS) params.delete(key);
         params.delete("cursor");
         return params;
       },

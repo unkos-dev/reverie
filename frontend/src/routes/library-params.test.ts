@@ -7,7 +7,9 @@ import {
   hasActiveFilterState,
   parseFilterParams,
   paramsFromSearch,
+  PURGE_ONLY_PARAM_KEYS,
   serializeFilterParams,
+  TEXT_COLUMN_OPS,
   viewFromSearch,
   type FilterState,
 } from "./library-params";
@@ -241,6 +243,52 @@ describe("serializeFilterParams", () => {
     const params = search("title_empty=true");
     serializeFilterParams(parseFilterParams(params), params);
     expect(params.has("title_empty")).toBe(false);
+  });
+});
+
+describe("dead text params (no wire predicate)", () => {
+  /** Every dead key with a value each live sibling op would accept. */
+  function deadQuery(): string {
+    return PURGE_ONLY_PARAM_KEYS.map((key) => `${key}=true`).join("&");
+  }
+
+  test("covers exactly the column/op pairs the ops table omits", () => {
+    expect([...PURGE_ONLY_PARAM_KEYS].sort()).toEqual([
+      "isbn_13_ne",
+      "subtitle_eq",
+      "subtitle_ne",
+      "title_empty",
+    ]);
+  });
+
+  test("parse drops every dead param instead of surfacing an unremovable chip", () => {
+    expect(parseFilterParams(search(deadQuery()))).toEqual(emptyFilterState());
+  });
+
+  test("the wire projection never sends a dead param", () => {
+    expect(paramsFromSearch(search(deadQuery()))).toEqual({});
+  });
+
+  test("any filter rewrite sweeps dead params off the URL", () => {
+    const params = search(deadQuery());
+    serializeFilterParams(parseFilterParams(params), params);
+    for (const key of PURGE_ONLY_PARAM_KEYS) expect(params.has(key)).toBe(false);
+  });
+});
+
+describe("TEXT_COLUMN_OPS wire sync", () => {
+  test("every declared op round-trips URL -> state -> wire", () => {
+    // Locks the explicit projection in `assignText` to the ops table: an op
+    // added to the table without a matching projection branch fails here as
+    // a dead param (parsed but never sent).
+    for (const [column, ops] of Object.entries(TEXT_COLUMN_OPS)) {
+      for (const op of ops) {
+        const key = `${column}_${op}`;
+        const raw = op === "empty" ? "true" : "x";
+        const sent = op === "empty" ? true : "x";
+        expect(paramsFromSearch(search(`${key}=${raw}`)), key).toEqual({ [key]: sent });
+      }
+    }
   });
 });
 
