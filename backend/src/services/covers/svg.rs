@@ -486,9 +486,12 @@ where
     let fetched_bytes = AtomicUsize::new(0);
     usvg::ImageHrefResolver {
         // THREAT: default data resolver wraps base64 payloads without bounding
-        // decode size. Apply the same byte+megapixel guard. (Data-URI payloads
-        // live inside the SVG bytes, already input-capped, so they need no
-        // cumulative budget.)
+        // decode size. Apply the same byte+megapixel guard. Data-URI payloads
+        // live inside the input-capped SVG bytes, so total encoded bytes are
+        // bounded without a cumulative budget here. That cap says nothing
+        // about decode cost: each admitted image may decode to the per-image
+        // megapixel cap at render, so aggregate decode work is bounded only
+        // by the node budget in check_render_complexity.
         resolve_data: Box::new(|_mime, data, _opts| safe_image_kind(data)),
         // THREAT: default string resolver reads local files. Restrict to
         // path-checked siblings inside the same EPUB ZIP, within the
