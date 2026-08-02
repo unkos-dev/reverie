@@ -208,4 +208,32 @@ done
 expect_message "prerelease NODE_VERSION names itself as the cause" \
   "prereleases are rejected by policy"
 
+# Negative controls on the hint itself. `case` arms are ordered, so a
+# prerelease glob broader than semver's separator silently wins for any
+# hyphen-bearing value. The alias case is not hypothetical: devDependencies
+# .vite in both package files already carries that exact shape.
+expect_no_message() {
+  local name="$1" unwanted="$2" out
+  out="$( (cd "$tmp" && "$checker") 2>&1 || true)"
+  if [[ $out == *"$unwanted"* ]]; then
+    echo "FAIL ${name}: message should not mention '${unwanted}', got: ${out}"
+    fail=1
+  else
+    echo "ok   ${name}"
+  fi
+}
+
+for typo in "0-2-6" "0.2-6" "npm:@voidzero-dev/vite-plus-core@0.2.6"; do
+  consistent_tree "$typo"
+  expect_no_message "malformed vite-plus pin (${typo}) is not called a prerelease" \
+    "prereleases are rejected"
+done
+
+baseline
+for f in ci docs-build scheduled-audit; do
+  workflow "$REF" "24-18-0" "${tmp}/.github/workflows/${f}.yml"
+done
+expect_no_message "malformed NODE_VERSION (24-18-0) is not called a prerelease" \
+  "prereleases are rejected"
+
 exit "$fail"

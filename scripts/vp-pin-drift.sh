@@ -44,9 +44,15 @@ exact_version() {
 # Report a value the shape check rejected, naming a prerelease as itself. The
 # generic wording sends a maintainer who deliberately pinned one looking for a
 # parse bug rather than at the policy above.
+#
+# The prerelease arm matches semver's prerelease separator, a `-` after three
+# numeric components, not a bare hyphen. `case` arms are ordered, so `*-*`
+# would win for `0-2-6` and for the `npm:@voidzero-dev/vite-plus-core@0.2.6`
+# alias spec both package files already carry, answering a malformed pin with
+# an instruction to remove a prerelease that was never there.
 shape_hint() {
   case "$1" in
-    *-*) echo "prereleases are rejected by policy; pin a stable release" ;;
+    [0-9]*.[0-9]*.[0-9]*-*) echo "prereleases are rejected by policy; pin a stable release" ;;
     "" | null) echo "the pin is absent" ;;
     *) echo "expected an exact x.y.z version" ;;
   esac
