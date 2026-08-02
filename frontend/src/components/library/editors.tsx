@@ -18,12 +18,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { FilterState, RangeFilter, SetFilter, TextFilter } from "@/routes/library-params";
+import {
+  isTextOp,
+  type FilterState,
+  type RangeFilter,
+  type SetFilter,
+  type TextFilter,
+  type TextOp,
+} from "@/routes/library-params";
 
 import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
-/** A text-column comparator. `empty` filters on the column being null. */
-export type TextOp = "contains" | "eq" | "ne" | "empty";
+export type { TextOp };
 
 const TEXT_OP_LABELS: Record<TextOp, string> = {
   contains: "contains",
@@ -46,10 +52,6 @@ function textFilterFor(op: TextOp, text: string): TextFilter {
   if (op === "contains") return { contains: text };
   if (op === "eq") return { eq: text };
   return { ne: text };
-}
-
-function isTextOp(value: string): value is TextOp {
-  return value === "contains" || value === "eq" || value === "ne" || value === "empty";
 }
 
 type TextFilterEditorProps = {

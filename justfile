@@ -158,10 +158,24 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # watchers. They must also sit on real storage, because a worktree on a tmpfs
 # loses unpushed commits at reboot; this recipe refuses to create one there.
 #
-# The branch arrives through "$@" rather than a {{ }} substitution: just
-# expands substitutions into the script text before bash parses it, and
-# double quotes do not stop command substitution, so a branch name
-# containing $() would execute. Git permits such names.
+# The branch (and optional base) arrive through "$@" rather than a {{ }}
+# substitution: just expands substitutions into the script text before bash
+# parses it, and double quotes do not stop command substitution, so a branch
+# name containing $() would execute. Git permits such names.
+#
+# BRANCH resolution, in order: an existing local branch of that name is
+# reused as-is; failing that, an existing origin/<branch> is checked out as a
+# new tracking branch; failing that, a brand-new branch is created and its
+# start point comes from scripts/worktree-base.sh, which prefers origin/main,
+# then falls back to a local main, and fails when neither exists rather than
+# guessing: the only remaining candidate is the invoking checkout's current
+# HEAD, and basing a new branch on that silently carries the checked-out
+# branch's own commits into every new worktree (pass HEAD as BASE to opt in
+# deliberately). BASE, when given, is an explicit start point that
+# overrides that whole chain for the brand-new-branch case; it is validated
+# and the recipe fails clearly if it does not resolve. BASE has no effect on
+# the first two cases, since an existing branch (local or remote-tracking)
+# already has its own history to build on.
 #
 # The worktree also gets its own `.cargo/config.toml` pinning `target-dir` to
 # its local `target/`, so concurrent worktree builds never share (and thrash)
@@ -170,13 +184,14 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; warns if Cargo environment overrides defeat isolation.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; a new branch bases on origin/main (falling back to local main, failing when neither exists) unless BASE is given explicitly; warns if Cargo environment overrides defeat isolation.
 [group('git')]
 [positional-arguments]
-worktree branch:
+worktree branch base="":
     #!/usr/bin/env bash
     set -ueo pipefail
     branch="$1"
+    base="${2:-}"
     slug="$(printf '%s' "$branch" | tr '/' '-')"
     dest={{ quote(worktree_root) }}"/reverie/${slug}"
     parent="$(dirname "$dest")"
@@ -204,7 +219,17 @@ worktree branch:
     elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
         git worktree add --track -b "$branch" "$dest" "origin/${branch}"
     else
-        git worktree add -b "$branch" "$dest"
+        # A genuinely new branch needs an explicit start point: left to its
+        # own default, `git worktree add -b` bases it on the CALLER's current
+        # HEAD, so invoking this recipe from a feature branch silently
+        # carried that branch's commits into the new worktree. Delegate the
+        # choice to scripts/worktree-base.sh so the resolution chain (and its
+        # selftest) live in one place.
+        base_resolution="$(scripts/worktree-base.sh "$branch" "$base")"
+        base_mode="${base_resolution%% *}"
+        base_ref="${base_resolution#* }"
+        echo "worktree base: ${base_mode} (${base_ref})"
+        git worktree add -b "$branch" "$dest" "$base_ref"
     fi
     # Trust is keyed to Codex's canonical absolute project path, so use the
     # physical paths Codex will resolve instead of preserving a symlinked

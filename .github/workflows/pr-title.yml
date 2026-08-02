@@ -1,0 +1,48 @@
+# Squash merging composes the merge commit from the pull request title and
+# body, so the title is the one commit subject commitlint's commit-msg hook
+# never sees: branch commits are linted and then discarded by the squash,
+# while the string that actually lands on main (and that release-please
+# parses) would go unvalidated. This lints the title with the same shared
+# config on every edit, closing that gap. Kept out of ci.yml so a title
+# edit reruns only this check, not the full CI matrix.
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+env:
+  # renovate: datasource=npm depName=vite-plus
+  VP_VERSION: "0.2.6"
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: "24.18.1"
+
+jobs:
+  commitlint:
+    name: PR title lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          version: ${{ env.VP_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
+          cache: true
+
+      - name: Install workspace
+        run: vp install
+
+      # The title is attacker-controlled input on a public repository; it
+      # reaches the shell only through the environment, never through
+      # template interpolation into the script text.
+      - name: Lint pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx --no-install commitlint

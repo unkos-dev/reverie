@@ -10,7 +10,7 @@
  * objects are passed in by reference — react-query handles structural
  * equality on the key, so equal params hit the same cache slot.
  */
-import type { ListBooksParams } from "@/api";
+import type { ArrayParamKey, ListBooksParams } from "@/api";
 import type { SuggestKind } from "@/api/suggest";
 
 /** Tuple for the root books namespace. */
@@ -34,13 +34,60 @@ function byCodepoint(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * Identity that also proves the list complete: when any `ArrayParamKey` is
+ * missing, the `Exclude` is non-`never` and the parameter type collapses to
+ * `never`, failing compilation. Completeness matters because a key this list
+ * misses silently skips normalization and re-fragments the cache by value
+ * order; the element constraint rejects bogus keys in the other direction.
+ */
+function exhaustiveArrayParamKeys<K extends readonly ArrayParamKey[]>(
+  keys: K & ([Exclude<ArrayParamKey, K[number]>] extends [never] ? unknown : never),
+): readonly ArrayParamKey[] {
+  return keys;
+}
+
+const ARRAY_PARAM_KEYS = exhaustiveArrayParamKeys([
+  "author",
+  "author_any",
+  "author_none",
+  "tag",
+  "tag_any",
+  "tag_none",
+  "genre",
+  "genre_any",
+  "genre_none",
+  "mood",
+  "mood_any",
+  "mood_none",
+  "status_any",
+  "status_none",
+] as const);
+
+/**
+ * Sort every array-valued filter param with the same locale-independent
+ * comparator `authors.resolve` uses. Two filter sets that differ only in
+ * the order their multi-value params were appended to the URL (e.g. tag
+ * chips added in a different sequence) must hit the same cache slot rather
+ * than fragmenting into two.
+ */
+function normalizeListParams(params: ListBooksParams): ListBooksParams {
+  const normalized: ListBooksParams = { ...params };
+  for (const key of ARRAY_PARAM_KEYS) {
+    const value = normalized[key];
+    if (value !== undefined) normalized[key] = [...value].sort(byCodepoint);
+  }
+  return normalized;
+}
+
 /** Read-only key arrays — `as const` makes them tuples for TS narrowing. */
 export const queryKeys = {
   books: {
     /** Root namespace; invalidate to wipe every books-* cache slot. */
     all: ["books"] as const satisfies BooksAllKey,
     /** List endpoint with filters/sort/cursor. Distinct params = distinct slot. */
-    list: (params: ListBooksParams): BooksListKey => ["books", "list", params] as const,
+    list: (params: ListBooksParams): BooksListKey =>
+      ["books", "list", normalizeListParams(params)] as const,
     /** Prefix of the whole detail family; invalidate to mark every cached
      *  book detail stale (refetches only the ones currently on screen). */
     detailsAll: ["books", "detail"] as const satisfies BookDetailsAllKey,

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO works (title, sort_title) VALUES ('Émile Zola', 'Émile Zola')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e0c54f516cf4ddc8d7a836e2affca26ce1ab5970ff88f2d6d7876858cdc3edee"
+}

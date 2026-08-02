@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = COALESCE($3, has_embedded_cover) WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "64e09c4f843d3157f8917755cef71ebae3ac8aa1301d9c3c1382613be96128ed"
+}

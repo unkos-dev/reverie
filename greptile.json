@@ -24,12 +24,14 @@
   "excludeAuthors": ["renovate[bot]", "dependabot[bot]", "github-actions[bot]"],
   "excludeBranches": [
     "release-please--**",
+    "build/**",
     "chore/**",
     "docs/**",
     "test/**",
     "perf/**",
     "ci/**",
     "revert/**",
+    "style/**",
     "agent/**"
   ],
   "ignorePatterns": [
@@ -241,7 +243,7 @@
       {
         "id": "conventional-commits",
         "severity": "low",
-        "rule": "Conventional Commits are mandatory. Branch names follow GitHub Flow with prefixes feat/, fix/, refactor/, docs/, chore/, test/."
+        "rule": "Conventional Commits are mandatory. Branch names follow GitHub Flow, prefixed with any commitlint-accepted type (build/, chore/, ci/, docs/, feat/, fix/, perf/, refactor/, revert/, style/, test/)."
       },
       {
         "id": "outbound-user-agent",

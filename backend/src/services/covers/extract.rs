@@ -13,10 +13,12 @@ use super::svg;
 use crate::services::epub::{container_layer, cover_layer, is_safe_path, opf_layer, zip_layer};
 
 /// Read the EPUB at `epub_path`, locate the cover (EPUB 3
-/// `properties="cover-image"`, falling back to the legacy id heuristic), and
-/// return its raw bytes + detected `ImageFormat`. `SVG`-declared covers are
-/// rasterized to `PNG` at this boundary. Returns [`CoverError::NoCover`] when
-/// no cover is declared or the declared file is missing.
+/// `properties="cover-image"`, falling back to the EPUB 2 `<meta
+/// name="cover" content="ID"/>` declaration, falling back last to the legacy
+/// id heuristic), and return its raw bytes + detected `ImageFormat`.
+/// `SVG`-declared covers are rasterized to `PNG` at this boundary. Returns
+/// [`CoverError::NoCover`] when no cover is declared or the declared file is
+/// missing.
 pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
     // zip_layer::validate emits issues into a Vec rather than returning them;
     // we need the ZipHandle but don't care about its advisory issues here
@@ -68,7 +70,11 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
 /// `{cover_dir}/{href}` so a future change to how `cover_dir` is derived cannot
 /// silently reintroduce path traversal before the ZIP lookup. Returns `None`
 /// for any unsafe path.
-fn join_sibling_path(cover_dir: &str, href: &str) -> Option<String> {
+///
+/// `pub(crate)` so [`crate::services::epub::cover_layer::validate`] can resolve
+/// siblings the same way this module does: one path-join implementation for
+/// both the serve and ingestion routes to a rasterized SVG cover.
+pub(crate) fn join_sibling_path(cover_dir: &str, href: &str) -> Option<String> {
     let sibling_path = if cover_dir.is_empty() {
         href.to_owned()
     } else {

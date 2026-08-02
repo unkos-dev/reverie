@@ -494,6 +494,50 @@ async fn list_endpoint_multi_series_work_does_not_duplicate(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_series_position_matches_stored_value(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "list-series-pos", "Volume Seven").await;
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert series");
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+        series_id,
+        work_id,
+        7.0_f64,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert series_works");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    // The list path fails differently from the detail endpoint: its dynamic
+    // QueryBuilder rows go through series_ref_from_row, where a column type
+    // mismatch surfaces as a decode error rather than garbage bytes. That
+    // error was once discarded into a silent null; this pins the ordinal
+    // actually reaching the API payload.
+    let position = items[0]["series"]["position"].as_f64().unwrap();
+    assert!(
+        (position - 7.0).abs() < 1e-9,
+        "series.position must equal the stored ordinal, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1666,6 +1710,51 @@ async fn detail_endpoint_timestamps_are_rfc3339_strings(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_series_position_matches_stored_value(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, m_id) = insert_book(&ingestion_pool, "series-pos", "Volume Eighty-Five").await;
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert series");
+    // Bind through float8 on write, matching the real enrichment writer
+    // (models::work::upgrade_stub) so this test stores the ordinal the way
+    // production data arrives.
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+        series_id,
+        work_id,
+        85.0_f64,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert series_works");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    // Regression guard: when this column was NUMERIC, a macro read without
+    // a SQL-level `::float8` cast decoded the NUMERIC wire bytes as if they
+    // were an IEEE-754 float8, producing a denormal garbage value. The
+    // column is double precision now; this stays as the end-to-end pin that
+    // the stored ordinal survives to the API.
+    let position = body["series"]["position"].as_f64().unwrap();
+    assert!(
+        (position - 85.0).abs() < 1e-9,
+        "series.position must equal the stored ordinal, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_endpoint_hidden_id_returns_404(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1806,6 +1895,61 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
     assert!(
         body["series"].is_null(),
         "no series seeded → series must surface null, got {body}",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn series_ref_from_row_fails_loud_on_decode_mismatch(pool: PgPool) {
+    // Pins the loud-but-handled contract directly at the row boundary: a
+    // column type drift must surface as an error, not degrade to a silent
+    // None. Swallowing this Err is what hid the original NUMERIC mismatch.
+    let mistyped_series_row_sql = "SELECT 'not-a-uuid'::text AS series_id, \
+         'Long Saga'::text AS series_name, \
+         'seven'::text AS series_position";
+    let row = sqlx::query(mistyped_series_row_sql)
+        .fetch_one(&pool)
+        .await
+        .expect("fetch mistyped row");
+    assert!(
+        super::series_ref_from_row(&row).is_err(),
+        "a series column decode mismatch must propagate as an error",
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn work_endpoint_series_position_matches_stored_value(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (work_id, _m_id) = insert_book(&ingestion_pool, "work-series-pos", "Volume One").await;
+    let series_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO series (name, sort_name) VALUES ('Long Saga', 'Long Saga') RETURNING id",
+    )
+    .fetch_one(&ingestion_pool)
+    .await
+    .expect("insert series");
+    sqlx::query!(
+        "INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, $3::float8)",
+        series_id,
+        work_id,
+        1.0_f64,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("insert series_works");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get(&format!("/api/v1/works/{work_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    let position = body["series"]["position"].as_f64().unwrap();
+    assert!(
+        (position - 1.0).abs() < 1e-9,
+        "series.position must equal the stored ordinal, got {body}",
     );
 }
 
@@ -2693,7 +2837,8 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
     let explain_subtitle_sql = "EXPLAIN (FORMAT JSON) \
         SELECT m.id FROM manifestations m \
         JOIN works w ON w.id = m.work_id \
-        WHERE TRUE AND w.subtitle ILIKE $1 \
+        WHERE TRUE AND immutable_unaccent(w.subtitle) \
+            ILIKE '%' || nullif(immutable_unaccent_like($1), '') || '%' \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
     // Discourage seq scans and nested loops for this probe inside a throwaway
@@ -2721,7 +2866,7 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
     // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection over
     // the dynamic filter SQL the compile-time macros cannot prepare.
     let row = sqlx::query(explain_subtitle_sql)
-        .bind("%Subtitle 12345%")
+        .bind("Subtitle 12345")
         .fetch_one(&mut *tx)
         .await
         .expect("explain subtitle_contains");
@@ -2731,6 +2876,90 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
     assert!(
         plan_uses_index(&plan, "idx_works_subtitle_trgm"),
         "subtitle_contains must ride the trigram index, not a full-scan Filter: {plan}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn title_contains_diacritic_folding_rides_trgm_index_at_scale(pool: PgPool) {
+    use sqlx::Row as _;
+
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+    // 50k works with distinct titles, plus one accented needle so a folded,
+    // unaccented query still selects a single row: the case the folded
+    // trigram index (`immutable_unaccent(title)`) must serve.
+    sqlx::query!(
+        "INSERT INTO works (title, sort_title) \
+         SELECT 'Bulk Opus ' || g.n, 'Bulk Opus ' || g.n \
+         FROM generate_series(1, 50000) AS g(n)"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed works");
+    sqlx::query!(
+        "INSERT INTO works (title, sort_title) VALUES ('\u{c9}mile Zola', '\u{c9}mile Zola')"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed accented work");
+    sqlx::query!(
+        "INSERT INTO manifestations \
+            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             file_size_bytes, ingestion_status, validation_status) \
+         SELECT w.id, 'epub'::manifestation_format, '/tmp/bulk-' || w.id, \
+                'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
+                'complete'::ingestion_status, 'clean'::validation_status \
+         FROM works w"
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed manifestations");
+
+    // CARVE-OUT (runtime-sqlx allowlist): ANALYZE is maintenance DDL the macros
+    // cannot validate; fresh stats keep the planner from choosing empty-table
+    // plans for the bulk seed. Runs on the owner pool (ANALYZE needs ownership).
+    sqlx::query("ANALYZE works, manifestations")
+        .execute(&pool)
+        .await
+        .expect("analyze seeded tables");
+
+    // Literal twin of push_ilike_contains' folded output for title_contains on
+    // the recent-sort list query (default page size + 1).
+    let explain_title_sql = "EXPLAIN (FORMAT JSON) \
+        SELECT m.id FROM manifestations m \
+        JOIN works w ON w.id = m.work_id \
+        WHERE TRUE AND immutable_unaccent(w.title) \
+            ILIKE '%' || nullif(immutable_unaccent_like($1), '') || '%' \
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
+
+    let mut tx = ingestion_pool.begin().await.expect("begin explain txn");
+    // CARVE-OUT (runtime-sqlx allowlist): SET LOCAL is a transaction-scoped GUC
+    // mutation the compile-time macros cannot validate.
+    sqlx::query("SET LOCAL enable_seqscan = off")
+        .execute(&mut *tx)
+        .await
+        .expect("disable seqscan for the probe");
+    // CARVE-OUT (runtime-sqlx allowlist): SET LOCAL is a transaction-scoped GUC
+    // mutation the compile-time macros cannot validate.
+    sqlx::query("SET LOCAL enable_nestloop = off")
+        .execute(&mut *tx)
+        .await
+        .expect("disable nested loops for the probe");
+    // CARVE-OUT (runtime-sqlx allowlist): EXPLAIN is planner introspection over
+    // the dynamic filter SQL the compile-time macros cannot prepare.
+    let row = sqlx::query(explain_title_sql)
+        // Unaccented needle: the folded index, not the dropped raw one, must
+        // serve this query.
+        .bind("emile zola")
+        .fetch_one(&mut *tx)
+        .await
+        .expect("explain title_contains diacritic folding");
+    let plan: serde_json::Value = row.get("QUERY PLAN");
+    tx.rollback().await.expect("rollback explain txn");
+    assert_no_seq_scan_on(&plan, "works", "title_contains diacritic folding");
+    assert!(
+        plan_uses_index(&plan, "idx_works_title_trgm"),
+        "title_contains must ride the folded trigram index, not a full-scan Filter: {plan}"
     );
 }
 
@@ -2944,6 +3173,48 @@ async fn search_typo_tolerant_via_trigram(pool: PgPool) {
         .cloned()
         .expect("items");
     assert_eq!(items.len(), 1, "trigram leg recovers the typo");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_diacritic_folding_matches_unaccented_query(pool: PgPool) {
+    // "emile zola" (no diacritics) must find "\u{c9}mile Zola" via the
+    // hybrid search, folding accents on both the tsvector and trigram legs.
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    insert_book(&ingestion_pool, "emile", "\u{c9}mile Zola").await;
+    insert_book(&ingestion_pool, "other", "Unrelated Title").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get("/api/v1/search?q=emile+zola")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert!(
+        items.iter().any(|i| i["title"] == "\u{c9}mile Zola"),
+        "unaccented query must find the accented title, got {items:?}"
+    );
+
+    // Exact accented input still matches (no regression from folding).
+    let r = server
+        .get("/api/v1/search?q=%C3%89mile+Zola")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let items = r.json::<serde_json::Value>()["items"]
+        .as_array()
+        .cloned()
+        .expect("items");
+    assert!(
+        items.iter().any(|i| i["title"] == "\u{c9}mile Zola"),
+        "accented query must still match the accented title, got {items:?}"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -3451,6 +3722,18 @@ async fn set_subtitle(ingestion_pool: &PgPool, work_id: Uuid, subtitle: &str) {
     .expect("set subtitle");
 }
 
+/// Set a work's `description`; the works trigger refolds `search_vector`.
+async fn set_description(ingestion_pool: &PgPool, work_id: Uuid, description: &str) {
+    sqlx::query!(
+        "UPDATE works SET description = $1 WHERE id = $2",
+        description,
+        work_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("set description");
+}
+
 /// Set a manifestation's `isbn_13`.
 async fn set_isbn(ingestion_pool: &PgPool, m_id: Uuid, isbn: &str) {
     sqlx::query!(
@@ -3550,6 +3833,62 @@ async fn filter_title_contains_is_case_insensitive_and_escapes_wildcards(pool: P
     // title that literally contains `%`, and nothing else.
     let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=50%25").await;
     assert_eq!(hits, vec!["50% Discount Manual"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_title_contains_folds_accents(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    insert_book(&ingestion_pool, "emile", "\u{c9}mile Zola").await;
+    insert_book(&ingestion_pool, "other", "Unrelated Title").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // Unaccented needle finds the accented row.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=emile%20zola").await;
+    assert_eq!(hits, vec!["\u{c9}mile Zola"]);
+
+    // Accented needle still matches (no regression from folding).
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%C3%89mile").await;
+    assert_eq!(hits, vec!["\u{c9}mile Zola"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filter_title_contains_escapes_folded_metacharacters(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    insert_book(&ingestion_pool, "pct", "50% Discount Manual").await;
+    insert_book(&ingestion_pool, "bslash", r"Back\slash Path").await;
+    insert_book(&ingestion_pool, "other", "Unrelated Title").await;
+    let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
+
+    // unaccent folds fullwidth ％ (U+FF05) to ASCII %. Folding must not
+    // re-materialize a live wildcard out of the needle: the folded % matches
+    // the title carrying a literal %, and nothing else.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%85").await;
+    assert_eq!(hits, vec!["50% Discount Manual"]);
+
+    // Fullwidth ＿ (U+FF3F) folds to _. As a literal it matches no title; as
+    // a smuggled single-character wildcard it would match every title.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BF").await;
+    assert_eq!(hits, Vec::<String>::new());
+
+    // Fullwidth ＼ (U+FF3C) folds to \ and must itself be escaped: it matches
+    // the literal backslash in the stored title.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BC").await;
+    assert_eq!(hits, vec![r"Back\slash Path"]);
+
+    // A folded ＼ directly before an ASCII % must not neutralize that %'s
+    // escape (which would leave a live wildcard matching any title with a
+    // backslash). No title contains a literal `\%`, so: no hits.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BC%25").await;
+    assert_eq!(hits, Vec::<String>::new());
+
+    // A needle that folds to nothing (combining marks map to the empty
+    // string in unaccent.rules) must match nothing, not everything.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%CC%81").await;
+    assert_eq!(hits, Vec::<String>::new());
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -3825,6 +4164,10 @@ async fn filter_q_matches_tsvector_and_ilike_legs(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     insert_book(&ingestion_pool, "leguin", "The Left Hand of Darkness").await;
     insert_book(&ingestion_pool, "gibson", "Neuromancer").await;
+    let (accented_work, _m) = insert_book(&ingestion_pool, "zola", "Plain Title").await;
+    set_description(&ingestion_pool, accented_work, "M\u{e9}moires d'\u{c9}mile").await;
+    let (numword_work, _m2) = insert_book(&ingestion_pool, "edition", "Second Plain Title").await;
+    set_description(&ingestion_pool, numword_work, "1\u{e8}re \u{e9}dition").await;
     let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
 
     // Full-text leg: a two-word websearch hits the tsvector even though the
@@ -3836,6 +4179,18 @@ async fn filter_q_matches_tsvector_and_ilike_legs(pool: PgPool) {
     // still matches via ILIKE.
     let ilike_hit = filtered_titles(&server, &basic, "/api/v1/books?q=euroman").await;
     assert_eq!(ilike_hit, vec!["Neuromancer"]);
+
+    // Folding leg: accented content lives only in the description, so the
+    // ILIKE title leg cannot mask a broken tsvector configuration; the
+    // unaccented query must match through the folded search_vector alone.
+    let fold_hit = filtered_titles(&server, &basic, "/api/v1/books?q=memoires").await;
+    assert_eq!(fold_hit, vec!["Plain Title"]);
+
+    // numword tokens fold too: '1ère' (letters plus a digit) classifies as
+    // numword, outside the word/hword/hword_part classes, and must still be
+    // reachable by its unaccented form.
+    let numword_hit = filtered_titles(&server, &basic, "/api/v1/books?q=1ere").await;
+    assert_eq!(numword_hit, vec!["Second Plain Title"]);
 }
 
 #[sqlx::test(migrations = "./migrations")]
