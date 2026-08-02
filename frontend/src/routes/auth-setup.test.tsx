@@ -13,27 +13,15 @@ import { queryKeys } from "@/lib/query/keys";
 import { Component as AuthSetup } from "./auth-setup";
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({
-    effective: "dark",
-    preference: "system",
-    setPreference: vi.fn(),
-  }),
+  useTheme: () => ({ effective: "dark", preference: "system", setPreference: vi.fn() }),
 }));
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/auth");
 
-type Status = {
-  setup_required: boolean;
-  local_auth_enabled: boolean;
-  oidc_enabled: boolean;
-};
+type Status = { setup_required: boolean; local_auth_enabled: boolean; oidc_enabled: boolean };
 
 function renderSetup(status: Status): { client: QueryClient } {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(queryKeys.auth.setupStatus(), status);
 
   const routes: RouteObject[] = [
@@ -64,11 +52,7 @@ afterEach(() => {
 describe("auth-setup", () => {
   test("submitting creates the admin then routes to /login", async () => {
     vi.mocked(setupAdmin).mockResolvedValue(undefined);
-    renderSetup({
-      setup_required: true,
-      local_auth_enabled: true,
-      oidc_enabled: false,
-    });
+    renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
@@ -84,11 +68,7 @@ describe("auth-setup", () => {
     vi.mocked(setupAdmin).mockRejectedValue(
       new ApiError(409, null, "Conflict", "Setup is already complete."),
     );
-    renderSetup({
-      setup_required: true,
-      local_auth_enabled: true,
-      oidc_enabled: false,
-    });
+    renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
@@ -101,11 +81,7 @@ describe("auth-setup", () => {
   });
 
   test("bounces to /login once an administrator exists", async () => {
-    renderSetup({
-      setup_required: false,
-      local_auth_enabled: true,
-      oidc_enabled: false,
-    });
+    renderSetup({ setup_required: false, local_auth_enabled: true, oidc_enabled: false });
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
   });
 
@@ -128,11 +104,7 @@ describe("auth-setup", () => {
   });
 
   test("blocks a blank display name with an inline error and never calls setup", async () => {
-    renderSetup({
-      setup_required: true,
-      local_auth_enabled: true,
-      oidc_enabled: false,
-    });
+    renderSetup({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Email"), "ada@example.com");

@@ -286,11 +286,7 @@ export function HighlightedSnippet({ text, className }: HighlightedSnippetProps)
       parts.push({ text: text.slice(cursor), highlight, start: cursor });
       break;
     }
-    parts.push({
-      text: text.slice(cursor, nextIndex),
-      highlight,
-      start: cursor,
-    });
+    parts.push({ text: text.slice(cursor, nextIndex), highlight, start: cursor });
     cursor = nextIndex + marker.length;
     highlight = !highlight;
   }

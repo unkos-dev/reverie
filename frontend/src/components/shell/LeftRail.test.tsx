@@ -17,11 +17,7 @@ vi.mock("@/api", async (importOriginal) => {
 vi.mock("@/hooks/useAuthMe", () => ({ useAuthMe: vi.fn() }));
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({
-    preference: "system",
-    effective: "dark",
-    setPreference: vi.fn(),
-  }),
+  useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
 }));
 
 const listShelvesMock = vi.mocked(listShelves);
@@ -56,9 +52,7 @@ function authState(role: "admin" | "adult" | "child" | undefined): ReturnType<ty
 }
 
 function renderRail(initialEntry = "/library"): void {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const router = createMemoryRouter([{ path: "*", element: <LeftRail /> }], {
     initialEntries: [initialEntry],
   });

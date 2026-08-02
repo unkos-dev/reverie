@@ -64,10 +64,7 @@ describe("listUsers", () => {
           title: "Forbidden",
           detail: "Access denied.",
         },
-        {
-          status: 403,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { status: 403, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(listUsers()).rejects.toThrow();
@@ -88,15 +85,8 @@ describe("updateUserRole", () => {
   test("throws on non-2xx", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(
-        {
-          type: "https://reverie.example/probs/forbidden",
-          status: 403,
-          title: "Forbidden",
-        },
-        {
-          status: 403,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { type: "https://reverie.example/probs/forbidden", status: 403, title: "Forbidden" },
+        { status: 403, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(updateUserRole(STUB_USER.id, "adult")).rejects.toThrow();
@@ -123,15 +113,8 @@ describe("updateUserChildStatus", () => {
   test("throws on non-2xx", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(
-        {
-          type: "https://reverie.example/probs/forbidden",
-          status: 403,
-          title: "Forbidden",
-        },
-        {
-          status: 403,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { type: "https://reverie.example/probs/forbidden", status: 403, title: "Forbidden" },
+        { status: 403, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(updateUserChildStatus(STUB_USER.id, true)).rejects.toThrow();
@@ -163,10 +146,7 @@ describe("updateUser", () => {
           title: "Validation Error",
           detail: "email already in use",
         },
-        {
-          status: 422,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(updateUser(STUB_USER.id, { email: "taken@example.com" })).rejects.toThrow();
@@ -209,15 +189,8 @@ describe("createUser", () => {
   test("throws on duplicate email (409)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(
-        {
-          type: "https://reverie.example/probs/email-conflict",
-          status: 409,
-          title: "Conflict",
-        },
-        {
-          status: 409,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { type: "https://reverie.example/probs/email-conflict", status: 409, title: "Conflict" },
+        { status: 409, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(
@@ -251,10 +224,7 @@ describe("setAccountStatus", () => {
           status: 422,
           title: "Validation Error",
         },
-        {
-          status: 422,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(setAccountStatus(STUB_USER.id, true)).rejects.toThrow();
@@ -270,9 +240,7 @@ describe("adminResetPassword", () => {
     const call = vi.mocked(fetch).mock.calls[0];
     expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/password-reset`);
     expect(call[1]?.method).toBe("POST");
-    expect(bodyJson(call[1])).toEqual({
-      new_password: "correct-horse-battery-staple",
-    });
+    expect(bodyJson(call[1])).toEqual({ new_password: "correct-horse-battery-staple" });
   });
 
   test("throws on policy rejection (422)", async () => {
@@ -283,10 +251,7 @@ describe("adminResetPassword", () => {
           status: 422,
           title: "Validation Error",
         },
-        {
-          status: 422,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { status: 422, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(adminResetPassword(STUB_USER.id, "weak")).rejects.toThrow();

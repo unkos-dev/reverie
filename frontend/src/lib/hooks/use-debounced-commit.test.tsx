@@ -52,9 +52,7 @@ describe("useDebouncedCommit", () => {
   test("commits once, delay after the last draft change", () => {
     const onCommit = vi.fn();
     render(<Harness onCommit={onCommit} />);
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "ab" },
-    });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
     vi.advanceTimersByTime(DELAY_MS - 1);
     expect(onCommit).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
@@ -65,9 +63,7 @@ describe("useDebouncedCommit", () => {
   test("unrelated parent re-renders do not reset the pending window", () => {
     const onCommit = vi.fn();
     render(<Harness onCommit={onCommit} />);
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "ab" },
-    });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
     vi.advanceTimersByTime(100);
     fireEvent.click(screen.getByRole("button", { name: "rerender" }));
     vi.advanceTimersByTime(100);
@@ -125,9 +121,7 @@ describe("useDebouncedCommit", () => {
       );
     }
     render(<SwitchingHarness />);
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "x" },
-    });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: "relabel" }));
     vi.advanceTimersByTime(DELAY_MS);
     expect(calls).toEqual(["second:x"]);
@@ -161,9 +155,7 @@ describe("useDebouncedCommit", () => {
       );
     }
     render(<StaleHarness />);
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "ab" },
-    });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
     // A clear affordance invalidates the draft after the timer is scheduled
     // but before it fires (no re-render in between).
     stale = true;
@@ -187,9 +179,7 @@ describe("useDebouncedCommit", () => {
       );
     }
     render(<FreshHarness />);
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "ab" },
-    });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
     vi.advanceTimersByTime(DELAY_MS);
     expect(onCommit).toHaveBeenCalledWith("ab");
   });
@@ -197,9 +187,7 @@ describe("useDebouncedCommit", () => {
   test("unmount cancels a pending commit", () => {
     const onCommit = vi.fn();
     const { unmount } = render(<Harness onCommit={onCommit} />);
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "ab" },
-    });
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "ab" } });
     vi.advanceTimersByTime(100);
     unmount();
     vi.advanceTimersByTime(DELAY_MS * 2);

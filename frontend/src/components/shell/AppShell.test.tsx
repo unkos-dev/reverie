@@ -14,11 +14,7 @@ vi.mock("./LeftRail", () => ({
 }));
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({
-    preference: "system",
-    effective: "dark",
-    setPreference: vi.fn(),
-  }),
+  useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
 }));
 
 afterEach(() => {

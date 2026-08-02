@@ -65,11 +65,7 @@ function pushText(
       remove: drop("contains"),
     });
   if (filter.eq !== undefined)
-    segments.push({
-      key: `${key}_eq`,
-      text: `${label} is "${filter.eq}"`,
-      remove: drop("eq"),
-    });
+    segments.push({ key: `${key}_eq`, text: `${label} is "${filter.eq}"`, remove: drop("eq") });
   if (filter.ne !== undefined)
     segments.push({
       key: `${key}_ne`,

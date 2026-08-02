@@ -266,10 +266,7 @@ function AddToShelf({ bookId, bookTitle }: { bookId: string; bookTitle: string }
             <DropdownMenuItem
               key={shelf.id}
               onSelect={() => {
-                addMutation.mutate({
-                  shelfId: shelf.id,
-                  shelfName: shelf.name,
-                });
+                addMutation.mutate({ shelfId: shelf.id, shelfName: shelf.name });
               }}
             >
               {shelf.name}

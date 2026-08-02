@@ -12,21 +12,13 @@ import { register } from "@/api/auth";
 import { Component as AuthRegister } from "./auth-register";
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({
-    effective: "dark",
-    preference: "system",
-    setPreference: vi.fn(),
-  }),
+  useTheme: () => ({ effective: "dark", preference: "system", setPreference: vi.fn() }),
 }));
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/auth");
 
 function renderRegister(): void {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const routes: RouteObject[] = [
     { path: "/register", element: <AuthRegister /> },
     { path: "/login", element: <div data-testid="login-page">Login</div> },

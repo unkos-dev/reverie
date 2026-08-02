@@ -22,9 +22,7 @@ import { ApiError } from "@/api";
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
 function renderRouterWithFailure(loader: LoaderFunction): void {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const routes: RouteObject[] = [
     {
       path: "/",
@@ -59,10 +57,7 @@ describe("RootErrorBoundary", () => {
   test("renders a numbered 'Error N' surface for other route response statuses", async () => {
     renderRouterWithFailure(() => {
       // oxlint-disable-next-line typescript/only-throw-error -- react-router loaders bail out via `throw new Response(...)`.
-      throw new Response("server fault", {
-        status: 500,
-        statusText: "Server Fault",
-      });
+      throw new Response("server fault", { status: 500, statusText: "Server Fault" });
     });
 
     expect(await screen.findByRole("heading", { name: /error 500/i })).toBeInTheDocument();

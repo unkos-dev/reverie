@@ -206,9 +206,7 @@ describe("FilterRail typed sections", () => {
     const pages = sectionByTitle("Pages");
     await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
     const title = sectionByTitle("Title");
-    const titleInput = within(title).getByRole("textbox", {
-      name: "Filter value",
-    });
+    const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(titleInput, "sea");
     await debounceSettled();
     const search = currentSearch(router);
@@ -221,9 +219,7 @@ describe("FilterRail typed sections", () => {
     const router = renderRail();
     const user = userEvent.setup();
     const title = sectionByTitle("Title");
-    const titleInput = within(title).getByRole("textbox", {
-      name: "Filter value",
-    });
+    const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(titleInput, "sea");
     await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
     await debounceSettled();
@@ -287,11 +283,7 @@ describe("FilterRail sort section", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Change Title sort direction/ }));
     expect(currentSearch(router).get("sort")).toBe("-title,-created_at");
-    await user.click(
-      screen.getByRole("button", {
-        name: "Move Added earlier in sort priority",
-      }),
-    );
+    await user.click(screen.getByRole("button", { name: "Move Added earlier in sort priority" }));
     expect(currentSearch(router).get("sort")).toBe("-created_at,-title");
     await user.click(screen.getByRole("button", { name: "Remove Added from sort" }));
     expect(currentSearch(router).get("sort")).toBe("-title");

@@ -34,9 +34,7 @@ interface PaletteHarness {
 }
 
 function renderPalette(initialEntries: string[] = ["/library"]): PaletteHarness {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const routes: RouteObject[] = [
     { path: "/library", element: <CommandPalette /> },
     { path: "/b/:id", element: <div data-testid="book-route" /> },
@@ -134,9 +132,7 @@ describe("CommandPalette — dialog semantics (spec §6)", () => {
   test("dialog is modal with listbox results semantics and kbd footer", async () => {
     renderPalette();
     triggerCmdK();
-    const dialog = await screen.findByRole("dialog", {
-      name: /search library/i,
-    });
+    const dialog = await screen.findByRole("dialog", { name: /search library/i });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
     expect(screen.getByText(/navigate/i)).toBeInTheDocument();

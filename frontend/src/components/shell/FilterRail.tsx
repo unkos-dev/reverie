@@ -122,10 +122,7 @@ function useDraftSlice<T>(
     value: committed,
     gen: clearGen.current,
   }));
-  const [synced, setSynced] = useState({
-    full: fullToken,
-    slice: sliceToken(committed),
-  });
+  const [synced, setSynced] = useState({ full: fullToken, slice: sliceToken(committed) });
   // Render-phase state adjustment, the compiler-accepted alternative to a
   // sync effect.
   if (fullToken !== synced.full) {
@@ -228,10 +225,7 @@ export function FilterRail({
       title={title}
       activeCount={setCount(filters[family])}
       onClear={() => {
-        clearFilters((current) => ({
-          ...current,
-          [family]: { all: [], any: [], none: [] },
-        }));
+        clearFilters((current) => ({ ...current, [family]: { all: [], any: [], none: [] } }));
       }}
     >
       <VocabEditor
@@ -284,19 +278,13 @@ export function FilterRail({
         title="Status"
         activeCount={filters.status.any.length + filters.status.none.length}
         onClear={() => {
-          clearFilters((current) => ({
-            ...current,
-            status: { any: [], none: [] },
-          }));
+          clearFilters((current) => ({ ...current, status: { any: [], none: [] } }));
         }}
       >
         <StatusEditor
           value={filters.status.any}
           onChange={(any) => {
-            commitFilters((current) => ({
-              ...current,
-              status: { ...current.status, any },
-            }));
+            commitFilters((current) => ({ ...current, status: { ...current.status, any } }));
           }}
         />
       </RailSection>
@@ -393,11 +381,7 @@ export function FilterRail({
           after={filters.addedAfter}
           before={filters.addedBefore}
           onChange={({ after, before }) => {
-            commitFilters((current) => ({
-              ...current,
-              addedAfter: after,
-              addedBefore: before,
-            }));
+            commitFilters((current) => ({ ...current, addedAfter: after, addedBefore: before }));
           }}
         />
       </RailSection>
@@ -655,10 +639,7 @@ function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionPro
     if (isError) console.error("[FilterRail] shelves fetch failed", error);
   }, [isError, error]);
 
-  const options = (shelves ?? []).map((shelf) => ({
-    id: shelf.id,
-    name: shelf.name,
-  }));
+  const options = (shelves ?? []).map((shelf) => ({ id: shelf.id, name: shelf.name }));
   let emptyText = "No shelves yet.";
   if (isLoading) emptyText = "Loading shelves…";
   else if (isError) emptyText = "Couldn't load shelves.";

@@ -12,9 +12,7 @@ import * as tokensApi from "@/api/tokens";
 
 import { TokensPage } from "./TokensPage";
 
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 afterEach(() => {
   cleanup();
@@ -92,9 +90,7 @@ describe("TokensPage", () => {
   });
 
   test("shows error message on fetch failure", async () => {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(queryKeys.auth.me(), ADULT_ME);
     vi.spyOn(tokensApi, "listTokens").mockRejectedValueOnce(new Error("network error"));
 

@@ -12,28 +12,18 @@ import { changeOwnPassword } from "@/api/auth";
 import { Component as AccountPassword } from "./account-password";
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({
-    effective: "dark",
-    preference: "system",
-    setPreference: vi.fn(),
-  }),
+  useTheme: () => ({ effective: "dark", preference: "system", setPreference: vi.fn() }),
 }));
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/auth");
 
 function renderChange(): void {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const routes: RouteObject[] = [
     { path: "/account/password", element: <AccountPassword /> },
     { path: "/login", element: <div data-testid="login-page">Login</div> },
   ];
-  const router = createMemoryRouter(routes, {
-    initialEntries: ["/account/password"],
-  });
+  const router = createMemoryRouter(routes, { initialEntries: ["/account/password"] });
 
   function Wrapper(): ReactElement {
     return (

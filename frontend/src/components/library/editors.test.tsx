@@ -23,9 +23,7 @@ describe("TextFilterEditor", () => {
     const onChange = vi.fn();
     render(<TextFilterEditor value={{}} ops={TEXT_OPS} onChange={onChange} />);
 
-    fireEvent.change(screen.getByLabelText("Value"), {
-      target: { value: "dune" },
-    });
+    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "dune" } });
 
     expect(onChange).toHaveBeenLastCalledWith({ contains: "dune" });
   });
@@ -59,9 +57,7 @@ describe("RangeFilterEditor", () => {
     const onChange = vi.fn();
     render(<RangeFilterEditor value={{ lte: 500 }} min={0} onChange={onChange} />);
 
-    fireEvent.change(screen.getByLabelText("Min"), {
-      target: { value: "100" },
-    });
+    fireEvent.change(screen.getByLabelText("Min"), { target: { value: "100" } });
 
     expect(onChange).toHaveBeenLastCalledWith({ lte: 500, gte: 100 });
   });
@@ -70,9 +66,7 @@ describe("RangeFilterEditor", () => {
     const onChange = vi.fn();
     render(<RangeFilterEditor value={{}} onChange={onChange} />);
 
-    fireEvent.change(screen.getByLabelText("Min"), {
-      target: { value: "12.5" },
-    });
+    fireEvent.change(screen.getByLabelText("Min"), { target: { value: "12.5" } });
 
     expect(onChange).toHaveBeenLastCalledWith({ gte: undefined });
   });
@@ -98,14 +92,9 @@ describe("DateRangeEditor", () => {
     const onChange = vi.fn();
     render(<DateRangeEditor before="2026-06-30" onChange={onChange} />);
 
-    fireEvent.change(screen.getByLabelText("After"), {
-      target: { value: "2026-01-01" },
-    });
+    fireEvent.change(screen.getByLabelText("After"), { target: { value: "2026-01-01" } });
 
-    expect(onChange).toHaveBeenLastCalledWith({
-      after: "2026-01-01",
-      before: "2026-06-30",
-    });
+    expect(onChange).toHaveBeenLastCalledWith({ after: "2026-01-01", before: "2026-06-30" });
   });
 });
 
@@ -178,10 +167,7 @@ function VocabHarness({ initial }: { initial: SetFilter }): ReactElement {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
-  const [draft, setDraft] = useState<FilterState>({
-    ...emptyFilterState(),
-    tags: initial,
-  });
+  const [draft, setDraft] = useState<FilterState>({ ...emptyFilterState(), tags: initial });
   return (
     <QueryClientProvider client={client}>
       <VocabEditor

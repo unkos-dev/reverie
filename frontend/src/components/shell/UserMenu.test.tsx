@@ -71,11 +71,7 @@ afterEach(() => {
 
 describe("UserChip", () => {
   test("renders nothing while authn is pending or logged out", () => {
-    useAuthMeMock.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isError: false,
-    });
+    useAuthMeMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     const { container } = renderChip();
     expect(container).toBeEmptyDOMElement();
   });
@@ -102,9 +98,7 @@ describe("UserChip", () => {
     renderChip();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    const link = await screen.findByRole("menuitem", {
-      name: "Change password",
-    });
+    const link = await screen.findByRole("menuitem", { name: "Change password" });
     expect(link).toHaveAttribute("href", "/account/password");
   });
 

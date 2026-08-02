@@ -30,10 +30,7 @@ function mockAuthMe(status: number): void {
     if (url.includes("/auth/me")) {
       const body = status === 200 ? JSON.stringify(STUB_ME) : null;
       return Promise.resolve(
-        new Response(body, {
-          status,
-          headers: { "Content-Type": "application/json" },
-        }),
+        new Response(body, { status, headers: { "Content-Type": "application/json" } }),
       );
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`));

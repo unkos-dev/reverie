@@ -80,10 +80,7 @@ export async function patchTheme(
   try {
     await apiFetch("/auth/me/theme", {
       method: "PATCH",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ theme_preference: value }),
       ...(signal ? { signal } : {}),
     });

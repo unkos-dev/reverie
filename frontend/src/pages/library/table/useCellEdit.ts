@@ -189,14 +189,10 @@ function invalidateAffectedDetails(
   workScoped: boolean,
 ): void {
   if (workScoped) {
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.books.detailsAll,
-    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.books.detailsAll });
     return;
   }
-  void queryClient.invalidateQueries({
-    queryKey: queryKeys.books.detail(manifestationId),
-  });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(manifestationId) });
 }
 
 /**
@@ -266,12 +262,7 @@ function restoreMetadataRow(
         entry.previousRow.work_id,
         route.workScoped,
       ),
-    (item) =>
-      route.applyToRow(item, {
-        value,
-        version_id: null,
-        previous_version_id: null,
-      }),
+    (item) => route.applyToRow(item, { value, version_id: null, previous_version_id: null }),
   );
 }
 
@@ -457,10 +448,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       const key = pendingKey(row.id, columnKey);
       setPending(key, displayValue(columns, columnKey, row));
       try {
-        const response = await metadataMutation.mutateAsync({
-          manifestationId: row.id,
-          patch,
-        });
+        const response = await metadataMutation.mutateAsync({ manifestationId: row.id, patch });
         // Invariant: a successful metadata PATCH always echoes every
         // touched field back in `fields`, keyed by the same field name.
         const applied = lookupAppliedField(response.fields, route.field);
@@ -504,10 +492,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     const key = pendingKey(row.id, columnKey);
     setPending(key, displayValue(columns, columnKey, row));
     try {
-      const response = await readingMutation.mutateAsync({
-        manifestationId: row.id,
-        patch,
-      });
+      const response = await readingMutation.mutateAsync({ manifestationId: row.id, patch });
       updateListCache(
         queryClient,
         listKey,

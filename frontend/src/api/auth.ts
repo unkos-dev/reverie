@@ -88,11 +88,7 @@ export async function setupAdmin(
   displayName: string,
   password: string,
 ): Promise<void> {
-  const body = SetupAdminSchema.parse({
-    email,
-    display_name: displayName,
-    password,
-  });
+  const body = SetupAdminSchema.parse({ email, display_name: displayName, password });
   await apiFetch("/auth/setup", {
     method: "POST",
     body: JSON.stringify(body),
@@ -127,11 +123,7 @@ export async function resetPassword(
   pin: string,
   newPassword: string,
 ): Promise<void> {
-  const body = ResetPasswordSchema.parse({
-    email,
-    pin,
-    new_password: newPassword,
-  });
+  const body = ResetPasswordSchema.parse({ email, pin, new_password: newPassword });
   await apiFetch("/auth/reset-password", {
     method: "POST",
     body: JSON.stringify(body),
@@ -153,11 +145,7 @@ export async function register(
   displayName: string,
   password: string,
 ): Promise<void> {
-  const body = RegisterSchema.parse({
-    email,
-    display_name: displayName,
-    password,
-  });
+  const body = RegisterSchema.parse({ email, display_name: displayName, password });
   await apiFetch("/auth/register", {
     method: "POST",
     body: JSON.stringify(body),

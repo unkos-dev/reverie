@@ -11,9 +11,7 @@ import * as usersApi from "@/api/users";
 
 import { UsersPage } from "./UsersPage";
 
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 afterEach(() => {
   cleanup();
@@ -63,10 +61,7 @@ function renderUsersPage(
 
   const routes: RouteObject[] = [
     { path: "/admin/users", element: <UsersPage /> },
-    {
-      path: "/library",
-      element: <div data-testid="library-page">Library</div>,
-    },
+    { path: "/library", element: <div data-testid="library-page">Library</div> },
   ];
   const router = createMemoryRouter(routes, {
     initialEntries: ["/admin/users"],
@@ -108,17 +103,13 @@ describe("UsersPage", () => {
   test("shows error message on fetch failure", async () => {
     // Pre-seed error state by leaving users cache empty and having no fetch mock.
     // Instead seed the cache with the error directly via query state manipulation.
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(queryKeys.auth.me(), ADMIN_ME);
     // Don't seed users — query will attempt fetch; mock it to fail.
     vi.spyOn(usersApi, "listUsers").mockRejectedValueOnce(new Error("network error"));
 
     const routes: RouteObject[] = [{ path: "/admin/users", element: <UsersPage /> }];
-    const router = createMemoryRouter(routes, {
-      initialEntries: ["/admin/users"],
-    });
+    const router = createMemoryRouter(routes, { initialEntries: ["/admin/users"] });
 
     render(
       <QueryClientProvider client={client}>

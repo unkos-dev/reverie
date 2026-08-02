@@ -18,9 +18,5 @@ export const designRoutes: RouteObject[] = [
   { path: "/design/system", element: <DesignSystemPage /> },
   { path: "/design/hero/library", element: <HeroLibraryPage /> },
   { path: "/design/hero/book", element: <HeroBookPage /> },
-  {
-    path: "/design/grid-spike",
-    element: <GridSpikeHarness />,
-    errorElement: <GridSpikeError />,
-  },
+  { path: "/design/grid-spike", element: <GridSpikeHarness />, errorElement: <GridSpikeError /> },
 ];

@@ -63,16 +63,14 @@ describe("logout", () => {
 
 describe("fetchSetupStatus", () => {
   test("GETs /auth/setup/status and parses the body", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          setup_required: true,
-          local_auth_enabled: true,
-          oidc_enabled: false,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ setup_required: true, local_auth_enabled: true, oidc_enabled: false }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
 
     const status = await fetchSetupStatus();
 
@@ -117,10 +115,7 @@ describe("loginLocal", () => {
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
     expect(input).toBe("/auth/local/login");
     expect(init?.method).toBe("POST");
-    expect(bodyOf(init)).toEqual({
-      email: "user@example.com",
-      password: "secret",
-    });
+    expect(bodyOf(init)).toEqual({ email: "user@example.com", password: "secret" });
     // The follow-up CSRF hydration ran.
     expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
