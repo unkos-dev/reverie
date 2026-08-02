@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT wa.work_id, a.name, wa.role AS \"role: ContributorRole\"\n           FROM work_authors wa\n           JOIN authors a ON a.id = wa.author_id\n           WHERE wa.work_id = ANY($1::uuid[]) AND wa.role <> 'author'\n           ORDER BY wa.role ASC, wa.position ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "work_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "work_authors",
+            "name": "work_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "role: ContributorRole",
+        "type_info": {
+          "Custom": {
+            "name": "author_role",
+            "kind": {
+              "Enum": [
+                "author",
+                "editor",
+                "translator",
+                "narrator"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "work_authors",
+            "name": "role"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "47b07da681162ff87b6ff1daf0171d3a4cb4812ad00dab9796260a46927a5c13"
+}

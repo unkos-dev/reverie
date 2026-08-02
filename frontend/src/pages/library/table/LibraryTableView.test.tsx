@@ -47,9 +47,14 @@ function rowFixture(index: number, overrides: Partial<BookListItem> = {}): BookL
     title: `Book Title ${String(index)}`,
     subtitle: `Subtitle ${String(index)}`,
     authors: [`Author ${String(index)}`],
+    contributors: [],
     series: null,
     isbn_13: `9780000${String(index).padStart(6, "0")}`,
     pages: 100 + index,
+    tags: [],
+    genres: [],
+    moods: [],
+    content_rating: null,
     cover_url: "",
     ingestion_status: "complete",
     validation_status: "clean",
@@ -453,7 +458,13 @@ describe("LibraryTableView", () => {
       items: [
         rowFixture(1, {
           series: { id: "s1", name: "Discworld", position: 8 },
-          reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+          reading_state: {
+            status: "want_to_read",
+            rating: 3,
+            progress_pct: null,
+            started_at: null,
+            finished_at: null,
+          },
         }),
       ],
     });
@@ -490,7 +501,13 @@ describe("LibraryTableView", () => {
       items: [
         rowFixture(1, {
           series: { id: "s1", name: "Discworld", position: 8 },
-          reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+          reading_state: {
+            status: "want_to_read",
+            rating: 3,
+            progress_pct: null,
+            started_at: null,
+            finished_at: null,
+          },
         }),
       ],
     });
@@ -520,7 +537,13 @@ describe("LibraryTableView", () => {
     function editableRowFixture(): BookListItem {
       return rowFixture(1, {
         series: { id: "s1", name: "Discworld", position: 8 },
-        reading_state: { status: "want_to_read", rating: 3, progress_pct: null },
+        reading_state: {
+          status: "want_to_read",
+          rating: 3,
+          progress_pct: null,
+          started_at: null,
+          finished_at: null,
+        },
       });
     }
 

@@ -50,6 +50,11 @@ pub struct ReadingState {
 /// Batch-loaded alongside the page (see `routes::library::load_authors_for_works`
 /// for the sibling batch-load pattern); `None` when the caller has no
 /// `reading_state` row for that book (unread).
+///
+/// Deliberately excludes `notes`: it is capped at 10k characters per row,
+/// which at the maximum page size would dominate the response body many
+/// times over. Clients read notes through the single-book
+/// `GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct ReadingStateSummary {
@@ -59,6 +64,12 @@ pub struct ReadingStateSummary {
     pub rating: Option<i16>,
     /// `reading_state.progress_pct`, 0-100.
     pub progress_pct: Option<f32>,
+    /// `reading_state.started_at`; see [`ReadingState::started_at`].
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub started_at: Option<OffsetDateTime>,
+    /// `reading_state.finished_at`; see [`ReadingState::finished_at`].
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub finished_at: Option<OffsetDateTime>,
 }
 
 #[cfg(test)]

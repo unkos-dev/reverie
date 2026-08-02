@@ -6765,6 +6765,7 @@
           "work_id",
           "title",
           "authors",
+          "contributors",
           "cover_url",
           "tags",
           "genres",
@@ -6797,6 +6798,13 @@
                 "description": "Audience-suitability rating (`manifestations.content_rating`);\n`None` when unrated."
               }
             ]
+          },
+          "contributors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributorRef"
+            },
+            "description": "Non-author contributors (editor/translator/narrator) of the parent\nwork, ordered by role then position; empty when the work has none."
           },
           "cover_url": {
             "type": "string",
@@ -6977,12 +6985,16 @@
       },
       "BookListRow": {
         "type": "object",
-        "description": "One row of a paginated book list. Decoded via [`sqlx::FromRow`]\nagainst the query in `routes/library::list`, then enriched with\nthe batch-loaded `authors` slot and serialised straight to JSON.",
+        "description": "One row of a paginated book list. Assembled by hand from the\ndynamic `QueryBuilder` row in `routes/library::list`, then enriched\nwith the batch-loaded multi-value slots and serialised straight to\nJSON.",
         "required": [
           "id",
           "work_id",
           "title",
           "authors",
+          "contributors",
+          "tags",
+          "genres",
+          "moods",
           "cover_url",
           "ingestion_status",
           "validation_status",
@@ -6998,6 +7010,24 @@
               "type": "string"
             },
             "description": "Author display names ordered by `work_authors.position`. Empty\nwhen the work has no authors yet (pre-enrichment stub), and never\nincludes editors/translators/narrators — no role substitutes for\nanother in display."
+          },
+          "content_rating": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContentRating",
+                "description": "Audience-suitability rating (`manifestations.content_rating`);\n`None` when unrated."
+              }
+            ]
+          },
+          "contributors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributorRef"
+            },
+            "description": "Non-author contributors (editor/translator/narrator) of the parent\nwork, ordered by role then position. Batch-loaded alongside\n`authors`; empty when the work has none."
           },
           "cover_url": {
             "type": "string",
@@ -7026,6 +7056,13 @@
             },
             "description": "Per-provider aggregate ratings for visible providers, sorted by\nsource. Batch-loaded per page."
           },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Genre names attached to the manifestation, sorted by name.\nBatch-loaded per page."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -7041,6 +7078,13 @@
               "null"
             ],
             "description": "`manifestations.isbn_13`, when known."
+          },
+          "moods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Mood names attached to the manifestation, sorted by name.\nBatch-loaded per page."
           },
           "pages": {
             "type": [
@@ -7078,6 +7122,13 @@
               "null"
             ],
             "description": "`works.subtitle`, when declared."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names attached to the manifestation, sorted by name.\nBatch-loaded per page."
           },
           "title": {
             "type": "string",
@@ -7130,6 +7181,34 @@
           "mature",
           "adult",
           "explicit"
+        ]
+      },
+      "ContributorRef": {
+        "type": "object",
+        "description": "One non-author contributor surfaced on a book projection. Authors\nstay in the flat `authors` display array; this slot carries the other\n`work_authors` roles so per-role grid columns need no extra fetch.\nOrdered by role (enum declaration order), then contributor position.",
+        "required": [
+          "name",
+          "role"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Contributor display name (`authors.name`)."
+          },
+          "role": {
+            "$ref": "#/components/schemas/ContributorRole",
+            "description": "Contribution role (`work_authors.role`); never\n[`ContributorRole::Author`] on this slot."
+          }
+        }
+      },
+      "ContributorRole": {
+        "type": "string",
+        "description": "How one person contributed to a work.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].\n\nVariant order mirrors the Postgres declaration order, which is also the\norder the enum compares in `ORDER BY` — contributor lists sorted by role\non the DB side surface in this same order on the wire.",
+        "enum": [
+          "author",
+          "editor",
+          "translator",
+          "narrator"
         ]
       },
       "ContributorsPatch": {
@@ -7892,8 +7971,16 @@
       },
       "ReadingStateSummary": {
         "type": "object",
-        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).",
+        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
         "properties": {
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`reading_state.finished_at`; see [`ReadingState::finished_at`]."
+          },
           "progress_pct": {
             "type": [
               "number",
@@ -7909,6 +7996,14 @@
             ],
             "format": "int32",
             "description": "`reading_state.rating`, 1-5."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`reading_state.started_at`; see [`ReadingState::started_at`]."
           },
           "status": {
             "oneOf": [

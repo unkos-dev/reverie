@@ -61,6 +61,8 @@ const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   status: null,
   rating: null,
   progress_pct: null,
+  started_at: null,
+  finished_at: null,
 };
 
 function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {

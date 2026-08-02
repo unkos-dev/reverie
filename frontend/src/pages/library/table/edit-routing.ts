@@ -89,6 +89,8 @@ function applyReadingResponse(row: BookListItem, response: ReadingState): BookLi
       status: response.status,
       rating: response.rating,
       progress_pct: response.progress_pct,
+      started_at: response.started_at,
+      finished_at: response.finished_at,
     },
   };
 }

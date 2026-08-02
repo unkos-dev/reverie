@@ -1,7 +1,22 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+// Raw import so the committed OpenAPI artifact is usable as a fixture
+// without pulling Node fs types into the browser-typed src tree.
+import openapiRaw from "../../../docs/openapi.json?raw";
+
 import { __seedCsrfTokenForTesting } from "./csrf";
-import { getBook, getWork, listBooks, updateBookMetadata } from "./books";
+import {
+  ContentRatingSchema,
+  ContributorRoleSchema,
+  EnrichmentStatusSchema,
+  getBook,
+  getWork,
+  IngestionStatusSchema,
+  listBooks,
+  ReadingStatusSchema,
+  updateBookMetadata,
+  ValidationStatusSchema,
+} from "./books";
 import { ApiError } from "./errors";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
@@ -25,6 +40,32 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("wire enum parity with the generated OpenAPI schema", () => {
+  const spec = JSON.parse(openapiRaw) as {
+    components: { schemas: Record<string, { enum?: string[] }> };
+  };
+
+  const cases: [string, { options: readonly string[] }][] = [
+    ["ContentRating", ContentRatingSchema],
+    ["ContributorRole", ContributorRoleSchema],
+    ["ReadingStatus", ReadingStatusSchema],
+    ["IngestionStatus", IngestionStatusSchema],
+    ["EnrichmentStatus", EnrichmentStatusSchema],
+    ["ValidationStatus", ValidationStatusSchema],
+  ];
+
+  for (const [name, schema] of cases) {
+    test(`${name} options equal components.schemas.${name}.enum`, () => {
+      const generated = spec.components.schemas[name]?.enum;
+      expect(
+        generated,
+        `components.schemas.${name}.enum missing from docs/openapi.json`,
+      ).toBeDefined();
+      expect([...schema.options].sort()).toEqual([...(generated ?? [])].sort());
+    });
+  }
+});
+
 describe("listBooks", () => {
   test("calls GET /api/v1/books and returns the envelope", async () => {
     const body = {
@@ -35,14 +76,25 @@ describe("listBooks", () => {
           title: "Stoner",
           subtitle: null,
           authors: ["John Williams"],
+          contributors: [{ name: "Edna Prose", role: "editor" }],
           series: null,
           isbn_13: "9781590171998",
           pages: 288,
+          tags: ["campus-novel"],
+          genres: ["Literary Fiction"],
+          moods: ["Somber"],
+          content_rating: "explicit",
           cover_url: "/api/v1/books/.../cover/thumb",
           ingestion_status: "complete",
           validation_status: "clean",
           enrichment_status: "complete",
-          reading_state: { status: "finished", rating: 5, progress_pct: 100 },
+          reading_state: {
+            status: "finished",
+            rating: 5,
+            progress_pct: 100,
+            started_at: "2025-12-01T00:00:00Z",
+            finished_at: "2025-12-31T00:00:00Z",
+          },
           created_at: "2026-01-01T00:00:00Z",
         },
       ],
@@ -141,6 +193,7 @@ describe("getBook", () => {
         work_id: "w-1",
         title: "x",
         authors: [],
+        contributors: [],
         series: null,
         description: null,
         language: null,
@@ -224,9 +277,14 @@ describe("response schema validation (zod boundary)", () => {
             title: "t",
             subtitle: null,
             authors: [],
+            contributors: [],
             series: null,
             isbn_13: null,
             pages: null,
+            tags: [],
+            genres: [],
+            moods: [],
+            content_rating: null,
             reading_state: null,
             cover_url: "",
             ingestion_status: "bogus_state",
@@ -251,9 +309,14 @@ describe("response schema validation (zod boundary)", () => {
             title: "t",
             subtitle: null,
             authors: [],
+            contributors: [],
             series: null,
             isbn_13: null,
             pages: null,
+            tags: [],
+            genres: [],
+            moods: [],
+            content_rating: null,
             reading_state: null,
             cover_url: "",
             ingestion_status: "complete",
@@ -275,6 +338,7 @@ describe("response schema validation (zod boundary)", () => {
         work_id: "w",
         title: "x",
         authors: [],
+        contributors: [],
         series: null,
         description: 12345, // should be string | null
         language: null,

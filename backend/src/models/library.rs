@@ -6,16 +6,18 @@
 //! `skip_serializing_if`), RFC 3339 timestamps via the `time` crate
 //! default. Mirrors [`crate::models::user::User`] shape.
 //!
-//! [`crate::models::library::BookListRow`] doubles as the `sqlx::FromRow` decode target and
-//! the API response item. The `created_at` field is the recent-sort
-//! cursor key and, as RFC 3339 on the wire, the value behind the
-//! "Added" sort column in the frontend `BookListItem` interface in
-//! `frontend/src/api/books.ts`.
+//! [`crate::models::library::BookListRow`] is assembled by hand from the
+//! dynamic `QueryBuilder` row in `routes/library::list` (it has no
+//! `sqlx::FromRow` derive) and doubles as the API response item. The
+//! `created_at` field is the recent-sort cursor key and, as RFC 3339 on
+//! the wire, the value behind the "Added" sort column in the frontend
+//! `BookListItem` interface in `frontend/src/api/books.ts`.
 //!
-//! `authors` is loaded via a separate batch query (`ANY($1::uuid[])`)
-//! after the page rows arrive — the join cannot be expressed in a
-//! single `sqlx::query!` macro without producing one row per
-//! `(manifestation, author)` pair.
+//! The multi-value slots (`authors`, `contributors`, `tags`, `genres`,
+//! `moods`, and the caller's `reading_state`) load via separate batch
+//! queries (`ANY($1::uuid[])`) after the page rows arrive: joining any
+//! of them into the paginated base query would emit one row per pair
+//! and break `LIMIT` and the cursor math.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -23,6 +25,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::models::content_rating::ContentRating;
+use crate::models::contributor_role::ContributorRole;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::external_identifier::IdentifierLevel;
 use crate::models::ingestion_status::IngestionStatus;
@@ -42,6 +45,20 @@ pub struct SeriesRef {
     /// Position within the series (`series_works.position`), `None`
     /// when the membership row has a null position.
     pub position: Option<f64>,
+}
+
+/// One non-author contributor surfaced on a book projection. Authors
+/// stay in the flat `authors` display array; this slot carries the other
+/// `work_authors` roles so per-role grid columns need no extra fetch.
+/// Ordered by role (enum declaration order), then contributor position.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub struct ContributorRef {
+    /// Contributor display name (`authors.name`).
+    pub name: String,
+    /// Contribution role (`work_authors.role`); never
+    /// [`ContributorRole::Author`] on this slot.
+    pub role: ContributorRole,
 }
 
 /// One external-source identifier surfaced on a book projection.
@@ -79,9 +96,10 @@ pub struct ExternalRatingRef {
     pub fetched_at: OffsetDateTime,
 }
 
-/// One row of a paginated book list. Decoded via [`sqlx::FromRow`]
-/// against the query in `routes/library::list`, then enriched with
-/// the batch-loaded `authors` slot and serialised straight to JSON.
+/// One row of a paginated book list. Assembled by hand from the
+/// dynamic `QueryBuilder` row in `routes/library::list`, then enriched
+/// with the batch-loaded multi-value slots and serialised straight to
+/// JSON.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct BookListRow {
@@ -99,12 +117,28 @@ pub struct BookListRow {
     /// includes editors/translators/narrators — no role substitutes for
     /// another in display.
     pub authors: Vec<String>,
+    /// Non-author contributors (editor/translator/narrator) of the parent
+    /// work, ordered by role then position. Batch-loaded alongside
+    /// `authors`; empty when the work has none.
+    pub contributors: Vec<ContributorRef>,
     /// Series membership; `None` when the work isn't on a series.
     pub series: Option<SeriesRef>,
     /// `manifestations.isbn_13`, when known.
     pub isbn_13: Option<String>,
     /// `manifestations.pages`, when known.
     pub pages: Option<i32>,
+    /// Tag names attached to the manifestation, sorted by name.
+    /// Batch-loaded per page.
+    pub tags: Vec<String>,
+    /// Genre names attached to the manifestation, sorted by name.
+    /// Batch-loaded per page.
+    pub genres: Vec<String>,
+    /// Mood names attached to the manifestation, sorted by name.
+    /// Batch-loaded per page.
+    pub moods: Vec<String>,
+    /// Audience-suitability rating (`manifestations.content_rating`);
+    /// `None` when unrated.
+    pub content_rating: Option<ContentRating>,
     /// Cover thumbnail URL — relative path served by the
     /// `/api/v1/books/{id}/cover/thumb` handler under the caller's
     /// session. Not pre-signed; access is gated by the session cookie.
@@ -150,6 +184,9 @@ pub struct BookDetail {
     pub subtitle: Option<String>,
     /// Author display names ordered by `work_authors.position`.
     pub authors: Vec<String>,
+    /// Non-author contributors (editor/translator/narrator) of the parent
+    /// work, ordered by role then position; empty when the work has none.
+    pub contributors: Vec<ContributorRef>,
     /// Series membership; `None` when the work isn't on a series.
     pub series: Option<SeriesRef>,
     /// Long-form description (`works.description`).
