@@ -111,7 +111,10 @@ const MAX_TAG_FILTERS: usize = 20;
 /// A flat suffix grammar of typed per-column conditions, AND-combined with the
 /// vocabulary filters above and each other. Text (`title_contains/_eq/_ne`,
 /// `subtitle_contains/_empty`, `isbn_13_contains/_eq/_empty`) is
-/// case-insensitive `ILIKE`; numeric (`pages_gte/_lte/_empty`) and date
+/// case-insensitive `ILIKE`; the `_contains` legs (and the `q` quick filter
+/// below) also fold accents, so an unaccented needle matches an accented
+/// stored value, while `_eq`/`_ne` stay accent-sensitive; numeric
+/// (`pages_gte/_lte/_empty`) and date
 /// (`created_at_gte/_lte`, day-inclusive) are scalar bounds; `status_any/_none`
 /// (with the `unread` pseudo-value) and `rating_gte/_lte/_empty` probe the
 /// caller's RLS-scoped `reading_state`; `author`/`author_any`/`author_none`
@@ -174,7 +177,8 @@ struct ListParams {
     /// None-of tag filter: no listed tag name is attached.
     #[serde(default)]
     tag_none: Vec<String>,
-    /// Case-insensitive substring match on the work title.
+    /// Case-insensitive, accent-insensitive substring match on the work
+    /// title.
     #[serde(default)]
     title_contains: Option<String>,
     /// Case-insensitive exact match on the work title (no wildcards).
@@ -183,7 +187,8 @@ struct ListParams {
     /// Case-insensitive exact non-match on the work title.
     #[serde(default)]
     title_ne: Option<String>,
-    /// Case-insensitive substring match on the work subtitle.
+    /// Case-insensitive, accent-insensitive substring match on the work
+    /// subtitle.
     #[serde(default)]
     subtitle_contains: Option<String>,
     /// `true` keeps only rows with no subtitle; `false` keeps only rows
@@ -236,7 +241,8 @@ struct ListParams {
     rating_empty: Option<bool>,
     /// Quick-search text: narrows the current result set to rows whose
     /// title or full-text vector matches, within the active sort order.
-    /// A filter, not a ranked search (that lives at `/api/v1/search`).
+    /// Case- and accent-insensitive. A filter, not a ranked search (that
+    /// lives at `/api/v1/search`).
     #[serde(default)]
     q: Option<String>,
 }

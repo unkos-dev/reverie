@@ -18,8 +18,13 @@
 //!   key makes at most one `rs` row visible per manifestation, so every
 //!   status/rating probe refers to the same row.
 //! - Text matching is case-insensitive `ILIKE` with backslash-escaped
-//!   wildcards ([`escape_like`]) and accent-sensitive, matching the search
-//!   and suggest endpoints.
+//!   wildcards. The `title`/`subtitle` `_contains` legs and the quick `q`
+//!   filter are also accent-insensitive (folded through `immutable_unaccent`,
+//!   matching the search and suggest endpoints), and on those legs the
+//!   escaping runs in SQL after folding (`immutable_unaccent_like`), because
+//!   unaccent can fold Unicode punctuation into `%`/`_`/`\` and would undo a
+//!   pre-fold escape. `isbn_13_contains` (nothing to fold) and the unfolded
+//!   `_eq`/`_ne` exact legs escape in Rust via [`escape_like`].
 
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, QueryBuilder};
@@ -424,8 +429,11 @@ fn push_vocab_predicates(
 }
 
 /// Push the text-column conditions (`title`/`subtitle` on `works`, `isbn_13`
-/// on `manifestations`). `_contains` wraps the escaped needle in `%…%`,
-/// `_eq` binds it wildcard-free, `_ne` negates, `_empty` is a null check.
+/// on `manifestations`). `_contains` wraps the needle in `%…%` and folds
+/// accents on both sides (see [`push_ilike_contains`]) except for `isbn_13`,
+/// which has nothing to fold and stays on the plain escaped path; `_eq` binds
+/// it wildcard-free and accent-sensitive, `_ne` negates the same way,
+/// `_empty` is a null check.
 fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(needle) = trimmed(p.title_contains.as_deref()) {
         push_ilike_contains(qb, "w.title", needle);
@@ -443,7 +451,7 @@ fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
         push_is_empty(qb, "w.subtitle", empty);
     }
     if let Some(needle) = trimmed(p.isbn_13_contains.as_deref()) {
-        push_ilike_contains(qb, "m.isbn_13", needle);
+        push_ilike_contains_plain(qb, "m.isbn_13", needle);
     }
     if let Some(needle) = trimmed(p.isbn_13_eq.as_deref()) {
         push_ilike_exact(qb, "m.isbn_13", needle, false);
@@ -453,9 +461,31 @@ fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     }
 }
 
-/// `AND <col> ILIKE '%needle%'`. `col` is a fixed fragment; `needle` is
-/// escaped so `%`/`_`/`\` match literally.
+/// `AND immutable_unaccent(<col>) ILIKE '%' ||
+/// nullif(immutable_unaccent_like($raw), '') || '%'`. `col` is a fixed
+/// fragment; the needle binds RAW, never through [`escape_like`]: the
+/// unaccent dictionary maps some Unicode characters (fullwidth `％`/`＿`/`＼`
+/// among them) into LIKE metacharacters, so an escape applied before folding
+/// is undone by it. `immutable_unaccent_like` folds first and escapes after,
+/// on the SQL side, and the live `%` wildcards concatenate outside it. The
+/// `nullif` guards the dictionary's erasures (combining marks fold to the
+/// empty string): an empty fold nulls the whole pattern, so the predicate
+/// matches nothing instead of everything. Both sides fold through the same
+/// `IMMUTABLE` wrapper the folded trigram indexes are built on, so an
+/// unaccented needle matches an accented stored value without the column
+/// losing its stored accents.
 fn push_ilike_contains(qb: &mut QueryBuilder<Postgres>, col: &str, needle: &str) {
+    qb.push(" AND immutable_unaccent(");
+    qb.push(col);
+    qb.push(") ILIKE '%' || nullif(immutable_unaccent_like(");
+    qb.push_bind(needle.to_owned());
+    qb.push("), '') || '%'");
+}
+
+/// `AND <col> ILIKE '%needle%'` with no accent folding: the escaped-in-Rust
+/// needle is final because nothing rewrites it after [`escape_like`] runs.
+/// Used where folding buys nothing (`isbn_13` is digits and `X`).
+fn push_ilike_contains_plain(qb: &mut QueryBuilder<Postgres>, col: &str, needle: &str) {
     qb.push(" AND ");
     qb.push(col);
     qb.push(" ILIKE ");
@@ -615,14 +645,18 @@ fn push_rating_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
 
 /// Push the quick-search filter: a full-text match OR a title trigram match,
 /// with no ranking so the active sort order is preserved. Both legs are
-/// index-backed (GIN `search_vector`, `GiST` `title` trigram).
+/// index-backed (GIN `search_vector`, `GiST` `title` trigram) and both fold
+/// accents: `search_vector` is built under the `unaccent_english` text search
+/// configuration, so the tsquery leg must query under the same configuration
+/// to keep matching an accented query against a folded lexeme; the title leg
+/// wraps both sides in `immutable_unaccent`, matching the folded index.
 fn push_q_predicate(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(raw) = trimmed(p.q.as_deref()) {
-        qb.push(" AND (w.search_vector @@ websearch_to_tsquery('english', ");
+        qb.push(" AND (w.search_vector @@ websearch_to_tsquery('unaccent_english', ");
         qb.push_bind(raw.to_owned());
-        qb.push(") OR w.title ILIKE ");
-        qb.push_bind(format!("%{}%", escape_like(raw)));
-        qb.push(")");
+        qb.push(") OR immutable_unaccent(w.title) ILIKE '%' || nullif(immutable_unaccent_like(");
+        qb.push_bind(raw.to_owned());
+        qb.push("), '') || '%')");
     }
 }
 
