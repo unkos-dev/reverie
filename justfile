@@ -477,9 +477,15 @@ db-migrate:
 #
 # Is not: the deployment path. Real instances still migrate through the
 # application binary's `migrate` command (what `db-migrate` runs), which
-# may perform runtime checks sqlx-cli does not. This recipe is a local
-# authoring shortcut, never a substitute for that command in a shipped
-# environment.
+# performs runtime checks sqlx-cli does not, and which applies all
+# pending transactional migrations inside one batch transaction where
+# sqlx-cli commits each migration individually. A migration that needs
+# an earlier migration's commit (the classic case: using an enum value a
+# previous migration just added) passes here and fails under the shipped
+# runner on a fresh database. Before pushing a branch that adds a
+# migration, run `just db-reset && just db-migrate` once so the shipped
+# runner has applied it from scratch; nothing else in the local loop or
+# preflight exercises that runner.
 #
 # Is not: a cache regenerator. Run `just rust::sqlx-prepare` afterward;
 # this recipe only touches the database.
@@ -488,12 +494,19 @@ db-migrate:
 # dev DB that already carries a sibling worktree's migration. Not on by
 # default: it weakens sqlx-cli's check that applied migrations match the
 # local migration files, and that check should stay strict unless a
-# developer knowingly needs to relax it.
+# developer knowingly needs to relax it. Even after it succeeds, the
+# sibling's applied migration is still unknown to this branch's binary,
+# so the application's schema-ahead check keeps rejecting the database:
+# `db-migrate` and backend startup both fail until the branch gains the
+# sibling's migration file or the database is rebuilt with
+# `just db-reset` (destructive; discards the shared DB's data).
 #
-# Same migrator DSN as db-migrate (the default above), reused verbatim so
-# the two cannot drift apart. Duplicated rather than lifted into a just
-# variable for the same reason db-migrate inlines it: a just variable
-# would echo an overridden credential into dry-run/verbose recipe output.
+# Same migrator DSN default as db-migrate, as a deliberate copy that
+# nothing in just enforces; scripts/recipe-secret-echo-test.sh asserts
+# the two stay byte-identical, so change both together. Duplicated
+# rather than lifted into a just variable for the same reason db-migrate
+# inlines it: a just variable would echo an overridden credential into
+# dry-run/verbose recipe output.
 #
 # Apply pending migrations directly with sqlx-cli, bypassing the backend build.
 [group('db')]
