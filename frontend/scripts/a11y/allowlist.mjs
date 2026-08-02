@@ -19,9 +19,11 @@
 // (Ink), so the lg primary button measures ink-on-gold at 5.11:1 on Light and
 // 8.64:1 on Dark — both clear 4.5:1 at its 14px/500 type, and the gate is green
 // without the exception. The brand restriction it referenced still stands (see
-// frontend/DESIGN.md §2 "Light-Gold Restriction Rule": gold on light surfaces
-// is permitted only on focus rings, large CTAs, and recovery actions); the
-// accent simply no longer needs an accessibility exception to satisfy it.
+// frontend/DESIGN.md §2 "Light-Gold Restriction Rule": on light surfaces the
+// gold-9 fill is permitted only on large CTAs and recovery actions, and gold
+// that must read as text or a hairline, the focus ring above all, uses the
+// `accent-text` (gold-11) step instead); the accent simply no longer needs an
+// accessibility exception to satisfy it.
 
 /**
  * Documented, accepted WCAG carve-outs. Each entry matches a node iff the
