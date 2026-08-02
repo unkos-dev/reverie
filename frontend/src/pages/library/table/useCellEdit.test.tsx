@@ -73,14 +73,25 @@ function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     title: "Original Title",
     subtitle: "Original Subtitle",
     authors: ["Original Author"],
+    contributors: [],
     series: null,
     isbn_13: "9780000000001",
     pages: 100,
+    tags: [],
+    genres: [],
+    moods: [],
+    content_rating: null,
     cover_url: "",
     ingestion_status: "complete",
     validation_status: "clean",
     enrichment_status: "complete",
-    reading_state: { status: "reading", rating: 3, progress_pct: 40 },
+    reading_state: {
+      status: "reading",
+      rating: 3,
+      progress_pct: 40,
+      started_at: null,
+      finished_at: null,
+    },
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
@@ -207,7 +218,16 @@ describe("useCellEdit", () => {
     seedCache(client, [row]);
     vi.mocked(updateReadingState).mockResolvedValue(readingStateFixture({ rating: 5 }));
     const report: CellEditReport<BookListItem> = {
-      row: { ...row, reading_state: { status: "reading", rating: 5, progress_pct: 40 } },
+      row: {
+        ...row,
+        reading_state: {
+          status: "reading",
+          rating: 5,
+          progress_pct: 40,
+          started_at: null,
+          finished_at: null,
+        },
+      },
       previousRow: row,
       columnKey: "rating",
     };
@@ -343,11 +363,28 @@ describe("useCellEdit", () => {
 
   test("undoing a reading edit counter-patches through updateReadingState and applies its response, not the raw snapshot", async () => {
     const client = makeClient();
-    const row = rowFixture({ reading_state: { status: "reading", rating: 2, progress_pct: 40 } });
+    const row = rowFixture({
+      reading_state: {
+        status: "reading",
+        rating: 2,
+        progress_pct: 40,
+        started_at: null,
+        finished_at: null,
+      },
+    });
     seedCache(client, [row]);
     vi.mocked(updateReadingState).mockResolvedValueOnce(readingStateFixture({ rating: 5 }));
     const report: CellEditReport<BookListItem> = {
-      row: { ...row, reading_state: { status: "reading", rating: 5, progress_pct: 40 } },
+      row: {
+        ...row,
+        reading_state: {
+          status: "reading",
+          rating: 5,
+          progress_pct: 40,
+          started_at: null,
+          finished_at: null,
+        },
+      },
       previousRow: row,
       columnKey: "rating",
     };
@@ -373,6 +410,8 @@ describe("useCellEdit", () => {
         status: "reading",
         rating: 2,
         progress_pct: 55,
+        started_at: null,
+        finished_at: null,
       });
     });
   });
@@ -660,13 +699,30 @@ describe("useCellEdit", () => {
 
   test("a failed reading-pipeline edit leaves the cache untouched, clears the pending entry, and toasts", async () => {
     const client = makeClient();
-    const row = rowFixture({ reading_state: { status: "reading", rating: 3, progress_pct: 40 } });
+    const row = rowFixture({
+      reading_state: {
+        status: "reading",
+        rating: 3,
+        progress_pct: 40,
+        started_at: null,
+        finished_at: null,
+      },
+    });
     seedCache(client, [row]);
     vi.mocked(updateReadingState).mockRejectedValue(
       new ApiError(422, null, "Validation Error", "Rating must be between 1 and 5."),
     );
     const report: CellEditReport<BookListItem> = {
-      row: { ...row, reading_state: { status: "reading", rating: 5, progress_pct: 40 } },
+      row: {
+        ...row,
+        reading_state: {
+          status: "reading",
+          rating: 5,
+          progress_pct: 40,
+          started_at: null,
+          finished_at: null,
+        },
+      },
       previousRow: row,
       columnKey: "rating",
     };
@@ -680,6 +736,8 @@ describe("useCellEdit", () => {
       status: "reading",
       rating: 3,
       progress_pct: 40,
+      started_at: null,
+      finished_at: null,
     });
     await waitFor(() => {
       expect(screen.getByTestId("pending-keys")).toHaveTextContent("");

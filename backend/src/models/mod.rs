@@ -6,6 +6,8 @@
 
 /// Closed value set for the `content_rating` Postgres `ENUM`.
 pub mod content_rating;
+/// Closed value set for the `author_role` Postgres `ENUM`.
+pub mod contributor_role;
 /// Per-user device tokens for OPDS / mobile-client Basic-auth flows.
 pub mod device_token;
 /// Closed value set for the `enrichment_status` Postgres `ENUM`.
