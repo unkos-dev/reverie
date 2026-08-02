@@ -51,6 +51,20 @@ expect() {
   fi
 }
 
+# Assert on the message, not just the exit code. A guard that fails closed but
+# names the wrong cause sends the reader to the wrong fix, which is the whole
+# reason the shape hints exist.
+expect_message() {
+  local name="$1" want="$2" out
+  out="$( (cd "$tmp" && "$checker") 2>&1 || true)"
+  if [[ $out == *"$want"* ]]; then
+    echo "ok   ${name}"
+  else
+    echo "FAIL ${name}: expected message containing '${want}', got: ${out}"
+    fail=1
+  fi
+}
+
 baseline
 expect "agreeing pins pass" 0
 
@@ -179,5 +193,19 @@ expect "multi-digit components accepted on both pins" 0
 
 consistent_tree "0.0.0" "0.0.0"
 expect "all-zero versions accepted on both pins" 0
+
+# Failing closed is not enough: the message has to name the cause, or a
+# maintainer who deliberately pinned a prerelease goes looking for a parse bug
+# in a guard that is in fact enforcing a policy.
+consistent_tree "0.2.6-beta"
+expect_message "prerelease vite-plus pin names itself as the cause" \
+  "prereleases are rejected by policy"
+
+baseline
+for f in ci docs-build scheduled-audit; do
+  workflow "$REF" "24.18.0-rc" "${tmp}/.github/workflows/${f}.yml"
+done
+expect_message "prerelease NODE_VERSION names itself as the cause" \
+  "prereleases are rejected by policy"
 
 exit "$fail"
