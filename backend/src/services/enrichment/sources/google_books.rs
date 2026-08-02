@@ -390,9 +390,9 @@ mod tests {
                 out.rating
             );
         };
-        assert!((rating.rating - 4.5).abs() < f32::EPSILON);
-        assert!((rating.rating_scale - 5.0).abs() < f32::EPSILON);
-        assert_eq!(rating.review_count, 1234);
+        assert!((rating.rating() - 4.5).abs() < f32::EPSILON);
+        assert!((rating.rating_scale() - 5.0).abs() < f32::EPSILON);
+        assert_eq!(rating.review_count(), 1234);
     }
 
     #[tokio::test]

@@ -4430,7 +4430,7 @@ async fn seed_external_refs(ingestion_pool: &PgPool, work_id: Uuid, m_id: Uuid) 
     use crate::models::external_identifier::{
         upsert_manifestation_identifier, upsert_work_identifier,
     };
-    use crate::models::external_rating::upsert_rating;
+    use crate::models::external_rating::{RatingObservation, upsert_rating};
 
     upsert_work_identifier(ingestion_pool, work_id, "openlibrary", "OL45804W", None)
         .await
@@ -4441,12 +4441,22 @@ async fn seed_external_refs(ingestion_pool: &PgPool, work_id: Uuid, m_id: Uuid) 
     upsert_manifestation_identifier(ingestion_pool, m_id, "asin", "B004GXAX8C", None)
         .await
         .expect("seed asin id");
-    upsert_rating(ingestion_pool, m_id, "googlebooks", 4.5, 5.0, 100)
-        .await
-        .expect("seed googlebooks rating");
-    upsert_rating(ingestion_pool, m_id, "amazon", 4.1, 5.0, 2000)
-        .await
-        .expect("seed amazon rating");
+    upsert_rating(
+        ingestion_pool,
+        m_id,
+        "googlebooks",
+        &RatingObservation::new(4.5, 5.0, 100).expect("valid test rating"),
+    )
+    .await
+    .expect("seed googlebooks rating");
+    upsert_rating(
+        ingestion_pool,
+        m_id,
+        "amazon",
+        &RatingObservation::new(4.1, 5.0, 2000).expect("valid test rating"),
+    )
+    .await
+    .expect("seed amazon rating");
 }
 
 fn id_entry<'a>(items: &'a [serde_json::Value], scheme: &str) -> Option<&'a serde_json::Value> {
@@ -4572,7 +4582,7 @@ async fn list_pagination_unaffected_by_multiple_ids_and_ratings(pool: PgPool) {
     use crate::models::external_identifier::{
         upsert_manifestation_identifier, upsert_work_identifier,
     };
-    use crate::models::external_rating::upsert_rating;
+    use crate::models::external_rating::{RatingObservation, upsert_rating};
 
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -4611,12 +4621,22 @@ async fn list_pagination_unaffected_by_multiple_ids_and_ratings(pool: PgPool) {
         upsert_manifestation_identifier(&ingestion_pool, m_id, "goodreads", "5907", None)
             .await
             .expect("seed goodreads id");
-        upsert_rating(&ingestion_pool, m_id, "googlebooks", 4.0, 5.0, 10)
-            .await
-            .expect("seed rating");
-        upsert_rating(&ingestion_pool, m_id, "openlibrary", 3.5, 5.0, 7)
-            .await
-            .expect("seed rating");
+        upsert_rating(
+            &ingestion_pool,
+            m_id,
+            "googlebooks",
+            &RatingObservation::new(4.0, 5.0, 10).expect("valid test rating"),
+        )
+        .await
+        .expect("seed rating");
+        upsert_rating(
+            &ingestion_pool,
+            m_id,
+            "openlibrary",
+            &RatingObservation::new(3.5, 5.0, 7).expect("valid test rating"),
+        )
+        .await
+        .expect("seed rating");
         all_ids.push(m_id);
     }
 

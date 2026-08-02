@@ -251,12 +251,14 @@ pub async fn run_once(
 /// cache, bypassing the journal and the policy engine entirely: ratings are
 /// per-source refreshable values with no canonical to reconcile, never
 /// journaled, locked, or written back. A reported rating refreshes the row;
-/// a rating-capable record that omits its rating, or reports one the schema
-/// would reject, removes the cached row so the projection cannot serve an
-/// obsolete score indefinitely; a path that carries no rating data leaves
-/// the cache untouched. The range guard mirrors the table's CHECK
-/// constraints, so an unusable value clears the row rather than aborting the
-/// whole enrichment transaction on the DB CHECK.
+/// a rating-capable record that omits its rating, or reports one the ratings
+/// cache's own invariant rejects, removes the cached row so the projection
+/// cannot serve an obsolete score indefinitely; a path that carries no
+/// rating data leaves the cache untouched. There is no runtime range guard
+/// here: `RatingObservation` cannot be constructed out of range, so an
+/// unusable value already arrives as [`RatingSignal::Unusable`] rather than
+/// as a [`RatingSignal::Reported`] value that this function would need to
+/// re-check.
 async fn upsert_ratings(
     tx: &mut Transaction<'_, Postgres>,
     manifestation_id: Uuid,
@@ -278,34 +280,28 @@ async fn upsert_ratings(
                     );
                 }
             }
-            RatingSignal::Reported(r) => {
-                let in_range = r.rating_scale > 0.0
-                    && r.rating >= 0.0
-                    && r.rating <= r.rating_scale
-                    && r.review_count >= 0;
-                if !in_range {
-                    // A value the schema would reject is no evidence that the
-                    // cached score still holds, so drop it instead of serving
-                    // it until the provider next reports something usable.
-                    let removed =
-                        external_rating::delete_rating(&mut **tx, manifestation_id, &run.source_id)
-                            .await?;
-                    warn!(
-                        %manifestation_id, source = %run.source_id, rating = r.rating,
-                        scale = r.rating_scale, count = r.review_count, cleared = removed,
-                        "enrichment: unusable provider rating; cache row cleared"
-                    );
-                    continue;
-                }
+            RatingSignal::Reported(observation) => {
                 external_rating::upsert_rating(
                     &mut **tx,
                     manifestation_id,
                     &run.source_id,
-                    r.rating,
-                    r.rating_scale,
-                    r.review_count,
+                    observation,
                 )
                 .await?;
+            }
+            RatingSignal::Unusable(err) => {
+                // A value the cache's invariant rejects is no evidence that
+                // the cached score still holds, so drop it instead of
+                // serving it until the provider next reports something
+                // usable.
+                let removed =
+                    external_rating::delete_rating(&mut **tx, manifestation_id, &run.source_id)
+                        .await?;
+                warn!(
+                    %manifestation_id, source = %run.source_id, rating = err.rating,
+                    scale = err.rating_scale, count = err.review_count, cleared = removed,
+                    "enrichment: unusable provider rating; cache row cleared"
+                );
             }
         }
     }
@@ -1412,6 +1408,17 @@ mod tests {
     // the missing `SELECT` grant so the orchestrator's
     // `field_lock::is_locked_tx` call succeeds under this role.
     use crate::test_support::db::{app_pool_for, ingestion_pool_for};
+
+    /// Build a known-valid observation for seeding a cached rating; the
+    /// constructor's own validation is covered in `models::external_rating`.
+    fn seed_rating(
+        rating: f32,
+        rating_scale: f32,
+        review_count: i32,
+    ) -> external_rating::RatingObservation {
+        external_rating::RatingObservation::new(rating, rating_scale, review_count)
+            .expect("valid test rating")
+    }
 
     fn config_with_mock_sources(
         ol_uri: &str,
@@ -3416,9 +3423,14 @@ mod tests {
             .await
             .unwrap();
         // A rating cached by an earlier run.
-        crate::models::external_rating::upsert_rating(&pool, m_id, "googlebooks", 4.5, 5.0, 100)
-            .await
-            .unwrap();
+        crate::models::external_rating::upsert_rating(
+            &pool,
+            m_id,
+            "googlebooks",
+            &seed_rating(4.5, 5.0, 100),
+        )
+        .await
+        .unwrap();
 
         // The re-fetched Volume record no longer reports a rating.
         Mock::given(method("GET"))
@@ -3455,25 +3467,34 @@ mod tests {
             MockServer::start().await,
             MockServer::start().await,
         );
-        // Two editions cover both reachable halves of the range guard. The
-        // scale half is unreachable from the adapters, which pin 5.0.
+        // Two editions cover both unusable classes reachable from the
+        // adapters: a rating above its scale and a negative rating. The
+        // scale predicate of `RatingObservation::new` is unreachable from
+        // the adapters, which pin 5.0, and an unstorable review count is
+        // clamped to unreported before construction instead of becoming
+        // unusable.
         let over_scale = Uuid::new_v4().simple().to_string();
         let (_ow, over_id) = insert_isbnless_fixture(&pool, &over_scale).await;
         upsert_manifestation_identifier(&pool, over_id, "googlebooks", "volOVER", None)
             .await
             .unwrap();
-        let negative_count = Uuid::new_v4().simple().to_string();
-        let (_nw, negative_id) = insert_isbnless_fixture(&pool, &negative_count).await;
+        let negative_rating = Uuid::new_v4().simple().to_string();
+        let (_nw, negative_id) = insert_isbnless_fixture(&pool, &negative_rating).await;
         upsert_manifestation_identifier(&pool, negative_id, "googlebooks", "volNEG", None)
             .await
             .unwrap();
         for m in [over_id, negative_id] {
-            crate::models::external_rating::upsert_rating(&pool, m, "googlebooks", 4.5, 5.0, 100)
-                .await
-                .unwrap();
+            crate::models::external_rating::upsert_rating(
+                &pool,
+                m,
+                "googlebooks",
+                &seed_rating(4.5, 5.0, 100),
+            )
+            .await
+            .unwrap();
         }
 
-        // Both payloads carry values the table's CHECK constraints reject.
+        // Both payloads carry ratings `RatingObservation::new` rejects.
         Mock::given(method("GET"))
             .and(path("/volumes/volOVER"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -3486,7 +3507,7 @@ mod tests {
             .and(path("/volumes/volNEG"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": "volNEG",
-                "volumeInfo": {"title": "Negative Count", "averageRating": 4.0, "ratingsCount": -1}
+                "volumeInfo": {"title": "Negative Rating", "averageRating": -0.5, "ratingsCount": 3}
             })))
             .mount(&gb)
             .await;
@@ -3524,9 +3545,14 @@ mod tests {
             .await
             .unwrap();
         // An openlibrary rating cached from an earlier search-path run.
-        crate::models::external_rating::upsert_rating(&pool, m_id, "openlibrary", 4.2, 5.0, 55)
-            .await
-            .unwrap();
+        crate::models::external_rating::upsert_rating(
+            &pool,
+            m_id,
+            "openlibrary",
+            &seed_rating(4.2, 5.0, 55),
+        )
+        .await
+        .unwrap();
 
         // The native edition record carries no rating data either way.
         mock_ol_edition(&ol, "OL7353617M", json!({"title": "Dune"})).await;

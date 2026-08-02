@@ -32,6 +32,82 @@ pub struct ManifestationExternalRating {
     pub fetched_at: OffsetDateTime,
 }
 
+/// A per-manifestation aggregate rating observed from one provider, valid
+/// against the `manifestation_external_ratings` CHECK constraints.
+///
+/// Fields are private: the only way to obtain one is [`Self::new`], which
+/// enforces the same predicate as three constraints on that table -
+/// `manifestation_external_ratings_rating_scale_positive`
+/// (`rating_scale > 0`), `manifestation_external_ratings_rating_range`
+/// (`rating >= 0 AND rating <= rating_scale`), and
+/// `manifestation_external_ratings_review_count_nonneg`
+/// (`review_count >= 0`). This constructor is the single site that must
+/// track those constraints if they ever change.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RatingObservation {
+    rating: f32,
+    rating_scale: f32,
+    review_count: i32,
+}
+
+impl RatingObservation {
+    /// Build a `RatingObservation`, rejecting any value the table's CHECK
+    /// constraints would reject (see the struct doc comment for the exact
+    /// constraint names). A `NaN` rating is rejected without a dedicated
+    /// `is_nan` check: every comparison against `NaN` is `false`, so it
+    /// fails the range predicate naturally.
+    pub fn new(
+        rating: f32,
+        rating_scale: f32,
+        review_count: i32,
+    ) -> Result<Self, InvalidRatingObservation> {
+        if rating_scale > 0.0 && rating >= 0.0 && rating <= rating_scale && review_count >= 0 {
+            Ok(Self {
+                rating,
+                rating_scale,
+                review_count,
+            })
+        } else {
+            Err(InvalidRatingObservation {
+                rating,
+                rating_scale,
+                review_count,
+            })
+        }
+    }
+
+    /// The provider's score on its own scale.
+    pub const fn rating(&self) -> f32 {
+        self.rating
+    }
+
+    /// The provider's maximum score (e.g. 5).
+    pub const fn rating_scale(&self) -> f32 {
+        self.rating_scale
+    }
+
+    /// Number of reviews backing the score; 0 when unreported.
+    pub const fn review_count(&self) -> i32 {
+        self.review_count
+    }
+}
+
+/// A rating-capable record reported values the `manifestation_external_ratings`
+/// CHECK constraints would reject. Carries the rejected values so a caller
+/// can log or report them without re-deriving which predicate failed.
+#[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
+#[error(
+    "rating observation rejected: rating={rating}, rating_scale={rating_scale}, review_count={review_count}"
+)]
+pub struct InvalidRatingObservation {
+    /// The rejected rating value.
+    pub rating: f32,
+    /// The rejected scale value.
+    pub rating_scale: f32,
+    /// The rejected review count.
+    pub review_count: i32,
+}
+
 /// Upsert a rating for a `(manifestation_id, source)` pair, refreshing the
 /// score/scale/count and stamping `fetched_at = now()`. Idempotent: a re-run
 /// with the same score updates the one row in place (no duplicate). Two
@@ -40,9 +116,7 @@ pub async fn upsert_rating(
     executor: impl sqlx::PgExecutor<'_>,
     manifestation_id: Uuid,
     source: &str,
-    rating: f32,
-    rating_scale: f32,
-    review_count: i32,
+    observation: &RatingObservation,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "INSERT INTO manifestation_external_ratings \
@@ -55,9 +129,9 @@ pub async fn upsert_rating(
                        fetched_at = now()",
         manifestation_id,
         source,
-        rating,
-        rating_scale,
-        review_count,
+        observation.rating,
+        observation.rating_scale,
+        observation.review_count,
     )
     .execute(executor)
     .await
@@ -107,16 +181,58 @@ mod tests {
         (a - b).abs() < f32::EPSILON
     }
 
+    /// Build a known-valid observation for tests that don't care about the
+    /// constructor's own validation (that's covered separately below).
+    fn obs(rating: f32, rating_scale: f32, review_count: i32) -> RatingObservation {
+        RatingObservation::new(rating, rating_scale, review_count).expect("valid test rating")
+    }
+
+    // ---- RatingObservation::new ----
+
+    #[test]
+    fn new_accepts_valid_observation() {
+        let observation = RatingObservation::new(4.5, 5.0, 100).expect("valid");
+        assert!(approx(observation.rating(), 4.5));
+        assert!(approx(observation.rating_scale(), 5.0));
+        assert_eq!(observation.review_count(), 100);
+    }
+
+    #[test]
+    fn new_rejects_rating_above_scale() {
+        assert!(RatingObservation::new(6.0, 5.0, 1).is_err());
+    }
+
+    #[test]
+    fn new_rejects_negative_rating() {
+        assert!(RatingObservation::new(-0.5, 5.0, 1).is_err());
+    }
+
+    #[test]
+    fn new_rejects_nonpositive_scale() {
+        assert!(RatingObservation::new(4.0, 0.0, 1).is_err());
+        assert!(RatingObservation::new(0.0, -5.0, 1).is_err());
+    }
+
+    #[test]
+    fn new_rejects_negative_review_count() {
+        assert!(RatingObservation::new(4.0, 5.0, -1).is_err());
+    }
+
+    #[test]
+    fn new_rejects_nan_rating() {
+        assert!(RatingObservation::new(f32::NAN, 5.0, 1).is_err());
+    }
+
     // ---- upsert idempotency + independence ----
 
     #[sqlx::test(migrations = "./migrations")]
     async fn upsert_updates_in_place(pool: PgPool) {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-upsert").await;
-        upsert_rating(&pool, m, "googlebooks", 4.0, 5.0, 100)
+        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 100))
             .await
             .expect("first");
-        upsert_rating(&pool, m, "googlebooks", 4.5, 5.0, 250)
+        upsert_rating(&pool, m, "googlebooks", &obs(4.5, 5.0, 250))
             .await
             .expect("second");
 
@@ -140,10 +256,10 @@ mod tests {
         let (_w1, m1) = insert_work_and_manifestation(&ingestion, "rating-ed1").await;
         let (_w2, m2) = insert_work_and_manifestation(&ingestion, "rating-ed2").await;
         // Same provider, different volume ratings — no cross-edition clobber.
-        upsert_rating(&pool, m1, "googlebooks", 3.0, 5.0, 10)
+        upsert_rating(&pool, m1, "googlebooks", &obs(3.0, 5.0, 10))
             .await
             .expect("ed1");
-        upsert_rating(&pool, m2, "googlebooks", 5.0, 5.0, 20)
+        upsert_rating(&pool, m2, "googlebooks", &obs(5.0, 5.0, 20))
             .await
             .expect("ed2");
 
@@ -172,7 +288,7 @@ mod tests {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-fk").await;
         // `manual` exists in metadata_sources but is NOT rating-capable.
-        let err = upsert_rating(&pool, m, "manual", 4.0, 5.0, 1)
+        let err = upsert_rating(&pool, m, "manual", &obs(4.0, 5.0, 1))
             .await
             .expect_err("source=manual must be FK-rejected");
         assert_eq!(
@@ -182,21 +298,59 @@ mod tests {
         );
     }
 
+    // These three CHECK constraints can no longer be reached through the
+    // typed `upsert_rating` API (`RatingObservation::new` rejects the values
+    // first), so they are exercised with a direct insert instead.
     #[sqlx::test(migrations = "./migrations")]
     async fn rating_out_of_range_rejected(pool: PgPool) {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-range").await;
-        assert!(
-            upsert_rating(&pool, m, "googlebooks", 6.0, 5.0, 1)
-                .await
-                .is_err(),
-            "rating above scale rejected"
+        let over_scale = sqlx::query!(
+            "INSERT INTO manifestation_external_ratings \
+                 (manifestation_id, source, rating, rating_scale, review_count) \
+             VALUES ($1, 'googlebooks', $2, $3, $4)",
+            m,
+            6.0_f32,
+            5.0_f32,
+            1,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("rating above scale rejected");
+        assert_eq!(
+            err_code(&over_scale).as_deref(),
+            Some("23514"),
+            "check_violation"
         );
-        assert!(
-            upsert_rating(&pool, m, "googlebooks", -0.5, 5.0, 1)
-                .await
-                .is_err(),
-            "negative rating rejected"
+        assert_eq!(
+            over_scale
+                .as_database_error()
+                .and_then(sqlx::error::DatabaseError::constraint),
+            Some("manifestation_external_ratings_rating_range")
+        );
+
+        let negative = sqlx::query!(
+            "INSERT INTO manifestation_external_ratings \
+                 (manifestation_id, source, rating, rating_scale, review_count) \
+             VALUES ($1, 'googlebooks', $2, $3, $4)",
+            m,
+            -0.5_f32,
+            5.0_f32,
+            1,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("negative rating rejected");
+        assert_eq!(
+            err_code(&negative).as_deref(),
+            Some("23514"),
+            "check_violation"
+        );
+        assert_eq!(
+            negative
+                .as_database_error()
+                .and_then(sqlx::error::DatabaseError::constraint),
+            Some("manifestation_external_ratings_rating_range")
         );
     }
 
@@ -204,11 +358,23 @@ mod tests {
     async fn negative_review_count_rejected(pool: PgPool) {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-count").await;
-        assert!(
-            upsert_rating(&pool, m, "googlebooks", 4.0, 5.0, -1)
-                .await
-                .is_err(),
-            "negative review_count rejected"
+        let err = sqlx::query!(
+            "INSERT INTO manifestation_external_ratings \
+                 (manifestation_id, source, rating, rating_scale, review_count) \
+             VALUES ($1, 'googlebooks', $2, $3, $4)",
+            m,
+            4.0_f32,
+            5.0_f32,
+            -1,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("negative review_count rejected");
+        assert_eq!(err_code(&err).as_deref(), Some("23514"), "check_violation");
+        assert_eq!(
+            err.as_database_error()
+                .and_then(sqlx::error::DatabaseError::constraint),
+            Some("manifestation_external_ratings_review_count_nonneg")
         );
     }
 
@@ -216,11 +382,23 @@ mod tests {
     async fn nonpositive_scale_rejected(pool: PgPool) {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-scale").await;
-        assert!(
-            upsert_rating(&pool, m, "googlebooks", 0.0, 0.0, 1)
-                .await
-                .is_err(),
-            "rating_scale = 0 rejected"
+        let err = sqlx::query!(
+            "INSERT INTO manifestation_external_ratings \
+                 (manifestation_id, source, rating, rating_scale, review_count) \
+             VALUES ($1, 'googlebooks', $2, $3, $4)",
+            m,
+            0.0_f32,
+            0.0_f32,
+            1,
+        )
+        .execute(&pool)
+        .await
+        .expect_err("rating_scale = 0 rejected");
+        assert_eq!(err_code(&err).as_deref(), Some("23514"), "check_violation");
+        assert_eq!(
+            err.as_database_error()
+                .and_then(sqlx::error::DatabaseError::constraint),
+            Some("manifestation_external_ratings_rating_scale_positive")
         );
     }
 
@@ -230,7 +408,7 @@ mod tests {
     async fn deleting_manifestation_cascades_ratings(pool: PgPool) {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rating-cascade").await;
-        upsert_rating(&pool, m, "googlebooks", 4.0, 5.0, 1)
+        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 1))
             .await
             .expect("seed");
         sqlx::query!("DELETE FROM manifestations WHERE id = $1", m)
@@ -255,10 +433,10 @@ mod tests {
         let app = app_pool_for(&pool).await;
         let (_vw, visible_m) = insert_work_and_manifestation(&ingestion, "rat-vis").await;
         let (_hw, hidden_m) = insert_work_and_manifestation(&ingestion, "rat-hid").await;
-        upsert_rating(&pool, visible_m, "googlebooks", 4.0, 5.0, 1)
+        upsert_rating(&pool, visible_m, "googlebooks", &obs(4.0, 5.0, 1))
             .await
             .expect("seed visible");
-        upsert_rating(&pool, hidden_m, "googlebooks", 2.0, 5.0, 1)
+        upsert_rating(&pool, hidden_m, "googlebooks", &obs(2.0, 5.0, 1))
             .await
             .expect("seed hidden");
 
@@ -285,7 +463,7 @@ mod tests {
         let ingestion = ingestion_pool_for(&pool).await;
         let app = app_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-enable").await;
-        upsert_rating(&pool, m, "googlebooks", 4.0, 5.0, 1)
+        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 1))
             .await
             .expect("seed");
         let (child_id, _) = create_child_user_and_basic_auth(&app, "rat-enable").await;
@@ -307,7 +485,7 @@ mod tests {
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-nouser").await;
         let (adult_id, _) = create_adult_and_basic_auth(&app, "rat-nouser").await;
         let mut tx = acquire_with_rls(&app, adult_id).await.expect("rls tx");
-        let err = upsert_rating(&mut *tx, m, "googlebooks", 4.0, 5.0, 1)
+        let err = upsert_rating(&mut *tx, m, "googlebooks", &obs(4.0, 5.0, 1))
             .await
             .expect_err("adult rating write denied");
         assert!(is_rls_denied(&err), "expected 42501, got {err:?}");
@@ -317,7 +495,7 @@ mod tests {
     async fn ingestion_can_upsert_ratings(pool: PgPool) {
         let ingestion = ingestion_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-ing").await;
-        upsert_rating(&ingestion, m, "googlebooks", 4.0, 5.0, 1)
+        upsert_rating(&ingestion, m, "googlebooks", &obs(4.0, 5.0, 1))
             .await
             .expect("ingestion upsert succeeds");
     }
@@ -328,7 +506,7 @@ mod tests {
         let app = app_pool_for(&pool).await;
         let readonly = readonly_pool_for(&pool).await;
         let (_w, m) = insert_work_and_manifestation(&ingestion, "rat-ro").await;
-        upsert_rating(&pool, m, "googlebooks", 4.0, 5.0, 1)
+        upsert_rating(&pool, m, "googlebooks", &obs(4.0, 5.0, 1))
             .await
             .expect("seed");
         let (adult_id, _) = create_adult_and_basic_auth(&app, "rat-ro").await;
