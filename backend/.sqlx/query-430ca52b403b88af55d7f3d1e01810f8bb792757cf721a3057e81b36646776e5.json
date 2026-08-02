@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mo.id, mo.name\n                 FROM moods mo\n                WHERE EXISTS (\n                          SELECT 1 FROM manifestation_moods mm\n                          JOIN manifestations m ON m.id = mm.manifestation_id\n                         WHERE mm.mood_id = mo.id\n                      )\n                  AND (immutable_unaccent(mo.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'\n                       OR immutable_unaccent($1) <% immutable_unaccent(mo.name))\n                ORDER BY (immutable_unaccent(mo.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,\n                         word_similarity(immutable_unaccent($1), immutable_unaccent(mo.name)) DESC,\n                         mo.name ASC\n                LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "moods",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "moods",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "430ca52b403b88af55d7f3d1e01810f8bb792757cf721a3057e81b36646776e5"
+}

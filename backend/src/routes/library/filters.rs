@@ -461,22 +461,25 @@ fn push_text_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     }
 }
 
-/// `AND immutable_unaccent(<col>) ILIKE '%' || immutable_unaccent_like($raw)
-/// || '%'`. `col` is a fixed fragment; the needle binds RAW, never through
-/// [`escape_like`]: the unaccent dictionary maps some Unicode characters
-/// (fullwidth `％`/`＿`/`＼` among them) into LIKE metacharacters, so an
-/// escape applied before folding is undone by it. `immutable_unaccent_like`
-/// folds first and escapes after, on the SQL side, and the live `%` wildcards
-/// concatenate outside it. Both sides fold through the same `IMMUTABLE`
-/// wrapper the folded trigram indexes are built on, so an unaccented needle
-/// matches an accented stored value without the column losing its stored
-/// accents.
+/// `AND immutable_unaccent(<col>) ILIKE '%' ||
+/// nullif(immutable_unaccent_like($raw), '') || '%'`. `col` is a fixed
+/// fragment; the needle binds RAW, never through [`escape_like`]: the
+/// unaccent dictionary maps some Unicode characters (fullwidth `％`/`＿`/`＼`
+/// among them) into LIKE metacharacters, so an escape applied before folding
+/// is undone by it. `immutable_unaccent_like` folds first and escapes after,
+/// on the SQL side, and the live `%` wildcards concatenate outside it. The
+/// `nullif` guards the dictionary's erasures (combining marks fold to the
+/// empty string): an empty fold nulls the whole pattern, so the predicate
+/// matches nothing instead of everything. Both sides fold through the same
+/// `IMMUTABLE` wrapper the folded trigram indexes are built on, so an
+/// unaccented needle matches an accented stored value without the column
+/// losing its stored accents.
 fn push_ilike_contains(qb: &mut QueryBuilder<Postgres>, col: &str, needle: &str) {
     qb.push(" AND immutable_unaccent(");
     qb.push(col);
-    qb.push(") ILIKE '%' || immutable_unaccent_like(");
+    qb.push(") ILIKE '%' || nullif(immutable_unaccent_like(");
     qb.push_bind(needle.to_owned());
-    qb.push(") || '%'");
+    qb.push("), '') || '%'");
 }
 
 /// `AND <col> ILIKE '%needle%'` with no accent folding: the escaped-in-Rust
@@ -651,9 +654,9 @@ fn push_q_predicate(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(raw) = trimmed(p.q.as_deref()) {
         qb.push(" AND (w.search_vector @@ websearch_to_tsquery('unaccent_english', ");
         qb.push_bind(raw.to_owned());
-        qb.push(") OR immutable_unaccent(w.title) ILIKE '%' || immutable_unaccent_like(");
+        qb.push(") OR immutable_unaccent(w.title) ILIKE '%' || nullif(immutable_unaccent_like(");
         qb.push_bind(raw.to_owned());
-        qb.push(") || '%')");
+        qb.push("), '') || '%')");
     }
 }
 

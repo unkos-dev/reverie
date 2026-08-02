@@ -2838,7 +2838,7 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
         SELECT m.id FROM manifestations m \
         JOIN works w ON w.id = m.work_id \
         WHERE TRUE AND immutable_unaccent(w.subtitle) \
-            ILIKE '%' || immutable_unaccent_like($1) || '%' \
+            ILIKE '%' || nullif(immutable_unaccent_like($1), '') || '%' \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
     // Discourage seq scans and nested loops for this probe inside a throwaway
@@ -2929,7 +2929,7 @@ async fn title_contains_diacritic_folding_rides_trgm_index_at_scale(pool: PgPool
         SELECT m.id FROM manifestations m \
         JOIN works w ON w.id = m.work_id \
         WHERE TRUE AND immutable_unaccent(w.title) \
-            ILIKE '%' || immutable_unaccent_like($1) || '%' \
+            ILIKE '%' || nullif(immutable_unaccent_like($1), '') || '%' \
         ORDER BY m.created_at DESC, m.id DESC LIMIT 61";
 
     let mut tx = ingestion_pool.begin().await.expect("begin explain txn");
@@ -3722,6 +3722,18 @@ async fn set_subtitle(ingestion_pool: &PgPool, work_id: Uuid, subtitle: &str) {
     .expect("set subtitle");
 }
 
+/// Set a work's `description`; the works trigger refolds `search_vector`.
+async fn set_description(ingestion_pool: &PgPool, work_id: Uuid, description: &str) {
+    sqlx::query!(
+        "UPDATE works SET description = $1 WHERE id = $2",
+        description,
+        work_id,
+    )
+    .execute(ingestion_pool)
+    .await
+    .expect("set description");
+}
+
 /// Set a manifestation's `isbn_13`.
 async fn set_isbn(ingestion_pool: &PgPool, m_id: Uuid, isbn: &str) {
     sqlx::query!(
@@ -3871,6 +3883,11 @@ async fn filter_title_contains_escapes_folded_metacharacters(pool: PgPool) {
     // escape (which would leave a live wildcard matching any title with a
     // backslash). No title contains a literal `\%`, so: no hits.
     let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%EF%BC%BC%25").await;
+    assert_eq!(hits, Vec::<String>::new());
+
+    // A needle that folds to nothing (combining marks map to the empty
+    // string in unaccent.rules) must match nothing, not everything.
+    let hits = filtered_titles(&server, &basic, "/api/v1/books?title_contains=%CC%81").await;
     assert_eq!(hits, Vec::<String>::new());
 }
 
@@ -4147,6 +4164,10 @@ async fn filter_q_matches_tsvector_and_ilike_legs(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     insert_book(&ingestion_pool, "leguin", "The Left Hand of Darkness").await;
     insert_book(&ingestion_pool, "gibson", "Neuromancer").await;
+    let (accented_work, _m) = insert_book(&ingestion_pool, "zola", "Plain Title").await;
+    set_description(&ingestion_pool, accented_work, "M\u{e9}moires d'\u{c9}mile").await;
+    let (numword_work, _m2) = insert_book(&ingestion_pool, "edition", "Second Plain Title").await;
+    set_description(&ingestion_pool, numword_work, "1\u{e8}re \u{e9}dition").await;
     let server = server_with_page_size(&app_pool, &ingestion_pool, 50);
 
     // Full-text leg: a two-word websearch hits the tsvector even though the
@@ -4158,6 +4179,18 @@ async fn filter_q_matches_tsvector_and_ilike_legs(pool: PgPool) {
     // still matches via ILIKE.
     let ilike_hit = filtered_titles(&server, &basic, "/api/v1/books?q=euroman").await;
     assert_eq!(ilike_hit, vec!["Neuromancer"]);
+
+    // Folding leg: accented content lives only in the description, so the
+    // ILIKE title leg cannot mask a broken tsvector configuration; the
+    // unaccented query must match through the folded search_vector alone.
+    let fold_hit = filtered_titles(&server, &basic, "/api/v1/books?q=memoires").await;
+    assert_eq!(fold_hit, vec!["Plain Title"]);
+
+    // numword tokens fold too: '1ère' (letters plus a digit) classifies as
+    // numword, outside the word/hword/hword_part classes, and must still be
+    // reachable by its unaccented form.
+    let numword_hit = filtered_titles(&server, &basic, "/api/v1/books?q=1ere").await;
+    assert_eq!(numword_hit, vec!["Second Plain Title"]);
 }
 
 #[sqlx::test(migrations = "./migrations")]

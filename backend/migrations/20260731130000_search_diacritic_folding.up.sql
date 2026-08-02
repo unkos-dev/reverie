@@ -39,16 +39,24 @@ CREATE OR REPLACE FUNCTION public.immutable_unaccent_like(text)
         SELECT regexp_replace(public.immutable_unaccent($1), '([\\%_])', '\\\1', 'g')
     $$;
 
--- Text search configuration chaining unaccent before the english stemmer, so
--- to_tsvector/to_tsquery fold accents the same way immutable_unaccent folds
--- trigram input. Token types per the unaccent extension's documented recipe:
--- `word`/`hword`/`hword_part` are the only token classes that can carry a
--- non-ASCII letter, so the ascii-only classes keep the plain english mapping.
+-- Text search configuration chaining unaccent ahead of each class's base
+-- dictionary, so to_tsvector/to_tsquery fold accents the same way
+-- immutable_unaccent folds trigram input. Six token classes can carry a
+-- non-ASCII letter: the pure-letter `word`/`hword`/`hword_part` (the
+-- unaccent extension's documented recipe) and their digit-carrying
+-- `numword`/`numhword`/`hword_numpart` siblings, which the default parser
+-- splits off whenever a token mixes letters and digits ('1ère', 'Café2').
+-- Each keeps its base-config dictionary after the fold: english_stem for the
+-- letter classes, simple for the numeric ones, exactly as pg_catalog.english
+-- maps them. The ascii-only classes cannot fold and keep the plain mapping.
 DROP TEXT SEARCH CONFIGURATION IF EXISTS public.unaccent_english;
 CREATE TEXT SEARCH CONFIGURATION public.unaccent_english (COPY = pg_catalog.english);
 ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
     ALTER MAPPING FOR hword, hword_part, word
     WITH unaccent, english_stem;
+ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
+    ALTER MAPPING FOR numword, numhword, hword_numpart
+    WITH unaccent, simple;
 
 -- The pinned search_path keeps the trigger correct under any caller session:
 -- unlike the pg_catalog-resolved 'english', both unaccent_english and the

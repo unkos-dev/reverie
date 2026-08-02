@@ -24,7 +24,9 @@
 //!   into those very metacharacters, so an escape applied before folding
 //!   would be undone by it. Postgres's default `LIKE`/`ILIKE` escape
 //!   character is already backslash, so no explicit `ESCAPE` clause is
-//!   needed.
+//!   needed. A needle the dictionary erases entirely (combining marks fold
+//!   to the empty string) nulls the pattern via `nullif` and matches
+//!   nothing rather than everything.
 //! - Every match is also accent-insensitive: the vocabulary column is
 //!   wrapped in `immutable_unaccent` and the bound query text folds through
 //!   the same dictionary (the `ILIKE` prefix leg via
@@ -219,7 +221,7 @@ async fn query_genres(
                           JOIN manifestations m ON m.id = mg.manifestation_id
                          WHERE mg.genre_id = g.id
                       )
-                  AND immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND immutable_unaccent(g.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                 ORDER BY g.name ASC
                 LIMIT $2"#,
             q.raw,
@@ -238,9 +240,9 @@ async fn query_genres(
                           JOIN manifestations m ON m.id = mg.manifestation_id
                          WHERE mg.genre_id = g.id
                       )
-                  AND (immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND (immutable_unaccent(g.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                        OR immutable_unaccent($1) <% immutable_unaccent(g.name))
-                ORDER BY (immutable_unaccent(g.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                ORDER BY (immutable_unaccent(g.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,
                          word_similarity(immutable_unaccent($1), immutable_unaccent(g.name)) DESC,
                          g.name ASC
                 LIMIT $2"#,
@@ -271,7 +273,7 @@ async fn query_moods(
                           JOIN manifestations m ON m.id = mm.manifestation_id
                          WHERE mm.mood_id = mo.id
                       )
-                  AND immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND immutable_unaccent(mo.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                 ORDER BY mo.name ASC
                 LIMIT $2"#,
             q.raw,
@@ -290,9 +292,9 @@ async fn query_moods(
                           JOIN manifestations m ON m.id = mm.manifestation_id
                          WHERE mm.mood_id = mo.id
                       )
-                  AND (immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND (immutable_unaccent(mo.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                        OR immutable_unaccent($1) <% immutable_unaccent(mo.name))
-                ORDER BY (immutable_unaccent(mo.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                ORDER BY (immutable_unaccent(mo.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,
                          word_similarity(immutable_unaccent($1), immutable_unaccent(mo.name)) DESC,
                          mo.name ASC
                 LIMIT $2"#,
@@ -323,7 +325,7 @@ async fn query_tags(
                           JOIN manifestations m ON m.id = mt.manifestation_id
                          WHERE mt.tag_id = t.id
                       )
-                  AND immutable_unaccent(t.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND immutable_unaccent(t.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                 ORDER BY t.name ASC
                 LIMIT $2"#,
             q.raw,
@@ -342,9 +344,9 @@ async fn query_tags(
                           JOIN manifestations m ON m.id = mt.manifestation_id
                          WHERE mt.tag_id = t.id
                       )
-                  AND (immutable_unaccent(t.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND (immutable_unaccent(t.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                        OR immutable_unaccent($1) <% immutable_unaccent(t.name))
-                ORDER BY (immutable_unaccent(t.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                ORDER BY (immutable_unaccent(t.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,
                          word_similarity(immutable_unaccent($1), immutable_unaccent(t.name)) DESC,
                          t.name ASC
                 LIMIT $2"#,
@@ -381,7 +383,7 @@ async fn query_authors(
                           JOIN manifestations m ON m.work_id = wa.work_id
                          WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
-                  AND immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND immutable_unaccent(a.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                 ORDER BY a.name ASC
                 LIMIT $2"#,
             q.raw,
@@ -400,9 +402,9 @@ async fn query_authors(
                           JOIN manifestations m ON m.work_id = wa.work_id
                          WHERE wa.author_id = a.id AND wa.role = 'author'
                       )
-                  AND (immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND (immutable_unaccent(a.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                        OR immutable_unaccent($1) <% immutable_unaccent(a.name))
-                ORDER BY (immutable_unaccent(a.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                ORDER BY (immutable_unaccent(a.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,
                          word_similarity(immutable_unaccent($1), immutable_unaccent(a.name)) DESC,
                          a.name ASC
                 LIMIT $2"#,
@@ -438,7 +440,7 @@ async fn query_series(
                           JOIN manifestations m ON m.work_id = sw.work_id
                          WHERE sw.series_id = s.id
                       )
-                  AND immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND immutable_unaccent(s.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                 ORDER BY s.name ASC
                 LIMIT $2"#,
             q.raw,
@@ -457,9 +459,9 @@ async fn query_series(
                           JOIN manifestations m ON m.work_id = sw.work_id
                          WHERE sw.series_id = s.id
                       )
-                  AND (immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%'
+                  AND (immutable_unaccent(s.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                        OR immutable_unaccent($1) <% immutable_unaccent(s.name))
-                ORDER BY (immutable_unaccent(s.name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                ORDER BY (immutable_unaccent(s.name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,
                          word_similarity(immutable_unaccent($1), immutable_unaccent(s.name)) DESC,
                          s.name ASC
                 LIMIT $2"#,
@@ -493,7 +495,7 @@ async fn query_publishers(
                )
                SELECT name AS "name!"
                  FROM pubs
-                WHERE immutable_unaccent(name) ILIKE immutable_unaccent_like($1) || '%'
+                WHERE immutable_unaccent(name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                 ORDER BY name ASC
                 LIMIT $2"#,
             q.raw,
@@ -511,9 +513,9 @@ async fn query_publishers(
                )
                SELECT name AS "name!"
                  FROM pubs
-                WHERE immutable_unaccent(name) ILIKE immutable_unaccent_like($1) || '%'
+                WHERE immutable_unaccent(name) ILIKE nullif(immutable_unaccent_like($1), '') || '%'
                    OR immutable_unaccent($1) <% immutable_unaccent(name)
-                ORDER BY (immutable_unaccent(name) ILIKE immutable_unaccent_like($1) || '%') DESC,
+                ORDER BY (immutable_unaccent(name) ILIKE nullif(immutable_unaccent_like($1), '') || '%') DESC,
                          word_similarity(immutable_unaccent($1), immutable_unaccent(name)) DESC,
                          name ASC
                 LIMIT $2"#,
@@ -1207,6 +1209,21 @@ mod tests {
             values,
             vec![r"\backdated".to_owned()],
             "folded backslash must match the literal-backslash genre"
+        );
+
+        // A needle that folds to nothing (combining marks map to the empty
+        // string in unaccent.rules) must suggest nothing, not the unfiltered
+        // vocabulary head.
+        let r = server
+            .get("/api/v1/genres/suggest?q=%CC%81")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let values = suggestion_values(&r.json());
+        assert_eq!(
+            values,
+            Vec::<String>::new(),
+            "an empty fold must not match everything"
         );
     }
 
