@@ -88,8 +88,9 @@ pub fn is_fetchable_scheme(scheme: &str) -> bool {
 /// `SourceResult` becomes one `metadata_versions` journal row by contract,
 /// and ratings are a refreshable direct-write cache that is never journaled,
 /// locked, or written back. The type itself lives beside the table whose
-/// CHECK constraints it mirrors; it is re-exported here so adapter code can
-/// keep importing it from this module.
+/// CHECK constraints it mirrors; it is re-exported here so code that
+/// consumes a [`RatingSignal`] can name the signal's payload types from the
+/// module that defines it.
 pub use crate::models::external_rating::{InvalidRatingObservation, RatingObservation};
 
 /// What one lookup learned about the provider's aggregate rating.
@@ -149,8 +150,17 @@ impl LookupOutcome {
     /// [`Reported`]: RatingSignal::Reported
     /// [`Unusable`]: RatingSignal::Unusable
     pub const fn is_empty(&self) -> bool {
-        self.fields.is_empty()
-            && matches!(self.rating, RatingSignal::Unknown | RatingSignal::Absent)
+        if !self.fields.is_empty() {
+            return false;
+        }
+        // Exhaustive on purpose: a new signal variant must decide its
+        // hit-or-miss classification here at compile time, or fallback and
+        // cache-kind selection silently diverge from the orchestrator's own
+        // handling of the variant.
+        match self.rating {
+            RatingSignal::Unknown | RatingSignal::Absent => true,
+            RatingSignal::Reported(_) | RatingSignal::Unusable(_) => false,
+        }
     }
 }
 
@@ -169,17 +179,19 @@ pub(super) fn rating_signal(average: Option<f64>, count: Option<i64>, scale: f32
     )]
     let rating = avg as f32;
     // `None` means the provider didn't report a count at all, which is
-    // silently 0 (unreported, not invalid). A `Some` that doesn't fit in
-    // `i32` is a different case: the provider *did* report a count, just one
-    // outside the range the cache can store, so it's worth a log line.
-    let review_count = count.map_or(0, |n| {
-        i32::try_from(n).unwrap_or_else(|_| {
+    // silently 0 (unreported, not invalid). A reported count the cache
+    // cannot store, negative or beyond `i32`, is also treated as unreported
+    // but earns a log line, so a bogus count alone never invalidates an
+    // otherwise valid rating.
+    let review_count = count.map_or(0, |n| match i32::try_from(n) {
+        Ok(stored) if stored >= 0 => stored,
+        _ => {
             warn!(
                 reported_count = n,
-                "enrichment: provider review count exceeds i32 range; treating as unreported"
+                "enrichment: provider review count not storable; treating as unreported"
             );
             0
-        })
+        }
     });
     match RatingObservation::new(rating, scale, review_count) {
         Ok(observation) => RatingSignal::Reported(observation),
@@ -332,6 +344,19 @@ mod tests {
             observation.review_count(),
             0,
             "an unrepresentable count is dropped, not the whole rating"
+        );
+    }
+
+    #[test]
+    fn rating_signal_negative_count_maps_to_zero_but_stays_reported() {
+        let signal = rating_signal(Some(4.0), Some(-1), 5.0);
+        let RatingSignal::Reported(observation) = signal else {
+            panic!("expected Reported, got {signal:?}");
+        };
+        assert_eq!(
+            observation.review_count(),
+            0,
+            "a negative count is dropped, not the whole rating"
         );
     }
 

@@ -3467,15 +3467,19 @@ mod tests {
             MockServer::start().await,
             MockServer::start().await,
         );
-        // Two editions cover both reachable halves of the range guard. The
-        // scale half is unreachable from the adapters, which pin 5.0.
+        // Two editions cover both unusable classes reachable from the
+        // adapters: a rating above its scale and a negative rating. The
+        // scale predicate of `RatingObservation::new` is unreachable from
+        // the adapters, which pin 5.0, and an unstorable review count is
+        // clamped to unreported before construction instead of becoming
+        // unusable.
         let over_scale = Uuid::new_v4().simple().to_string();
         let (_ow, over_id) = insert_isbnless_fixture(&pool, &over_scale).await;
         upsert_manifestation_identifier(&pool, over_id, "googlebooks", "volOVER", None)
             .await
             .unwrap();
-        let negative_count = Uuid::new_v4().simple().to_string();
-        let (_nw, negative_id) = insert_isbnless_fixture(&pool, &negative_count).await;
+        let negative_rating = Uuid::new_v4().simple().to_string();
+        let (_nw, negative_id) = insert_isbnless_fixture(&pool, &negative_rating).await;
         upsert_manifestation_identifier(&pool, negative_id, "googlebooks", "volNEG", None)
             .await
             .unwrap();
@@ -3490,7 +3494,7 @@ mod tests {
             .unwrap();
         }
 
-        // Both payloads carry values the table's CHECK constraints reject.
+        // Both payloads carry ratings `RatingObservation::new` rejects.
         Mock::given(method("GET"))
             .and(path("/volumes/volOVER"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -3503,7 +3507,7 @@ mod tests {
             .and(path("/volumes/volNEG"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": "volNEG",
-                "volumeInfo": {"title": "Negative Count", "averageRating": 4.0, "ratingsCount": -1}
+                "volumeInfo": {"title": "Negative Rating", "averageRating": -0.5, "ratingsCount": 3}
             })))
             .mount(&gb)
             .await;
