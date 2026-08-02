@@ -49,6 +49,26 @@ expect "ranged devEngines pin rejected" 1
 write_pins "11.18.0" "11"
 expect "ranged mise pin rejected" 1
 
+# Malformed values planted in BOTH copies. These are the cases a
+# trailing-wildcard glob accepts: with the same bad value on each side the
+# equality check agrees with itself, so only an anchored match rejects them.
+for bad in "11.18.0-beta" "11.18.0junk" "11x.18.0" "1.2.3.4" "11.18" "v11.18.0" "11-18-0"; do
+  write_pins "$bad" "$bad"
+  expect "matching malformed pins (${bad}) rejected" 1
+done
+
+# Positive controls. A regex tightened past the accepted set would reject
+# these too, and every case above would still pass, so rejection alone does
+# not prove the matcher is right.
+write_pins "11.18.0" "11.18.0"
+expect "single-digit components accepted" 0
+
+write_pins "110.180.1000" "110.180.1000"
+expect "multi-digit components accepted" 0
+
+write_pins "0.0.0" "0.0.0"
+expect "all-zero version accepted" 0
+
 # Two absent versions would compare equal and pass having checked nothing.
 jq -n '{devEngines: {packageManager: {name: "npm", onFail: "download"}}}' >"${tmp}/package.json"
 printf '[tools]\njust = "1.57.0"\n' >"${tmp}/mise.toml"
