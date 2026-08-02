@@ -315,11 +315,30 @@ pub async fn run_once(
     // library-health sweep will surface the divergence, but we log the
     // specifics at `error!` so an operator doesn't have to wait for the
     // sweep to notice.
+    //
+    // Also refresh has_embedded_cover from the post-writeback validation
+    // already computed above: the fresh value is the truth for the file as
+    // it now sits on disk (e.g. a cover-reason writeback just embedded a
+    // sidecar cover that wasn't there at ingestion). Discarding it left the
+    // flag stuck at its ingestion-time value forever. Same tri-state
+    // semantics as ingestion: only a successful EPUB validation run
+    // produces `Some`; `COALESCE` leaves the column untouched when it
+    // doesn't (`post_validation` is `Err` here only in theory, since the
+    // branch above already routed that case to `RolledBack` and returned
+    // before this point).
     let new_hash = compute_hex_sha256(&final_path)?;
+    let post_has_cover: Option<bool> = post_validation
+        .as_ref()
+        .ok()
+        .map(|report| report.has_usable_embedded_cover);
     if let Err(e) = sqlx::query!(
-        "UPDATE manifestations SET current_file_hash = $1 WHERE id = $2",
+        "UPDATE manifestations \
+            SET current_file_hash = $1, \
+                has_embedded_cover = COALESCE($3, has_embedded_cover) \
+          WHERE id = $2",
         new_hash,
         manifestation_id,
+        post_has_cover,
     )
     .execute(pool)
     .await
@@ -1314,6 +1333,98 @@ mod tests {
         assert_eq!(row.ingestion_file_hash, original_hash);
     }
 
+    /// Cover-reason writeback must persist the freshly computed
+    /// `has_usable_embedded_cover` back onto `manifestations.has_embedded_cover`.
+    /// A row ingested with `has_embedded_cover = false` (e.g. no embedded
+    /// cover at ingestion time) whose sidecar cover is later embedded via
+    /// writeback must not keep reporting `false` forever: the post-writeback
+    /// validation already recomputes the truth; this guards that it gets
+    /// written, not discarded.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn run_once_cover_writeback_updates_has_embedded_cover_flag(pool: PgPool) {
+        // Real `image`-crate-encoded 1x1 PNG images (unlike the placeholder bytes
+        // in `make_fixture_epub_with_cover`'s sibling test above, which are
+        // deliberately undecodable and never exercise Layer 5's decode
+        // check). This test needs a cover that genuinely decodes so
+        // `has_usable_embedded_cover` comes back `true` post-writeback.
+        const PNG_ORIGINAL: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 15, 73, 68, 65, 84, 120, 1, 1, 4, 0, 251,
+            255, 0, 10, 20, 30, 0, 104, 0, 61, 232, 12, 187, 131, 0, 0, 0, 0, 73, 69, 78, 68, 174,
+            66, 96, 130,
+        ];
+        const PNG_REPLACEMENT: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 15, 73, 68, 65, 84, 120, 1, 1, 4, 0, 251,
+            255, 0, 200, 100, 50, 3, 86, 1, 95, 58, 122, 172, 164, 0, 0, 0, 0, 73, 69, 78, 68, 174,
+            66, 96, 130,
+        ];
+
+        let app_pool = writeback_pool_for(&pool).await;
+        let ing_pool = ingestion_pool_for(&pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+
+        let (_epub_dir, src_path) =
+            make_fixture_epub_with_cover(&format!("StaleCover-{marker}"), PNG_ORIGINAL);
+        let original_bytes = std::fs::read(&src_path).unwrap();
+        let original_hash = initial_hex_sha256(&original_bytes);
+
+        let cover_dir = tempfile::tempdir().unwrap();
+        let pending_dir = cover_dir.path().join("_covers").join("pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        let cover_filename = format!("{marker}.png");
+        let pending_path = pending_dir.join(&cover_filename);
+        std::fs::write(&pending_path, PNG_REPLACEMENT).unwrap();
+
+        let (_work_id, m_id) = insert_fixture(
+            &ing_pool,
+            &marker,
+            src_path.to_str().unwrap(),
+            &original_hash,
+        )
+        .await;
+        let pending_str = pending_path.to_str().unwrap();
+        sqlx::query!(
+            // Simulate a manifestation ingested before this cover was
+            // embedded: has_embedded_cover = false, sidecar pending.
+            "UPDATE manifestations SET cover_path = $1, has_embedded_cover = false WHERE id = $2",
+            pending_str,
+            m_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .unwrap();
+
+        let job_id = sqlx::query_scalar!(
+            "INSERT INTO writeback_jobs (manifestation_id, reason) \
+             VALUES ($1, 'cover') RETURNING id",
+            m_id,
+        )
+        .fetch_one(&ing_pool)
+        .await
+        .unwrap();
+
+        let outcome = run_once(&app_pool, &test_config(), job_id).await.unwrap();
+        assert!(
+            matches!(outcome, RunOutcome::Success { .. }),
+            "cover writeback should succeed: {outcome:?}"
+        );
+
+        let has_cover: Option<bool> = sqlx::query_scalar!(
+            "SELECT has_embedded_cover FROM manifestations WHERE id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            has_cover,
+            Some(true),
+            "has_embedded_cover must be refreshed from the post-writeback validation, \
+             not left stale at its pre-writeback value"
+        );
+    }
+
     /// Collision branch of `resolve_collision`: if the rendered target
     /// already exists, the writeback lands at `<stem> (2).<ext>` instead.
     /// Guards against regressions where the suffix logic silently
@@ -1476,6 +1587,7 @@ mod tests {
             outcome,
             accessibility_metadata: None,
             opf_data: None,
+            has_usable_embedded_cover: false,
         }
     }
 

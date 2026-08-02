@@ -772,7 +772,7 @@ pub(super) async fn emit_series_books(
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.created_at, m.updated_at, m.isbn_13, m.isbn_10, \
-                w.id AS work_id, w.title, w.description, w.language, sw.position \
+                w.id AS work_id, w.title, w.description, w.language \
          FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
          JOIN series_works sw ON sw.work_id = w.id \
@@ -858,7 +858,7 @@ pub(super) async fn emit_search(
                 w.id AS work_id, w.title, w.description, w.language \
          FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
-         WHERE w.search_vector @@ plainto_tsquery('english', ",
+         WHERE w.search_vector @@ plainto_tsquery('unaccent_english', ",
     );
     qb.push_bind(q_trim);
     qb.push(")");
@@ -866,7 +866,7 @@ pub(super) async fn emit_search(
         qb.push(" AND ");
         push_scope(&mut qb, scope, "m");
     }
-    qb.push(" ORDER BY ts_rank_cd(w.search_vector, plainto_tsquery('english', ");
+    qb.push(" ORDER BY ts_rank_cd(w.search_vector, plainto_tsquery('unaccent_english', ");
     qb.push_bind(q_trim);
     qb.push(")) DESC, m.created_at DESC, m.id DESC LIMIT ");
     qb.push_bind(page_size);

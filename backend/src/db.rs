@@ -1108,9 +1108,10 @@ mod tests {
     fn migration_set_has_no_superuser_only_operations() {
         // The migration set must be applicable by the non-superuser
         // reverie_migrator. Scan the embedded SQL for operations that require
-        // superuser. CREATE EXTENSION is allowed only for the two trusted
-        // extensions (pg_trgm, pgcrypto), which a non-superuser with CREATE on
-        // the target schema may install; any other extension needs superuser.
+        // superuser. CREATE EXTENSION is allowed only for the trusted
+        // extensions (pg_trgm, pgcrypto, unaccent — each ships `trusted = true`
+        // in its control file), which a non-superuser with CREATE on the
+        // target schema may install; any other extension needs superuser.
         let migrator = sqlx::migrate!("./migrations");
         for m in migrator
             .iter()
@@ -1135,8 +1136,10 @@ mod tests {
                 );
                 if upper.contains("CREATE EXTENSION") {
                     assert!(
-                        upper.contains("PG_TRGM") || upper.contains("PGCRYPTO"),
-                        "migration {} installs a non-allowlisted extension (only trusted pg_trgm/pgcrypto are installable by the non-superuser migrator): {line}",
+                        upper.contains("PG_TRGM")
+                            || upper.contains("PGCRYPTO")
+                            || upper.contains("UNACCENT"),
+                        "migration {} installs a non-allowlisted extension (only trusted pg_trgm/pgcrypto/unaccent are installable by the non-superuser migrator): {line}",
                         m.version
                     );
                 }

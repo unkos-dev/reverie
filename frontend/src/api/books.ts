@@ -192,6 +192,18 @@ export type ListBooksParams = {
   created_at_lte?: string;
 };
 
+/**
+ * The {@link ListBooksParams} keys whose value is a string array (the
+ * vocab/author and status set filters). Derived from the wire type so the
+ * consumers that enumerate array-valued params (query-key normalization, the
+ * set-filter projection) share one definition that tracks the wire shape.
+ */
+export type ArrayParamKey = {
+  [K in keyof ListBooksParams]-?: NonNullable<ListBooksParams[K]> extends readonly string[]
+    ? K
+    : never;
+}[keyof ListBooksParams];
+
 const MetadataVersionSummarySchema = z.object({
   pending: z.number().int().nonnegative(),
   accepted: z.number().int().nonnegative(),

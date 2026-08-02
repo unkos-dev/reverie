@@ -158,10 +158,24 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # watchers. They must also sit on real storage, because a worktree on a tmpfs
 # loses unpushed commits at reboot; this recipe refuses to create one there.
 #
-# The branch arrives through "$@" rather than a {{ }} substitution: just
-# expands substitutions into the script text before bash parses it, and
-# double quotes do not stop command substitution, so a branch name
-# containing $() would execute. Git permits such names.
+# The branch (and optional base) arrive through "$@" rather than a {{ }}
+# substitution: just expands substitutions into the script text before bash
+# parses it, and double quotes do not stop command substitution, so a branch
+# name containing $() would execute. Git permits such names.
+#
+# BRANCH resolution, in order: an existing local branch of that name is
+# reused as-is; failing that, an existing origin/<branch> is checked out as a
+# new tracking branch; failing that, a brand-new branch is created and its
+# start point comes from scripts/worktree-base.sh, which prefers origin/main,
+# then falls back to a local main, and fails when neither exists rather than
+# guessing: the only remaining candidate is the invoking checkout's current
+# HEAD, and basing a new branch on that silently carries the checked-out
+# branch's own commits into every new worktree (pass HEAD as BASE to opt in
+# deliberately). BASE, when given, is an explicit start point that
+# overrides that whole chain for the brand-new-branch case; it is validated
+# and the recipe fails clearly if it does not resolve. BASE has no effect on
+# the first two cases, since an existing branch (local or remote-tracking)
+# already has its own history to build on.
 #
 # The worktree also gets its own `.cargo/config.toml` pinning `target-dir` to
 # its local `target/`, so concurrent worktree builds never share (and thrash)
@@ -170,13 +184,14 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; warns if Cargo environment overrides defeat isolation.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; a new branch bases on origin/main (falling back to local main, failing when neither exists) unless BASE is given explicitly; warns if Cargo environment overrides defeat isolation.
 [group('git')]
 [positional-arguments]
-worktree branch:
+worktree branch base="":
     #!/usr/bin/env bash
     set -ueo pipefail
     branch="$1"
+    base="${2:-}"
     slug="$(printf '%s' "$branch" | tr '/' '-')"
     dest={{ quote(worktree_root) }}"/reverie/${slug}"
     parent="$(dirname "$dest")"
@@ -204,7 +219,17 @@ worktree branch:
     elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
         git worktree add --track -b "$branch" "$dest" "origin/${branch}"
     else
-        git worktree add -b "$branch" "$dest"
+        # A genuinely new branch needs an explicit start point: left to its
+        # own default, `git worktree add -b` bases it on the CALLER's current
+        # HEAD, so invoking this recipe from a feature branch silently
+        # carried that branch's commits into the new worktree. Delegate the
+        # choice to scripts/worktree-base.sh so the resolution chain (and its
+        # selftest) live in one place.
+        base_resolution="$(scripts/worktree-base.sh "$branch" "$base")"
+        base_mode="${base_resolution%% *}"
+        base_ref="${base_resolution#* }"
+        echo "worktree base: ${base_mode} (${base_ref})"
+        git worktree add -b "$branch" "$dest" "$base_ref"
     fi
     # Trust is keyed to Codex's canonical absolute project path, so use the
     # physical paths Codex will resolve instead of preserving a symlinked
@@ -439,6 +464,54 @@ db-reset:
 [group('db')]
 db-migrate:
     cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run -- migrate
+
+# Is: a development-loop unblocker for the compile/cache/migration cycle
+# when a branch is authoring a new migration. `db-migrate` compiles the
+# backend binary first, but the binary cannot compile until the sqlx
+# offline cache reflects the new migration, and the cache cannot
+# regenerate until the migration has been applied to the dev DB. This
+# recipe breaks that cycle by applying the SQL files in
+# backend/migrations/ straight through sqlx-cli, no compile involved.
+# After it runs, `just rust::sqlx-prepare` regenerates the offline cache
+# against the now-migrated schema so the binary builds again.
+#
+# Is not: the deployment path. Real instances still migrate through the
+# application binary's `migrate` command (what `db-migrate` runs), which
+# performs runtime checks sqlx-cli does not, and which applies all
+# pending transactional migrations inside one batch transaction where
+# sqlx-cli commits each migration individually. A migration that needs
+# an earlier migration's commit (the classic case: using an enum value a
+# previous migration just added) passes here and fails under the shipped
+# runner on a fresh database. Before pushing a branch that adds a
+# migration, run `just db-reset && just db-migrate` once so the shipped
+# runner has applied it from scratch; nothing else in the local loop or
+# preflight exercises that runner.
+#
+# Is not: a cache regenerator. Run `just rust::sqlx-prepare` afterward;
+# this recipe only touches the database.
+#
+# Takes optional passthrough args, e.g. `--ignore-missing` for a shared
+# dev DB that already carries a sibling worktree's migration. Not on by
+# default: it weakens sqlx-cli's check that applied migrations match the
+# local migration files, and that check should stay strict unless a
+# developer knowingly needs to relax it. Even after it succeeds, the
+# sibling's applied migration is still unknown to this branch's binary,
+# so the application's schema-ahead check keeps rejecting the database:
+# `db-migrate` and backend startup both fail until the branch gains the
+# sibling's migration file or the database is rebuilt with
+# `just db-reset` (destructive; discards the shared DB's data).
+#
+# Same migrator DSN default as db-migrate, as a deliberate copy that
+# nothing in just enforces; scripts/recipe-secret-echo-test.sh asserts
+# the two stay byte-identical, so change both together. Duplicated
+# rather than lifted into a just variable for the same reason db-migrate
+# inlines it: a just variable would echo an overridden credential into
+# dry-run/verbose recipe output.
+#
+# Apply pending migrations directly with sqlx-cli, bypassing the backend build.
+[group('db')]
+db-migrate-raw *args:
+    cd backend && DATABASE_URL="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo sqlx migrate run {{ args }}
 
 # Idempotent by construction: db-up is a no-op when the container is already
 # healthy, db-migrate is a no-op once the schema is current, and each

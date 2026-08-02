@@ -452,6 +452,63 @@ describe("LibraryPage", () => {
     });
   });
 
+  test("dead params neither light the filter badge nor flip the empty state", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?title_empty=true&subtitle_eq=x&subtitle_ne=y&isbn_13_ne=z"],
+    });
+    // None of these reach the API, so the page must read as unfiltered: the
+    // onboarding empty state, and a Filters trigger with no count badge
+    // (a badge would change its accessible name to "Filters N").
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.queryByText("No books match these filters")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
+  });
+
+  test("a malformed live-key value neither lights the badge nor flips the empty state", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?pages_gte=abc&created_at_gte=notadate&status_any=bogus"],
+    });
+    // The codec drops all three values, so nothing reaches the wire: the
+    // page must read as unfiltered even though the live keys are present.
+    expect(await screen.findByText("No books yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
+  });
+
+  test("a well-formed filter lights the badge with the sent-param count", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?pages_gte=500"],
+      cacheParams: { pages_gte: 500 },
+      extraCacheParams: [{}],
+    });
+    expect(await screen.findByText("No books match these filters")).toBeInTheDocument();
+    // The count badge renders inside the trigger, so it joins the accessible
+    // name with no separator.
+    expect(screen.getByRole("button", { name: "Filters1" })).toBeInTheDocument();
+  });
+
+  test("clear-all also sweeps dead params off the URL", async () => {
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      initialEntries: ["/library?series=s-1&title_empty=true"],
+      cacheParams: { series: "s-1" },
+      extraCacheParams: [{}],
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /clear all filters/i }));
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent;
+      expect(search).not.toContain("series");
+      expect(search).not.toContain("title_empty");
+    });
+  });
+
   test("renders the empty state when items is empty", async () => {
     renderLibrary({ items: [], nextCursor: null });
     expect(await screen.findByText("No books yet")).toBeInTheDocument();

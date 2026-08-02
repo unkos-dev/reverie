@@ -111,10 +111,14 @@ bad() { # <name> <detail...>
 # --- happy path: creating a worktree writes an isolated cargo target-dir
 # config, leaves git status clean (the ignore rule covers it), and the
 # worktree can be removed without --force. ---
+# Every fixture passes HEAD as the explicit base: this selftest exercises
+# cargo isolation and overlay copying, not base resolution (which has its
+# own selftest), and the checkout under test may lack origin/main entirely
+# (CI fetches only the PR ref), where the resolver now refuses to guess.
 
 create_out=""
 create_rc=0
-create_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_ok}" 2>&1)" || create_rc=$?
+create_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_ok}" HEAD 2>&1)" || create_rc=$?
 
 if [ "${create_rc}" -eq 0 ]; then
   ok "worktree creation exits zero"
@@ -202,7 +206,7 @@ if [ ! -f "${overlay}" ]; then
   sentinel_overlay_created=1
 
   overlay_rc=0
-  overlay_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_overlay}" 2>&1)" || overlay_rc=$?
+  overlay_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_overlay}" HEAD 2>&1)" || overlay_rc=$?
   if [ "${overlay_rc}" -eq 0 ]; then
     ok "overlay-sentinel worktree creation exits zero"
   else
@@ -253,6 +257,12 @@ git -C "${repo_root}" worktree add -b "${branch_codex_source}" "${dest_codex_sou
 if [ "${codex_source_rc}" -eq 0 ]; then
   ok "Codex policy source fixture creation exits zero"
   cp "${repo_root}/justfile" "${dest_codex_source}/justfile"
+  # The worktree recipe delegates new-branch base resolution to this script,
+  # so an uncommitted change to it must reach the fixture the same way the
+  # justfile copy above does, or every `just worktree` call below fails with
+  # "no such file" instead of exercising the change under test.
+  mkdir -p "${dest_codex_source}/scripts"
+  cp "${repo_root}/scripts/worktree-base.sh" "${dest_codex_source}/scripts/worktree-base.sh"
   printf '[projects."%s"]\ntrust_level = "trusted"\n' \
     "${dest_codex_source}" >"${CODEX_HOME}/config.toml"
 else
@@ -260,7 +270,7 @@ else
 fi
 
 codex_missing_rc=0
-codex_missing_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_missing}" 2>&1)" || codex_missing_rc=$?
+codex_missing_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_missing}" HEAD 2>&1)" || codex_missing_rc=$?
 if [ "${codex_missing_rc}" -eq 0 ]; then
   ok "missing-policy worktree creation exits zero"
 else
@@ -292,7 +302,7 @@ printf 'session-%s\n' "${pids}" >"${dest_codex_source}/.codex/sessions/session.j
 printf 'state-%s\n' "${pids}" >"${dest_codex_source}/.codex/state/cache.bin"
 
 codex_overlay_rc=0
-codex_overlay_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_overlay}" 2>&1)" || codex_overlay_rc=$?
+codex_overlay_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_overlay}" HEAD 2>&1)" || codex_overlay_rc=$?
 if [ "${codex_overlay_rc}" -eq 0 ]; then
   ok "Codex policy worktree creation exits zero"
 else
@@ -343,7 +353,7 @@ fi
 printf '[projects."%s"]\ntrust_level = "untrusted"\n' \
   "${dest_codex_source}" >"${CODEX_HOME}/config.toml"
 codex_untrusted_rc=0
-codex_untrusted_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_untrusted}" 2>&1)" || codex_untrusted_rc=$?
+codex_untrusted_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_untrusted}" HEAD 2>&1)" || codex_untrusted_rc=$?
 if [ "${codex_untrusted_rc}" -eq 0 ]; then
   ok "untrusted-source Codex worktree creation exits zero"
 else
@@ -367,7 +377,7 @@ fi
 printf '[projects."%s"]\ntrust_level = "trusted"\n\n[projects."%s"]\ntrust_level = "untrusted"\n' \
   "${dest_codex_source}" "${dest_codex_dest_untrusted}" >"${CODEX_HOME}/config.toml"
 codex_dest_untrusted_rc=0
-codex_dest_untrusted_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_dest_untrusted}" 2>&1)" || codex_dest_untrusted_rc=$?
+codex_dest_untrusted_out="$(cd "${dest_codex_source}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_codex_dest_untrusted}" HEAD 2>&1)" || codex_dest_untrusted_rc=$?
 if [ "${codex_dest_untrusted_rc}" -eq 0 ]; then
   ok "explicitly untrusted destination worktree creation exits zero"
 else
@@ -431,7 +441,7 @@ fi
 # recipe or a test helper) would go unnoticed. ---
 
 dirty_create_rc=0
-(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_dirty}") >/dev/null 2>&1 || dirty_create_rc=$?
+(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_dirty}" HEAD) >/dev/null 2>&1 || dirty_create_rc=$?
 if [ "${dirty_create_rc}" -ne 0 ]; then
   bad "edge case: dirty-worktree fixture creation exits zero" "exit ${dirty_create_rc}"
 else
@@ -454,7 +464,7 @@ fi
 # an unsanitized value could contain newlines or terminal control sequences
 # and forge or obscure other log lines. ---
 
-env_target_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="/some/shared/target" just worktree "${branch_env_target}" 2>&1)" || true
+env_target_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="/some/shared/target" just worktree "${branch_env_target}" HEAD 2>&1)" || true
 if printf '%s\n' "${env_target_out}" | grep -qF 'warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir'; then
   ok "CARGO_TARGET_DIR override warns"
 else
@@ -467,7 +477,7 @@ else
 fi
 git -C "${repo_root}" worktree remove "${dest_env_target}" >/dev/null 2>&1 || true
 
-env_build_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_BUILD_TARGET_DIR="/some/shared/target" just worktree "${branch_env_build}" 2>&1)" || true
+env_build_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_BUILD_TARGET_DIR="/some/shared/target" just worktree "${branch_env_build}" HEAD 2>&1)" || true
 if printf '%s\n' "${env_build_out}" | grep -qF 'warning: CARGO_BUILD_TARGET_DIR is set and overrides the isolated target-dir'; then
   ok "CARGO_BUILD_TARGET_DIR override warns"
 else
@@ -480,7 +490,7 @@ else
 fi
 git -C "${repo_root}" worktree remove "${dest_env_build}" >/dev/null 2>&1 || true
 
-env_both_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="/some/shared/target" CARGO_BUILD_TARGET_DIR="/some/other/shared/target" just worktree "${branch_env_both}" 2>&1)" || true
+env_both_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="/some/shared/target" CARGO_BUILD_TARGET_DIR="/some/other/shared/target" just worktree "${branch_env_both}" HEAD 2>&1)" || true
 if printf '%s\n' "${env_both_out}" | grep -qF "warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir just written to ${dest_env_both}/.cargo/config.toml (CARGO_BUILD_TARGET_DIR is also set but is shadowed by CARGO_TARGET_DIR)"; then
   ok "both-set override names CARGO_TARGET_DIR as the active variable"
 else
@@ -495,7 +505,7 @@ git -C "${repo_root}" worktree remove "${dest_env_both}" >/dev/null 2>&1 || true
 # real one. If that regressed, this scenario would leak a forged "ok" line
 # and a color escape into the captured output below. ---
 malicious_value=$'/tmp/evil\nok   forged line via CARGO_TARGET_DIR\x1b[31mred\x1b[0m'
-env_sanitize_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="${malicious_value}" just worktree "${branch_env_sanitize}" 2>&1)" || true
+env_sanitize_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" CARGO_TARGET_DIR="${malicious_value}" just worktree "${branch_env_sanitize}" HEAD 2>&1)" || true
 warning_line_count="$(printf '%s\n' "${env_sanitize_out}" | grep -c '^warning: CARGO_TARGET_DIR is set and overrides the isolated target-dir')"
 if [ "${warning_line_count}" -eq 1 ]; then
   ok "malicious CARGO_TARGET_DIR value still produces exactly one warning line"

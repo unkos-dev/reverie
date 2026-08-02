@@ -1,28 +1,31 @@
-//! Text sanitisation for metadata fields: `HTML` stripping, entity decoding, whitespace normalisation.
+//! Text sanitisation for metadata fields: `HTML` stripping, whitespace normalisation.
 //!
 //! `OPF` metadata fields arrive as untrusted strings from ingested `EPUB` files.
-//! Without sanitisation, attacker-controlled descriptions or titles containing
-//! `HTML` markup or entity-encoded payloads could propagate injection vectors
-//! into the rendered UI. This module reduces all text fields to plaintext before
-//! they reach the database or any downstream consumer.
+//! Entity and character-reference decoding is owned entirely by the `OPF`
+//! parse layer (`opf_layer::read_element_text` for element text bodies, an
+//! attribute-decode helper for attribute values such as `<meta content="...">`):
+//! by the time a value reaches this module it is already character data, not
+//! markup. Decoding it again here would reinterpret literal text a second
+//! time and corrupt any legitimate entity-like content: XML 1.0 section
+//! 4.4.2 treats entity inclusion as one replacement operation, not a
+//! repeatable one. Without sanitisation, attacker-controlled descriptions or
+//! titles containing `HTML` markup could still propagate injection vectors
+//! into the rendered UI, so this module strips markup and normalises
+//! whitespace before values reach the database or any downstream consumer.
 //!
-//! Invariant: every value returned by `sanitise` is free of `HTML` tags;
-//! valid numeric character references and the named entities recognised by
-//! `decode_entities` (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`)
-//! are decoded; malformed or out-of-range numeric entities (where
-//! `parse_numeric_entity` returns `None`) and unknown named entities are
-//! preserved literally — the `&` and surrounding characters survive;
-//! whitespace is collapsed to single spaces.
+//! Invariant: every value returned by `sanitise` is free of `HTML` tags and
+//! has whitespace collapsed to single spaces. It performs no entity decoding
+//! of its own.
 
 /// Reduce an untrusted metadata string to sanitised plaintext.
 ///
-/// Applies the three-stage pipeline in order: entity decoding →
-/// `HTML` tag stripping → whitespace normalisation. The pipeline
-/// mitigates `HTML` injection by ensuring no markup survives into stored
-/// metadata values or the rendered UI.
+/// Applies the two-stage pipeline in order: `HTML` tag stripping →
+/// whitespace normalisation. The pipeline mitigates `HTML` injection by
+/// ensuring no markup survives into stored metadata values or the rendered
+/// UI. Entity decoding is not performed here: the input is assumed to
+/// already be decoded character data (see module docs).
 pub fn sanitise(input: &str) -> String {
-    let decoded = decode_entities(input);
-    let stripped = strip_html(&decoded);
+    let stripped = strip_html(input);
     normalise_whitespace(&stripped)
 }
 
@@ -66,59 +69,6 @@ pub fn normalise_whitespace(input: &str) -> String {
     result.trim_end().to_string()
 }
 
-/// Decode common HTML entities and numeric character references.
-pub fn decode_entities(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut remaining = input;
-
-    while let Some(amp_pos) = remaining.find('&') {
-        result.push_str(&remaining[..amp_pos]);
-        remaining = &remaining[amp_pos..];
-
-        // Lookahead capped at 12 bytes: covers all named entities (max "&#x10FFFF;" = 10 chars)
-        // and avoids scanning long runs of text for a missing semicolon.
-        // Search raw bytes to avoid panicking on multi-byte UTF-8 boundaries.
-        let lookahead = remaining.len().min(12);
-        let semi_pos = remaining.as_bytes()[..lookahead]
-            .iter()
-            .position(|&b| b == b';');
-        if let Some(semi_pos) = semi_pos {
-            let entity = &remaining[1..semi_pos];
-            let decoded = match entity {
-                "amp" => Some('&'),
-                "lt" => Some('<'),
-                "gt" => Some('>'),
-                "quot" => Some('"'),
-                "apos" => Some('\''),
-                "nbsp" => Some('\u{00A0}'),
-                _ if entity.starts_with('#') => parse_numeric_entity(&entity[1..]),
-                _ => None,
-            };
-            if let Some(c) = decoded {
-                result.push(c);
-                remaining = &remaining[semi_pos + 1..];
-            } else {
-                result.push('&');
-                remaining = &remaining[1..];
-            }
-        } else {
-            result.push('&');
-            remaining = &remaining[1..];
-        }
-    }
-    result.push_str(remaining);
-    result
-}
-
-fn parse_numeric_entity(s: &str) -> Option<char> {
-    let num = if let Some(hex) = s.strip_prefix('x').or_else(|| s.strip_prefix('X')) {
-        u32::from_str_radix(hex, 16).ok()?
-    } else {
-        s.parse::<u32>().ok()?
-    };
-    char::from_u32(num)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,24 +104,6 @@ mod tests {
     }
 
     #[test]
-    fn decode_named_entities() {
-        assert_eq!(decode_entities("Smith &amp; Jones"), "Smith & Jones");
-        assert_eq!(decode_entities("&lt;tag&gt;"), "<tag>");
-        assert_eq!(decode_entities("&quot;hello&quot;"), "\"hello\"");
-    }
-
-    #[test]
-    fn decode_numeric_entities() {
-        assert_eq!(decode_entities("&#169;"), "\u{00A9}"); // copyright symbol
-        assert_eq!(decode_entities("&#xA9;"), "\u{00A9}");
-    }
-
-    #[test]
-    fn decode_unknown_entity_preserved() {
-        assert_eq!(decode_entities("&unknown;"), "&unknown;");
-    }
-
-    #[test]
     fn normalise_whitespace_collapse() {
         assert_eq!(normalise_whitespace("  hello   world  "), "hello world");
     }
@@ -183,7 +115,10 @@ mod tests {
 
     #[test]
     fn sanitise_full_pipeline() {
-        assert_eq!(sanitise("<p>Smith &amp; Jones</p>"), "Smith & Jones");
+        // HTML is stripped, but the entity is left untouched: `sanitise`
+        // assumes its input already arrived as decoded character data from
+        // the OPF parse layer, so it must not decode entities itself.
+        assert_eq!(sanitise("<p>Smith &amp; Jones</p>"), "Smith &amp; Jones");
     }
 
     #[test]

@@ -21,6 +21,7 @@ import {
   parseSortParam,
   ReadingStatusSchema,
   serializeSortParam,
+  type ArrayParamKey,
   type ListBooksParams,
   type SortLevelParam,
 } from "@/api";
@@ -51,13 +52,73 @@ export function viewFromSearch(search: URLSearchParams): LibraryView | null {
  */
 export const MAX_FILTER_VALUES = 20;
 
+/** The full text-operator vocabulary; each column supports the subset in
+ *  {@link TEXT_COLUMN_OPS}. `empty` filters on the column being null. */
+export const TEXT_OPS = ["contains", "eq", "ne", "empty"] as const;
+export type TextOp = (typeof TEXT_OPS)[number];
+
+/** Type guard narrowing an arbitrary string into the `TextOp` union. */
+export function isTextOp(value: string): value is TextOp {
+  return TEXT_OPS.some((op) => op === value);
+}
+
+const TEXT_COLUMNS = ["title", "subtitle", "isbn_13"] as const;
+type TextColumn = (typeof TEXT_COLUMNS)[number];
+
+/** The subset of `TextOp` backed by a wire field for column `C`: exactly the
+ *  ops whose `${C}_${op}` key exists on {@link ListBooksParams}, so declaring
+ *  an op the API cannot serve fails compilation. */
+type WireOp<C extends TextColumn> = {
+  [O in TextOp]: `${C}_${O}` extends keyof ListBooksParams ? O : never;
+}[TextOp];
+
 /**
- * Every filter URL key, in one place so `paramsFromSearch`,
- * `serializeFilterParams`, and the page's clear-all / has-active-filter checks
- * cannot drift. `q` and the single-value `series`/`shelf` filters are included;
- * pagination (`cursor`) and ordering (`sort`) are not filters and stay out.
+ * The one declaration of which operators each text column offers. The codec
+ * parses and serializes only these, {@link filterStateToParams} sends only
+ * these, and the filter rail builds each column's operator select from this
+ * table, so an op missing here cannot become URL state, a chip, or a wire
+ * param anywhere. `title` has no `empty` (the backend column is `NOT NULL`,
+ * so the condition could never match a row); `subtitle` offers containment
+ * and emptiness only; `isbn_13` has no `ne`. Order is the operator-select
+ * order in the rail.
  */
-export const FILTER_PARAM_KEYS = [
+export const TEXT_COLUMN_OPS: { readonly [C in TextColumn]: readonly WireOp<C>[] } = {
+  title: ["contains", "eq", "ne"],
+  subtitle: ["contains", "empty"],
+  isbn_13: ["contains", "eq", "empty"],
+};
+
+/** The text-condition URL keys with live predicates, derived from
+ *  {@link TEXT_COLUMN_OPS} so the filter-key list cannot drift from it. */
+const TEXT_FILTER_PARAM_KEYS: readonly string[] = TEXT_COLUMNS.flatMap((column) =>
+  TEXT_COLUMN_OPS[column].map((op) => `${column}_${op}`),
+);
+
+/**
+ * Text params with no wire predicate: the column/op pairs absent from
+ * {@link TEXT_COLUMN_OPS} (e.g. `title_empty`, `subtitle_eq`). Nothing parses
+ * or sends them, but a hand-crafted or stale URL can still carry one, so
+ * `serializeFilterParams`'s delete-then-set sweep and the page's clear-all
+ * purge them. They are deliberately not in {@link FILTER_PARAM_KEYS}: a param
+ * that is never sent must not count as an active filter (toolbar badge,
+ * filtered-empty-state selection).
+ */
+export const PURGE_ONLY_PARAM_KEYS: readonly string[] = TEXT_COLUMNS.flatMap((column) => {
+  const supported: readonly TextOp[] = TEXT_COLUMN_OPS[column];
+  return TEXT_OPS.filter((op) => !supported.includes(op)).map((op) => `${column}_${op}`);
+});
+
+/**
+ * Every live filter URL key, in one place so `serializeFilterParams`'s
+ * delete-then-set sweep and the page's clear-all cannot drift from the codec.
+ * `q` and the single-value `series`/`shelf` filters are included; pagination
+ * (`cursor`) and ordering (`sort`) are not filters and stay out. Dead params
+ * a URL might still carry live in {@link PURGE_ONLY_PARAM_KEYS}, which shares
+ * the purge sweeps. Active-filter checks (badge count, empty-state split) do
+ * not read either list: they derive from {@link filterStateToParams}, so only
+ * a condition that actually reaches the wire counts as active.
+ */
+export const FILTER_PARAM_KEYS: readonly string[] = [
   "q",
   "author",
   "author_any",
@@ -75,14 +136,7 @@ export const FILTER_PARAM_KEYS = [
   "mood_none",
   "status_any",
   "status_none",
-  "title_contains",
-  "title_eq",
-  "title_ne",
-  "subtitle_contains",
-  "subtitle_empty",
-  "isbn_13_contains",
-  "isbn_13_eq",
-  "isbn_13_empty",
+  ...TEXT_FILTER_PARAM_KEYS,
   "pages_gte",
   "pages_lte",
   "pages_empty",
@@ -91,13 +145,13 @@ export const FILTER_PARAM_KEYS = [
   "rating_empty",
   "created_at_gte",
   "created_at_lte",
-] as const;
+];
 
 /** One reading-status token accepted by the status filter. */
 const STATUS_TOKENS: ReadonlySet<string> = new Set([...ReadingStatusSchema.options, "unread"]);
 
-/** A text-column condition. Not every column offers every operator; the editor
- *  gates which are available, the codec maps only the params that exist. */
+/** A text-column condition. Not every column offers every operator;
+ *  {@link TEXT_COLUMN_OPS} declares each column's set. */
 export type TextFilter = {
   contains?: string;
   eq?: string;
@@ -202,16 +256,23 @@ function statusFromSearch(search: URLSearchParams, key: string): string[] {
   return setFromSearch(search, key).filter((token) => STATUS_TOKENS.has(token));
 }
 
-function textFromSearch(search: URLSearchParams, prefix: string): TextFilter {
+/**
+ * Parse a text-column condition, reading only the ops {@link TEXT_COLUMN_OPS}
+ * declares for the column. A param outside that set (`?title_empty=`,
+ * `?subtitle_eq=`) has no wire predicate, so it must be dropped here rather
+ * than surfacing as a chip for a condition that is silently never sent.
+ */
+function textFromSearch(search: URLSearchParams, column: TextColumn): TextFilter {
   const filter: TextFilter = {};
-  const contains = trimmedOrUndefined(search.get(`${prefix}_contains`));
-  if (contains !== undefined) filter.contains = contains;
-  const eq = trimmedOrUndefined(search.get(`${prefix}_eq`));
-  if (eq !== undefined) filter.eq = eq;
-  const ne = trimmedOrUndefined(search.get(`${prefix}_ne`));
-  if (ne !== undefined) filter.ne = ne;
-  const empty = boolFromSearch(search.get(`${prefix}_empty`));
-  if (empty !== undefined) filter.empty = empty;
+  for (const op of TEXT_COLUMN_OPS[column]) {
+    if (op === "empty") {
+      const empty = boolFromSearch(search.get(`${column}_empty`));
+      if (empty !== undefined) filter.empty = empty;
+    } else {
+      const value = trimmedOrUndefined(search.get(`${column}_${op}`));
+      if (value !== undefined) filter[op] = value;
+    }
+  }
   return filter;
 }
 
@@ -288,11 +349,11 @@ function appendSet(search: URLSearchParams, key: string, values: readonly string
   }
 }
 
-function serializeText(search: URLSearchParams, prefix: string, filter: TextFilter): void {
-  setText(search, `${prefix}_contains`, filter.contains);
-  setText(search, `${prefix}_eq`, filter.eq);
-  setText(search, `${prefix}_ne`, filter.ne);
-  setBool(search, `${prefix}_empty`, filter.empty);
+function serializeText(search: URLSearchParams, column: TextColumn, filter: TextFilter): void {
+  for (const op of TEXT_COLUMN_OPS[column]) {
+    if (op === "empty") setBool(search, `${column}_empty`, filter.empty);
+    else setText(search, `${column}_${op}`, filter[op]);
+  }
 }
 
 function serializeRange(search: URLSearchParams, prefix: string, filter: RangeFilter): void {
@@ -303,12 +364,14 @@ function serializeRange(search: URLSearchParams, prefix: string, filter: RangeFi
 
 /**
  * Write a {@link FilterState} onto `search` in place, delete-then-set: every
- * filter key is cleared first so a dropped condition leaves no stale param,
- * then each active condition is written. `cursor` is the caller's concern (a
- * filter change invalidates the keyset boundary); this touches filter keys only.
+ * filter key (dead ones included) is cleared first so a dropped condition or
+ * a stale ghost param leaves nothing behind, then each active condition is
+ * written. `cursor` is the caller's concern (a filter change invalidates the
+ * keyset boundary); this touches filter keys only.
  */
 export function serializeFilterParams(state: FilterState, search: URLSearchParams): void {
   for (const key of FILTER_PARAM_KEYS) search.delete(key);
+  for (const key of PURGE_ONLY_PARAM_KEYS) search.delete(key);
   setText(search, "q", state.q);
   serializeText(search, "title", state.title);
   serializeText(search, "subtitle", state.subtitle);
@@ -335,11 +398,14 @@ export function serializeFilterParams(state: FilterState, search: URLSearchParam
   setText(search, "shelf", state.shelf);
 }
 
-function assignText(
-  params: ListBooksParams,
-  prefix: "title" | "subtitle" | "isbn_13",
-  filter: TextFilter,
-): void {
+/**
+ * Project one text condition onto the wire params. The conditionals mirror
+ * {@link TEXT_COLUMN_OPS} in the explicit form the compiler can check against
+ * `ListBooksParams` (a dynamic `${column}_${op}` key cannot be proven to
+ * exist without a cast); the codec tests walk the ops table end to end to
+ * keep this projection from drifting out of it.
+ */
+function assignText(params: ListBooksParams, prefix: TextColumn, filter: TextFilter): void {
   if (filter.contains !== undefined) params[`${prefix}_contains`] = filter.contains;
   if (prefix === "title" && filter.eq !== undefined) params.title_eq = filter.eq;
   if (prefix === "title" && filter.ne !== undefined) params.title_ne = filter.ne;
@@ -348,14 +414,6 @@ function assignText(
     params[`${prefix}_empty`] = filter.empty;
   }
 }
-
-/** The `ListBooksParams` keys whose value is a string array (the vocab/author
- *  set filters), so `assignSet` can index them without widening to `never`. */
-type ArrayParamKey = {
-  [K in keyof ListBooksParams]-?: NonNullable<ListBooksParams[K]> extends readonly string[]
-    ? K
-    : never;
-}[keyof ListBooksParams];
 
 function assignSet(
   params: ListBooksParams,

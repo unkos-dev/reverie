@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH\n            q AS (SELECT websearch_to_tsquery('unaccent_english', $1) AS tsq),\n            ts_hits AS (\n                SELECT w.id, ts_rank_cd(w.search_vector, q.tsq, 32) AS rank\n                FROM works w, q\n                WHERE w.search_vector @@ q.tsq\n            ),\n            trgm_hits AS (\n                SELECT w.id,\n                       similarity(immutable_unaccent(w.title), immutable_unaccent($1)) * 0.5 AS rank\n                FROM works w\n                WHERE immutable_unaccent(w.title) % immutable_unaccent($1)\n                  AND similarity(immutable_unaccent(w.title), immutable_unaccent($1)) > $4\n            ),\n            merged AS (\n                SELECT id, MAX(rank) AS rank, BOOL_OR(src = 'ts') AS has_ts\n                FROM (\n                    SELECT id, rank, 'ts'::text AS src FROM ts_hits\n                    UNION ALL\n                    SELECT id, rank, 'trgm'::text AS src FROM trgm_hits\n                ) u\n                GROUP BY id\n            )\n        SELECT m.id                AS \"m_id!\",\n               m.work_id           AS \"work_id!\",\n               w.title             AS \"title!\",\n               merged.rank::float8 AS \"rank!\",\n               merged.has_ts       AS \"has_ts!\",\n               CASE\n                   WHEN merged.has_ts THEN\n                       ts_headline(\n                           'unaccent_english',\n                           COALESCE(w.title, '') || ' ' || COALESCE(w.description, ''),\n                           (SELECT tsq FROM q),\n                           $3\n                       )\n                   ELSE NULL\n               END AS snippet\n          -- The JOIN to manifestations fans out one row per\n          -- (work, manifestation) pair, so a work with multiple\n          -- formats (epub + pdf + cbz) emits a separate result per\n          -- format. This is intentional for the command-palette UX:\n          -- each manifestation is its own navigable card, mirroring\n          -- the list-page row shape. The LIMIT is therefore \"top-N\n          -- manifestations across all matching works\", not\n          -- \"top-N works\".\n          FROM merged\n          JOIN works w           ON w.id = merged.id\n          JOIN manifestations m  ON m.work_id = w.id\n         ORDER BY merged.rank DESC, m.id ASC\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "m_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "work_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "work_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "rank!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "has_ts!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "snippet",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Float4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "7b76377b83abdf8de9d9717eb84393a612f1ff8083ffa0846185381fed7c8e6c"
+}

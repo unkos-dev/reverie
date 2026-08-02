@@ -35,4 +35,22 @@ describe("queryKeys", () => {
     expect(queryKeys.books.list({})[0]).toBe("books");
     expect(queryKeys.books.detail("x")[0]).toBe("books");
   });
+
+  test("books.list sorts array-valued filter params, same as authors.resolve", () => {
+    const a = queryKeys.books.list({ tag_any: ["mystery", "fantasy"] });
+    const b = queryKeys.books.list({ tag_any: ["fantasy", "mystery"] });
+    expect(a).toEqual(b);
+  });
+
+  test("books.list keys distinct array-valued filters as distinct tuples", () => {
+    const a = queryKeys.books.list({ author_none: ["a", "b"] });
+    const b = queryKeys.books.list({ author_none: ["a", "c"] });
+    expect(a).not.toEqual(b);
+  });
+
+  test("books.list sorting does not mutate the caller's array", () => {
+    const tags = ["mystery", "fantasy"];
+    queryKeys.books.list({ tag_any: tags });
+    expect(tags).toEqual(["mystery", "fantasy"]);
+  });
 });
