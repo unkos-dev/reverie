@@ -230,6 +230,44 @@ async fn search_roundtrip(pool: PgPool) {
     assert!(!body.contains("Cryptonomicon"));
 }
 
+// ── Test 33: search folds accents under unaccent_english ─────────────────
+
+#[sqlx::test(migrations = "./migrations")]
+async fn search_folds_accents(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    insert_epub_manifestation(&ingestion_pool, tmp.path(), "acc", "\u{c9}mile Zola").await;
+    insert_epub_manifestation(&ingestion_pool, tmp.path(), "dec", "Unrelated Title").await;
+
+    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+
+    // OPDS assembles its own query, so the unaccent_english coupling between
+    // works.search_vector and this endpoint's plainto_tsquery is pinned here,
+    // independent of the JSON search surface's tests. Unaccented input finds
+    // the accented row.
+    let response = server
+        .get("/opds/library/search?q=emile%20zola")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body = std::str::from_utf8(response.as_bytes()).unwrap();
+    assert!(body.contains("\u{c9}mile Zola"));
+    assert!(!body.contains("Unrelated Title"));
+
+    // Accented input keeps matching (no regression from folding).
+    let response = server
+        .get("/opds/library/search?q=%C3%89mile")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body = std::str::from_utf8(response.as_bytes()).unwrap();
+    assert!(body.contains("\u{c9}mile Zola"));
+    assert!(!body.contains("Unrelated Title"));
+}
+
 // ── Test 25: child sees only whitelisted manifestations ──────────────────
 
 #[sqlx::test(migrations = "./migrations")]

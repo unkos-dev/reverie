@@ -75,8 +75,10 @@ Two subtleties are part of the decision, not incidental:
   compensating control.
 - Bad, because schema rollback is deliberately partial: the wrappers,
   configuration, and extension survive the down migration so a deployed
-  binary that names them degrades to accent-sensitive matching instead
-  of erroring; full removal requires rolling back the image first.
+  binary that names them keeps returning accent-insensitive results
+  instead of erroring, but its folded trigram expressions run unindexed
+  until the application image is rolled back too; full removal requires
+  rolling back the image first.
 - Neutral, because `isbn_13` stays unfolded: digits and `X` have
   nothing to fold, so it keeps the plain escaped `ILIKE` path.
 
