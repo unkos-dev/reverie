@@ -25,16 +25,22 @@ err() {
   fail=1
 }
 
+# Anchored on both ends deliberately. A trailing-wildcard glob is a prefix
+# match, not an exact one: it accepts `0.2.6-beta`, `0x.2.6`, and `0.2.6.7`.
+# Every pin below is compared against this reference, so a malformed value
+# admitted here is a malformed value the whole guard then agrees with.
+# npm publishes only x.y.z, so a pin that is not one cannot resolve at all.
+exact_version() {
+  [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
 # The root vite-plus devDependency is the reference: it is the vp the local
 # recipes actually execute, so every other copy is checked against it.
 ref="$(jq -r '.devDependencies["vite-plus"] // ""' package.json)"
-case "$ref" in
-  [0-9]*.[0-9]*) ;;
-  *)
-    err package.json "could not parse the vite-plus devDependency version (got '${ref}'); the dependency shape may have changed, so update this guard"
-    exit 1
-    ;;
-esac
+if ! exact_version "$ref"; then
+  err package.json "could not parse the vite-plus devDependency version (got '${ref}'); the dependency shape may have changed, so update this guard"
+  exit 1
+fi
 
 for f in package.json frontend/package.json; do
   pkg="$(jq -r '.devDependencies["vite-plus"] // ""' "$f")"
@@ -90,13 +96,10 @@ for f in "${workflows[@]}"; do
   # key, so pins missing everywhere would agree with each other and pass,
   # and setup-vp falls back to the latest LTS node when given no version:
   # the floating runtime the pin exists to prevent.
-  case "$node_pin" in
-    [0-9]*.[0-9]*.[0-9]*) ;;
-    *)
-      err "$f" "NODE_VERSION is '${node_pin}', not a pinned x.y.z version; without it setup-vp resolves whatever node is latest LTS that day"
-      continue
-      ;;
-  esac
+  if ! exact_version "$node_pin"; then
+    err "$f" "NODE_VERSION is '${node_pin}', not a pinned x.y.z version; without it setup-vp resolves whatever node is latest LTS that day"
+    continue
+  fi
   if [ -z "$node_ref" ]; then
     node_ref="$node_pin"
     node_ref_file="$f"

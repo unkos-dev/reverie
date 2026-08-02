@@ -137,4 +137,47 @@ baseline
 edit_json "${tmp}/package.json" '.devDependencies["vite-plus"] = "workspace:*"'
 expect "unparsable reference version rejected" 1
 
+# Malformed vite-plus versions planted in EVERY copy, so all the equality
+# comparisons agree and the shape check is the only thing left that can
+# reject. Anything less isolating passes for the wrong reason: a bad value in
+# one file alone is caught by the mismatch it creates, which a prefix-matching
+# glob would also catch, so the case would not distinguish the two matchers.
+consistent_tree() {
+  local v="$1" alias="npm:@voidzero-dev/vite-plus-core@$1" f
+  jq -n --arg v "$v" --arg a "$alias" \
+    '{devDependencies: {"vite-plus": $v, vite: $a}, overrides: {vite: "$vite"}}' \
+    >"${tmp}/package.json"
+  jq -n --arg v "$v" --arg a "$alias" \
+    '{devDependencies: {"vite-plus": $v, vite: $a}}' \
+    >"${tmp}/frontend/package.json"
+  rm -f "${tmp}"/.github/workflows/*.yml "${tmp}"/.github/workflows/*.yaml
+  for f in ci docs-build scheduled-audit; do
+    workflow "$v" "${2:-$NODE}" "${tmp}/.github/workflows/${f}.yml"
+  done
+}
+
+for bad in "0.2.6-beta" "0.2.6junk" "0x.2.6" "0.2.6.7" "0.2" "v0.2.6" "0-2-6"; do
+  consistent_tree "$bad"
+  expect "malformed vite-plus version (${bad}) rejected in every copy" 1
+done
+
+# The same shapes in NODE_VERSION, which setup-vp hands to actions verbatim
+# and which resolves to nothing once it stops naming a published release.
+for bad in "24.18.0-rc" "24.18.0junk" "24x.18.0" "24.18.0.1" "v24.18.0"; do
+  baseline
+  for f in ci docs-build scheduled-audit; do
+    workflow "$REF" "$bad" "${tmp}/.github/workflows/${f}.yml"
+  done
+  expect "malformed NODE_VERSION (${bad}) rejected" 1
+done
+
+# Positive controls. A matcher tightened past the accepted set would reject
+# these too while every rejection case above still passed, so rejection alone
+# does not prove the shape check is right.
+consistent_tree "10.200.3000" "100.0.1"
+expect "multi-digit components accepted on both pins" 0
+
+consistent_tree "0.0.0" "0.0.0"
+expect "all-zero versions accepted on both pins" 0
+
 exit "$fail"
