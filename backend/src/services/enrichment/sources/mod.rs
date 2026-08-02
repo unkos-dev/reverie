@@ -21,6 +21,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use reqwest::StatusCode;
 use serde_json::Value;
+use tracing::warn;
 
 use super::cache::CachedResponse;
 
@@ -83,21 +84,13 @@ pub fn is_fetchable_scheme(scheme: &str) -> bool {
     matches!(scheme, "openlibrary" | "googlebooks" | "hardcover")
 }
 
-/// A per-manifestation aggregate rating observed from one provider.
-///
 /// Ratings deliberately travel outside the [`SourceResult`] stream: a
 /// `SourceResult` becomes one `metadata_versions` journal row by contract,
 /// and ratings are a refreshable direct-write cache that is never journaled,
-/// locked, or written back.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RatingObservation {
-    /// The provider's score on its own scale.
-    pub rating: f32,
-    /// The provider's maximum score (e.g. 5).
-    pub rating_scale: f32,
-    /// Number of reviews backing the score; 0 when unreported.
-    pub review_count: i32,
-}
+/// locked, or written back. The type itself lives beside the table whose
+/// CHECK constraints it mirrors; it is re-exported here so adapter code can
+/// keep importing it from this module.
+pub use crate::models::external_rating::{InvalidRatingObservation, RatingObservation};
 
 /// What one lookup learned about the provider's aggregate rating.
 ///
@@ -106,7 +99,10 @@ pub struct RatingObservation {
 /// record never carries rating data, so resolving through one says nothing
 /// about the provider's rating and must not erase a value cached from an
 /// earlier run. A rating-capable record that omits the rating is the
-/// provider saying it no longer has one.
+/// provider saying it no longer has one. [`Self::Unusable`] is a third,
+/// distinct case: a rating-capable record reported a rating, but the
+/// reported values fail [`RatingObservation::new`], so nothing usable came
+/// back either.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum RatingSignal {
     /// This lookup path carries no rating data either way; the cached
@@ -118,6 +114,10 @@ pub enum RatingSignal {
     Absent,
     /// The provider reports this rating; the cache row is refreshed.
     Reported(RatingObservation),
+    /// A rating-capable record reported values the ratings cache's own
+    /// invariant rejects; any previously cached rating for this provider is
+    /// removed rather than served stale.
+    Unusable(InvalidRatingObservation),
 }
 
 /// Everything one `lookup` call produced: journal-bound field observations
@@ -140,10 +140,17 @@ impl LookupOutcome {
         }
     }
 
-    /// `true` when the lookup produced neither fields nor a reported
-    /// rating (a miss for fallback purposes).
+    /// `true` when the lookup produced neither fields nor a rating signal
+    /// worth acting on (a miss for fallback purposes). Both [`Reported`] and
+    /// [`Unusable`] count as a hit: an out-of-range rating is still evidence
+    /// the record carries rating data, even though [`Unusable`] cannot be
+    /// cached as-is.
+    ///
+    /// [`Reported`]: RatingSignal::Reported
+    /// [`Unusable`]: RatingSignal::Unusable
     pub const fn is_empty(&self) -> bool {
-        self.fields.is_empty() && !matches!(self.rating, RatingSignal::Reported(_))
+        self.fields.is_empty()
+            && matches!(self.rating, RatingSignal::Unknown | RatingSignal::Absent)
     }
 }
 
@@ -156,15 +163,28 @@ pub(super) fn rating_signal(average: Option<f64>, count: Option<i64>, scale: f32
     let Some(avg) = average else {
         return RatingSignal::Absent;
     };
-    RatingSignal::Reported(RatingObservation {
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "provider ratings are small values on a 5-point scale; f64→f32 is lossless in that range"
-        )]
-        rating: avg as f32,
-        rating_scale: scale,
-        review_count: count.and_then(|n| i32::try_from(n).ok()).unwrap_or(0),
-    })
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "provider ratings are small values on a 5-point scale; f64→f32 is lossless in that range"
+    )]
+    let rating = avg as f32;
+    // `None` means the provider didn't report a count at all, which is
+    // silently 0 (unreported, not invalid). A `Some` that doesn't fit in
+    // `i32` is a different case: the provider *did* report a count, just one
+    // outside the range the cache can store, so it's worth a log line.
+    let review_count = count.map_or(0, |n| {
+        i32::try_from(n).unwrap_or_else(|_| {
+            warn!(
+                reported_count = n,
+                "enrichment: provider review count exceeds i32 range; treating as unreported"
+            );
+            0
+        })
+    });
+    match RatingObservation::new(rating, scale, review_count) {
+        Ok(observation) => RatingSignal::Reported(observation),
+        Err(err) => RatingSignal::Unusable(err),
+    }
 }
 
 /// A single field observation from a metadata source.
@@ -264,7 +284,9 @@ pub(super) fn encode_query_component(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::encode_query_component;
+    use super::{
+        LookupOutcome, RatingObservation, RatingSignal, encode_query_component, rating_signal,
+    };
 
     #[test]
     fn encode_query_component_escapes_reserved_chars() {
@@ -273,5 +295,57 @@ mod tests {
         assert_eq!(encode_query_component("A&B"), "A%26B");
         assert_eq!(encode_query_component("50% off"), "50%25%20off");
         assert_eq!(encode_query_component("q=1"), "q%3D1");
+    }
+
+    #[test]
+    fn rating_signal_reports_valid_average() {
+        let signal = rating_signal(Some(4.5), Some(100), 5.0);
+        let RatingSignal::Reported(observation) = signal else {
+            panic!("expected Reported, got {signal:?}");
+        };
+        assert!((observation.rating() - 4.5).abs() < f32::EPSILON);
+        assert!((observation.rating_scale() - 5.0).abs() < f32::EPSILON);
+        assert_eq!(observation.review_count(), 100);
+    }
+
+    #[test]
+    fn rating_signal_absent_when_no_average() {
+        assert_eq!(rating_signal(None, Some(10), 5.0), RatingSignal::Absent);
+    }
+
+    #[test]
+    fn rating_signal_unusable_when_average_out_of_range() {
+        let signal = rating_signal(Some(6.0), Some(10), 5.0);
+        assert!(
+            matches!(signal, RatingSignal::Unusable(_)),
+            "expected Unusable, got {signal:?}"
+        );
+    }
+
+    #[test]
+    fn rating_signal_count_above_i32_max_maps_to_zero_but_stays_reported() {
+        let signal = rating_signal(Some(4.0), Some(i64::from(i32::MAX) + 1), 5.0);
+        let RatingSignal::Reported(observation) = signal else {
+            panic!("expected Reported, got {signal:?}");
+        };
+        assert_eq!(
+            observation.review_count(),
+            0,
+            "an unrepresentable count is dropped, not the whole rating"
+        );
+    }
+
+    #[test]
+    fn lookup_outcome_unusable_rating_is_not_empty() {
+        let observation_err =
+            RatingObservation::new(6.0, 5.0, 1).expect_err("6.0 is out of [0, 5.0]");
+        let outcome = LookupOutcome {
+            fields: vec![],
+            rating: RatingSignal::Unusable(observation_err),
+        };
+        assert!(
+            !outcome.is_empty(),
+            "an unusable rating is still evidence the record carries rating data"
+        );
     }
 }

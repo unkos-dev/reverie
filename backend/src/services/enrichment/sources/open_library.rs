@@ -1016,8 +1016,8 @@ mod tests {
                 out.rating
             );
         };
-        assert!((rating.rating - 4.25).abs() < f32::EPSILON);
-        assert!((rating.rating_scale - 5.0).abs() < f32::EPSILON);
-        assert_eq!(rating.review_count, 4321);
+        assert!((rating.rating() - 4.25).abs() < f32::EPSILON);
+        assert!((rating.rating_scale() - 5.0).abs() < f32::EPSILON);
+        assert_eq!(rating.review_count(), 4321);
     }
 }

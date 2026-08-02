@@ -494,8 +494,8 @@ mod tests {
         else {
             panic!("rating maps to a reported rating, got {:?}", out.rating);
         };
-        assert!((rating.rating - 4.31).abs() < 1e-6);
-        assert_eq!(rating.review_count, 999);
+        assert!((rating.rating() - 4.31).abs() < 1e-6);
+        assert_eq!(rating.review_count(), 999);
     }
 
     #[tokio::test]
