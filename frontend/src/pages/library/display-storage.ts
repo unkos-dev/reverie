@@ -24,7 +24,10 @@ const StoredDisplaySchema = z.object({
 
 export type DisplayPreferences = z.infer<typeof StoredDisplaySchema>;
 
-const NO_PREFERENCE: DisplayPreferences = { density: null, hiddenColumns: null };
+const NO_PREFERENCE: DisplayPreferences = {
+  density: null,
+  hiddenColumns: null,
+};
 
 /** Read persisted display preferences; each field is `null` when unset,
  *  unreadable, or malformed. */

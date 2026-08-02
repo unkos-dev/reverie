@@ -53,10 +53,32 @@ export type ReadingStatus = z.infer<typeof ReadingStatusSchema>;
 
 export { ReadingStatusSchema };
 
+const ContentRatingSchema = z.enum(["everyone", "teen", "mature", "adult"]);
+/** Audience-suitability rating. Matches `backend/src/models/content_rating.rs`. */
+export type ContentRating = z.infer<typeof ContentRatingSchema>;
+
+const ContributorRoleSchema = z.enum(["author", "editor", "translator", "narrator"]);
+/** Contribution role. Matches `backend/src/models/contributor_role.rs`. */
+export type ContributorRole = z.infer<typeof ContributorRoleSchema>;
+
+const ContributorRefSchema = z.object({
+  name: z.string(),
+  role: ContributorRoleSchema,
+});
+/**
+ * One non-author contributor on a book projection. The `authors` array
+ * stays the author-role display surface; `role` here is never `"author"`.
+ * Mirrors `ContributorRef` in `backend/src/models/library.rs`.
+ */
+export type ContributorRef = z.infer<typeof ContributorRefSchema>;
+
 const ReadingStateSummarySchema = z.object({
   status: ReadingStatusSchema.nullable(),
   rating: z.number().int().nullable(),
+  notes: z.string().nullable(),
   progress_pct: z.number().nullable(),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
 });
 /**
  * Caller-scoped reading-state summary batch-loaded onto list rows.
@@ -71,9 +93,14 @@ const BookListItemSchema = z.object({
   title: z.string(),
   subtitle: z.string().nullable(),
   authors: z.array(z.string()),
+  contributors: z.array(ContributorRefSchema),
   series: SeriesRefSchema.nullable(),
   isbn_13: z.string().nullable(),
   pages: z.number().int().nullable(),
+  tags: z.array(z.string()),
+  genres: z.array(z.string()),
+  moods: z.array(z.string()),
+  content_rating: ContentRatingSchema.nullable(),
   cover_url: z.string(),
   ingestion_status: IngestionStatusSchema,
   validation_status: ValidationStatusSchema,
@@ -243,6 +270,7 @@ const BookDetailSchema = z.object({
   work_id: z.string(),
   title: z.string(),
   authors: z.array(z.string()),
+  contributors: z.array(ContributorRefSchema),
   series: SeriesRefSchema.nullable(),
   description: z.string().nullable(),
   language: z.string().nullable(),

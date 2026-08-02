@@ -407,7 +407,16 @@ export const FEATURED_BOOK_ID = "wind-up-bird";
  * the library page header.
  */
 export const SHELVES: { name: string; count: number }[] = [
-  { name: "Currently reading", count: BOOKS.filter((b) => b.readingState === "reading").length },
-  { name: "Want to read", count: BOOKS.filter((b) => b.readingState === "unread").length },
-  { name: "Finished", count: BOOKS.filter((b) => b.readingState === "finished").length },
+  {
+    name: "Currently reading",
+    count: BOOKS.filter((b) => b.readingState === "reading").length,
+  },
+  {
+    name: "Want to read",
+    count: BOOKS.filter((b) => b.readingState === "unread").length,
+  },
+  {
+    name: "Finished",
+    count: BOOKS.filter((b) => b.readingState === "finished").length,
+  },
 ];

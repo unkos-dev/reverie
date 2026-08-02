@@ -32,18 +32,25 @@ describe("useAuthMe", () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthMe(), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
-    expect(result.current.data).toMatchObject({ display_name: "Alice", role: "admin" });
+    expect(result.current.data).toMatchObject({
+      display_name: "Alice",
+      role: "admin",
+    });
   });
 
   test("returns undefined on 401 (not authenticated)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthMe(), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -54,7 +61,9 @@ describe("useAuthMe", () => {
   test("returns undefined on 403 (forbidden)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 403 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthMe(), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -67,7 +76,9 @@ describe("useAuthMe", () => {
       new Response(null, { status: 500, statusText: "Internal Server Error" }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthMe(), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -84,7 +95,9 @@ describe("useAuthMe", () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthMe(), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -95,7 +108,9 @@ describe("useAuthMe", () => {
   test("isError is false on 401 (not an operational failure)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
 
-    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthMe(), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);

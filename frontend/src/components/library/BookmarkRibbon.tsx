@@ -37,7 +37,9 @@ export function BookmarkRibbon(): ReactElement {
   }, []);
 
   // Keep the 2.5rem-tall thumb inside the full-height track at both ends.
-  const thumbStyle: CSSProperties = { top: `calc(${String(progress)} * (100vh - 2.5rem))` };
+  const thumbStyle: CSSProperties = {
+    top: `calc(${String(progress)} * (100vh - 2.5rem))`,
+  };
 
   return (
     <div

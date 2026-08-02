@@ -68,7 +68,10 @@ export function Component(): ReactElement {
     }
     const newPassword = newPasswordField.safeParse(formString(data, "new_password"));
     if (!newPassword.success) {
-      setError({ field: "new", message: "Use at least 8 characters for the new password." });
+      setError({
+        field: "new",
+        message: "Use at least 8 characters for the new password.",
+      });
       return;
     }
     changeMutation.mutate({

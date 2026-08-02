@@ -16,7 +16,12 @@ async function collectAll(
   const all: SpikeBookRow[] = [];
   let cursor: string | undefined;
   for (;;) {
-    const page = await listSpikeBooks(dataset, { cursor, pageSize, sort, latencyMs: 0 });
+    const page = await listSpikeBooks(dataset, {
+      cursor,
+      pageSize,
+      sort,
+      latencyMs: 0,
+    });
     all.push(...page.items);
     if (page.next_cursor === null) break;
     cursor = page.next_cursor;
@@ -26,7 +31,11 @@ async function collectAll(
 
 describe("listSpikeBooks paging", () => {
   test("first page returns pageSize items and a continuation cursor", async () => {
-    const page = await listSpikeBooks(DATA, { pageSize: 50, sort: [], latencyMs: 0 });
+    const page = await listSpikeBooks(DATA, {
+      pageSize: 50,
+      sort: [],
+      latencyMs: 0,
+    });
     expect(page.items).toHaveLength(50);
     expect(page.next_cursor).not.toBeNull();
   });
@@ -40,17 +49,30 @@ describe("listSpikeBooks paging", () => {
   test("final partial page is short and terminates the cursor", async () => {
     // 205 rows / 50 => pages of 50,50,50,50,5.
     let cursor: string | undefined;
-    let last = await listSpikeBooks(DATA, { pageSize: 50, sort: [], latencyMs: 0 });
+    let last = await listSpikeBooks(DATA, {
+      pageSize: 50,
+      sort: [],
+      latencyMs: 0,
+    });
     while (last.next_cursor !== null) {
       cursor = last.next_cursor;
-      last = await listSpikeBooks(DATA, { cursor, pageSize: 50, sort: [], latencyMs: 0 });
+      last = await listSpikeBooks(DATA, {
+        cursor,
+        pageSize: 50,
+        sort: [],
+        latencyMs: 0,
+      });
     }
     expect(last.items).toHaveLength(5);
     expect(last.next_cursor).toBeNull();
   });
 
   test("an empty dataset returns an empty first page and no cursor", async () => {
-    const page = await listSpikeBooks([], { pageSize: 50, sort: [], latencyMs: 0 });
+    const page = await listSpikeBooks([], {
+      pageSize: 50,
+      sort: [],
+      latencyMs: 0,
+    });
     expect(page.items).toHaveLength(0);
     expect(page.next_cursor).toBeNull();
   });
@@ -84,7 +106,12 @@ describe("listSpikeBooks sort", () => {
 describe("listSpikeBooks cursor edges", () => {
   test("a malformed cursor throws MockCursorError", async () => {
     await expect(
-      listSpikeBooks(DATA, { cursor: "!!!not-base64!!!", pageSize: 10, sort: [], latencyMs: 0 }),
+      listSpikeBooks(DATA, {
+        cursor: "!!!not-base64!!!",
+        pageSize: 10,
+        sort: [],
+        latencyMs: 0,
+      }),
     ).rejects.toBeInstanceOf(MockCursorError);
   });
 

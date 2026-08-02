@@ -306,7 +306,11 @@ function GridStage(props: GridStageProps): ReactElement {
     // error state rather than a swallowed failure.
     const scroller = stageRef.current?.querySelector(".rdg") ?? null;
     if (!(scroller instanceof HTMLElement)) {
-      setMetrics((m) => ({ ...m, frame: null, scrollNote: "scroll container not found" }));
+      setMetrics((m) => ({
+        ...m,
+        frame: null,
+        scrollNote: "scroll container not found",
+      }));
       return;
     }
     setRunning(true);

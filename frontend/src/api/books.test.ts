@@ -35,14 +35,26 @@ describe("listBooks", () => {
           title: "Stoner",
           subtitle: null,
           authors: ["John Williams"],
+          contributors: [{ name: "Edna Prose", role: "editor" }],
           series: null,
           isbn_13: "9781590171998",
           pages: 288,
+          tags: ["campus-novel"],
+          genres: ["Literary Fiction"],
+          moods: ["Somber"],
+          content_rating: "mature",
           cover_url: "/api/v1/books/.../cover/thumb",
           ingestion_status: "complete",
           validation_status: "clean",
           enrichment_status: "complete",
-          reading_state: { status: "finished", rating: 5, progress_pct: 100 },
+          reading_state: {
+            status: "finished",
+            rating: 5,
+            notes: "quiet devastation",
+            progress_pct: 100,
+            started_at: "2025-12-01T00:00:00Z",
+            finished_at: "2025-12-31T00:00:00Z",
+          },
           created_at: "2026-01-01T00:00:00Z",
         },
       ],
@@ -83,7 +95,11 @@ describe("listBooks", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
 
-    await listBooks({ pages_gte: 500, subtitle_empty: true, tag_any: ["fantasy", "horror"] });
+    await listBooks({
+      pages_gte: 500,
+      subtitle_empty: true,
+      tag_any: ["fantasy", "horror"],
+    });
 
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
     expect(url.searchParams.get("pages_gte")).toBe("500");
@@ -128,7 +144,10 @@ describe("getBook", () => {
           status: 404,
           detail: "Resource not found.",
         }),
-        { status: 404, headers: { "Content-Type": "application/problem+json" } },
+        {
+          status: 404,
+          headers: { "Content-Type": "application/problem+json" },
+        },
       ),
     );
     await expect(getBook("ghost")).rejects.toBeInstanceOf(ApiError);
@@ -141,6 +160,7 @@ describe("getBook", () => {
         work_id: "w-1",
         title: "x",
         authors: [],
+        contributors: [],
         series: null,
         description: null,
         language: null,
@@ -224,9 +244,14 @@ describe("response schema validation (zod boundary)", () => {
             title: "t",
             subtitle: null,
             authors: [],
+            contributors: [],
             series: null,
             isbn_13: null,
             pages: null,
+            tags: [],
+            genres: [],
+            moods: [],
+            content_rating: null,
             reading_state: null,
             cover_url: "",
             ingestion_status: "bogus_state",
@@ -251,9 +276,14 @@ describe("response schema validation (zod boundary)", () => {
             title: "t",
             subtitle: null,
             authors: [],
+            contributors: [],
             series: null,
             isbn_13: null,
             pages: null,
+            tags: [],
+            genres: [],
+            moods: [],
+            content_rating: null,
             reading_state: null,
             cover_url: "",
             ingestion_status: "complete",
@@ -275,6 +305,7 @@ describe("response schema validation (zod boundary)", () => {
         work_id: "w",
         title: "x",
         authors: [],
+        contributors: [],
         series: null,
         description: 12345, // should be string | null
         language: null,
@@ -316,7 +347,10 @@ describe("updateBookMetadata", () => {
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
     expect(input).toBe("/api/v1/books/abc-123/metadata");
     expect(init?.method).toBe("PATCH");
-    expect(parseJsonBody(init?.body)).toEqual({ title: "New", description: null });
+    expect(parseJsonBody(init?.body)).toEqual({
+      title: "New",
+      description: null,
+    });
   });
 
   test("returns the parsed per-field version-change map", async () => {
@@ -332,7 +366,9 @@ describe("updateBookMetadata", () => {
       }),
     );
 
-    const result = await updateBookMetadata("abc-123", { isbn_13: "978-1-59017-199-8" });
+    const result = await updateBookMetadata("abc-123", {
+      isbn_13: "978-1-59017-199-8",
+    });
 
     expect(result.fields.isbn_13).toEqual({
       value: "9781590171998",
@@ -345,7 +381,11 @@ describe("updateBookMetadata", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({
         fields: {
-          title: { value: "New", version_id: "not-a-uuid", previous_version_id: null },
+          title: {
+            value: "New",
+            version_id: "not-a-uuid",
+            previous_version_id: null,
+          },
         },
       }),
     );

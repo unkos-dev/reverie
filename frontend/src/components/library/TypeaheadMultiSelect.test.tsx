@@ -63,11 +63,11 @@ describe("TypeaheadMultiSelect", () => {
   });
 
   test("fires the suggest request once the debounce settles at 2+ characters", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        jsonResponse({ suggestions: [{ id: LE_GUIN, value: "Ursula K. Le Guin" }] }),
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        suggestions: [{ id: LE_GUIN, value: "Ursula K. Le Guin" }],
+      }),
+    );
     render(<Harness />);
     const user = userEvent.setup();
 
@@ -88,7 +88,9 @@ describe("TypeaheadMultiSelect", () => {
     const input = screen.getByRole("combobox", { name: /add author/i });
 
     await user.type(input, "le");
-    const option = await screen.findByRole("option", { name: "Ursula K. Le Guin" });
+    const option = await screen.findByRole("option", {
+      name: "Ursula K. Le Guin",
+    });
     await user.click(option);
 
     const chips = screen.getByRole("list", { name: /selected author/i });

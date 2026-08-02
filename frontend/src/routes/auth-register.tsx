@@ -35,7 +35,10 @@ import { AuthShell } from "./auth-shell";
  * example a duplicate email or a disabled instance), so it stays `form` level
  * and is announced through the alert without mislabelling a specific input.
  */
-type FormError = { field: "display" | "email" | "password" | "form"; message: string };
+type FormError = {
+  field: "display" | "email" | "password" | "form";
+  message: string;
+};
 
 /** Route component for `/register`. */
 export function Component(): ReactElement {
@@ -80,7 +83,10 @@ export function Component(): ReactElement {
     }
     const password = newPasswordField.safeParse(formString(data, "password"));
     if (!password.success) {
-      setError({ field: "password", message: "Use at least 8 characters for the password." });
+      setError({
+        field: "password",
+        message: "Use at least 8 characters for the password.",
+      });
       return;
     }
     registerMutation.mutate({

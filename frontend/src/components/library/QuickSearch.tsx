@@ -31,7 +31,10 @@ export function QuickSearch({
   // a clearing write bumps it after the edit, and the fire-time check must
   // veto the stale draft even if an unrelated re-render lands between the
   // bump and the due timer (same rationale as the rail's useDraftSlice).
-  const [draftState, setDraftState] = useState(() => ({ value, gen: clearGen.current }));
+  const [draftState, setDraftState] = useState(() => ({
+    value,
+    gen: clearGen.current,
+  }));
   const [synced, setSynced] = useState({ value, resetToken });
   // Reset the input to reflect `value` when the committed `q` changes from
   // outside (navigation) OR when any other filter changes (a section clear,

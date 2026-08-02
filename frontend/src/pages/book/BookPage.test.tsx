@@ -16,6 +16,7 @@ function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
     work_id: "w-1",
     title: "The Brothers Karamazov",
     authors: ["Fyodor Dostoevsky"],
+    contributors: [],
     series: null,
     description: "A passionate, polyphonic novel of patricide, faith and free will.",
     language: "en",
@@ -84,7 +85,9 @@ describe("BookPage", () => {
 
   test("renders the description in the Overview tab", async () => {
     renderBook(bookFixture());
-    const overviewPanel = await screen.findByRole("tabpanel", { name: /overview/i });
+    const overviewPanel = await screen.findByRole("tabpanel", {
+      name: /overview/i,
+    });
     expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
   });
 

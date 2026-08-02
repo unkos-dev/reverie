@@ -79,11 +79,20 @@ interface ShortcutRow {
 
 const SHORTCUT_ROWS: ShortcutRow[] = [
   { keys: ["↑", "↓", "←", "→"], description: "Move focus one cell" },
-  { keys: ["Home", "End"], description: "Jump to the first or last cell in the row" },
+  {
+    keys: ["Home", "End"],
+    description: "Jump to the first or last cell in the row",
+  },
   { keys: ["Ctrl", "Home"], description: "Jump to the first loaded row" },
   { keys: ["Ctrl", "End"], description: "Jump to the last loaded row" },
-  { keys: ["Page Up", "Page Down"], description: "Scroll one viewport of rows" },
-  { keys: ["Tab"], description: "Move to the next cell; exits the grid at the last cell" },
+  {
+    keys: ["Page Up", "Page Down"],
+    description: "Scroll one viewport of rows",
+  },
+  {
+    keys: ["Tab"],
+    description: "Move to the next cell; exits the grid at the last cell",
+  },
   {
     keys: ["Shift", "Tab"],
     description: "Move to the previous cell; exits the grid at the first cell",
@@ -95,7 +104,10 @@ const SHORTCUT_ROWS: ShortcutRow[] = [
     keys: ["F2"],
     description: "Edit the focused cell (opens only; Esc or Enter closes)",
   },
-  { keys: ["A", "…", "Z"], description: "Type a character to start editing with that value" },
+  {
+    keys: ["A", "…", "Z"],
+    description: "Type a character to start editing with that value",
+  },
   { keys: ["Esc"], description: "While editing: discard the edit" },
   { keys: ["Enter"], description: "While editing: commit the edit" },
   { keys: ["Ctrl", "Z"], description: "Undo the most recent edit" },

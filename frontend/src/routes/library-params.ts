@@ -82,7 +82,9 @@ type WireOp<C extends TextColumn> = {
  * and emptiness only; `isbn_13` has no `ne`. Order is the operator-select
  * order in the rail.
  */
-export const TEXT_COLUMN_OPS: { readonly [C in TextColumn]: readonly WireOp<C>[] } = {
+export const TEXT_COLUMN_OPS: {
+  readonly [C in TextColumn]: readonly WireOp<C>[];
+} = {
   title: ["contains", "eq", "ne"],
   subtitle: ["contains", "empty"],
   isbn_13: ["contains", "eq", "empty"],

@@ -12,19 +12,29 @@ import { requestPasswordReset, resetPassword } from "@/api/auth";
 import { Component as AuthForgot } from "./auth-forgot-password";
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({ effective: "dark", preference: "system", setPreference: vi.fn() }),
+  useTheme: () => ({
+    effective: "dark",
+    preference: "system",
+    setPreference: vi.fn(),
+  }),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
 vi.mock("@/api/auth");
 
 function renderForgot(): void {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
 
   const routes: RouteObject[] = [
     { path: "/forgot-password", element: <AuthForgot /> },
     { path: "/login", element: <div data-testid="login-page">Login</div> },
   ];
-  const router = createMemoryRouter(routes, { initialEntries: ["/forgot-password"] });
+  const router = createMemoryRouter(routes, {
+    initialEntries: ["/forgot-password"],
+  });
 
   function Wrapper(): ReactElement {
     return (

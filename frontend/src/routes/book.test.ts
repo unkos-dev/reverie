@@ -19,6 +19,7 @@ function bookDetail(id: string): Record<string, unknown> {
     work_id: "w-1",
     title: "x",
     authors: [],
+    contributors: [],
     series: null,
     description: null,
     language: null,

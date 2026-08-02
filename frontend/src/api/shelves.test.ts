@@ -127,7 +127,11 @@ describe("getShelf", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
-        jsonResponse({ ...identity, items: [item(1), item(2)], next_cursor: "bmV4dA" }),
+        jsonResponse({
+          ...identity,
+          items: [item(1), item(2)],
+          next_cursor: "bmV4dA",
+        }),
       )
       .mockResolvedValueOnce(jsonResponse({ ...identity, items: [item(3)], next_cursor: null }));
     const result = await getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");

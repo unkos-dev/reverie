@@ -330,7 +330,10 @@ describe("ThemeProvider setPreference", () => {
           title: "Precondition Required",
           status: 428,
         }),
-        { status: 428, headers: { "Content-Type": "application/problem+json" } },
+        {
+          status: 428,
+          headers: { "Content-Type": "application/problem+json" },
+        },
       );
     mockMe("light"); // 1. reconcile /auth/me
     fetchMock.mockResolvedValueOnce(csrfMissing428()); // 2. PATCH → 428

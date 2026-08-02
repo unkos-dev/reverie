@@ -13,14 +13,26 @@ function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     title: "Original Title",
     subtitle: "Original Subtitle",
     authors: ["Original Author"],
+    contributors: [],
     series: null,
     isbn_13: "9780000000001",
     pages: 100,
+    tags: [],
+    genres: [],
+    moods: [],
+    content_rating: null,
     cover_url: "",
     ingestion_status: "complete",
     validation_status: "clean",
     enrichment_status: "complete",
-    reading_state: { status: "reading", rating: 3, progress_pct: 40 },
+    reading_state: {
+      status: "reading",
+      rating: 3,
+      notes: null,
+      progress_pct: 40,
+      started_at: null,
+      finished_at: null,
+    },
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
@@ -183,7 +195,14 @@ describe("status route", () => {
     if (route.pipeline !== "reading") throw new Error("expected reading pipeline");
     const row = rowFixture();
     const draft = rowFixture({
-      reading_state: { status: "finished", rating: 3, progress_pct: 40 },
+      reading_state: {
+        status: "finished",
+        rating: 3,
+        notes: null,
+        progress_pct: 40,
+        started_at: null,
+        finished_at: null,
+      },
     });
     expect(route.toPatch(row, draft)).toEqual({ status: "finished" });
   });
@@ -210,7 +229,10 @@ describe("status route", () => {
     expect(applied.reading_state).toEqual({
       status: "finished",
       rating: 3,
+      notes: null,
       progress_pct: 100,
+      started_at: null,
+      finished_at: "2026-07-01T00:00:00Z",
     });
   });
 });
@@ -225,7 +247,14 @@ describe("rating route", () => {
     if (route.pipeline !== "reading") throw new Error("expected reading pipeline");
     const row = rowFixture();
     const draft = rowFixture({
-      reading_state: { status: "reading", rating: 5, progress_pct: 40 },
+      reading_state: {
+        status: "reading",
+        rating: 5,
+        notes: null,
+        progress_pct: 40,
+        started_at: null,
+        finished_at: null,
+      },
     });
     expect(route.toPatch(row, draft)).toEqual({ rating: 5 });
   });
@@ -247,7 +276,10 @@ describe("rating route", () => {
     expect(applied.reading_state).toEqual({
       status: "reading",
       rating: 1,
+      notes: null,
       progress_pct: 40,
+      started_at: null,
+      finished_at: null,
     });
   });
 });

@@ -55,7 +55,13 @@ const COLUMNS: readonly GridColumn<TestRow>[] = [
     accessor: (row) => row.title,
     renderEditCell: TitleEditor,
   },
-  { key: "author", name: "Author", sortable: true, width: 160, accessor: (row) => row.author },
+  {
+    key: "author",
+    name: "Author",
+    sortable: true,
+    width: 160,
+    accessor: (row) => row.author,
+  },
   {
     key: "status",
     name: "Status",
@@ -132,9 +138,13 @@ describe("ReactDataGridBinding contract", () => {
     const onSortChange = vi.fn();
     const user = userEvent.setup();
     render(<Harness onSortChange={onSortChange} />);
-    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    const titleHeader = await screen.findByRole("columnheader", {
+      name: "Title",
+    });
     await user.click(titleHeader);
-    const authorHeader = await screen.findByRole("columnheader", { name: "Author" });
+    const authorHeader = await screen.findByRole("columnheader", {
+      name: "Author",
+    });
     await user.keyboard("{Control>}");
     await user.click(authorHeader);
     await user.keyboard("{/Control}");
@@ -150,9 +160,13 @@ describe("ReactDataGridBinding contract", () => {
     const onSortChange = vi.fn();
     const user = userEvent.setup();
     render(<Harness onSortChange={onSortChange} />);
-    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    const titleHeader = await screen.findByRole("columnheader", {
+      name: "Title",
+    });
     await user.click(titleHeader);
-    const authorHeader = await screen.findByRole("columnheader", { name: "Author" });
+    const authorHeader = await screen.findByRole("columnheader", {
+      name: "Author",
+    });
     await user.keyboard("{Control>}");
     await user.click(authorHeader);
     await user.keyboard("{/Control}");
@@ -175,9 +189,13 @@ describe("ReactDataGridBinding contract", () => {
   test("a sort-priority indicator exposes an accessible sort-level label", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
+    const titleHeader = await screen.findByRole("columnheader", {
+      name: "Title",
+    });
     await user.click(titleHeader);
-    const authorHeader = await screen.findByRole("columnheader", { name: "Author" });
+    const authorHeader = await screen.findByRole("columnheader", {
+      name: "Author",
+    });
     await user.keyboard("{Control>}");
     await user.click(authorHeader);
     await user.keyboard("{/Control}");
@@ -191,7 +209,11 @@ describe("ReactDataGridBinding contract", () => {
     const firstTitle = await screen.findByText(ROWS[0].title);
     await user.click(firstTitle);
     await waitFor(() => {
-      expect(onCellFocus).toHaveBeenCalledWith({ row: ROWS[0], rowIdx: 0, columnKey: "title" });
+      expect(onCellFocus).toHaveBeenCalledWith({
+        row: ROWS[0],
+        rowIdx: 0,
+        columnKey: "title",
+      });
     });
   });
 
@@ -263,7 +285,9 @@ describe("ReactDataGridBinding edit surface", () => {
     const cell = await screen.findByText(ROWS[2].status);
     await user.click(cell);
     await user.keyboard("{Enter}");
-    const select = await screen.findByRole("combobox", { name: "Status editor" });
+    const select = await screen.findByRole("combobox", {
+      name: "Status editor",
+    });
     await user.selectOptions(select, "read");
     await waitFor(() => {
       expect(onCellEdit).toHaveBeenCalledWith({
@@ -349,7 +373,10 @@ describe("ReactDataGridBinding edit surface", () => {
     if (capturedOnRowsChange === undefined) {
       throw new Error("expected the stub DataGrid to receive onRowsChange");
     }
-    capturedOnRowsChange([...ROWS], { indexes: [0, 1], column: { key: "title" } });
+    capturedOnRowsChange([...ROWS], {
+      indexes: [0, 1],
+      column: { key: "title" },
+    });
 
     expect(onCellEdit).not.toHaveBeenCalled();
 

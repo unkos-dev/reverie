@@ -21,7 +21,10 @@ export const pinField = z.string().trim().min(1);
 export const currentPasswordField = z.string().min(1);
 
 /** Body for `POST /auth/local/login`. */
-export const LoginLocalSchema = z.object({ email: emailField, password: currentPasswordField });
+export const LoginLocalSchema = z.object({
+  email: emailField,
+  password: currentPasswordField,
+});
 /** Body for `POST /auth/setup`. */
 export const SetupAdminSchema = z.object({
   email: emailField,

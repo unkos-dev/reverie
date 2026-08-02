@@ -144,7 +144,10 @@ export function RangeFilterEditor({
             disabled={isEmpty}
             value={value.gte === undefined ? "" : String(value.gte)}
             onChange={(event) => {
-              onChange({ ...value, gte: parseIntOrUndefined(event.target.value) });
+              onChange({
+                ...value,
+                gte: parseIntOrUndefined(event.target.value),
+              });
             }}
           />
         </div>
@@ -158,7 +161,10 @@ export function RangeFilterEditor({
             disabled={isEmpty}
             value={value.lte === undefined ? "" : String(value.lte)}
             onChange={(event) => {
-              onChange({ ...value, lte: parseIntOrUndefined(event.target.value) });
+              onChange({
+                ...value,
+                lte: parseIntOrUndefined(event.target.value),
+              });
             }}
           />
         </div>
@@ -258,7 +264,11 @@ export function StatusEditor({ value, onChange }: StatusEditorProps): ReactEleme
 /** Match modes for a vocabulary/author set condition. */
 export type SetMode = "all" | "any" | "none";
 
-const MODE_WORD: Record<SetMode, string> = { all: "all of", any: "any of", none: "none of" };
+const MODE_WORD: Record<SetMode, string> = {
+  all: "all of",
+  any: "any of",
+  none: "none of",
+};
 
 /** Vocabulary families edited through the mode-select + typeahead widget. */
 export type VocabFamily = "authors" | "tags" | "genres" | "moods";

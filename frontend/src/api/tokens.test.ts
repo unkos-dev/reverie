@@ -36,7 +36,11 @@ describe("tokens API client parsing", () => {
       ...VALID_TOKEN,
       token: "rvpat_11111111-1111-4111-8111-111111111111.secretvalue",
     });
-    const result = await createToken({ name: "k", scopes: ["read"], expiresInDays: null });
+    const result = await createToken({
+      name: "k",
+      scopes: ["read"],
+      expiresInDays: null,
+    });
     expect(typeof result.token).toBe("string");
   });
 

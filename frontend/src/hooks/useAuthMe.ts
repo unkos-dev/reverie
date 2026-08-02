@@ -30,7 +30,11 @@ const AuthMeSchema = z.object({
 
 type AuthMe = z.infer<typeof AuthMeSchema>;
 
-function useAuthMe(): { data: AuthMe | undefined; isLoading: boolean; isError: boolean } {
+function useAuthMe(): {
+  data: AuthMe | undefined;
+  isLoading: boolean;
+  isError: boolean;
+} {
   const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.auth.me(),
     queryFn: async ({ signal }) => {

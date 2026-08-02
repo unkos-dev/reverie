@@ -57,8 +57,16 @@ pub struct ReadingStateSummary {
     pub status: Option<ReadingStatus>,
     /// `reading_state.rating`, 1-5.
     pub rating: Option<i16>,
+    /// `reading_state.notes`; free-text, caller-authored.
+    pub notes: Option<String>,
     /// `reading_state.progress_pct`, 0-100.
     pub progress_pct: Option<f32>,
+    /// `reading_state.started_at`; see [`ReadingState::started_at`].
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub started_at: Option<OffsetDateTime>,
+    /// `reading_state.finished_at`; see [`ReadingState::finished_at`].
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub finished_at: Option<OffsetDateTime>,
 }
 
 #[cfg(test)]

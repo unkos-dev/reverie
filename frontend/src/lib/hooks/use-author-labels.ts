@@ -11,7 +11,9 @@ import { queryKeys } from "@/lib/query/keys";
 
 /** Resolves a set of author ids to display labels, with fallback states for
  *  in-flight and failed lookups. */
-export function useAuthorLabels(ids: readonly string[]): { labelFor: (id: string) => string } {
+export function useAuthorLabels(ids: readonly string[]): {
+  labelFor: (id: string) => string;
+} {
   const { data, isFetching, isError, error } = useQuery({
     queryKey: queryKeys.authors.resolve(ids),
     queryFn: ({ signal }) => resolveAuthors(ids, signal),

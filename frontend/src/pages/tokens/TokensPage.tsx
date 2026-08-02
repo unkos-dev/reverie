@@ -65,10 +65,26 @@ type ExpiryValue = (typeof EXPIRY_OPTIONS)[number]["value"];
 // level grants itself and every level below it. Ordered low to high; `admin`
 // is offered only to admins (the backend re-enforces the ceiling).
 const ACCESS_LEVELS = [
-  { value: "read", label: "Read-only", hint: "View library data. Cannot make changes." },
-  { value: "write", label: "Read & write", hint: "View and modify library data." },
-  { value: "admin", label: "Admin", hint: "Full access, including user management." },
-] as const satisfies ReadonlyArray<{ value: Scope; label: string; hint: string }>;
+  {
+    value: "read",
+    label: "Read-only",
+    hint: "View library data. Cannot make changes.",
+  },
+  {
+    value: "write",
+    label: "Read & write",
+    hint: "View and modify library data.",
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    hint: "Full access, including user management.",
+  },
+] as const satisfies ReadonlyArray<{
+  value: Scope;
+  label: string;
+  hint: string;
+}>;
 
 function errorDetail(err: unknown): string {
   if (err instanceof ApiError) return err.detail;

@@ -1521,6 +1521,63 @@ async fn detail_and_list_endpoints_exclude_editor_from_authors(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_and_list_endpoints_surface_contributors_with_roles(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let m_id =
+        insert_book_with_author(&ingestion_pool, "ctr", "Contributed Tome", "Doe, Jane").await;
+    let work_id: Uuid =
+        sqlx::query_scalar!("SELECT work_id FROM manifestations WHERE id = $1", m_id)
+            .fetch_one(&ingestion_pool)
+            .await
+            .unwrap();
+    test_support::db::insert_contributor(&ingestion_pool, work_id, "Voz, Kim", "narrator", 1).await;
+    test_support::db::insert_contributor(&ingestion_pool, work_id, "Roe, Pat", "editor", 1).await;
+    test_support::db::insert_contributor(&ingestion_pool, work_id, "Tran, Sam", "translator", 1)
+        .await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Role order follows the author_role enum declaration (editor,
+    // translator, narrator), position within a role — insertion order
+    // above is deliberately scrambled to prove the ordering is server-side.
+    let expected = serde_json::json!([
+        {"name": "Roe, Pat", "role": "editor"},
+        {"name": "Tran, Sam", "role": "translator"},
+        {"name": "Voz, Kim", "role": "narrator"},
+    ]);
+
+    let list_response = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    assert_eq!(list_response.status_code(), StatusCode::OK);
+    let list_body: serde_json::Value = list_response.json();
+    assert_eq!(
+        list_body["items"][0]["contributors"], expected,
+        "non-author roles must surface as contributors on list rows — got {list_body}"
+    );
+    assert_eq!(
+        list_body["items"][0]["authors"],
+        serde_json::json!(["Doe, Jane"]),
+        "authors display array must stay author-role only — got {list_body}"
+    );
+
+    let detail_response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(detail_response.status_code(), StatusCode::OK);
+    let detail_body: serde_json::Value = detail_response.json();
+    assert_eq!(
+        detail_body["contributors"], expected,
+        "non-author roles must surface as contributors on detail — got {detail_body}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_and_list_endpoints_surface_subtitle_and_pages(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2712,6 +2769,67 @@ async fn detail_endpoint_returns_genres_moods_and_content_rating(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_surfaces_vocabularies_and_content_rating(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+    let (_work_id, m_id) = insert_book(&ingestion_pool, "lv", "Aardvark Almanac").await;
+    tag_book(&ingestion_pool, m_id, "signed").await;
+    genre_book(&ingestion_pool, m_id, "Woodworking").await;
+    genre_book(&ingestion_pool, m_id, "Astrophysics").await;
+    mood_book(&ingestion_pool, m_id, "Somber").await;
+    sqlx::query!(
+        "UPDATE manifestations SET content_rating = 'mature'::content_rating WHERE id = $1",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("set content_rating");
+    let (_bare_work, _bare_id) = insert_book(&ingestion_pool, "lv2", "Bare Binder").await;
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let response = server
+        .get("/api/v1/books?sort=title")
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+
+    let decorated = &body["items"][0];
+    assert_eq!(decorated["title"], "Aardvark Almanac", "got {body}");
+    assert_eq!(
+        decorated["tags"],
+        serde_json::json!(["signed"]),
+        "got {body}"
+    );
+    assert_eq!(
+        decorated["genres"],
+        serde_json::json!(["Astrophysics", "Woodworking"]),
+        "genres ordered by name, got {body}"
+    );
+    assert_eq!(
+        decorated["moods"],
+        serde_json::json!(["Somber"]),
+        "got {body}"
+    );
+    assert_eq!(decorated["content_rating"], "mature", "got {body}");
+
+    let bare = &body["items"][1];
+    assert_eq!(bare["title"], "Bare Binder", "got {body}");
+    assert_eq!(bare["tags"], serde_json::json!([]), "got {body}");
+    assert_eq!(bare["genres"], serde_json::json!([]), "got {body}");
+    assert_eq!(bare["moods"], serde_json::json!([]), "got {body}");
+    assert!(
+        bare["content_rating"].is_null()
+            && bare
+                .as_object()
+                .is_some_and(|o| o.contains_key("content_rating")),
+        "unrated book must carry an explicit null content_rating, got {body}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn manual_vocab_patch_does_not_inflate_pending_count(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -3585,6 +3703,69 @@ async fn list_endpoint_reading_state_is_caller_scoped(pool: PgPool) {
         b_item["reading_state"].is_null(),
         "user B has no reading_state row for this book: {b_item}"
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn list_endpoint_reading_summary_carries_notes_and_dates(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reading-notes-a").await;
+    let (_b_id, b_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reading-notes-b").await;
+    let (_work, m_id) = insert_book(&ingestion_pool, "reading-notes", "Annotated Book").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    // Real write path: entering `reading` stamps started_at, entering
+    // `finished` stamps finished_at — the summary must carry both stamps.
+    server
+        .patch(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, a_basic.clone())
+        .json(&serde_json::json!({"status": "reading", "notes": "loved the first act"}))
+        .await;
+    server
+        .patch(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, a_basic.clone())
+        .json(&serde_json::json!({"status": "finished"}))
+        .await;
+
+    let a_list = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, a_basic)
+        .await;
+    assert_eq!(a_list.status_code(), StatusCode::OK);
+    let a_body: serde_json::Value = a_list.json();
+    let a_state = &a_body["items"][0]["reading_state"];
+    assert_eq!(a_state["status"], "finished", "got {a_body}");
+    assert_eq!(a_state["notes"], "loved the first act", "got {a_body}");
+    for stamp in ["started_at", "finished_at"] {
+        let raw = a_state[stamp].as_str().unwrap_or_else(|| {
+            panic!("{stamp} must be an RFC 3339 string on the list summary, got {a_body}")
+        });
+        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|e| panic!("{stamp} must parse as RFC 3339 ({e}), got {a_body}"));
+    }
+
+    // A rating-only row keeps the new slots as explicit nulls.
+    server
+        .patch(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, b_basic.clone())
+        .json(&serde_json::json!({"rating": 3}))
+        .await;
+    let b_list = server
+        .get("/api/v1/books")
+        .add_header(AUTHORIZATION, b_basic)
+        .await;
+    assert_eq!(b_list.status_code(), StatusCode::OK);
+    let b_body: serde_json::Value = b_list.json();
+    let b_state = &b_body["items"][0]["reading_state"];
+    assert_eq!(b_state["rating"], 3, "got {b_body}");
+    for slot in ["notes", "started_at", "finished_at"] {
+        assert!(
+            b_state[slot].is_null() && b_state.as_object().is_some_and(|o| o.contains_key(slot)),
+            "rating-only summary must carry explicit null {slot}, got {b_body}"
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]

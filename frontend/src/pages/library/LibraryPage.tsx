@@ -82,7 +82,9 @@ import { readViewCookie, writeViewCookie } from "./view-cookie";
  * route's critical path.
  */
 const LibraryTableView = lazy(() =>
-  import("./table/LibraryTableView").then((m) => ({ default: m.LibraryTableView })),
+  import("./table/LibraryTableView").then((m) => ({
+    default: m.LibraryTableView,
+  })),
 );
 
 /** The library's one overlay slot: filters or one book's details, never both. */

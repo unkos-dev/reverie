@@ -286,7 +286,9 @@ describe("TEXT_COLUMN_OPS wire sync", () => {
         const key = `${column}_${op}`;
         const raw = op === "empty" ? "true" : "x";
         const sent = op === "empty" ? true : "x";
-        expect(paramsFromSearch(search(`${key}=${raw}`)), key).toEqual({ [key]: sent });
+        expect(paramsFromSearch(search(`${key}=${raw}`)), key).toEqual({
+          [key]: sent,
+        });
       }
     }
   });
@@ -313,7 +315,12 @@ describe("filterStateToParams", () => {
   });
 
   test("drops blank q/series/shelf so an empty string is not an active filter", () => {
-    const blank: FilterState = { ...emptyFilterState(), q: "", series: "", shelf: "" };
+    const blank: FilterState = {
+      ...emptyFilterState(),
+      q: "",
+      series: "",
+      shelf: "",
+    };
     expect(filterStateToParams(blank)).toEqual({});
     expect(hasActiveFilterState(blank)).toBe(false);
   });
@@ -327,7 +334,10 @@ describe("hasActiveFilterState", () => {
   test("is true when any condition is set", () => {
     expect(hasActiveFilterState({ ...emptyFilterState(), q: "x" })).toBe(true);
     expect(
-      hasActiveFilterState({ ...emptyFilterState(), status: { any: ["unread"], none: [] } }),
+      hasActiveFilterState({
+        ...emptyFilterState(),
+        status: { any: ["unread"], none: [] },
+      }),
     ).toBe(true);
   });
 });

@@ -15,7 +15,9 @@ function jsonResponse(body: unknown): Response {
 }
 
 function makeWrapper() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client }, children);
 }
@@ -34,7 +36,9 @@ describe("useAuthorLabels", () => {
       jsonResponse({ items: [{ id: LE_GUIN, value: "Ursula K. Le Guin" }] }),
     );
 
-    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.labelFor(LE_GUIN)).toBe("Ursula K. Le Guin");
@@ -44,7 +48,9 @@ describe("useAuthorLabels", () => {
   test("labels an id as resolving while the lookup is in flight", () => {
     vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => undefined));
 
-    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), {
+      wrapper: makeWrapper(),
+    });
 
     expect(result.current.labelFor(LE_GUIN)).toBe("resolving…");
   });
@@ -52,7 +58,9 @@ describe("useAuthorLabels", () => {
   test("labels an unresolved id as unknown", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ items: [] }));
 
-    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.labelFor(LE_GUIN)).toBe("Unknown author");
@@ -63,7 +71,9 @@ describe("useAuthorLabels", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthorLabels([LE_GUIN]), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.labelFor(LE_GUIN)).toBe("author unavailable");
@@ -74,7 +84,9 @@ describe("useAuthorLabels", () => {
   test("does not fetch when there are no ids to resolve", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const { result } = renderHook(() => useAuthorLabels([]), { wrapper: makeWrapper() });
+    const { result } = renderHook(() => useAuthorLabels([]), {
+      wrapper: makeWrapper(),
+    });
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result.current.labelFor(LE_GUIN)).toBe("Unknown author");

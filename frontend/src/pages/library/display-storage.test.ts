@@ -12,7 +12,10 @@ afterEach(() => {
 
 describe("display-storage", () => {
   test("round-trips density and hidden columns", () => {
-    writeDisplayPreferences({ density: "compact", hiddenColumns: ["isbn_13", "pages"] });
+    writeDisplayPreferences({
+      density: "compact",
+      hiddenColumns: ["isbn_13", "pages"],
+    });
     expect(readDisplayPreferences()).toEqual({
       density: "compact",
       hiddenColumns: ["isbn_13", "pages"],
@@ -20,7 +23,10 @@ describe("display-storage", () => {
   });
 
   test("absent storage reads as no preference", () => {
-    expect(readDisplayPreferences()).toEqual({ density: null, hiddenColumns: null });
+    expect(readDisplayPreferences()).toEqual({
+      density: null,
+      hiddenColumns: null,
+    });
   });
 
   test("a density write preserves stored hidden columns", () => {
@@ -34,7 +40,10 @@ describe("display-storage", () => {
 
   test("malformed JSON reads as no preference", () => {
     localStorage.setItem(DISPLAY_STORAGE_KEY, "{not json");
-    expect(readDisplayPreferences()).toEqual({ density: null, hiddenColumns: null });
+    expect(readDisplayPreferences()).toEqual({
+      density: null,
+      hiddenColumns: null,
+    });
   });
 
   test("unknown density value degrades to null without dropping columns", () => {
@@ -42,7 +51,10 @@ describe("display-storage", () => {
       DISPLAY_STORAGE_KEY,
       JSON.stringify({ density: "roomy", hiddenColumns: ["series"] }),
     );
-    expect(readDisplayPreferences()).toEqual({ density: null, hiddenColumns: ["series"] });
+    expect(readDisplayPreferences()).toEqual({
+      density: null,
+      hiddenColumns: ["series"],
+    });
   });
 
   test("non-string entries in hiddenColumns degrade the field to null", () => {
@@ -50,14 +62,20 @@ describe("display-storage", () => {
       DISPLAY_STORAGE_KEY,
       JSON.stringify({ density: "compact", hiddenColumns: [3, "series"] }),
     );
-    expect(readDisplayPreferences()).toEqual({ density: "compact", hiddenColumns: null });
+    expect(readDisplayPreferences()).toEqual({
+      density: "compact",
+      hiddenColumns: null,
+    });
   });
 
   test("throwing storage degrades silently on read and write", () => {
     const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("denied");
     });
-    expect(readDisplayPreferences()).toEqual({ density: null, hiddenColumns: null });
+    expect(readDisplayPreferences()).toEqual({
+      density: null,
+      hiddenColumns: null,
+    });
     expect(() => {
       writeDisplayPreferences({ density: "compact" });
     }).not.toThrow();

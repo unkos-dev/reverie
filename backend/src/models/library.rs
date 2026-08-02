@@ -23,6 +23,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::models::content_rating::ContentRating;
+use crate::models::contributor_role::ContributorRole;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::external_identifier::IdentifierLevel;
 use crate::models::ingestion_status::IngestionStatus;
@@ -42,6 +43,20 @@ pub struct SeriesRef {
     /// Position within the series (`series_works.position`), `None`
     /// when the membership row has a null position.
     pub position: Option<f64>,
+}
+
+/// One non-author contributor surfaced on a book projection. Authors
+/// stay in the flat `authors` display array; this slot carries the other
+/// `work_authors` roles so per-role grid columns need no extra fetch.
+/// Ordered by role (enum declaration order), then contributor position.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub struct ContributorRef {
+    /// Contributor display name (`authors.name`).
+    pub name: String,
+    /// Contribution role (`work_authors.role`); never
+    /// [`ContributorRole::Author`] on this slot.
+    pub role: ContributorRole,
 }
 
 /// One external-source identifier surfaced on a book projection.
@@ -99,12 +114,28 @@ pub struct BookListRow {
     /// includes editors/translators/narrators — no role substitutes for
     /// another in display.
     pub authors: Vec<String>,
+    /// Non-author contributors (editor/translator/narrator) of the parent
+    /// work, ordered by role then position. Batch-loaded alongside
+    /// `authors`; empty when the work has none.
+    pub contributors: Vec<ContributorRef>,
     /// Series membership; `None` when the work isn't on a series.
     pub series: Option<SeriesRef>,
     /// `manifestations.isbn_13`, when known.
     pub isbn_13: Option<String>,
     /// `manifestations.pages`, when known.
     pub pages: Option<i32>,
+    /// Tag names attached to the manifestation, sorted by name.
+    /// Batch-loaded per page.
+    pub tags: Vec<String>,
+    /// Genre names attached to the manifestation, sorted by name.
+    /// Batch-loaded per page.
+    pub genres: Vec<String>,
+    /// Mood names attached to the manifestation, sorted by name.
+    /// Batch-loaded per page.
+    pub moods: Vec<String>,
+    /// Audience-suitability rating (`manifestations.content_rating`);
+    /// `None` when unrated.
+    pub content_rating: Option<ContentRating>,
     /// Cover thumbnail URL — relative path served by the
     /// `/api/v1/books/{id}/cover/thumb` handler under the caller's
     /// session. Not pre-signed; access is gated by the session cookie.
@@ -150,6 +181,9 @@ pub struct BookDetail {
     pub subtitle: Option<String>,
     /// Author display names ordered by `work_authors.position`.
     pub authors: Vec<String>,
+    /// Non-author contributors (editor/translator/narrator) of the parent
+    /// work, ordered by role then position; empty when the work has none.
+    pub contributors: Vec<ContributorRef>,
     /// Series membership; `None` when the work isn't on a series.
     pub series: Option<SeriesRef>,
     /// Long-form description (`works.description`).

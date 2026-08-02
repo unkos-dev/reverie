@@ -97,7 +97,9 @@ export type ReactDataGridBindingProps<R> = GridBindingProps<R> & {
  * column's accessible name stays the header text alone.
  */
 function HeaderCellWithTooltip<R>(
-  props: RenderHeaderCellProps<R> & { tooltip: { label: string; content: string } },
+  props: RenderHeaderCellProps<R> & {
+    tooltip: { label: string; content: string };
+  },
 ): ReactElement {
   const { tooltip, ...headerProps } = props;
   const descriptionId = useId();
@@ -333,7 +335,11 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
             // later tranche, so multi-index commits are deliberately dropped.
             if (indexes.length !== 1 || onCellEdit === undefined) return;
             const index = indexes[0];
-            onCellEdit({ row: nextRows[index], previousRow: rows[index], columnKey: column.key });
+            onCellEdit({
+              row: nextRows[index],
+              previousRow: rows[index],
+              columnKey: column.key,
+            });
           }}
           onScroll={onScroll}
           onCellClick={onRowActivate === undefined ? undefined : handleCellClick}
@@ -352,7 +358,9 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
             renderSortStatus,
             ...(selection === undefined
               ? {}
-              : { renderCheckbox: makeRenderCheckbox(selection.selectAllLabel) }),
+              : {
+                  renderCheckbox: makeRenderCheckbox(selection.selectAllLabel),
+                }),
           }}
         />
       </div>

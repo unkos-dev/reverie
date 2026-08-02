@@ -41,11 +41,12 @@ use crate::auth::middleware::CurrentUser;
 use crate::db;
 use crate::error::AppError;
 use crate::models::content_rating::ContentRating;
+use crate::models::contributor_role::ContributorRole;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::external_identifier::IdentifierLevel;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::library::{
-    BookDetail, BookListRow, ExternalIdRef, ExternalRatingRef, MetadataVersionRow,
+    BookDetail, BookListRow, ContributorRef, ExternalIdRef, ExternalRatingRef, MetadataVersionRow,
     MetadataVersionSummary, SeriesRef, WorkDetail, WorkManifestation,
 };
 use crate::models::reading_state::ReadingStateSummary;
@@ -330,6 +331,7 @@ async fn list(
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
         "SELECT m.id, m.work_id, m.created_at, m.isbn_13, m.pages, \
+                m.content_rating, \
                 m.ingestion_status::text AS ingestion_status, \
                 m.validation_status, \
                 m.enrichment_status::text AS enrichment_status, \
@@ -377,7 +379,12 @@ async fn list(
         .map(|r| r.get::<Uuid, _>("work_id"))
         .collect();
     let authors_by_work = load_authors_for_works(&mut tx, &work_ids).await?;
+    let contributors_by_work = load_contributors_for_works(&mut tx, &work_ids).await?;
     let manifestation_ids: Vec<Uuid> = page_rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
+    let tags_by_manifestation = load_tags_for_manifestations(&mut tx, &manifestation_ids).await?;
+    let genres_by_manifestation =
+        load_genres_for_manifestations(&mut tx, &manifestation_ids).await?;
+    let moods_by_manifestation = load_moods_for_manifestations(&mut tx, &manifestation_ids).await?;
     let reading_by_manifestation =
         load_reading_state_for_manifestations(&mut tx, &manifestation_ids).await?;
     // Snapshot of the hot-reloaded visibility setting; reading it per
@@ -401,9 +408,31 @@ async fn list(
             title: r.get("title"),
             subtitle: r.get("subtitle"),
             authors: authors_by_work.get(&work_id).cloned().unwrap_or_default(),
+            contributors: contributors_by_work
+                .get(&work_id)
+                .cloned()
+                .unwrap_or_default(),
             series,
             isbn_13: r.get("isbn_13"),
             pages: r.get("pages"),
+            tags: tags_by_manifestation
+                .get(&m_id)
+                .cloned()
+                .unwrap_or_default(),
+            genres: genres_by_manifestation
+                .get(&m_id)
+                .cloned()
+                .unwrap_or_default(),
+            moods: moods_by_manifestation
+                .get(&m_id)
+                .cloned()
+                .unwrap_or_default(),
+            // Fallible decode for the same reason as validation_status
+            // below: an unknown content_rating variant must be a clean
+            // 500, not a panic.
+            content_rating: r.try_get("content_rating").map_err(|e| {
+                AppError::Internal(anyhow::anyhow!("unknown content_rating value from DB: {e}"))
+            })?,
             cover_url: format!("/api/v1/books/{m_id}/cover/thumb"),
             ingestion_status: parse_ingestion(&ingestion_raw)?,
             // Fallible decode: this dynamic QueryBuilder path can't use a
@@ -785,6 +814,40 @@ pub(crate) async fn load_authors_for_works(
     Ok(out)
 }
 
+/// Batch-load non-author contributors for a page of works, ordered by
+/// role (`author_role` declaration order) then position. The author
+/// role is excluded here because it already feeds `authors[]` via
+/// [`load_authors_for_works`]; duplicating it would put the same names
+/// on the wire twice per row.
+pub(crate) async fn load_contributors_for_works(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    work_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<ContributorRef>>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, Vec<ContributorRef>> =
+        std::collections::HashMap::new();
+    if work_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = sqlx::query!(
+        r#"SELECT wa.work_id, a.name, wa.role AS "role: ContributorRole"
+           FROM work_authors wa
+           JOIN authors a ON a.id = wa.author_id
+           WHERE wa.work_id = ANY($1::uuid[]) AND wa.role <> 'author'
+           ORDER BY wa.role ASC, wa.position ASC"#,
+        work_ids,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in rows {
+        out.entry(r.work_id).or_default().push(ContributorRef {
+            name: r.name,
+            role: r.role,
+        });
+    }
+    Ok(out)
+}
+
 pub(crate) async fn load_reading_state_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_ids: &[Uuid],
@@ -799,7 +862,8 @@ pub(crate) async fn load_reading_state_for_manifestations(
     // `reading_state`'s RLS policy already confines this SELECT to the
     // caller's own rows.
     let rows = sqlx::query!(
-        r#"SELECT manifestation_id, status AS "status?: ReadingStatus", rating, progress_pct
+        r#"SELECT manifestation_id, status AS "status?: ReadingStatus", rating, notes,
+                  progress_pct, started_at, finished_at
              FROM reading_state WHERE manifestation_id = ANY($1::uuid[])"#,
         manifestation_ids,
     )
@@ -812,7 +876,10 @@ pub(crate) async fn load_reading_state_for_manifestations(
             ReadingStateSummary {
                 status: r.status,
                 rating: r.rating,
+                notes: r.notes,
                 progress_pct: r.progress_pct,
+                started_at: r.started_at,
+                finished_at: r.finished_at,
             },
         );
     }
@@ -1002,9 +1069,22 @@ async fn detail(
         .await?
         .remove(&work_id)
         .unwrap_or_default();
-    let tags = load_manifestation_tags(&mut tx, id).await?;
-    let genres = load_manifestation_genres(&mut tx, id).await?;
-    let moods = load_manifestation_moods(&mut tx, id).await?;
+    let contributors = load_contributors_for_works(&mut tx, &[work_id])
+        .await?
+        .remove(&work_id)
+        .unwrap_or_default();
+    let tags = load_tags_for_manifestations(&mut tx, &[id])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
+    let genres = load_genres_for_manifestations(&mut tx, &[id])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
+    let moods = load_moods_for_manifestations(&mut tx, &[id])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
     let hidden = hidden_providers(&state.settings.read().await.provider_visibility);
     let (ids_by_manifestation, ids_by_work) =
         load_external_ids(&mut tx, &[id], &[work_id], &hidden).await?;
@@ -1050,6 +1130,7 @@ async fn detail(
         title: row.title,
         subtitle: row.subtitle,
         authors,
+        contributors,
         series,
         description: row.description,
         language: row.language,
@@ -1216,52 +1297,84 @@ async fn fetch_detail_row(
     }))
 }
 
-async fn load_manifestation_tags(
+/// Batch-load tag names for a page of manifestations, sorted by name
+/// within each book. Same shape as [`load_authors_for_works`]: the
+/// one-to-many join stays out of the paginated base query so it cannot
+/// multiply rows under `LIMIT`.
+pub(crate) async fn load_tags_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
-    manifestation_id: Uuid,
-) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar!(
-        "SELECT t.name FROM manifestation_tags mt \
+    manifestation_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<String>>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, Vec<String>> = std::collections::HashMap::new();
+    if manifestation_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = sqlx::query!(
+        "SELECT mt.manifestation_id, t.name FROM manifestation_tags mt \
          JOIN tags t ON t.id = mt.tag_id \
-         WHERE mt.manifestation_id = $1 \
+         WHERE mt.manifestation_id = ANY($1::uuid[]) \
          ORDER BY t.name ASC",
-        manifestation_id,
+        manifestation_ids,
     )
     .fetch_all(&mut **tx)
     .await
-    .map_err(|e| AppError::Internal(e.into()))
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in rows {
+        out.entry(r.manifestation_id).or_default().push(r.name);
+    }
+    Ok(out)
 }
 
-async fn load_manifestation_genres(
+/// Batch-load genre names for a page of manifestations, sorted by name
+/// within each book. See [`load_tags_for_manifestations`].
+pub(crate) async fn load_genres_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
-    manifestation_id: Uuid,
-) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar!(
-        "SELECT g.name FROM manifestation_genres mg \
+    manifestation_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<String>>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, Vec<String>> = std::collections::HashMap::new();
+    if manifestation_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = sqlx::query!(
+        "SELECT mg.manifestation_id, g.name FROM manifestation_genres mg \
          JOIN genres g ON g.id = mg.genre_id \
-         WHERE mg.manifestation_id = $1 \
+         WHERE mg.manifestation_id = ANY($1::uuid[]) \
          ORDER BY g.name ASC",
-        manifestation_id,
+        manifestation_ids,
     )
     .fetch_all(&mut **tx)
     .await
-    .map_err(|e| AppError::Internal(e.into()))
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in rows {
+        out.entry(r.manifestation_id).or_default().push(r.name);
+    }
+    Ok(out)
 }
 
-async fn load_manifestation_moods(
+/// Batch-load mood names for a page of manifestations, sorted by name
+/// within each book. See [`load_tags_for_manifestations`].
+pub(crate) async fn load_moods_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
-    manifestation_id: Uuid,
-) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar!(
-        "SELECT md.name FROM manifestation_moods mm \
+    manifestation_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<String>>, AppError> {
+    let mut out: std::collections::HashMap<Uuid, Vec<String>> = std::collections::HashMap::new();
+    if manifestation_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = sqlx::query!(
+        "SELECT mm.manifestation_id, md.name FROM manifestation_moods mm \
          JOIN moods md ON md.id = mm.mood_id \
-         WHERE mm.manifestation_id = $1 \
+         WHERE mm.manifestation_id = ANY($1::uuid[]) \
          ORDER BY md.name ASC",
-        manifestation_id,
+        manifestation_ids,
     )
     .fetch_all(&mut **tx)
     .await
-    .map_err(|e| AppError::Internal(e.into()))
+    .map_err(|e| AppError::Internal(e.into()))?;
+    for r in rows {
+        out.entry(r.manifestation_id).or_default().push(r.name);
+    }
+    Ok(out)
 }
 
 /// Upper bound on pending versions loaded for one manifestation's

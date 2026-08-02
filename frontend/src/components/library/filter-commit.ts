@@ -64,7 +64,10 @@ export function makeFilterCommit(
   return (patch) => {
     applyParams((params) => {
       const next = patch(parseFilterParams(params));
-      lastEdit.current = { full: fullFilterToken(next), reset: filterResetToken(next) };
+      lastEdit.current = {
+        full: fullFilterToken(next),
+        reset: filterResetToken(next),
+      };
       serializeFilterParams(next, params);
       params.delete("cursor");
       return params;

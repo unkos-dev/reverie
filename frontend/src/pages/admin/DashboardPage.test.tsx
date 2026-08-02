@@ -86,7 +86,9 @@ function renderDashboard(
   stats: DashboardStats | null,
   activity: DashboardActivity | null,
 ): void {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   if (meData !== null) client.setQueryData(queryKeys.auth.me(), meData);
   if (stats !== null) client.setQueryData(queryKeys.dashboard.stats(), stats);
   if (activity !== null)
@@ -94,9 +96,14 @@ function renderDashboard(
 
   const routes: RouteObject[] = [
     { path: "/admin/dashboard", element: <DashboardPage /> },
-    { path: "/library", element: <div data-testid="library-page">Library</div> },
+    {
+      path: "/library",
+      element: <div data-testid="library-page">Library</div>,
+    },
   ];
-  const router = createMemoryRouter(routes, { initialEntries: ["/admin/dashboard"] });
+  const router = createMemoryRouter(routes, {
+    initialEntries: ["/admin/dashboard"],
+  });
 
   function Wrapper(): ReactElement {
     return (

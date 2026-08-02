@@ -16,7 +16,11 @@ import { VIEW_COOKIE_NAME } from "./view-cookie";
 // The masthead reads the effective theme to pick its hero asset; these tests
 // exercise the page, not theme resolution, so the provider is stubbed.
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
+  useTheme: () => ({
+    preference: "system",
+    effective: "dark",
+    setPreference: vi.fn(),
+  }),
 }));
 
 // Any test that toggles the view writes the cookie as a side effect; expire
@@ -32,9 +36,14 @@ function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     title: "The Brothers Karamazov",
     subtitle: null,
     authors: ["Fyodor Dostoevsky"],
+    contributors: [],
     series: null,
     isbn_13: "9780374528379",
     pages: null,
+    tags: [],
+    genres: [],
+    moods: [],
+    content_rating: null,
     cover_url: "/api/v1/books/11111111/cover/thumb",
     ingestion_status: "complete",
     validation_status: "clean",
@@ -51,6 +60,7 @@ function detailFixture(base: BookListItem): BookDetail {
     work_id: base.work_id,
     title: base.title,
     authors: base.authors,
+    contributors: [],
     series: base.series,
     description: null,
     language: null,
@@ -217,7 +227,10 @@ describe("LibraryPage", () => {
   });
 
   test("grid tiles carry a focus treatment equal to the hover treatment", async () => {
-    renderLibrary({ items: [bookFixture({ id: "abc", title: "Stoner" })], nextCursor: null });
+    renderLibrary({
+      items: [bookFixture({ id: "abc", title: "Stoner" })],
+      nextCursor: null,
+    });
     const link = await screen.findByRole("link", { name: /stoner/i });
     expect(link.className).toMatch(/hover:/);
     expect(link.className).toMatch(/focus-visible:/);
@@ -249,8 +262,14 @@ describe("LibraryPage", () => {
   test("the filter drawer lists distinct series from the loaded pages", async () => {
     renderLibrary({
       items: [
-        bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } }),
-        bookFixture({ id: "b", series: { id: "s-1", name: "Discworld", position: 2 } }),
+        bookFixture({
+          id: "a",
+          series: { id: "s-1", name: "Discworld", position: 1 },
+        }),
+        bookFixture({
+          id: "b",
+          series: { id: "s-1", name: "Discworld", position: 2 },
+        }),
         bookFixture({ id: "c", series: null }),
       ],
       nextCursor: null,
@@ -531,7 +550,11 @@ describe("LibraryPage", () => {
   });
 
   test("true-empty offers an ingestion link to admins", async () => {
-    renderLibrary({ items: [], nextCursor: null, me: meFixture({ role: "admin" }) });
+    renderLibrary({
+      items: [],
+      nextCursor: null,
+      me: meFixture({ role: "admin" }),
+    });
     const link = await screen.findByRole("link", { name: /ingestion/i });
     expect(link.getAttribute("href")).toBe("/admin/dashboard");
   });
@@ -599,7 +622,9 @@ describe("LibraryPage", () => {
     });
     function Wrapper(): ReactElement {
       const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
-      const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+      const router = createMemoryRouter(routes, {
+        initialEntries: ["/library"],
+      });
       return (
         <QueryClientProvider client={client}>
           <RouterProvider router={router} />
@@ -635,13 +660,18 @@ describe("LibraryPage", () => {
     });
     client.setQueryData(queryKeys.books.list({}), {
       pages: [
-        { items: [bookFixture({ title: "The Brothers Karamazov" })], next_cursor: "eyJ4Ijox" },
+        {
+          items: [bookFixture({ title: "The Brothers Karamazov" })],
+          next_cursor: "eyJ4Ijox",
+        },
       ],
       pageParams: [undefined],
     });
     function Wrapper(): ReactElement {
       const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
-      const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+      const router = createMemoryRouter(routes, {
+        initialEntries: ["/library"],
+      });
       return (
         <QueryClientProvider client={client}>
           <RouterProvider router={router} />
@@ -715,7 +745,12 @@ describe("LibraryPage", () => {
 
     test("an active series filter renders a chip with the resolved name, not a raw id", async () => {
       renderLibrary({
-        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        items: [
+          bookFixture({
+            id: "a",
+            series: { id: "s-1", name: "Discworld", position: 1 },
+          }),
+        ],
         nextCursor: null,
         initialEntries: ["/library?series=s-1"],
         cacheParams: { series: "s-1" },
@@ -727,7 +762,12 @@ describe("LibraryPage", () => {
 
     test("a chip's remove control drops exactly that filter param", async () => {
       renderLibrary({
-        items: [bookFixture({ id: "a", series: { id: "s-1", name: "Discworld", position: 1 } })],
+        items: [
+          bookFixture({
+            id: "a",
+            series: { id: "s-1", name: "Discworld", position: 1 },
+          }),
+        ],
         nextCursor: null,
         initialEntries: ["/library?series=s-1&status_any=unread"],
         cacheParams: { series: "s-1", status_any: ["unread"] },
@@ -736,7 +776,9 @@ describe("LibraryPage", () => {
       const chips = await screen.findByTestId("filter-chips");
       const user = userEvent.setup();
       await user.click(
-        within(chips).getByRole("button", { name: /Remove filter: Series: Discworld/ }),
+        within(chips).getByRole("button", {
+          name: /Remove filter: Series: Discworld/,
+        }),
       );
       await waitFor(() => {
         const search = screen.getByTestId("location-search").textContent;
@@ -818,11 +860,15 @@ describe("LibraryPage", () => {
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
       await user.click(
-        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+        await screen.findByRole("button", {
+          name: `Open details for ${book.title}`,
+        }),
       );
       const drawer = await screen.findByRole("dialog");
       expect(await within(drawer).findByText("Farrar, Straus and Giroux")).toBeInTheDocument();
-      const fullRecord = within(drawer).getByRole("link", { name: /View full record/ });
+      const fullRecord = within(drawer).getByRole("link", {
+        name: /View full record/,
+      });
       expect(fullRecord.getAttribute("href")).toBe(`/b/${book.id}`);
       expect(within(drawer).getByRole("button", { name: /Add to shelf/ })).toBeInTheDocument();
       // No mock-only actions survive from the prototype.
@@ -870,7 +916,9 @@ describe("LibraryPage", () => {
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
       await user.click(
-        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+        await screen.findByRole("button", {
+          name: `Open details for ${book.title}`,
+        }),
       );
       const drawer = await screen.findByRole("dialog");
       expect(await within(drawer).findByRole("alert")).toHaveTextContent(/couldn't load/i);
@@ -894,7 +942,9 @@ describe("LibraryPage", () => {
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
       await user.click(
-        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+        await screen.findByRole("button", {
+          name: `Open details for ${book.title}`,
+        }),
       );
       const drawer = await screen.findByRole("dialog");
       expect(drawer.querySelector('[aria-busy="true"]')).not.toBeNull();
@@ -912,7 +962,9 @@ describe("LibraryPage", () => {
       await screen.findByTestId("library-table");
       const user = userEvent.setup();
       await user.click(
-        await screen.findByRole("button", { name: `Open details for ${book.title}` }),
+        await screen.findByRole("button", {
+          name: `Open details for ${book.title}`,
+        }),
       );
       await screen.findByRole("dialog");
       await user.keyboard("{Escape}");
@@ -1075,7 +1127,10 @@ describe("LibraryPage", () => {
         await screen.findByTestId("library-table");
         const group = screen.getByRole("group", { name: "Table density" });
         expect(
-          within(group).getByRole("button", { name: "Comfortable", pressed: true }),
+          within(group).getByRole("button", {
+            name: "Comfortable",
+            pressed: true,
+          }),
         ).toBeInTheDocument();
         const user = userEvent.setup();
         await user.click(within(group).getByRole("button", { name: "Compact" }));
