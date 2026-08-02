@@ -47,4 +47,12 @@ expect "github backend filter_bins pin rejected" 1 'tool: widget@1.2.3'
 expect "github backend bin pin rejected" 1 'tool: gadget@4.5.6'
 expect "cargo backend pin rejected" 1 'tool: cargo-test-tool@1.0.0'
 
+# An inline entry can carry a backend prefix too. Until the census stripped it
+# the derived patterns held the literal `npm:npm`, which cannot match the bare
+# tool name a workflow would pin, so the tool was silently uncovered.
+printf '[tools]\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
+expect "inline backend-prefixed inline pin rejected" 1 'run: npm install -g npm@11.19.0'
+expect "inline backend-prefixed annotation rejected" 1 '# renovate: datasource=npm depName=npm'
+expect "tool name without a version still passes" 0 'run: npm ci'
+
 exit "$fail"

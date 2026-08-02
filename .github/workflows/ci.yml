@@ -969,6 +969,15 @@ jobs:
       - name: vp and node pins agree across every copy
         run: scripts/vp-pin-drift.sh
 
+      # Same reasoning as the vp guard above: run the script directly, ahead
+      # of mise, so a disagreeing npm pin fails in seconds rather than after
+      # provisioning the npm that package.json would then reject. This job
+      # enumerates recipes individually rather than running `just
+      # infra::lint`, so a guard added only to that aggregate would run
+      # locally and never on the merge path.
+      - name: npm pin agrees between package.json and mise
+        run: scripts/npm-pin-drift.sh
+
       # Single-source tool provisioning: mise installs the exact pins from
       # mise.toml, so this job runs the same binaries as the local hooks and
       # there is no per-workflow version copy to drift.
@@ -999,6 +1008,15 @@ jobs:
 
       - name: vp-pin gate self-test
         run: just infra::vp-pin-drift-selftest
+
+      - name: npm-pin gate self-test
+        run: just infra::npm-pin-drift-selftest
+
+      # A custom manager whose regex stops matching yields no deps and no
+      # error, so nothing else here can notice Renovate losing sight of the
+      # devEngines pin.
+      - name: Renovate still sees the devEngines npm pin
+        run: just infra::renovate-npm-manager-selftest
 
       - name: ADR frontmatter and index coverage
         run: just infra::adr-frontmatter-selftest

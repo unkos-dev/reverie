@@ -12,6 +12,17 @@ typos = "1.48.0"
 vale = "3.16.0"
 yamllint = "1.38.0"
 zizmor = "1.28.0"
+# npm enforces `devEngines.packageManager` in package.json on every direct
+# invocation, hard-erroring with EBADDEVENGINES when the running npm
+# disagrees rather than honouring the declared `onFail: download`. Without
+# this entry a checkout falls through to whatever npm the ambient config
+# supplies, so a machine whose global pin has moved ahead can run neither
+# `npm install` nor any lefthook step that shells out to npm. CI is not a
+# backstop: every job installs through `vp install`, which never consults
+# devEngines. `npm-pin-drift` holds this in lockstep with package.json.
+# node stays unpinned here because CI single-sources NODE_VERSION and
+# `tool-pin-drift` rejects a workflow pin of any mise-managed tool.
+"npm:npm" = "11.18.0"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.
