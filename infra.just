@@ -115,6 +115,16 @@ vp-pin-drift:
 vp-pin-drift-selftest:
     scripts/vp-pin-drift-selftest.sh
 
+# Assert the npm pin agrees between package.json devEngines and mise.toml.
+[group('infra')]
+npm-pin-drift:
+    scripts/npm-pin-drift.sh
+
+# Exercise the npm-pin guard against planted drift before trusting it.
+[group('infra')]
+npm-pin-drift-selftest:
+    scripts/npm-pin-drift-selftest.sh
+
 # Validate canonical ADR frontmatter and lifecycle index coverage.
 [group('infra')]
 adr-frontmatter-selftest:
@@ -234,7 +244,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
