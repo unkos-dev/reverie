@@ -1012,6 +1012,12 @@ jobs:
       - name: npm-pin gate self-test
         run: just infra::npm-pin-drift-selftest
 
+      # A custom manager whose regex stops matching yields no deps and no
+      # error, so nothing else here can notice Renovate losing sight of the
+      # devEngines pin.
+      - name: Renovate still sees the devEngines npm pin
+        run: just infra::renovate-npm-manager-selftest
+
       - name: ADR frontmatter and index coverage
         run: just infra::adr-frontmatter-selftest
 

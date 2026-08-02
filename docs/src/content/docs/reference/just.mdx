@@ -90,6 +90,7 @@ one, one still in progress, and no recorded run at all apart.
 | `just infra::preflight-scope-selftest`           | Self-test the preflight scoper's lane mapping, escalation, and fail-closed paths.                                                   |
 | `just infra::prose`                              | Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).                                                            |
 | `just infra::recipe-secret-echo-test`            | Overridden DB credentials never echo into recipe logs (dry-run assertion).                                                          |
+| `just infra::renovate-npm-manager-selftest`      | Assert Renovate's custom manager still sees the devEngines npm pin.                                                                 |
 | `just infra::sanitize-sarif-severities-selftest` | Self-test the SARIF severity sanitizer both Snyk upload jobs run.                                                                   |
 | `just infra::shellcheck`                         | Shellcheck every tracked shell script.                                                                                              |
 | `just infra::tool-pin-drift`                     | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.                                                     |

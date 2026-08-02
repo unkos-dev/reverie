@@ -105,14 +105,24 @@ expect "table-form mise pin accepted" 0
 printf '[tools]\n[tools."npm:npm"]\nversion = "11.19.0"\n' >"${tmp}/mise.toml"
 expect "table-form mise pin still compared for drift" 1
 
-# npm's schema permits an array of packageManager entries. Indexing it as an
-# object aborts jq before any guard message reaches the reader.
-jq -n '{devEngines: {packageManager: [{name: "npm", version: "11.18.0"}]}}' >"${tmp}/package.json"
-printf '[tools]\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
-expect "array-form devEngines accepted" 0
+# A table entry with no version key pins nothing. Resolving the mapping to a
+# scalar without this case reports the whole two-line mapping as the offending
+# version and blames the format rather than the missing key.
+write_pins "11.18.0" "11.18.0"
+printf '[tools]\n[tools."npm:npm"]\nfilter_bins = "npm"\n' >"${tmp}/mise.toml"
+expect_message "table entry without a version names the missing key" "has no version key"
 
-jq -n '{devEngines: {packageManager: [{name: "npm", version: "11.19.0"}]}}' >"${tmp}/package.json"
-expect "array-form devEngines still compared for drift" 1
+# npm accepts a string ("npm@11.18.0", the top-level packageManager spelling)
+# and an array of candidates. Both are rejected rather than blessed: the
+# Renovate custom manager that keeps this pin in step with mise.toml matches
+# only the object form, and a guard whose contract is wider than that manager
+# reintroduces the one-visible-copy gap the npm-pin group exists to close.
+printf '[tools]\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
+jq -n '{devEngines: {packageManager: "npm@11.18.0"}}' >"${tmp}/package.json"
+expect_message "string-shaped packageManager names the shape" "has type 'string'"
+
+jq -n '{devEngines: {packageManager: [{name: "npm", version: "11.18.0"}]}}' >"${tmp}/package.json"
+expect_message "array-shaped packageManager names the shape" "has type 'array'"
 
 # Failing closed is not enough: the message has to name the cause, or a
 # maintainer who deliberately pinned a prerelease goes looking for a parse bug.
@@ -122,5 +132,25 @@ expect_message "prerelease names itself as the cause" "prereleases are rejected 
 write_pins "11.18.0" "11.18.0"
 printf '[tools]\njust = "1.57.0"\n' >"${tmp}/mise.toml"
 expect_message "absent mise pin names itself as the cause" "the key is absent"
+
+# Negative controls on the hint itself. `case` arms are ordered, so a
+# prerelease glob broader than semver's separator silently wins for any
+# hyphen-bearing value and answers a typo with "remove the prerelease". These
+# are the arms that compete for a match, which is where message tests pay off.
+expect_no_message() {
+  local name="$1" unwanted="$2" out
+  out="$( (cd "$tmp" && "$checker") 2>&1 || true)"
+  if [[ $out == *"$unwanted"* ]]; then
+    echo "FAIL ${name}: message should not mention '${unwanted}', got: ${out}"
+    fail=1
+  else
+    echo "ok   ${name}"
+  fi
+}
+
+for typo in "11-18-0" "11.18-0" "npm@11.18.0"; do
+  write_pins "$typo" "$typo"
+  expect_no_message "hyphenated typo (${typo}) is not called a prerelease" "prereleases are rejected"
+done
 
 exit "$fail"
