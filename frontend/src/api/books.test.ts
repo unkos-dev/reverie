@@ -1,7 +1,22 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+// Raw import so the committed OpenAPI artifact is usable as a fixture
+// without pulling Node fs types into the browser-typed src tree.
+import openapiRaw from "../../../docs/openapi.json?raw";
+
 import { __seedCsrfTokenForTesting } from "./csrf";
-import { getBook, getWork, listBooks, updateBookMetadata } from "./books";
+import {
+  ContentRatingSchema,
+  ContributorRoleSchema,
+  EnrichmentStatusSchema,
+  getBook,
+  getWork,
+  IngestionStatusSchema,
+  listBooks,
+  ReadingStatusSchema,
+  updateBookMetadata,
+  ValidationStatusSchema,
+} from "./books";
 import { ApiError } from "./errors";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
@@ -25,6 +40,32 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("wire enum parity with the generated OpenAPI schema", () => {
+  const spec = JSON.parse(openapiRaw) as {
+    components: { schemas: Record<string, { enum?: string[] }> };
+  };
+
+  const cases: [string, { options: readonly string[] }][] = [
+    ["ContentRating", ContentRatingSchema],
+    ["ContributorRole", ContributorRoleSchema],
+    ["ReadingStatus", ReadingStatusSchema],
+    ["IngestionStatus", IngestionStatusSchema],
+    ["EnrichmentStatus", EnrichmentStatusSchema],
+    ["ValidationStatus", ValidationStatusSchema],
+  ];
+
+  for (const [name, schema] of cases) {
+    test(`${name} options equal components.schemas.${name}.enum`, () => {
+      const generated = spec.components.schemas[name]?.enum;
+      expect(
+        generated,
+        `components.schemas.${name}.enum missing from docs/openapi.json`,
+      ).toBeDefined();
+      expect([...schema.options].sort()).toEqual([...(generated ?? [])].sort());
+    });
+  }
+});
+
 describe("listBooks", () => {
   test("calls GET /api/v1/books and returns the envelope", async () => {
     const body = {
@@ -42,7 +83,7 @@ describe("listBooks", () => {
           tags: ["campus-novel"],
           genres: ["Literary Fiction"],
           moods: ["Somber"],
-          content_rating: "mature",
+          content_rating: "explicit",
           cover_url: "/api/v1/books/.../cover/thumb",
           ingestion_status: "complete",
           validation_status: "clean",

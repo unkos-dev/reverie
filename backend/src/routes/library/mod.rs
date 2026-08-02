@@ -1302,10 +1302,12 @@ async fn fetch_detail_row(
 /// multiply rows under `LIMIT`.
 ///
 /// This loader and its genre/mood siblings are deliberately three
-/// near-identical copies: `sqlx::query!` requires the SQL to be a
-/// string literal, so the table and column names cannot be
-/// parameterised without dropping to runtime SQL, which this crate
-/// bans on the data path.
+/// near-identical copies. The constraint is on the SQL text alone:
+/// `sqlx::query!` takes only a string literal, so the table and column
+/// names cannot be parameterised without dropping to runtime SQL,
+/// which this crate bans on the data path. The surrounding Rust
+/// scaffolding could be shared; it stays inline so each loader reads
+/// as one unit next to its query.
 pub(crate) async fn load_tags_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_ids: &[Uuid],

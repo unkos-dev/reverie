@@ -53,7 +53,18 @@ export type ReadingStatus = z.infer<typeof ReadingStatusSchema>;
 
 export { ReadingStatusSchema };
 
-const ContentRatingSchema = z.enum(["everyone", "teen", "mature", "adult"]);
+// The wire-enum schemas are exported for the OpenAPI parity test in
+// books.test.ts, which pins each hand-mirrored option set to the
+// generated docs/openapi.json.
+export {
+  ContentRatingSchema,
+  ContributorRoleSchema,
+  EnrichmentStatusSchema,
+  IngestionStatusSchema,
+  ValidationStatusSchema,
+};
+
+const ContentRatingSchema = z.enum(["everyone", "teen", "mature", "adult", "explicit"]);
 /** Audience-suitability rating. Matches `backend/src/models/content_rating.rs`. */
 export type ContentRating = z.infer<typeof ContentRatingSchema>;
 
