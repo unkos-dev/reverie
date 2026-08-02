@@ -3,7 +3,7 @@
  * GENERATED ARTIFACT — do not hand-edit. Regenerate: npm run primitives:gen.
  *
  * Source fn:  scripts/radix-gen/generate-radix-colors.ts (radix-ui/website @ 88a9f14)
- * Deps:       @radix-ui/colors@3.0.0  colorjs.io@0.7.0  bezier-easing@3.0.1
+ * Deps:       @radix-ui/colors@3.0.0  colorjs.io@0.7.1  bezier-easing@3.0.1
  * Anchors:    bg-dark #0E0D0A · bg-light(parchment) #E8DCC2
  *             accent(gold) #C9A961 · danger #B91C1C · neutral-seed #8A8170
  * OVERRIDE:   --gold-contrast forced to ink #0e0d0a (generator returned #fff,
