@@ -6985,7 +6985,7 @@
       },
       "BookListRow": {
         "type": "object",
-        "description": "One row of a paginated book list. Decoded via [`sqlx::FromRow`]\nagainst the query in `routes/library::list`, then enriched with\nthe batch-loaded `authors` slot and serialised straight to JSON.",
+        "description": "One row of a paginated book list. Assembled by hand from the\ndynamic `QueryBuilder` row in `routes/library::list`, then enriched\nwith the batch-loaded multi-value slots and serialised straight to\nJSON.",
         "required": [
           "id",
           "work_id",
@@ -7971,7 +7971,7 @@
       },
       "ReadingStateSummary": {
         "type": "object",
-        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).",
+        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
         "properties": {
           "finished_at": {
             "type": [
@@ -7980,13 +7980,6 @@
             ],
             "format": "date-time",
             "description": "`reading_state.finished_at`; see [`ReadingState::finished_at`]."
-          },
-          "notes": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`reading_state.notes`; free-text, caller-authored."
           },
           "progress_pct": {
             "type": [

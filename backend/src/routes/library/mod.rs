@@ -862,7 +862,7 @@ pub(crate) async fn load_reading_state_for_manifestations(
     // `reading_state`'s RLS policy already confines this SELECT to the
     // caller's own rows.
     let rows = sqlx::query!(
-        r#"SELECT manifestation_id, status AS "status?: ReadingStatus", rating, notes,
+        r#"SELECT manifestation_id, status AS "status?: ReadingStatus", rating,
                   progress_pct, started_at, finished_at
              FROM reading_state WHERE manifestation_id = ANY($1::uuid[])"#,
         manifestation_ids,
@@ -876,7 +876,6 @@ pub(crate) async fn load_reading_state_for_manifestations(
             ReadingStateSummary {
                 status: r.status,
                 rating: r.rating,
-                notes: r.notes,
                 progress_pct: r.progress_pct,
                 started_at: r.started_at,
                 finished_at: r.finished_at,
@@ -1301,6 +1300,12 @@ async fn fetch_detail_row(
 /// within each book. Same shape as [`load_authors_for_works`]: the
 /// one-to-many join stays out of the paginated base query so it cannot
 /// multiply rows under `LIMIT`.
+///
+/// This loader and its genre/mood siblings are deliberately three
+/// near-identical copies: `sqlx::query!` requires the SQL to be a
+/// string literal, so the table and column names cannot be
+/// parameterised without dropping to runtime SQL, which this crate
+/// bans on the data path.
 pub(crate) async fn load_tags_for_manifestations(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     manifestation_ids: &[Uuid],

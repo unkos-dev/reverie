@@ -41,10 +41,7 @@ import { pendingKey, useCellEdit } from "./useCellEdit";
 const EMPTY_CELL = "—";
 
 /** Row heights per density; the header stays fixed across both. */
-const ROW_HEIGHT_BY_DENSITY: Record<Density, number> = {
-  comfortable: 64,
-  compact: 44,
-};
+const ROW_HEIGHT_BY_DENSITY: Record<Density, number> = { comfortable: 64, compact: 44 };
 const TABLE_HEADER_HEIGHT = 42;
 
 /**
@@ -63,7 +60,6 @@ const WORK_SCOPED_TOOLTIP = {
 const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   status: null,
   rating: null,
-  notes: null,
   progress_pct: null,
   started_at: null,
   finished_at: null,
@@ -76,10 +72,7 @@ function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactE
       kind="text"
       required
       onDraft={(value) => {
-        editorProps.update({
-          ...editorProps.row,
-          title: value ?? editorProps.row.title,
-        });
+        editorProps.update({ ...editorProps.row, title: value ?? editorProps.row.title });
       }}
     />
   );
@@ -143,10 +136,7 @@ function renderStatusEditCell(editorProps: GridEditorProps<BookListItem>): React
     <StatusCellEditor
       value={readingState.status}
       onCommit={(status) => {
-        editorProps.commit({
-          ...editorProps.row,
-          reading_state: { ...readingState, status },
-        });
+        editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, status } });
       }}
     />
   );
@@ -158,10 +148,7 @@ function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): React
     <RatingCellEditor
       value={readingState.rating}
       onCommit={(rating) => {
-        editorProps.commit({
-          ...editorProps.row,
-          reading_state: { ...readingState, rating },
-        });
+        editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, rating } });
       }}
     />
   );

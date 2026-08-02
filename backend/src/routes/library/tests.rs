@@ -3706,7 +3706,7 @@ async fn list_endpoint_reading_state_is_caller_scoped(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_endpoint_reading_summary_carries_notes_and_dates(pool: PgPool) {
+async fn list_endpoint_reading_summary_carries_reading_dates(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_a_id, a_basic) =
@@ -3737,7 +3737,14 @@ async fn list_endpoint_reading_summary_carries_notes_and_dates(pool: PgPool) {
     let a_body: serde_json::Value = a_list.json();
     let a_state = &a_body["items"][0]["reading_state"];
     assert_eq!(a_state["status"], "finished", "got {a_body}");
-    assert_eq!(a_state["notes"], "loved the first act", "got {a_body}");
+    // Notes are capped at 10k characters per row, so a page of summaries
+    // must not carry them; the single-book reading endpoint serves them.
+    assert!(
+        a_state
+            .as_object()
+            .is_some_and(|o| !o.contains_key("notes")),
+        "notes must stay off the list summary, got {a_body}"
+    );
     for stamp in ["started_at", "finished_at"] {
         let raw = a_state[stamp].as_str().unwrap_or_else(|| {
             panic!("{stamp} must be an RFC 3339 string on the list summary, got {a_body}")
@@ -3760,7 +3767,7 @@ async fn list_endpoint_reading_summary_carries_notes_and_dates(pool: PgPool) {
     let b_body: serde_json::Value = b_list.json();
     let b_state = &b_body["items"][0]["reading_state"];
     assert_eq!(b_state["rating"], 3, "got {b_body}");
-    for slot in ["notes", "started_at", "finished_at"] {
+    for slot in ["started_at", "finished_at"] {
         assert!(
             b_state[slot].is_null() && b_state.as_object().is_some_and(|o| o.contains_key(slot)),
             "rating-only summary must carry explicit null {slot}, got {b_body}"

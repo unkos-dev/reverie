@@ -23,11 +23,7 @@ import {
 } from "./routes/production";
 
 vi.mock("@/lib/theme/ThemeProvider", () => ({
-  useTheme: () => ({
-    preference: "system",
-    effective: "dark",
-    setPreference: vi.fn(),
-  }),
+  useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
 }));
 
 const ADMIN_ME = {
@@ -132,12 +128,7 @@ function bodyFor(url: URL, role: string): unknown {
     return { items: [SHELF], next_cursor: null };
   }
   if (pathname.startsWith("/api/v1/series/")) {
-    return {
-      id: "series-1",
-      name: "Discworld",
-      sort_name: "discworld",
-      works: [],
-    };
+    return { id: "series-1", name: "Discworld", sort_name: "discworld", works: [] };
   }
   if (pathname === "/api/v1/users") return [{ ...ADMIN_ME, ...USER_TIMESTAMPS, disabled: false }];
   if (pathname === "/api/v1/dashboard/stats") return STATS;
@@ -331,9 +322,7 @@ describe("filter rail — param-write to loader-refetch seam", () => {
     // Toggle-off: re-clicking the active checkbox clears the param and
     // restores the unfiltered grid (spec §10 active-filter clearing).
     await user.click(screen.getByRole("button", { name: /^Filters/ }));
-    const activeBox = await screen.findByRole("checkbox", {
-      name: "Discworld",
-    });
+    const activeBox = await screen.findByRole("checkbox", { name: "Discworld" });
     expect(activeBox).toBeChecked();
     await user.click(activeBox);
     await waitFor(

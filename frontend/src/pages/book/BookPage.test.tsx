@@ -85,9 +85,7 @@ describe("BookPage", () => {
 
   test("renders the description in the Overview tab", async () => {
     renderBook(bookFixture());
-    const overviewPanel = await screen.findByRole("tabpanel", {
-      name: /overview/i,
-    });
+    const overviewPanel = await screen.findByRole("tabpanel", { name: /overview/i });
     expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
   });
 

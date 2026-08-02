@@ -49,24 +49,9 @@ beforeEach(() => {
 const LIST_KEY: BooksListKey = queryKeys.books.list({});
 
 const TEST_COLUMNS: readonly GridColumn<BookListItem>[] = [
-  {
-    key: "title",
-    name: "Title",
-    sortable: false,
-    accessor: (row) => row.title,
-  },
-  {
-    key: "isbn_13",
-    name: "ISBN",
-    sortable: false,
-    accessor: (row) => row.isbn_13 ?? "",
-  },
-  {
-    key: "authors",
-    name: "Authors",
-    sortable: false,
-    accessor: (row) => row.authors.join(", "),
-  },
+  { key: "title", name: "Title", sortable: false, accessor: (row) => row.title },
+  { key: "isbn_13", name: "ISBN", sortable: false, accessor: (row) => row.isbn_13 ?? "" },
+  { key: "authors", name: "Authors", sortable: false, accessor: (row) => row.authors.join(", ") },
   {
     key: "status",
     name: "Status",
@@ -103,7 +88,6 @@ function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     reading_state: {
       status: "reading",
       rating: 3,
-      notes: null,
       progress_pct: 40,
       started_at: null,
       finished_at: null,
@@ -117,11 +101,7 @@ function fieldChange(
   value: unknown,
   previousVersionId: string | null = "prev-version",
 ): FieldVersionChange {
-  return {
-    value,
-    version_id: "new-version",
-    previous_version_id: previousVersionId,
-  };
+  return { value, version_id: "new-version", previous_version_id: previousVersionId };
 }
 
 function readingStateFixture(overrides: Partial<ReadingState> = {}): ReadingState {
@@ -227,9 +207,7 @@ describe("useCellEdit", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
 
     await waitFor(() => {
-      expect(updateBookMetadata).toHaveBeenCalledWith(row.id, {
-        title: "New Title",
-      });
+      expect(updateBookMetadata).toHaveBeenCalledWith(row.id, { title: "New Title" });
     });
     expect(updateReadingState).not.toHaveBeenCalled();
   });
@@ -245,7 +223,6 @@ describe("useCellEdit", () => {
         reading_state: {
           status: "reading",
           rating: 5,
-          notes: null,
           progress_pct: 40,
           started_at: null,
           finished_at: null,
@@ -289,11 +266,7 @@ describe("useCellEdit", () => {
     const client = makeClient();
     const rowA = rowFixture({ id: "book-1", work_id: "work-1" });
     const rowB = rowFixture({ id: "book-2", work_id: "work-1" });
-    const other = rowFixture({
-      id: "book-3",
-      work_id: "work-2",
-      title: "Unrelated Work",
-    });
+    const other = rowFixture({ id: "book-3", work_id: "work-2", title: "Unrelated Work" });
     seedCache(client, [rowA, rowB, other]);
     vi.mocked(updateBookMetadata).mockResolvedValue({
       fields: { title: fieldChange("New Title") },
@@ -314,16 +287,8 @@ describe("useCellEdit", () => {
 
   test("an isbn_13 edit does not fan out to sibling editions of the same work", async () => {
     const client = makeClient();
-    const rowA = rowFixture({
-      id: "book-1",
-      work_id: "work-1",
-      isbn_13: "9780000000001",
-    });
-    const rowB = rowFixture({
-      id: "book-2",
-      work_id: "work-1",
-      isbn_13: "9780000000002",
-    });
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1", isbn_13: "9780000000001" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1", isbn_13: "9780000000002" });
     seedCache(client, [rowA, rowB]);
     vi.mocked(updateBookMetadata).mockResolvedValue({
       fields: { isbn_13: fieldChange("9781111111111") },
@@ -402,7 +367,6 @@ describe("useCellEdit", () => {
       reading_state: {
         status: "reading",
         rating: 2,
-        notes: null,
         progress_pct: 40,
         started_at: null,
         finished_at: null,
@@ -416,7 +380,6 @@ describe("useCellEdit", () => {
         reading_state: {
           status: "reading",
           rating: 5,
-          notes: null,
           progress_pct: 40,
           started_at: null,
           finished_at: null,
@@ -437,21 +400,15 @@ describe("useCellEdit", () => {
     vi.mocked(updateReadingState).mockResolvedValueOnce(
       readingStateFixture({ rating: 2, progress_pct: 55 }),
     );
-    fireEvent.keyDown(screen.getByTestId("wrapper"), {
-      key: "z",
-      ctrlKey: true,
-    });
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
 
     await waitFor(() => {
-      expect(updateReadingState).toHaveBeenNthCalledWith(2, row.id, {
-        rating: 2,
-      });
+      expect(updateReadingState).toHaveBeenNthCalledWith(2, row.id, { rating: 2 });
     });
     await waitFor(() => {
       expect(readCache(client)[0].reading_state).toEqual({
         status: "reading",
         rating: 2,
-        notes: null,
         progress_pct: 55,
         started_at: null,
         finished_at: null,
@@ -544,10 +501,7 @@ describe("useCellEdit", () => {
 
     // Ctrl+Z now reaches B, since A was spliced out of the stack rather than
     // merely shadowed.
-    fireEvent.keyDown(screen.getByTestId("wrapper"), {
-      key: "z",
-      ctrlKey: true,
-    });
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
     await waitFor(() => {
       expect(revertField).toHaveBeenCalledWith(row.id, "isbn_13", "v-b");
     });
@@ -622,9 +576,7 @@ describe("useCellEdit", () => {
       expect(revertField).toHaveBeenCalledWith(row.id, "title", "prev-version-id");
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.books.detailsAll,
-      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
     });
   });
 
@@ -669,9 +621,7 @@ describe("useCellEdit", () => {
     });
 
     vi.mocked(updateBookMetadata).mockResolvedValueOnce({
-      fields: {
-        "contributors.author": fieldChange(["Original Author"], "v-restore"),
-      },
+      fields: { "contributors.author": fieldChange(["Original Author"], "v-restore") },
     });
     getUndoAction(0)();
 
@@ -753,7 +703,6 @@ describe("useCellEdit", () => {
       reading_state: {
         status: "reading",
         rating: 3,
-        notes: null,
         progress_pct: 40,
         started_at: null,
         finished_at: null,
@@ -769,7 +718,6 @@ describe("useCellEdit", () => {
         reading_state: {
           status: "reading",
           rating: 5,
-          notes: null,
           progress_pct: 40,
           started_at: null,
           finished_at: null,
@@ -787,7 +735,6 @@ describe("useCellEdit", () => {
     expect(readCache(client)[0].reading_state).toEqual({
       status: "reading",
       rating: 3,
-      notes: null,
       progress_pct: 40,
       started_at: null,
       finished_at: null,
@@ -861,25 +808,15 @@ describe("useCellEdit", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
 
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.books.detailsAll,
-      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
     });
   });
 
   test("an isbn_13 edit invalidates only the edited manifestation's detail query", async () => {
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, "invalidateQueries");
-    const rowA = rowFixture({
-      id: "book-1",
-      work_id: "work-1",
-      isbn_13: "9780000000001",
-    });
-    const rowB = rowFixture({
-      id: "book-2",
-      work_id: "work-1",
-      isbn_13: "9780000000002",
-    });
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1", isbn_13: "9780000000001" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1", isbn_13: "9780000000002" });
     seedCache(client, [rowA, rowB]);
     vi.mocked(updateBookMetadata).mockResolvedValue({
       fields: { isbn_13: fieldChange("9781111111111") },
@@ -893,16 +830,10 @@ describe("useCellEdit", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
 
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.books.detail("book-1"),
-      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-1") });
     });
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
-      queryKey: queryKeys.books.detail("book-2"),
-    });
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
-      queryKey: queryKeys.books.detailsAll,
-    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detail("book-2") });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
   });
 
   test("undoing a work-scoped metadata edit invalidates the whole book-detail family too", async () => {
@@ -932,24 +863,14 @@ describe("useCellEdit", () => {
       expect(revertField).toHaveBeenCalledWith("book-1", "title", "prev-version-id");
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.books.detailsAll,
-      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
     });
   });
 
   test("undo restores sibling editions: a title edit fanned out to a sibling is restored on undo too", async () => {
     const client = makeClient();
-    const rowA = rowFixture({
-      id: "book-1",
-      work_id: "work-1",
-      title: "Original Title",
-    });
-    const rowB = rowFixture({
-      id: "book-2",
-      work_id: "work-1",
-      title: "Original Title",
-    });
+    const rowA = rowFixture({ id: "book-1", work_id: "work-1", title: "Original Title" });
+    const rowB = rowFixture({ id: "book-2", work_id: "work-1", title: "Original Title" });
     seedCache(client, [rowA, rowB]);
     vi.mocked(updateBookMetadata).mockResolvedValueOnce({
       fields: { title: fieldChange("New Title", "prev-version-id") },
@@ -966,10 +887,7 @@ describe("useCellEdit", () => {
       expect(readCache(client).find((item) => item.id === "book-2")?.title).toBe("New Title");
     });
 
-    fireEvent.keyDown(screen.getByTestId("wrapper"), {
-      key: "z",
-      ctrlKey: true,
-    });
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
 
     await waitFor(() => {
       expect(revertField).toHaveBeenCalledWith("book-1", "title", "prev-version-id");
@@ -998,10 +916,7 @@ describe("useCellEdit", () => {
       expect(toast.success).toHaveBeenCalled();
     });
 
-    fireEvent.keyDown(screen.getByTestId("wrapper"), {
-      key: "z",
-      ctrlKey: true,
-    });
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
 
     await waitFor(() => {
       expect(revertField).toHaveBeenCalledWith(row.id, "subtitle", "v-prev");

@@ -28,7 +28,6 @@ function rowFixture(overrides: Partial<BookListItem> = {}): BookListItem {
     reading_state: {
       status: "reading",
       rating: 3,
-      notes: null,
       progress_pct: 40,
       started_at: null,
       finished_at: null,
@@ -198,7 +197,6 @@ describe("status route", () => {
       reading_state: {
         status: "finished",
         rating: 3,
-        notes: null,
         progress_pct: 40,
         started_at: null,
         finished_at: null,
@@ -229,7 +227,6 @@ describe("status route", () => {
     expect(applied.reading_state).toEqual({
       status: "finished",
       rating: 3,
-      notes: null,
       progress_pct: 100,
       started_at: null,
       finished_at: "2026-07-01T00:00:00Z",
@@ -250,7 +247,6 @@ describe("rating route", () => {
       reading_state: {
         status: "reading",
         rating: 5,
-        notes: null,
         progress_pct: 40,
         started_at: null,
         finished_at: null,
@@ -276,7 +272,6 @@ describe("rating route", () => {
     expect(applied.reading_state).toEqual({
       status: "reading",
       rating: 1,
-      notes: null,
       progress_pct: 40,
       started_at: null,
       finished_at: null,

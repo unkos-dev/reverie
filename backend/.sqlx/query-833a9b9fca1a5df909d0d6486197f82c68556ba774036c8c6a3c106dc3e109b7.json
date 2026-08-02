@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT manifestation_id, status AS \"status?: ReadingStatus\", rating, notes,\n                  progress_pct, started_at, finished_at\n             FROM reading_state WHERE manifestation_id = ANY($1::uuid[])",
+  "query": "SELECT manifestation_id, status AS \"status?: ReadingStatus\", rating,\n                  progress_pct, started_at, finished_at\n             FROM reading_state WHERE manifestation_id = ANY($1::uuid[])",
   "describe": {
     "columns": [
       {
@@ -51,17 +51,6 @@
       },
       {
         "ordinal": 3,
-        "name": "notes",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "reading_state",
-            "name": "notes"
-          }
-        }
-      },
-      {
-        "ordinal": 4,
         "name": "progress_pct",
         "type_info": "Float4",
         "origin": {
@@ -72,7 +61,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "started_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -83,7 +72,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "finished_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -105,9 +94,8 @@
       true,
       true,
       true,
-      true,
       true
     ]
   },
-  "hash": "3d283417a680a798c832f24b4e8292f55fae3dc7b8df2758f0f6738e3c5e4234"
+  "hash": "833a9b9fca1a5df909d0d6486197f82c68556ba774036c8c6a3c106dc3e109b7"
 }

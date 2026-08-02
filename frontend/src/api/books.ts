@@ -75,7 +75,6 @@ export type ContributorRef = z.infer<typeof ContributorRefSchema>;
 const ReadingStateSummarySchema = z.object({
   status: ReadingStatusSchema.nullable(),
   rating: z.number().int().nullable(),
-  notes: z.string().nullable(),
   progress_pct: z.number().nullable(),
   started_at: z.string().nullable(),
   finished_at: z.string().nullable(),

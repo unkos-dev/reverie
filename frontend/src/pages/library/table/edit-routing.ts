@@ -88,7 +88,6 @@ function applyReadingResponse(row: BookListItem, response: ReadingState): BookLi
     reading_state: {
       status: response.status,
       rating: response.rating,
-      notes: response.notes,
       progress_pct: response.progress_pct,
       started_at: response.started_at,
       finished_at: response.finished_at,

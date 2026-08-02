@@ -72,12 +72,7 @@ function rowFixture(index: number, overrides: Partial<BookListItem> = {}): BookL
 // be mounted, rather than relying on a scroll to reach a later row.
 const ROWS: BookListItem[] = Array.from({ length: 30 }, (_, index) =>
   index === 0
-    ? rowFixture(index, {
-        subtitle: null,
-        isbn_13: null,
-        pages: null,
-        reading_state: null,
-      })
+    ? rowFixture(index, { subtitle: null, isbn_13: null, pages: null, reading_state: null })
     : rowFixture(index),
 );
 
@@ -120,9 +115,7 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
   };
   const routes: RouteObject[] = [{ path: "/library", element: <TableHarness {...props} /> }];
   const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   function Wrapper(): ReactElement {
     return (
@@ -142,14 +135,8 @@ function renderTableView(overrides: Partial<TableProps> = {}): TableProps {
  * past the 10px slack in `isAtBottom`.
  */
 function scrollToBottom(grid: HTMLElement): void {
-  Object.defineProperty(grid, "scrollHeight", {
-    value: 1000,
-    configurable: true,
-  });
-  Object.defineProperty(grid, "clientHeight", {
-    value: 300,
-    configurable: true,
-  });
+  Object.defineProperty(grid, "scrollHeight", { value: 1000, configurable: true });
+  Object.defineProperty(grid, "clientHeight", { value: 300, configurable: true });
   Object.defineProperty(grid, "scrollTop", { value: 1000, configurable: true });
   fireEvent.scroll(grid);
 }
@@ -185,14 +172,8 @@ describe("LibraryTableView", () => {
     // range that brings Authors' header cell into the mounted window without
     // scrolling past it. If that 1024px stub value ever changes, these two
     // numbers need to move with it.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 2600,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 1500,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 2600, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1500, configurable: true });
     fireEvent.scroll(grid);
     const user = userEvent.setup();
     const header = await screen.findByRole("columnheader", { name: "Authors" });
@@ -220,28 +201,14 @@ describe("LibraryTableView", () => {
     // test below: with this single short row the grid auto-sizes Title and
     // Subtitle to 1024px each, so every fixed-width column (incl. Pages)
     // sits past the initial viewport until both scrolls land.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 2578,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 1554,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
     fireEvent.scroll(grid);
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 4526,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 3502,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
     fireEvent.scroll(grid);
     const user = userEvent.setup();
-    const header = await within(grid).findByRole("columnheader", {
-      name: "Pages",
-    });
+    const header = await within(grid).findByRole("columnheader", { name: "Pages" });
     await user.click(header);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "pages", desc: false }]);
   });
@@ -254,28 +221,14 @@ describe("LibraryTableView", () => {
     });
     const grid = await screen.findByRole("grid");
     const user = userEvent.setup();
-    const titleHeader = await screen.findByRole("columnheader", {
-      name: "Title",
-    });
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
     await user.click(titleHeader);
 
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 2578,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 1554,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
     fireEvent.scroll(grid);
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 4526,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 3502,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
     fireEvent.scroll(grid);
 
     const authorsHeader = await within(grid).findByRole("columnheader", {
@@ -304,19 +257,11 @@ describe("LibraryTableView", () => {
     // virtualization: selection + details + the nine data columns.
     expect(grid).toHaveAttribute("aria-colcount", "11");
     // Scroll fully right so the trailing Added header mounts, then click it.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 4646,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 3622,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
     fireEvent.scroll(grid);
     const user = userEvent.setup();
-    const addedHeader = await within(grid).findByRole("columnheader", {
-      name: "Added",
-    });
+    const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
     await user.click(addedHeader);
     expect(onSortChange).toHaveBeenCalledWith([{ field: "created_at", desc: false }]);
   });
@@ -330,18 +275,10 @@ describe("LibraryTableView", () => {
     const grid = await screen.findByRole("grid");
     // Scroll fully right so the trailing Added header mounts, same geometry
     // as the "exposes an Added column" test above.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 4646,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 3622,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 4646, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3622, configurable: true });
     fireEvent.scroll(grid);
-    const addedHeader = await within(grid).findByRole("columnheader", {
-      name: "Added",
-    });
+    const addedHeader = await within(grid).findByRole("columnheader", { name: "Added" });
     expect(addedHeader).toHaveAttribute("aria-sort", "descending");
   });
 
@@ -354,9 +291,7 @@ describe("LibraryTableView", () => {
     });
     await screen.findByRole("grid");
     expect(
-      screen.queryByRole("button", {
-        name: "Move Title later in sort priority",
-      }),
+      screen.queryByRole("button", { name: "Move Title later in sort priority" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear sort" })).not.toBeInTheDocument();
   });
@@ -366,9 +301,7 @@ describe("LibraryTableView", () => {
       renderTableView();
       await screen.findByRole("grid");
       const user = userEvent.setup();
-      const trigger = screen.getAllByRole("button", {
-        name: "(all editions)",
-      })[0];
+      const trigger = screen.getAllByRole("button", { name: "(all editions)" })[0];
       trigger.focus();
       expect(await screen.findByRole("tooltip")).toHaveTextContent(
         "Edits apply to all editions of the work",
@@ -384,9 +317,7 @@ describe("LibraryTableView", () => {
       renderTableView({ onSortChange });
       await screen.findByRole("grid");
       const user = userEvent.setup();
-      const trigger = screen.getAllByRole("button", {
-        name: "(all editions)",
-      })[0];
+      const trigger = screen.getAllByRole("button", { name: "(all editions)" })[0];
       await user.click(trigger);
       expect(onSortChange).not.toHaveBeenCalled();
     });
@@ -435,9 +366,7 @@ describe("LibraryTableView", () => {
       vi.resetModules();
       const { LibraryTableView: MockedView } = await import("./LibraryTableView");
       try {
-        const client = new QueryClient({
-          defaultOptions: { queries: { retry: false } },
-        });
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
         render(
           <QueryClientProvider client={client}>
             <MockedView
@@ -481,11 +410,7 @@ describe("LibraryTableView", () => {
 
   test("scrolling to the bottom calls onLoadMore when a next page is available", async () => {
     const onLoadMore = vi.fn();
-    renderTableView({
-      hasNextPage: true,
-      isFetchingNextPage: false,
-      onLoadMore,
-    });
+    renderTableView({ hasNextPage: true, isFetchingNextPage: false, onLoadMore });
     const grid = await screen.findByRole("grid");
     scrollToBottom(grid);
     expect(onLoadMore).toHaveBeenCalledTimes(1);
@@ -493,11 +418,7 @@ describe("LibraryTableView", () => {
 
   test("scrolling to the bottom does NOT call onLoadMore while a fetch is already in flight", async () => {
     const onLoadMore = vi.fn();
-    renderTableView({
-      hasNextPage: true,
-      isFetchingNextPage: true,
-      onLoadMore,
-    });
+    renderTableView({ hasNextPage: true, isFetchingNextPage: true, onLoadMore });
     const grid = await screen.findByRole("grid");
     scrollToBottom(grid);
     expect(onLoadMore).not.toHaveBeenCalled();
@@ -505,11 +426,7 @@ describe("LibraryTableView", () => {
 
   test("scrolling to the bottom does NOT call onLoadMore when there is no next page", async () => {
     const onLoadMore = vi.fn();
-    renderTableView({
-      hasNextPage: false,
-      isFetchingNextPage: false,
-      onLoadMore,
-    });
+    renderTableView({ hasNextPage: false, isFetchingNextPage: false, onLoadMore });
     const grid = await screen.findByRole("grid");
     scrollToBottom(grid);
     expect(onLoadMore).not.toHaveBeenCalled();
@@ -517,11 +434,7 @@ describe("LibraryTableView", () => {
 
   test("scrolling to the bottom does NOT call onLoadMore after a failed fetch; Retry is the only refire path", async () => {
     const onLoadMore = vi.fn();
-    renderTableView({
-      hasNextPage: true,
-      isFetchNextPageError: true,
-      onLoadMore,
-    });
+    renderTableView({ hasNextPage: true, isFetchNextPageError: true, onLoadMore });
     const grid = await screen.findByRole("grid");
     scrollToBottom(grid);
     expect(onLoadMore).not.toHaveBeenCalled();
@@ -534,11 +447,7 @@ describe("LibraryTableView", () => {
 
   test("idle state with a next page renders the Load more fallback, which calls onLoadMore", async () => {
     const onLoadMore = vi.fn();
-    renderTableView({
-      hasNextPage: true,
-      isFetchingNextPage: false,
-      onLoadMore,
-    });
+    renderTableView({ hasNextPage: true, isFetchingNextPage: false, onLoadMore });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Load more" }));
     expect(onLoadMore).toHaveBeenCalledTimes(1);
@@ -552,7 +461,6 @@ describe("LibraryTableView", () => {
           reading_state: {
             status: "want_to_read",
             rating: 3,
-            notes: null,
             progress_pct: null,
             started_at: null,
             finished_at: null,
@@ -565,27 +473,15 @@ describe("LibraryTableView", () => {
     // 1024/1024/50/50/140/80/120/90 (total 2578), so Series onward sits past
     // the initial 1024px window. Scrolling to the max position (2578 - 1024)
     // mounts everything from Series through Rating in one shot.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 2578,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 1554,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
     fireEvent.scroll(grid);
     expect(await within(grid).findByText("Discworld · #8")).toBeInTheDocument();
     // Mounting Series re-measures the auto columns to the 1024px viewport
     // stub (template becomes 4x1024 + fixed), pushing Status and Rating out
     // of the window again; a second max-position scroll reaches them.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 4526,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 3502,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
     fireEvent.scroll(grid);
     expect(await within(grid).findByText("want to read")).toBeInTheDocument();
     expect(within(grid).getByText("★★★")).toBeInTheDocument();
@@ -608,7 +504,6 @@ describe("LibraryTableView", () => {
           reading_state: {
             status: "want_to_read",
             rating: 3,
-            notes: null,
             progress_pct: null,
             started_at: null,
             finished_at: null,
@@ -617,38 +512,20 @@ describe("LibraryTableView", () => {
       ],
     });
     const grid = await screen.findByRole("grid");
-    const titleHeader = await screen.findByRole("columnheader", {
-      name: "Title",
-    });
+    const titleHeader = await screen.findByRole("columnheader", { name: "Title" });
     expect(within(titleHeader).getByRole("button", { name: "(all editions)" })).toBeInTheDocument();
 
     // Same scroll dance as the "populated series and status" render test:
     // ISBN and Pages sit past the initial 1024px window until scrolled in.
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 2578,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 1554,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
     fireEvent.scroll(grid);
-    Object.defineProperty(grid, "scrollWidth", {
-      value: 4526,
-      configurable: true,
-    });
-    Object.defineProperty(grid, "scrollLeft", {
-      value: 3502,
-      configurable: true,
-    });
+    Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+    Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
     fireEvent.scroll(grid);
 
-    const isbnHeader = await within(grid).findByRole("columnheader", {
-      name: "ISBN",
-    });
-    const pagesHeader = within(grid).getByRole("columnheader", {
-      name: "Pages",
-    });
+    const isbnHeader = await within(grid).findByRole("columnheader", { name: "ISBN" });
+    const pagesHeader = within(grid).getByRole("columnheader", { name: "Pages" });
     expect(within(isbnHeader).queryByRole("button")).not.toBeInTheDocument();
     expect(within(pagesHeader).queryByRole("button")).not.toBeInTheDocument();
   });
@@ -663,7 +540,6 @@ describe("LibraryTableView", () => {
         reading_state: {
           status: "want_to_read",
           rating: 3,
-          notes: null,
           progress_pct: null,
           started_at: null,
           finished_at: null,
@@ -672,26 +548,14 @@ describe("LibraryTableView", () => {
     }
 
     function scrollToRevealRightColumns(grid: HTMLElement): void {
-      Object.defineProperty(grid, "scrollWidth", {
-        value: 2578,
-        configurable: true,
-      });
-      Object.defineProperty(grid, "scrollLeft", {
-        value: 1554,
-        configurable: true,
-      });
+      Object.defineProperty(grid, "scrollWidth", { value: 2578, configurable: true });
+      Object.defineProperty(grid, "scrollLeft", { value: 1554, configurable: true });
       fireEvent.scroll(grid);
     }
 
     function scrollToRevealTrailingColumns(grid: HTMLElement): void {
-      Object.defineProperty(grid, "scrollWidth", {
-        value: 4526,
-        configurable: true,
-      });
-      Object.defineProperty(grid, "scrollLeft", {
-        value: 3502,
-        configurable: true,
-      });
+      Object.defineProperty(grid, "scrollWidth", { value: 4526, configurable: true });
+      Object.defineProperty(grid, "scrollLeft", { value: 3502, configurable: true });
       fireEvent.scroll(grid);
     }
 
@@ -891,9 +755,7 @@ describe("LibraryTableView", () => {
       renderTableView({ onRowActivate });
       const user = userEvent.setup();
       await user.click(
-        await screen.findByRole("button", {
-          name: `Open details for ${ROWS[0].title}`,
-        }),
+        await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
       );
       expect(onRowActivate).toHaveBeenCalledTimes(1);
       expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
@@ -901,19 +763,11 @@ describe("LibraryTableView", () => {
 
     test("clicking a read-only cell activates the row; an editable cell does not", async () => {
       const onRowActivate = vi.fn();
-      const row = rowFixture(1, {
-        series: { id: "s1", name: "Discworld", position: 8 },
-      });
+      const row = rowFixture(1, { series: { id: "s1", name: "Discworld", position: 8 } });
       renderTableView({ items: [row], onRowActivate });
       const grid = await screen.findByRole("grid");
-      Object.defineProperty(grid, "scrollWidth", {
-        value: 2657,
-        configurable: true,
-      });
-      Object.defineProperty(grid, "scrollLeft", {
-        value: 1633,
-        configurable: true,
-      });
+      Object.defineProperty(grid, "scrollWidth", { value: 2657, configurable: true });
+      Object.defineProperty(grid, "scrollLeft", { value: 1633, configurable: true });
       fireEvent.scroll(grid);
       const user = userEvent.setup();
       const seriesCell = await within(grid).findByText("Discworld · #8");
@@ -947,9 +801,7 @@ describe("LibraryTableView", () => {
       expect(screen.queryByRole("columnheader", { name: "Subtitle" })).not.toBeInTheDocument();
       const user = userEvent.setup();
       await user.click(
-        await screen.findByRole("button", {
-          name: `Open details for ${ROWS[0].title}`,
-        }),
+        await screen.findByRole("button", { name: `Open details for ${ROWS[0].title}` }),
       );
       expect(onRowActivate).toHaveBeenCalledWith(ROWS[0]);
     });

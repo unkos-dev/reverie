@@ -50,7 +50,6 @@ describe("listBooks", () => {
           reading_state: {
             status: "finished",
             rating: 5,
-            notes: "quiet devastation",
             progress_pct: 100,
             started_at: "2025-12-01T00:00:00Z",
             finished_at: "2025-12-31T00:00:00Z",
@@ -95,11 +94,7 @@ describe("listBooks", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }));
 
-    await listBooks({
-      pages_gte: 500,
-      subtitle_empty: true,
-      tag_any: ["fantasy", "horror"],
-    });
+    await listBooks({ pages_gte: 500, subtitle_empty: true, tag_any: ["fantasy", "horror"] });
 
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
     expect(url.searchParams.get("pages_gte")).toBe("500");
@@ -144,10 +139,7 @@ describe("getBook", () => {
           status: 404,
           detail: "Resource not found.",
         }),
-        {
-          status: 404,
-          headers: { "Content-Type": "application/problem+json" },
-        },
+        { status: 404, headers: { "Content-Type": "application/problem+json" } },
       ),
     );
     await expect(getBook("ghost")).rejects.toBeInstanceOf(ApiError);
@@ -347,10 +339,7 @@ describe("updateBookMetadata", () => {
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
     expect(input).toBe("/api/v1/books/abc-123/metadata");
     expect(init?.method).toBe("PATCH");
-    expect(parseJsonBody(init?.body)).toEqual({
-      title: "New",
-      description: null,
-    });
+    expect(parseJsonBody(init?.body)).toEqual({ title: "New", description: null });
   });
 
   test("returns the parsed per-field version-change map", async () => {
@@ -366,9 +355,7 @@ describe("updateBookMetadata", () => {
       }),
     );
 
-    const result = await updateBookMetadata("abc-123", {
-      isbn_13: "978-1-59017-199-8",
-    });
+    const result = await updateBookMetadata("abc-123", { isbn_13: "978-1-59017-199-8" });
 
     expect(result.fields.isbn_13).toEqual({
       value: "9781590171998",
@@ -381,11 +368,7 @@ describe("updateBookMetadata", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({
         fields: {
-          title: {
-            value: "New",
-            version_id: "not-a-uuid",
-            previous_version_id: null,
-          },
+          title: { value: "New", version_id: "not-a-uuid", previous_version_id: null },
         },
       }),
     );
