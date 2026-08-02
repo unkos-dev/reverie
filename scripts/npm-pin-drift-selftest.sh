@@ -25,6 +25,20 @@ expect() {
   fi
 }
 
+# Assert on the message, not just the exit code. A guard that fails closed but
+# names the wrong cause sends the reader to the wrong fix, which is the whole
+# reason the shape hints exist.
+expect_message() {
+  local name="$1" want="$2" out
+  out="$( (cd "$tmp" && "$checker") 2>&1 || true)"
+  if [[ $out == *"$want"* ]]; then
+    echo "ok   ${name}"
+  else
+    echo "FAIL ${name}: expected message containing '${want}', got: ${out}"
+    fail=1
+  fi
+}
+
 write_pins "11.18.0" "11.18.0"
 expect "matching pins pass" 0
 
@@ -79,5 +93,34 @@ expect "both pins absent rejected" 1
 jq -n '{devEngines: {packageManager: {name: "pnpm", version: "11.18.0"}}}' >"${tmp}/package.json"
 printf '[tools]\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
 expect "non-npm package manager rejected" 1
+
+# mise.toml uses [tools."backend:name"] table blocks for every other
+# backend-prefixed tool, so converting this entry to that form is a plausible
+# edit. Reading only the inline form renders the table as "version: 11.18.0"
+# and blames the version string for what is a syntax difference.
+write_pins "11.18.0" "11.18.0"
+printf '[tools]\n[tools."npm:npm"]\nversion = "11.18.0"\n' >"${tmp}/mise.toml"
+expect "table-form mise pin accepted" 0
+
+printf '[tools]\n[tools."npm:npm"]\nversion = "11.19.0"\n' >"${tmp}/mise.toml"
+expect "table-form mise pin still compared for drift" 1
+
+# npm's schema permits an array of packageManager entries. Indexing it as an
+# object aborts jq before any guard message reaches the reader.
+jq -n '{devEngines: {packageManager: [{name: "npm", version: "11.18.0"}]}}' >"${tmp}/package.json"
+printf '[tools]\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
+expect "array-form devEngines accepted" 0
+
+jq -n '{devEngines: {packageManager: [{name: "npm", version: "11.19.0"}]}}' >"${tmp}/package.json"
+expect "array-form devEngines still compared for drift" 1
+
+# Failing closed is not enough: the message has to name the cause, or a
+# maintainer who deliberately pinned a prerelease goes looking for a parse bug.
+write_pins "11.18.0-beta" "11.18.0-beta"
+expect_message "prerelease names itself as the cause" "prereleases are rejected by policy"
+
+write_pins "11.18.0" "11.18.0"
+printf '[tools]\njust = "1.57.0"\n' >"${tmp}/mise.toml"
+expect_message "absent mise pin names itself as the cause" "the key is absent"
 
 exit "$fail"

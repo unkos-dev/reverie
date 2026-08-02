@@ -23,7 +23,13 @@ managed_tools=$(
     in_tools && NF > 1 {
       key = $1
       gsub(/[[:space:]"]/, "", key)
-      print key
+      # Strip the backend prefix as the table-block branch above does. An
+      # inline entry can carry one too (`"npm:npm" = "11.18.0"`), and without
+      # this the census emits the literal `npm:npm`, whose derived patterns
+      # can never match the bare tool name a workflow would actually pin.
+      sub(/^[^:]*:/, "", key)
+      count = split(key, parts, "/")
+      print parts[count]
     }
     in_tool_block && $1 ~ /^(bin|filter_bins)$/ {
       value = $2
