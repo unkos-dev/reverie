@@ -22,7 +22,7 @@ zizmor = "1.28.0"
 # devEngines. `npm-pin-drift` holds this in lockstep with package.json.
 # node stays unpinned here because CI single-sources NODE_VERSION and
 # `tool-pin-drift` rejects a workflow pin of any mise-managed tool.
-"npm:npm" = "11.19.0"
+"npm:npm" = "12.0.2"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.
