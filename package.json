@@ -58,8 +58,8 @@
     }
   },
   "allowScripts": {
-    "esbuild@0.28.1": true,
-    "lefthook@2.1.10": true,
-    "puppeteer": false
+    "puppeteer": false,
+    "esbuild": false,
+    "lefthook": false
   }
 }

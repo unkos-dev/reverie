@@ -9,10 +9,11 @@ on:
     branches: [main]
     paths:
       - "docs/**"
-      # docs is an npm workspace; a root manifest/lockfile change must
-      # redeploy too.
+      # docs is an npm workspace; a root manifest, lockfile, or npm
+      # config change must redeploy too.
       - "package.json"
       - "package-lock.json"
+      - ".npmrc"
       - ".github/workflows/docs.yml"
       - ".github/workflows/docs-build.yml"
     tags:
