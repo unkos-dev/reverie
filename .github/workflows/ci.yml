@@ -391,12 +391,12 @@ jobs:
       - name: Doc lint (broken intra-doc links)
         env:
           RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
-        run: mise exec mold -- cargo doc --no-deps --workspace
+        run: mise exec mold -- cargo doc --locked --no-deps --workspace
 
       # Drift guard on the committed .sqlx/ query cache: fails if the cache
       # is stale relative to the query macros + live schema.
       - name: Check sqlx query cache freshness
-        run: mise exec mold -- cargo sqlx prepare --check -- --tests
+        run: mise exec mold -- cargo sqlx prepare --check -- --locked --tests
 
       # nextest does not run doctests. Reverie has none today; this step
       # exists so doctest drift fails CI from day one and is near-instant
@@ -1111,6 +1111,16 @@ jobs:
       # run produces both a log and a gate-status-readable record.
       - name: Detached gate self-test
         run: just infra::gate-detach-selftest
+
+      # Every dependency-resolving cargo invocation across the just recipes,
+      # the git hooks, the workflow files (this one included), and the image
+      # build must pass --locked (the package-ingress ADR's frozen-installs
+      # control); the selftest keeps the guard's matching from drifting.
+      - name: cargo --locked guard
+        run: just infra::cargo-locked-guard
+
+      - name: cargo --locked guard self-test
+        run: just infra::cargo-locked-guard-selftest
 
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate

@@ -499,7 +499,7 @@ db-reset:
 # Apply pending migrations with the dedicated migrator identity.
 [group('db')]
 db-migrate:
-    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run -- migrate
+    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run --locked -- migrate
 
 # Is: a development-loop unblocker for the compile/cache/migration cycle
 # when a branch is authoring a new migration. `db-migrate` compiles the
@@ -543,6 +543,11 @@ db-migrate:
 # rather than lifted into a just variable for the same reason db-migrate
 # inlines it: a just variable would echo an overridden credential into
 # dry-run/verbose recipe output.
+#
+# No --locked here, unlike every resolving cargo invocation in these
+# recipes: `cargo sqlx migrate run` replays SQL files through sqlx-cli and
+# never resolves this workspace's dependencies, so there is nothing for the
+# flag to lock. scripts/cargo-locked-guard.sh exempts it by pattern.
 #
 # Apply pending migrations directly with sqlx-cli, bypassing the backend build.
 [group('db')]
