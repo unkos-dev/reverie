@@ -117,6 +117,17 @@ case "$log_path" in
   *) fail 'the log lands under the same directory the run records use' "log: ${log_path}, run_dir: ${run_dir}" ;;
 esac
 
+# Mode 600, not the ambient umask: the log holds the full lane output the
+# run records deliberately refuse, and the umask-guarded pre-creation in
+# gate-detach.sh is one refactor away from looking redundant next to the
+# redirect. This assertion is what encodes why it exists.
+log_mode="$(stat -c '%a' "$log_path" 2> /dev/null || true)"
+if [ "$log_mode" = "600" ]; then
+  pass 'the primary log is created mode 600'
+else
+  fail 'the primary log is created mode 600' "mode: ${log_mode:-unreadable}"
+fi
+
 if wait_for_status "$state_ok" 100; then
   pass 'gate-status reports the detached run once it finishes'
 else
@@ -180,6 +191,14 @@ else
     *"cannot write "*"gate-status' will not track this run"*) pass 'the fallback warns that gate-status will not track the run' ;;
     *) fail 'the fallback warns that gate-status will not track the run' "output: ${out}" ;;
   esac
+  # The stale-verdict trap this case exists to close: with no marker written,
+  # a gate-status hint here would replay whatever older verdict the state dir
+  # already holds, so the closing line must name the log as the only channel.
+  case "$out" in
+    *"replay the verdict with 'just gate-status'"*) fail 'the fallback does not point at gate-status' "output: ${out}" ;;
+    *"follow the run with 'tail -f "*) pass 'the fallback points at the log, not gate-status' ;;
+    *) fail 'the fallback points at the log, not gate-status' "output: ${out}" ;;
+  esac
   ro_log="$(printf '%s\n' "$out" | sed -n 's/.*log at //p')"
   if [ -z "$ro_log" ]; then
     fail 'the fallback still announces a log path' "output: ${out}"
@@ -189,6 +208,12 @@ else
     fail 'the fallback log still carries the verdict line' "$(cat "$ro_log")"
   else
     pass 'the fallback log still carries the verdict line'
+  fi
+  ro_mode="$(stat -c '%a' "$ro_log" 2> /dev/null || true)"
+  if [ "$ro_mode" = "600" ]; then
+    pass 'the fallback log is created mode 600'
+  else
+    fail 'the fallback log is created mode 600' "mode: ${ro_mode:-unreadable}"
   fi
   rm -f "$ro_log"
 fi

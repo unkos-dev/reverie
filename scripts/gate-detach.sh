@@ -106,4 +106,13 @@ if [ -n "$run_dir" ]; then
 fi
 
 echo "gate-detach: running 'just ${recipe}' detached, log at ${log}"
-echo "gate-detach: replay the verdict with 'just gate-status'"
+# The closing hint must match the channel that actually answers for this
+# run: on the fallback path there is no marker and no record coming, so
+# pointing at gate-status would replay whatever older verdict the unwritable
+# directory already holds, the exact stale green the marker exists to
+# prevent.
+if [ -n "$run_dir" ]; then
+  echo "gate-detach: replay the verdict with 'just gate-status'"
+else
+  echo "gate-detach: follow the run with 'tail -f ${log}'; gate-status will not track it"
+fi
