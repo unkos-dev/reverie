@@ -28,7 +28,7 @@ env:
   # node_modules/.bin/vp every recipe actually runs); Renovate bumps both in
   # the grouped vite-plus PR.
   # renovate: datasource=npm depName=vite-plus
-  VP_VERSION: "0.2.6"
+  VP_VERSION: "0.2.7"
   # Single node pin for CI, replacing the seven hand-copied node-version
   # inputs Renovate never tracked. engines.node and the Dockerfile base image
   # stay separately Renovate-managed.
