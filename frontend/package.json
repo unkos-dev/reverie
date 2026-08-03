@@ -60,8 +60,8 @@
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~7.0.0",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-    "vite-plus": "0.2.6",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.7",
+    "vite-plus": "0.2.7",
     "vitest": "4.1.10"
   }
 }
