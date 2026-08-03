@@ -197,6 +197,11 @@ doctor-selftest:
 db-ready-selftest:
     scripts/db-ready-selftest.sh
 
+# Self-test the shared tmpfs/ramfs filesystem guard `just worktree` and `just doctor` both call.
+[group('infra')]
+require-disk-backed-selftest:
+    scripts/require-disk-backed-selftest.sh
+
 # Self-test the worktree recipe's Cargo isolation and operator-owned overlays.
 [group('infra')]
 worktree-selftest:
@@ -212,10 +217,15 @@ worktree-base-selftest:
 preflight-scope-selftest:
     scripts/preflight-scope-selftest.sh
 
-# Self-test the gate runner's verdict line, run record, and status reporting.
+# Self-test the gate runner's verdict line, run record, status reporting, and resource-scoping wrap.
 [group('infra')]
 gate-run-selftest:
     scripts/gate-run-selftest.sh
+
+# Self-test the detached-gate script `just preflight-detach` wraps: a passing and a failing run each need a log and a gate-status-readable record.
+[group('infra')]
+gate-detach-selftest:
+    scripts/gate-detach-selftest.sh
 
 # lefthook is a node-local devDep, not on PATH, so it runs via npx. Validation
 # is cheap and offline, so it joins the lint aggregate.
@@ -249,7 +259,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

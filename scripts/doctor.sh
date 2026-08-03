@@ -53,6 +53,31 @@ else
   fail "mise-pinned tools are installed" "install mise, then run 'mise install'"
 fi
 
+# 2b. npm resolved on PATH matches the devEngines.packageManager pin in
+# package.json. devEngines is what npm itself enforces: every direct npm
+# invocation compares the running binary's version against it and hard-fails
+# with EBADDEVENGINES on a mismatch, and lefthook's git hooks invoke bare
+# npx/npm from the caller's PATH, so this breaks every commit, not just an
+# explicit `npm install`. scripts/npm-pin-drift.sh checks the declared pin
+# agrees with mise.toml; this checks the binary actually resolved on PATH
+# agrees with the declared pin, which mise alone cannot guarantee once a
+# stale npm sits ahead of mise's shims.
+declared_npm="$(jq -r '.devEngines.packageManager.version // ""' package.json 2>/dev/null || true)"
+if command -v npm > /dev/null 2>&1; then
+  resolved_npm="$(npm --version 2>/dev/null || true)"
+  if [ -z "${resolved_npm}" ]; then
+    fail "npm on PATH reports a version" "run 'npm --version' manually and investigate"
+  elif [ -z "${declared_npm}" ]; then
+    fail "package.json declares devEngines.packageManager.version" "restore the npm pin in package.json devEngines"
+  elif [ "${resolved_npm}" != "${declared_npm}" ]; then
+    fail "npm on PATH (${resolved_npm}) matches the devEngines.packageManager pin (${declared_npm})" "run 'mise install', and confirm mise's shims precede any other npm on PATH"
+  else
+    pass "npm on PATH matches the devEngines.packageManager pin (${resolved_npm})"
+  fi
+else
+  fail "npm on PATH matches the devEngines.packageManager pin" "run 'mise install', and confirm mise's shims precede any other npm on PATH"
+fi
+
 # 3. Docker daemon reachable.
 docker_up=0
 if command -v docker >/dev/null 2>&1 && docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; then
@@ -253,14 +278,46 @@ git worktree list | while IFS= read -r line; do
   info "  ${line}"
 done
 
-# 11. Disk space on the filesystem holding the repo.
+# 11. Disk space on the filesystem holding the repo. tmpfs-aware: a low
+# reading on a RAM-backed filesystem means building there spends memory, not
+# disk, so the warning says that explicitly and points at a disk-backed
+# alternative rather than reading like an ordinary low-disk warning. Reuses
+# scripts/require-disk-backed.sh's own `stat -f -c %T` detection (its
+# --fstype mode) rather than a second copy of that invocation.
+#
+# DOCTOR_STUB_DISK_AVAIL_BYTES and DOCTOR_STUB_DISK_FSTYPE exist only for
+# doctor-selftest.sh: free disk space and filesystem type are host facts a
+# fixture cannot control, so the selftest overrides both to reach every
+# branch deterministically instead of depending on where CI or a developer's
+# machine happens to run it.
 five_gib=$((5 * 1024 * 1024 * 1024))
-if avail_bytes="$(df -B1 --output=avail "${repo_root}" 2>/dev/null | tail -n 1 | tr -d ' ')" && [ -n "${avail_bytes}" ]; then
+if [ -n "${DOCTOR_STUB_DISK_AVAIL_BYTES:-}" ]; then
+  avail_bytes="${DOCTOR_STUB_DISK_AVAIL_BYTES}"
+  disk_probe_ok=1
+elif avail_bytes="$(df -B1 --output=avail "${repo_root}" 2>/dev/null | tail -n 1 | tr -d ' ')" && [ -n "${avail_bytes}" ]; then
+  disk_probe_ok=1
+else
+  disk_probe_ok=0
+fi
+
+if [ "${disk_probe_ok}" -eq 1 ]; then
   avail_gib=$((avail_bytes / 1024 / 1024 / 1024))
   if [ "${avail_bytes}" -ge "${five_gib}" ]; then
     pass "disk space: ${avail_gib} GiB free"
   else
-    warn "disk space: only ${avail_gib} GiB free" "free up space on the filesystem holding ${repo_root}"
+    if [ -n "${DOCTOR_STUB_DISK_FSTYPE+set}" ]; then
+      fstype="${DOCTOR_STUB_DISK_FSTYPE}"
+    else
+      fstype="$("${repo_root}/scripts/require-disk-backed.sh" --fstype "${repo_root}" 2>/dev/null || true)"
+    fi
+    case "${fstype}" in
+      tmpfs | ramfs)
+        warn "disk space: only ${avail_gib} GiB free on ${fstype} (RAM-backed)" "building here spends memory, not disk; use a disk-backed path (see 'just worktree', WORKTREE_ROOT)"
+        ;;
+      *)
+        warn "disk space: only ${avail_gib} GiB free" "free up space on the filesystem holding ${repo_root}"
+        ;;
+    esac
   fi
 else
   warn "disk space check" "cannot determine free space (non-GNU df); check manually"

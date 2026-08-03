@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Self-test scripts/gate-detach.sh: the mechanics behind `just preflight-detach`.
+# Exercises the real script against a fixture justfile that wraps
+# scripts/gate-run.sh, so the assertions cover the actual detach-and-log path
+# without paying for a real preflight lane.
+set -ueo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
+
+failures=0
+pass() { printf 'ok   %s\n' "$1"; }
+fail() {
+  printf 'FAIL %s\n  %s\n' "$1" "$2"
+  failures=$((failures + 1))
+}
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+fixture="${tmpdir}/fixture"
+mkdir -p "${fixture}/scripts"
+cp "${repo_root}/scripts/gate-run.sh" "${fixture}/scripts/gate-run.sh"
+cp "${repo_root}/scripts/gate-detach.sh" "${fixture}/scripts/gate-detach.sh"
+
+# A real, isolated git repo: gate-run.sh's own commit/dirty bookkeeping
+# should not leak the actual checkout's state into this fixture's records.
+git -C "$fixture" init -q -b main
+git -C "$fixture" config user.name "Gate Detach Selftest"
+git -C "$fixture" config user.email "selftest@example.invalid"
+git -C "$fixture" config commit.gpgsign false
+
+cat > "${fixture}/justfile" << 'EOF'
+set shell := ["bash", "-ueo", "pipefail", "-c"]
+
+fixture-gate:
+    scripts/gate-run.sh demo ok
+
+ok:
+    echo "lane ok ran"
+
+boom:
+    echo "lane boom ran"; exit 3
+
+fixture-gate-fail:
+    scripts/gate-run.sh demo boom
+EOF
+git -C "$fixture" add justfile scripts
+git -C "$fixture" commit -qm fixture
+
+state="${tmpdir}/state"
+
+# Poll for the detached job to finish rather than sleeping a fixed amount:
+# the lane is a trivial echo, so this normally resolves in well under a
+# second, but a slow or loaded CI runner must not turn that into a flake.
+wait_for_status() { # <state_home> <timeout_tenths_of_a_second>
+  local state_home="$1" timeout="$2" waited=0 rc
+  while [ "$waited" -lt "$timeout" ]; do
+    rc=0
+    XDG_STATE_HOME="$state_home" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' --status" > /dev/null 2>&1 || rc=$?
+    # A recorded failure is also "finished"; only "no record yet" (exit 4)
+    # or "still in progress" (exit 3) should keep polling.
+    if [ "$rc" -ne 3 ] && [ "$rc" -ne 4 ]; then
+      return 0
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# --- a detached run produces a log and a gate-status-readable record --------
+
+state_ok="${state}/ok"
+out="$(XDG_STATE_HOME="$state_ok" bash -c "cd '$fixture' && '${fixture}/scripts/gate-detach.sh' fixture-gate" 2>&1)"
+
+case "$out" in
+  *"gate-detach: running 'just fixture-gate' detached, log at "*) pass 'the immediate announcement names the recipe and the log path' ;;
+  *) fail 'the immediate announcement names the recipe and the log path' "output: ${out}" ;;
+esac
+case "$out" in
+  *"gate-detach: replay the verdict with 'just gate-status'"*) pass 'the announcement reminds the caller to replay with gate-status' ;;
+  *) fail 'the announcement reminds the caller to replay with gate-status' "output: ${out}" ;;
+esac
+
+log_path="$(printf '%s\n' "$out" | sed -n 's/.*log at //p')"
+if [ -z "$log_path" ]; then
+  fail 'a log path was printed' "output: ${out}"
+  printf '\ncannot continue without a log path\n' >&2
+  exit 1
+fi
+
+run_dir="$(XDG_STATE_HOME="$state_ok" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' --run-dir")"
+case "$log_path" in
+  "${run_dir}"/*) pass 'the log lands under the same directory the run records use' ;;
+  *) fail 'the log lands under the same directory the run records use' "log: ${log_path}, run_dir: ${run_dir}" ;;
+esac
+
+if wait_for_status "$state_ok" 100; then
+  pass 'gate-status reports the detached run once it finishes'
+else
+  fail 'gate-status reports the detached run once it finishes' 'timed out waiting for a finished record'
+fi
+
+if [ ! -s "$log_path" ]; then
+  fail 'the log file is non-empty' "no such file, or empty: ${log_path}"
+elif ! grep -qF 'GATE: PASS demo' "$log_path"; then
+  fail 'the log carries the real verdict line' "$(cat "$log_path")"
+else
+  pass 'the log carries the real verdict line'
+fi
+
+rc=0
+XDG_STATE_HOME="$state_ok" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' --status" > /dev/null 2>&1 || rc=$?
+if [ "$rc" -ne 0 ]; then
+  fail 'gate-status exits 0 for the passing detached run' "exited ${rc}"
+else
+  pass 'gate-status exits 0 for the passing detached run'
+fi
+
+# --- a failing detached run is still readable back as a failure -------------
+
+state_fail="${state}/fail"
+XDG_STATE_HOME="$state_fail" bash -c "cd '$fixture' && '${fixture}/scripts/gate-detach.sh' fixture-gate-fail" > /dev/null
+
+if ! wait_for_status "$state_fail" 100; then
+  fail 'a failing detached run is read back as a failure' 'timed out waiting for a finished record'
+else
+  rc=0
+  XDG_STATE_HOME="$state_fail" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' --status" > /dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    pass 'a failing detached run is read back as a failure'
+  else
+    fail 'a failing detached run is read back as a failure' "exit ${rc}, expected 1"
+  fi
+fi
+
+# --- the justfile recipe delegates to this script, not a re-inlined pipeline
+
+# Guards against the mechanics drifting back into the recipe body, which
+# would leave this whole file testing a script the recipe no longer calls.
+# shellcheck disable=SC2016  # the pattern is recipe text; $ must stay literal
+if grep -q 'exec scripts/gate-detach.sh "\$target" "\$@"' "${repo_root}/justfile"; then
+  pass 'preflight-detach delegates to scripts/gate-detach.sh'
+else
+  fail 'preflight-detach delegates to scripts/gate-detach.sh' 'the justfile recipe no longer calls the script this file tests'
+fi
+
+if [ "$failures" -ne 0 ]; then
+  printf '\n%d gate-detach assertion(s) failed\n' "$failures" >&2
+  exit 1
+fi
+echo 'OK: gate-detach produces a log and a gate-status-readable record, for both a passing and a failing run'

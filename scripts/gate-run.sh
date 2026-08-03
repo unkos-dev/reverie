@@ -22,12 +22,20 @@
 #
 # Usage: gate-run.sh <label> [lane...]   # run the lanes, print the verdict
 #        gate-run.sh --status            # report the last recorded run
+#        gate-run.sh --run-dir           # print the per-checkout record dir
 #
 # --status exit codes, one per outcome a caller must not confuse: 0 the last
 # run passed, 1 it failed, 2 it died unfinished, 3 it is still in progress,
 # 4 there is no recorded run at all. The record is still the secondary channel:
 # a run whose record location was unwritable leaves nothing here, so the
 # `GATE:` line in the captured output remains the authority.
+#
+# Resource bound: when a systemd user manager is reachable and this is not
+# CI, a lane run (never --status or --run-dir, and never a bare query) wraps
+# itself once, whole-run rather than per-lane, in a `systemd-run --user
+# --scope` under agents.slice, so a runaway lane cannot exhaust the host
+# outside its own cgroup budget. See the check further down for the exact
+# conditions and why CI cannot be affected by it.
 set -ueo pipefail
 
 # Runs older than this, or beyond this many newer runs, are pruned at startup.
@@ -81,6 +89,34 @@ list_runs() {
 current_head() {
   git -C "$checkout" rev-parse HEAD 2> /dev/null || true
 }
+
+# Bound resource usage: wrap the whole run in one transient scope rather than
+# trusting every lane's own tooling to behave, so a runaway lane cannot
+# exhaust the host outside its own cgroup budget. Excluded from the wrap:
+# --status and --run-dir (pure queries, nothing to bound), and any run
+# already inside one (GATE_RUN_SCOPED, set just before the exec below, guards
+# against wrapping the re-invocation a second time once it lands back here as
+# the scope's own command).
+#
+# CI must see zero behavioural change, so the CI environment variable
+# disables the wrap outright rather than trusting `systemctl` to also come
+# back unreachable on every CI runner; GitHub Actions exports CI=true on
+# every job. Off CI, `systemctl --user show-environment` is the direct
+# reachability probe: no session, no bus, or no systemd at all fail it the
+# same way, and the run proceeds exactly as it did before this existed.
+if [ "${1:-}" != '--status' ] && [ "${1:-}" != '--run-dir' ] \
+  && [ -z "${GATE_RUN_SCOPED:-}" ] && [ -z "${CI:-}" ] \
+  && command -v systemd-run > /dev/null 2>&1 \
+  && systemctl --user show-environment > /dev/null 2>&1; then
+  export GATE_RUN_SCOPED=1
+  exec systemd-run --user --scope --slice=agents.slice --quiet --collect -- "$0" "$@"
+fi
+
+if [ "${1:-}" = '--run-dir' ]; then
+  [ "$#" -eq 1 ] || die 'usage: gate-run.sh --run-dir'
+  printf '%s\n' "$run_dir"
+  exit 0
+fi
 
 if [ "${1:-}" = '--status' ]; then
   [ "$#" -eq 1 ] || die 'usage: gate-run.sh --status'

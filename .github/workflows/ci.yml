@@ -1088,6 +1088,12 @@ jobs:
       - name: Doctor environment check self-test
         run: just infra::doctor-selftest
 
+      # Self-tests the shared tmpfs/ramfs guard `just worktree` and `just
+      # doctor` both call into, against a real tmpfs specimen (/dev/shm or
+      # /tmp) and a disk-backed path.
+      - name: Disk-backed filesystem guard self-test
+        run: just infra::require-disk-backed-selftest
+
       # Exercises `just worktree` end to end (git worktree add/remove
       # included), covering Cargo isolation plus ignored Claude and Codex
       # overlays that the generated-reference drift check never executes.
@@ -1100,6 +1106,11 @@ jobs:
       # is exercised against a fixture justfile here rather than trusted.
       - name: Gate runner verdict self-test
         run: just infra::gate-run-selftest
+
+      # `just preflight-detach` wraps this script; self-tests that a detached
+      # run produces both a log and a gate-status-readable record.
+      - name: Detached gate self-test
+        run: just infra::gate-detach-selftest
 
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate
