@@ -68,6 +68,8 @@ log path to replay afterward.
 | `just infra::actionlint`                         | Lint GitHub Actions workflow files.                                                                                                              |
 | `just infra::adr-frontmatter-selftest`           | Validate canonical ADR frontmatter and lifecycle index coverage.                                                                                 |
 | `just infra::backend-dev-env-selftest`           | Assert the backend dev recipes defer to `.env` instead of overriding it.                                                                         |
+| `just infra::cargo-locked-guard`                 | Every dependency-resolving cargo invocation in the just recipes must pass --locked; the package-ingress ADR records why.                         |
+| `just infra::cargo-locked-guard-selftest`        | Self-test scripts/cargo-locked-guard.sh against clean and violating fixtures, then the real recipes.                                             |
 | `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.                                                               |
 | `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.                                                                       |
 | `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                                                                              |
@@ -78,7 +80,7 @@ log path to replay afterward.
 | `just infra::filter-sarif-test-rules-selftest`   | ordinary rule reported in a test file still reaches the dashboard.                                                                               |
 | `just infra::filter-sarif-unfixable-os-selftest` | a fix available is never withheld.                                                                                                               |
 | `just infra::gate-detach-selftest`               | Self-test the detached-gate script `just preflight-detach` wraps: a passing and a failing run each need a log and a gate-status-readable record. |
-| `just infra::gate-run-selftest`                  | Self-test the gate runner's verdict line, run record, status reporting, and resource-scoping wrap.                                               |
+| `just infra::gate-run-selftest`                  | Self-test the gate runner's verdict line, run record, status reporting, and record pruning.                                                      |
 | `just infra::greptile-config`                    | Validate greptile.json parses and every pinned context path resolves.                                                                            |
 | `just infra::hadolint`                           | Hadolint every tracked Dockerfile.                                                                                                               |
 | `just infra::just-reference`                     | Regenerate the just recipe reference from the justfiles. WRITES.                                                                                 |

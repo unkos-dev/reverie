@@ -109,12 +109,13 @@ invokes. All three are denied by name.
   lockfile alone, and every install it runs passes `--ignore-scripts`.
 - Neutral, because cargo has no install-script equivalent, so control 3 reads
   as npm-specific while the other four span both stacks.
-- Neutral, because control 2 is not yet uniform: the CI steps that
+- Neutral, because control 2 keeps one named gap: the CI steps that
   `cargo install sqlx-cli` resolve that tool's own dependencies fresh instead
-  of from its lockfile, and `--locked` reaches only the build, test, and
-  regen recipes. Coverage, doctests, doc-lint, `sqlx prepare`, the migration
-  runners, and the dev server all omit it. Each gap is narrower than the npm
-  path, which no longer has a resolving install anywhere.
+  of from its lockfile. Every resolving cargo invocation in the just recipes
+  passes `--locked`, and `scripts/cargo-locked-guard.sh` fails the lint gate
+  when a new one arrives without it; `cargo sqlx migrate run` carries no
+  flag because it resolves nothing. The remaining gap is narrower than the
+  npm path, which no longer has a resolving install anywhere.
 
 ### Confirmation
 

@@ -1112,6 +1112,15 @@ jobs:
       - name: Detached gate self-test
         run: just infra::gate-detach-selftest
 
+      # Every dependency-resolving cargo invocation in the just recipes must
+      # pass --locked (the package-ingress ADR's frozen-installs control);
+      # the selftest keeps the guard's own matching from drifting silently.
+      - name: Locked cargo invocations guard
+        run: just infra::cargo-locked-guard
+
+      - name: Locked cargo invocations guard self-test
+        run: just infra::cargo-locked-guard-selftest
+
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate
 

@@ -48,7 +48,7 @@ clippy:
 # Reject broken intra-doc links in the public docstrings.
 [group('rust')]
 doc-lint:
-    SQLX_OFFLINE=true RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --no-deps --workspace
+    SQLX_OFFLINE=true RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --locked --no-deps --workspace
 
 # Offline (no database), so it runs locally; this is the backend pre-push gate.
 #
@@ -70,12 +70,12 @@ test *args:
 # DB: full test suite under coverage instrumentation.
 [group('rust')]
 cov:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo llvm-cov nextest --workspace --locked --lcov --output-path lcov.info
 
 # DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo test --doc --workspace
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo test --locked --doc --workspace
 
 # This is the one recipe that dirties the shared target dir, and it is
 # unavoidable: `sqlx prepare` deliberately bumps the mtimes of the crate's
@@ -91,7 +91,7 @@ doctests:
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare --check -- --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare --check -- --locked --tests
 
 # WRITES backend/.sqlx; commit the result in the same change as the queries
 # that produced it. `sqlx-check` is the read-only gate form.
@@ -99,7 +99,7 @@ sqlx-check:
 # DB: regenerate the sqlx offline query cache from the live schema.
 [group('rust')]
 sqlx-prepare:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
 
 # WRITES docs/openapi.json plus the generated config reference and schema;
 # commit the result in the same change that moved the API or config surface.
@@ -162,7 +162,7 @@ dev:
     #!/usr/bin/env bash
     set -ueo pipefail
     source ../scripts/backend-dev-env.sh
-    exec cargo run
+    exec cargo run --locked
 
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
 # the ownership and race checks (see scripts/dev-server.sh); this sets the
@@ -181,7 +181,7 @@ _dev-lifecycle action:
     source ../scripts/backend-dev-env.sh
     DEV_SERVER_DIR=. \
     DEV_SERVER_PORT="$REVERIE_PORT" \
-    DEV_SERVER_CMD="cargo run" \
+    DEV_SERVER_CMD="cargo run --locked" \
     DEV_SERVER_LEADER_PATTERN='(^|/)(cargo|reverie-api)$' \
     DEV_SERVER_START_TICKS=600 \
     DEV_SERVER_STOP_HINT="just rust::dev-stop" \
