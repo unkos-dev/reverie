@@ -57,7 +57,7 @@ RUN cargo auditable build --release
 # requires a .git directory the build context deliberately excludes; the
 # frontend build tools ship platform binaries as scriptless optional deps,
 # so nothing in the install relies on lifecycle scripts.
-FROM node:24.18.0-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS frontend-builder
+FROM node:24.18.1-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS frontend-builder
 # vp's native binary initializes an HTTPS client at startup and aborts when
 # the system has no CA store; the slim base ships none.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
@@ -109,7 +109,12 @@ FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7
 # flipping traffic.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-RUN useradd -r -s /bin/false reverie
+# Fixed numeric id rather than letting `useradd -r` pick one: the allocation
+# is whatever the base image happens to have free, so it can move under the
+# running container between base-image rebuilds, and an orchestrator that
+# must prove the process is non-root before admitting it cannot resolve a
+# name at all. No volume is mounted as this user, so the id is free to pin.
+RUN useradd -r -u 10001 -s /bin/false reverie
 
 COPY --from=backend-builder /build/target/release/reverie-api /usr/local/bin/reverie-api
 COPY --from=frontend-builder /build/frontend/dist /srv/frontend
@@ -126,7 +131,7 @@ COPY --from=frontend-sbom /build/frontend.cdx.json /usr/share/reverie/sbom/front
 # if the dir or its csp-hashes.json sidecar is missing.
 ENV REVERIE_FRONTEND_DIST_PATH=/srv/frontend
 
-USER reverie
+USER 10001
 EXPOSE 3000
 
 # UNK-165: probe the readiness endpoint (DB-dependent) so the container is
@@ -134,7 +139,10 @@ EXPOSE 3000
 # live. The default entrypoint verifies the schema (it does not migrate); run
 # `reverie migrate` first, or set REVERIE_AUTO_MIGRATE=true (then the
 # start-period must also cover the in-process migration on first boot).
+# Exec form: the probe needs no shell feature, so the shell form would only
+# add a `/bin/sh -c` process between the runtime and curl on every interval.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl --fail --silent --show-error --output /dev/null http://127.0.0.1:3000/health/ready
+    CMD ["curl", "--fail", "--silent", "--show-error", \
+         "--output", "/dev/null", "http://127.0.0.1:3000/health/ready"]
 
 ENTRYPOINT ["reverie-api"]

@@ -1,7 +1,7 @@
 [tools]
 actionlint = "1.7.12"
 gitleaks = "8.30.1"
-hadolint = "2.14.0"
+hadolint = "2.15.0"
 just = "1.57.0"
 # Linker for the Rust build, routed in via `-C link-arg=-fuse-ld=mold`. Pinned
 # here rather than installed with apt so CI resolves it through the same
@@ -22,7 +22,7 @@ zizmor = "1.28.0"
 # devEngines. `npm-pin-drift` holds this in lockstep with package.json.
 # node stays unpinned here because CI single-sources NODE_VERSION and
 # `tool-pin-drift` rejects a workflow pin of any mise-managed tool.
-"npm:npm" = "11.19.0"
+"npm:npm" = "12.0.2"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.
