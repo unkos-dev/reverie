@@ -111,9 +111,10 @@ invokes. All three are denied by name.
   as npm-specific while the other four span both stacks.
 - Neutral, because control 2 is not yet uniform: the CI steps that
   `cargo install sqlx-cli` resolve that tool's own dependencies fresh instead
-  of from its lockfile, and the coverage and doctest recipes omit `--locked`.
-  Both are narrower than the npm path, which no longer has a resolving install
-  anywhere, and both are named here so the gap is a known one.
+  of from its lockfile, and `--locked` reaches only the build, test, and
+  regen recipes. Coverage, doctests, doc-lint, `sqlx prepare`, the migration
+  runners, and the dev server all omit it. Each gap is narrower than the npm
+  path, which no longer has a resolving install anywhere.
 
 ### Confirmation
 
