@@ -30,17 +30,25 @@ build:
     cargo llvm-cov nextest --workspace --locked
     cargo build --workspace --locked # a trailing comment on a locked line
     echo done # prose mentioning cargo build in a trailing comment only
+    echo prose about cargo build inside a message segment only
+    echo starting && cargo build --locked --workspace
+    cargo +stable build --locked --workspace
+    HOST=${DATABASE_URL#postgres://} cargo build --locked --workspace
     cargo fmt --all
     cargo machete
     cargo deny check
     cargo sqlx migrate run
+    cargo chef prepare --recipe-path recipe.json
+    cargo chef cook --release --locked --recipe-path recipe.json
     mise exec mold -- cargo install sqlx-cli --version 1.2.3
 EOF
 
-# One unlocked line per resolving subcommand the repo uses, plus the two
-# bypass shapes: an unknown subcommand (must fail loudly, not pass as
-# unrecognised) and a trailing comment on an unlocked line (must not exempt
-# the code before it).
+# One unlocked line per resolving subcommand the repo uses, plus every known
+# bypass shape: an unknown subcommand (must fail loudly, not pass as
+# unrecognised), a trailing comment on an unlocked line, an echo segment
+# followed by a real invocation, a parameter expansion whose # is not a
+# comment, a compound line where only the second invocation is locked, and a
+# toolchain prefix.
 bad="${tmpdir}/bad.just"
 cat > "$bad" << 'EOF'
 build:
@@ -56,8 +64,12 @@ build:
     cargo bench --workspace
     cargo install left-pad
     cargo build --workspace # TODO: lock this later
+    echo starting && cargo build --workspace
+    HOST=${DATABASE_URL#postgres://} cargo build --workspace
+    cargo build --workspace && cargo doc --locked --no-deps
+    cargo +nightly build --workspace
 EOF
-expected_violations=12
+expected_violations=16
 
 rc=0
 "$guard" "$good" > /dev/null 2>&1 || rc=$?

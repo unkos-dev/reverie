@@ -113,10 +113,10 @@ invokes. All three are denied by name.
   `cargo install sqlx-cli` resolve that tool's own dependencies fresh instead
   of from its lockfile, with the version pin held in lockstep with the sqlx
   crate by its own CI check. Every other resolving cargo invocation across
-  the just recipes, the git hooks, and the workflow files passes `--locked`,
-  and `scripts/cargo-locked-guard.sh` fails the lint gate when one arrives
-  without it, treating unknown cargo subcommands as resolving until ruled
-  otherwise. The remaining gap is narrower than the npm path, which no
+  the just recipes, the git hooks, the workflow files, and the image build
+  passes `--locked`, and `scripts/cargo-locked-guard.sh` fails the lint gate
+  when one arrives without it, treating unknown cargo subcommands as
+  resolving until ruled otherwise. The remaining gap is narrower than the npm path, which no
   longer has a resolving install anywhere.
 
 ### Confirmation
@@ -127,7 +127,8 @@ dependencies carry an install script not covered by `allowScripts`. Every
 itself; a pinned entry naming a transitive package is the defect this record
 exists to prevent. On the cargo side, `scripts/cargo-locked-guard.sh` fails
 the lint gate for any resolving invocation without `--locked` across the
-recipes, hooks, and workflows, treating unknown subcommands as resolving.
+recipes, hooks, workflows, and image build, treating unknown subcommands as
+resolving.
 
 ## More Information
 

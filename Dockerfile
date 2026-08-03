@@ -29,7 +29,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 # This layer is the cache target — warm hits skip ~3min of dep compilation.
 FROM chef AS cooker
 COPY --from=planner /build/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
 
 # Stage 1d: backend-builder — real build atop warm dep layer.
 # SQLX_OFFLINE forces sqlx::query! macros to validate against the committed
@@ -41,7 +41,7 @@ ENV SQLX_OFFLINE=true
 # `auditable build` is the plain build plus a dependency manifest linked
 # into the binary; only the final link needs it, so the cooked dep layer
 # above is unaffected and stays cache-valid.
-RUN cargo auditable build --release
+RUN cargo auditable build --release --locked
 
 # Stage 2: Build frontend with buildkit npm cache mount.
 # The mount avoids re-fetching tarballs when the npm-ci layer cache is invalidated

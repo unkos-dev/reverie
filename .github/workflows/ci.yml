@@ -1112,9 +1112,10 @@ jobs:
       - name: Detached gate self-test
         run: just infra::gate-detach-selftest
 
-      # Every dependency-resolving cargo invocation in the just recipes must
-      # pass --locked (the package-ingress ADR's frozen-installs control);
-      # the selftest keeps the guard's own matching from drifting silently.
+      # Every dependency-resolving cargo invocation across the just recipes,
+      # the git hooks, the workflow files (this one included), and the image
+      # build must pass --locked (the package-ingress ADR's frozen-installs
+      # control); the selftest keeps the guard's matching from drifting.
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard
 
