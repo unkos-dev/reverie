@@ -112,26 +112,32 @@ Two aggregates anchor the local loop and should be the default reflex:
   names the exact fixing command. Run it first whenever the environment
   might have changed or a failure looks environmental rather than caused by
   the change.
-- `just preflight` runs everything the CI gate runs that is locally
-  runnable, including the DB-backed backend test suite, the sqlx cache
-  check, the backend static guards, cargo-machete, cargo-deny, the frontend
-  build, the a11y scan, and the zizmor workflow-security audit (online
-  audits included when a GitHub token is in the environment, offline-
-  degraded otherwise). It brings the dev database up itself. Run it before
-  any push; a green preflight covers every locally runnable CI check,
-  leaving only the CI-only lanes (MSRV, coverage, the docker image build,
-  and the IaC, SAST, and secret scans) to the remote run. `just check`
-  remains the fast offline subset for mid-task iteration; it includes
-  zizmor's offline-only audits but not the token-gated ones.
-- `just preflight-scoped` runs the same gate minus the lanes CI itself would
-  skip, deciding from `.github/path-filters.yml` (the file CI's `changes` job
-  feeds to dorny/paths-filter, so the two cannot drift). A docs-only or
+- `just preflight` runs only the preflight lanes this branch's changed paths
+  require, deciding from `.github/path-filters.yml` (the file CI's `changes`
+  job feeds to dorny/paths-filter, so the two cannot drift). A docs-only or
   frontend-only branch skips the database, the Rust rebuild, and the
   dependency audit. Changes to the verification machinery itself (the
   justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full
-  lane set, and the whole-tree repo-lint mirror always runs. Prefer it
-  mid-branch; `just preflight` is still the unconditional answer and the one
-  to run when the change is broad or you are unsure.
+  lane set, and the whole-tree repo-lint mirror always runs. This is the
+  default gate and the mid-branch reflex.
+- `just preflight-full` runs everything the CI gate runs that is locally
+  runnable, unconditionally: the DB-backed backend test suite, the sqlx
+  cache check, the backend static guards, cargo-machete, cargo-deny, the
+  frontend build, the a11y scan, and the zizmor workflow-security audit
+  (online audits included when a GitHub token is in the environment,
+  offline-degraded otherwise). It brings the dev database up itself. Run it
+  before any push (unless a scoped run already escalated to it), when the
+  change is broad, or when you are unsure; a green run covers every locally
+  runnable CI check, leaving only the CI-only lanes (MSRV, coverage, the
+  docker image build, and the IaC, SAST, and secret scans) to the remote
+  run. `just check` remains the fast offline subset for mid-task iteration;
+  it includes zizmor's offline-only audits but not the token-gated ones.
+- `just preflight-detach [scoped|full]` runs either gate detached from the
+  terminal (setsid), so a long run survives a session or turn boundary
+  without a hand-rolled setsid-plus-log-file pipeline. It prints the log
+  path immediately and returns; the log lands under the same
+  `$XDG_STATE_HOME/reverie/gate/` area the lane records use, and `just
+gate-status` replays the verdict once the run finishes.
 
 Both gates end with a single verdict line, `GATE: PASS <label> (...)` or
 `GATE: FAIL <label> at <lane> (...)`. Read that line, not the tail of the last

@@ -22,6 +22,7 @@
 #
 # Usage: gate-run.sh <label> [lane...]   # run the lanes, print the verdict
 #        gate-run.sh --status            # report the last recorded run
+#        gate-run.sh --run-dir           # print the per-checkout record dir
 #
 # --status exit codes, one per outcome a caller must not confuse: 0 the last
 # run passed, 1 it failed, 2 it died unfinished, 3 it is still in progress,
@@ -82,6 +83,12 @@ current_head() {
   git -C "$checkout" rev-parse HEAD 2> /dev/null || true
 }
 
+if [ "${1:-}" = '--run-dir' ]; then
+  [ "$#" -eq 1 ] || die 'usage: gate-run.sh --run-dir'
+  printf '%s\n' "$run_dir"
+  exit 0
+fi
+
 if [ "${1:-}" = '--status' ]; then
   [ "$#" -eq 1 ] || die 'usage: gate-run.sh --status'
   latest="$(list_runs | head -1)"
@@ -125,7 +132,10 @@ if [ "${1:-}" = '--status' ]; then
   # connection, a reboot) or is still going. Reporting either as a pass would
   # be the same false green this script exists to prevent, so each gets a
   # nonzero status of its own, decided by whether the recorded runner pid is
-  # alive. kill -0 answers liveness, not identity: a pid recycled since the
+  # alive. scripts/gate-detach.sh leans on exactly these semantics: it records
+  # a verdict-less marker carrying the detached child's pid at the moment of
+  # detach, so a run that dies before this script ever starts reads as "never
+  # finished" here instead of leaving an older verdict as the newest record. kill -0 answers liveness, not identity: a pid recycled since the
   # run can make a dead run read as live, which is accepted for the newest
   # same-user record over anything unportable like procfs. The lane in
   # question is the one after the last that finished, which the plan recorded
@@ -183,7 +193,10 @@ run_log="${run_dir}/${run_id}.jsonl"
 if mkdir -p "$run_dir" 2> /dev/null && : >> "$run_log" 2> /dev/null; then
   # Pruning is deliberately non-fatal: an unpruned directory is cosmetic, and
   # nothing about housekeeping should be able to stop a gate from running.
-  find "$run_dir" -maxdepth 1 -type f -name '*.jsonl' -mtime "+${MAX_AGE_DAYS}" -delete 2> /dev/null || true
+  # Detached logs (scripts/gate-detach.sh) share this directory and hold full
+  # lane output, so leaving them out of the age prune would grow the
+  # directory by a build log per detached run, without bound.
+  find "$run_dir" -maxdepth 1 -type f \( -name '*.jsonl' -o -name 'detached-*.log' \) -mtime "+${MAX_AGE_DAYS}" -delete 2> /dev/null || true
   kept=0
   while IFS= read -r stale; do
     kept=$((kept + 1))

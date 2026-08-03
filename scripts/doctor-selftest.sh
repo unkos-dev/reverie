@@ -7,6 +7,14 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 doctor="${repo_root}/scripts/doctor.sh"
 
+# $TMPDIR (mktemp's default): every host fact the placement used to carry is
+# stubbed instead. Free space and filesystem type both come from the
+# DOCTOR_STUB_DISK_* seams in the sections below, and the one assertion that
+# runs the real fstype detector asserts against the type the fixture
+# actually sits on rather than assuming a disk-backed one. The previous
+# placement, a sibling of the checkout, was itself a host coupling: it
+# required a writable checkout parent, which a sandboxed run of the main
+# checkout does not have.
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
@@ -14,6 +22,24 @@ fixture="${tmp}/fixture"
 mkdir -p "${fixture}/scripts" "${fixture}/backend/.sqlx"
 cp "${doctor}" "${fixture}/scripts/doctor.sh"
 chmod +x "${fixture}/scripts/doctor.sh"
+cp "${repo_root}/scripts/require-disk-backed.sh" "${fixture}/scripts/require-disk-backed.sh"
+chmod +x "${fixture}/scripts/require-disk-backed.sh"
+
+# devEngines.packageManager pin the npm-drift check (2b) compares the
+# PATH-resolved npm against. The version is arbitrary; only agreement with
+# the npm stub's reported version (below) matters.
+fixture_npm_version="11.18.0"
+cat > "${fixture}/package.json" << EOF
+{
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "onFail": "download",
+      "version": "${fixture_npm_version}"
+    }
+  }
+}
+EOF
 
 # A minimal, real git repo so git-derived checks (branch, ahead/behind,
 # origin/main staleness) exercise real git plumbing rather than a stub.
@@ -69,12 +95,26 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat head tail tr cut uname grep; do
+for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node npm npx; do
+for tool in just cargo rustc node npx; do
   noop_stub "${stub_bin}" "${tool}"
 done
+
+# npm stub: reports DOCTOR_STUB_NPM_VERSION (default: the fixture's own
+# devEngines pin, so the happy path agrees without any override) rather than
+# doctor.sh only checking resolvability like the noop-stubbed tools above,
+# since check 2b actually runs `npm --version` and compares it.
+cat > "${stub_bin}/npm" << NPM_STUB
+#!/usr/bin/env bash
+if [ "\$1" = '--version' ]; then
+  printf '%s\n' "\${DOCTOR_STUB_NPM_VERSION-${fixture_npm_version}}"
+  exit 0
+fi
+exit 0
+NPM_STUB
+chmod +x "${stub_bin}/npm"
 
 # Scratch HOME so the kache platform-default and XDG_CACHE_HOME-fallback
 # resolution below never reads or sizes the real machine's build cache.
@@ -257,6 +297,16 @@ expect_not_contains() { # <name> <needle>
 }
 
 # --- fully-stubbed happy path: every check passes, exit 0 ---
+
+# Forces check 11 (disk space) to a comfortably-passing figure regardless of
+# real free space on whatever filesystem the fixture landed on: free space
+# is a host fact this selftest does not control, and the assertions below
+# assert an exact "no WARN lines" happy path that a slow host or a nearly
+# full disk must not be able to break. Stays exported (and so in effect) for
+# every assertion below except the dedicated disk-check section further
+# down, which overrides or unsets it per case to reach every branch.
+export DOCTOR_STUB_DISK_AVAIL_BYTES=$((10 * 1024 * 1024 * 1024))
+
 export DOCTOR_STUB_DOCKER_UP=1
 export DOCTOR_STUB_CONTAINER_STATUS=running
 export DOCTOR_STUB_CONTAINER_HEALTH=healthy
@@ -638,5 +688,103 @@ expect_contains "both-set warning's fix covers both variables" "unset both CARGO
 unset CARGO_TARGET_DIR
 unset CARGO_BUILD_TARGET_DIR
 rm -rf "${fixture}/.cargo"
+
+# --- npm toolchain drift (check 2b): PATH npm vs devEngines.packageManager ---
+
+# A wrong-version npm is exactly what a stale PATH entry ahead of mise's
+# shims produces, and it is what breaks every lefthook commit with
+# EBADDEVENGINES: the check must fail closed on it, not just note it.
+export DOCTOR_STUB_NPM_VERSION="9.9.9"
+expect_exit "npm version mismatch fails the run" 1 "${stub_bin}"
+expect_contains "npm version mismatch is reported" "FAIL npm on PATH (9.9.9) matches the devEngines.packageManager pin (${fixture_npm_version})"
+expect_contains "npm version mismatch names the fix" "run 'mise install', and confirm mise's shims precede any other npm on PATH"
+unset DOCTOR_STUB_NPM_VERSION
+
+# The matching case is already exercised by the happy path above (no FAIL or
+# WARN lines at all); this pins the exact PASS line so a future regression
+# that silently stopped reporting it would still be caught.
+expect_exit "matching npm version passes" 0 "${stub_bin}"
+expect_contains "matching npm version is reported" "PASS npm on PATH matches the devEngines.packageManager pin (${fixture_npm_version})"
+
+# No npm on PATH at all: check 1 already fails on the missing binary, but
+# check 2b must independently fail too rather than silently skip, since a
+# reader scanning only for its own line must not read a missing npm as a
+# version match that was never actually checked.
+stub_bin_no_npm="${tmp}/bin-no-npm"
+mkdir -p "${stub_bin_no_npm}"
+for f in "${stub_bin}"/*; do
+  name="$(basename "${f}")"
+  [ "${name}" = "npm" ] && continue
+  cp -P "${f}" "${stub_bin_no_npm}/${name}"
+done
+expect_exit "missing npm fails closed on the version check too" 1 "${stub_bin_no_npm}"
+expect_contains "missing npm names the fix on the version check" "FAIL npm on PATH matches the devEngines.packageManager pin -- fix: run 'mise install'"
+
+# --- npm pin readability (check 2b): a failing jq is its own failure --------
+
+# A jq that is missing or cannot parse package.json used to collapse into an
+# empty pin, sending the reader to "restore the npm pin" when the pin was
+# fine all along. The stub PATH links the real jq, so break the link
+# explicitly and restore it afterwards. Check 2 shares jq and fails too;
+# only the 2b wording is under test here.
+rm -f "${stub_bin}/jq"
+printf '#!/usr/bin/env bash\nexit 1\n' > "${stub_bin}/jq"
+chmod +x "${stub_bin}/jq"
+expect_exit "a failing jq fails the run" 1 "${stub_bin}"
+expect_contains "a failing jq is reported as unreadable, not as a missing pin" "FAIL package.json devEngines pin is readable (jq failed)"
+expect_not_contains "a failing jq does not misreport a missing pin" "restore the npm pin"
+rm -f "${stub_bin}/jq"
+ln -s "$(command -v jq)" "${stub_bin}/jq"
+
+# --- disk space (check 11): tmpfs-aware wording ------------------------------
+
+# A low reading is forced directly via the override rather than by writing
+# gigabytes of fixture data or depending on the real host actually being
+# low on space; DOCTOR_STUB_DISK_FSTYPE independently controls whether the
+# low reading is attributed to a RAM-backed filesystem, so both branches are
+# reachable without needing a real tmpfs-backed fixture directory.
+export DOCTOR_STUB_DISK_AVAIL_BYTES=$((1 * 1024 * 1024 * 1024))
+
+export DOCTOR_STUB_DISK_FSTYPE="tmpfs"
+expect_exit "low disk space on tmpfs warns, does not fail" 0 "${stub_bin}"
+expect_contains "tmpfs warning names the filesystem as RAM-backed" "WARN disk space: only 1 GiB free on tmpfs (RAM-backed)"
+expect_contains "tmpfs warning explains the memory cost and points at a fix" "building here spends memory, not disk; use a disk-backed path"
+expect_not_contains "tmpfs warning does not also print the ordinary low-disk wording" "free up space on the filesystem holding"
+
+export DOCTOR_STUB_DISK_FSTYPE="ext4"
+expect_exit "low disk space on a real disk warns with the ordinary wording" 0 "${stub_bin}"
+expect_contains "ordinary low-disk warning is reported" "WARN disk space: only 1 GiB free -- fix: free up space on the filesystem holding"
+expect_not_contains "ordinary low-disk warning does not claim to be RAM-backed" "RAM-backed"
+
+# Set to the empty string (not unset): this is the "stat could not answer"
+# shape scripts/require-disk-backed.sh --fstype itself produces, and it must
+# fall back to the ordinary wording rather than crashing on an empty case
+# match or, worse, misreporting an unknown filesystem as RAM-backed.
+export DOCTOR_STUB_DISK_FSTYPE=""
+expect_exit "an undetectable filesystem type falls back to the ordinary warning" 0 "${stub_bin}"
+expect_contains "undetectable-fstype low-disk warning is reported" "WARN disk space: only 1 GiB free -- fix: free up space on the filesystem holding"
+
+# Unset (rather than overridden) exercises the real wiring to
+# scripts/require-disk-backed.sh --fstype: the fixture's own copy of that
+# script runs for real against the fixture's own directory. The expected
+# wording follows whatever filesystem $TMPDIR actually put the fixture on,
+# so this asserts that the detector and the warning agree without assuming
+# the host handed out a disk-backed temp dir.
+unset DOCTOR_STUB_DISK_FSTYPE
+fixture_fstype="$("${fixture}/scripts/require-disk-backed.sh" --fstype "${fixture}")"
+case "${fixture_fstype}" in
+  tmpfs | ramfs)
+    expect_exit "the real fstype detector reports the fixture's RAM-backed filesystem" 0 "${stub_bin}"
+    expect_contains "real-detector low-disk warning names the filesystem as RAM-backed" "WARN disk space: only 1 GiB free on ${fixture_fstype} (RAM-backed)"
+    ;;
+  *)
+    expect_exit "the real fstype detector agrees the fixture is not RAM-backed" 0 "${stub_bin}"
+    expect_contains "real-detector low-disk warning is reported" "WARN disk space: only 1 GiB free -- fix: free up space on the filesystem holding"
+    ;;
+esac
+
+# Restore the happy-path figure so this section cannot leak into anything
+# appended after it.
+export DOCTOR_STUB_DISK_AVAIL_BYTES=$((10 * 1024 * 1024 * 1024))
 
 exit "${fail}"

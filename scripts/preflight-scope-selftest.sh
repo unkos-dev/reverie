@@ -326,11 +326,11 @@ fi
 # being present.
 justfile_code="$(grep -v '^[[:space:]]*#' justfile)"
 # shellcheck disable=SC2016  # the patterns are recipe text; $ must stay literal
-if printf '%s\n' "$justfile_code" | grep -qF 'scripts/gate-run.sh preflight-scoped "${lanes[@]}"' &&
+if printf '%s\n' "$justfile_code" | grep -qF 'scripts/gate-run.sh preflight "${lanes[@]}"' &&
   ! printf '%s\n' "$justfile_code" | grep -qF 'just "${lanes[@]}"'; then
-  printf 'ok   %s\n' 'preflight-scoped delegates its lane list to the looping runner'
+  printf 'ok   %s\n' 'preflight (the scoped default gate) delegates its lane list to the looping runner'
 else
-  printf 'FAIL %s\n' 'preflight-scoped passes its lane list to a single just call; a variadic lane swallows the lanes after it'
+  printf 'FAIL %s\n' 'preflight passes its lane list to a single just call; a variadic lane swallows the lanes after it'
   failures=$((failures + 1))
 fi
 

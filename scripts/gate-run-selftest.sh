@@ -164,6 +164,17 @@ if [ -z "$record_dir" ]; then
 fi
 pass 'runs are recorded under XDG_STATE_HOME'
 
+# --- --run-dir prints the same directory runs are recorded under ------------
+
+run_gate "$state" --run-dir
+if [ "$rc" -ne 0 ]; then
+  fail '--run-dir exits 0' "exited ${rc}"
+elif [ "$(printf '%s' "$out" | tr -d '\n')" != "$record_dir" ]; then
+  fail '--run-dir prints the directory runs are recorded under' "got: ${out}, want: ${record_dir}"
+else
+  pass '--run-dir prints the directory runs are recorded under'
+fi
+
 run_gate "$state" demo ok boom
 latest="$(find "$record_dir" -maxdepth 1 -type f -name '*.jsonl' -print | sort | tail -1)"
 if [ "$(grep -c '"lane":' "$latest")" -ne 2 ]; then
@@ -387,6 +398,25 @@ if [ "$after" -gt 20 ]; then
   fail 'pruning bounds the record directory' "kept ${after} runs (was ${before} before seeding)"
 else
   pass 'pruning bounds the record directory'
+fi
+
+# --- the age prune also reaps detached logs ---------------------------------
+
+# gate-detach.sh writes detached-*.log files into the same directory, and
+# each one holds a full gate's output, so the age prune must cover them or
+# the directory grows by a build log per detached run, without bound.
+old_log="${record_dir}/detached-19700101T000000Z-1.log"
+echo 'stale detached log' > "$old_log"
+touch -d '30 days ago' "$old_log"
+fresh_log="${record_dir}/detached-29990101T000000Z-1.log"
+echo 'fresh detached log' > "$fresh_log"
+run_gate "$state" demo ok
+if [ -e "$old_log" ]; then
+  fail 'the age prune reaps old detached logs' "still present: ${old_log}"
+elif [ ! -e "$fresh_log" ]; then
+  fail 'the age prune keeps recent detached logs' "deleted: ${fresh_log}"
+else
+  pass 'the age prune reaps old detached logs and keeps recent ones'
 fi
 
 if [ "$failures" -ne 0 ]; then

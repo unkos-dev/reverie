@@ -84,19 +84,24 @@ build: js::build rust::build docs::build
 # last line of a captured run saying nothing about the run. See gate-run.sh for
 # why that matters and what it costs.
 #
-# Run everything CI runs that is locally runnable, DB-backed tests included.
+# `just preflight` is the default, scoped gate below; run this unconditional
+# form before any push (unless a scoped run already escalated to it), when
+# the change is broad, or when you are unsure.
+#
+# Run everything CI runs that is locally runnable, DB-backed tests included, unconditionally.
 [group('aggregate')]
-preflight:
+preflight-full:
     #!/usr/bin/env bash
     set -ueo pipefail
-    scripts/gate-run.sh preflight \
+    scripts/gate-run.sh preflight-full \
         rust::guards db-up check rust::doc-lint test rust::doctests \
         rust::sqlx-check rust::machete rust::deny js::build \
         js::font-integrity js::a11y infra::zizmor
 
-# The same gate as `preflight`, minus the lanes CI itself would skip. A
+# The same gate as `preflight-full`, minus the lanes CI itself would skip. A
 # frontend-only branch pays for the frontend lanes and the unconditional
 # repo-lint mirror, not a database, a Rust rebuild, and a dependency audit.
+# This is the default gate and the mid-branch reflex.
 #
 # The skip decisions come from .github/path-filters.yml, the same file CI's
 # `changes` job feeds to dorny/paths-filter, so widening a filter for CI
@@ -104,15 +109,16 @@ preflight:
 # (justfiles, scripts/, tool pins, that filter file) escalate to the full lane
 # set, because a scoped run cannot reason about a change to its own rules.
 #
-# This is the mid-branch reflex; `just preflight` stays the unconditional
-# answer and is what to run when in doubt. Args pass through to
+# `just preflight-full` stays the unconditional answer: run it when the
+# change is broad or you are unsure, though a scoped run's own escalation
+# reaches the same lanes automatically when it applies. Args pass through to
 # scripts/preflight-scope.sh (`--base <ref>` to compare against something
 # other than origin/main).
 #
-# Run only the preflight lanes this branch's changed paths require.
+# Run only the preflight lanes this branch's changed paths require (the default gate).
 [group('aggregate')]
 [positional-arguments]
-preflight-scoped *args:
+preflight *args:
     #!/usr/bin/env bash
     set -ueo pipefail
     # Command substitution, not `mapfile < <(...)`: a process substitution's
@@ -122,17 +128,52 @@ preflight-scoped *args:
     if [ -z "$scope" ]; then
         # Still a gate run, so it still gets a verdict: a no-op that printed
         # only prose would be the one outcome a caller could not read back.
-        echo "preflight-scoped: no lane required for the changed paths"
-        exec scripts/gate-run.sh preflight-scoped
+        echo "preflight: no lane required for the changed paths"
+        exec scripts/gate-run.sh preflight
     fi
     mapfile -t lanes <<< "$scope"
-    echo "preflight-scoped: ${lanes[*]}"
+    echo "preflight: ${lanes[*]}"
     # Safe to pass the whole array here only because gate-run.sh runs one lane
     # per `just` invocation. It must never reach `just` on a single command
     # line: a lane that takes parameters, such as `rust::test *args`, swallows
     # every following name as its own argument, so the lanes after it silently
     # never run and the gate can still exit 0.
-    exec scripts/gate-run.sh preflight-scoped "${lanes[@]}"
+    exec scripts/gate-run.sh preflight "${lanes[@]}"
+
+# Detaches from the invoking terminal (setsid) rather than relying on a
+# hand-rolled setsid-plus-log-file pipeline, which is what this replaces:
+# scripts/gate-detach.sh owns the mechanics so nothing has to hand-roll one
+# again. The log lands under the same $XDG_STATE_HOME/reverie/gate/ area the
+# lane records use, keyed per checkout the same way, so `just gate-status`
+# reads the finished run back regardless of which mode produced it. MODE
+# selects which gate runs detached: "scoped" (default) is `just preflight`,
+# and its *args pass through to scripts/preflight-scope.sh; "full" is `just
+# preflight-full`, which takes no arguments of its own.
+#
+# Run the scoped (default) or full preflight gate detached from the terminal; see `just gate-status` for the verdict.
+[group('aggregate')]
+[positional-arguments]
+preflight-detach mode="scoped" *args:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    case "$1" in
+        scoped)
+            target=preflight
+            ;;
+        full)
+            if [ "$#" -gt 1 ]; then
+                echo "preflight-detach: full mode takes no extra arguments" >&2
+                exit 1
+            fi
+            target=preflight-full
+            ;;
+        *)
+            echo "preflight-detach: unknown mode '$1' (expected 'scoped' or 'full')" >&2
+            exit 1
+            ;;
+    esac
+    shift
+    exec scripts/gate-detach.sh "$target" "$@"
 
 # The record lives under $XDG_STATE_HOME, keyed per checkout: it is machine
 # state rather than repository content, and two worktrees running a gate at
@@ -196,19 +237,14 @@ worktree branch base="":
     dest={{ quote(worktree_root) }}"/reverie/${slug}"
     parent="$(dirname "$dest")"
     mkdir -p "$parent"
-    # `stat -f -c` is GNU-only; BSD stat (macOS) rejects it. Report the gap
-    # rather than defaulting to a value that would silently pass the guard,
-    # so a skipped check never looks like a passed one.
-    if fstype="$(stat -f -c %T "$parent" 2>/dev/null)"; then
-        case "$fstype" in
-            tmpfs | ramfs)
-                echo "refusing to create a worktree on ${fstype}: ${dest}" >&2
-                echo "unpushed commits there do not survive a reboot; set WORKTREE_ROOT to a disk-backed path" >&2
-                exit 1
-                ;;
-        esac
-    else
-        echo "warning: cannot read the filesystem type of ${parent} (non-GNU stat); the tmpfs guard did not run" >&2
+    # scripts/require-disk-backed.sh centralizes the tmpfs/ramfs filesystem
+    # check this recipe and `just doctor`'s low-disk warning both need, so
+    # the underlying `stat -f -c` invocation (GNU-only; BSD/macOS rejects it)
+    # and its warn-but-continue fallback live in one place.
+    if ! scripts/require-disk-backed.sh "$parent"; then
+        echo "refusing to create a worktree there: ${dest}" >&2
+        echo "unpushed commits there do not survive a reboot; set WORKTREE_ROOT to a disk-backed path" >&2
+        exit 1
     fi
     # Prefer an existing local branch, then a remote-tracking one. Without
     # the second case a branch that exists only on the remote would be
