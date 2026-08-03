@@ -129,7 +129,7 @@ jobs:
           shard=$(( 10#$(date -u +%V) % 8 ))
           echo "ISO week $(date -u +%V) -> shard ${shard}/8"
           rc=0
-          mise exec mold cargo:cargo-mutants -- cargo mutants --workspace --shard "${shard}/8" -- --all-targets || rc=$?
+          mise exec mold cargo:cargo-mutants -- cargo mutants --workspace --shard "${shard}/8" -- --locked --all-targets || rc=$?
           case "$rc" in
             0) echo "shard clean: every mutant caught" ;;
             2|3)
