@@ -29,13 +29,6 @@
 # 4 there is no recorded run at all. The record is still the secondary channel:
 # a run whose record location was unwritable leaves nothing here, so the
 # `GATE:` line in the captured output remains the authority.
-#
-# Resource bound: when a systemd user manager is reachable and this is not
-# CI, a lane run (never --status or --run-dir, and never a bare query) wraps
-# itself once, whole-run rather than per-lane, in a `systemd-run --user
-# --scope` under agents.slice, so a runaway lane cannot exhaust the host
-# outside its own cgroup budget. See the check further down for the exact
-# conditions and why CI cannot be affected by it.
 set -ueo pipefail
 
 # Runs older than this, or beyond this many newer runs, are pruned at startup.
@@ -90,28 +83,6 @@ current_head() {
   git -C "$checkout" rev-parse HEAD 2> /dev/null || true
 }
 
-# Bound resource usage: wrap the whole run in one transient scope rather than
-# trusting every lane's own tooling to behave, so a runaway lane cannot
-# exhaust the host outside its own cgroup budget. Excluded from the wrap:
-# --status and --run-dir (pure queries, nothing to bound), and any run
-# already inside one (GATE_RUN_SCOPED, set just before the exec below, guards
-# against wrapping the re-invocation a second time once it lands back here as
-# the scope's own command).
-#
-# CI must see zero behavioural change, so the CI environment variable
-# disables the wrap outright rather than trusting `systemctl` to also come
-# back unreachable on every CI runner; GitHub Actions exports CI=true on
-# every job. Off CI, `systemctl --user show-environment` is the direct
-# reachability probe: no session, no bus, or no systemd at all fail it the
-# same way, and the run proceeds exactly as it did before this existed.
-if [ "${1:-}" != '--status' ] && [ "${1:-}" != '--run-dir' ] \
-  && [ -z "${GATE_RUN_SCOPED:-}" ] && [ -z "${CI:-}" ] \
-  && command -v systemd-run > /dev/null 2>&1 \
-  && systemctl --user show-environment > /dev/null 2>&1; then
-  export GATE_RUN_SCOPED=1
-  exec systemd-run --user --scope --slice=agents.slice --quiet --collect -- "$0" "$@"
-fi
-
 if [ "${1:-}" = '--run-dir' ]; then
   [ "$#" -eq 1 ] || die 'usage: gate-run.sh --run-dir'
   printf '%s\n' "$run_dir"
@@ -161,7 +132,10 @@ if [ "${1:-}" = '--status' ]; then
   # connection, a reboot) or is still going. Reporting either as a pass would
   # be the same false green this script exists to prevent, so each gets a
   # nonzero status of its own, decided by whether the recorded runner pid is
-  # alive. kill -0 answers liveness, not identity: a pid recycled since the
+  # alive. scripts/gate-detach.sh leans on exactly these semantics: it records
+  # a verdict-less marker carrying the detached child's pid at the moment of
+  # detach, so a run that dies before this script ever starts reads as "never
+  # finished" here instead of leaving an older verdict as the newest record. kill -0 answers liveness, not identity: a pid recycled since the
   # run can make a dead run read as live, which is accepted for the newest
   # same-user record over anything unportable like procfs. The lane in
   # question is the one after the last that finished, which the plan recorded
@@ -219,7 +193,10 @@ run_log="${run_dir}/${run_id}.jsonl"
 if mkdir -p "$run_dir" 2> /dev/null && : >> "$run_log" 2> /dev/null; then
   # Pruning is deliberately non-fatal: an unpruned directory is cosmetic, and
   # nothing about housekeeping should be able to stop a gate from running.
-  find "$run_dir" -maxdepth 1 -type f -name '*.jsonl' -mtime "+${MAX_AGE_DAYS}" -delete 2> /dev/null || true
+  # Detached logs (scripts/gate-detach.sh) share this directory and hold full
+  # lane output, so leaving them out of the age prune would grow the
+  # directory by a build log per detached run, without bound.
+  find "$run_dir" -maxdepth 1 -type f \( -name '*.jsonl' -o -name 'detached-*.log' \) -mtime "+${MAX_AGE_DAYS}" -delete 2> /dev/null || true
   kept=0
   while IFS= read -r stale; do
     kept=$((kept + 1))

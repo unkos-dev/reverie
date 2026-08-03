@@ -89,7 +89,7 @@ done
 #
 # staging, iac, docker, openapi and npm are deliberately empty. Their CI jobs
 # need a built image, a scanner container, or a registry token, so there is no
-# faithful local lane to run; `just preflight` never ran them either.
+# faithful local lane to run; `just preflight-full` never ran them either.
 lanes_for() {
   case "$1" in
     backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::machete ;;
@@ -102,7 +102,7 @@ lanes_for() {
   esac
 }
 
-# Emission order. Mirrors `just preflight`: the static guards that need no
+# Emission order. Mirrors `just preflight-full`: the static guards that need no
 # toolchain, database, or install come first so they fail fastest, db-up
 # precedes every DB-backed recipe, and the network-backed audit runs last.
 LANE_ORDER=(

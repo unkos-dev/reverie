@@ -153,9 +153,4 @@ picked up uncommitted changes the run never saw. The
 `GATE:` line in the captured output stays the authority: a sandboxed or
 otherwise write-blocked run leaves no record, so `gate-status` can only answer
 for the last run that managed to write one.
-
-When a systemd user manager is reachable and the run is not on CI (the `CI`
-environment variable is unset), a gate run wraps its whole invocation, once,
-in a `systemd-run --user --scope` under `agents.slice`, bounding the run's
-resource usage without changing CI's behaviour at all.
 </task_runner>

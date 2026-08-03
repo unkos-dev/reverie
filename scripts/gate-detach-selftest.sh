@@ -43,6 +43,9 @@ boom:
 
 fixture-gate-fail:
     scripts/gate-run.sh demo boom
+
+upstream-fail:
+    echo "dying before gate-run.sh ever starts"; exit 7
 EOF
 git -C "$fixture" add justfile scripts
 git -C "$fixture" commit -qm fixture
@@ -134,6 +137,35 @@ else
   fi
 fi
 
+# --- a detach that dies upstream of gate-run.sh must not replay a stale PASS
+
+# The regression this pins down: gate-run.sh writes its start record only
+# once it is running, so a detached recipe failing before it (a scoper error,
+# a missing tool) used to leave the previous run's record as the newest one,
+# and gate-status replayed a stale green verdict for a gate that never ran.
+# The detach-start marker makes that outcome exit 2, "never finished".
+state_stale="${state}/stale"
+XDG_STATE_HOME="$state_stale" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' demo ok" > /dev/null 2>&1
+rc=0
+XDG_STATE_HOME="$state_stale" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' --status" > /dev/null 2>&1 || rc=$?
+if [ "$rc" -ne 0 ]; then
+  fail 'seeding a green record before the upstream-death case' "gate-status exited ${rc} on the seed run"
+fi
+
+XDG_STATE_HOME="$state_stale" bash -c "cd '$fixture' && '${fixture}/scripts/gate-detach.sh' upstream-fail" > /dev/null
+
+if ! wait_for_status "$state_stale" 100; then
+  fail 'an upstream death settles into a readable status' 'status stayed in progress or unrecorded'
+else
+  rc=0
+  XDG_STATE_HOME="$state_stale" bash -c "cd '$fixture' && '${fixture}/scripts/gate-run.sh' --status" > /dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    pass 'a detach dying upstream of gate-run.sh reads as never-finished, not the stale PASS'
+  else
+    fail 'a detach dying upstream of gate-run.sh reads as never-finished, not the stale PASS' "exit ${rc}, expected 2"
+  fi
+fi
+
 # --- the justfile recipe delegates to this script, not a re-inlined pipeline
 
 # Guards against the mechanics drifting back into the recipe body, which
@@ -149,4 +181,4 @@ if [ "$failures" -ne 0 ]; then
   printf '\n%d gate-detach assertion(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo 'OK: gate-detach produces a log and a gate-status-readable record, for both a passing and a failing run'
+echo 'OK: gate-detach produces a log and a gate-status-readable record for passing, failing, and dying-upstream runs'

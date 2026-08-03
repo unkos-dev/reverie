@@ -62,16 +62,7 @@ run_gate_in() {
   local dir="$1" state_home="$2"
   shift 2
   rc=0
-  # CI=1: every assertion above the dedicated systemd-scoping section below
-  # is a gate-run mechanics test, unrelated to the resource-bound wrap. This
-  # keeps the whole suite hermetic against whatever systemd --user state the
-  # host running it happens to have, rather than depending on real systemd
-  # being unreachable here for the pre-existing assertions to still hold.
-  # GATE_RUN_SCOPED is also stripped explicitly rather than trusted absent:
-  # this selftest can itself be running inside a real wrap (see
-  # run_gate_stubbed below for why that matters), and CI=1 alone would still
-  # leave that inherited value sitting unused in the environment.
-  (cd "$dir" && XDG_STATE_HOME="$state_home" CI=1 env -u GATE_RUN_SCOPED "$runner" "$@") > "$outfile" 2>&1 || rc=$?
+  (cd "$dir" && XDG_STATE_HOME="$state_home" "$runner" "$@") > "$outfile" 2>&1 || rc=$?
   out="$(cat "$outfile")"
 }
 run_gate() { run_gate_in "$lanes_dir" "$@"; }
@@ -409,130 +400,27 @@ else
   pass 'pruning bounds the record directory'
 fi
 
-# --- systemd-run resource scoping --------------------------------------
+# --- the age prune also reaps detached logs ---------------------------------
 
-# The runner wraps its whole invocation (never per lane) in one
-# `systemd-run --user --scope` under agents.slice when a systemd user
-# manager is reachable and this is not CI. Every assertion above ran with
-# CI=1 forced in run_gate_in, so none of them could have depended on this;
-# this section is the only place that unsets it, and only inside a stubbed
-# PATH, so the suite never depends on whether the host actually has a
-# reachable systemd --user manager.
-systemd_stub_dir="${tmpdir}/systemd-stub"
-mkdir -p "$systemd_stub_dir"
-systemd_run_log="${tmpdir}/systemd-run.log"
-
-cat > "${systemd_stub_dir}/systemctl" << 'STUB'
-#!/usr/bin/env bash
-[ -z "${SYSTEMCTL_STUB_UNREACHABLE:-}" ] && [ "$1" = '--user' ] && [ "$2" = 'show-environment' ]
-STUB
-chmod +x "${systemd_stub_dir}/systemctl"
-
-# Records its own invocation, then execs straight through past the `--`
-# separator, so the wrapped gate run actually finishes and reports a real
-# verdict rather than the assertions only proving the stub was called.
-cat > "${systemd_stub_dir}/systemd-run" << 'STUB'
-#!/usr/bin/env bash
-set -ueo pipefail
-: "${SYSTEMD_RUN_LOG:?}"
-printf '%s\n' "$*" >> "$SYSTEMD_RUN_LOG"
-args=("$@")
-sep=-1
-for i in "${!args[@]}"; do
-  if [ "${args[$i]}" = '--' ]; then
-    sep=$i
-    break
-  fi
-done
-[ "$sep" -ge 0 ] || {
-  echo "systemd-run stub: no -- separator in: $*" >&2
-  exit 1
-}
-exec "${args[@]:$((sep + 1))}"
-STUB
-chmod +x "${systemd_stub_dir}/systemd-run"
-
-run_gate_stubbed() { # <state_home> <CI value, or empty to unset> <1 to make systemctl unreachable, else 0> <lane...>
-  local state_home="$1" ci_value="$2" unreachable="$3"
-  shift 3
-  rc=0
-  (
-    cd "$lanes_dir" || exit 1
-    export PATH="${systemd_stub_dir}:${PATH}"
-    export SYSTEMD_RUN_LOG="$systemd_run_log"
-    export XDG_STATE_HOME="$state_home"
-    # This selftest can itself be running inside a real scope (this machine's
-    # own systemd --user is reachable and CI is unset for the selftest run
-    # as a whole), which would already have GATE_RUN_SCOPED=1 in the ambient
-    # environment. That variable exists to stop the runner wrapping itself
-    # twice on a genuine self re-exec; inherited here instead, it would mask
-    # every assertion below by making a fresh, unrelated invocation look
-    # like it was already wrapped. Force it unset so each case starts from
-    # "not yet scoped", matching what a first-time invocation actually sees.
-    unset GATE_RUN_SCOPED 2> /dev/null || true
-    if [ "$unreachable" = 1 ]; then
-      export SYSTEMCTL_STUB_UNREACHABLE=1
-    else
-      unset SYSTEMCTL_STUB_UNREACHABLE 2> /dev/null || true
-    fi
-    if [ -n "$ci_value" ]; then
-      export CI="$ci_value"
-    else
-      unset CI 2> /dev/null || true
-    fi
-    "$runner" demo "$@"
-  ) > "$outfile" 2>&1 || rc=$?
-  out="$(cat "$outfile")"
-}
-
-: > "$systemd_run_log"
-run_gate_stubbed "${tmpdir}/state-systemd-wrapped" '' 0 ok
-if [ "$rc" -ne 0 ]; then
-  fail 'a wrapped run still exits 0' "exited ${rc}"
+# gate-detach.sh writes detached-*.log files into the same directory, and
+# each one holds a full gate's output, so the age prune must cover them or
+# the directory grows by a build log per detached run, without bound.
+old_log="${record_dir}/detached-19700101T000000Z-1.log"
+echo 'stale detached log' > "$old_log"
+touch -d '30 days ago' "$old_log"
+fresh_log="${record_dir}/detached-29990101T000000Z-1.log"
+echo 'fresh detached log' > "$fresh_log"
+run_gate "$state" demo ok
+if [ -e "$old_log" ]; then
+  fail 'the age prune reaps old detached logs' "still present: ${old_log}"
+elif [ ! -e "$fresh_log" ]; then
+  fail 'the age prune keeps recent detached logs' "deleted: ${fresh_log}"
 else
-  pass 'a wrapped run still exits 0'
+  pass 'the age prune reaps old detached logs and keeps recent ones'
 fi
-if [ ! -s "$systemd_run_log" ]; then
-  fail 'a reachable systemd user manager outside CI triggers the wrap' 'systemd-run was never invoked'
-else
-  pass 'a reachable systemd user manager outside CI triggers the wrap'
-fi
-if ! grep -qF -- '--user --scope --slice=agents.slice --quiet --collect --' "$systemd_run_log"; then
-  fail 'the wrap uses the documented scope and slice' "$(cat "$systemd_run_log")"
-else
-  pass 'the wrap uses the documented scope and slice'
-fi
-case "$(tail -1 "$outfile")" in
-  'GATE: PASS demo (1 lane, '*'s: ok)') pass 'the wrapped run still reports a real verdict' ;;
-  *) fail 'the wrapped run still reports a real verdict' "last line: $(tail -1 "$outfile")" ;;
-esac
-
-: > "$systemd_run_log"
-run_gate_stubbed "${tmpdir}/state-systemd-ci" true 0 ok
-if [ -s "$systemd_run_log" ]; then
-  fail 'CI sees zero behavioural change: no wrap is attempted' "systemd-run was invoked: $(cat "$systemd_run_log")"
-else
-  pass 'CI sees zero behavioural change: no wrap is attempted'
-fi
-case "$(tail -1 "$outfile")" in
-  'GATE: PASS demo (1 lane, '*'s: ok)') pass 'CI still runs the gate normally, unwrapped' ;;
-  *) fail 'CI still runs the gate normally, unwrapped' "last line: $(tail -1 "$outfile")" ;;
-esac
-
-: > "$systemd_run_log"
-run_gate_stubbed "${tmpdir}/state-systemd-unreachable" '' 1 ok
-if [ -s "$systemd_run_log" ]; then
-  fail 'an unreachable systemd user manager runs the gate unwrapped' "systemd-run was invoked: $(cat "$systemd_run_log")"
-else
-  pass 'an unreachable systemd user manager runs the gate unwrapped'
-fi
-case "$(tail -1 "$outfile")" in
-  'GATE: PASS demo (1 lane, '*'s: ok)') pass 'an unreachable systemd user manager still reports a real verdict' ;;
-  *) fail 'an unreachable systemd user manager still reports a real verdict' "last line: $(tail -1 "$outfile")" ;;
-esac
 
 if [ "$failures" -ne 0 ]; then
   printf '\n%d gate-run assertion(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo 'OK: gate-run verdict, record, status, pruning, and resource-scoping behaviour'
+echo 'OK: gate-run verdict, record, status, and pruning behaviour'
