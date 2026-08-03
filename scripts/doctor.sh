@@ -18,8 +18,8 @@ warn() { printf 'WARN %s -- fix: %s\n' "$1" "$2"; warn_count=$((warn_count + 1))
 fail() { printf 'FAIL %s -- fix: %s\n' "$1" "$2"; fail_count=$((fail_count + 1)); }
 info() { printf 'INFO %s\n' "$1"; }
 
-# 1. Required binaries resolve on PATH. jq is included because check 2 and
-# check 7 below both shell out to it; without this, a missing jq shows up
+# 1. Required binaries resolve on PATH. jq is included because checks 2, 2b,
+# and 7 below all shell out to it; without this, a missing jq shows up
 # only as a confusing "(missing: unknown)" deep in another check's output.
 for bin in git just docker cargo rustc node npm npx mise jq; do
   if command -v "$bin" >/dev/null 2>&1; then
@@ -62,8 +62,14 @@ fi
 # agrees with mise.toml; this checks the binary actually resolved on PATH
 # agrees with the declared pin, which mise alone cannot guarantee once a
 # stale npm sits ahead of mise's shims.
-declared_npm="$(jq -r '.devEngines.packageManager.version // ""' package.json 2>/dev/null || true)"
-if command -v npm > /dev/null 2>&1; then
+jq_rc=0
+declared_npm="$(jq -r '.devEngines.packageManager.version // ""' package.json 2>/dev/null)" || jq_rc=$?
+if [ "${jq_rc}" -ne 0 ]; then
+  # Fail closed and name the real fault: a failed jq collapsed into an empty
+  # string is indistinguishable from a genuinely absent pin, and "restore
+  # the pin" is the wrong fix when jq is missing or package.json unreadable.
+  fail "package.json devEngines pin is readable (jq failed)" "run 'jq .devEngines package.json' manually and investigate"
+elif command -v npm > /dev/null 2>&1; then
   resolved_npm="$(npm --version 2>/dev/null || true)"
   if [ -z "${resolved_npm}" ]; then
     fail "npm on PATH reports a version" "run 'npm --version' manually and investigate"

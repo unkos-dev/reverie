@@ -71,6 +71,25 @@ wait_for_status() { # <state_home> <timeout_tenths_of_a_second>
   return 1
 }
 
+# The record and the log are two channels for one event, and they flush
+# differently: gate-run.sh appends each record line in its own open-write-
+# close, so records land immediately, while the detached child's stdout is a
+# block-buffered stream that may not surface the verdict line until process
+# teardown. Any assertion on log CONTENT therefore waits on the log itself;
+# synchronising on the record and then reading the log is a race that only
+# fails on a slow machine.
+wait_for_log_verdict() { # <log_path> <timeout_tenths_of_a_second>
+  local log_path="$1" timeout="$2" waited=0
+  while [ "$waited" -lt "$timeout" ]; do
+    if grep -q '^GATE: ' "$log_path" 2> /dev/null; then
+      return 0
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
 # --- a detached run produces a log and a gate-status-readable record --------
 
 state_ok="${state}/ok"
@@ -104,8 +123,8 @@ else
   fail 'gate-status reports the detached run once it finishes' 'timed out waiting for a finished record'
 fi
 
-if [ ! -s "$log_path" ]; then
-  fail 'the log file is non-empty' "no such file, or empty: ${log_path}"
+if ! wait_for_log_verdict "$log_path" 100; then
+  fail 'the log carries the real verdict line' "no GATE: line appeared; log holds: $(cat "$log_path" 2> /dev/null)"
 elif ! grep -qF 'GATE: PASS demo' "$log_path"; then
   fail 'the log carries the real verdict line' "$(cat "$log_path")"
 else
@@ -136,6 +155,44 @@ else
     fail 'a failing detached run is read back as a failure' "exit ${rc}, expected 1"
   fi
 fi
+
+# --- an unwritable state dir must not stop the gate --------------------------
+
+# gate-run.sh's contract: the record layer is a convenience that must never
+# stop a gate. The detach path adds a log to that layer, so on an unwritable
+# state dir it must still launch the run, with the log falling back to a
+# TMPDIR path and a warning naming what gate-status loses.
+state_ro="${state}/ro"
+mkdir -p "$state_ro"
+chmod 500 "$state_ro"
+if touch "${state_ro}/probe" 2> /dev/null; then
+  rm -f "${state_ro}/probe"
+  echo 'skip unwritable-state case: chmod has no effect here (running as root?)'
+else
+  rc=0
+  out="$(XDG_STATE_HOME="$state_ro" bash -c "cd '$fixture' && '${fixture}/scripts/gate-detach.sh' fixture-gate" 2>&1)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail 'an unwritable state dir still launches the gate' "gate-detach exited ${rc}: ${out}"
+  else
+    pass 'an unwritable state dir still launches the gate'
+  fi
+  case "$out" in
+    *"cannot write "*"gate-status' will not track this run"*) pass 'the fallback warns that gate-status will not track the run' ;;
+    *) fail 'the fallback warns that gate-status will not track the run' "output: ${out}" ;;
+  esac
+  ro_log="$(printf '%s\n' "$out" | sed -n 's/.*log at //p')"
+  if [ -z "$ro_log" ]; then
+    fail 'the fallback still announces a log path' "output: ${out}"
+  elif ! wait_for_log_verdict "$ro_log" 100; then
+    fail 'the fallback log still carries the verdict line' "no GATE: line appeared; log holds: $(cat "$ro_log" 2> /dev/null)"
+  elif ! grep -qF 'GATE: PASS demo' "$ro_log"; then
+    fail 'the fallback log still carries the verdict line' "$(cat "$ro_log")"
+  else
+    pass 'the fallback log still carries the verdict line'
+  fi
+  rm -f "$ro_log"
+fi
+chmod 700 "$state_ro"
 
 # --- a detach that dies upstream of gate-run.sh must not replay a stale PASS
 
@@ -181,4 +238,4 @@ if [ "$failures" -ne 0 ]; then
   printf '\n%d gate-detach assertion(s) failed\n' "$failures" >&2
   exit 1
 fi
-echo 'OK: gate-detach produces a log and a gate-status-readable record for passing, failing, and dying-upstream runs'
+echo 'OK: gate-detach produces a log and a gate-status-readable record for passing, failing, dying-upstream, and unwritable-state runs'

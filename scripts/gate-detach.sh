@@ -7,6 +7,12 @@
 # gate/ directory scripts/gate-run.sh already keys per checkout, so the log
 # sits next to the run record `just gate-status` reads back.
 #
+# The log accepts what the run records refuse: gate-run.sh keeps lane output
+# out of its records because a recipe line can legitimately echo a secret
+# default, but a detached run's output has to land somewhere or the run is
+# unobservable. The log is the terminal a detached run does not have, so it
+# is created 0600 and reaped by gate-run.sh's age prune.
+#
 # Usage: scripts/gate-detach.sh <just-recipe> [recipe-arg...]
 set -ueo pipefail
 
@@ -30,7 +36,6 @@ esac
 # slugged) rather than recomputing it here, so the log can never land
 # somewhere gate-status does not also look.
 run_dir="$(scripts/gate-run.sh --run-dir)"
-mkdir -p "$run_dir"
 
 # Same id derivation as gate-run.sh, for the same reason: records sort by
 # name, newest first, and the marker written below must sort under any record
@@ -46,7 +51,23 @@ case "$whole" in
   '' | *[!0-9]*) whole='-1' ;;
 esac
 TZ=UTC0 printf -v stamp '%(%Y%m%dT%H%M%SZ)T' "$whole"
+
+# An unwritable state dir must never stop the gate: gate-run.sh states that
+# contract for its records, and it holds here too. The log is not optional
+# the way a record is (a detached run with no log is unobservable), so it
+# falls back to a mktemp path, which mktemp creates 0600 just like the
+# umask-guarded primary path; the marker is skipped with a warning naming
+# the consequence. The background job's redirect below truncates the
+# pre-created file without changing its mode.
 log="${run_dir}/detached-${stamp}-$$.log"
+if ! { mkdir -p "$run_dir" && (umask 077 && : > "$log"); } 2> /dev/null; then
+  log="$(mktemp "${TMPDIR:-/tmp}/reverie-gate-detach-XXXXXX.log")" || {
+    echo "gate-detach: nowhere writable for the log (state dir and TMPDIR both failed)" >&2
+    exit 1
+  }
+  echo "gate-detach: cannot write ${run_dir}; logging to ${log} instead, and 'just gate-status' will not track this run" >&2
+  run_dir=''
+fi
 
 # `setsid` detaches the child from this shell's controlling terminal so a
 # later SIGHUP (the shell exiting, the terminal closing) cannot reach it;
@@ -67,20 +88,22 @@ disown
 # child alive reads as "still in progress", child dead with nothing newer
 # reads as "never finished", and the run's own records supersede the marker
 # by sorting newer the moment gate-run.sh starts.
-tree_head="$(git rev-parse HEAD 2> /dev/null || true)"
-case "$tree_head" in
-  *[!0-9a-f]* | '') tree='"head":null,"dirty":null' ;;
-  *)
-    if [ -n "$(git status --porcelain 2> /dev/null | head -1)" ]; then
-      tree="\"head\":\"${tree_head}\",\"dirty\":true"
-    else
-      tree="\"head\":\"${tree_head}\",\"dirty\":false"
-    fi
-    ;;
-esac
-marker="${run_dir}/${stamp}-${subsecond}-${child}.jsonl"
-printf '%s\n' "{\"run\":\"${stamp}-${subsecond}-${child}\",\"label\":\"${recipe}\",\"event\":\"detach-start\",${tree},\"pid\":${child}}" > "$marker" 2> /dev/null ||
-  echo "gate-detach: cannot record the detach at ${marker}; gate-status will not see this run until gate-run.sh starts" >&2
+if [ -n "$run_dir" ]; then
+  tree_head="$(git rev-parse HEAD 2> /dev/null || true)"
+  case "$tree_head" in
+    *[!0-9a-f]* | '') tree='"head":null,"dirty":null' ;;
+    *)
+      if [ -n "$(git status --porcelain 2> /dev/null | head -1)" ]; then
+        tree="\"head\":\"${tree_head}\",\"dirty\":true"
+      else
+        tree="\"head\":\"${tree_head}\",\"dirty\":false"
+      fi
+      ;;
+  esac
+  marker="${run_dir}/${stamp}-${subsecond}-${child}.jsonl"
+  printf '%s\n' "{\"run\":\"${stamp}-${subsecond}-${child}\",\"label\":\"${recipe}\",\"event\":\"detach-start\",${tree},\"pid\":${child}}" > "$marker" 2> /dev/null ||
+    echo "gate-detach: cannot record the detach at ${marker}; gate-status will not see this run until gate-run.sh starts" >&2
+fi
 
 echo "gate-detach: running 'just ${recipe}' detached, log at ${log}"
 echo "gate-detach: replay the verdict with 'just gate-status'"

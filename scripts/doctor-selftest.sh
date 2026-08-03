@@ -7,17 +7,15 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 doctor="${repo_root}/scripts/doctor.sh"
 
-# A sibling of the checkout, not $TMPDIR: doctor.sh's own disk-space check
-# (11) reads real free space on whatever filesystem the fixture sits on, and
-# a sandboxed dev environment's default temp dir is often a tmpfs backed by
-# available memory rather than disk, which can read as "under 5 GiB free"
-# independent of real disk state. This mirrors `just worktree`'s own default
-# root and scripts/worktree-selftest.sh's fixture placement, so this
-# selftest passes everywhere those already do. The happy-path assertions
-# below also force DOCTOR_STUB_DISK_AVAIL_BYTES rather than trusting even
-# this placement alone: real free space, disk-backed or not, is still a host
-# fact this fixture does not control.
-tmp="$(mktemp -d "$(dirname "${repo_root}")/.doctor-selftest.XXXXXX")"
+# $TMPDIR (mktemp's default): every host fact the placement used to carry is
+# stubbed instead. Free space and filesystem type both come from the
+# DOCTOR_STUB_DISK_* seams in the sections below, and the one assertion that
+# runs the real fstype detector asserts against the type the fixture
+# actually sits on rather than assuming a disk-backed one. The previous
+# placement, a sibling of the checkout, was itself a host coupling: it
+# required a writable checkout parent, which a sandboxed run of the main
+# checkout does not have.
+tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
 fixture="${tmp}/fixture"
@@ -301,9 +299,8 @@ expect_not_contains() { # <name> <needle>
 # --- fully-stubbed happy path: every check passes, exit 0 ---
 
 # Forces check 11 (disk space) to a comfortably-passing figure regardless of
-# real free space on whatever filesystem the fixture landed on: the fixture
-# placement above rules out tmpfs specifically, but free space itself is
-# still a host fact this selftest does not control, and the assertions below
+# real free space on whatever filesystem the fixture landed on: free space
+# is a host fact this selftest does not control, and the assertions below
 # assert an exact "no WARN lines" happy path that a slow host or a nearly
 # full disk must not be able to break. Stays exported (and so in effect) for
 # every assertion below except the dedicated disk-check section further
@@ -723,6 +720,22 @@ done
 expect_exit "missing npm fails closed on the version check too" 1 "${stub_bin_no_npm}"
 expect_contains "missing npm names the fix on the version check" "FAIL npm on PATH matches the devEngines.packageManager pin -- fix: run 'mise install'"
 
+# --- npm pin readability (check 2b): a failing jq is its own failure --------
+
+# A jq that is missing or cannot parse package.json used to collapse into an
+# empty pin, sending the reader to "restore the npm pin" when the pin was
+# fine all along. The stub PATH links the real jq, so break the link
+# explicitly and restore it afterwards. Check 2 shares jq and fails too;
+# only the 2b wording is under test here.
+rm -f "${stub_bin}/jq"
+printf '#!/usr/bin/env bash\nexit 1\n' > "${stub_bin}/jq"
+chmod +x "${stub_bin}/jq"
+expect_exit "a failing jq fails the run" 1 "${stub_bin}"
+expect_contains "a failing jq is reported as unreadable, not as a missing pin" "FAIL package.json devEngines pin is readable (jq failed)"
+expect_not_contains "a failing jq does not misreport a missing pin" "restore the npm pin"
+rm -f "${stub_bin}/jq"
+ln -s "$(command -v jq)" "${stub_bin}/jq"
+
 # --- disk space (check 11): tmpfs-aware wording ------------------------------
 
 # A low reading is forced directly via the override rather than by writing
@@ -753,12 +766,22 @@ expect_contains "undetectable-fstype low-disk warning is reported" "WARN disk sp
 
 # Unset (rather than overridden) exercises the real wiring to
 # scripts/require-disk-backed.sh --fstype: the fixture's own copy of that
-# script runs for real against the fixture's own directory, which sits on
-# whatever disk-backed filesystem this selftest's own placement (above) put
-# it on, so this must land on the ordinary warning too.
+# script runs for real against the fixture's own directory. The expected
+# wording follows whatever filesystem $TMPDIR actually put the fixture on,
+# so this asserts that the detector and the warning agree without assuming
+# the host handed out a disk-backed temp dir.
 unset DOCTOR_STUB_DISK_FSTYPE
-expect_exit "the real fstype detector agrees the fixture is not RAM-backed" 0 "${stub_bin}"
-expect_contains "real-detector low-disk warning is reported" "WARN disk space: only 1 GiB free -- fix: free up space on the filesystem holding"
+fixture_fstype="$("${fixture}/scripts/require-disk-backed.sh" --fstype "${fixture}")"
+case "${fixture_fstype}" in
+  tmpfs | ramfs)
+    expect_exit "the real fstype detector reports the fixture's RAM-backed filesystem" 0 "${stub_bin}"
+    expect_contains "real-detector low-disk warning names the filesystem as RAM-backed" "WARN disk space: only 1 GiB free on ${fixture_fstype} (RAM-backed)"
+    ;;
+  *)
+    expect_exit "the real fstype detector agrees the fixture is not RAM-backed" 0 "${stub_bin}"
+    expect_contains "real-detector low-disk warning is reported" "WARN disk space: only 1 GiB free -- fix: free up space on the filesystem holding"
+    ;;
+esac
 
 # Restore the happy-path figure so this section cannot leak into anything
 # appended after it.
