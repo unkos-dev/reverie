@@ -85,12 +85,12 @@ ADR-or-amendment after the detector earns its keep.
   `.github/renovate.json`, pre-v1.0 bumps stay manual-review (no
   auto-merge); `impeccable` is currently at v2.1.9, so patch
   bumps auto-merge would apply once any rules drift to require it.
-- **No Chromium download.** `frontend/package.json` carries
-  `"puppeteer": { "skipDownload": true }`, puppeteer's
-  cosmiconfig-based config loader discovers this field on every
-  `npm install`/`npm ci` and skips the postinstall Chromium
-  fetch. Our usage never invokes the puppeteer code path (see
-  Future Plan for the dynamic-import evidence).
+- **No Chromium download.** The root `package.json` denies puppeteer's
+  install script under
+  [2026-08-03-package-ingress-default-deny.md](2026-08-03-package-ingress-default-deny.md),
+  so the postinstall Chromium fetch never runs. Our usage never
+  invokes the puppeteer code path (see Future Plan for the
+  dynamic-import evidence).
 
 ### Supply-chain stance
 
@@ -103,14 +103,20 @@ ADR-or-amendment after the detector earns its keep.
   `detectUrl()` (URL-scan). Dynamically imported. Top-level
   imports do not reach puppeteer.
 
-Skipping the Chromium download via `puppeteer.skipDownload` removes
-the ~180MB postinstall fetch without removing the puppeteer JS
-itself; the dynamic import inside `detectUrl()` would fail with
-puppeteer's documented error message ("puppeteer is required for
-URL scanning") if URL-scan were ever invoked. Static path
-unaffected.
+Denying the install script drops the ~180MB postinstall fetch
+without removing the puppeteer JS itself. The dynamic import inside
+`detectUrl()` still resolves, so a URL-scan would fail at
+`launch()` for want of a browser rather than at the import;
+`npx puppeteer browsers install chrome` fetches one on demand if
+URL-scan is ever wanted. Static path unaffected.
 
-Alternatives to `skipDownload: true` were rejected:
+Corrected 2026-08-03: this record first named
+`"puppeteer": { "skipDownload": true }` in `frontend/package.json`
+as the mechanism. No manifest carried that field, so the fetch kept
+running until the install-script denial landed. The alternatives
+below were weighed against that field and stand as written.
+
+Alternatives weighed at the time were rejected:
 
 - `npm ci --omit=optional`: breaks `@tailwindcss/oxide`'s 12
   platform-binary `optionalDependencies` (standard npm

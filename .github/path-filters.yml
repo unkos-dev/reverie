@@ -28,11 +28,13 @@ audit:
   - ".github/path-filters.yml"
 frontend:
   # Root workspace inputs drive the frontend too: the hoisted
-  # lockfile + shared overrides, and the root vite.config.ts
-  # that owns the frontend lint config.
+  # lockfile + shared overrides, the root vite.config.ts that
+  # owns the frontend lint config, and the .npmrc whose
+  # install-script policy every workspace install answers to.
   - "frontend/**"
   - "package.json"
   - "package-lock.json"
+  - ".npmrc"
   - "vite.config.ts"
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
@@ -94,12 +96,13 @@ docs:
   # regen trips this filter without a separate backend trigger;
   # a stale-but-unregenerated artifact is caught by the backend
   # job's drift tests instead. docs is an npm workspace, so the
-  # root manifest/lockfile affect its build. docs-build.yml is
-  # the shared build definition; docs.yml is the deploy lane
-  # that must still pass the PR-time gate here.
+  # root manifest, lockfile, and .npmrc affect its build.
+  # docs-build.yml is the shared build definition; docs.yml is
+  # the deploy lane that must still pass the PR-time gate here.
   - "docs/**"
   - "package.json"
   - "package-lock.json"
+  - ".npmrc"
   - ".github/workflows/ci.yml"
   - ".github/workflows/docs.yml"
   - ".github/workflows/docs-build.yml"
