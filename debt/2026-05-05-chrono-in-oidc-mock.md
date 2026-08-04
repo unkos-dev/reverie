@@ -13,10 +13,12 @@ lift-when: openidconnect v5 stable release decouples chrono types, OR migrate to
 
 The project standard for date/time handling is the `time` crate, not
 `chrono`, recorded in `backend/AGENTS.md`. The standard is a
-consistency choice: one date/time crate across the tree, and `time` is
-the one with first-party `sqlx` and `utoipa` support. The scaffold
-predated the decision, so the blueprint still mentions chrono; the
-ratified posture is `time`.
+consistency choice: one date/time crate across the tree. Both crates
+are supported by `sqlx` and `utoipa`, so availability is not the
+differentiator; `time` is simply the one wired up here, and
+`backend/Cargo.toml` leaves the `chrono` features off deliberately.
+The scaffold predated the decision, so the blueprint still mentions
+chrono; the ratified posture is `time`.
 
 The OIDC test mock (`backend/src/test_support.rs::oidc_mock`) builds
 ID-token claims via `openidconnect::core::CoreIdTokenClaims::new`.
@@ -43,12 +45,20 @@ Three separate facts are easy to conflate here, so state them apart:
    dev-dependency would not remove chrono from the built binary.
 
 `backend/AGENTS.md` documents the carve-out and
-`backend/guards/chrono-allowlist.txt` registers it. Note the
-granularity: the allowlist entry is the path `backend/src/test_support.rs:`,
-matched as a substring against the guard's `grep -rn` output, so the
-enforced exemption is the whole file rather than the `oidc_mock`
-function. Keeping the use inside `oidc_mock` is a convention the guard
-does not check.
+`backend/guards/chrono-allowlist.txt` registers it. Be precise about
+what the guard covers, because it is narrower than it looks on two
+axes. It greps `backend/src/` for `use chrono` and `extern crate
+chrono` only, so a fully-qualified `chrono::` path is caught nowhere,
+allowlisted or not. And the allowlist entry is the bare path
+`backend/src/test_support.rs:`, matched as a substring against the
+`grep -rn` output, so the exemption covers the whole file rather than
+the `oidc_mock` function.
+
+Keeping the use inside `oidc_mock` and in import form is therefore a
+rule the guard cannot fully enforce, not a rule the guard relaxes.
+The blast radius is bounded: `test_support` is `#[cfg(test)]`-gated
+(`backend/src/lib.rs:37`), so anything the guard misses is still test
+code that cannot reach a production build.
 
 ## Why this isn't the right shape
 
@@ -87,15 +97,23 @@ Three independent paths can lift this debt:
    dependency but isolates the conversion site to a single named
    function with a clear deletion target post-(1)/(2).
 
-When a path completes and the proper fix has shipped, purge rather than
-archive, per the hard rules in `README.md`:
+Only paths 1 and 2 resolve this debt. Path 3 narrows it: first-party
+chrono usage remains, `[dev-dependencies]` keeps chrono, and the
+allowlist entry stays, so the wrong shape is still in the tree and
+`README.md`'s hard rules keep the entry active.
 
-1. Update `backend/AGENTS.md` to remove the carve-out, or narrow it if
-   path 3 is taken.
+When path 1 or 2 completes and the proper fix has shipped, purge rather
+than archive, per those hard rules:
+
+1. Remove the carve-out from `backend/AGENTS.md`.
 2. Remove chrono from `[dev-dependencies]` and drop the
-   `backend/guards/chrono-allowlist.txt` entry if path 1 or 2 is taken.
+   `backend/guards/chrono-allowlist.txt` entry.
 3. Delete this file and its line in `README.md`, leaving no tombstone.
    The purge commit message names the resolving PR.
+
+When path 3 completes, amend rather than purge: narrow the carve-out in
+`backend/AGENTS.md` to the adapter function, and update this entry's
+`lift-when` to the remaining paths.
 
 An unblocked path whose fix has not shipped leaves this entry active.
 
