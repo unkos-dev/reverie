@@ -26,15 +26,29 @@ The types are non-negotiable at the call site.
 
 ## Workaround
 
-`backend/Cargo.toml` includes `chrono` as a dependency in `dev-dependencies`
-(or feature-gated, depending on current state). `oidc_mock` constructs
-chrono `DateTime<Utc>` values for the duration of the mock setup.
-No first-party code outside `oidc_mock` touches chrono.
+`backend/Cargo.toml` declares `chrono` under `[dev-dependencies]`.
+`oidc_mock` constructs chrono `DateTime<Utc>` values for the duration
+of the mock setup. No first-party code outside `oidc_mock` touches
+chrono.
 
-`backend/AGENTS.md` documents the carve-out, and
-`backend/guards/chrono-allowlist.txt` is the enforced registry of
-exempted call sites. The use is contained to the OIDC mock and must
-not spread elsewhere.
+Three separate facts are easy to conflate here, so state them apart:
+
+1. **First-party usage** is confined to `oidc_mock`. This is what the
+   debt is about.
+2. **The direct declaration** is a dev-dependency, so no first-party
+   production code compiles against chrono.
+3. **The production graph still contains chrono** transitively, through
+   `jwks_client_rs`, and through `oauth2` under `openidconnect`. Verify
+   with `cargo tree --locked -e normal -i chrono`. Removing the
+   dev-dependency would not remove chrono from the built binary.
+
+`backend/AGENTS.md` documents the carve-out and
+`backend/guards/chrono-allowlist.txt` registers it. Note the
+granularity: the allowlist entry is the path `backend/src/test_support.rs:`,
+matched as a substring against the guard's `grep -rn` output, so the
+enforced exemption is the whole file rather than the `oidc_mock`
+function. Keeping the use inside `oidc_mock` is a convention the guard
+does not check.
 
 ## Why this isn't the right shape
 
@@ -48,10 +62,12 @@ Two crates for the same job is taxing for three reasons:
 
 This is a consistency cost, not a security one. An earlier version of
 this entry argued that chrono widened the audit surface on CVE-history
-grounds. That reasoning is obsolete: RUSTSEC-2020-0159 was fixed in
-chrono 0.4.20, and the crate has been actively maintained since. The
-dependency is carried in dev-dependencies for a single test call site,
-and the reason to keep it contained is a coherent codebase, not risk.
+grounds. That reasoning does not hold on either count. RUSTSEC-2020-0159
+was fixed in chrono 0.4.20 and the crate has been actively maintained
+since, so its presence is not a risk to weigh; and lifting this debt
+would not shrink the audit surface anyway, because chrono stays in the
+production graph transitively either way. The reason to keep the use
+contained is a coherent codebase.
 
 ## Lift conditions
 
@@ -71,13 +87,17 @@ Three independent paths can lift this debt:
    dependency but isolates the conversion site to a single named
    function with a clear deletion target post-(1)/(2).
 
-When any path completes:
+When a path completes and the proper fix has shipped, purge rather than
+archive, per the hard rules in `README.md`:
 
-1. Flip this entry to `status: lifted`, set `lifted`, set
-   `superseded-by`.
-2. Update `backend/AGENTS.md` to remove the carve-out (or narrow it
-   if path 3 is taken).
-3. Remove chrono from `Cargo.toml` if path 1 or 2 is taken.
+1. Update `backend/AGENTS.md` to remove the carve-out, or narrow it if
+   path 3 is taken.
+2. Remove chrono from `[dev-dependencies]` and drop the
+   `backend/guards/chrono-allowlist.txt` entry if path 1 or 2 is taken.
+3. Delete this file and its line in `README.md`, leaving no tombstone.
+   The purge commit message names the resolving PR.
+
+An unblocked path whose fix has not shipped leaves this entry active.
 
 ## Related
 
@@ -107,23 +127,25 @@ Pre-evaluated escape hatches if upstream stalls indefinitely. None
 strictly dominates, and is recorded so a future session doesn't
 cold-research this:
 
-| Option                               | reqwest                    | chrono                     | Maintenance             | Switch cost                                                           |
-| ------------------------------------ | -------------------------- | -------------------------- | ----------------------- | --------------------------------------------------------------------- |
-| **stay** openidconnect 4.0.1         | dual 0.12+0.13             | dev-dep only               | slowing                 | none                                                                  |
-| **openid** (kilork) 0.23             | **0.13 only**              | **prod** (via biscuit 0.7) | active-ish              | full auth rewrite                                                     |
-| **mas-oidc-client** 0.11             | http-agnostic (BYO client) | **prod** (via mas-jose)    | strong (Element/Matrix) | rewrite + off-label use                                               |
-| jwt-authorizer / aliri / compact_jwt | —                          | varies                     | varies                  | largest — token-validation only, hand-roll discovery + auth-code flow |
+| Option                               | reqwest                    | chrono                               | Maintenance             | Switch cost                                                           |
+| ------------------------------------ | -------------------------- | ------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
+| **stay** openidconnect 4.0.1         | dual 0.12+0.13             | dev-dep + already transitive in prod | slowing                 | none                                                                  |
+| **openid** (kilork) 0.23             | **0.13 only**              | **prod** (via biscuit 0.7)           | active-ish              | full auth rewrite                                                     |
+| **mas-oidc-client** 0.11             | http-agnostic (BYO client) | **prod** (via mas-jose)              | strong (Element/Matrix) | rewrite + off-label use                                               |
+| jwt-authorizer / aliri / compact_jwt | —                          | varies                               | varies                  | largest — token-validation only, hand-roll discovery + auth-code flow |
 
 Key trap: the only full-RP alternative that clears the reqwest-dual
-residue (`openid`) drags **chrono into the production tree** via
-`biscuit`, which is _strictly worse_ for this debt, today chrono is
-dev-dep-only. `mas-oidc-client` is best-maintained but purpose-built
-for the Matrix Authentication Service and also chrono-based.
+residue (`openid`) puts chrono on a **first-party production call
+path** via `biscuit`, which is worse for this debt than today's
+position. Today chrono is already in the production graph
+transitively, but no first-party production code compiles against it.
+`mas-oidc-client` is best-maintained but purpose-built for the Matrix
+Authentication Service and also chrono-based.
 
 Conclusion: do **not** pivot to clear this debt alone. Both this
 chrono debt and the reqwest-dual residue are `severity: low,
-surfaces: developer` (binary size + audit surface, not correctness or
-a security hole); a security-sensitive auth-subsystem rewrite
+surfaces: developer` (binary size and codebase coherence, not
+correctness or a security hole); a security-sensitive auth-subsystem rewrite
 (`auth/oidc.rs` + `backend.rs` + `oidc_mock`) is poor ROI against
 low-severity cosmetic debt. A pivot becomes justified only if bundled
 with an independently-motivated libauth refactor, OR if
