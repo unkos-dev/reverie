@@ -61,7 +61,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 <tool_standards>
 
 - **Formatting & Linting:** You must respect `cargo fmt` and `cargo clippy`. Do not fight the formatter. Fix warnings, do not suppress them with `#[allow(...)]` unless heavily justified.
-- **Time Crate:** Use the `time` crate. The `chrono` crate is strictly forbidden in first-party code.
+- **Time Crate:** Use the `time` crate. The `chrono` crate is strictly forbidden in first-party code. The reason is consistency, not risk: one date/time crate avoids conversion layers and ambiguity about which type an API wants, and `time` is the one with first-party `sqlx` and `utoipa` support. `chrono` is well maintained; the documented carve-out is `test_support.rs::oidc_mock`, where `openidconnect` v4's `CoreIdTokenClaims::new` forces `chrono` types on the call site. `backend/guards/chrono-allowlist.txt` registers exemptions and `scripts/backend-guards.sh` enforces them.
 - **Logging:** Use `tracing` with structured fields. Never use `println!`.
 - **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts. Run `just rust::regen` and commit them in the same PR; drift tests gate CI.
   </tool_standards>

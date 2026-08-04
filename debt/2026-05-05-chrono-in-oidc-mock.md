@@ -12,9 +12,10 @@ lift-when: openidconnect v5 stable release decouples chrono types, OR migrate to
 ## Constraint
 
 The project standard for date/time handling is the `time` crate, not
-`chrono` (recorded in `backend/AGENTS.md` and in memory
-`project_time_not_chrono.md`). The standard was set after the project
-scaffold predated the decision; the blueprint mentions chrono but the
+`chrono`, recorded in `backend/AGENTS.md`. The standard is a
+consistency choice: one date/time crate across the tree, and `time` is
+the one with first-party `sqlx` and `utoipa` support. The scaffold
+predated the decision, so the blueprint still mentions chrono; the
 ratified posture is `time`.
 
 The OIDC test mock (`backend/src/test_support.rs::oidc_mock`) builds
@@ -30,27 +31,27 @@ The types are non-negotiable at the call site.
 chrono `DateTime<Utc>` values for the duration of the mock setup.
 No first-party code outside `oidc_mock` touches chrono.
 
-`backend/AGENTS.md` documents the carve-out explicitly:
-
-> The single documented exception is `test_support.rs::oidc_mock`,
-> where `openidconnect` v4's public API (`CoreIdTokenClaims::new`)
-> forces chrono types on the call site. That use is contained to the
-> OIDC mock and must not spread elsewhere.
+`backend/AGENTS.md` documents the carve-out, and
+`backend/guards/chrono-allowlist.txt` is the enforced registry of
+exempted call sites. The use is contained to the OIDC mock and must
+not spread elsewhere.
 
 ## Why this isn't the right shape
 
-Two crates for the same job is taxing for several reasons:
+Two crates for the same job is taxing for three reasons:
 
 1. Cognitive overhead: contributors have to remember which crate
    applies where, and what conversions exist between them.
 2. Compile time: chrono's deps add to the dev build.
-3. Audit surface: chrono has its own CVE history; `time` was chosen
-   in part for its smaller surface. Carrying chrono in dev-deps
-   widens the attack surface against the test toolchain (relevant if
-   tests are ever run against untrusted input, which they shouldn't
-   be but the discipline matters).
-4. The carve-out invites scope creep: every new test that touches
+3. The carve-out invites scope creep: every new test that touches
    OIDC claims has the same temptation.
+
+This is a consistency cost, not a security one. An earlier version of
+this entry argued that chrono widened the audit surface on CVE-history
+grounds. That reasoning is obsolete: RUSTSEC-2020-0159 was fixed in
+chrono 0.4.20, and the crate has been actively maintained since. The
+dependency is carried in dev-dependencies for a single test call site,
+and the reason to keep it contained is a coherent codebase, not risk.
 
 ## Lift conditions
 
@@ -83,8 +84,8 @@ When any path completes:
 - `backend/AGENTS.md`: carve-out documentation (would update on
   lift)
 - `backend/src/test_support.rs::oidc_mock`: workaround site
-- Memory: `project_time_not_chrono.md`: project posture
-- No Linear ticket yet: file as part of any libauth refactor or
+- `backend/guards/chrono-allowlist.txt`: enforced exemption registry
+- No tracked issue yet: file as part of any libauth refactor or
   when an upstream dep-unblock surfaces. Until then, this debt entry
   is the canonical record.
 
