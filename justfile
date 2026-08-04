@@ -26,6 +26,16 @@ _default:
 help:
     @just --list --list-submodules
 
+# npm workspaces hoist the frontend and docs dependency trees into the one root
+# node_modules, so this is the whole tree's install and there is no per-plane
+# equivalent. `npm ci` rather than `npm install`: it is lockfile-exact and it
+# works from nothing.
+#
+# Install the npm workspace (frontend + docs) from the root lockfile.
+[group('aggregate')]
+install:
+    npm ci
+
 # infra::zizmor-offline rides along here rather than inside infra::check
 # because it audits a different CI job (workflow-security) than the one
 # infra::lint mirrors (repo-lint); it stays additive so that doc comment
@@ -225,7 +235,7 @@ worktree_root := env_var_or_default("WORKTREE_ROOT", parent_directory(justfile_d
 # (CARGO_TARGET_DIR wins when both are set), so this recipe warns rather
 # than silently unsetting a variable in the caller's environment.
 #
-# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir and, when present, Claude and active Codex policy overlays carried over; a new branch bases on origin/main (falling back to local main, failing when neither exists) unless BASE is given explicitly; warns if Cargo environment overrides defeat isolation.
+# Create a git worktree for BRANCH at `$WORKTREE_ROOT/reverie/<slug>`, with an isolated cargo target dir, the node dependencies installed under the npm the destination declares (so this recipe needs network access), and, when present, Claude and active Codex policy overlays carried over; a new branch bases on origin/main (falling back to local main, failing when neither exists) unless BASE is given explicitly; warns if Cargo environment overrides defeat isolation.
 [group('git')]
 [positional-arguments]
 worktree branch base="":
@@ -447,6 +457,40 @@ worktree branch base="":
                 fi
                 ;;
         esac
+    fi
+    # Node dependencies, and the one step in this recipe that touches the
+    # network. Without them the worktree is a checkout where every JS lane
+    # fails on a third-party message naming neither the condition nor the fix,
+    # so the recipe pays for the install rather than leaving it to be found.
+    #
+    # --ignore-scripts is load-bearing: the root `prepare` script runs
+    # `lefthook install`, and worktrees share $GIT_COMMON_DIR/hooks, so an
+    # unsuppressed install repoints every checkout's hooks at absolute paths
+    # inside this worktree and keeps pointing there once it is deleted.
+    #
+    # npm enforces package.json's `devEngines.packageManager` on every direct
+    # invocation, hard-erroring when the running version disagrees, so the
+    # install runs under the npm the destination declares rather than the one
+    # this checkout has on PATH. The version has to be explicit: a branch old
+    # enough to declare a different npm also predates the "npm:npm" entry in
+    # mise.toml, so a bare `mise exec` there resolves nothing.
+    npm_pin=""
+    if [ -f "$dest/package.json" ] && command -v jq > /dev/null; then
+        npm_pin="$(jq -r '.devEngines.packageManager.version // empty' "$dest/package.json" 2> /dev/null || true)"
+    fi
+    if [ -n "$npm_pin" ] && command -v mise > /dev/null; then
+        echo "installing node dependencies in $dest (npm ${npm_pin} via mise)"
+        install_cmd=(mise exec "npm:npm@${npm_pin}" -- npm ci --ignore-scripts)
+    else
+        echo "installing node dependencies in $dest (npm ci)"
+        install_cmd=(npm ci --ignore-scripts)
+    fi
+    # Not `&&`, for the reason given above the mise trust call: the recipe
+    # would report a ready worktree that no JS lane can run in.
+    if ! (cd "$dest" && "${install_cmd[@]}"); then
+        echo "failed to install node dependencies in $dest" >&2
+        echo "the branch and the worktree are correct; run 'just install' inside it to finish" >&2
+        exit 1
     fi
     echo "worktree ready: $dest"
 

@@ -180,39 +180,27 @@ fi
 # into the one root node_modules (adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md),
 # so a healthy checkout has no frontend/node_modules or docs/node_modules of
 # its own to check.
+#
+# Every unhealthy state here gets the same advice. `just install` runs
+# `npm ci`, which is lockfile-exact and bootstraps from nothing, so it repairs
+# an absent tree, an interrupted one, and a stale one alike, and none of the
+# three needs a binary a broken install may not have left behind.
 if [ -d node_modules ]; then
   pass "root node_modules present"
 else
-  # npx --no-install cannot bootstrap an empty tree: with no node_modules at
-  # all there is no local vp binary for it to fall back to, so it refuses to
-  # fetch one and errors out. npm install is the one command that works from
-  # nothing; it also gets vp into node_modules/.bin for the staleness checks
-  # below to use afterward.
-  warn "root node_modules present" "npm install"
+  warn "root node_modules present" "just install"
 fi
 
 if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
   if [ package-lock.json -nt node_modules/.package-lock.json ]; then
-    # Advice is keyed on whether node_modules/.bin/vp actually exists, not
-    # inferred from marker files: an install that predates vite-plus
-    # entering the lockfile can leave the marker present and the lockfile
-    # newer with no vp binary ever having been installed, and npx
-    # --no-install has nothing to fall back to in that case either.
-    if [ -x node_modules/.bin/vp ]; then
-      warn "node_modules stale against package-lock.json" "npx --no-install vp install"
-    else
-      warn "node_modules stale against package-lock.json" "npm install"
-    fi
+    warn "node_modules stale against package-lock.json" "just install"
   else
     pass "node_modules matches package-lock.json"
   fi
 else
   # The install marker (node_modules/.package-lock.json) is missing even
-  # though node_modules exists: an incomplete or interrupted install, where
-  # node_modules/.bin/vp may itself be missing. npx --no-install has
-  # nothing to fall back to there, so advise the same npm install bootstrap
-  # as the absent-tree branch above rather than a command that may not run.
-  warn "node_modules install incomplete (marker missing)" "npm install"
+  # though node_modules exists: an incomplete or interrupted install.
+  warn "node_modules install incomplete (marker missing)" "just install"
 fi
 
 # 7. sqlx offline cache present, with at least one entry that actually

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Self-test `just worktree`'s cargo isolation and operator-owned overlays. The
-# generated-reference drift check only reads recipe metadata and never executes
-# the recipe. Most cases invoke the checkout's real recipe directly. Codex
+# Self-test `just worktree`'s cargo isolation, operator-owned overlays, and
+# dependency install. The generated-reference drift check only reads recipe
+# metadata and never executes the recipe. Every case runs against the npm stub
+# installed below, so no fixture ever installs for real. Most cases invoke the
+# checkout's real recipe directly. Codex
 # policy cases mirror the current justfile into a disposable source worktree so
 # uncommitted recipe changes are exercised before their first commit; if the
 # recipe delegates behavior to another file, that fixture must mirror it too.
@@ -18,6 +20,53 @@ scratch_root="$(mktemp -d "$(dirname "${repo_root}")/.worktree-selftest.XXXXXX")
 export CODEX_HOME="${scratch_root}/codex-home"
 mkdir -p "${CODEX_HOME}"
 
+# --- npm stub, in force for every fixture below. The recipe's dependency
+# install is its only network step, and the CI copy of this lane cannot run a
+# real one at all: repo-lint provisions npm through setup-vp rather than mise,
+# so its npm hard-errors with EBADDEVENGINES against the pin package.json
+# declares. The stub records the working directory and arguments instead, which
+# is what the assertions actually need; a real install is proven by the manual
+# acceptance test. WORKTREE_SELFTEST_NPM_EXIT drives the failure case. ---
+stub_bin="${scratch_root}/stub-bin"
+mkdir -p "${stub_bin}"
+export WORKTREE_SELFTEST_NPM_LOG="${scratch_root}/npm-invocations"
+export WORKTREE_SELFTEST_MISE_LOG="${scratch_root}/mise-exec-tools"
+: >"${WORKTREE_SELFTEST_NPM_LOG}"
+: >"${WORKTREE_SELFTEST_MISE_LOG}"
+
+cat >"${stub_bin}/npm" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\t%s\n' "${PWD}" "$*" >>"${WORKTREE_SELFTEST_NPM_LOG}"
+exit "${WORKTREE_SELFTEST_NPM_EXIT:-0}"
+STUB
+chmod +x "${stub_bin}/npm"
+
+# `mise exec` resolves its own npm and would run straight past the stub above,
+# so mise is shadowed too. Only `exec` is intercepted: it records the tool spec
+# and then runs the command after `--`, which lands on the npm stub. Every
+# other subcommand delegates to the real mise, so the trust the recipe inherits
+# a few lines earlier is still granted for real.
+real_mise="$(command -v mise || true)"
+export WORKTREE_SELFTEST_REAL_MISE="${real_mise}"
+if [ -n "${real_mise}" ]; then
+  cat >"${stub_bin}/mise" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = "exec" ]; then
+  shift
+  printf '%s\n' "${1:-}" >>"${WORKTREE_SELFTEST_MISE_LOG}"
+  shift
+  [ "${1:-}" = "--" ] && shift
+  exec "$@"
+fi
+exec "${WORKTREE_SELFTEST_REAL_MISE}" "$@"
+STUB
+  chmod +x "${stub_bin}/mise"
+fi
+export PATH="${stub_bin}:${PATH}"
+
+# The pin the recipe must resolve out of a destination created from HEAD.
+head_npm_pin="$(jq -r '.devEngines.packageManager.version // empty' "${repo_root}/package.json")"
+
 pids="$$"
 branch_ok="test/worktree-selftest-ok-${pids}"
 branch_dirty="test/worktree-selftest-dirty-${pids}"
@@ -26,6 +75,8 @@ branch_env_build="test/worktree-selftest-envbuild-${pids}"
 branch_env_both="test/worktree-selftest-envboth-${pids}"
 branch_env_sanitize="test/worktree-selftest-envsanitize-${pids}"
 branch_overlay="test/worktree-selftest-overlay-${pids}"
+branch_install_fail="test/worktree-selftest-installfail-${pids}"
+branch_npm_pin="test/worktree-selftest-npmpin-${pids}"
 branch_codex_source="test/worktree-codex-policy-source-${pids}"
 branch_codex_missing="test/worktree-codex-policy-missing-${pids}"
 branch_codex_overlay="test/worktree-codex-policy-overlay-${pids}"
@@ -38,6 +89,8 @@ slug_env_build="${branch_env_build//\//-}"
 slug_env_both="${branch_env_both//\//-}"
 slug_env_sanitize="${branch_env_sanitize//\//-}"
 slug_overlay="${branch_overlay//\//-}"
+slug_install_fail="${branch_install_fail//\//-}"
+slug_npm_pin="${branch_npm_pin//\//-}"
 slug_codex_source="${branch_codex_source//\//-}"
 slug_codex_missing="${branch_codex_missing//\//-}"
 slug_codex_overlay="${branch_codex_overlay//\//-}"
@@ -50,6 +103,8 @@ dest_env_build="${scratch_root}/reverie/${slug_env_build}"
 dest_env_both="${scratch_root}/reverie/${slug_env_both}"
 dest_env_sanitize="${scratch_root}/reverie/${slug_env_sanitize}"
 dest_overlay="${scratch_root}/reverie/${slug_overlay}"
+dest_install_fail="${scratch_root}/reverie/${slug_install_fail}"
+dest_npm_pin="${scratch_root}/reverie/${slug_npm_pin}"
 dest_codex_source="${scratch_root}/reverie/${slug_codex_source}"
 dest_codex_missing="${scratch_root}/reverie/${slug_codex_missing}"
 dest_codex_overlay="${scratch_root}/reverie/${slug_codex_overlay}"
@@ -71,6 +126,8 @@ cleanup() {
   git -C "${repo_root}" worktree remove --force "${dest_env_both}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_env_sanitize}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_overlay}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_install_fail}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" worktree remove --force "${dest_npm_pin}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_codex_missing}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_codex_overlay}" >/dev/null 2>&1 || true
   git -C "${repo_root}" worktree remove --force "${dest_codex_untrusted}" >/dev/null 2>&1 || true
@@ -84,6 +141,8 @@ cleanup() {
   git -C "${repo_root}" branch -D "${branch_env_both}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_env_sanitize}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_overlay}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_install_fail}" >/dev/null 2>&1 || true
+  git -C "${repo_root}" branch -D "${branch_npm_pin}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_codex_missing}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_codex_overlay}" >/dev/null 2>&1 || true
   git -C "${repo_root}" branch -D "${branch_codex_untrusted}" >/dev/null 2>&1 || true
@@ -180,6 +239,34 @@ else
   else
     ok "no overlay in the source checkout means none in the worktree"
   fi
+fi
+
+# The dependency install, the recipe's only network-bearing step.
+# --ignore-scripts is load-bearing and silently so: without it the install's
+# root `prepare` script runs `lefthook install`, and because worktrees share
+# $GIT_COMMON_DIR/hooks that repoints every checkout of the repository at
+# absolute paths inside this worktree, which outlive it. Assert the flag and
+# the working directory, not just that npm was reached.
+dest_ok_phys="$(cd "${dest_ok}" && pwd -P)"
+want_npm_invocation="${dest_ok_phys}"$'\t'"ci --ignore-scripts"
+got_npm_invocation="$(cat "${WORKTREE_SELFTEST_NPM_LOG}")"
+if [ "${got_npm_invocation}" = "${want_npm_invocation}" ]; then
+  ok "worktree creation runs npm ci --ignore-scripts in the destination"
+else
+  bad "worktree creation runs npm ci --ignore-scripts in the destination" \
+    "want: ${want_npm_invocation@Q}" "got:  ${got_npm_invocation@Q}"
+fi
+
+if [ -n "${real_mise}" ]; then
+  got_mise_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
+  if [ "${got_mise_tool}" = "npm:npm@${head_npm_pin}" ]; then
+    ok "the install runs under the npm the destination declares"
+  else
+    bad "the install runs under the npm the destination declares" \
+      "want: npm:npm@${head_npm_pin}" "got:  ${got_mise_tool@Q}"
+  fi
+else
+  echo "skip the install runs under the npm the destination declares: no mise on PATH"
 fi
 
 remove_out=""
@@ -521,5 +608,87 @@ else
   ok "malicious CARGO_TARGET_DIR value does not inject content into the output"
 fi
 git -C "${repo_root}" worktree remove "${dest_env_sanitize}" >/dev/null 2>&1 || true
+
+# --- install failure: by the time the install runs, the branch and the
+# worktree exist and are correct, so the recipe must fail loudly and leave them
+# where they are. Recreating the worktree is not the repair; one command inside
+# it is, and the failure has to say so. ---
+
+: >"${WORKTREE_SELFTEST_NPM_LOG}"
+install_fail_rc=0
+install_fail_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" WORKTREE_SELFTEST_NPM_EXIT=1 just worktree "${branch_install_fail}" HEAD 2>&1)" || install_fail_rc=$?
+if [ "${install_fail_rc}" -ne 0 ]; then
+  ok "a failing install fails the recipe"
+else
+  bad "a failing install fails the recipe" "the recipe reported success" "${install_fail_out}"
+fi
+if printf '%s\n' "${install_fail_out}" | grep -qF "just install"; then
+  ok "a failing install names the command that repairs it"
+else
+  bad "a failing install names the command that repairs it" "${install_fail_out}"
+fi
+if [ -e "${dest_install_fail}/.git" ]; then
+  ok "a failing install leaves the worktree in place"
+else
+  bad "a failing install leaves the worktree in place" "no checkout at ${dest_install_fail}"
+fi
+git -C "${repo_root}" worktree remove --force "${dest_install_fail}" >/dev/null 2>&1 || true
+
+# --- destination-declared npm pin: this recipe most often lands on a branch
+# that already exists, and npm enforces package.json's devEngines pin on every
+# direct invocation, so a branch declaring an npm other than the one on PATH
+# fails the install outright unless the recipe honours the declaration it
+# finds. Every fixture above is created from HEAD and shares the current pin,
+# so this is the only case that can catch a regression to a bare `npm ci`.
+#
+# The fixture commit is built with plumbing against a scratch index rather than
+# by checking anything out. It rewrites the pin and drops the justfile
+# altogether, the shape of any branch predating this change, which also proves
+# the recipe never reaches for the destination's own recipes. ---
+
+if [ -n "${real_mise}" ]; then
+  fixture_pin="11.18.0"
+  if [ "${fixture_pin}" = "${head_npm_pin}" ]; then
+    bad "the npm pin fixture declares a pin unlike HEAD's" \
+      "both are ${fixture_pin}; choose another fixture pin"
+  fi
+  pin_index="${scratch_root}/npm-pin.index"
+  pin_blob="$(git -C "${repo_root}" show HEAD:package.json \
+    | jq --arg v "${fixture_pin}" '.devEngines.packageManager.version = $v' \
+    | git -C "${repo_root}" hash-object -w --stdin)"
+  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" read-tree HEAD
+  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index \
+    --cacheinfo "100644,${pin_blob},package.json"
+  GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" update-index --force-remove justfile
+  pin_tree="$(GIT_INDEX_FILE="${pin_index}" git -C "${repo_root}" write-tree)"
+  # An explicit identity: a CI checkout configures none, and commit-tree
+  # refuses to run without one.
+  pin_commit="$(GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@invalid \
+    GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@invalid \
+    git -C "${repo_root}" commit-tree "${pin_tree}" -p HEAD -m "worktree selftest npm pin fixture")"
+  git -C "${repo_root}" branch "${branch_npm_pin}" "${pin_commit}" >/dev/null
+
+  : >"${WORKTREE_SELFTEST_MISE_LOG}"
+  : >"${WORKTREE_SELFTEST_NPM_LOG}"
+  npm_pin_rc=0
+  npm_pin_out="$(cd "${repo_root}" && WORKTREE_ROOT="${scratch_root}" just worktree "${branch_npm_pin}" 2>&1)" || npm_pin_rc=$?
+  if [ "${npm_pin_rc}" -eq 0 ]; then
+    ok "worktree creation on a differently pinned branch exits zero"
+  else
+    bad "worktree creation on a differently pinned branch exits zero" \
+      "exit ${npm_pin_rc}" "${npm_pin_out}"
+  fi
+
+  got_pin_tool="$(cat "${WORKTREE_SELFTEST_MISE_LOG}")"
+  if [ "${got_pin_tool}" = "npm:npm@${fixture_pin}" ]; then
+    ok "the install honours the destination's npm pin, not the running one"
+  else
+    bad "the install honours the destination's npm pin, not the running one" \
+      "want: npm:npm@${fixture_pin}" "got:  ${got_pin_tool@Q}"
+  fi
+  git -C "${repo_root}" worktree remove "${dest_npm_pin}" >/dev/null 2>&1 || true
+else
+  echo "skip the destination npm pin fixture: no mise on PATH"
+fi
 
 exit "${fail}"

@@ -62,16 +62,6 @@ mkdir -p "${fixture}/node_modules"
 echo '{}' >"${fixture}/package-lock.json"
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
 
-# An executable node_modules/.bin/vp, the actual precondition the staleness
-# advice checks for (an install that predates vite-plus entering the
-# lockfile can have the marker and no vp binary at all).
-install_vp_stub() {
-  mkdir -p "${fixture}/node_modules/.bin"
-  printf '#!/usr/bin/env bash\nexit 0\n' >"${fixture}/node_modules/.bin/vp"
-  chmod +x "${fixture}/node_modules/.bin/vp"
-}
-install_vp_stub
-
 # Non-empty sqlx offline cache with one entry shaped like a real sqlx
 # query-*.json (query + hash keys), not just any parseable JSON.
 echo '{"query": "SELECT 1", "hash": "deadbeef"}' >"${fixture}/backend/.sqlx/query-fixture.json"
@@ -413,53 +403,36 @@ echo '{"query": "SELECT 1", "hash": "deadbeef"}' >"${fixture}/backend/.sqlx/quer
 expect_exit "a valid sqlx cache entry passes" 0 "${stub_bin}"
 expect_contains "valid sqlx cache is reported" "PASS sqlx offline cache"
 
-# --- node_modules advice: each branch's fix must actually be runnable from
-# that branch's starting state, not just present as text. ---
+# --- node_modules advice: `just install` runs `npm ci`, which is
+# lockfile-exact and works from nothing, so it is the runnable repair for
+# every unhealthy state below and each one must name it. ---
 
-# (a) node_modules absent entirely: npx --no-install has no local binary to
-# fall back to, so the advice must be npm install, the one command that
-# bootstraps from nothing.
+# (a) node_modules absent entirely.
 rm -rf "${fixture}/node_modules"
 expect_exit "absent node_modules warns" 0 "${stub_bin}"
-expect_contains "absent node_modules advises npm install" "WARN root node_modules present -- fix: npm install"
+expect_contains "absent node_modules advises just install" "WARN root node_modules present -- fix: just install"
 mkdir -p "${fixture}/node_modules"
-install_vp_stub
 echo '{}' >"${fixture}/package-lock.json"
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
 
 # (b) node_modules present but the install marker missing: an incomplete or
-# interrupted install, where node_modules/.bin/vp may itself be missing, so
-# this must also advise npm install rather than npx --no-install.
+# interrupted install.
 rm -f "${fixture}/node_modules/.package-lock.json"
 expect_exit "missing install marker warns" 0 "${stub_bin}"
-expect_contains "missing install marker advises npm install" "WARN node_modules install incomplete (marker missing) -- fix: npm install"
+expect_contains "missing install marker advises just install" "WARN node_modules install incomplete (marker missing) -- fix: just install"
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
 
 # (c) both files present but the lockfile is strictly newer than the
-# marker: a genuine staleness. With node_modules/.bin/vp present (a
-# completed install), npx --no-install can repair it. Writing the marker
-# before the lockfile is the same portable ordering trick used to set up
-# the fixture originally, run in the other direction; unlike the tie-safe
-# "not stale" setup, this assertion needs a real, not just a same-second,
-# gap, so a one-second sleep (portable, unlike a GNU-only `touch -d`
-# backdate) sits between the two writes.
+# marker: a genuine staleness. Writing the marker before the lockfile is the
+# same portable ordering trick used to set up the fixture originally, run in
+# the other direction; unlike the tie-safe "not stale" setup, this assertion
+# needs a real, not just a same-second, gap, so a one-second sleep (portable,
+# unlike a GNU-only `touch -d` backdate) sits between the two writes.
 echo '{}' >"${fixture}/node_modules/.package-lock.json"
 sleep 1
 echo '{}' >"${fixture}/package-lock.json"
 expect_exit "stale lockfile warns" 0 "${stub_bin}"
-expect_contains "stale lockfile advises npx --no-install vp install" "WARN node_modules stale against package-lock.json -- fix: npx --no-install vp install"
-
-# (d) the same staleness, but node_modules/.bin/vp does not exist: an
-# install that predates vite-plus entering the lockfile, so the marker is
-# present and the lockfile is newer with no vp binary ever having been
-# installed. npx --no-install has nothing to fall back to here either, so
-# this must also advise npm install. This is the regression test for the
-# advice being keyed on the actual binary rather than inferred from
-# marker files.
-rm -f "${fixture}/node_modules/.bin/vp"
-expect_exit "stale lockfile with no vp binary warns" 0 "${stub_bin}"
-expect_contains "stale lockfile with no vp binary advises npm install" "WARN node_modules stale against package-lock.json -- fix: npm install"
-install_vp_stub
+expect_contains "stale lockfile advises just install" "WARN node_modules stale against package-lock.json -- fix: just install"
 
 # restore the happy-path ordering (lockfile written before the marker) for
 # any assertions that follow.
