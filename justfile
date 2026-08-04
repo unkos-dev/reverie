@@ -463,10 +463,15 @@ worktree branch base="":
     # fails on a third-party message naming neither the condition nor the fix,
     # so the recipe pays for the install rather than leaving it to be found.
     #
-    # --ignore-scripts is load-bearing: the root `prepare` script runs
-    # `lefthook install`, and worktrees share $GIT_COMMON_DIR/hooks, so an
-    # unsuppressed install repoints every checkout's hooks at absolute paths
-    # inside this worktree and keeps pointing there once it is deleted.
+    # --ignore-scripts, because the root `prepare` script runs `lefthook
+    # install` and a worktree already shares $GIT_COMMON_DIR/hooks: it can
+    # provision nothing here, and only rewrites which absolute lefthook path
+    # those shared hooks bake in, repository-wide and last-writer-wins, on
+    # every worktree creation. The generated hook probes that path before its
+    # per-checkout fallback, so a stale one heals itself; the cost while this
+    # worktree lives is that every other checkout runs its binary. Leaving
+    # install scripts unrun in a fresh checkout also matches
+    # adr/2026-08-03-package-ingress-default-deny.md.
     #
     # npm enforces package.json's `devEngines.packageManager` on every direct
     # invocation, hard-erroring when the running version disagrees, so the

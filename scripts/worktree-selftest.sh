@@ -241,12 +241,12 @@ else
   fi
 fi
 
-# The dependency install, the recipe's only network-bearing step.
-# --ignore-scripts is load-bearing and silently so: without it the install's
-# root `prepare` script runs `lefthook install`, and because worktrees share
-# $GIT_COMMON_DIR/hooks that repoints every checkout of the repository at
-# absolute paths inside this worktree, which outlive it. Assert the flag and
-# the working directory, not just that npm was reached.
+# The dependency install, the recipe's only network-bearing step. Dropping
+# --ignore-scripts is silent: the install still succeeds, and the only trace is
+# that its root `prepare` script has rewritten the shared $GIT_COMMON_DIR/hooks
+# to bake in this worktree's lefthook path, for every checkout of the
+# repository. Assert the flag and the working directory, not just that npm was
+# reached.
 dest_ok_phys="$(cd "${dest_ok}" && pwd -P)"
 want_npm_invocation="${dest_ok_phys}"$'\t'"ci --ignore-scripts"
 got_npm_invocation="$(cat "${WORKTREE_SELFTEST_NPM_LOG}")"
