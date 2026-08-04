@@ -83,6 +83,10 @@ pub struct Settings {
     pub revision: i64,
 
     /// DB-assigned (`now()` on every UPDATE); not operator-settable.
+    // Wire-facing despite this struct also being the in-process settings
+    // cache: it is `#[serde(flatten)]`ed into the `GET /api/v1/settings`
+    // response, so the RFC 3339 adapter is required here too.
+    #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
 }
 

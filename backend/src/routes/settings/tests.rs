@@ -42,7 +42,7 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     assert!(body["enrichment_concurrency"].is_number());
     assert!(body["format_priority"].is_array());
     assert!(body["restart_required_fields"].is_array());
-    assert!(!body["updated_at"].is_null(), "updated_at must be present");
+    test_support::assert_rfc3339(&body, "updated_at");
     assert!(
         body.get("last_successful_reload_at").is_some(),
         "last_successful_reload_at must be present in response"

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO shelves (user_id, name, created_at, updated_at) VALUES ($1, 'Precise', '2026-05-24T01:00:00.123456Z', '2026-05-24T01:00:00.123456Z') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "shelves",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "28edec4591d8655a124c61fffdf74f88e1f472eac801c9416559ac8707f4e84d"
+}
