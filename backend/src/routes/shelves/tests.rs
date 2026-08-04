@@ -49,6 +49,15 @@ async fn list_shelves_returns_only_callers_shelves(pool: PgPool) {
     assert!(names.contains(&"Alpha private"));
     assert!(!names.iter().any(|n| n.contains("beta")));
     assert!(body["next_cursor"].is_null());
+
+    let shelf = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["name"] == "Alpha private")
+        .expect("the caller's shelf is listed");
+    test_support::assert_rfc3339(shelf, "created_at");
+    test_support::assert_rfc3339(shelf, "updated_at");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -69,6 +78,8 @@ async fn create_shelf_round_trips(pool: PgPool) {
     assert_eq!(body["name"], "Currently reading");
     assert!(!body["is_system"].as_bool().unwrap());
     assert_eq!(body["item_count"].as_i64().unwrap(), 0);
+    test_support::assert_rfc3339(&body, "created_at");
+    test_support::assert_rfc3339(&body, "updated_at");
     let etag = r
         .headers()
         .get(header::ETAG)
@@ -76,6 +87,11 @@ async fn create_shelf_round_trips(pool: PgPool) {
         .to_str()
         .unwrap();
     assert!(etag.starts_with('"'), "ETag must be quoted: {etag}");
+    assert_eq!(
+        etag.trim_matches('"'),
+        body["updated_at"].as_str().unwrap(),
+        "the ETag is the body's updated_at, so the two must agree textually",
+    );
 
     // List now includes the new shelf.
     let listed = server
@@ -125,6 +141,8 @@ async fn rename_shelf_updates_name(pool: PgPool) {
     assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
     let body: serde_json::Value = r.json();
     assert_eq!(body["name"], "New name");
+    test_support::assert_rfc3339(&body, "created_at");
+    test_support::assert_rfc3339(&body, "updated_at");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -511,6 +529,103 @@ async fn reorder_happy_path_persists_new_order(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn shelf_detail_timestamps_round_trip_as_if_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "wire-detail", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}"))
+        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    let etag = etag_value(r.headers());
+    let body: serde_json::Value = r.json();
+
+    // The detail envelope is route-local and re-declares both
+    // timestamps, so the model DTO being correct proves nothing here.
+    test_support::assert_rfc3339(&body, "created_at");
+    test_support::assert_rfc3339(&body, "updated_at");
+    for item in body["items"].as_array().expect("items array") {
+        test_support::assert_rfc3339(item, "added_at");
+    }
+
+    let read_updated_at = body["updated_at"].as_str().unwrap();
+    assert_eq!(
+        etag.trim_matches('"'),
+        read_updated_at,
+        "the ETag header and the body's updated_at must be the same text",
+    );
+
+    // The property clients depend on: the timestamp read from the body,
+    // quoted, is accepted as If-Match. A body shape the client cannot
+    // reproduce as a header value breaks the reorder contract even when
+    // the header alone is well-formed.
+    let reorder = server
+        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
+        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+        .add_header(
+            header::IF_MATCH,
+            HeaderValue::from_str(&format!("\"{read_updated_at}\"")).unwrap(),
+        )
+        .json(&json!({"items": [ids[1], ids[0]]}))
+        .await;
+    assert_eq!(
+        reorder.status_code(),
+        StatusCode::NO_CONTENT,
+        "body: {}",
+        reorder.text()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_timestamps_keep_sub_second_precision(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "sub-second").await;
+    // Written at INSERT, not UPDATE: the `shelves_set_updated_at`
+    // trigger fires BEFORE UPDATE and would replace any chosen value
+    // with `now()`.
+    let shelf_id: Uuid = sqlx::query_scalar!(
+        "INSERT INTO shelves (user_id, name, created_at, updated_at) \
+         VALUES ($1, 'Precise', '2026-05-24T01:00:00.123456Z', \
+         '2026-05-24T01:00:00.123456Z') RETURNING id",
+        a_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}"))
+        .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    let body: serde_json::Value = r.json();
+
+    for field in ["created_at", "updated_at"] {
+        let parsed = test_support::assert_rfc3339(&body, field);
+        assert_eq!(
+            parsed.nanosecond(),
+            123_456_000,
+            "sub-second precision must survive serialisation: {}",
+            body[field],
+        );
+        // Sub-second digits are emitted only when non-zero, so consumers
+        // must accept variable precision rather than a fixed width.
+        assert!(
+            body[field].as_str().unwrap().contains('.'),
+            "a fractional second must be emitted when present: {}",
+            body[field],
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn reorder_rejects_partial_list(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -884,6 +999,8 @@ async fn shelf_items_pagination_total_under_identical_sort_keys(pool: PgPool) {
         for v in body["items"].as_array().unwrap() {
             let id: Uuid = v["manifestation_id"].as_str().unwrap().parse().unwrap();
             assert!(!seen.contains(&id), "duplicate item {id} on page {pages}");
+            // Every page serialises items, not just the first.
+            test_support::assert_rfc3339(v, "added_at");
             seen.push(id);
         }
         pages += 1;

@@ -275,6 +275,32 @@ pub fn assert_problem(
     body
 }
 
+/// Assert a JSON field carries the published timestamp contract, a
+/// `Z`-terminated RFC 3339 string, and return it parsed.
+///
+/// The parse is load-bearing rather than decorative. `time`'s serde
+/// impls emit a 9-element tuple by default and a space-separated
+/// `2026-05-24 01:00:00.0 +00:00:00` under `serde-human-readable`;
+/// the second is a JSON string but is not RFC 3339, so `is_string()`
+/// or `!is_null()` cannot tell a conforming response from a broken one.
+///
+/// # Panics
+///
+/// Panics when `field` is absent, is not a JSON string, does not carry
+/// the UTC `Z` designator, or does not parse as RFC 3339. Intended for
+/// test code only, where the panic is the assertion-failure surface.
+pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> time::OffsetDateTime {
+    let raw = body[field]
+        .as_str()
+        .unwrap_or_else(|| panic!("`{field}` must be a JSON string, got: {}", body[field]));
+    assert!(
+        raw.ends_with('Z'),
+        "`{field}` must be UTC and `Z`-terminated, got: {raw}",
+    );
+    time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|e| panic!("`{field}` must be RFC 3339, got {raw}: {e}"))
+}
+
 /// Real-DB helpers for tests that exercise the live schema + RLS policies.
 ///
 /// Tests use `#[sqlx::test(migrations = "./migrations")]`, which provisions
