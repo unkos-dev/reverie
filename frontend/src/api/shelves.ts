@@ -47,8 +47,9 @@
  * and `renameShelf` parse `ShelfSchema` on the response to a write the
  * server has already committed, so a rejection there reports failure for
  * an operation that succeeded: the caller's `onSuccess` never runs, its
- * cache invalidation is skipped, and retrying a create collides with the
- * row it just made. Recovery is a refetch, not a retry. Distinguishing a
+ * cache invalidation is skipped, and retrying a create adds a second
+ * shelf under the same name, because nothing enforces name uniqueness.
+ * Recovery is a refetch, not a retry. Distinguishing a
  * schema rejection from a transport failure in mutation handlers is
  * error plumbing rather than contract enforcement, and is deliberately
  * not done here.
