@@ -994,10 +994,13 @@ mod tests {
     }
 
     // Migration 20260610165400 adds decode-range CHECK constraints on TIMESTAMPTZ
-    // columns: `time` without `large-dates` only decodes years -9999..=9999,
-    // so a year-10000+ row (out-of-band mutation only) would panic at
+    // columns, bounding them to years 1..=9999. Postgres accepts values
+    // `DateTime<Utc>` cannot represent (year 294276, and the `infinity`
+    // specials), and such a row (out-of-band mutation only) would panic at
     // `row.get::<DateTime<Utc>>` on every read path. The write must be
-    // rejected at the schema boundary instead.
+    // rejected at the schema boundary instead. The bound is tighter than
+    // chrono's own year-262142 ceiling, deliberately: no Reverie timestamp
+    // legitimately falls outside the common era.
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_rejects_beyond_decode_upper_bound(pool: PgPool) {
         let subject = format!("ts-upper-{}", Uuid::new_v4());
