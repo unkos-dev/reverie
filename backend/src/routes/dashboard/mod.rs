@@ -277,10 +277,8 @@ struct ActivityParams {
 #[derive(serde::Serialize, utoipa::ToSchema)]
 struct BatchRow {
     batch_id: uuid::Uuid,
-    #[serde(with = "time::serde::rfc3339")]
-    started_at: time::OffsetDateTime,
-    #[serde(with = "time::serde::rfc3339::option")]
-    ended_at: Option<time::OffsetDateTime>,
+    started_at: chrono::DateTime<chrono::Utc>,
+    ended_at: Option<chrono::DateTime<chrono::Utc>>,
     total: i64,
     completed: i64,
     failed: i64,

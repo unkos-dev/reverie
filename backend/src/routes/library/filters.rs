@@ -26,9 +26,9 @@
 //!   pre-fold escape. `isbn_13_contains` (nothing to fold) and the unfolded
 //!   `_eq`/`_ne` exact legs escape in Rust via [`escape_like`].
 
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, QueryBuilder};
-use time::Date;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -36,23 +36,24 @@ use crate::models::reading_status::ReadingStatus;
 
 use super::{ListParams, MAX_TAG_FILTERS};
 
-/// `deserialize_with` shim for the `created_at_*` date filters. The `time`
-/// crate's default serde for [`Date`] reads a component representation, not
-/// the `YYYY-MM-DD` string a query param carries, so the date params route
+/// `deserialize_with` shim for the `created_at_*` date filters. Query params
+/// arrive as strings even when they carry a date, so the date params route
 /// through here: an absent field defaults to `None` (never reaching this),
 /// and a present value parses via [`parse_iso_date`], failing deserialization
-/// (a 400) on a malformed date rather than silently dropping it.
+/// (a 400) on a malformed date rather than silently dropping it. Parsing here
+/// rather than leaning on [`NaiveDate`]'s own serde also pins the accepted
+/// spelling to `YYYY-MM-DD` alone.
 pub(super) mod iso_date_opt {
+    use chrono::NaiveDate;
     use serde::{Deserialize, Deserializer};
-    use time::Date;
 
-    /// Deserialize `Option<Date>` from an optional ISO 8601 calendar-date
+    /// Deserialize `Option<NaiveDate>` from an optional ISO 8601 calendar-date
     /// string.
     ///
     /// # Errors
     /// Returns the deserializer's error when the value is present but is not a
     /// `YYYY-MM-DD` calendar date.
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Date>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<NaiveDate>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -65,20 +66,19 @@ pub(super) mod iso_date_opt {
     }
 }
 
-/// Parse a `YYYY-MM-DD` calendar date with no feature-gated format machinery:
-/// three integer components fed to [`Date::from_calendar_date`], which rejects
-/// an out-of-range month or a day past the month's length. `None` on any
-/// malformed input (extra components, non-numeric parts, an impossible date).
-fn parse_iso_date(text: &str) -> Option<Date> {
+/// Parse a `YYYY-MM-DD` calendar date with no format machinery: three integer
+/// components fed to [`NaiveDate::from_ymd_opt`], which rejects an out-of-range
+/// month or a day past the month's length. `None` on any malformed input
+/// (extra components, non-numeric parts, an impossible date).
+fn parse_iso_date(text: &str) -> Option<NaiveDate> {
     let mut parts = text.split('-');
     let year: i32 = parts.next()?.parse().ok()?;
-    let month: u8 = parts.next()?.parse().ok()?;
-    let day: u8 = parts.next()?.parse().ok()?;
+    let month: u32 = parts.next()?.parse().ok()?;
+    let day: u32 = parts.next()?.parse().ok()?;
     if parts.next().is_some() {
         return None;
     }
-    let month = time::Month::try_from(month).ok()?;
-    Date::from_calendar_date(year, month, day).ok()
+    NaiveDate::from_ymd_opt(year, month, day)
 }
 
 /// Upper bound on any single text-filter needle. Bounds the worst-case
@@ -532,18 +532,18 @@ fn push_pages_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
 fn push_created_at_predicates(qb: &mut QueryBuilder<Postgres>, p: &ListParams) {
     if let Some(d) = p.created_at_gte {
         qb.push(" AND m.created_at >= ");
-        qb.push_bind(d.midnight().assume_utc());
+        qb.push_bind(d.and_time(NaiveTime::MIN).and_utc());
     }
     if let Some(d) = p.created_at_lte {
         // Day-inclusive upper bound: strictly before the next day's midnight.
-        // At the representable maximum (`9999-12-31`) there is no next day, so
-        // fall back to `<=` the maximum timestamp; no real row reaches it.
-        if let Some(next) = d.next_day() {
+        // At `NaiveDate::MAX` there is no next day, so fall back to `<=` the
+        // maximum timestamp; no real row reaches it.
+        if let Some(next) = d.succ_opt() {
             qb.push(" AND m.created_at < ");
-            qb.push_bind(next.midnight().assume_utc());
+            qb.push_bind(next.and_time(NaiveTime::MIN).and_utc());
         } else {
             qb.push(" AND m.created_at <= ");
-            qb.push_bind(time::PrimitiveDateTime::MAX.assume_utc());
+            qb.push_bind(DateTime::<Utc>::MAX_UTC);
         }
     }
 }
@@ -784,7 +784,7 @@ mod tests {
         #[derive(serde::Deserialize)]
         struct Wrap {
             #[serde(default, deserialize_with = "iso_date_opt::deserialize")]
-            d: Option<Date>,
+            d: Option<NaiveDate>,
         }
         let present: Wrap = serde_json::from_str(r#"{"d":"2026-06-30"}"#).expect("present parses");
         assert_eq!(

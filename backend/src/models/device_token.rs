@@ -4,9 +4,9 @@
 //! module owns the row shape, lifecycle queries (create/list/revoke),
 //! the per-user cap, and the SQL-side debounce on `last_used_at`.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::auth::scope::Scope;
@@ -28,20 +28,20 @@ pub struct DeviceToken {
     pub token_hash: String,
     /// `now()` of the last successful auth, written by
     /// [`update_last_used`]; `None` if the token has never been used.
-    pub last_used_at: Option<OffsetDateTime>,
+    pub last_used_at: Option<DateTime<Utc>>,
     /// Row insert timestamp.
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// `now()` of revocation; `None` while the token is active.
     /// [`list_for_user`] and [`find_by_id`] return only active rows
     /// (not revoked and not expired).
-    pub revoked_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<DateTime<Utc>>,
     /// Capabilities this token carries. Defaults to `{read}` at the DB
     /// level; a token carries the explicit scopes chosen at mint, bounded by
     /// the owner's role ceiling ([`Scope::grantable_by`]).
     pub scopes: Vec<Scope>,
     /// Optional expiry. `None` = never expires. [`find_by_id`] filters out
     /// expired rows.
-    pub expires_at: Option<OffsetDateTime>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// Test-only token insert without the per-user cap.
@@ -185,7 +185,7 @@ pub async fn create_with_limit(
     name: &str,
     token_hash: &str,
     scopes: &[Scope],
-    expires_at: Option<OffsetDateTime>,
+    expires_at: Option<DateTime<Utc>>,
 ) -> Result<DeviceToken, CreateError> {
     let mut tx = pool.begin().await.map_err(CreateError::Db)?;
 
@@ -263,7 +263,7 @@ pub async fn update_last_used(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error
 
 #[cfg(test)]
 mod tests {
-    use time::Duration;
+    use chrono::TimeDelta;
 
     use super::*;
 
@@ -468,7 +468,7 @@ mod tests {
         .await
         .expect("create user");
 
-        let expires_at = OffsetDateTime::now_utc() + Duration::days(90);
+        let expires_at = Utc::now() + TimeDelta::days(90);
         let token = create_with_limit(
             &pool,
             user_id,
@@ -482,8 +482,8 @@ mod tests {
 
         assert_eq!(token.scopes, vec![Scope::Read, Scope::Write]);
         assert_eq!(
-            token.expires_at.map(OffsetDateTime::unix_timestamp),
-            Some(expires_at.unix_timestamp())
+            token.expires_at.map(|d: DateTime<Utc>| d.timestamp()),
+            Some(expires_at.timestamp())
         );
     }
 
@@ -502,7 +502,7 @@ mod tests {
         // count must exclude expired rows, else an expired-but-unrevoked
         // token permanently eats a slot.
         let cap = usize::try_from(MAX_TOKENS_PER_USER).expect("MAX_TOKENS_PER_USER fits usize");
-        let expired = OffsetDateTime::now_utc() - Duration::days(1);
+        let expired = Utc::now() - TimeDelta::days(1);
         for i in 0..cap {
             create_with_limit(
                 &pool,
@@ -565,7 +565,7 @@ mod tests {
             "revoked token must not resolve"
         );
 
-        let expired_at = OffsetDateTime::now_utc() - Duration::days(1);
+        let expired_at = Utc::now() - TimeDelta::days(1);
         let expired = create_with_limit(
             &pool,
             user_id,

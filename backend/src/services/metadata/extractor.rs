@@ -44,7 +44,7 @@ pub struct ExtractedMetadata {
     pub publisher: Option<String>,
     /// Publication date parsed from `OPF` `<dc:date>` in `YYYY`, `YYYY-MM`,
     /// or `YYYY-MM-DD` format. Partial dates default to the first of month/year.
-    pub pub_date: Option<time::Date>,
+    pub pub_date: Option<chrono::NaiveDate>,
     /// First valid `ISBN` found among the `OPF` identifiers. `None` when no
     /// recognisable valid `ISBN` was present (the extractor selects the first
     /// `IsbnResult` whose `valid` flag is set, so an invalid-only identifier
@@ -284,22 +284,16 @@ fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
 }
 
 /// Try to parse a date string in common OPF formats.
-fn parse_date(s: &str) -> Option<time::Date> {
+fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
     let s = s.trim();
     // YYYY-MM-DD
-    if let Ok(d) = time::Date::parse(
-        s,
-        &time::macros::format_description!("[year]-[month]-[day]"),
-    ) {
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Some(d);
     }
     // YYYY-MM (default to 1st of month)
     if s.len() >= 7 && s.chars().nth(4) == Some('-') {
         let padded = format!("{s}-01");
-        if let Ok(d) = time::Date::parse(
-            &padded,
-            &time::macros::format_description!("[year]-[month]-[day]"),
-        ) {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(&padded, "%Y-%m-%d") {
             return Some(d);
         }
     }
@@ -307,7 +301,7 @@ fn parse_date(s: &str) -> Option<time::Date> {
     if s.len() == 4
         && let Ok(year) = s.parse::<i32>()
     {
-        return time::Date::from_calendar_date(year, time::Month::January, 1).ok();
+        return chrono::NaiveDate::from_ymd_opt(year, 1, 1);
     }
     None
 }

@@ -33,10 +33,9 @@ use axum::http::header::{ETAG, IF_MATCH, LINK};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, QueryBuilder, Row};
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -67,14 +66,16 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// Format the `updated_at` timestamp as an RFC 9110 entity-tag (the
 /// header value carries the RFC 3339 timestamp wrapped in double
 /// quotes per RFC 9110 §8.8.3).
-fn etag_header(updated_at: OffsetDateTime) -> Result<HeaderValue, AppError> {
-    let formatted = updated_at
-        .format(&Rfc3339)
-        .map_err(|e| AppError::Internal(e.into()))?;
+fn etag_header(updated_at: DateTime<Utc>) -> Result<HeaderValue, AppError> {
+    // The tag must be the same RFC 3339 spelling serde writes into the
+    // response body, because clients echo the body's `updated_at` back as
+    // `If-Match`. `to_rfc3339_opts(AutoSi, true)` is exactly what chrono's
+    // `Serialize` impl emits; `to_rfc3339()` is not (it writes `+00:00`).
+    let formatted = updated_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
     HeaderValue::from_str(&format!("\"{formatted}\"")).map_err(|e| AppError::Internal(e.into()))
 }
 
-/// Parse the `If-Match` request header into an [`OffsetDateTime`].
+/// Parse the `If-Match` request header into an [`DateTime<Utc>`].
 ///
 /// Strips the RFC 9110 entity-tag quoting and decodes the inner
 /// RFC 3339 timestamp. Returns:
@@ -82,7 +83,7 @@ fn etag_header(updated_at: OffsetDateTime) -> Result<HeaderValue, AppError> {
 ///   with [`AppError::IfMatchRequired`]).
 /// - `Ok(Some(_))` on a well-formed entity-tag.
 /// - `Err(AppError::Validation)` when the value is malformed.
-fn parse_if_match(headers: &HeaderMap) -> Result<Option<OffsetDateTime>, AppError> {
+fn parse_if_match(headers: &HeaderMap) -> Result<Option<DateTime<Utc>>, AppError> {
     let Some(raw) = headers.get(IF_MATCH) else {
         return Ok(None);
     };
@@ -105,11 +106,13 @@ fn parse_if_match(headers: &HeaderMap) -> Result<Option<OffsetDateTime>, AppErro
             "If-Match value must be a quoted entity-tag".into(),
         ));
     };
-    let ts = OffsetDateTime::parse(stripped, &Rfc3339).map_err(|e| {
-        AppError::Validation(format!(
-            "If-Match value is not a valid RFC3339 entity-tag: {e}"
-        ))
-    })?;
+    let ts = DateTime::parse_from_rfc3339(stripped)
+        .map_err(|e| {
+            AppError::Validation(format!(
+                "If-Match value is not a valid RFC3339 entity-tag: {e}"
+            ))
+        })?
+        .with_timezone(&Utc);
     Ok(Some(ts))
 }
 
@@ -508,14 +511,12 @@ struct ShelfDetailResponse {
     // This envelope re-declares the model's timestamps rather than
     // embedding `Shelf`, so it needs its own adapters; see
     // `models::shelf::Shelf::created_at` for why they are load-bearing.
-    #[serde(with = "time::serde::rfc3339")]
-    created_at: OffsetDateTime,
+    created_at: DateTime<Utc>,
     /// `shelves.updated_at` — the `ETag` value the client echoes as
     /// `If-Match` on the reorder PUT.
     // Rendered by the same adapter `etag_header` uses, so the value a
     // client reads from the body round-trips as an `If-Match` header.
-    #[serde(with = "time::serde::rfc3339")]
-    updated_at: OffsetDateTime,
+    updated_at: DateTime<Utc>,
     /// One page of items ordered by `position ASC, added_at ASC,
     /// manifestation_id ASC`.
     items: Vec<ShelfItem>,
@@ -631,11 +632,7 @@ async fn get_shelf_with_items(
                     added_at: last.get("added_at"),
                     manifestation_id,
                 }
-                .encode()
-                .map_err(|e| {
-                    tracing::warn!(error = %e, %manifestation_id, "failed to encode shelf-items cursor");
-                    AppError::Internal(e.into())
-                })?,
+                .encode(),
             )
         }
         _ => None,
@@ -763,7 +760,7 @@ async fn add_shelf_item(
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
-    let updated_at: OffsetDateTime = sqlx::query_scalar!(
+    let updated_at: DateTime<Utc> = sqlx::query_scalar!(
         r#"UPDATE shelves SET updated_at = now() WHERE id = $1
            RETURNING updated_at AS "ts!""#,
         id,
@@ -839,7 +836,7 @@ async fn remove_shelf_item(
     if deleted.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    let updated_at: OffsetDateTime = sqlx::query_scalar!(
+    let updated_at: DateTime<Utc> = sqlx::query_scalar!(
         r#"UPDATE shelves SET updated_at = now() WHERE id = $1
            RETURNING updated_at AS "ts!""#,
         shelf_id,
@@ -975,7 +972,7 @@ async fn reorder_shelf_items(
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
 
-    let updated_at: OffsetDateTime = sqlx::query_scalar!(
+    let updated_at: DateTime<Utc> = sqlx::query_scalar!(
         r#"UPDATE shelves SET updated_at = now() WHERE id = $1
            RETURNING updated_at AS "ts!""#,
         id,

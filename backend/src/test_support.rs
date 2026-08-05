@@ -168,7 +168,7 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
         provider_visibility: serde_json::json!({}),
         revision: 0,
-        updated_at: time::OffsetDateTime::now_utc(),
+        updated_at: chrono::Utc::now(),
     }))
 }
 
@@ -289,7 +289,7 @@ pub fn assert_problem(
 /// Panics when `field` is absent, is not a JSON string, does not carry
 /// the UTC `Z` designator, or does not parse as RFC 3339. Intended for
 /// test code only, where the panic is the assertion-failure surface.
-pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> time::OffsetDateTime {
+pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> chrono::DateTime<chrono::Utc> {
     let raw = body[field]
         .as_str()
         .unwrap_or_else(|| panic!("`{field}` must be a JSON string, got: {}", body[field]));
@@ -297,8 +297,9 @@ pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> time::OffsetDate
         raw.ends_with('Z'),
         "`{field}` must be UTC and `Z`-terminated, got: {raw}",
     );
-    time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+    chrono::DateTime::parse_from_rfc3339(raw)
         .unwrap_or_else(|e| panic!("`{field}` must be RFC 3339, got {raw}: {e}"))
+        .with_timezone(&chrono::Utc)
 }
 
 /// Real-DB helpers for tests that exercise the live schema + RLS policies.

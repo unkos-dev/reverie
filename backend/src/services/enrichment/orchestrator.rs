@@ -213,9 +213,9 @@ pub async fn run_once(
     let http = api_client(&ua);
 
     let ttls = CacheTtls {
-        hit: time::Duration::days(i64::from(config.enrichment.cache_ttl_hit_days)),
-        miss: time::Duration::days(i64::from(config.enrichment.cache_ttl_miss_days)),
-        error: time::Duration::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
+        hit: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_hit_days)),
+        miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
+        error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
     let results = fan_out_with_fallback(
         pool,
@@ -1243,12 +1243,11 @@ fn json_as_string(v: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
-    use time::format_description::well_known::Iso8601;
+fn parse_iso_date(s: &str) -> Result<chrono::NaiveDate, chrono::ParseError> {
     // `s.len()` is in bytes; provider strings are adversarial and may contain
     // multi-byte UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
     if s.len() >= 10 && s.is_char_boundary(10) {
-        time::Date::parse(&s[..10], &Iso8601::DATE)
+        chrono::NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d")
     } else {
         // Fall back to `YYYY` or `YYYY-MM` by padding.
         let padded = match s.len() {
@@ -1256,7 +1255,7 @@ fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
             7 => format!("{s}-01"),
             _ => s.to_string(),
         };
-        time::Date::parse(&padded, &Iso8601::DATE)
+        chrono::NaiveDate::parse_from_str(&padded, "%Y-%m-%d")
     }
 }
 
@@ -1301,9 +1300,9 @@ pub async fn fan_out_for_dry_run(
     let ua = config.user_agent();
     let http = api_client(&ua);
     let ttls = CacheTtls {
-        hit: time::Duration::days(i64::from(config.enrichment.cache_ttl_hit_days)),
-        miss: time::Duration::days(i64::from(config.enrichment.cache_ttl_miss_days)),
-        error: time::Duration::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
+        hit: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_hit_days)),
+        miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
+        error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
     let results = fan_out_with_fallback(
         pool,

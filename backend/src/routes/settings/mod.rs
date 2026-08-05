@@ -9,7 +9,7 @@
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
 use axum::response::IntoResponse;
-use time::OffsetDateTime;
+use chrono::{DateTime, Utc};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
@@ -43,8 +43,7 @@ struct SettingsResponse {
     restart_required_fields: &'static [&'static str],
     /// Timestamp of the last successful LISTEN/NOTIFY settings reload in
     /// this process; `null` until the first reload.
-    #[serde(with = "time::serde::rfc3339::option")]
-    last_successful_reload_at: Option<OffsetDateTime>,
+    last_successful_reload_at: Option<DateTime<Utc>>,
 }
 
 /// `GET /api/v1/settings` — return current persisted settings (admin only).

@@ -2218,19 +2218,18 @@ async fn insert_manual_version(
     Ok(id)
 }
 
-fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
-    use time::format_description::well_known::Iso8601;
+fn parse_iso_date(s: &str) -> Result<chrono::NaiveDate, chrono::ParseError> {
     // `s.len()` is in bytes; user-submitted strings can contain multi-byte
     // UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
     if s.len() >= 10 && s.is_char_boundary(10) {
-        time::Date::parse(&s[..10], &Iso8601::DATE)
+        chrono::NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d")
     } else {
         let padded = match s.len() {
             4 => format!("{s}-01-01"),
             7 => format!("{s}-01"),
             _ => s.to_string(),
         };
-        time::Date::parse(&padded, &Iso8601::DATE)
+        chrono::NaiveDate::parse_from_str(&padded, "%Y-%m-%d")
     }
 }
 

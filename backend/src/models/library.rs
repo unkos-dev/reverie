@@ -19,9 +19,9 @@
 //! of them into the paginated base query would emit one row per pair
 //! and break `LIMIT` and the cursor math.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::models::content_rating::ContentRating;
@@ -92,8 +92,7 @@ pub struct ExternalRatingRef {
     /// Number of reviews backing the score; 0 when unreported.
     pub review_count: i32,
     /// When the enrichment pipeline last refreshed this value.
-    #[serde(with = "time::serde::rfc3339")]
-    pub fetched_at: OffsetDateTime,
+    pub fetched_at: DateTime<Utc>,
 }
 
 /// One row of a paginated book list. Assembled by hand from the
@@ -164,8 +163,7 @@ pub struct BookListRow {
     pub external_ratings: Vec<ExternalRatingRef>,
     /// `manifestations.created_at`. RFC 3339 on the wire; also the
     /// recent-sort cursor key and the value behind the "Added" sort column.
-    #[serde(with = "time::serde::rfc3339")]
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
 }
 
 /// `/api/v1/books/{id}` response. Carries the [`BookListRow`] fields
@@ -244,11 +242,9 @@ pub struct BookDetail {
     /// `manifestations.created_at`. RFC 3339 on the wire — without the
     /// adapter, `time` serialises a 9-element tuple and the frontend
     /// `BookDetailSchema` (`z.string()`) rejects every detail response.
-    #[serde(with = "time::serde::rfc3339")]
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// `manifestations.updated_at`. RFC 3339 on the wire (see `created_at`).
-    #[serde(with = "time::serde::rfc3339")]
-    pub updated_at: OffsetDateTime,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// One pending draft row surfaced on the Versions tab. Serialised as
@@ -399,6 +395,5 @@ pub struct WorkManifestation {
     /// `manifestations.created_at`. RFC 3339 on the wire — the frontend
     /// `WorkManifestationSchema` expects `z.string()`, not `time`'s
     /// default tuple serialisation.
-    #[serde(with = "time::serde::rfc3339")]
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
 }

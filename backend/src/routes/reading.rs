@@ -10,8 +10,8 @@
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use time::OffsetDateTime;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -63,9 +63,9 @@ struct ReadingStateRow {
     rating: Option<i16>,
     notes: Option<String>,
     progress_pct: Option<f32>,
-    started_at: Option<OffsetDateTime>,
-    finished_at: Option<OffsetDateTime>,
-    last_read_at: Option<OffsetDateTime>,
+    started_at: Option<DateTime<Utc>>,
+    finished_at: Option<DateTime<Utc>>,
+    last_read_at: Option<DateTime<Utc>>,
 }
 
 impl From<ReadingStateRow> for ReadingState {
@@ -180,12 +180,12 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     let (progress_pct, started_at, finished_at, last_read_at) = match req.status.flatten() {
         Some(ReadingStatus::Reading) => (
             existing.progress_pct,
-            Some(existing.started_at.unwrap_or_else(OffsetDateTime::now_utc)),
+            Some(existing.started_at.unwrap_or_else(Utc::now)),
             existing.finished_at,
             existing.last_read_at,
         ),
         Some(ReadingStatus::Finished) => {
-            let now = OffsetDateTime::now_utc();
+            let now = Utc::now();
             (Some(100.0_f32), existing.started_at, Some(now), Some(now))
         }
         _ => (

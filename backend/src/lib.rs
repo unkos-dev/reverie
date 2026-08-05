@@ -863,8 +863,7 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
     let pin = auth::recovery::generate_pin();
     let pin_hash = auth::password::hash_password(pin.as_bytes())
         .map_err(|e| anyhow::anyhow!("failed to hash the recovery PIN: {e}"))?;
-    let expires_at =
-        time::OffsetDateTime::now_utc() + time::Duration::seconds(config.recovery_pin_ttl_secs);
+    let expires_at = chrono::Utc::now() + chrono::TimeDelta::seconds(config.recovery_pin_ttl_secs);
     // Supersede prior PINs, persist the new one, and publish it as one
     // serialized step, so a concurrent forgot-password request in the server
     // process cannot leave the operator file and the stored hash describing

@@ -7,9 +7,9 @@
 // Phase B building block: callers are wired in Phase C.  Until then this module
 // is unused from the binary entry point but is fully tested.
 
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::PgPool;
-use time::OffsetDateTime;
 
 /// The kind of API response recorded in a cache row.
 ///
@@ -37,17 +37,17 @@ pub struct CachedResponse {
     /// `HTTP` status code from the upstream response, if applicable.
     pub http_status: Option<i32>,
     /// Timestamp when the upstream call was made (stored in `UTC`).
-    pub fetched_at: OffsetDateTime,
+    pub fetched_at: DateTime<Utc>,
 }
 
 /// Per-kind `TTL` configuration passed to `write`.
 pub struct CacheTtls {
     /// How long to keep a successful hit before expiry.
-    pub hit: time::Duration,
+    pub hit: chrono::TimeDelta,
     /// How long to remember a confirmed miss (avoids immediate re-lookup).
-    pub miss: time::Duration,
+    pub miss: chrono::TimeDelta,
     /// How long to suppress retries after a source error.
-    pub error: time::Duration,
+    pub error: chrono::TimeDelta,
 }
 
 /// Read a live cache entry for `(source, lookup_key)`.
@@ -106,7 +106,7 @@ pub async fn write(
     http_status: Option<i32>,
     ttls: &CacheTtls,
 ) -> sqlx::Result<()> {
-    let now = OffsetDateTime::now_utc();
+    let now = Utc::now();
     let ttl = match kind {
         ApiCacheKind::Hit => ttls.hit,
         ApiCacheKind::Miss => ttls.miss,
@@ -142,14 +142,14 @@ pub async fn write(
 mod tests {
     use super::*;
     use crate::test_support::db::ingestion_pool_for;
+    use chrono::TimeDelta;
     use serde_json::json;
-    use time::Duration;
 
     fn ttls_standard() -> CacheTtls {
         CacheTtls {
-            hit: Duration::hours(1),
-            miss: Duration::minutes(5),
-            error: Duration::minutes(1),
+            hit: TimeDelta::hours(1),
+            miss: TimeDelta::minutes(5),
+            error: TimeDelta::minutes(1),
         }
     }
 
@@ -186,9 +186,9 @@ mod tests {
         let source = "test-cache-expired";
         let key = "test-expired";
         let ttls = CacheTtls {
-            hit: Duration::ZERO,
-            miss: Duration::ZERO,
-            error: Duration::ZERO,
+            hit: TimeDelta::zero(),
+            miss: TimeDelta::zero(),
+            error: TimeDelta::zero(),
         };
 
         write(

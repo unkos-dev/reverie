@@ -700,8 +700,8 @@ async fn forgot_password(
         let pin = crate::auth::recovery::generate_pin();
         let pin_hash = crate::auth::password::hash_password(pin.as_bytes())
             .map_err(|e| AppError::Internal(anyhow::anyhow!("pin hash failed: {e}")))?;
-        let expires_at = time::OffsetDateTime::now_utc()
-            + time::Duration::seconds(state.config.recovery_pin_ttl_secs);
+        let expires_at =
+            chrono::Utc::now() + chrono::TimeDelta::seconds(state.config.recovery_pin_ttl_secs);
 
         // THREAT (publishing an unpersisted PIN): supersede, persist, and write
         // the operator file as one serialized step, so this request publishes a

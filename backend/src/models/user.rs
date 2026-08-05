@@ -6,10 +6,10 @@
 //! `(issuer, subject)`; `users.oidc_subject` is a vestigial nullable column,
 //! no longer the identity key, and OIDC login no longer auto-promotes.
 
+use chrono::{DateTime, Utc};
 use email_address::{EmailAddress, Options};
 use serde::Serialize;
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::models::role::Role;
@@ -24,11 +24,11 @@ struct UserRow {
     email: Option<String>,
     role: Role,
     is_child: bool,
-    created_at: OffsetDateTime,
-    updated_at: OffsetDateTime,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
     session_version: i32,
     theme_preference: ThemePreference,
-    disabled_at: Option<OffsetDateTime>,
+    disabled_at: Option<DateTime<Utc>>,
 }
 
 /// Public user row exposed to handlers and serialised in API responses.
@@ -56,9 +56,9 @@ pub struct User {
     /// remains the single source of truth across both axes.
     pub is_child: bool,
     /// Row insert timestamp.
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// `now()` of the most recent change to any user-facing field.
-    pub updated_at: OffsetDateTime,
+    pub updated_at: DateTime<Utc>,
     /// Monotonic counter incremented to force-invalidate every active
     /// session for this user; compared per-request by
     /// [`crate::auth::middleware::CurrentUser`].
@@ -69,7 +69,7 @@ pub struct User {
     /// when active. Every auth-resolution path rejects a user with this set, so
     /// a disabled account cannot log in, rehydrate a session, or authenticate a
     /// device token.
-    pub disabled_at: Option<OffsetDateTime>,
+    pub disabled_at: Option<DateTime<Utc>>,
 }
 
 impl From<UserRow> for User {
@@ -996,7 +996,7 @@ mod tests {
     // Migration 20260610165400 adds decode-range CHECK constraints on TIMESTAMPTZ
     // columns: `time` without `large-dates` only decodes years -9999..=9999,
     // so a year-10000+ row (out-of-band mutation only) would panic at
-    // `row.get::<OffsetDateTime>` on every read path. The write must be
+    // `row.get::<DateTime<Utc>>` on every read path. The write must be
     // rejected at the schema boundary instead.
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_rejects_beyond_decode_upper_bound(pool: PgPool) {
@@ -1066,7 +1066,7 @@ mod tests {
     }
 
     // The full decodable range stays writable: year 9999 passes the CHECK
-    // and round-trips through OffsetDateTime decode.
+    // and round-trips through DateTime<Utc> decode.
     #[sqlx::test(migrations = "./migrations")]
     async fn timestamptz_check_accepts_max_decodable_year(pool: PgPool) {
         let subject = format!("ts-max-{}", Uuid::new_v4());
@@ -1086,7 +1086,7 @@ mod tests {
             .await
             .expect("decode of max in-range created_at must succeed")
             .expect("user still present");
-        assert_eq!(reloaded.created_at.year(), 9999);
+        assert_eq!(chrono::Datelike::year(&reloaded.created_at), 9999);
     }
 
     #[sqlx::test(migrations = "./migrations")]

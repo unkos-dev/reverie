@@ -71,8 +71,8 @@ pub async fn run_sweep(store: PostgresStore, cancel: CancellationToken) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, TimeDelta, Utc};
     use sqlx::PgPool;
-    use time::{Duration, OffsetDateTime};
 
     async fn session_count(pool: &PgPool) -> i64 {
         sqlx::query_scalar!(r#"SELECT count(*) AS "count!" FROM tower_sessions.session"#)
@@ -81,7 +81,7 @@ mod tests {
             .unwrap()
     }
 
-    async fn insert_session(pool: &PgPool, id: &str, expiry: OffsetDateTime) {
+    async fn insert_session(pool: &PgPool, id: &str, expiry: DateTime<Utc>) {
         sqlx::query!(
             "INSERT INTO tower_sessions.session (id, data, expiry_date) VALUES ($1, $2, $3)",
             id,
@@ -95,9 +95,9 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn sweep_deletes_expired_and_keeps_live(pool: PgPool) {
-        let now = OffsetDateTime::now_utc();
-        insert_session(&pool, "expired", now - Duration::hours(1)).await;
-        insert_session(&pool, "live", now + Duration::hours(1)).await;
+        let now = Utc::now();
+        insert_session(&pool, "expired", now - TimeDelta::hours(1)).await;
+        insert_session(&pool, "live", now + TimeDelta::hours(1)).await;
         assert_eq!(session_count(&pool).await, 2);
 
         let store = PostgresStore::new(pool.clone());

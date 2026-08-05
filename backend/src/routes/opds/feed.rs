@@ -15,21 +15,17 @@
 //! Every `expect()` call in this module writes to a `Writer<Cursor<Vec<u8>>>`.
 //! `std::io::Cursor<Vec<u8>>` is an infallible sink — there is no I/O and
 //! writes cannot fail except on OOM (which is a process abort, not a Result).
-//! The `Rfc3339` format calls are on `OffsetDateTime` values produced by
-//! `now_utc()` or parsed from trusted DB fields, both of which are always
-//! representable as Rfc3339. Making every builder method return `Result`
-//! would cascade error-handling into every call site for an error path that
-//! physically cannot occur.
+//! Making every builder method return `Result` would cascade error-handling
+//! into every call site for an error path that physically cannot occur.
 #![expect(
     clippy::expect_used,
-    reason = "all expects write to Cursor<Vec<u8>> (infallible) or format OffsetDateTime as Rfc3339 (always representable)"
+    reason = "all expects write to Cursor<Vec<u8>>, an infallible sink"
 )]
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use std::io::Cursor;
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use url::Url;
 use uuid::Uuid;
 
@@ -113,7 +109,7 @@ pub struct AcquisitionEntry {
     /// ISBN-13 preferred; ISBN-10 fallback. `None` emits a `urn:uuid:` id.
     pub isbn: Option<String>,
     /// Entry `<updated>` timestamp (sourced from `manifestations.updated_at`).
-    pub updated_at: OffsetDateTime,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// Streaming OPDS feed builder.
@@ -139,7 +135,7 @@ impl FeedBuilder {
         self_path: &str,
         kind: FeedKind,
         title: &str,
-        updated: OffsetDateTime,
+        updated: DateTime<Utc>,
     ) -> Self {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
         writer
@@ -160,7 +156,7 @@ impl FeedBuilder {
         write_text_element(
             &mut writer,
             "updated",
-            &updated.format(&Rfc3339).expect("format updated"),
+            &updated.to_rfc3339_opts(SecondsFormat::AutoSi, true),
         );
 
         // Feed-level <author>. RFC 4287 §4.1.1: a feed element MUST contain
@@ -231,9 +227,7 @@ impl FeedBuilder {
         write_text_element(
             &mut self.writer,
             "updated",
-            &OffsetDateTime::now_utc()
-                .format(&Rfc3339)
-                .expect("format updated"),
+            &Utc::now().to_rfc3339_opts(SecondsFormat::AutoSi, true),
         );
 
         let abs_href = self.abs(href);
@@ -277,8 +271,7 @@ impl FeedBuilder {
             "updated",
             &entry
                 .updated_at
-                .format(&Rfc3339)
-                .expect("format entry updated"),
+                .to_rfc3339_opts(SecondsFormat::AutoSi, true),
         );
 
         for creator in &entry.creators {
@@ -429,7 +422,9 @@ mod tests {
     }
 
     fn empty_acquisition_bytes() -> Vec<u8> {
-        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-04-21T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let mut b = FeedBuilder::new(
             &base(),
             "/opds/library/new",
@@ -476,7 +471,9 @@ mod tests {
 
     #[test]
     fn feed_id_is_feed_urn() {
-        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-04-21T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let b = FeedBuilder::new(
             &base(),
             "/opds/library",
@@ -552,7 +549,9 @@ mod tests {
 
     #[test]
     fn missing_isbn_falls_back_to_uuid_urn() {
-        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-04-21T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let mut b = FeedBuilder::new(
             &base(),
             "/opds/library/new",
@@ -579,7 +578,9 @@ mod tests {
 
     #[test]
     fn navigation_entry_uses_navigation_profile_type() {
-        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-04-21T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let mut b = FeedBuilder::new(&base(), "/opds", FeedKind::Navigation, "Root", ts);
         b.add_navigation_entry(
             "urn:reverie:feed:/opds/library",

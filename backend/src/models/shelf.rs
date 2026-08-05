@@ -14,8 +14,8 @@
 //! Without that bump, a `POST .../items` would not change the `ETag`
 //! and the next reorder PUT would 412 spuriously.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// One shelf in the shelves-list response, plus the read shape for
@@ -36,12 +36,10 @@ pub struct Shelf {
     // serde impl emits a 9-element tuple of date and offset components,
     // so dropping it publishes a shape no `date-time` consumer accepts.
     // Applies to every timestamp in this module.
-    #[serde(with = "time::serde::rfc3339")]
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// `shelves.updated_at`. Doubles as the `ETag` value the client
     /// echoes on `If-Match` for the reorder endpoint.
-    #[serde(with = "time::serde::rfc3339")]
-    pub updated_at: OffsetDateTime,
+    pub updated_at: DateTime<Utc>,
     /// Count of `shelf_items` rows on this shelf. Computed inline via
     /// a correlated scalar subquery on the list endpoint and surfaces
     /// in the sidebar without a follow-up request per shelf.
@@ -62,8 +60,7 @@ pub struct ShelfItem {
     /// the reorder PUT.
     pub position: i32,
     /// `shelf_items.added_at`.
-    #[serde(with = "time::serde::rfc3339")]
-    pub added_at: OffsetDateTime,
+    pub added_at: DateTime<Utc>,
 }
 
 // `GET /api/v1/shelves/{id}`'s envelope (`ShelfDetailResponse`) lives in

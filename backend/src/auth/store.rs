@@ -26,9 +26,38 @@
 //! (`reverie_app` DML only).
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
+use time::OffsetDateTime;
 use tower_sessions::session::{Id, Record};
 use tower_sessions::session_store::{self, ExpiredDeletion, SessionStore};
+
+/// Convert `tower-sessions`' expiry into the type sqlx binds to
+/// `timestamptz`.
+///
+/// [`Record::expiry_date`](tower_sessions::session::Record) is a
+/// `time::OffsetDateTime` because the upstream trait defines it that way,
+/// while first-party code and the sqlx `chrono` feature speak
+/// `DateTime<Utc>`. The two are bridged through the epoch, which is exact
+/// in both directions and for instants on either side of it: `time` reports
+/// whole seconds since the epoch plus a non-negative nanosecond-of-second,
+/// which is the same decomposition [`DateTime::from_timestamp`] consumes.
+///
+/// THREAT: this value is the session's expiry, and
+/// [`SessionStore::load`](tower_sessions::session_store::SessionStore::load)
+/// admits a session only while `expiry_date > now()`. Rounding, truncating,
+/// or defaulting an unconvertible instant would move that boundary and could
+/// extend a session past its intended life, so the out-of-range case refuses
+/// the write instead. It is not reachable from a live session (`Expiry`
+/// values are minutes to hours from now); it exists so no future caller can
+/// make it silent.
+fn expiry_to_timestamptz(expiry: OffsetDateTime) -> session_store::Result<DateTime<Utc>> {
+    DateTime::from_timestamp(expiry.unix_timestamp(), expiry.nanosecond()).ok_or_else(|| {
+        session_store::Error::Encode(format!(
+            "session expiry {expiry} is outside the representable timestamp range"
+        ))
+    })
+}
 
 /// Postgres-backed [`SessionStore`](tower_sessions::session_store::SessionStore)
 /// over `tower_sessions.session`.
@@ -55,6 +84,7 @@ impl PostgresStore {
         let id = record.id.to_string();
         let data =
             rmp_serde::to_vec(record).map_err(|e| session_store::Error::Encode(e.to_string()))?;
+        let expiry_date = expiry_to_timestamptz(record.expiry_date)?;
         sqlx::query!(
             "INSERT INTO tower_sessions.session (id, data, expiry_date) \
              VALUES ($1, $2, $3) \
@@ -62,7 +92,7 @@ impl PostgresStore {
                SET data = excluded.data, expiry_date = excluded.expiry_date",
             id,
             data,
-            record.expiry_date,
+            expiry_date,
         )
         .execute(&self.pool)
         .await
@@ -87,6 +117,7 @@ impl SessionStore for PostgresStore {
             let id = record.id.to_string();
             let data = rmp_serde::to_vec(record)
                 .map_err(|e| session_store::Error::Encode(e.to_string()))?;
+            let expiry_date = expiry_to_timestamptz(record.expiry_date)?;
             let inserted = sqlx::query_scalar!(
                 "INSERT INTO tower_sessions.session (id, data, expiry_date) \
                  VALUES ($1, $2, $3) \
@@ -94,7 +125,7 @@ impl SessionStore for PostgresStore {
                  RETURNING id",
                 id,
                 data,
-                record.expiry_date,
+                expiry_date,
             )
             .fetch_optional(&self.pool)
             .await
@@ -149,5 +180,54 @@ impl ExpiredDeletion for PostgresStore {
             .await
             .map_err(|e| session_store::Error::Backend(e.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expiry_to_timestamptz;
+    use chrono::SecondsFormat;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn preserves_a_subsecond_instant() {
+        let expiry = OffsetDateTime::from_unix_timestamp(1_785_000_896).expect("epoch seconds")
+            + time::Duration::nanoseconds(123_456_789);
+
+        let converted = expiry_to_timestamptz(expiry).expect("representable");
+
+        assert_eq!(converted.timestamp(), expiry.unix_timestamp());
+        assert_eq!(converted.timestamp_subsec_nanos(), expiry.nanosecond());
+        assert_eq!(
+            converted.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            "2026-08-05T09:34:56.123456789Z"
+        );
+    }
+
+    #[test]
+    fn preserves_a_pre_epoch_subsecond_instant() {
+        // Whole seconds go negative while the nanosecond-of-second stays
+        // positive. A conversion that added the two as signed quantities would
+        // land a full second away; going through the epoch does not.
+        let expiry = OffsetDateTime::UNIX_EPOCH - time::Duration::milliseconds(500);
+
+        let converted = expiry_to_timestamptz(expiry).expect("representable");
+
+        assert_eq!(expiry.unix_timestamp(), -1);
+        assert_eq!(expiry.nanosecond(), 500_000_000);
+        assert_eq!(
+            converted.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            "1969-12-31T23:59:59.500Z"
+        );
+    }
+
+    #[test]
+    fn round_trips_a_whole_second_instant() {
+        let expiry = OffsetDateTime::from_unix_timestamp(1_785_000_896).expect("epoch seconds");
+
+        let converted = expiry_to_timestamptz(expiry).expect("representable");
+
+        assert_eq!(converted.timestamp(), 1_785_000_896);
+        assert_eq!(converted.timestamp_subsec_nanos(), 0);
     }
 }
