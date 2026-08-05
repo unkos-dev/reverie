@@ -45,8 +45,8 @@ export type DashboardStats = z.infer<typeof DashboardStatsSchema>;
 
 const BatchRowSchema = z.object({
   batch_id: z.uuid(),
-  started_at: z.string(),
-  ended_at: z.string().nullable(),
+  started_at: z.iso.datetime(),
+  ended_at: z.iso.datetime().nullable(),
   total: z.number().int().nonnegative(),
   completed: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),

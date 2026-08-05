@@ -187,6 +187,107 @@ describe("getShelf", () => {
   });
 });
 
+describe("timestamp wire contract", () => {
+  // What `time` serialises an OffsetDateTime to while the
+  // `serde-human-readable` feature is off: (year, ordinal, hour, minute,
+  // second, nanosecond, offset_hours, offset_minutes, offset_seconds).
+  // The shelves endpoints shipped this shape, so it is the regression
+  // these cases exist to catch.
+  const TUPLE = [2026, 144, 1, 0, 0, 0, 0, 0, 0];
+  // What enabling that feature would emit instead: a space between date
+  // and time, and a seconds-precision offset. Also not RFC 3339, so
+  // turning the feature on is not a fix.
+  const SPACE_SEPARATED = "2026-05-24 01:00:00.0 +00:00:00";
+
+  const detailPage = (overrides: Record<string, unknown>) => ({
+    id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    name: "Holiday",
+    is_system: false,
+    created_at: "2026-05-24T01:00:00Z",
+    updated_at: "2026-05-24T01:00:00Z",
+    items: [],
+    next_cursor: null,
+    ...overrides,
+  });
+
+  test("listShelves rejects a tuple-shaped created_at", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          { ...shelfRow("Tuple", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"), created_at: TUPLE },
+        ],
+        next_cursor: null,
+      }),
+    );
+    await expect(listShelves()).rejects.toThrow(/created_at/);
+  });
+
+  test("listShelves rejects a space-separated created_at", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            ...shelfRow("Spaced", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4"),
+            created_at: SPACE_SEPARATED,
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+    await expect(listShelves()).rejects.toThrow(/created_at/);
+  });
+
+  test("getShelf rejects a tuple-shaped updated_at", async () => {
+    // updated_at is the entity-tag the reorder path echoes as If-Match,
+    // so a malformed one must fail here rather than reach buildEtag.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(detailPage({ updated_at: TUPLE })),
+    );
+    await expect(getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow(/updated_at/);
+  });
+
+  test("getShelf rejects a space-separated updated_at", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(detailPage({ updated_at: SPACE_SEPARATED })),
+    );
+    await expect(getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow(/updated_at/);
+  });
+
+  test("getShelf rejects a tuple-shaped added_at on an item", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        detailPage({
+          items: [
+            {
+              manifestation_id: "00000000-0000-0000-0000-000000000001",
+              position: 1,
+              added_at: TUPLE,
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")).rejects.toThrow(/added_at/);
+  });
+
+  test("accepts the Z-terminated form the backend emits, including sub-second precision", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            ...shelfRow("Precise", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5"),
+            created_at: "2026-08-03T15:01:48.21622Z",
+            updated_at: "2026-08-03T15:09:03.466213Z",
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+    const result = await listShelves();
+    expect(result[0]?.updated_at).toBe("2026-08-03T15:09:03.466213Z");
+  });
+});
+
 describe("listShelves walk bound", () => {
   test("throws loudly when pagination never terminates", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>

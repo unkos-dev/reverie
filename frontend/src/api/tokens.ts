@@ -12,16 +12,15 @@ import { apiFetch } from "./fetch";
 const SCOPE_VALUES = ["read", "write", "admin"] as const;
 type Scope = (typeof SCOPE_VALUES)[number];
 
-// Timestamps are RFC 3339 (offset form, e.g. `...+00:00` or `...Z`). Validate
-// the format at the parse boundary so a backend serialization regression fails
-// loudly here rather than reaching date formatting as an invalid string.
+// Timestamps validate as `Z`-terminated RFC 3339; `./shelves.ts` carries
+// the note on why the bare validator is the right one for this wire format.
 const TokenSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   scopes: z.array(z.enum(SCOPE_VALUES)),
-  expires_at: z.iso.datetime({ offset: true }).nullable(),
-  last_used_at: z.iso.datetime({ offset: true }).nullable(),
-  created_at: z.iso.datetime({ offset: true }),
+  expires_at: z.iso.datetime().nullable(),
+  last_used_at: z.iso.datetime().nullable(),
+  created_at: z.iso.datetime(),
 });
 
 /** One active device token in the list view (no plaintext, no hash). */

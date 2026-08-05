@@ -3,6 +3,57 @@
  *
  * Mirrors the response DTOs in `backend/src/models/shelf.rs`.
  *
+ * # Timestamp validation
+ *
+ * `created_at`, `updated_at`, and `added_at` use bare `z.iso.datetime()`,
+ * which accepts only a `Z`-terminated value with arbitrary sub-second
+ * precision. That is exactly what the backend emits: Postgres
+ * `timestamptz` normalises to UTC, and the serde adapter formats a UTC
+ * offset as `Z`. The `{ offset: true }` variant would also accept
+ * `+00:00`, which no endpoint here produces, so the bare form is both
+ * stricter and correct.
+ *
+ * These fields were `z.string()` until a serialization defect shipped a
+ * non-RFC 3339 shape past them. A type-only check cannot catch a format
+ * regression, so the format is pinned here rather than assumed.
+ *
+ * # Failure policy
+ *
+ * A malformed timestamp is rejected in the schema, so every consumer
+ * fails at the same point rather than each inventing its own handling.
+ * What differs is what the surface does with that failure. Reads fall
+ * into three tiers, and the split is deliberate:
+ *
+ * - **Primary** surfaces let the error reach the route error boundary,
+ *   because a shelves page that cannot show shelves has nothing to
+ *   render: `pages/shelves/ShelvesListPage` and
+ *   `pages/shelves/ShelfDetailPage` (both `useSuspenseQuery`).
+ * - **Loaders** prefetch and swallow, leaving the throw to the primary
+ *   surface that re-reads the same key: `routes/shelves` and
+ *   `routes/shelf-detail` (both `prefetchQuery`).
+ * - **Auxiliary** surfaces degrade and stay mounted, because shelves are
+ *   an accessory to their real job: `components/shell/LeftRail`,
+ *   `components/shell/FilterRail`, `pages/library/FilterChips`,
+ *   `pages/library/BookDetailDrawer`, and `pages/library/BatchBar` (all
+ *   `useQuery`). Degrading must stay observable: the central
+ *   `QueryCache.onError` routes only 401s, so these log the failure
+ *   themselves.
+ *
+ * Adding a read consumer means placing it in one of those three tiers.
+ * Do not promote an auxiliary surface to a throw without a design
+ * artifact covering the resulting error state.
+ *
+ * Writes sit outside that split and are not a fourth tier. `createShelf`
+ * and `renameShelf` parse `ShelfSchema` on the response to a write the
+ * server has already committed, so a rejection there reports failure for
+ * an operation that succeeded: the caller's `onSuccess` never runs, its
+ * cache invalidation is skipped, and retrying a create adds a second
+ * shelf under the same name, because nothing enforces name uniqueness.
+ * Recovery is a refetch, not a retry. Distinguishing a
+ * schema rejection from a transport failure in mutation handlers is
+ * error plumbing rather than contract enforcement, and is deliberately
+ * not done here.
+ *
  * # ETag / If-Match contract
  *
  * The backend emits `ETag: "<updated_at RFC3339>"` on every shelf read
@@ -25,8 +76,8 @@ const ShelfSchema = z.object({
   id: z.string(),
   name: z.string(),
   is_system: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
   item_count: z.number().int().nonnegative(),
 });
 /** One shelf in `GET /api/v1/shelves` (and create/rename round-trips). */
@@ -35,7 +86,7 @@ export type Shelf = z.infer<typeof ShelfSchema>;
 const ShelfItemSchema = z.object({
   manifestation_id: z.string(),
   position: z.number().int(),
-  added_at: z.string(),
+  added_at: z.iso.datetime(),
 });
 /** One item row in `GET /api/v1/shelves/{id}`. */
 export type ShelfItem = z.infer<typeof ShelfItemSchema>;
@@ -55,8 +106,8 @@ const ShelfDetailPageSchema = z.object({
   id: z.string(),
   name: z.string(),
   is_system: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
   items: z.array(ShelfItemSchema),
   next_cursor: z.string().nullable(),
 });

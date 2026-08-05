@@ -18,8 +18,8 @@ const UserSchema = z.object({
   role: z.enum(ROLE_VALUES),
   is_child: z.boolean(),
   disabled: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
 });
 
 type User = z.infer<typeof UserSchema>;

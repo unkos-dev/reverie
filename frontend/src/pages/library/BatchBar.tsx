@@ -10,7 +10,7 @@
  * rather than letting "all" be misread as "everything matching".
  */
 import { FolderPlus, Loader2 } from "lucide-react";
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -41,11 +41,21 @@ export function BatchBar({
 }: BatchBarProps): ReactElement | null {
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(false);
-  const { data: shelves, isError: shelvesError } = useQuery<Shelf[]>({
+  const {
+    data: shelves,
+    isError: shelvesError,
+    error: shelvesQueryError,
+  } = useQuery<Shelf[]>({
     queryKey: queryKeys.shelves.list(),
     queryFn: ({ signal }) => listShelves(signal),
     staleTime: 60_000,
   });
+  // A shelf-less picker is sanctioned degradation, but the failure must
+  // stay observable: the central QueryCache.onError only routes 401s, so
+  // a non-auth failure would otherwise vanish.
+  useEffect(() => {
+    if (shelvesError) console.error("[BatchBar] shelves fetch failed", shelvesQueryError);
+  }, [shelvesError, shelvesQueryError]);
 
   if (selectedIds.size === 0) return null;
 

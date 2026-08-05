@@ -17,9 +17,9 @@ export const ReadingStateSchema = z.object({
   rating: z.number().int().nullable(),
   notes: z.string().nullable(),
   progress_pct: z.number().nullable(),
-  started_at: z.string().nullable(),
-  finished_at: z.string().nullable(),
-  last_read_at: z.string().nullable(),
+  started_at: z.iso.datetime().nullable(),
+  finished_at: z.iso.datetime().nullable(),
+  last_read_at: z.iso.datetime().nullable(),
 });
 /**
  * A caller's reading state for one book. All-null fields mean unread
