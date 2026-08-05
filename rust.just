@@ -118,8 +118,10 @@ build:
 
 # Offline (no database, no toolchain needed). Mirrors ci.yml's backend-checks
 # static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
-# time-crate usage, and em dashes in the generated config schema, each checked
-# against its .github/*-allowlist.txt (or, for the em-dash guard, none).
+# and em dashes in the generated config schema, each checked against its
+# .github/*-allowlist.txt (or, for the em-dash guard, none). The
+# datetime-crate boundary is a clippy lint, not a guard; see
+# backend/clippy.toml.
 #
 # Backend static allowlist and prose guards.
 [group('rust')]

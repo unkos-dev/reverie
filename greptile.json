@@ -202,7 +202,7 @@
       {
         "id": "chrono-not-time",
         "severity": "medium",
-        "rule": "First-party backend code uses `chrono` (`DateTime<Utc>` for instants, `NaiveDate` for calendar dates). Flag any new use of the `time` crate outside the files listed in backend/guards/time-allowlist.txt, including fully-qualified `time::` paths. Also flag any new `#[serde(with = \"...rfc3339\")]` adapter: chrono serialises RFC 3339 by default, so an adapter signals a field that should have been `DateTime<Utc>`. `std::time` and `tokio::time` are unrelated and fine.",
+        "rule": "First-party backend code uses `chrono` (`DateTime<Utc>` for instants, `NaiveDate` for calendar dates). Flag any new use of the `time` crate that is not covered by a scoped `#[expect(clippy::disallowed_types, ...)]`; clippy enforces this via disallowed-types in backend/clippy.toml. Also flag any new `#[serde(with = \"...rfc3339\")]` adapter: chrono serialises RFC 3339 by default, so an adapter signals a field that should have been `DateTime<Utc>`. `std::time` and `tokio::time` are unrelated and fine.",
         "scope": ["backend/**/*.rs"]
       },
       {

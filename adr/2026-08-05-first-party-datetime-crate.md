@@ -95,7 +95,7 @@ rounding or truncating one.
   existed only to carry a formatting failure that cannot occur.
 - Bad, because `time` remains in the tree at three boundaries, so two
   datetime crates coexist and a contributor must know which applies where.
-  The static guard is what keeps that boundary from spreading.
+  A compiler lint is what keeps that boundary from spreading.
 - Bad, because explicit RFC 3339 formatting has a trap: the crate's plain
   `to_rfc3339` writes a `+00:00` offset, while serde and the options-taking
   variant write `Z`. Code that formats a timestamp by hand must match what
@@ -112,11 +112,20 @@ rounding or truncating one.
 
 ### Confirmation
 
-First-party code uses `chrono`. A static guard rejects any `time::` path in
-backend sources outside a reviewed allowlist, which names the three
-third-party boundaries and nothing else. The guard matches qualified paths,
-not only imports, because the session-layer boundary reaches the crate
-without importing it.
+First-party code uses `chrono`. The `time` types are entered as
+`disallowed-types` in the clippy configuration, and the three third-party
+boundaries carry scoped `#[expect]` attributes naming the API that forces
+each one.
+
+A compiler lint rather than a text search, because the question is what a
+path resolves to and not how it is spelled: an import, a fully-qualified
+call, an absolute `::time::` path, a re-export reached through another
+crate, and a renaming import are one identity and one entry, while
+`std::time` is a different identity needing no exclusion clause. It also
+covers the whole workspace and every target rather than one source
+directory, and an exemption that stops being necessary fails the build, so
+the carve-outs cannot outlive their justification the way a checked-in
+allowlist can.
 
 ## Pros and Cons of the Options
 

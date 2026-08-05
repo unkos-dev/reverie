@@ -21,6 +21,11 @@
 //! the cookie silently rejected by the browser — the documented signal
 //! to put the deployment behind TLS.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "the cookie builder's `max_age` takes a time::Duration and accepts no chrono equivalent; see adr/2026-08-05-first-party-datetime-crate.md"
+)]
+
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use time::Duration;
 

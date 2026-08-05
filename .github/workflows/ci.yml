@@ -222,9 +222,11 @@ jobs:
           add_shims_to_path: false
 
       # Single-sourced in scripts/backend-guards.sh: runtime sqlx::query and
-      # raw_sql invocations, raw axum .route( registrations, chrono imports,
-      # and em dashes in the generated config schema, each checked against its
-      # .github/*-allowlist.txt (the em-dash guard has none).
+      # raw_sql invocations, raw axum .route( registrations, and em dashes in
+      # the generated config schema, each checked against its
+      # .github/*-allowlist.txt (the em-dash guard has none). The
+      # datetime-crate boundary is a clippy lint instead, so it runs in the
+      # lint job rather than here.
       - name: Backend static guards
         working-directory: ${{ github.workspace }}
         run: mise exec just -- just rust::guards

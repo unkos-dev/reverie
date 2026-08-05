@@ -25,6 +25,11 @@
 //! access is bounded at the role-grant layer
 //! (`reverie_app` DML only).
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime, converted to DateTime<Utc> by expiry_to_timestamptz before it reaches sqlx; see adr/2026-08-05-first-party-datetime-crate.md"
+)]
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
