@@ -208,6 +208,11 @@ describe("BatchBar shelves-load failure", () => {
     expect(notice).toHaveAttribute("aria-disabled", "true");
     // The toolbar is still mounted: degraded, not unmounted by an error.
     expect(screen.getByRole("toolbar", { name: "Batch actions" })).toBeInTheDocument();
+    // The other half of the tier: degrading silently is the failure mode
+    // this surface must not have, since QueryCache.onError routes only 401s.
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith("[BatchBar] shelves fetch failed", expect.any(Error));
+    });
     errorSpy.mockRestore();
   });
 });

@@ -21,8 +21,8 @@
  *
  * A malformed timestamp is rejected in the schema, so every consumer
  * fails at the same point rather than each inventing its own handling.
- * What differs is what the surface does with that failure, and the split
- * is deliberate:
+ * What differs is what the surface does with that failure. Reads fall
+ * into three tiers, and the split is deliberate:
  *
  * - **Primary** surfaces let the error reach the route error boundary,
  *   because a shelves page that cannot show shelves has nothing to
@@ -39,9 +39,19 @@
  *   `QueryCache.onError` routes only 401s, so these log the failure
  *   themselves.
  *
- * Adding a consumer means placing it in one of those three tiers. Do not
- * promote an auxiliary surface to a throw without a design artifact
- * covering the resulting error state.
+ * Adding a read consumer means placing it in one of those three tiers.
+ * Do not promote an auxiliary surface to a throw without a design
+ * artifact covering the resulting error state.
+ *
+ * Writes sit outside that split and are not a fourth tier. `createShelf`
+ * and `renameShelf` parse `ShelfSchema` on the response to a write the
+ * server has already committed, so a rejection there reports failure for
+ * an operation that succeeded: the caller's `onSuccess` never runs, its
+ * cache invalidation is skipped, and retrying a create collides with the
+ * row it just made. Recovery is a refetch, not a retry. Distinguishing a
+ * schema rejection from a transport failure in mutation handlers is
+ * error plumbing rather than contract enforcement, and is deliberately
+ * not done here.
  *
  * # ETag / If-Match contract
  *
