@@ -37,8 +37,12 @@ inputs:
 outputs:
   version:
     description: >-
-      The toolchain version actually installed. Callers that key a cache on the
-      compiler read it from here so the key and the compiler cannot disagree.
+      The resolved channel string, which is the version
+      backend/rust-toolchain.toml pins verbatim unless a caller overrode it.
+      Callers keying a cache on the compiler read it from here rather than
+      parsing the file a second time. It names the requested toolchain rather
+      than the exact compiler: a two-component override reports as given, not as
+      the patch release rustup settles on.
     value: ${{ steps.resolve.outputs.version }}
 
 runs:

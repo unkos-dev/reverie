@@ -18,6 +18,15 @@ backend:
   - "docker/init-roles.sql"
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  # The composite that installs the pinned compiler. It is listed here rather
+  # than left to the `workflows` filter because that filter runs only the
+  # workflow-security scan: an edit deciding which rustc every Rust job builds
+  # with would otherwise merge without one of them running. Its three consumers
+  # (backend-checks, coverage, MSRV) all gate on this filter, and MSRV has no
+  # push fallback to surface the breakage on main afterwards. Scoped to this
+  # action rather than all of .github/actions, since no other filter's jobs
+  # install a toolchain.
+  - ".github/actions/rust-toolchain/**"
   - ".github/path-filters.yml"
 audit:
   - "backend/Cargo.toml"
