@@ -121,9 +121,9 @@ pub struct SortCursor {
 
 /// Parse and encode failures for the cursor family.
 ///
-/// Parsing yields the input-shape variants; encoding yields
-/// [`Self::FormatTimestamp`] (pipe-format cursors) or
-/// [`Self::SerializePayload`] ([`SortCursor`]).
+/// Parsing yields the input-shape variants. Encoding yields only
+/// [`Self::SerializePayload`], and only for [`SortCursor`]: the
+/// pipe-format cursors write their timestamp infallibly.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CursorError {
