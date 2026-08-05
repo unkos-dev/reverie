@@ -6,12 +6,13 @@
 # that fired in CI on a branch touching none of the code they fired on, or that
 # a developer saw weeks before CI did.
 #
-# CI installs this same version explicitly rather than relying on rustup to
-# correct it after the fact: dtolnay/rust-toolchain does not read this file at
-# all (its `toolchain` input is required and is the only thing it resolves), so
-# naming `stable` there would install a toolchain each job then discards. The
-# workflows parse the channel out of this file instead of repeating the version
-# where it could drift. Renovate's rust-toolchain manager owns the bumps.
+# CI installs this same version explicitly rather than leaving rustup to
+# auto-install it on the first cargo call: an explicit install adds the
+# components a single job needs, fails loudly and early when this file cannot
+# be read, and puts the pinned rustc on PATH before anything keys a build cache
+# on it. .github/actions/rust-toolchain reads the channel from here, so the
+# version is never repeated where it could drift. Renovate's rust-toolchain
+# manager owns the bumps.
 #
 # Only `llvm-tools` is declared here, and only because both planes need it:
 # the coverage CI job reads instrumentation with it, and so does the local

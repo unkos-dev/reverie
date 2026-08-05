@@ -58,6 +58,9 @@ jobs:
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
+      # Colour survives the captured runner log; see ci.yml's backend-checks
+      # job.
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -67,29 +70,10 @@ jobs:
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
-      # The version comes out of backend/rust-toolchain.toml, the file rustup
-      # honours for every cargo call, rather than being named here: naming
-      # `stable` would install a toolchain the first cargo call then replaces,
-      # and would let this workflow drift onto a different compiler from the
-      # one ci.yml and a developer's machine use. This workflow has no changes
-      # job to resolve it once, so it reads the channel itself. Same extraction
-      # shape as ci.yml's; `|| true` sends a dropped field to the format guard
-      # rather than failing the pipe opaquely.
-      - name: Resolve pinned toolchain
-        id: toolchain
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          version=$(grep -m1 '^channel' backend/rust-toolchain.toml | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
-          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "Could not extract a valid channel from backend/rust-toolchain.toml (got: '${version}')" >&2
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
+      # Installs the version backend/rust-toolchain.toml pins, the file rustup
+      # honours for every cargo call, so this workflow cannot drift onto a
+      # different compiler from the one ci.yml and a developer's machine use.
+      - uses: ./.github/actions/rust-toolchain
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:

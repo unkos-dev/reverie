@@ -57,47 +57,38 @@ jobs:
       openapi: ${{ steps.filter.outputs.openapi }}
       npm: ${{ steps.filter.outputs.npm }}
       docs: ${{ steps.filter.outputs.docs }}
-      toolchain: ${{ steps.toolchain.outputs.version }}
-      kache: ${{ steps.toolchain.outputs.kache }}
+      kache: ${{ steps.kache.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # Resolve the pinned Rust toolchain and build-cache versions once for
-      # every job that needs them.
+      # Resolve the pinned build-cache version once for every job that needs
+      # it. mise.toml is the pin a developer's machine installs kache from,
+      # and the cache action takes a version string of its own, so reading it
+      # here keeps one source of truth and stops a second copy drifting.
       #
-      # backend/rust-toolchain.toml is what rustup actually honours, but
-      # dtolnay/rust-toolchain never reads it and requires an explicit
-      # version, so naming `stable` there would install a toolchain the first
-      # cargo call then replaces. mise.toml is likewise the pin a developer's
-      # machine installs kache from, and the cache action takes a version
-      # string of its own. Reading both here keeps one source of truth apiece
-      # and stops a second copy drifting. Same extraction shape as the MSRV
-      # job's rust-version read: the match stops at the closing quote, and
+      # The Rust toolchain is not resolved here. .github/actions/rust-toolchain
+      # reads backend/rust-toolchain.toml in the job that installs from it and
+      # reports the version back, so the compiler and anything keyed on it come
+      # from one read rather than from two parsers that have to agree.
+      #
       # `|| true` lets a dropped field reach the format guard instead of
       # failing the pipe opaquely.
-      - name: Resolve pinned toolchain and cache versions
-        id: toolchain
+      - name: Resolve pinned build-cache version
+        id: kache
         run: |
           set -euo pipefail
-          version=$(grep -m1 '^channel' backend/rust-toolchain.toml | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
-          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "Could not extract a valid channel from backend/rust-toolchain.toml (got: '${version}')" >&2
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-          kache=$(awk '
+          version=$(awk '
             /^\[tools\."github:kunobi-ninja\/kache"\]/ { in_kache = 1; next }
             in_kache && /^\[/ { exit }
             in_kache && /^version[[:space:]]*=/ { gsub(/[^0-9.]/, ""); print; exit }
           ' mise.toml || true)
-          if [[ ! "${kache}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Could not extract a valid kache version from mise.toml (got: '${kache}')" >&2
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not extract a valid kache version from mise.toml (got: '${version}')" >&2
             exit 1
           fi
-          echo "kache=${kache}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
@@ -151,6 +142,11 @@ jobs:
       # without two settings having to agree.
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
+      # Cargo emits colour only when it detects a terminal, and a captured
+      # runner log is never one, so warnings and errors would arrive as
+      # undifferentiated text. Set per job rather than per step because it
+      # applies to every cargo call the job makes.
+      CARGO_TERM_COLOR: always
       # Belt and braces with the object-read credentials below: a pull request
       # is told not to write to the store the default branch restores from,
       # rather than relying on the bucket to reject it.
@@ -231,14 +227,13 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: mise exec just -- just rust::guards
 
-      # The action reads its toolchain from the git ref name, so a SHA pin
-      # needs `toolchain:` named explicitly. The version comes from
-      # backend/rust-toolchain.toml via the changes job, so this job and a
-      # developer's machine compile with the same rustc. Components are
-      # per-job: this one lints, so clippy and rustfmt, not llvm-tools.
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      # Installs the version backend/rust-toolchain.toml pins, so this job and
+      # a developer's machine compile with the same rustc. Components are
+      # per-job: this one lints, so clippy and rustfmt, not llvm-tools. The
+      # step id is read by the cache namespace below.
+      - id: rust
+        uses: ./.github/actions/rust-toolchain
         with:
-          toolchain: ${{ needs.changes.outputs.toolchain }}
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -307,7 +302,7 @@ jobs:
           # job with a different configuration needs its own value, coverage
           # most of all: `-C instrument-coverage` is a separate key space and
           # reusing this namespace would silently cross the two.
-          namespace: x86_64-unknown-linux-gnu/${{ needs.changes.outputs.toolchain }}/dev
+          namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
 
       # A cache degrades quietly by design: kache compiles for real whenever
       # the store is unreachable and still exits 0. A mistyped secret or a
@@ -449,18 +444,19 @@ jobs:
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
+      # See the backend-checks job.
+      CARGO_TERM_COLOR: always
       CARGO_LLVM_COV_TARGET_DIR: target/llvm-cov-target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # Version from backend/rust-toolchain.toml via the changes job; see the
-      # backend-checks toolchain step. Coverage instrumentation is read back by
-      # llvm-tools, so that component is this job's alone.
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      # Version from backend/rust-toolchain.toml; see the backend-checks
+      # toolchain step. Coverage instrumentation is read back by llvm-tools, so
+      # that component is this job's alone.
+      - uses: ./.github/actions/rust-toolchain
         with:
-          toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -536,6 +532,8 @@ jobs:
     env:
       SQLX_OFFLINE: "true"
       CARGO_INCREMENTAL: 0
+      # See the backend-checks job.
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -558,9 +556,9 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      # The pinned SHA is the action's `stable` tag; the `toolchain:` input
-      # overrides which channel is actually installed.
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      # The one caller that overrides the pinned channel: this job compiles on
+      # the declared floor rather than on the version the toolchain file pins.
+      - uses: ./.github/actions/rust-toolchain
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
 
