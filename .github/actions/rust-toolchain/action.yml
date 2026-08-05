@@ -1,0 +1,111 @@
+name: Install Rust toolchain
+description: >-
+  Install the Rust toolchain backend/rust-toolchain.toml pins, using the rustup
+  the runner image already ships, and make it the default so tools that probe
+  rustc from the repository root see the pinned compiler.
+
+  This calls rustup directly rather than wrapping a third-party action. Pinning
+  an action by commit SHA is only worth what the SHA can prove: the previous
+  action published versions as long-lived branches that upstream rewrites, so
+  the pinned commit stopped being reachable from any branch there and the pin
+  no longer identified auditable upstream code. Installing a toolchain is a
+  single call to the first-party tool that every hosted runner preinstalls, so
+  there is no platform knowledge left for an action to hold. Caching is the
+  opposite case and stays with a directly pinned action, where the key
+  derivation and quota behaviour genuinely earn the dependency.
+
+  Resolving the channel here, rather than at each call site, is what keeps the
+  toolchain file the only place the version is named. The MSRV job is the sole
+  caller that overrides it, because it deliberately compiles on the declared
+  floor instead.
+
+inputs:
+  toolchain:
+    description: >-
+      Toolchain to install instead of the one backend/rust-toolchain.toml
+      pins. Empty means use the pinned channel.
+    required: false
+    default: ""
+  components:
+    description: >-
+      Comma-separated rustup components to install alongside the toolchain.
+      Components are per-job rather than declared in the toolchain file when
+      only one job needs them.
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: >-
+      The toolchain version actually installed. Callers that key a cache on the
+      compiler read it from here so the key and the compiler cannot disagree.
+    value: ${{ steps.resolve.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    # A composite step does not inherit the calling job's default
+    # working-directory, and several callers default to backend/, so the
+    # repository-root path is anchored explicitly.
+    #
+    # The sed match stops at the closing quote, and `|| true` lets a dropped
+    # field reach the format guard instead of failing the pipe opaquely. The
+    # guard matters more than it looks: an unresolved version would otherwise
+    # reach the cache namespace below as an empty string and quietly pollute a
+    # shared key space.
+    - name: Resolve toolchain version
+      id: resolve
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        TOOLCHAIN_OVERRIDE: ${{ inputs.toolchain }}
+      run: |
+        set -euo pipefail
+        version="${TOOLCHAIN_OVERRIDE}"
+        source="input"
+        if [ -z "${version}" ]; then
+          source="backend/rust-toolchain.toml"
+          version=$(grep -m1 '^channel' backend/rust-toolchain.toml \
+            | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
+        fi
+        if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "Could not resolve a valid Rust toolchain from ${source} (got: '${version}')" >&2
+          exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    # --profile minimal keeps the docs and sources a CI job never opens off the
+    # runner; --no-self-update pins rustup itself to the runner image rather
+    # than letting an install step change the tool doing the installing.
+    #
+    # RUSTUP_PERMIT_COPY_RENAME lets rustup fall back to copy-then-delete when
+    # it cannot rename across a filesystem boundary. It is scoped to this step
+    # because it exists to stop an obscure install failure, not to change how
+    # anything later behaves.
+    #
+    # `rustup default` is separate and load-bearing: the toolchain file only
+    # governs cargo invocations under backend/, so without it a tool probing
+    # rustc from the repository root reads whichever compiler the runner image
+    # happened to ship, and a cache keyed on that would not match the compiler
+    # the build actually used.
+    - name: Install toolchain
+      shell: bash
+      env:
+        TOOLCHAIN: ${{ steps.resolve.outputs.version }}
+        COMPONENTS: ${{ inputs.components }}
+        RUSTUP_PERMIT_COPY_RENAME: 1
+      run: |
+        set -euo pipefail
+        component_args=()
+        if [ -n "${COMPONENTS}" ]; then
+          IFS=',' read -ra requested <<< "${COMPONENTS}"
+          for component in "${requested[@]}"; do
+            component="${component//[[:space:]]/}"
+            if [ -n "${component}" ]; then
+              component_args+=(--component "${component}")
+            fi
+          done
+        fi
+        rustup toolchain install "${TOOLCHAIN}" \
+          --profile minimal --no-self-update "${component_args[@]}"
+        rustup default "${TOOLCHAIN}"
