@@ -65,27 +65,21 @@ on the frontend's API client surface.
 ### Date format: RFC 3339
 
 Timestamps serialise as RFC 3339 strings (e.g.
-`"2026-05-22T13:42:00.123Z"`). Response DTOs opt in per field with
-`#[serde(with = "time::serde::rfc3339")]`. That adapter is
-load-bearing rather than decorative: the `time` crate's default
-serde impl emits a 9-element tuple of date and offset components,
-so a field that omits it publishes a shape this convention
-forbids. The crate's `serde-human-readable` feature is
-deliberately left off, because its output is space-separated with
-a seconds-precision offset and is therefore not RFC 3339; enabling
-it would break every field that is currently correct.
+`"2026-05-22T13:42:00.123Z"`).
 
 Two invariants follow from Postgres normalising `timestamptz` to
 UTC. Values are `Z`-terminated, never a numeric offset. Sub-second
 digits are emitted only when non-zero, so consumers must accept
 variable fractional precision rather than a fixed width.
 
-Which datetime crate the backend uses is a separate decision and
-belongs to its own ADR; this one governs the wire format only. The
-RFC 3339 shape matches the existing OPDS Atom feed (Atom's
-`<updated>` and `<published>` use the same shape per RFC 4287
-§3.3) so the two surfaces stay consistent for any operator who
-reads both.
+Which datetime crate the backend uses, and therefore what makes a
+DTO field carry this shape, is a separate decision recorded in
+[chrono is the first-party datetime
+crate](2026-08-05-first-party-datetime-crate.md); this one governs
+the wire format only. The RFC 3339 shape matches the existing OPDS
+Atom feed (Atom's `<updated>` and `<published>` use the same shape
+per RFC 4287 §3.3) so the two surfaces stay consistent for any
+operator who reads both.
 
 ### Error envelope: RFC 7807 `application/problem+json` (CHANGED)
 

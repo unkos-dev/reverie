@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(converted.timestamp_subsec_nanos(), expiry.nanosecond());
         assert_eq!(
             converted.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-            "2026-08-05T09:34:56.123456789Z"
+            "2026-07-25T17:34:56.123456789Z"
         );
     }
 
