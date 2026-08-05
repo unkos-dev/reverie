@@ -37,6 +37,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 - **Explicit Returns:** Public functions must have explicit return types (`ReactElement`, not `JSX.Element` which is deprecated in React 19).
 - **No `as` Casts:** Type assertions are forbidden unless narrowing from `unknown` with a documented reason.
 - **Zod Boundaries:** All API response bodies, URL parameters, and form inputs must be parsed through a Zod schema before use.
+- **Validate Formats, Not Just Types:** A response field with a declared format gets a validator for that format, not `z.string()`. Timestamps use bare `z.iso.datetime()`: the API emits `Z`-terminated RFC 3339, and the `{ offset: true }` variant would also accept `+00:00`, which nothing produces. `z.string()` accepts any serialization regression that happens to be a string, which is how a malformed wire format reached production once already. This applies to response schemas; a request field must keep matching what the endpoint accepts, which can be looser.
   </typescript_invariants>
 
 <state_and_data>

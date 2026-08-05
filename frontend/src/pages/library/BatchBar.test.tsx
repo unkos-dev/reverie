@@ -4,7 +4,10 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { addShelfItem } from "@/api";
+import { addShelfItem, listShelves } from "@/api";
+// The barrel is mocked below; this deep import is not, so it yields the
+// real implementation (schema included) for the contract test.
+import { listShelves as realListShelves } from "@/api/shelves";
 import { toast } from "sonner";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -24,7 +27,10 @@ const SHELF = { id: "shelf-1", name: "Favourites", item_count: 0 };
 
 type BarProps = Partial<Parameters<typeof BatchBar>[0]>;
 
-function renderBar(overrides: BarProps = {}): {
+function renderBar(
+  overrides: BarProps = {},
+  { seedShelves = true }: { seedShelves?: boolean } = {},
+): {
   client: QueryClient;
   onCompleted: ReturnType<typeof vi.fn>;
   onClearSelection: ReturnType<typeof vi.fn>;
@@ -32,7 +38,9 @@ function renderBar(overrides: BarProps = {}): {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  client.setQueryData(queryKeys.shelves.list(), [SHELF]);
+  // Seeding keeps the picker tests off the network; the contract test
+  // below opts out so the real query (and its schema) actually runs.
+  if (seedShelves) client.setQueryData(queryKeys.shelves.list(), [SHELF]);
   const onCompleted = vi.fn();
   const onClearSelection = vi.fn();
   function Wrapper(): ReactElement {
@@ -160,5 +168,46 @@ describe("BatchBar add-to-shelf run", () => {
   test("renders nothing with an empty selection", () => {
     renderBar({ selectedIds: new Set() });
     expect(screen.queryByRole("toolbar", { name: "Batch actions" })).not.toBeInTheDocument();
+  });
+});
+
+describe("BatchBar shelves-load failure", () => {
+  test("a schema-rejected shelves response degrades to the disabled notice", async () => {
+    // This surface is the auxiliary tier: it degrades and logs instead of
+    // throwing to the error boundary. Running the real listShelves over a
+    // mocked fetch pins that behaviour to the actual schema, so tightening
+    // or loosening the validator cannot silently promote this to a crash.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(listShelves).mockImplementation(realListShelves);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "shelf-1",
+              name: "Favourites",
+              is_system: false,
+              // The shape the endpoint shipped before the wire format was
+              // fixed: time's 9-element OffsetDateTime tuple.
+              created_at: [2026, 144, 1, 0, 0, 0, 0, 0, 0],
+              updated_at: [2026, 144, 1, 0, 0, 0, 0, 0, 0],
+              item_count: 0,
+            },
+          ],
+          next_cursor: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    renderBar({}, { seedShelves: false });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Add to shelf/ }));
+
+    const notice = await screen.findByRole("menuitem", { name: "Couldn't load shelves" });
+    expect(notice).toHaveAttribute("aria-disabled", "true");
+    // The toolbar is still mounted: degraded, not unmounted by an error.
+    expect(screen.getByRole("toolbar", { name: "Batch actions" })).toBeInTheDocument();
+    errorSpy.mockRestore();
   });
 });

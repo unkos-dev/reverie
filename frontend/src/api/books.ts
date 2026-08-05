@@ -87,8 +87,8 @@ const ReadingStateSummarySchema = z.object({
   status: ReadingStatusSchema.nullable(),
   rating: z.number().int().nullable(),
   progress_pct: z.number().nullable(),
-  started_at: z.string().nullable(),
-  finished_at: z.string().nullable(),
+  started_at: z.iso.datetime().nullable(),
+  finished_at: z.iso.datetime().nullable(),
 });
 /**
  * Caller-scoped reading-state summary batch-loaded onto list rows.
@@ -116,7 +116,7 @@ const BookListItemSchema = z.object({
   validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
   reading_state: ReadingStateSummarySchema.nullable(),
-  created_at: z.string(),
+  created_at: z.iso.datetime(),
 });
 /**
  * One row of a paginated book list response. Mirrors
@@ -295,8 +295,8 @@ const BookDetailSchema = z.object({
   enrichment_status: EnrichmentStatusSchema,
   metadata_version_summary: MetadataVersionSummarySchema,
   metadata_versions: z.array(MetadataVersionRowSchema),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
 });
 /**
  * `GET /api/v1/books/{id}` response. Carries `BookListItem` fields plus
@@ -312,7 +312,7 @@ const WorkManifestationSchema = z.object({
   ingestion_status: IngestionStatusSchema,
   validation_status: ValidationStatusSchema,
   enrichment_status: EnrichmentStatusSchema,
-  created_at: z.string(),
+  created_at: z.iso.datetime(),
 });
 /** One manifestation row embedded in a [`WorkDetail`] response. */
 export type WorkManifestation = z.infer<typeof WorkManifestationSchema>;

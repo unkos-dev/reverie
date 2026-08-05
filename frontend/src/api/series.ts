@@ -22,7 +22,7 @@ const WorkManifestationSchema = z.object({
   ingestion_status: z.enum(["pending", "processing", "complete", "failed", "skipped"]),
   validation_status: z.enum(["pending", "clean", "repaired", "degraded", "failed"]),
   enrichment_status: z.enum(["pending", "in_progress", "complete", "failed", "skipped"]),
-  created_at: z.string(),
+  created_at: z.iso.datetime(),
 });
 /** One manifestation row attached to a work in a series response. */
 export type SeriesWorkManifestation = z.infer<typeof WorkManifestationSchema>;
