@@ -29,8 +29,8 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -90,11 +90,9 @@ struct UserResponse {
     /// Whether child content-visibility rules apply to this user.
     is_child: bool,
     /// Row creation timestamp.
-    #[serde(with = "time::serde::rfc3339")]
-    created_at: OffsetDateTime,
+    created_at: DateTime<Utc>,
     /// Last mutation timestamp.
-    #[serde(with = "time::serde::rfc3339")]
-    updated_at: OffsetDateTime,
+    updated_at: DateTime<Utc>,
     /// Whether the account is soft-disabled (cannot authenticate). Derived from
     /// `disabled_at`; the timestamp itself is not exposed on the wire.
     disabled: bool,

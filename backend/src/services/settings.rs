@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
 use crate::models::settings::{Settings, UpdateSettings};
@@ -241,7 +241,7 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
 pub async fn spawn_listener(
     pool: PgPool,
     settings: Arc<RwLock<Settings>>,
-    last_reload: Arc<RwLock<Option<OffsetDateTime>>>,
+    last_reload: Arc<RwLock<Option<DateTime<Utc>>>>,
     cancel: tokio_util::sync::CancellationToken,
 ) {
     loop {
@@ -262,7 +262,7 @@ pub async fn spawn_listener(
 async fn listen_loop(
     pool: &PgPool,
     settings: &Arc<RwLock<Settings>>,
-    last_reload: &Arc<RwLock<Option<OffsetDateTime>>>,
+    last_reload: &Arc<RwLock<Option<DateTime<Utc>>>>,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<(), sqlx::Error> {
     let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
@@ -295,7 +295,7 @@ async fn listen_loop(
 async fn refresh(
     pool: &PgPool,
     settings: &Arc<RwLock<Settings>>,
-    last_reload: &Arc<RwLock<Option<OffsetDateTime>>>,
+    last_reload: &Arc<RwLock<Option<DateTime<Utc>>>>,
 ) {
     match load(pool).await {
         Ok(new_settings) => {
@@ -305,13 +305,11 @@ async fn refresh(
             apply_if_newer(&mut guard, new_settings);
             drop(guard);
             let mut ts = last_reload.write().await;
-            *ts = Some(OffsetDateTime::now_utc());
+            *ts = Some(Utc::now());
         }
         Err(e) => {
             let last = *last_reload.read().await;
-            let cache_age_secs = last.map_or(-1, |ts| {
-                OffsetDateTime::now_utc().unix_timestamp() - ts.unix_timestamp()
-            });
+            let cache_age_secs = last.map_or(-1, |ts| Utc::now().timestamp() - ts.timestamp());
             tracing::error!(
                 error = %e,
                 cache_age_secs,

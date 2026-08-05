@@ -81,6 +81,10 @@ pub fn build_router(state: AppState) -> Router {
 /// shared-store seam is only required by tests that exercise routing
 /// internals (which already need crate-private access for fixtures).
 /// Production builds use `PostgresStore` via [`build_router`].
+#[expect(
+    clippy::disallowed_types,
+    reason = "tower_sessions::Expiry::OnInactivity takes a time::Duration and accepts no chrono equivalent; see adr/2026-08-05-first-party-datetime-crate.md"
+)]
 pub(crate) fn build_router_with_session_store<S>(state: AppState, session_store: S) -> Router
 where
     S: tower_sessions::SessionStore + Clone,
@@ -863,8 +867,7 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
     let pin = auth::recovery::generate_pin();
     let pin_hash = auth::password::hash_password(pin.as_bytes())
         .map_err(|e| anyhow::anyhow!("failed to hash the recovery PIN: {e}"))?;
-    let expires_at =
-        time::OffsetDateTime::now_utc() + time::Duration::seconds(config.recovery_pin_ttl_secs);
+    let expires_at = chrono::Utc::now() + chrono::TimeDelta::seconds(config.recovery_pin_ttl_secs);
     // Supersede prior PINs, persist the new one, and publish it as one
     // serialized step, so a concurrent forgot-password request in the server
     // process cannot leave the operator file and the stored hash describing
@@ -1184,6 +1187,10 @@ mod tests {
     // same DB pool, and asserting the record loads with identical
     // contents.
     #[sqlx::test(migrations = "./migrations")]
+    #[expect(
+        clippy::disallowed_types,
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+    )]
     async fn session_record_survives_store_restart(pool: sqlx::PgPool) {
         use std::collections::HashMap;
         use time::OffsetDateTime;
@@ -1230,6 +1237,10 @@ mod tests {
     // authenticated identity. Asserting it explicitly closes the
     // negative-case gap CR raised on PR #180.
     #[sqlx::test(migrations = "./migrations")]
+    #[expect(
+        clippy::disallowed_types,
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+    )]
     async fn expired_session_is_not_returned(pool: sqlx::PgPool) {
         use std::collections::HashMap;
         use time::OffsetDateTime;
@@ -1266,6 +1277,10 @@ mod tests {
     // branch against the live schema rather than relying on compile-validation
     // of shared `upsert` SQL alone.
     #[sqlx::test(migrations = "./migrations")]
+    #[expect(
+        clippy::disallowed_types,
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+    )]
     async fn store_save_updates_existing_record(pool: sqlx::PgPool) {
         use std::collections::HashMap;
         use time::OffsetDateTime;
@@ -1306,6 +1321,10 @@ mod tests {
 
     // `delete` removes the row by id (logout / explicit invalidation path).
     #[sqlx::test(migrations = "./migrations")]
+    #[expect(
+        clippy::disallowed_types,
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+    )]
     async fn store_delete_removes_record(pool: sqlx::PgPool) {
         use std::collections::HashMap;
         use time::OffsetDateTime;

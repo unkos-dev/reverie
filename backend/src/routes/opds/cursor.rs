@@ -17,24 +17,21 @@
 //! in RLS, not the cursor.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
+use chrono::{DateTime, SecondsFormat, Utc};
 use uuid::Uuid;
 
 /// `(created_at, id)` tuple identifying the boundary row of a feed page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cursor {
     /// Boundary row's `manifestations.created_at`.
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// Boundary row's `manifestations.id` (tie-breaker for identical
     /// `created_at`).
     pub id: Uuid,
 }
 
-/// Parse and encode failures for [`Cursor`].
-///
-/// Parsing ([`Cursor::parse`]) yields the input-shape variants; encoding
-/// ([`Cursor::encode`]) yields [`Self::FormatTimestamp`].
+/// Parse failures for [`Cursor`]. Encoding ([`Cursor::encode`]) is
+/// infallible.
 #[derive(Debug, thiserror::Error)]
 pub enum CursorError {
     /// Input was not valid base64url.
@@ -56,28 +53,19 @@ pub enum CursorError {
     /// to a name-sorted feed, or vice versa).
     #[error("unknown tag byte")]
     UnknownTag,
-    /// `created_at` had a year outside RFC 3339's representable range
-    /// (`-9999..=9999`) during encode.
-    #[error("timestamp not representable as RFC 3339")]
-    FormatTimestamp(#[from] time::error::Format),
 }
 
 impl Cursor {
     /// Encode this cursor as a base64url-encoded `<rfc3339>|<uuid>`
     /// string suitable for use in a feed `?cursor=` query parameter.
     ///
-    /// # Errors
-    ///
-    /// Returns [`CursorError::FormatTimestamp`] if `created_at` has a
-    /// year outside RFC 3339's `-9999..=9999` range. Rust-side
-    /// `OffsetDateTime` caps years at 9999, so this is unreachable for
-    /// timestamps written through Reverie; it can only trigger for a
-    /// `TIMESTAMPTZ` mutated out-of-band (raw `psql`, a migration) to a
-    /// year > 9999.
-    pub fn encode(&self) -> Result<String, CursorError> {
-        let ts = self.created_at.format(&Rfc3339)?;
+    /// The timestamp is written with the same RFC 3339 spelling serde
+    /// gives a `DateTime<Utc>` on the wire, so a cursor timestamp and a
+    /// feed-entry timestamp for the same instant are byte-identical.
+    pub fn encode(&self) -> String {
+        let ts = self.created_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
         let payload = format!("{ts}|{}", self.id.as_hyphenated());
-        Ok(Base64UrlUnpadded::encode_string(payload.as_bytes()))
+        Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
 
     /// Parse a base64url-encoded cursor string back into `(created_at, id)`.
@@ -95,8 +83,9 @@ impl Cursor {
         let (ts, uuid) = decoded_str
             .split_once('|')
             .ok_or(CursorError::MissingDelimiter)?;
-        let created_at =
-            OffsetDateTime::parse(ts, &Rfc3339).map_err(|_| CursorError::InvalidTimestamp)?;
+        let created_at = DateTime::parse_from_rfc3339(ts)
+            .map_err(|_| CursorError::InvalidTimestamp)?
+            .with_timezone(&Utc);
         let id = Uuid::parse_str(uuid).map_err(|_| CursorError::InvalidUuid)?;
         Ok(Self { created_at, id })
     }
@@ -159,10 +148,12 @@ mod tests {
 
     #[test]
     fn encode_parse_roundtrip() {
-        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-04-21T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let id = Uuid::new_v4();
         let c = Cursor { created_at: ts, id };
-        let encoded = c.encode().expect("encode");
+        let encoded = c.encode();
         let parsed = Cursor::parse(&encoded).expect("round-trip parse");
         assert_eq!(parsed.created_at, ts);
         assert_eq!(parsed.id, id);
@@ -227,13 +218,14 @@ mod tests {
 
     #[test]
     fn name_rejects_recency_cursor() {
-        let ts = OffsetDateTime::parse("2026-04-21T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-04-21T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let recency = Cursor {
             created_at: ts,
             id: Uuid::new_v4(),
         }
-        .encode()
-        .expect("encode");
+        .encode();
         // A recency cursor's first segment is an RFC 3339 timestamp,
         // never the literal `n` tag.
         assert!(matches!(

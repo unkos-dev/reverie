@@ -16,8 +16,8 @@
 //! [`reset`](crate::models::login_throttle::reset). Per-source (per-IP) rate
 //! limiting does the hard blocking; this is the IP-independent backstop.
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 
 /// Lower-case an email for use as the throttle key. Applied consistently across
 /// all three operations so the same address always maps to the same row.
@@ -40,7 +40,7 @@ pub async fn record_failure(
     email: &str,
     base_secs: i32,
     cap_secs: i32,
-) -> Result<OffsetDateTime, sqlx::Error> {
+) -> Result<DateTime<Utc>, sqlx::Error> {
     sqlx::query_scalar!(
         r#"INSERT INTO local_login_throttle (email_lower, fail_count, locked_until)
            VALUES ($1, 1, now() + make_interval(secs => LEAST($3::double precision,
@@ -83,7 +83,7 @@ pub async fn reset(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
 pub async fn backoff_until(
     pool: &PgPool,
     email: &str,
-) -> Result<Option<OffsetDateTime>, sqlx::Error> {
+) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
     sqlx::query_scalar!(
         r#"SELECT locked_until AS "locked_until?" FROM local_login_throttle
            WHERE email_lower = $1 AND locked_until > now()"#,

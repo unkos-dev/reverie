@@ -188,15 +188,14 @@ describe("getShelf", () => {
 });
 
 describe("timestamp wire contract", () => {
-  // What `time` serialises an OffsetDateTime to while the
-  // `serde-human-readable` feature is off: (year, ordinal, hour, minute,
-  // second, nanosecond, offset_hours, offset_minutes, offset_seconds).
-  // The shelves endpoints shipped this shape, so it is the regression
-  // these cases exist to catch.
+  // The shape the shelves endpoints actually shipped: a component array of
+  // (year, ordinal, hour, minute, second, nanosecond, offset_hours,
+  // offset_minutes, offset_seconds). That is the regression these cases
+  // exist to catch, whatever the server is written in.
   const TUPLE = [2026, 144, 1, 0, 0, 0, 0, 0, 0];
-  // What enabling that feature would emit instead: a space between date
-  // and time, and a seconds-precision offset. Also not RFC 3339, so
-  // turning the feature on is not a fix.
+  // The other near-miss: a space between date and time with a
+  // seconds-precision offset. A JSON string, but not RFC 3339, so a
+  // string-typed check would pass it.
   const SPACE_SEPARATED = "2026-05-24 01:00:00.0 +00:00:00";
 
   const detailPage = (overrides: Record<string, unknown>) => ({

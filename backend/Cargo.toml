@@ -33,6 +33,11 @@ async-trait = "0.1.89"
 axum = "0.8.9"
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
 base64ct = { version = "1.8.3", features = ["std"] }
+# First-party datetime crate. `DateTime<Utc>` carries the UTC invariant in the
+# type parameter, and its serde default is RFC 3339 both directions, so the
+# published wire contract holds without a per-field adapter attribute.
+# See adr/2026-08-05-first-party-datetime-crate.md.
+chrono = { version = "0.4.44", features = ["serde"] }
 crc = "3.4.0"
 dotenvy = "0.15.7"
 email_address = "0.2.9"
@@ -67,14 +72,18 @@ sqlx = { version = "0.9.0", features = [
   "tls-rustls",
   "postgres",
   "uuid",
-  "time",
+  "chrono",
   "json",
   "macros",
   "migrate",
 ] }
 tempfile = "3.27.0"
 thiserror = "2.0.18"
-time = { version = "0.3.51", features = ["serde"] }
+# Boundary-only. First-party code uses chrono; `time` is declared because three
+# third-party signatures take its types directly (tower-sessions `Expiry` and
+# `Record`, and the cookie builder's `max_age`). clippy's `disallowed-types`
+# in clippy.toml holds that list, and each site carries a scoped `#[expect]`.
+time = "0.3.51"
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = "0.7.18"
 tower-http = { version = "0.7.0", features = ["cors", "fs", "trace"] }
@@ -91,11 +100,11 @@ validator = { version = "0.21.0", features = ["derive"] }
 schemars = { version = "1.2.1", features = ["url2"] }
 percent-encoding = "2.3.2"
 # OpenAPI 3.1 contract generated code-first from the handlers (docs-as-done,
-# UNK-370; adr/2026-06-08-api-versioning-openapi.md). `time`/`uuid` features
-# map those types into the schema; `chrono` is intentionally NOT enabled
-# (backend/AGENTS.md mandates the `time` crate). utoipa-axum's `OpenApiRouter`
-# makes a handler routed without `#[utoipa::path]` a compile error.
-utoipa = { version = "5.5", features = ["axum_extras", "time", "uuid"] }
+# UNK-370; adr/2026-06-08-api-versioning-openapi.md). The `chrono`/`uuid`
+# features map those types into the schema as `string`/`date-time` and
+# `string`/`uuid`. utoipa-axum's `OpenApiRouter` makes a handler routed without
+# `#[utoipa::path]` a compile error.
+utoipa = { version = "5.5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.2"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 walkdir = "2.5.0"
@@ -106,13 +115,6 @@ zxcvbn = "3"
 
 [dev-dependencies]
 axum-test = "21.0.0"
-# chrono: backend/AGENTS.md mandates the `time` crate over `chrono` in
-# production code. Documented dev-only exception: openidconnect 4.x's
-# CoreIdTokenClaims::new signature accepts `chrono::DateTime<Utc>` for
-# `exp` / `iat`, with no `time`-crate alternative. Confined to test
-# scaffolding under `#[cfg(test)]` and dev-deps; production code path
-# in `src/auth/oidc.rs` uses no chrono.
-chrono = "0.4.44"
 rand_core_06 = { package = "rand_core", version = "0.6", features = ["std", "getrandom"] }
 rsa = { version = "0.9.10", features = ["pem"] }
 wiremock = "0.6.5"

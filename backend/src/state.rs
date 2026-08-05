@@ -15,7 +15,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
-use time::OffsetDateTime;
+use chrono::{DateTime, Utc};
 
 use crate::auth::jwt::JwtValidator;
 use crate::auth::oidc::OidcClient;
@@ -68,5 +68,5 @@ pub struct AppState {
     /// the initial `load()` at startup does not count. Exposed in
     /// `GET /api/v1/settings` so operators can verify the live-reload
     /// mechanism is healthy.
-    pub last_settings_reload: Arc<RwLock<Option<OffsetDateTime>>>,
+    pub last_settings_reload: Arc<RwLock<Option<DateTime<Utc>>>>,
 }

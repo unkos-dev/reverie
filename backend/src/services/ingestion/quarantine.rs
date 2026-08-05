@@ -8,8 +8,8 @@
 //! The quarantine directory is created on demand and is never pruned automatically —
 //! operators own the retention policy for quarantined files.
 
+use chrono::{SecondsFormat, Utc};
 use std::path::{Path, PathBuf};
-use time::OffsetDateTime;
 
 /// Move a file to the quarantine directory with a `JSON` sidecar explaining why.
 ///
@@ -40,8 +40,8 @@ pub fn quarantine_file(
 
     let mut dest = quarantine_dir.join(filename);
     if dest.exists() {
-        let now = OffsetDateTime::now_utc();
-        let ts = now.unix_timestamp();
+        let now = Utc::now();
+        let ts = now.timestamp();
         let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
         let ext = dest.extension().and_then(|e| e.to_str());
         let new_name = ext.map_or_else(|| format!("{stem}_{ts}"), |e| format!("{stem}_{ts}.{e}"));
@@ -59,11 +59,11 @@ pub fn quarantine_file(
 
     // Write JSON sidecar
     let sidecar_path = PathBuf::from(format!("{}.quarantine.json", dest.display()));
-    let now = OffsetDateTime::now_utc();
+    let now = Utc::now();
     let sidecar = serde_json::json!({
         "original_path": source.display().to_string(),
         "reason": reason,
-        "quarantined_at": now.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
+        "quarantined_at": now.to_rfc3339_opts(SecondsFormat::AutoSi, true),
     });
     let sidecar_bytes = serde_json::to_string_pretty(&sidecar)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;

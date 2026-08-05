@@ -168,7 +168,7 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
         provider_visibility: serde_json::json!({}),
         revision: 0,
-        updated_at: time::OffsetDateTime::now_utc(),
+        updated_at: chrono::Utc::now(),
     }))
 }
 
@@ -278,18 +278,18 @@ pub fn assert_problem(
 /// Assert a JSON field carries the published timestamp contract, a
 /// `Z`-terminated RFC 3339 string, and return it parsed.
 ///
-/// The parse is load-bearing rather than decorative. `time`'s serde
-/// impls emit a 9-element tuple by default and a space-separated
-/// `2026-05-24 01:00:00.0 +00:00:00` under `serde-human-readable`;
-/// the second is a JSON string but is not RFC 3339, so `is_string()`
-/// or `!is_null()` cannot tell a conforming response from a broken one.
+/// The parse is load-bearing rather than decorative. A JSON string is
+/// not by itself the contract: a space-separated or offset-suffixed
+/// rendering is still a string, so `is_string()` or `!is_null()`
+/// cannot tell a conforming response from a broken one. The `Z` check
+/// and the RFC 3339 parse together are what pin the published shape.
 ///
 /// # Panics
 ///
 /// Panics when `field` is absent, is not a JSON string, does not carry
 /// the UTC `Z` designator, or does not parse as RFC 3339. Intended for
 /// test code only, where the panic is the assertion-failure surface.
-pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> time::OffsetDateTime {
+pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> chrono::DateTime<chrono::Utc> {
     let raw = body[field]
         .as_str()
         .unwrap_or_else(|| panic!("`{field}` must be a JSON string, got: {}", body[field]));
@@ -297,8 +297,9 @@ pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> time::OffsetDate
         raw.ends_with('Z'),
         "`{field}` must be UTC and `Z`-terminated, got: {raw}",
     );
-    time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+    chrono::DateTime::parse_from_rfc3339(raw)
         .unwrap_or_else(|e| panic!("`{field}` must be RFC 3339, got {raw}: {e}"))
+        .with_timezone(&chrono::Utc)
 }
 
 /// Real-DB helpers for tests that exercise the live schema + RLS policies.
@@ -1159,13 +1160,10 @@ pub mod oidc_mock {
             name: Option<&str>,
             nonce: &str,
         ) {
-            // chrono is required by openidconnect v4's public API:
             // CoreIdTokenClaims::new takes chrono::DateTime<Utc> for the
-            // expiration and issued_at parameters. Project policy is `time`
-            // over chrono — this transitive use is
-            // the documented exception. Do not "migrate" to time here; it
-            // would require forking openidconnect.
-            use chrono::{Duration, Utc};
+            // expiration and issued_at parameters, which is what first-party
+            // code uses anyway.
+            use chrono::{TimeDelta, Utc};
             let issuer_url = IssuerUrl::new(self.issuer.clone()).expect("valid issuer url");
             let access_token = AccessToken::new("test-access-token".to_string());
 
@@ -1185,7 +1183,7 @@ pub mod oidc_mock {
             let claims = CoreIdTokenClaims::new(
                 issuer_url,
                 vec![Audience::new(self.client_id.clone())],
-                Utc::now() + Duration::seconds(300),
+                Utc::now() + TimeDelta::seconds(300),
                 Utc::now(),
                 standard_claims,
                 EmptyAdditionalClaims {},

@@ -5,13 +5,16 @@
 # the justfile header's stated philosophy (CI command definitions live once);
 # ci.yml invokes this script instead of duplicating the grep logic inline.
 #
-# Four independent guards, run in the same order as backend-checks:
+# Three independent guards, run in the same order as backend-checks:
 #   1. runtime sqlx::query/raw_sql invocations outside the allowlist
 #   2. raw axum .route( registrations outside the allowlist
-#   3. chrono imports outside the allowlist
-#   4. em dashes in the generated config schema
+#   3. em dashes in the generated config schema
 #
-# Exit-code handling is load-bearing in guards 1-3: grep exit 1 means
+# The datetime-crate boundary is NOT here: it asks what a path resolves
+# to rather than how it is spelled, which a regex can only approximate.
+# It lives in backend/clippy.toml as `disallowed-types`.
+#
+# Exit-code handling is load-bearing in guards 1-2: grep exit 1 means
 # "clean", exit >1 is a real error that must not read as clean, and an
 # empty/missing allowlist fails here (set -e) instead of failing open
 # downstream.
@@ -81,19 +84,7 @@ run_grep_guard \
     "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," \
     "or add a justified entry to backend/guards/axum-route-allowlist.txt."
 
-# 3. The backend standardises on the `time` crate (backend/AGENTS.md);
-# chrono exists in Cargo.toml solely for openidconnect's test-support
-# signature.
-run_grep_guard \
-    "chrono imports" \
-    'use chrono|extern crate chrono' \
-    backend/src/ \
-    backend/guards/chrono-allowlist.txt \
-    "Reverie uses the time crate (backend/AGENTS.md); chrono is" \
-    "reserved for the documented openidconnect test-support carve-out." \
-    "Justify any new entry in backend/guards/chrono-allowlist.txt."
-
-# 4. The schema descriptions are config-struct doc-comments (schemars folds
+# 3. The schema descriptions are config-struct doc-comments (schemars folds
 # them in); the Vale gate covers Markdown but not this generated JSON. Match
 # raw U+2014 UTF-8 bytes (LC_ALL=C + fixed-string) so the check never
 # depends on grep's PCRE or locale support: a PCRE-mode grep rejecting
@@ -113,4 +104,4 @@ fi
 if [ "$fail" -ne 0 ]; then
     exit 1
 fi
-echo "OK: backend static guards hold (sqlx-runtime, axum-route, chrono, config-schema em dash)"
+echo "OK: backend static guards hold (sqlx-runtime, axum-route, config-schema em dash)"

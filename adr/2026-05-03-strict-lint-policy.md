@@ -42,6 +42,15 @@ Add `[lints.clippy]` block to `backend/Cargo.toml`:
   `undocumented_unsafe_blocks`
 - `todo` and `unimplemented` as `warn` (allowed during dev,
   visible at PR time)
+- Third-party APIs the project bans outright as `disallowed-methods`
+  / `disallowed-types` entries in `backend/clippy.toml`, each carrying
+  the reason and the ADR that decided it. Permitted exceptions are
+  scoped `#[expect]` attributes at the call sites, so an exemption
+  that stops being necessary fails the build. This layer is for bans
+  whose subject is a resolved path rather than a piece of text; a
+  ban that a text search can express belongs in
+  `scripts/backend-guards.sh`, which runs before any toolchain
+  install and is correspondingly cheaper.
 - 4 pedantic lints allow-listed because they target library API
   hygiene, not application correctness:
   - `module_name_repetitions`: would require renaming

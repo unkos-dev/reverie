@@ -2218,20 +2218,70 @@ async fn insert_manual_version(
     Ok(id)
 }
 
-fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
-    use time::format_description::well_known::Iso8601;
+/// Why a submitted `pub_date` was rejected.
+///
+/// The two cases mean different things to the caller: a malformed value is a
+/// spelling mistake, while an out-of-range year is a well-formed date the
+/// column will not hold. Both surface as a 400, and the distinction is what
+/// makes the message actionable.
+#[derive(Debug, thiserror::Error)]
+enum PubDateError {
+    /// Not a `YYYY-MM-DD` calendar date, or not a date at all.
+    #[error("expected an ISO 8601 calendar date (YYYY-MM-DD)")]
+    Malformed,
+    /// A real date, outside the years Reverie accepts.
+    #[error("year must be between {MIN_PUB_YEAR} and {MAX_PUB_YEAR}")]
+    YearOutOfRange,
+}
+
+/// Accepted `pub_date` year bounds.
+///
+/// These mirror the common-era convention the `timestamptz` decode-range
+/// checks set, for the same reason: no Reverie date legitimately predates the
+/// common era, and Postgres accepts years that `DateTime<Utc>` cannot
+/// represent. The bound lives here rather than in the schema because
+/// `manifestations.pub_date` carries no CHECK constraint, so it holds only as
+/// far as every writer routes through this function.
+const MIN_PUB_YEAR: i32 = 1;
+const MAX_PUB_YEAR: i32 = 9999;
+
+/// The one accepted spelling, used to parse and to re-render for the
+/// canonical-form check below.
+const ISO_DATE_FMT: &str = "%Y-%m-%d";
+
+/// Normalise `s` to the `YYYY-MM-DD` candidate this parser will accept,
+/// widening a bare `YYYY` or `YYYY-MM` and truncating a full timestamp.
+fn iso_candidate(s: &str) -> String {
     // `s.len()` is in bytes; user-submitted strings can contain multi-byte
     // UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
     if s.len() >= 10 && s.is_char_boundary(10) {
-        time::Date::parse(&s[..10], &Iso8601::DATE)
+        s[..10].to_owned()
     } else {
-        let padded = match s.len() {
+        match s.len() {
             4 => format!("{s}-01-01"),
             7 => format!("{s}-01"),
-            _ => s.to_string(),
-        };
-        time::Date::parse(&padded, &Iso8601::DATE)
+            _ => s.to_owned(),
+        }
     }
+}
+
+fn parse_iso_date(s: &str) -> Result<chrono::NaiveDate, PubDateError> {
+    let candidate = iso_candidate(s);
+    let date = chrono::NaiveDate::parse_from_str(&candidate, ISO_DATE_FMT)
+        .map_err(|_| PubDateError::Malformed)?;
+    // Two independent widenings have to be closed, and a range check alone
+    // closes only one. chrono's numeric fields accept fewer digits than the
+    // format spells, so `26-05-01` parses as year 26, which is inside any
+    // sane range. Requiring the parse to round-trip to the same string
+    // rejects every non-canonical spelling; the range check then rejects
+    // canonical years the column cannot hold, such as `0000-01-01`.
+    if date.format(ISO_DATE_FMT).to_string() != candidate {
+        return Err(PubDateError::Malformed);
+    }
+    if !(MIN_PUB_YEAR..=MAX_PUB_YEAR).contains(&chrono::Datelike::year(&date)) {
+        return Err(PubDateError::YearOutOfRange);
+    }
+    Ok(date)
 }
 
 #[cfg(test)]
@@ -2247,6 +2297,65 @@ mod tests {
         // 3-byte codepoint pushes byte-10 mid-character; pre-fix this panicked.
         let s = "2024-01-€€€garbage";
         assert!(parse_iso_date(s).is_err());
+    }
+
+    #[test]
+    fn parse_iso_date_rejects_a_short_year() {
+        // chrono's `%Y` consumes one to four digits, so this parses cleanly
+        // as year 26 and lands inside any sane year range. Only the
+        // round-trip check catches it, and storing it would silently record a
+        // date two millennia off the one submitted.
+        let err = parse_iso_date("26-05-01").expect_err("short year must not be accepted");
+        assert!(
+            matches!(err, super::PubDateError::Malformed),
+            "expected a spelling rejection, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_iso_date_rejects_unpadded_fields() {
+        for input in ["2024-1-15", "2024-01-5", "-9999-1-1"] {
+            assert!(
+                parse_iso_date(input).is_err(),
+                "{input} is not canonical and must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_iso_date_rejects_year_zero_as_out_of_range() {
+        // Ten characters and canonically spelled, so the round-trip passes it
+        // and the range check is the only thing between it and a bind
+        // Postgres rejects: there is no year 0 in a date column.
+        let err = parse_iso_date("0000-01-01").expect_err("year 0 must not be accepted");
+        assert!(
+            matches!(err, super::PubDateError::YearOutOfRange),
+            "expected a range rejection, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_iso_date_rejects_a_signed_year() {
+        // A leading sign makes the date eleven characters, so it never
+        // survives the ten-byte narrowing, whichever variant reports it. The
+        // property under test is rejection, not which check fired.
+        assert!(parse_iso_date("-9999-01-01").is_err());
+    }
+
+    #[test]
+    fn parse_iso_date_accepts_the_range_boundaries() {
+        assert!(parse_iso_date("0001-01-01").is_ok());
+        assert!(parse_iso_date("9999-12-31").is_ok());
+    }
+
+    #[test]
+    fn parse_iso_date_distinguishes_malformed_from_out_of_range() {
+        // The two map to different operator-facing messages, so the variant
+        // has to survive the parse rather than collapsing to one error.
+        assert!(matches!(
+            parse_iso_date("nonsense").expect_err("not a date"),
+            super::PubDateError::Malformed
+        ));
     }
 
     #[test]

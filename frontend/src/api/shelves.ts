@@ -8,8 +8,8 @@
  * `created_at`, `updated_at`, and `added_at` use bare `z.iso.datetime()`,
  * which accepts only a `Z`-terminated value with arbitrary sub-second
  * precision. That is exactly what the backend emits: Postgres
- * `timestamptz` normalises to UTC, and the serde adapter formats a UTC
- * offset as `Z`. The `{ offset: true }` variant would also accept
+ * `timestamptz` normalises to UTC, and the backend serialises a UTC
+ * instant with the `Z` designator. The `{ offset: true }` variant would also accept
  * `+00:00`, which no endpoint here produces, so the bare form is both
  * stricter and correct.
  *

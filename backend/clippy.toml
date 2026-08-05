@@ -31,3 +31,28 @@ disallowed-methods = [
   { path = "reqwest::Client::builder", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see adr/2026-05-18-outbound-http-user-agent.md" },
   { path = "reqwest::ClientBuilder::new", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see adr/2026-05-18-outbound-http-user-agent.md" },
 ]
+
+## First-party code uses chrono. The `time` crate stays in the tree only
+## because three third-party signatures take its types and accept nothing
+## else: tower-sessions' `Expiry` and `Record`, and the cookie builder's
+## `max_age`. Those sites carry scoped `#[expect]`s naming the API that
+## forces them:
+##   - `build_router_with_session_store` (src/lib.rs) and its store tests
+##   - `theme_cookie` (src/auth/theme_cookie.rs)
+##   - `PostgresStore` (src/auth/store.rs), which converts at the boundary
+##
+## This is a lint rather than a text search because the question is what a
+## path resolves to, not how it is spelled: `use time::Duration`,
+## `::time::Duration`, `tower_sessions::cookie::time::Duration`, and
+## `use time::Duration as D` are one `DefId` and one entry, while
+## `std::time::Duration` is a different `DefId` and needs no exclusion.
+## An `#[expect]` that stops being necessary fails the build, so the
+## carve-outs cannot rot the way a checked-in allowlist can. That property
+## depends on `-D warnings`, which `rust.just`'s clippy recipe passes.
+## See adr/2026-08-05-first-party-datetime-crate.md.
+disallowed-types = [
+  { path = "time::OffsetDateTime", reason = "first-party code uses chrono::DateTime<Utc>; `time` is permitted only at the tower-sessions and cookie boundaries, which carry scoped #[expect]s; see adr/2026-08-05-first-party-datetime-crate.md" },
+  { path = "time::Duration", reason = "first-party code uses chrono::TimeDelta for datetime arithmetic and std::time::Duration for timers; `time::Duration` is permitted only at the tower-sessions and cookie boundaries; see adr/2026-08-05-first-party-datetime-crate.md" },
+  { path = "time::Date", reason = "first-party code uses chrono::NaiveDate for calendar dates; see adr/2026-08-05-first-party-datetime-crate.md" },
+  { path = "time::PrimitiveDateTime", reason = "first-party code uses chrono::NaiveDateTime, and chrono::DateTime<Utc> for instants; see adr/2026-08-05-first-party-datetime-crate.md" },
+]

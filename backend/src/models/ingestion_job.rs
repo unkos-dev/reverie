@@ -10,9 +10,9 @@
 //! Postgres `ENUM` is tracked separately and would mirror the pattern
 //! used by [`crate::models::ingestion_status::IngestionStatus`].
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// A single file's ingestion lifecycle row.
@@ -29,11 +29,11 @@ pub struct IngestionJob {
     /// Human-readable failure cause set by [`mark_failed`]; `None` otherwise.
     pub error_message: Option<String>,
     /// `now()` of the `queued → running` transition; `None` while still queued.
-    pub started_at: Option<OffsetDateTime>,
+    pub started_at: Option<DateTime<Utc>>,
     /// `now()` of the terminal-state transition; `None` while not yet finished.
-    pub completed_at: Option<OffsetDateTime>,
+    pub completed_at: Option<DateTime<Utc>>,
     /// Row insert timestamp.
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Insert a fresh `queued` job for `source_path` under `batch_id`.

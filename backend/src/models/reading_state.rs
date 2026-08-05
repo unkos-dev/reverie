@@ -10,10 +10,10 @@
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
 //! `Option<T>` for nullable (never `skip_serializing_if`), RFC 3339
-//! timestamps via `time`.
+//! timestamps.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
-use time::OffsetDateTime;
 
 use crate::models::reading_status::ReadingStatus;
 
@@ -35,15 +35,12 @@ pub struct ReadingState {
     pub progress_pct: Option<f32>,
     /// `reading_state.started_at`: stamped when a patch first sets `status`
     /// to [`ReadingStatus::Reading`]; not re-stamped on later re-entries.
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub started_at: Option<OffsetDateTime>,
+    pub started_at: Option<DateTime<Utc>>,
     /// `reading_state.finished_at`: stamped each time a patch sets `status`
     /// to [`ReadingStatus::Finished`].
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub finished_at: Option<OffsetDateTime>,
+    pub finished_at: Option<DateTime<Utc>>,
     /// `reading_state.last_read_at`.
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub last_read_at: Option<OffsetDateTime>,
+    pub last_read_at: Option<DateTime<Utc>>,
 }
 
 /// Reading-state slice embedded in each `GET /api/v1/books` list row.
@@ -65,11 +62,9 @@ pub struct ReadingStateSummary {
     /// `reading_state.progress_pct`, 0-100.
     pub progress_pct: Option<f32>,
     /// `reading_state.started_at`; see [`ReadingState::started_at`].
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub started_at: Option<OffsetDateTime>,
+    pub started_at: Option<DateTime<Utc>>,
     /// `reading_state.finished_at`; see [`ReadingState::finished_at`].
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub finished_at: Option<OffsetDateTime>,
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
 #[cfg(test)]
@@ -79,8 +74,8 @@ mod tests {
         app_pool_for, create_adult_and_basic_auth, ingestion_pool_for,
         insert_work_and_manifestation,
     };
+    use chrono::Utc;
     use sqlx::PgPool;
-    use time::OffsetDateTime;
     use uuid::Uuid;
 
     /// Create one user + one manifestation, return their ids.
@@ -115,7 +110,7 @@ mod tests {
             user_id,
             m_id,
             50.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&pool)
         .await
@@ -148,7 +143,7 @@ mod tests {
              VALUES ($1, $2, NULL, $3)",
             user_id,
             m_id,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&pool)
         .await;
@@ -167,7 +162,7 @@ mod tests {
             user_id,
             m_id,
             -1.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&pool)
         .await;
@@ -186,7 +181,7 @@ mod tests {
             user_id,
             m_id,
             101.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&pool)
         .await;
@@ -203,7 +198,7 @@ mod tests {
         let (_w1, m1) = insert_work_and_manifestation(&ingestion, "low-bound").await;
         let (_w2, m2) = insert_work_and_manifestation(&ingestion, "high-bound").await;
         let (user_id, _) = create_adult_and_basic_auth(&app, "boundaries").await;
-        let now = OffsetDateTime::now_utc();
+        let now = Utc::now();
 
         sqlx::query!(
             "INSERT INTO reading_state (user_id, manifestation_id, progress_pct, last_read_at) \
@@ -258,7 +253,7 @@ mod tests {
             alice,
             m_id,
             42.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&mut *tx)
         .await
@@ -291,7 +286,7 @@ mod tests {
             alice,
             m_id,
             99.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&mut *tx)
         .await;
@@ -311,7 +306,7 @@ mod tests {
             user_id,
             m_id,
             75.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&pool)
         .await
@@ -341,7 +336,7 @@ mod tests {
             user_id,
             m_id,
             75.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
         )
         .execute(&pool)
         .await
@@ -393,7 +388,7 @@ mod tests {
             "UPDATE reading_state SET progress_pct = $1, last_read_at = $2 \
              WHERE user_id = $3 AND manifestation_id = $4",
             33.0_f32,
-            OffsetDateTime::now_utc(),
+            Utc::now(),
             user_id,
             m_id,
         )

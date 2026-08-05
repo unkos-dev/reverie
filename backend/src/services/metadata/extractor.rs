@@ -44,7 +44,7 @@ pub struct ExtractedMetadata {
     pub publisher: Option<String>,
     /// Publication date parsed from `OPF` `<dc:date>` in `YYYY`, `YYYY-MM`,
     /// or `YYYY-MM-DD` format. Partial dates default to the first of month/year.
-    pub pub_date: Option<time::Date>,
+    pub pub_date: Option<chrono::NaiveDate>,
     /// First valid `ISBN` found among the `OPF` identifiers. `None` when no
     /// recognisable valid `ISBN` was present (the extractor selects the first
     /// `IsbnResult` whose `valid` flag is set, so an invalid-only identifier
@@ -283,33 +283,57 @@ fn completeness_confidence(meta: &ExtractedMetadata) -> f32 {
     confidence.min(1.0)
 }
 
+/// Accepted `pub_date` year bounds for EPUB-supplied dates.
+///
+/// These mirror the common-era convention the `timestamptz` decode-range
+/// checks set. `manifestations.pub_date` carries no CHECK constraint, so the
+/// bound holds only as far as every writer routes through this function.
+const MIN_PUB_YEAR: i32 = 1;
+const MAX_PUB_YEAR: i32 = 9999;
+
+/// The one accepted spelling, used to parse and to re-render for the
+/// canonical-form check in [`storable`].
+const ISO_DATE_FMT: &str = "%Y-%m-%d";
+
 /// Try to parse a date string in common OPF formats.
-fn parse_date(s: &str) -> Option<time::Date> {
+///
+/// An OPF is third-party input, so both of chrono's parsing widenings are
+/// reachable here: fewer digits than the format spells (`26-05-01` as year
+/// 26) and an explicit sign lifting the width cap (`-9999-01-01`). Each would
+/// otherwise yield a real date the `pub_date` column cannot store.
+fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
     let s = s.trim();
     // YYYY-MM-DD
-    if let Ok(d) = time::Date::parse(
-        s,
-        &time::macros::format_description!("[year]-[month]-[day]"),
-    ) {
+    if let Some(d) = storable(s) {
         return Some(d);
     }
     // YYYY-MM (default to 1st of month)
-    if s.len() >= 7 && s.chars().nth(4) == Some('-') {
-        let padded = format!("{s}-01");
-        if let Ok(d) = time::Date::parse(
-            &padded,
-            &time::macros::format_description!("[year]-[month]-[day]"),
-        ) {
-            return Some(d);
-        }
+    if s.len() >= 7
+        && s.chars().nth(4) == Some('-')
+        && let Some(d) = storable(&format!("{s}-01"))
+    {
+        return Some(d);
     }
     // YYYY (default to Jan 1)
     if s.len() == 4
         && let Ok(year) = s.parse::<i32>()
     {
-        return time::Date::from_calendar_date(year, time::Month::January, 1).ok();
+        return chrono::NaiveDate::from_ymd_opt(year, 1, 1).filter(|d| in_range(*d));
     }
     None
+}
+
+/// Parse `candidate` as a canonically spelled `YYYY-MM-DD` date whose year the
+/// column can hold. The round-trip is what rejects a short or unpadded field,
+/// which parses but does not re-render to the same string.
+fn storable(candidate: &str) -> Option<chrono::NaiveDate> {
+    let date = chrono::NaiveDate::parse_from_str(candidate, ISO_DATE_FMT).ok()?;
+    (date.format(ISO_DATE_FMT).to_string() == candidate && in_range(date)).then_some(date)
+}
+
+/// Whether the year falls inside [`MIN_PUB_YEAR`]..=[`MAX_PUB_YEAR`].
+fn in_range(date: chrono::NaiveDate) -> bool {
+    (MIN_PUB_YEAR..=MAX_PUB_YEAR).contains(&chrono::Datelike::year(&date))
 }
 
 /// Generate sort name: "J. R. R. Tolkien" → "Tolkien, J. R. R."
@@ -431,6 +455,22 @@ mod tests {
         assert!(parse_date("2020").is_some());
         assert!(parse_date("not-a-date").is_none());
         assert!(parse_date("").is_none());
+    }
+
+    #[test]
+    fn date_parsing_rejects_unstorable_years() {
+        // chrono's `%Y` takes one to four digits, and an explicit sign lifts
+        // the cap, so both of these parse to real dates the column cannot
+        // hold. An OPF is third-party input, so both are reachable.
+        assert!(parse_date("26-05-01").is_none());
+        assert!(parse_date("-9999-1-1").is_none());
+        assert!(parse_date("0000-01-01").is_none());
+    }
+
+    #[test]
+    fn date_parsing_accepts_the_range_boundaries() {
+        assert!(parse_date("0001-01-01").is_some());
+        assert!(parse_date("9999-12-31").is_some());
     }
 
     #[test]

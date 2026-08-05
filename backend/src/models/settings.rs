@@ -3,8 +3,8 @@
 //! See ADR `adr/2026-05-26-persisted-settings.md` for storage shape,
 //! precedence, and reload decisions.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 
 use crate::config::CleanupMode;
 use crate::models::manifestation_format::ManifestationFormat;
@@ -85,9 +85,8 @@ pub struct Settings {
     /// DB-assigned (`now()` on every UPDATE); not operator-settable.
     // Wire-facing despite this struct also being the in-process settings
     // cache: it is `#[serde(flatten)]`ed into the `GET /api/v1/settings`
-    // response, so the RFC 3339 adapter is required here too.
-    #[serde(with = "time::serde::rfc3339")]
-    pub updated_at: OffsetDateTime,
+    // response.
+    pub updated_at: DateTime<Utc>,
 }
 
 impl Settings {

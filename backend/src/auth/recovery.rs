@@ -23,8 +23,8 @@ use std::io::Write as _;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::models::password_reset_pin::{IssuanceLock, RotateOutcome, rotate};
@@ -72,7 +72,7 @@ pub fn write_pin_file(
     user_id: Uuid,
     email: &str,
     pin: &str,
-    expires_at: OffsetDateTime,
+    expires_at: DateTime<Utc>,
 ) -> std::io::Result<()> {
     fs::create_dir_all(dir)?;
     fs::set_permissions(dir, Permissions::from_mode(0o700))?;
@@ -97,7 +97,7 @@ fn stage_pin_file(
     staging: &Path,
     email: &str,
     pin: &str,
-    expires_at: OffsetDateTime,
+    expires_at: DateTime<Utc>,
 ) -> std::io::Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
@@ -129,7 +129,7 @@ pub struct PinIssuance {
     /// Argon2id PHC of `pin`, the only form persisted.
     pub pin_hash: String,
     /// When the PIN stops being valid.
-    pub expires_at: OffsetDateTime,
+    pub expires_at: DateTime<Utc>,
 }
 
 /// Whether an issuance published its PIN or stood down for a concurrent one.
@@ -276,7 +276,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let dir = tmp.path();
         let user_id = Uuid::new_v4();
-        let expires = OffsetDateTime::now_utc() + time::Duration::minutes(15);
+        let expires = Utc::now() + chrono::TimeDelta::minutes(15);
 
         write_pin_file(dir, user_id, "user@example.com", "1234567890", expires).expect("write");
         let path = pin_file_path(dir, user_id);
@@ -307,7 +307,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let dir = tmp.path();
         let user_id = Uuid::new_v4();
-        let expires = OffsetDateTime::now_utc() + time::Duration::minutes(15);
+        let expires = Utc::now() + chrono::TimeDelta::minutes(15);
 
         write_pin_file(dir, user_id, "user@example.com", "1111111111", expires).expect("first");
         write_pin_file(dir, user_id, "user@example.com", "2222222222", expires).expect("second");
@@ -339,7 +339,7 @@ mod tests {
             email: "recovery@example.com".to_owned(),
             pin: pin.to_owned(),
             pin_hash: crate::auth::password::hash_password(pin.as_bytes()).expect("hash pin"),
-            expires_at: OffsetDateTime::now_utc() + time::Duration::minutes(15),
+            expires_at: Utc::now() + chrono::TimeDelta::minutes(15),
         }
     }
 

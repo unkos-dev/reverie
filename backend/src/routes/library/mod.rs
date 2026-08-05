@@ -30,9 +30,9 @@ use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, QueryBuilder, Row};
-use time::OffsetDateTime;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -215,14 +215,14 @@ struct ListParams {
     #[serde(default)]
     pages_empty: Option<bool>,
     /// Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.
-    /// The `time` crate's default serde reads a component form, not a `YYYY-MM-DD`
-    /// string, so the query value is parsed through [`filters::iso_date_opt`]; a
-    /// malformed date fails deserialization and is a 400.
+    /// A query parameter arrives as a string, so the value is parsed through
+    /// [`filters::iso_date_opt`], which accepts `YYYY-MM-DD` and nothing else;
+    /// a malformed date fails deserialization and is a 400.
     #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
-    created_at_gte: Option<time::Date>,
+    created_at_gte: Option<chrono::NaiveDate>,
     /// Upper bound (day-inclusive) on the added date, ISO 8601 calendar date.
     #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
-    created_at_lte: Option<time::Date>,
+    created_at_lte: Option<chrono::NaiveDate>,
     /// Any-of reading-status filter. Each value is a `reading_status` wire
     /// name or the `unread` pseudo-value (no status set); a row qualifies
     /// when it matches at least one.
@@ -1116,13 +1116,7 @@ async fn detail(
         _ => None,
     };
 
-    let pub_date_str = row
-        .pub_date
-        .map(|d| {
-            d.format(&time::format_description::well_known::Iso8601::DATE)
-                .map_err(|e| AppError::Internal(e.into()))
-        })
-        .transpose()?;
+    let pub_date_str = row.pub_date.map(|d| d.format("%Y-%m-%d").to_string());
     Ok(axum::Json(BookDetail {
         id: row.id,
         work_id,
@@ -1172,10 +1166,10 @@ struct DetailRow {
     isbn_13: Option<String>,
     isbn_10: Option<String>,
     publisher: Option<String>,
-    pub_date: Option<time::Date>,
+    pub_date: Option<chrono::NaiveDate>,
     pages: Option<i32>,
-    created_at: OffsetDateTime,
-    updated_at: OffsetDateTime,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
     ingestion_status: String,
     validation_status: ValidationStatus,
     enrichment_status: String,

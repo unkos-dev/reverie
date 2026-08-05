@@ -16,6 +16,7 @@ use std::collections::HashSet;
 use std::path::Path as StdPath;
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -1016,10 +1017,10 @@ async fn series_feed_renders_all_manifestations(pool: PgPool) {
         .fetch_one(&ingestion_pool)
         .await
         .expect("insert work");
-        let created_at = if i == 50 {
-            time::macros::datetime!(2023-01-01 00:00:00 UTC)
+        let created_at: DateTime<Utc> = if i == 50 {
+            "2023-01-01T00:00:00Z".parse().expect("valid timestamp")
         } else {
-            time::macros::datetime!(2020-01-01 00:00:00 UTC)
+            "2020-01-01T00:00:00Z".parse().expect("valid timestamp")
         };
         let file_path = format!("/tmp/series-{i}.epub");
         let hash = format!("series-hash-{i}");

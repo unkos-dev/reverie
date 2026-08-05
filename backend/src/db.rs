@@ -1184,11 +1184,15 @@ mod tests {
     }
 
     // Migration 20260610165400 guards every first-party TIMESTAMPTZ column
-    // with a decode-range CHECK (`time` without `large-dates` only decodes
-    // years -9999..=9999; an out-of-range row panics at `row.get`). This
-    // catalog probe enforces coverage going forward: a new TIMESTAMPTZ
-    // column added without a matching range CHECK fails here, instead of
-    // shipping a column whose out-of-band corruption panics read paths.
+    // with a decode-range CHECK. Postgres TIMESTAMPTZ reaches year 294276
+    // plus the `infinity` specials, none of which `DateTime<Utc>` can
+    // represent, and an undecodable row panics at `row.get`. That migration's
+    // own header still frames the gap in terms of the `time` crate, which
+    // preceded chrono here; its bounds are unchanged and still valid, and
+    // editing an applied migration would break its checksum. This catalog
+    // probe enforces coverage going forward: a new TIMESTAMPTZ column added
+    // without a matching range CHECK fails here, instead of shipping a
+    // column whose out-of-band corruption panics read paths.
     #[sqlx::test(migrations = "./migrations")]
     async fn every_timestamptz_column_has_decode_range_check(pool: PgPool) {
         let unguarded: Vec<String> = sqlx::query_scalar(

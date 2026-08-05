@@ -14,9 +14,9 @@
 //! processes, so the rotation and the publication of the clear PIN that follows
 //! it stay one indivisible step; see [`crate::auth::recovery::issue_pin`].
 
+use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, Connection as _, PgConnection, PgPool, Postgres};
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// First key of the per-user issuance advisory lock. Advisory locks share one
@@ -55,7 +55,7 @@ pub struct PasswordResetPin {
     /// Argon2id PHC of the clear PIN.
     pub pin_hash: String,
     /// When this PIN stops being valid.
-    pub expires_at: OffsetDateTime,
+    pub expires_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for PasswordResetPin {
@@ -98,7 +98,7 @@ pub async fn insert(
     executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     pin_hash: &str,
-    expires_at: OffsetDateTime,
+    expires_at: DateTime<Utc>,
 ) -> Result<Uuid, sqlx::Error> {
     sqlx::query_scalar!(
         "INSERT INTO password_reset_pins (user_id, pin_hash, expires_at) \
@@ -273,7 +273,7 @@ pub async fn rotate(
     conn: &mut PgConnection,
     user_id: Uuid,
     pin_hash: &str,
-    expires_at: OffsetDateTime,
+    expires_at: DateTime<Utc>,
 ) -> Result<RotateOutcome, sqlx::Error> {
     let mut retries_left = ROTATE_RETRIES;
     loop {
@@ -328,7 +328,7 @@ async fn rotate_once(
     conn: &mut PgConnection,
     user_id: Uuid,
     pin_hash: &str,
-    expires_at: OffsetDateTime,
+    expires_at: DateTime<Utc>,
 ) -> Result<InsertOutcome, sqlx::Error> {
     let mut tx = Acquire::begin(&mut *conn).await?;
     // Bound the wait on a conflicting row or index lock so a rotation cannot pin
@@ -404,7 +404,7 @@ pub async fn consume(executor: impl sqlx::PgExecutor<'_>, id: Uuid) -> Result<bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::Duration;
+    use chrono::TimeDelta;
 
     async fn insert_user(pool: &PgPool) -> Uuid {
         sqlx::query_scalar!("INSERT INTO users (display_name) VALUES ('PIN Test') RETURNING id")
@@ -432,7 +432,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn active_then_consumed_is_inactive(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
         let id = insert(&pool, user_id, "$argon2id$hash", expires)
             .await
             .expect("insert pin");
@@ -464,7 +464,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn expired_pin_is_not_active(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expired = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let expired = Utc::now() - TimeDelta::minutes(1);
         insert(&pool, user_id, "$argon2id$hash", expired)
             .await
             .expect("insert pin");
@@ -480,7 +480,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn supersede_leaves_at_most_one_active(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
         insert(&pool, user_id, "$argon2id$first", expires)
             .await
             .expect("first");
@@ -503,7 +503,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn rotate_replaces_the_active_pin(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
         let first = insert(&pool, user_id, "$argon2id$first", expires)
             .await
             .expect("seed first pin");
@@ -528,7 +528,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn partial_unique_index_rejects_a_second_active_pin(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
         insert(&pool, user_id, "$argon2id$first", expires)
             .await
             .expect("first active pin");
@@ -559,7 +559,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn concurrent_rotate_leaves_exactly_one_active(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
 
         // Seed a prior active PIN so both concurrent rotates run the supersede
         // DELETE and then race on the INSERT, the READ COMMITTED interleaving
@@ -651,7 +651,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn rotate_retries_after_a_real_unique_violation(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
 
         // Hold an uncommitted active row for the user so rotate's INSERT parks on
         // the single-active slot deterministically instead of racing on the
@@ -706,7 +706,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn migration_reconciles_duplicate_active_rows_before_indexing(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
 
         // A database that ran the pre-index code could carry two unconsumed PINs
         // for one user. The unique index does not exist in that state, so drop
@@ -723,7 +723,7 @@ mod tests {
             (5, "$argon2id$mid"),
             (1, "$argon2id$new"),
         ] {
-            let created = OffsetDateTime::now_utc() - Duration::minutes(offset);
+            let created = Utc::now() - TimeDelta::minutes(offset);
             newest = sqlx::query_scalar!(
                 "INSERT INTO password_reset_pins (user_id, pin_hash, expires_at, created_at) \
                  VALUES ($1, $2, $3, $4) RETURNING id",
@@ -781,7 +781,7 @@ mod tests {
     async fn consume_rejects_expired_pin(pool: PgPool) {
         let user_id = insert_user(&pool).await;
         // Insert a PIN that expired 1 second ago (unconsumed).
-        let expired = OffsetDateTime::now_utc() - Duration::seconds(1);
+        let expired = Utc::now() - TimeDelta::seconds(1);
         let id = insert(&pool, user_id, "$argon2id$hash", expired)
             .await
             .expect("insert expired pin");
@@ -806,7 +806,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn rotate_rolls_back_when_insert_fails(pool: PgPool) {
         let user_id = insert_user(&pool).await;
-        let expires = OffsetDateTime::now_utc() + Duration::minutes(15);
+        let expires = Utc::now() + TimeDelta::minutes(15);
         let original = insert(&pool, user_id, "$argon2id$original", expires)
             .await
             .expect("seed original pin");
@@ -816,10 +816,10 @@ mod tests {
         // atomic rotate must roll that DELETE back and leave the original PIN
         // active; a non-atomic supersede would destroy it and lock the user out
         // of recovery.
-        let out_of_range = OffsetDateTime::new_utc(
-            time::Date::from_calendar_date(0, time::Month::January, 1).expect("year-0 date"),
-            time::Time::MIDNIGHT,
-        );
+        let out_of_range = chrono::NaiveDate::from_ymd_opt(0, 1, 1)
+            .expect("year-0 date")
+            .and_time(chrono::NaiveTime::MIN)
+            .and_utc();
         let mut conn = pool.acquire().await.expect("acquire");
         let err = rotate(&mut conn, user_id, "$argon2id$replacement", out_of_range)
             .await

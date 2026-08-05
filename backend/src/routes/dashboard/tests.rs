@@ -8,9 +8,9 @@
 //! `reverie_app` pool with the admin RLS context set by `acquire_with_rls`.
 
 use axum::http::{StatusCode, header::AUTHORIZATION};
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::error::problems;
@@ -100,7 +100,7 @@ async fn seed_job(
     batch_id: Uuid,
     marker: &str,
     status: &str,
-    completed_at: Option<OffsetDateTime>,
+    completed_at: Option<DateTime<Utc>>,
 ) {
     let source_path = format!("/tmp/scan-{marker}");
     sqlx::query!(
@@ -304,7 +304,7 @@ async fn activity_endpoint_admin_lists_batches(pool: PgPool) {
     let (_admin, admin_auth) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
 
     let batch = Uuid::new_v4();
-    let now = OffsetDateTime::now_utc();
+    let now = Utc::now();
     seed_job(&ingestion_pool, batch, "a1", "complete", Some(now)).await;
     seed_job(&ingestion_pool, batch, "a2", "complete", Some(now)).await;
 
@@ -330,7 +330,7 @@ async fn activity_in_progress_sums_to_total(pool: PgPool) {
 
     // In-flight batch: a running job (no completed_at) plus terminal jobs.
     let batch = Uuid::new_v4();
-    let now = OffsetDateTime::now_utc();
+    let now = Utc::now();
     seed_job(&ingestion_pool, batch, "b-run", "running", None).await;
     seed_job(&ingestion_pool, batch, "b-done", "complete", Some(now)).await;
     seed_job(&ingestion_pool, batch, "b-fail", "failed", Some(now)).await;
@@ -366,14 +366,7 @@ async fn activity_limit_is_clamped(pool: PgPool) {
     let (_admin, admin_auth) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
 
     let batch = Uuid::new_v4();
-    seed_job(
-        &ingestion_pool,
-        batch,
-        "c1",
-        "complete",
-        Some(OffsetDateTime::now_utc()),
-    )
-    .await;
+    seed_job(&ingestion_pool, batch, "c1", "complete", Some(Utc::now())).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 

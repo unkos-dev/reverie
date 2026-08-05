@@ -6,8 +6,8 @@
 //! instead of `users.oidc_subject`. Mirrors the private-`Row`/public-type
 //! split used in [`crate::models::user`].
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::models::identity_provider::IdentityProvider;
@@ -20,8 +20,8 @@ struct UserIdentityRow {
     provider: IdentityProvider,
     issuer: String,
     subject: String,
-    created_at: OffsetDateTime,
-    updated_at: OffsetDateTime,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 /// One external-provider identity link bound to a [`crate::models::user::User`].
@@ -38,9 +38,9 @@ pub struct UserIdentity {
     /// Provider-asserted subject (`sub`), unique only within `issuer`.
     pub subject: String,
     /// Row insert timestamp.
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// `now()` of the most recent change to this link.
-    pub updated_at: OffsetDateTime,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<UserIdentityRow> for UserIdentity {

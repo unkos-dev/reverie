@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use time::OffsetDateTime;
+use chrono::{DateTime, Utc};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -61,8 +61,7 @@ struct CreateTokenResponse {
     /// Capabilities this token carries.
     scopes: Vec<Scope>,
     /// `null` if the token never expires.
-    #[serde(with = "time::serde::rfc3339::option")]
-    expires_at: Option<OffsetDateTime>,
+    expires_at: Option<DateTime<Utc>>,
     /// The full Bearer credential (`{prefix}{id}.{secret}`), returned
     /// exactly once, here; only its SHA-256 hash is persisted, so the
     /// plaintext cannot be recovered later. For OPDS / Basic-auth clients,
@@ -82,15 +81,12 @@ struct TokenListItem {
     /// Capabilities this token carries.
     scopes: Vec<Scope>,
     /// `null` if the token never expires.
-    #[serde(with = "time::serde::rfc3339::option")]
-    expires_at: Option<OffsetDateTime>,
+    expires_at: Option<DateTime<Utc>>,
     /// Timestamp of the last successful auth with this token; `null` if
     /// the token has never been used.
-    #[serde(with = "time::serde::rfc3339::option")]
-    last_used_at: Option<OffsetDateTime>,
+    last_used_at: Option<DateTime<Utc>>,
     /// Token creation timestamp.
-    #[serde(with = "time::serde::rfc3339")]
-    created_at: OffsetDateTime,
+    created_at: DateTime<Utc>,
 }
 
 /// `POST /api/v1/tokens` — issue a new device token for the caller.
@@ -154,7 +150,7 @@ async fn create_token(
     let expires_at = match body.expires_in_days {
         None => None,
         Some(days @ (30 | 60 | 90 | 365)) => {
-            Some(OffsetDateTime::now_utc() + time::Duration::days(i64::from(days)))
+            Some(Utc::now() + chrono::TimeDelta::days(i64::from(days)))
         }
         Some(_) => {
             return Err(AppError::Validation(

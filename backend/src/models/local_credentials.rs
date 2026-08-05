@@ -7,8 +7,8 @@
 //! logged, and the table is granted to `reverie_app` only (no readonly,
 //! mirroring `device_tokens`).
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// A user's local password credential row.
@@ -22,9 +22,9 @@ pub struct LocalCredential {
     /// Argon2id PHC string. Never logged; the model is not serialisable.
     pub password_hash: String,
     /// Row insert timestamp.
-    pub created_at: OffsetDateTime,
+    pub created_at: DateTime<Utc>,
     /// `now()` of the most recent password change.
-    pub updated_at: OffsetDateTime,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl std::fmt::Debug for LocalCredential {

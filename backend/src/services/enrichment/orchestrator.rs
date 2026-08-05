@@ -213,9 +213,9 @@ pub async fn run_once(
     let http = api_client(&ua);
 
     let ttls = CacheTtls {
-        hit: time::Duration::days(i64::from(config.enrichment.cache_ttl_hit_days)),
-        miss: time::Duration::days(i64::from(config.enrichment.cache_ttl_miss_days)),
-        error: time::Duration::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
+        hit: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_hit_days)),
+        miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
+        error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
     let results = fan_out_with_fallback(
         pool,
@@ -1134,8 +1134,11 @@ async fn apply_field(
             // pub_date comes from an external source; we keep the journal
             // row so a reviewer can still accept/reject it and skip the
             // canonical write.
-            let Ok(date) = parse_iso_date(&v) else {
-                tracing::debug!(value = %v, "pub_date value not ISO; skipping canonical apply");
+            let Some(date) = parse_iso_date(&v) else {
+                tracing::debug!(
+                    value = %v,
+                    "pub_date value not a storable ISO date; skipping canonical apply"
+                );
                 return Ok(false);
             };
             sqlx::query!(
@@ -1243,21 +1246,49 @@ fn json_as_string(v: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn parse_iso_date(s: &str) -> Result<time::Date, time::error::Parse> {
-    use time::format_description::well_known::Iso8601;
+/// Accepted `pub_date` year bounds for provider metadata.
+///
+/// These mirror the common-era convention the `timestamptz` decode-range
+/// checks set. `manifestations.pub_date` carries no CHECK constraint, so the
+/// bound holds only as far as every writer routes through this function.
+const MIN_PUB_YEAR: i32 = 1;
+const MAX_PUB_YEAR: i32 = 9999;
+
+/// The one accepted spelling, used to parse and to re-render for the
+/// canonical-form check below.
+const ISO_DATE_FMT: &str = "%Y-%m-%d";
+
+/// Parse a provider date, rejecting any spelling or year the column cannot
+/// hold.
+///
+/// Returns `None` rather than an error type because the sole caller discards
+/// the reason and skips the value, logging the raw input instead.
+///
+/// Two independent widenings have to be closed. chrono's numeric fields
+/// accept fewer digits than the format spells, so `26-05-01` parses as year
+/// 26; requiring the parse to round-trip rejects that and every other
+/// non-canonical spelling. An explicit sign then lifts the width cap
+/// entirely, so a hostile `-9999-01-01` round-trips cleanly and needs the
+/// range check. Left unfiltered, either would reach the bind and fail the
+/// whole canonical-apply batch rather than being skipped like any other
+/// unusable provider value.
+fn parse_iso_date(s: &str) -> Option<chrono::NaiveDate> {
     // `s.len()` is in bytes; provider strings are adversarial and may contain
     // multi-byte UTF-8 codepoints. `is_char_boundary` keeps the slice valid.
-    if s.len() >= 10 && s.is_char_boundary(10) {
-        time::Date::parse(&s[..10], &Iso8601::DATE)
+    let candidate = if s.len() >= 10 && s.is_char_boundary(10) {
+        s[..10].to_owned()
     } else {
         // Fall back to `YYYY` or `YYYY-MM` by padding.
-        let padded = match s.len() {
+        match s.len() {
             4 => format!("{s}-01-01"),
             7 => format!("{s}-01"),
-            _ => s.to_string(),
-        };
-        time::Date::parse(&padded, &Iso8601::DATE)
-    }
+            _ => s.to_owned(),
+        }
+    };
+    let date = chrono::NaiveDate::parse_from_str(&candidate, ISO_DATE_FMT).ok()?;
+    (date.format(ISO_DATE_FMT).to_string() == candidate
+        && (MIN_PUB_YEAR..=MAX_PUB_YEAR).contains(&chrono::Datelike::year(&date)))
+    .then_some(date)
 }
 
 fn summarise_failure(source_id: &str, err: &SourceError) -> SourceFailure {
@@ -1301,9 +1332,9 @@ pub async fn fan_out_for_dry_run(
     let ua = config.user_agent();
     let http = api_client(&ua);
     let ttls = CacheTtls {
-        hit: time::Duration::days(i64::from(config.enrichment.cache_ttl_hit_days)),
-        miss: time::Duration::days(i64::from(config.enrichment.cache_ttl_miss_days)),
-        error: time::Duration::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
+        hit: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_hit_days)),
+        miss: chrono::TimeDelta::days(i64::from(config.enrichment.cache_ttl_miss_days)),
+        error: chrono::TimeDelta::minutes(i64::from(config.enrichment.cache_ttl_error_mins)),
     };
     let results = fan_out_with_fallback(
         pool,
@@ -2917,6 +2948,36 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(server)
             .await;
+    }
+
+    #[test]
+    fn parse_iso_date_accepts_the_storable_forms() {
+        assert!(parse_iso_date("2024-01-15").is_some());
+        assert!(parse_iso_date("2024-01").is_some());
+        assert!(parse_iso_date("2024").is_some());
+        assert!(parse_iso_date("2024-01-15T00:00:00Z").is_some());
+        assert!(parse_iso_date("0001-01-01").is_some());
+        assert!(parse_iso_date("9999-12-31").is_some());
+    }
+
+    #[test]
+    fn parse_iso_date_rejects_years_postgres_cannot_store() {
+        // Provider strings are adversarial. chrono's `%Y` takes one to four
+        // digits and an explicit sign lifts the cap, so each of these parses
+        // to a real NaiveDate that the `date` column rejects on bind. Left
+        // unfiltered they would fail the whole canonical-apply batch instead
+        // of being skipped like any other unusable value.
+        assert!(parse_iso_date("26-05-01").is_none());
+        assert!(parse_iso_date("-9999-1-1").is_none());
+        assert!(parse_iso_date("0000-01-01").is_none());
+    }
+
+    #[test]
+    fn parse_iso_date_rejects_non_dates() {
+        assert!(parse_iso_date("not-a-date").is_none());
+        assert!(parse_iso_date("").is_none());
+        // 3-byte codepoint pushes byte-10 mid-character.
+        assert!(parse_iso_date("2024-01-€€€garbage").is_none());
     }
 
     #[test]

@@ -116,7 +116,7 @@ async fn insert_book_at(
     ingestion_pool: &PgPool,
     marker: &str,
     title: &str,
-    created_at: time::OffsetDateTime,
+    created_at: chrono::DateTime<chrono::Utc>,
 ) -> (Uuid, Uuid) {
     let work_id: Uuid = sqlx::query_scalar!(
         "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
@@ -157,7 +157,7 @@ async fn insert_book_with_author_sort_name(
     title: &str,
     author_name: &str,
     sort_name: &str,
-    created_at: time::OffsetDateTime,
+    created_at: chrono::DateTime<chrono::Utc>,
 ) -> Uuid {
     let (work_id, m_id) = insert_book_at(ingestion_pool, marker, title, created_at).await;
     let author_id: Uuid = sqlx::query_scalar!(
@@ -199,8 +199,8 @@ async fn set_pages(ingestion_pool: &PgPool, m_id: Uuid, pages: i32) {
 /// Deterministic `created_at` boundary value for walk tests: seconds
 /// past a fixed epoch, so relative ordering across fixture rows is
 /// exact rather than depending on wall-clock insert timing.
-fn ts(offset_seconds: i64) -> time::OffsetDateTime {
-    time::OffsetDateTime::from_unix_timestamp(1_700_000_000 + offset_seconds)
+fn ts(offset_seconds: i64) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(1_700_000_000 + offset_seconds, 0)
         .expect("valid unix timestamp")
 }
 
@@ -278,7 +278,7 @@ async fn list_endpoint_admin_sees_all_books(pool: PgPool) {
     let created_at = items[0]["created_at"]
         .as_str()
         .unwrap_or_else(|| panic!("created_at must be a JSON string, got {}", items[0]));
-    time::OffsetDateTime::parse(created_at, &time::format_description::well_known::Rfc3339)
+    chrono::DateTime::parse_from_rfc3339(created_at)
         .unwrap_or_else(|e| panic!("created_at must parse as RFC 3339 ({e}): {created_at}"));
 }
 
@@ -549,9 +549,7 @@ async fn list_endpoint_cross_sort_cursor_rejected(pool: PgPool) {
     let default_spec = crate::routes::sort_spec::SortSpec::default();
     let recent = crate::routes::cursor::SortCursor {
         spec: default_spec.canonical(),
-        keys: vec![crate::routes::cursor::CursorValue::Ts(
-            time::OffsetDateTime::now_utc(),
-        )],
+        keys: vec![crate::routes::cursor::CursorValue::Ts(chrono::Utc::now())],
         id: Uuid::new_v4(),
         // Inert here: the sort mismatch is detected before the fingerprint.
         filter_fp: String::new(),
@@ -1754,14 +1752,13 @@ async fn detail_endpoint_timestamps_are_rfc3339_strings(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
     let body: serde_json::Value = response.json();
-    // Without the rfc3339 serde adapter, `time` serializes
-    // OffsetDateTime as a 9-element tuple and every frontend
-    // BookDetailSchema parse fails (z.string()).
+    // Both must reach the wire as RFC 3339 strings; the frontend
+    // BookDetailSchema rejects any other shape.
     for field in ["created_at", "updated_at"] {
         let raw = body[field]
             .as_str()
             .unwrap_or_else(|| panic!("{field} must be a JSON string, got {}", body[field]));
-        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+        chrono::DateTime::parse_from_rfc3339(raw)
             .unwrap_or_else(|e| panic!("{field} must parse as RFC 3339 ({e}): {raw}"));
     }
 }
@@ -1941,12 +1938,12 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
             format!("/api/v1/books/{mid}/cover/thumb"),
         );
         assert!(m["ingestion_status"].is_string());
-        // RFC 3339 string, not time's 9-element tuple — the frontend
-        // WorkManifestationSchema expects z.string().
+        // Must reach the wire as an RFC 3339 string; the frontend
+        // WorkManifestationSchema rejects any other shape.
         let raw = m["created_at"]
             .as_str()
             .unwrap_or_else(|| panic!("created_at must be a JSON string, got {}", m["created_at"]));
-        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+        chrono::DateTime::parse_from_rfc3339(raw)
             .unwrap_or_else(|e| panic!("created_at must parse as RFC 3339 ({e}): {raw}"));
     }
     assert!(
@@ -3749,7 +3746,7 @@ async fn list_endpoint_reading_summary_carries_reading_dates(pool: PgPool) {
         let raw = a_state[stamp].as_str().unwrap_or_else(|| {
             panic!("{stamp} must be an RFC 3339 string on the list summary, got {a_body}")
         });
-        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339)
+        chrono::DateTime::parse_from_rfc3339(raw)
             .unwrap_or_else(|e| panic!("{stamp} must parse as RFC 3339 ({e}), got {a_body}"));
     }
 
@@ -4164,7 +4161,9 @@ async fn filter_created_at_bounds_are_day_inclusive(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     // Three books on three distinct calendar days (UTC).
     let day = |iso: &str| {
-        time::OffsetDateTime::parse(iso, &time::format_description::well_known::Rfc3339).unwrap()
+        chrono::DateTime::parse_from_rfc3339(iso)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
     };
     insert_book_at(
         &ingestion_pool,

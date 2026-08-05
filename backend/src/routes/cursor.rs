@@ -44,9 +44,8 @@
 //! No HMAC — same trust model as the OPDS cursor.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 use crate::routes::sort_spec::{SortSpec, SortValueKind};
@@ -65,7 +64,7 @@ pub enum CursorValue {
     /// silently drop rows under three-valued SQL comparison.
     Text(Option<String>),
     /// Timestamp sort key (`created_at`), RFC 3339 on the wire.
-    Ts(#[serde(with = "time::serde::rfc3339")] OffsetDateTime),
+    Ts(DateTime<Utc>),
     /// Integer sort key (`pages`); `None` marks a NULL-bucket
     /// boundary row, as with [`Self::Text`].
     Int(Option<i32>),
@@ -122,9 +121,9 @@ pub struct SortCursor {
 
 /// Parse and encode failures for the cursor family.
 ///
-/// Parsing yields the input-shape variants; encoding yields
-/// [`Self::FormatTimestamp`] (pipe-format cursors) or
-/// [`Self::SerializePayload`] ([`SortCursor`]).
+/// Parsing yields the input-shape variants. Encoding yields only
+/// [`Self::SerializePayload`], and only for [`SortCursor`]: the
+/// pipe-format cursors write their timestamp infallibly.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CursorError {
@@ -159,13 +158,7 @@ pub enum CursorError {
     /// repeat rows.
     #[error("cursor filter mismatch")]
     FilterMismatch,
-    /// A cursor timestamp had a year outside RFC 3339's representable
-    /// range (`-9999..=9999`) during encode.
-    #[error("timestamp not representable as RFC 3339")]
-    FormatTimestamp(#[from] time::error::Format),
-    /// A [`SortCursor`] payload failed JSON serialization during
-    /// encode (a [`CursorValue::Ts`] year outside RFC 3339's
-    /// representable range).
+    /// A [`SortCursor`] payload failed JSON serialization during encode.
     #[error("cursor payload not serializable")]
     SerializePayload(#[from] serde_json::Error),
 }
@@ -175,13 +168,13 @@ impl SortCursor {
     ///
     /// # Errors
     ///
-    /// Returns [`CursorError::SerializePayload`] if a
-    /// [`CursorValue::Ts`] key has a year outside RFC 3339's
-    /// `-9999..=9999` range. Rust-side `OffsetDateTime` caps years at
-    /// 9999, so this is unreachable for timestamps written through
-    /// Reverie; it can only trigger for a `TIMESTAMPTZ` mutated
-    /// out-of-band (raw `psql`, a migration) to a year > 9999. The
-    /// non-timestamp values never fail.
+    /// Returns [`CursorError::SerializePayload`] if the payload fails
+    /// JSON serialization. No inhabited value of this type reaches that
+    /// path: the key variants are strings, integers, booleans, uuids,
+    /// and timestamps, none of which `serde_json` rejects, and a year
+    /// outside RFC 3339's `-9999..=9999` range serializes to the signed
+    /// ISO 8601 form rather than failing. The fallible signature is kept
+    /// so a future key variant cannot silently introduce a panic here.
     pub fn encode(&self) -> Result<String, CursorError> {
         let json = serde_json::to_string(self)?;
         Ok(Base64UrlUnpadded::encode_string(
@@ -365,7 +358,7 @@ pub struct ShelfItemCursor {
     /// Boundary item's `shelf_items.position`.
     pub position: i32,
     /// Boundary item's `shelf_items.added_at`.
-    pub added_at: OffsetDateTime,
+    pub added_at: DateTime<Utc>,
     /// Tiebreaker `shelf_items.manifestation_id`.
     pub manifestation_id: Uuid,
 }
@@ -373,19 +366,17 @@ pub struct ShelfItemCursor {
 impl ShelfItemCursor {
     /// Encode as a base64url-unpadded `?cursor=` value.
     ///
-    /// # Errors
-    ///
-    /// Returns [`CursorError::FormatTimestamp`] if `added_at` has a
-    /// year outside RFC 3339's `-9999..=9999` range (out-of-band DB
-    /// mutation only; see [`SortCursor::encode`]).
-    pub fn encode(&self) -> Result<String, CursorError> {
-        let ts = self.added_at.format(&Rfc3339)?;
+    /// The timestamp is written with the same RFC 3339 spelling serde
+    /// gives a `DateTime<Utc>` on the wire, so a cursor timestamp and a
+    /// response-body timestamp for the same instant are byte-identical.
+    pub fn encode(&self) -> String {
+        let ts = self.added_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
         let payload = format!(
             "si|{}|{ts}|{}",
             self.position,
             self.manifestation_id.as_hyphenated()
         );
-        Ok(Base64UrlUnpadded::encode_string(payload.as_bytes()))
+        Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
 
     /// Parse a base64url cursor produced by [`Self::encode`].
@@ -409,8 +400,9 @@ impl ShelfItemCursor {
         let (pos_str, rest) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
         let position: i32 = pos_str.parse().map_err(|_| CursorError::MalformedKey)?;
         let (ts, id_str) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
-        let added_at =
-            OffsetDateTime::parse(ts, &Rfc3339).map_err(|_| CursorError::MalformedKey)?;
+        let added_at = DateTime::parse_from_rfc3339(ts)
+            .map_err(|_| CursorError::MalformedKey)?
+            .with_timezone(&Utc);
         let manifestation_id = Uuid::parse_str(id_str).map_err(|_| CursorError::MalformedKey)?;
         Ok(Self {
             position,
@@ -448,7 +440,9 @@ mod tests {
     #[test]
     fn sort_roundtrip_ts() {
         let spec = SortSpec::default();
-        let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-05-22T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let cursor = cursor_under(&spec, vec![CursorValue::Ts(ts)]);
         let encoded = cursor.encode().expect("encode");
         let parsed = SortCursor::parse_for(&encoded, &spec, NO_FILTERS).expect("roundtrip");
@@ -494,7 +488,9 @@ mod tests {
     #[test]
     fn sort_roundtrip_three_levels() {
         let spec = spec_of("author,-created_at,title");
-        let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-05-22T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let cursor = cursor_under(
             &spec,
             vec![
@@ -694,7 +690,9 @@ mod tests {
 
     #[test]
     fn shelf_rejects_foreign_tags() {
-        let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-05-22T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let id = Uuid::new_v4();
         let books = SortCursor {
             spec: SortSpec::default().canonical(),
@@ -713,8 +711,7 @@ mod tests {
             added_at: ts,
             manifestation_id: id,
         }
-        .encode()
-        .expect("encode");
+        .encode();
         assert!(matches!(
             ShelfCursor::parse(&item),
             Err(CursorError::UnknownTag)
@@ -733,13 +730,15 @@ mod tests {
 
     #[test]
     fn shelf_item_roundtrip() {
-        let ts = OffsetDateTime::parse("2026-05-22T09:30:00Z", &Rfc3339).unwrap();
+        let ts = DateTime::parse_from_rfc3339("2026-05-22T09:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let key = ShelfItemCursor {
             position: 7,
             added_at: ts,
             manifestation_id: Uuid::new_v4(),
         };
-        let encoded = key.encode().expect("encode");
+        let encoded = key.encode();
         let parsed = ShelfItemCursor::parse(&encoded).expect("roundtrip");
         assert_eq!(parsed, key);
     }
