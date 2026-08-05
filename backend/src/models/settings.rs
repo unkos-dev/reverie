@@ -85,7 +85,7 @@ pub struct Settings {
     /// DB-assigned (`now()` on every UPDATE); not operator-settable.
     // Wire-facing despite this struct also being the in-process settings
     // cache: it is `#[serde(flatten)]`ed into the `GET /api/v1/settings`
-    // response, so the RFC 3339 adapter is required here too.
+    // response.
     pub updated_at: DateTime<Utc>,
 }
 

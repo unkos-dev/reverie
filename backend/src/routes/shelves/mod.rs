@@ -509,13 +509,13 @@ struct ShelfDetailResponse {
     name: String,
     is_system: bool,
     // This envelope re-declares the model's timestamps rather than
-    // embedding `Shelf`, so it needs its own adapters; see
-    // `models::shelf::Shelf::created_at` for why they are load-bearing.
+    // embedding `Shelf`.
     created_at: DateTime<Utc>,
     /// `shelves.updated_at` — the `ETag` value the client echoes as
     /// `If-Match` on the reorder PUT.
-    // Rendered by the same adapter `etag_header` uses, so the value a
-    // client reads from the body round-trips as an `If-Match` header.
+    // `etag_header` renders this field with the same RFC 3339 spelling
+    // serde writes here, so the value a client reads from the body
+    // round-trips as an `If-Match` header.
     updated_at: DateTime<Utc>,
     /// One page of items ordered by `position ASC, added_at ASC,
     /// manifestation_id ASC`.

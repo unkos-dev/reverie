@@ -2,7 +2,7 @@
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
-//! `Option<T>` for nullable, RFC 3339 timestamps via `time`.
+//! `Option<T>` for nullable, RFC 3339 timestamps.
 //!
 //! # RLS posture
 //!

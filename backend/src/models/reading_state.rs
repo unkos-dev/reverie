@@ -10,7 +10,7 @@
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
 //! `Option<T>` for nullable (never `skip_serializing_if`), RFC 3339
-//! timestamps via `time`.
+//! timestamps.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;

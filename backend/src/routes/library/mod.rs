@@ -215,9 +215,9 @@ struct ListParams {
     #[serde(default)]
     pages_empty: Option<bool>,
     /// Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.
-    /// The `time` crate's default serde reads a component form, not a `YYYY-MM-DD`
-    /// string, so the query value is parsed through [`filters::iso_date_opt`]; a
-    /// malformed date fails deserialization and is a 400.
+    /// A query parameter arrives as a string, so the value is parsed through
+    /// [`filters::iso_date_opt`], which accepts `YYYY-MM-DD` and nothing else;
+    /// a malformed date fails deserialization and is a 400.
     #[serde(default, deserialize_with = "filters::iso_date_opt::deserialize")]
     created_at_gte: Option<chrono::NaiveDate>,
     /// Upper bound (day-inclusive) on the added date, ISO 8601 calendar date.

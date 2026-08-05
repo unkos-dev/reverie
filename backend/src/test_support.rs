@@ -278,11 +278,11 @@ pub fn assert_problem(
 /// Assert a JSON field carries the published timestamp contract, a
 /// `Z`-terminated RFC 3339 string, and return it parsed.
 ///
-/// The parse is load-bearing rather than decorative. `time`'s serde
-/// impls emit a 9-element tuple by default and a space-separated
-/// `2026-05-24 01:00:00.0 +00:00:00` under `serde-human-readable`;
-/// the second is a JSON string but is not RFC 3339, so `is_string()`
-/// or `!is_null()` cannot tell a conforming response from a broken one.
+/// The parse is load-bearing rather than decorative. A JSON string is
+/// not by itself the contract: a space-separated or offset-suffixed
+/// rendering is still a string, so `is_string()` or `!is_null()`
+/// cannot tell a conforming response from a broken one. The `Z` check
+/// and the RFC 3339 parse together are what pin the published shape.
 ///
 /// # Panics
 ///

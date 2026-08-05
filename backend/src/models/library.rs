@@ -239,9 +239,8 @@ pub struct BookDetail {
     /// summary counts above remain so clients can render the tab badge
     /// without parsing the full list.
     pub metadata_versions: Vec<MetadataVersionRow>,
-    /// `manifestations.created_at`. RFC 3339 on the wire — without the
-    /// adapter, `time` serialises a 9-element tuple and the frontend
-    /// `BookDetailSchema` (`z.string()`) rejects every detail response.
+    /// `manifestations.created_at`. RFC 3339 on the wire, which the
+    /// frontend `BookDetailSchema` requires.
     pub created_at: DateTime<Utc>,
     /// `manifestations.updated_at`. RFC 3339 on the wire (see `created_at`).
     pub updated_at: DateTime<Utc>,
@@ -392,8 +391,7 @@ pub struct WorkManifestation {
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
     pub enrichment_status: EnrichmentStatus,
-    /// `manifestations.created_at`. RFC 3339 on the wire — the frontend
-    /// `WorkManifestationSchema` expects `z.string()`, not `time`'s
-    /// default tuple serialisation.
+    /// `manifestations.created_at`. RFC 3339 on the wire, which the
+    /// frontend `WorkManifestationSchema` requires.
     pub created_at: DateTime<Utc>,
 }

@@ -102,10 +102,15 @@ rounding or truncating one.
   serde emits, which matters most where a timestamp is both serialised into
   a response body and formatted into an entity-tag derived from it.
 - Neutral, because the two crates print sub-second digits differently, so a
-  timestamp string minted before this change may not compare equal to the
-  same instant rendered after it. Both affected surfaces already fail safe:
-  a stale entity-tag produces a precondition failure and a stale pagination
-  cursor produces a decode error.
+  stored value emitted as `…53.1404` before this change is emitted as
+  `…53.140400` after it. Both are valid RFC 3339 and the conventions record
+  already requires consumers to accept variable fractional precision. No
+  in-flight client is disrupted: entity-tags and pagination cursors are both
+  parsed back into instants before they are compared, so the difference in
+  spelling never reaches a comparison. This was checked by replaying
+  artifacts minted by a pre-change build against a post-change one, rather
+  than reasoned about: the old entity-tag was accepted and the old cursor
+  paginated correctly.
 - Neutral, because both crates already executed on production request paths
   before this decision and still do. Neither one entered or left the
   dependency graph.

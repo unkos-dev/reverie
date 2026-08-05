@@ -556,7 +556,7 @@
           {
             "name": "created_at_gte",
             "in": "query",
-            "description": "Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.\nThe `time` crate's default serde reads a component form, not a `YYYY-MM-DD`\nstring, so the query value is parsed through [`filters::iso_date_opt`]; a\nmalformed date fails deserialization and is a 400.",
+            "description": "Lower bound (day-inclusive) on the added date, ISO 8601 calendar date.\nA query parameter arrives as a string, so the value is parsed through\n[`filters::iso_date_opt`], which accepts `YYYY-MM-DD` and nothing else;\na malformed date fails deserialization and is a 400.",
             "required": false,
             "schema": {
               "type": "string",
@@ -6813,7 +6813,7 @@
           "created_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`manifestations.created_at`. RFC 3339 on the wire — without the\nadapter, `time` serialises a 9-element tuple and the frontend\n`BookDetailSchema` (`z.string()`) rejects every detail response."
+            "description": "`manifestations.created_at`. RFC 3339 on the wire, which the\nfrontend `BookDetailSchema` requires."
           },
           "description": {
             "type": [
@@ -9536,7 +9536,7 @@
           "created_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`manifestations.created_at`. RFC 3339 on the wire — the frontend\n`WorkManifestationSchema` expects `z.string()`, not `time`'s\ndefault tuple serialisation."
+            "description": "`manifestations.created_at`. RFC 3339 on the wire, which the\nfrontend `WorkManifestationSchema` requires."
           },
           "enrichment_status": {
             "$ref": "#/components/schemas/EnrichmentStatus",

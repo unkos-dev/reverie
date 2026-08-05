@@ -2,7 +2,7 @@
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
-//! `Option<T>` for nullable, RFC 3339 timestamps via `time`.
+//! `Option<T>` for nullable, RFC 3339 timestamps.
 //!
 //! # `ETag` + If-Match contract
 //!
@@ -32,10 +32,6 @@ pub struct Shelf {
     /// on the mutating handlers).
     pub is_system: bool,
     /// `shelves.created_at`.
-    // The adapter is load-bearing, not decorative: `time`'s default
-    // serde impl emits a 9-element tuple of date and offset components,
-    // so dropping it publishes a shape no `date-time` consumer accepts.
-    // Applies to every timestamp in this module.
     pub created_at: DateTime<Utc>,
     /// `shelves.updated_at`. Doubles as the `ETag` value the client
     /// echoes on `If-Match` for the reorder endpoint.

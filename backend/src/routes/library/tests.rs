@@ -1752,9 +1752,8 @@ async fn detail_endpoint_timestamps_are_rfc3339_strings(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
     let body: serde_json::Value = response.json();
-    // Without the rfc3339 serde adapter, `time` serializes
-    // DateTime<Utc> as a 9-element tuple and every frontend
-    // BookDetailSchema parse fails (z.string()).
+    // Both must reach the wire as RFC 3339 strings; the frontend
+    // BookDetailSchema rejects any other shape.
     for field in ["created_at", "updated_at"] {
         let raw = body[field]
             .as_str()
@@ -1939,8 +1938,8 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
             format!("/api/v1/books/{mid}/cover/thumb"),
         );
         assert!(m["ingestion_status"].is_string());
-        // RFC 3339 string, not time's 9-element tuple — the frontend
-        // WorkManifestationSchema expects z.string().
+        // Must reach the wire as an RFC 3339 string; the frontend
+        // WorkManifestationSchema rejects any other shape.
         let raw = m["created_at"]
             .as_str()
             .unwrap_or_else(|| panic!("created_at must be a JSON string, got {}", m["created_at"]));
