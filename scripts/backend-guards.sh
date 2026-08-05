@@ -8,7 +8,7 @@
 # Four independent guards, run in the same order as backend-checks:
 #   1. runtime sqlx::query/raw_sql invocations outside the allowlist
 #   2. raw axum .route( registrations outside the allowlist
-#   3. chrono imports outside the allowlist
+#   3. `time` crate usage outside the boundary allowlist
 #   4. em dashes in the generated config schema
 #
 # Exit-code handling is load-bearing in guards 1-3: grep exit 1 means
@@ -81,17 +81,21 @@ run_grep_guard \
     "Register endpoints via OpenApiRouter + routes!(...) with #[utoipa::path]," \
     "or add a justified entry to backend/guards/axum-route-allowlist.txt."
 
-# 3. The backend standardises on the `time` crate (backend/AGENTS.md);
-# chrono exists in Cargo.toml solely for openidconnect's test-support
-# signature.
+# 3. First-party code is chrono-only (backend/AGENTS.md); `time` survives
+# solely at the third-party signatures that take its types. The pattern
+# deliberately matches any qualified `time::` path rather than `use time`
+# alone: the session-layer expiry reaches the crate as
+# `time::Duration::hours(24)` without importing it, which a use-only pattern
+# would never see. The leading class excludes `std::time::` and
+# `tokio::time::`, which are a different crate entirely.
 run_grep_guard \
-    "chrono imports" \
-    'use chrono|extern crate chrono' \
+    "time crate usage" \
+    '(^|[^:[:alnum:]_])time::|extern crate time' \
     backend/src/ \
-    backend/guards/chrono-allowlist.txt \
-    "Reverie uses the time crate (backend/AGENTS.md); chrono is" \
-    "reserved for the documented openidconnect test-support carve-out." \
-    "Justify any new entry in backend/guards/chrono-allowlist.txt."
+    backend/guards/time-allowlist.txt \
+    "First-party code uses chrono (backend/AGENTS.md); the time crate is" \
+    "reserved for third-party signatures that accept nothing else." \
+    "Justify any new entry in backend/guards/time-allowlist.txt."
 
 # 4. The schema descriptions are config-struct doc-comments (schemars folds
 # them in); the Vale gate covers Markdown but not this generated JSON. Match
@@ -113,4 +117,4 @@ fi
 if [ "$fail" -ne 0 ]; then
     exit 1
 fi
-echo "OK: backend static guards hold (sqlx-runtime, axum-route, chrono, config-schema em dash)"
+echo "OK: backend static guards hold (sqlx-runtime, axum-route, time-crate, config-schema em dash)"
