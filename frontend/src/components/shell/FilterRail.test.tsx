@@ -194,6 +194,33 @@ describe("FilterRail typed sections", () => {
     });
   });
 
+  test("a multi-word title filter survives typing", async () => {
+    // The committed value is trimmed. Rendering it straight back into the
+    // box would delete the space the instant it is typed, and the next
+    // character would land against the previous word.
+    renderRail();
+    const user = userEvent.setup();
+    const title = sectionByTitle("Title");
+    const input = within(title).getByRole("textbox", { name: "Filter value" });
+    await user.type(input, "the sea");
+    expect(input).toHaveValue("the sea");
+    await debounceSettled();
+    await waitFor(() => {
+      expect(currentSearch().get("title_contains")).toBe("the sea");
+    });
+  });
+
+  test("a section clear empties the box it cleared", async () => {
+    renderRail("/library?title_contains=the+sea");
+    const user = userEvent.setup();
+    const title = sectionByTitle("Title");
+    expect(within(title).getByRole("textbox", { name: "Filter value" })).toHaveValue("the sea");
+    await user.click(screen.getByRole("button", { name: "Clear Title filters" }));
+    await waitFor(() => {
+      expect(within(title).getByRole("textbox", { name: "Filter value" })).toHaveValue("");
+    });
+  });
+
   test("pages min commits pages_gte after the debounce", async () => {
     renderRail();
     const user = userEvent.setup();

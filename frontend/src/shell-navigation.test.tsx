@@ -286,7 +286,12 @@ describe("shell navigation — click reachability (admin)", () => {
   });
 });
 
-describe("filter rail — param-write to loader-refetch seam", () => {
+// A filter write is a shallow history update, so it starts no navigation
+// and the route loader does not re-run. What this covers is the seam below
+// it: the param write changes the query key and the component-level fetch
+// re-fires. The loader path is exercised on a fresh load and on
+// back/forward, not here.
+describe("filter rail — param-write to component-refetch seam", () => {
   test("selecting a series facet refetches the grid with the filter applied", async () => {
     stubFetch("admin");
     renderApp();

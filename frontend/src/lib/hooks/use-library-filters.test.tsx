@@ -10,7 +10,7 @@ import { FILTER_PARAM_KEYS, PURGE_ONLY_PARAM_KEYS } from "@/routes/library-param
 import { ALL_FILTER_KEYS, useLibraryFilters } from "./use-library-filters";
 
 function Probe(): ReactElement {
-  const { commitSlice, clearAll } = useLibraryFilters();
+  const { commitSlice, clearAll, commitAll } = useLibraryFilters();
   return (
     <div>
       <button
@@ -57,6 +57,15 @@ function Probe(): ReactElement {
         }}
       >
         pick-multi
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          // The chip-removal shape: drop one condition, leave the rest.
+          commitAll((current) => ({ ...current, shelf: undefined }));
+        }}
+      >
+        remove-chip
       </button>
     </div>
   );
@@ -148,6 +157,21 @@ describe("useLibraryFilters", () => {
     await waitFor(() => {
       expect(currentSearch().get("title_empty")).toBeNull();
     });
+  });
+
+  test("a whole-grammar clear discards a pending edit rather than publishing it", async () => {
+    renderProbe("/library?shelf=shelf-1");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "type-two-slices" }));
+    await user.click(screen.getByRole("button", { name: "remove-chip" }));
+    await debounceSettled();
+    const search = currentSearch();
+    // Being undebounced cancels the queued writes. Patching the applied
+    // grammar rather than the pending one is what stops it carrying those
+    // half-typed values out to the URL and the wire early instead.
+    expect(search.get("title_contains")).toBeNull();
+    expect(search.get("pages_gte")).toBeNull();
+    expect(search.get("shelf")).toBeNull();
   });
 
   test("the clear-all census matches the codec's, in both directions", () => {

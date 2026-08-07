@@ -19,8 +19,10 @@ import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-que
 import { Loader2 } from "lucide-react";
 import {
   lazy,
+  memo,
   Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -180,7 +182,14 @@ function LibraryContent(): ReactElement {
       console.error("[LibraryContent] failed to load the next page", fetchNextPageError);
   }, [isFetchNextPageError, fetchNextPageError]);
 
-  const items: BookListItem[] = data.pages.flatMap((p) => p.items);
+  // Stable across renders that did not refetch, so the memoised grid below
+  // can actually skip. The page re-renders on every keystroke in a filter
+  // input: the write authority subscribes to the pending values of every
+  // library key, and a keystroke changes one of them. Those renders are
+  // behaviourally inert here (every read on this page comes from the
+  // applied view), but re-rendering a card per loaded cover on each
+  // keystroke is not free.
+  const items: BookListItem[] = useMemo(() => data.pages.flatMap((p) => p.items), [data]);
 
   function setView(next: LibraryView): void {
     writeViewCookie(next);
@@ -432,7 +441,7 @@ interface BookGridProps {
   items: BookListItem[];
 }
 
-function BookGrid({ items }: BookGridProps): ReactElement {
+const BookGrid = memo(function BookGrid({ items }: BookGridProps): ReactElement {
   return (
     <ul
       data-testid="library-grid"
@@ -452,7 +461,7 @@ function BookGrid({ items }: BookGridProps): ReactElement {
       })}
     </ul>
   );
-}
+});
 
 interface BookCardProps {
   book: BookListItem;
