@@ -53,8 +53,10 @@ These rules define the React and TypeScript architecture. Do not deviate.
 <state_ownership>
 
 - **One Writer Per Shared State:** Client state with more than one writer gets a single owner; components dispatch to it, never independently read-modify-write the same URL params or store slice.
-- **Library URL State:** All library filter, sort, and view URL writes flow through the page-owned write authority (`useLiveSearchParams`). Calling `setSearchParams` directly for library state from a component is a defect.
-- **Debounced Writes Re-Validate at Fire Time:** A due timer fires before the render that would cancel it (React renders ride scheduler tasks that lose to due timers), so a debounced write into shared state must check it is still valid when it fires, not only when scheduled.
+- **Library URL State:** The library's filter, sort, and view state lives in typed per-key search params (`lib/hooks/use-library-filters.ts`). Every read and every write on that surface goes through it. React Router's `useSearchParams` is banned there by lint, in both directions: those writes reach the URL through `history.replaceState`, which the router's history does not observe, so a read through it returns filter state that goes stale as soon as anything writes, and a write through it lands where the surface cannot read it.
+- **A Gesture Writes Only Its Own Keys:** Each editing surface owns a slice and writes that slice alone. Writing the whole grammar on every commit pushes a sibling slice's current value into that slice's pending write, overwriting an edit still being typed.
+- **Clear Affordances Are Undebounced Writes:** A write that does not ask to be debounced cancels the pending debounced write on the same keys before queueing its own. That is what stops a queued keystroke resurrecting a condition a clear just removed, which is why no timer re-checks validity when it fires and no generation counter exists for it to check.
+- **Filters Live in the URL for Their Lifetime, Not for Sharing:** They must survive a refresh and in-app navigation, but must not survive into a fresh visit days later, and no other medium has that shape without extra machinery. Link sharing is not the reason; this is a self-hosted household instance.
   </state_ownership>
 
 <styling_architecture>
