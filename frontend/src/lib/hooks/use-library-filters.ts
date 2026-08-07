@@ -126,6 +126,7 @@ const LIBRARY_PARSERS = {
   q: parseAsString,
   cursor: parseAsString,
   sort: parseAsString,
+  view: parseAsString,
   series: parseAsString,
   shelf: parseAsString,
   title_contains: parseAsString,
@@ -286,16 +287,29 @@ export type LibraryFilters = {
   /** Replace the sort stack. Ordering is not a filter, but it invalidates
    *  the cursor the same way. */
   commitSort: (levels: readonly SortLevelParam[]) => void;
+  /**
+   * Write the whole grammar at once, for the clear affordances that are not
+   * scoped to a slice (chip removal). Never debounced, so it also discards
+   * whatever the typed slices were holding, which is what a clear means.
+   */
+  commitAll: (patch: (current: FilterState) => FilterState) => void;
   /** Drop every filter condition, dead params included. Never debounced. */
   clearAll: () => void;
   /**
-   * Discard whatever the given slices are holding, by writing the applied
+   * Discard whatever the typed slices are holding, by writing the applied
    * URL's values back over their keys. Undebounced, so it cancels their
    * pending writes; this is how the drawer's Escape abandons an edit
-   * without any surface tracking that an abandon happened.
+   * without any surface tracking that an abandon happened. Only the typed
+   * slices can hold anything: every other gesture writes immediately.
    */
-  revertSlices: (slices: readonly FilterSlice[]) => void;
+  revertTypedEdits: () => void;
+  /** Set the browse projection. Not a filter, so it leaves the cursor. */
+  setView: (view: string | null) => void;
 };
+
+/** The slices whose writes are debounced, so the only ones that can be
+ *  holding a value the URL has not taken yet. */
+const TYPED_SLICES: readonly FilterSlice[] = ["title", "subtitle", "isbn13", "pages", "rating"];
 
 /** The library's filter grammar. Every library write goes through this. */
 export function useLibraryFilters(): LibraryFilters {
@@ -323,18 +337,27 @@ export function useLibraryFilters(): LibraryFilters {
         { limitUrlUpdates: defaultRateLimit },
       );
     },
+    commitAll: (patch) => {
+      void setParams(
+        { ...updateFor(ALL_FILTER_KEYS, patch(filters)), cursor: null },
+        { limitUrlUpdates: defaultRateLimit },
+      );
+    },
     clearAll: () => {
       const cleared: LibraryUpdate = { cursor: null };
       for (const key of ALL_FILTER_KEYS) cleared[key] = null;
       void setParams(cleared, { limitUrlUpdates: defaultRateLimit });
     },
-    revertSlices: (slices) => {
+    revertTypedEdits: () => {
       const appliedFilters = parseFilterParams(applied);
       let update: LibraryUpdate = {};
-      for (const slice of slices) {
+      for (const slice of TYPED_SLICES) {
         update = { ...update, ...updateFor(SLICE_KEYS[slice], appliedFilters) };
       }
       void setParams(update, { limitUrlUpdates: defaultRateLimit });
+    },
+    setView: (view) => {
+      void setParams({ view }, { limitUrlUpdates: defaultRateLimit });
     },
   };
 }

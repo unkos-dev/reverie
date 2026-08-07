@@ -1,12 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useRef, useState, type ReactElement } from "react";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
+import { useState, type ReactElement } from "react";
+import { createBrowserRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-
-import type { EditTokens } from "@/components/library/filter-commit";
-import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
 
 import { FilterRail } from "./FilterRail";
 
@@ -58,42 +56,31 @@ function Providers({ children }: { children: ReactElement }): ReactElement {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-/** Owns the write authority the page normally provides. */
-function RailHost(): ReactElement {
-  const { applyParams, clearGen } = useLiveSearchParams();
-  const lastEdit = useRef<EditTokens | null>(null);
-  const cancelGen = useRef(0);
-  return (
-    <FilterRail
-      seriesOptions={SERIES}
-      applyParams={applyParams}
-      clearGen={clearGen}
-      lastEdit={lastEdit}
-      cancelGen={cancelGen}
-    />
-  );
-}
-
-function renderRail(initialEntry = "/library"): ReturnType<typeof createMemoryRouter> {
-  const router = createMemoryRouter(
-    [
-      {
-        path: "/library",
-        element: (
+/**
+ * The real adapter over a browser router, matching production: search-param
+ * writes go through `history.replaceState`, so the assertions read the
+ * document's own URL. A memory router cannot be used here, because it keeps
+ * its location in memory where those writes never land.
+ */
+function renderRail(initialEntry = "/library"): void {
+  window.history.replaceState(null, "", initialEntry);
+  const router = createBrowserRouter([
+    {
+      path: "/library",
+      element: (
+        <NuqsAdapter>
           <Providers>
-            <RailHost />
+            <FilterRail seriesOptions={SERIES} />
           </Providers>
-        ),
-      },
-    ],
-    { initialEntries: [initialEntry] },
-  );
+        </NuqsAdapter>
+      ),
+    },
+  ]);
   render(<RouterProvider router={router} />);
-  return router;
 }
 
-function currentSearch(router: ReturnType<typeof createMemoryRouter>): URLSearchParams {
-  return new URLSearchParams(router.state.location.search);
+function currentSearch(): URLSearchParams {
+  return new URLSearchParams(window.location.search);
 }
 
 async function debounceSettled(): Promise<void> {
@@ -120,88 +107,106 @@ afterEach(() => {
 
 describe("FilterRail series facet", () => {
   test("selecting a series sets ?series= with single-select semantics", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
-    expect(currentSearch(router).get("series")).toBe("s-1");
+    await waitFor(() => {
+      expect(currentSearch().get("series")).toBe("s-1");
+    });
   });
 
   test("selecting the active series again clears the filter", async () => {
-    const router = renderRail("/library?series=s-1");
+    renderRail("/library?series=s-1");
     const user = userEvent.setup();
     const box = screen.getByRole("checkbox", { name: "Discworld" });
     expect(box).toBeChecked();
     await user.click(box);
-    expect(currentSearch(router).get("series")).toBeNull();
+    await waitFor(() => {
+      expect(currentSearch().get("series")).toBeNull();
+    });
   });
 
   test("section clear resets the series param and drops any cursor", async () => {
-    const router = renderRail("/library?series=s-2&cursor=abc");
+    renderRail("/library?series=s-2&cursor=abc");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Series filters" }));
-    const search = currentSearch(router);
-    expect(search.get("series")).toBeNull();
-    expect(search.get("cursor")).toBeNull();
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.get("series")).toBeNull();
+      expect(search.get("cursor")).toBeNull();
+    });
   });
 });
 
 describe("FilterRail shelf facet", () => {
   test("lists shelves from the API and picking one writes ?shelf=", async () => {
-    const router = renderRail("/library?cursor=abc");
+    renderRail("/library?cursor=abc");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("checkbox", { name: "Wishlist" }));
-    const search = currentSearch(router);
-    expect(search.get("shelf")).toBe("shelf-1");
-    expect(search.get("cursor")).toBeNull();
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.get("shelf")).toBe("shelf-1");
+      expect(search.get("cursor")).toBeNull();
+    });
   });
 
   test("section clear removes the shelf filter", async () => {
-    const router = renderRail("/library?shelf=shelf-2");
+    renderRail("/library?shelf=shelf-2");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Shelf filters" }));
-    expect(currentSearch(router).get("shelf")).toBeNull();
+    await waitFor(() => {
+      expect(currentSearch().get("shelf")).toBeNull();
+    });
   });
 });
 
 describe("FilterRail status section", () => {
   test("checking a status writes status_any immediately", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: "Reading" }));
-    expect(currentSearch(router).getAll("status_any")).toEqual(["reading"]);
+    await waitFor(() => {
+      expect(currentSearch().getAll("status_any")).toEqual(["reading"]);
+    });
   });
 
   test("section clear drops status_any and status_none together", async () => {
-    const router = renderRail("/library?status_any=reading&status_none=abandoned");
+    renderRail("/library?status_any=reading&status_none=abandoned");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Status filters" }));
-    const search = currentSearch(router);
-    expect(search.getAll("status_any")).toEqual([]);
-    expect(search.getAll("status_none")).toEqual([]);
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.getAll("status_any")).toEqual([]);
+      expect(search.getAll("status_none")).toEqual([]);
+    });
   });
 });
 
 describe("FilterRail typed sections", () => {
   test("title text commits title_contains after the debounce", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     const title = sectionByTitle("Title");
     await user.type(within(title).getByRole("textbox", { name: "Filter value" }), "dune");
     await debounceSettled();
-    expect(currentSearch(router).get("title_contains")).toBe("dune");
+    await waitFor(() => {
+      expect(currentSearch().get("title_contains")).toBe("dune");
+    });
   });
 
   test("pages min commits pages_gte after the debounce", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
     await debounceSettled();
-    expect(currentSearch(router).get("pages_gte")).toBe("300");
+    await waitFor(() => {
+      expect(currentSearch().get("pages_gte")).toBe("300");
+    });
   });
 
   test("a debounced commit in one section preserves another section's pending draft", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
@@ -209,37 +214,43 @@ describe("FilterRail typed sections", () => {
     const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(titleInput, "sea");
     await debounceSettled();
-    const search = currentSearch(router);
-    expect(search.get("pages_gte")).toBe("300");
-    expect(search.get("title_contains")).toBe("sea");
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.get("pages_gte")).toBe("300");
+      expect(search.get("title_contains")).toBe("sea");
+    });
     expect(titleInput).toHaveValue("sea");
   });
 
   test("an immediate commit elsewhere preserves a pending typed draft", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     const title = sectionByTitle("Title");
     const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(titleInput, "sea");
     await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
     await debounceSettled();
-    const search = currentSearch(router);
-    expect(search.get("series")).toBe("s-1");
-    expect(search.get("title_contains")).toBe("sea");
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.get("series")).toBe("s-1");
+      expect(search.get("title_contains")).toBe("sea");
+    });
     expect(titleInput).toHaveValue("sea");
   });
 
   test("section clear during a pending draft does not resurrect the value", async () => {
-    const router = renderRail("/library?pages_lte=900");
+    renderRail("/library?pages_lte=900");
     const user = userEvent.setup();
     const pages = sectionByTitle("Pages");
     const min = within(pages).getByRole("spinbutton", { name: "Min" });
     await user.type(min, "300");
     await user.click(within(pages).getByRole("button", { name: "Clear Pages filters" }));
     await debounceSettled();
-    const search = currentSearch(router);
-    expect(search.get("pages_gte")).toBeNull();
-    expect(search.get("pages_lte")).toBeNull();
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.get("pages_gte")).toBeNull();
+      expect(search.get("pages_lte")).toBeNull();
+    });
     expect(min).toHaveValue(null);
   });
 });
@@ -271,31 +282,41 @@ describe("FilterRail section state", () => {
 
 describe("FilterRail sort section", () => {
   test("adding a field appends a sort level", async () => {
-    const router = renderRail();
+    renderRail();
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Add sort field" }));
     await user.click(screen.getByRole("option", { name: "Title" }));
-    expect(currentSearch(router).get("sort")).toBe("title");
+    await waitFor(() => {
+      expect(currentSearch().get("sort")).toBe("title");
+    });
   });
 
   test("direction toggle, reorder, and remove rewrite ?sort=", async () => {
-    const router = renderRail("/library?sort=title,-created_at");
+    renderRail("/library?sort=title,-created_at");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Change Title sort direction/ }));
-    expect(currentSearch(router).get("sort")).toBe("-title,-created_at");
+    await waitFor(() => {
+      expect(currentSearch().get("sort")).toBe("-title,-created_at");
+    });
     await user.click(screen.getByRole("button", { name: "Move Added earlier in sort priority" }));
-    expect(currentSearch(router).get("sort")).toBe("-created_at,-title");
+    await waitFor(() => {
+      expect(currentSearch().get("sort")).toBe("-created_at,-title");
+    });
     await user.click(screen.getByRole("button", { name: "Remove Added from sort" }));
-    expect(currentSearch(router).get("sort")).toBe("-title");
+    await waitFor(() => {
+      expect(currentSearch().get("sort")).toBe("-title");
+    });
   });
 
   test("sort clear empties the stack and drops the cursor", async () => {
-    const router = renderRail("/library?sort=title,-created_at&cursor=abc");
+    renderRail("/library?sort=title,-created_at&cursor=abc");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Sort filters" }));
-    const search = currentSearch(router);
-    expect(search.get("sort")).toBeNull();
-    expect(search.get("cursor")).toBeNull();
+    await waitFor(() => {
+      const search = currentSearch();
+      expect(search.get("sort")).toBeNull();
+      expect(search.get("cursor")).toBeNull();
+    });
   });
 
   test("the rail hosts no live region of its own; announcements are page-level", () => {
@@ -312,10 +333,10 @@ describe("FilterRail sort section", () => {
 
 describe("FilterRail vocabulary sections", () => {
   test("clearing a vocabulary section drops all three mode params", async () => {
-    const router = renderRail("/library?author=a-1&author_any=a-2&author_none=a-3");
+    renderRail("/library?author=a-1&author_any=a-2&author_none=a-3");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Clear Authors filters" }));
-    const search = currentSearch(router);
+    const search = currentSearch();
     expect(search.getAll("author")).toEqual([]);
     expect(search.getAll("author_any")).toEqual([]);
     expect(search.getAll("author_none")).toEqual([]);

@@ -38,7 +38,6 @@ import {
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
-import { makeFilterClear, type EditTokens } from "@/components/library/filter-commit";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
@@ -48,18 +47,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
-import { useLibrarySearchParams, useQuickSearchFilter } from "@/lib/hooks/use-library-filters";
-import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
+import { useLibraryFilters, useLibrarySearchParams } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 
 import {
-  applySortToSearchParams,
-  FILTER_PARAM_KEYS,
   filterStateToParams,
   hasActiveFilterState,
   paramsFromSearch,
   parseFilterParams,
-  PURGE_ONLY_PARAM_KEYS,
   viewFromSearch,
   type LibraryView,
 } from "@/routes/library-params";
@@ -104,27 +99,21 @@ function LibraryContent(): ReactElement {
   // the router's history does not observe, so its own `useSearchParams`
   // would go stale against anything quick search writes.
   const searchParams = useLibrarySearchParams();
-  // Write authority for the surfaces not yet migrated off it (the rail's
-  // commits, header sort, clear-all, view toggle, chip removal).
-  const { applyParams, clearGen } = useLiveSearchParams();
-  // Quick search owns `q`; the page only needs its clear path, so
-  // clear-all can cancel a keystroke still queued against that key.
-  const { clearQuery } = useQuickSearchFilter();
+  const {
+    commitAll,
+    commitSort,
+    clearAll,
+    revertTypedEdits,
+    setView: setViewParam,
+  } = useLibraryFilters();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
-  // One edit-token ref per page: the toolbar quick search and the rail's
-  // sections share the draft-survival protocol through it (filter-commit.ts).
-  const lastEdit = useRef<EditTokens | null>(null);
   const [overlay, setOverlay] = useState<OverlayState>(null);
   // The overlays open from state, not a Radix Trigger, so Radix has no
   // trigger to restore focus to on close; the opener is captured here and
   // restored via onCloseAutoFocus instead (WCAG 2.4.3).
   const overlayReturnFocus = useRef<HTMLElement | null>(null);
-  // Escape = abandon: bumped when the filter drawer closes via Escape so
-  // pending rail drafts die at fire time; scrim and close-button closes
-  // leave it alone and pending drafts flush on unmount (see FilterRail).
-  const railCancelGen = useRef(0);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [displayPrefs] = useState(readDisplayPreferences);
   const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
@@ -195,34 +184,12 @@ function LibraryContent(): ReactElement {
 
   function setView(next: LibraryView): void {
     writeViewCookie(next);
-    applyParams((params) => {
-      if (next === "grid") params.delete("view");
-      else params.set("view", next);
-      return params;
-    });
+    setViewParam(next === "grid" ? null : next);
   }
 
   /** Table-header sort writes the same `?sort=` contract as the rail's sort section. */
   function setSortFromTable(levels: readonly SortLevelParam[]): void {
-    applyParams((params) => applySortToSearchParams(params, levels));
-  }
-
-  function clearAllFilters(): void {
-    lastEdit.current = null;
-    // Undebounced, so it cancels a queued quick-search keystroke that would
-    // otherwise land after the sweep below and resurrect the `q` condition.
-    clearQuery();
-    applyParams(
-      (params) => {
-        for (const key of FILTER_PARAM_KEYS) params.delete(key);
-        for (const key of PURGE_ONLY_PARAM_KEYS) params.delete(key);
-        params.delete("cursor");
-        return params;
-      },
-      // Pending drafts (quick search, rail sections) must die with the
-      // clear, or a due debounce could re-write a filter the user removed.
-      { clears: true },
-    );
+    commitSort(levels);
   }
 
   function setDensityPref(next: Density): void {
@@ -269,8 +236,7 @@ function LibraryContent(): ReactElement {
   /** Empty states first, then one branch per projection. */
   function renderBooks(): ReactElement {
     if (items.length === 0) {
-      if (hasActiveFilterState(filterState))
-        return <FilteredEmptyState onClear={clearAllFilters} />;
+      if (hasActiveFilterState(filterState)) return <FilteredEmptyState onClear={clearAll} />;
       return <EmptyState />;
     }
     if (viewMode === "grid") return <BookGrid items={items} />;
@@ -360,10 +326,8 @@ function LibraryContent(): ReactElement {
           <FilterChips
             filters={filterState}
             seriesNames={seriesById}
-            onRemove={(patch) => {
-              makeFilterClear(applyParams, lastEdit)(patch);
-            }}
-            onClearAll={clearAllFilters}
+            onRemove={commitAll}
+            onClearAll={clearAll}
           />
           <Separator className="mb-8" />
 
@@ -441,21 +405,16 @@ function LibraryContent(): ReactElement {
           side="right"
           aria-describedby={undefined}
           onCloseAutoFocus={restoreOverlayFocus}
-          onEscapeKeyDown={() => {
-            railCancelGen.current += 1;
-          }}
+          // Escape abandons: revert the typed slices to the URL's values,
+          // which cancels their pending writes. Scrim and close-button
+          // closes leave them alone, so those edits still settle.
+          onEscapeKeyDown={revertTypedEdits}
           className="w-[340px] max-w-[100vw] overflow-y-auto p-6"
         >
           <SheetHeader className="mb-2 p-0">
             <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
           </SheetHeader>
-          <FilterRail
-            seriesOptions={seriesOptions}
-            applyParams={applyParams}
-            clearGen={clearGen}
-            lastEdit={lastEdit}
-            cancelGen={railCancelGen}
-          />
+          <FilterRail seriesOptions={seriesOptions} />
         </SheetContent>
       </Sheet>
       <BookDetailDrawer
