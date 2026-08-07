@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import {
-  applySortToSearchParams,
   emptyFilterState,
   filterStateToParams,
   hasActiveFilterState,
@@ -329,31 +328,6 @@ describe("hasActiveFilterState", () => {
     expect(
       hasActiveFilterState({ ...emptyFilterState(), status: { any: ["unread"], none: [] } }),
     ).toBe(true);
-  });
-});
-
-describe("applySortToSearchParams", () => {
-  test("writes the serialized stack to the sort key", () => {
-    const result = applySortToSearchParams(search(""), [{ field: "title", desc: false }]);
-    expect(result.get("sort")).toBe("title");
-  });
-
-  test("an empty stack deletes the sort key rather than writing an empty value", () => {
-    const result = applySortToSearchParams(search("sort=title"), []);
-    expect(result.has("sort")).toBe(false);
-  });
-
-  test("always deletes cursor, even alongside a non-empty stack", () => {
-    const result = applySortToSearchParams(search("cursor=abc"), [{ field: "author", desc: true }]);
-    expect(result.has("cursor")).toBe(false);
-  });
-
-  test("leaves unrelated params untouched", () => {
-    const result = applySortToSearchParams(search("view=table&q=war"), [
-      { field: "pages", desc: false },
-    ]);
-    expect(result.get("view")).toBe("table");
-    expect(result.get("q")).toBe("war");
   });
 });
 

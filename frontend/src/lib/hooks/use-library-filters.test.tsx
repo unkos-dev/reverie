@@ -5,9 +5,9 @@ import type { ReactElement } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
-import { FILTER_PARAM_KEYS, PURGE_ONLY_PARAM_KEYS } from "@/routes/library-params";
+import { FILTER_PARAM_KEYS, PURGE_ONLY_PARAM_KEYS, TEXT_COLUMN_OPS } from "@/routes/library-params";
 
-import { ALL_FILTER_KEYS, useLibraryFilters } from "./use-library-filters";
+import { ALL_FILTER_KEYS, SLICE_KEYS, useLibraryFilters } from "./use-library-filters";
 
 function Probe(): ReactElement {
   const { commitSlice, clearAll, commitAll } = useLibraryFilters();
@@ -172,6 +172,31 @@ describe("useLibraryFilters", () => {
     expect(search.get("title_contains")).toBeNull();
     expect(search.get("pages_gte")).toBeNull();
     expect(search.get("shelf")).toBeNull();
+  });
+
+  test("each text slice owns exactly the keys its column declares", () => {
+    // The union assertion below cannot see this: moving a key between the
+    // codec's live and dead lists leaves their union unchanged, so the
+    // coarse census stays green while the slice that has to write the key
+    // never learns about it. The gesture would then clear the column's
+    // other keys and never write the new one. Assert the partition.
+    const textSlices = [
+      ["title", "title"],
+      ["subtitle", "subtitle"],
+      ["isbn13", "isbn_13"],
+    ] as const;
+    for (const [slice, column] of textSlices) {
+      const declared = TEXT_COLUMN_OPS[column].map((op) => `${column}_${op}`);
+      expect([...SLICE_KEYS[slice]].sort()).toEqual([...declared].sort());
+    }
+  });
+
+  test("the dead-param sweep equals the codec's purge-only list", () => {
+    // The other half of the same partition: keys clear-all sweeps that no
+    // slice owns must be exactly the params the codec declares dead.
+    const owned = new Set<string>(Object.values(SLICE_KEYS).flat());
+    const dead = ALL_FILTER_KEYS.filter((key) => key !== "q" && !owned.has(key));
+    expect([...dead].sort()).toEqual([...PURGE_ONLY_PARAM_KEYS].sort());
   });
 
   test("the clear-all census matches the codec's, in both directions", () => {
