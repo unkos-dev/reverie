@@ -40,6 +40,7 @@ import {
 } from "nuqs";
 import { useOptimisticSearchParams } from "nuqs/adapters/react-router/v8";
 
+import { parseSortParam, serializeSortParam, type SortLevelParam } from "@/api";
 import {
   parseFilterParams,
   serializeFilterParams,
@@ -247,8 +248,28 @@ function updateFor(keys: readonly LibraryKey[], next: FilterState): LibraryUpdat
   return update;
 }
 
+/**
+ * Rebuild a `URLSearchParams` from the pending values, so the codec stays
+ * the only thing that parses the grammar. Callers get the value a debounced
+ * write is still holding, which is what an editing surface must render;
+ * anything that should wait for the write to settle (the API query, the
+ * chips, the active count) reads {@link useLibrarySearchParams} instead.
+ */
+function toSearch(values: Values<typeof LIBRARY_PARSERS>): URLSearchParams {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null) continue;
+    if (Array.isArray(value)) for (const item of value) search.append(key, item);
+    else search.set(key, value);
+  }
+  return search;
+}
+
 export type LibraryFilters = {
-  /** The committed grammar, parsed by the codec from the live params. */
+  /**
+   * The grammar as the editing surfaces see it, including a value a
+   * debounced write is still holding.
+   */
   filters: FilterState;
   /**
    * Write one slice. `debounced` is for typed inputs; leaving it off
@@ -260,17 +281,30 @@ export type LibraryFilters = {
     patch: (current: FilterState) => FilterState,
     options?: { debounced?: boolean },
   ) => void;
+  /** The committed sort stack. */
+  sortLevels: readonly SortLevelParam[];
+  /** Replace the sort stack. Ordering is not a filter, but it invalidates
+   *  the cursor the same way. */
+  commitSort: (levels: readonly SortLevelParam[]) => void;
   /** Drop every filter condition, dead params included. Never debounced. */
   clearAll: () => void;
+  /**
+   * Discard whatever the given slices are holding, by writing the applied
+   * URL's values back over their keys. Undebounced, so it cancels their
+   * pending writes; this is how the drawer's Escape abandons an edit
+   * without any surface tracking that an abandon happened.
+   */
+  revertSlices: (slices: readonly FilterSlice[]) => void;
 };
 
 /** The library's filter grammar. Every library write goes through this. */
 export function useLibraryFilters(): LibraryFilters {
-  const search = useLibrarySearchParams();
-  const filters = parseFilterParams(search);
-  const [, setParams] = useQueryStates(LIBRARY_PARSERS);
+  const applied = useLibrarySearchParams();
+  const [values, setParams] = useQueryStates(LIBRARY_PARSERS);
+  const filters = parseFilterParams(toSearch(values));
   return {
     filters,
+    sortLevels: parseSortParam(values.sort ?? ""),
     commitSlice: (slice, patch, options) => {
       void setParams(
         // `cursor` rides along because a changed condition invalidates the
@@ -282,10 +316,25 @@ export function useLibraryFilters(): LibraryFilters {
         },
       );
     },
+    commitSort: (levels) => {
+      const serialised = serializeSortParam(levels);
+      void setParams(
+        { sort: serialised === "" ? null : serialised, cursor: null },
+        { limitUrlUpdates: defaultRateLimit },
+      );
+    },
     clearAll: () => {
       const cleared: LibraryUpdate = { cursor: null };
       for (const key of ALL_FILTER_KEYS) cleared[key] = null;
       void setParams(cleared, { limitUrlUpdates: defaultRateLimit });
+    },
+    revertSlices: (slices) => {
+      const appliedFilters = parseFilterParams(applied);
+      let update: LibraryUpdate = {};
+      for (const slice of slices) {
+        update = { ...update, ...updateFor(SLICE_KEYS[slice], appliedFilters) };
+      }
+      void setParams(update, { limitUrlUpdates: defaultRateLimit });
     },
   };
 }
